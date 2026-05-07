@@ -35,11 +35,20 @@ import os
 import re
 import statistics
 import sys
+
+# Task-surface tag. The framework distinguishes four surfaces:
+#   - smoothing_diagnosis: prose-quality diagnosis, regardless of provenance
+#   - voice_coherence:     does this draft match a writer/register baseline
+#   - validation:          empirical performance against a labeled corpus
+#   - craft_restoration:   what to do (lives in skill references, not scripts)
+# Every script's JSON output carries its surface so a downstream harness
+# can refuse to mix scores across surfaces, and reports self-identify
+# which question they answer. See ROADMAP.md "Phase 1 -> Phase 2
+# operational sequence" for the contract.
+TASK_SURFACE = "smoothing_diagnosis"
 from collections import Counter
 from pathlib import Path
 from typing import Any
-
-TASK_SURFACE = "smoothing_diagnosis"
 
 # ---------- Optional dependencies ----------
 try:
@@ -352,6 +361,65 @@ def pos_bigram_distribution(text: str) -> dict[str, Any] | None:
         "n_unique": len(bigrams),
         "entropy_bits": H,
         "top_20": dict(bigrams.most_common(20)),
+        # Full counts so a baseline aggregator can sum them and a
+        # downstream helper can compute KL/JSD against the aggregate.
+        # Bounded by the POS tag inventory (typically 17 universal
+        # tags = 289 possible bigrams), so the dict stays small.
+        "counts": dict(bigrams),
+    }
+
+
+def pos_bigram_distance(
+    target_counts: dict[str, int],
+    baseline_counts: dict[str, int],
+) -> dict[str, Any] | None:
+    """KL divergence and Jensen-Shannon divergence between two POS-bigram
+    count distributions.
+
+    Returns ``None`` if either distribution is empty. KL is computed as
+    ``KL(target ‖ baseline)`` with Laplace smoothing on the union of
+    bigrams seen in either distribution to handle zeros. JSD is
+    symmetric and bounded in ``[0, 1]`` (using log base 2). The
+    distributional-diagnostics reference describes these as the
+    canonical Layer A POS-bigram comparison; the helper makes the
+    numbers reportable when a baseline is supplied.
+    """
+    if not target_counts or not baseline_counts:
+        return None
+    keys = set(target_counts) | set(baseline_counts)
+    n_t = sum(target_counts.values())
+    n_b = sum(baseline_counts.values())
+    if n_t == 0 or n_b == 0:
+        return None
+    # Laplace smoothing: add one count per key to both distributions
+    # before normalizing. Prevents log(0) on bigrams missing from one
+    # side of the comparison without distorting the larger structure
+    # because the smoothing mass is small relative to typical counts.
+    smoothed_t = {k: target_counts.get(k, 0) + 1 for k in keys}
+    smoothed_b = {k: baseline_counts.get(k, 0) + 1 for k in keys}
+    total_t = sum(smoothed_t.values())
+    total_b = sum(smoothed_b.values())
+    p = {k: v / total_t for k, v in smoothed_t.items()}
+    q = {k: v / total_b for k, v in smoothed_b.items()}
+    kl = sum(
+        p[k] * math.log2(p[k] / q[k])
+        for k in keys
+        if p[k] > 0 and q[k] > 0
+    )
+    m = {k: 0.5 * (p[k] + q[k]) for k in keys}
+    jsd = 0.5 * sum(
+        p[k] * math.log2(p[k] / m[k])
+        for k in keys if p[k] > 0 and m[k] > 0
+    ) + 0.5 * sum(
+        q[k] * math.log2(q[k] / m[k])
+        for k in keys if q[k] > 0 and m[k] > 0
+    )
+    return {
+        "kl_to_baseline": round(kl, 4),
+        "jsd_to_baseline": round(jsd, 4),
+        "n_target_bigrams": n_t,
+        "n_baseline_bigrams": n_b,
+        "n_unique_union": len(keys),
     }
 
 
@@ -503,7 +571,8 @@ def audit_text(
 
 
 def audit_baseline(baseline_dir: str, **kwargs: Any) -> dict[str, Any]:
-    paths = sorted(Path(baseline_dir).glob("*.txt"))
+    paths = sorted(Path(baseline_dir).glob("*.txt")) + sorted(Path(baseline_dir).glob("*.md"))
+    paths = [p for p in paths if not p.name.lower().startswith("readme")]
     audits = []
     for p in paths:
         try:
@@ -516,7 +585,27 @@ def audit_baseline(baseline_dir: str, **kwargs: Any) -> dict[str, Any]:
         "n_files": len(paths),
         "audits": audits,
         "aggregate": _aggregate_baseline(audits),
+        "pos_bigram_aggregate": _aggregate_pos_bigrams(audits),
     }
+
+
+def _aggregate_pos_bigrams(
+    audits: list[dict[str, Any]],
+) -> dict[str, int]:
+    """Sum POS-bigram counts across baseline files.
+
+    Empty if spaCy was unavailable for any baseline file. The result is
+    consumed by ``compare_distributions`` to compute KL/JSD between a
+    target document and the baseline corpus.
+    """
+    total: Counter[str] = Counter()
+    for entry in audits:
+        a = entry.get("audit", {})
+        pb = (a.get("tier2") or {}).get("pos_bigrams") or {}
+        counts = pb.get("counts")
+        if isinstance(counts, dict):
+            total.update(counts)
+    return dict(total)
 
 
 def _aggregate_baseline(audits: list[dict[str, Any]]) -> dict[str, Any]:
@@ -571,9 +660,31 @@ def _z_score(value: float, agg: dict[str, float]) -> float | None:
     return (value - agg["mean"]) / agg["sd"]
 
 
+# Map dotted z-score path names to their heuristic key in
+# COMPRESSION_HEURISTICS so length-floor warnings can be carried through
+# from the band classification to the baseline z-score output. Signals
+# without an entry in COMPRESSION_HEURISTICS (function_word_ratio,
+# pos_bigrams.entropy_bits) have no length-floor convention; their
+# z-scores are reported without a length-floor flag.
+_BASELINE_PATH_TO_HEURISTIC: dict[str, str] = {
+    "tier1.sentence_length.sd": "sentence_length_sd",
+    "tier1.sentence_length.burstiness_B": "burstiness_B",
+    "tier1.mattr.value": "mattr",
+    "tier1.mtld": "mtld",
+    "tier1.yules_k": "yules_k",
+    "tier1.shannon_entropy_bits": "shannon_entropy",
+    "tier1.fkgl.sd": "fkgl_sd",
+    "tier1.connective_density.per_1000_tokens": "connective_density",
+    "tier2.mdd.sd": "mdd_sd",
+    "tier3.adjacent_cosine.mean": "adjacent_cosine_mean",
+    "tier3.adjacent_cosine.sd": "adjacent_cosine_sd",
+}
+
+
 def compare_to_baseline(audit: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
     agg = baseline.get("aggregate", {})
     z_scores: dict[str, Any] = {}
+    n_words = audit.get("summary", {}).get("n_words", 0)
     paths = [
         ("tier1.sentence_length.sd", ("tier1", "sentence_length", "sd")),
         ("tier1.sentence_length.burstiness_B", ("tier1", "sentence_length", "burstiness_B")),
@@ -604,13 +715,170 @@ def compare_to_baseline(audit: dict[str, Any], baseline: dict[str, Any]) -> dict
                 break
         if isinstance(d, (int, float)):
             z = _z_score(float(d), agg[name])
-            z_scores[name] = {
+            entry: dict[str, Any] = {
                 "value": float(d),
                 "baseline_mean": agg[name]["mean"],
                 "baseline_sd": agg[name]["sd"],
                 "z_score": z,
             }
+            heuristic_key = _BASELINE_PATH_TO_HEURISTIC.get(name)
+            if heuristic_key and heuristic_key in COMPRESSION_HEURISTICS:
+                _, _, _, length_floor = COMPRESSION_HEURISTICS[heuristic_key]
+                entry["length_floor"] = length_floor
+                entry["length_floor_satisfied"] = n_words >= length_floor
+                if n_words < length_floor:
+                    entry["warning"] = (
+                        f"Target has {n_words} words, below the "
+                        f"{length_floor}-word floor for {heuristic_key}. "
+                        "Z-score is reported but should be treated as "
+                        "noisy and not used for band-relevant inference."
+                    )
+            z_scores[name] = entry
     return z_scores
+
+
+def split_into_windows(
+    text: str,
+    window_size: int,
+    stride: int | None = None,
+) -> list[dict[str, Any]]:
+    """Slice ``text`` into overlapping word-count-bounded windows.
+
+    Each window slices the *original* text at word boundaries, so
+    paragraph breaks, punctuation, and quoted spans inside the window
+    are preserved (rather than reconstructed from a whitespace-split).
+    The windows are then run through ``audit_text`` the same way the
+    whole-document pass would be run.
+
+    AI contamination often arrives as patches rather than whole-chapter
+    drift; whole-chapter scores can mask localized problems where the
+    compressed region averages out against clean prose. The sliding
+    window catches the patches.
+
+    If ``stride`` is None or zero, defaults to ``window_size`` (non-
+    overlapping windows). Pass ``stride = window_size // 2`` for the
+    typical 50%-overlap scan.
+    """
+    if window_size <= 0:
+        raise ValueError("window_size must be positive")
+    if stride is None or stride <= 0:
+        stride = window_size
+    offsets = [(m.start(), m.end()) for m in _WORD_RE.finditer(text)]
+    n_words = len(offsets)
+    if n_words == 0:
+        return []
+    if n_words <= window_size:
+        return [{
+            "start_word": 0,
+            "end_word": n_words,
+            "char_start": offsets[0][0],
+            "char_end": offsets[-1][1],
+            "text": text[offsets[0][0]:offsets[-1][1]],
+        }]
+    windows: list[dict[str, Any]] = []
+    seen_ends: set[int] = set()
+    for start in range(0, n_words - window_size + 1, stride):
+        end = start + window_size
+        if end in seen_ends:
+            continue
+        seen_ends.add(end)
+        char_start = offsets[start][0]
+        char_end = offsets[end - 1][1]
+        windows.append({
+            "start_word": start,
+            "end_word": end,
+            "char_start": char_start,
+            "char_end": char_end,
+            "text": text[char_start:char_end],
+        })
+    # Ensure the final window covers the document tail; the strided
+    # loop may stop short of the end if (n_words - window_size) is not
+    # divisible by stride.
+    if windows[-1]["end_word"] < n_words:
+        last_start = n_words - window_size
+        windows.append({
+            "start_word": last_start,
+            "end_word": n_words,
+            "char_start": offsets[last_start][0],
+            "char_end": offsets[n_words - 1][1],
+            "text": text[offsets[last_start][0]:offsets[n_words - 1][1]],
+        })
+    return windows
+
+
+def audit_windows(
+    text: str,
+    window_size: int,
+    *,
+    stride: int | None = None,
+    baseline: dict[str, Any] | None = None,
+    do_tier2: bool = True,
+    do_tier3: bool = True,
+    mattr_window: int = 50,
+) -> list[dict[str, Any]]:
+    """Run ``audit_text`` + ``classify_compression`` on each sliding window.
+
+    When a ``baseline`` block (the result of ``audit_baseline``) is
+    supplied, also runs ``compare_to_baseline`` and
+    ``compare_distributions`` per window so each window carries its
+    own z-scores and POS-bigram divergence against the same baseline
+    aggregate the whole-document pass would use. Z-scores at small
+    window sizes are noisy by construction; the length-floor warnings
+    in ``compare_to_baseline`` flag them. The roadmap pairs this mode
+    with length-matched bootstrap percentiles, which would replace the
+    z-score noise with empirical confidence intervals; until then,
+    read window z-scores as inspection leads, not verdicts.
+    """
+    windows = split_into_windows(text, window_size, stride)
+    results: list[dict[str, Any]] = []
+    for w in windows:
+        a = audit_text(
+            w["text"],
+            do_tier2=do_tier2,
+            do_tier3=do_tier3,
+            mattr_window=mattr_window,
+        )
+        c = classify_compression(a)
+        entry = {
+            "start_word": w["start_word"],
+            "end_word": w["end_word"],
+            "char_start": w["char_start"],
+            "char_end": w["char_end"],
+            "n_words": a.get("summary", {}).get("n_words", 0),
+            "audit": a,
+            "compression": c,
+        }
+        if baseline is not None:
+            entry["baseline_comparison"] = compare_to_baseline(a, baseline)
+            divergences = compare_distributions(a, baseline)
+            if divergences:
+                entry["baseline_divergences"] = divergences
+        results.append(entry)
+    return results
+
+
+def compare_distributions(
+    audit: dict[str, Any],
+    baseline: dict[str, Any],
+) -> dict[str, Any]:
+    """Distribution-level distances between target and baseline.
+
+    Reported separately from z-scores because the shape is different:
+    KL/JSD are single distances, not z-scores against a baseline mean
+    and SD. Currently covers the POS-bigram divergence the
+    distributional-diagnostics reference describes; future additions
+    can plug into the same dict (function-word distribution, sentence-
+    length distribution shape, etc.) without changing the call site.
+    """
+    out: dict[str, Any] = {}
+    target_pb = (audit.get("tier2") or {}).get("pos_bigrams") or {}
+    target_counts = target_pb.get("counts")
+    baseline_counts = baseline.get("pos_bigram_aggregate") or {}
+    if isinstance(target_counts, dict) and baseline_counts:
+        dist = pos_bigram_distance(target_counts, baseline_counts)
+        if dist is not None:
+            out["pos_bigrams"] = dist
+    return out
 
 
 # ---------- Band classification ----------
@@ -666,6 +934,7 @@ def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
     skipped: list[str] = []
     notes: dict[str, str] = {}
     weighted_score = 0.0
+    available_weight = 0.0
     n_words = audit.get("summary", {}).get("n_words", 0)
     t1 = audit.get("tier1", {})
     t2 = audit.get("tier2") or {}
@@ -675,7 +944,7 @@ def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
         signal: str,
         value: float | None,
     ) -> None:
-        nonlocal weighted_score
+        nonlocal weighted_score, available_weight
         if value is None:
             return
         if signal not in COMPRESSION_HEURISTICS:
@@ -684,6 +953,10 @@ def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
         if n_words < length_floor:
             skipped.append(f"{signal} (need {length_floor}+ words, have {n_words})")
             return
+        # Signal is in scope: it cleared its length floor and has a
+        # value. Count its weight as available evidence regardless of
+        # whether it ends up flagged.
+        available_weight += weight
         compressed = (
             (direction == "lt" and value < thresh)
             or (direction == "gt" and value > thresh)
@@ -714,15 +987,28 @@ def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
         check("adjacent_cosine_mean", adj.get("mean"))
         check("adjacent_cosine_sd", adj.get("sd"))
 
-    # Band assignment by weighted score, scaled by available signals.
-    # With all length floors satisfied, max weight ≈ 13.5; for short docs,
-    # only ~5.5 of weight is available.
-    if weighted_score < 2.0:
-        band = "Lightly smoothed"
-    elif weighted_score < 5.0:
-        band = "Moderately smoothed"
+    # Band assignment by *fraction* of available signal weight. The
+    # absolute weighted_score depends on which signals had data and
+    # which were skipped for length, so a fixed-score threshold reads
+    # the same flag count differently in long and short documents:
+    # one signal at weight 2.0 firing in a 200-word doc with only 7.0
+    # available weight is 29% of available evidence, but in a 2000-
+    # word doc with 13.5 available weight it is 15%. Normalizing makes
+    # the band classification a fraction-of-evidence statement that
+    # carries across document lengths. Threshold values below are
+    # calibrated near the old absolute-weight cutoffs at the
+    # full-evidence (13.5) case: old < 2.0 ≈ 0.15, old ≥ 5.0 ≈ 0.37.
+    if available_weight <= 0:
+        band = "Insufficient signal"
+        compression_fraction: float | None = None
     else:
-        band = "Heavily smoothed"
+        compression_fraction = weighted_score / available_weight
+        if compression_fraction < 0.15:
+            band = "Lightly smoothed"
+        elif compression_fraction < 0.40:
+            band = "Moderately smoothed"
+        else:
+            band = "Heavily smoothed"
 
     if n_words < 200:
         notes["reliability"] = (
@@ -734,10 +1020,22 @@ def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
             "Document below 500 words; some length-sensitive signals skipped. "
             "Cross-check against Layer B."
         )
+    if available_weight > 0 and available_weight < 5.0:
+        notes["evidence"] = (
+            f"Only {available_weight:.1f} of {sum(w for _, _, w, _ in COMPRESSION_HEURISTICS.values()):.1f} "
+            "max signal weight cleared its length floor. Band is a "
+            "fraction-of-available statement, not an absolute count."
+        )
 
     return {
         "band": band,
         "weighted_score": round(weighted_score, 2),
+        "available_weight": round(available_weight, 2),
+        "compression_fraction": (
+            round(compression_fraction, 3)
+            if compression_fraction is not None
+            else None
+        ),
         "flagged_signals": flagged,
         "skipped_signals": skipped,
         "n_flagged": len(flagged),
@@ -756,13 +1054,22 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
     s = audit.get("summary", {})
     lines.append("=" * 60)
     lines.append("LAYER A: DISTRIBUTIONAL DIAGNOSTIC")
-    lines.append("=" * 60)
     lines.append(f"task_surface: {TASK_SURFACE}")
+    lines.append("=" * 60)
     lines.append(f"Words: {s.get('n_words', 0)}    Sentences: {s.get('n_sentences', 0)}")
     if not s.get("reliable", True):
         lines.append("WARNING: Document below 200 words; results are noisy.")
     lines.append("")
-    lines.append(f"Band: {compression['band']}  (weighted score: {compression.get('weighted_score', 0)})")
+    fraction = compression.get("compression_fraction")
+    fraction_str = (
+        f"{fraction:.2f}" if isinstance(fraction, (int, float)) else "n/a"
+    )
+    lines.append(
+        f"Band: {compression['band']}  "
+        f"(compression fraction: {fraction_str}, "
+        f"weighted score: {compression.get('weighted_score', 0)} of "
+        f"{compression.get('available_weight', 0)} available)"
+    )
     if compression["flagged_signals"]:
         lines.append("Flagged signals (compression observed):")
         for sig in compression["flagged_signals"]:
@@ -854,16 +1161,128 @@ def format_baseline_comparison(z_scores: dict[str, Any]) -> str:
         return ""
     lines = []
     lines.append("")
-    lines.append("Baseline comparison (z-scores; |z| > 1.0 is meaningful):")
+    lines.append(
+        "Baseline comparison (z-scores; |z| > 1.0 is meaningful; "
+        "rows marked [!] fall below their length floor and are noisy):"
+    )
+    unreliable: list[str] = []
     for name, info in z_scores.items():
         z = info.get("z_score")
         if z is None:
             continue
         marker = " *" if abs(z) > 1.0 else ""
+        floor_marker = ""
+        if info.get("length_floor_satisfied") is False:
+            floor_marker = " [!]"
+            unreliable.append(name)
         lines.append(
             f"  {name}: value={info['value']:.4f} "
             f"baseline_mean={info['baseline_mean']:.4f} "
-            f"z={z:+.2f}{marker}"
+            f"z={z:+.2f}{marker}{floor_marker}"
+        )
+    if unreliable:
+        lines.append("")
+        lines.append(
+            "Length-floor warnings (target word count below the floor "
+            "for these signals; z-scores are noisy):"
+        )
+        for name in unreliable:
+            info = z_scores[name]
+            lines.append(
+                f"  {name}: floor={info.get('length_floor')}"
+            )
+    return "\n".join(lines)
+
+
+def format_windows_dashboard(windows: list[dict[str, Any]]) -> str:
+    """Markdown table summarizing per-window band classifications."""
+    if not windows:
+        return ""
+    lines = []
+    lines.append("")
+    lines.append(
+        "Sliding-window scan (per-window band; whole-chapter scores can "
+        "mask localized compression):"
+    )
+    lines.append("")
+    has_baseline = any("baseline_comparison" in w for w in windows)
+    if has_baseline:
+        lines.append(
+            "| # | start | end | n_words | band | fraction | "
+            "max\\|z\\| | flagged |"
+        )
+        lines.append("|---|---:|---:|---:|---|---:|---:|---|")
+    else:
+        lines.append("| # | start | end | n_words | band | fraction | flagged |")
+        lines.append("|---|---:|---:|---:|---|---:|---|")
+    for i, w in enumerate(windows):
+        c = w.get("compression", {})
+        fraction = c.get("compression_fraction")
+        fraction_str = (
+            f"{fraction:.2f}" if isinstance(fraction, (int, float)) else "n/a"
+        )
+        flagged = ", ".join(c.get("flagged_signals", [])) or "(none)"
+        if has_baseline:
+            zs = w.get("baseline_comparison", {})
+            abs_zs = [
+                abs(info.get("z_score"))
+                for info in zs.values()
+                if isinstance(info, dict)
+                and isinstance(info.get("z_score"), (int, float))
+                and info.get("length_floor_satisfied", True)
+            ]
+            max_z = max(abs_zs) if abs_zs else None
+            max_z_str = f"{max_z:.2f}" if isinstance(max_z, (int, float)) else "n/a"
+            lines.append(
+                f"| {i+1} | {w['start_word']} | {w['end_word']} | "
+                f"{w['n_words']} | {c.get('band', 'unknown')} | "
+                f"{fraction_str} | {max_z_str} | {flagged} |"
+            )
+        else:
+            lines.append(
+                f"| {i+1} | {w['start_word']} | {w['end_word']} | "
+                f"{w['n_words']} | {c.get('band', 'unknown')} | "
+                f"{fraction_str} | {flagged} |"
+            )
+    lines.append("")
+    bands = Counter(w.get("compression", {}).get("band", "unknown") for w in windows)
+    band_summary = ", ".join(
+        f"{band}={count}"
+        for band, count in sorted(bands.items(), key=lambda kv: -kv[1])
+    )
+    lines.append(
+        f"Window band distribution ({len(windows)} windows): {band_summary}."
+    )
+    if has_baseline:
+        lines.append(
+            "Z-scores at window scope are noisy by construction; treat "
+            "them as inspection leads rather than verdicts. Length-matched "
+            "bootstrap percentiles are roadmap."
+        )
+    return "\n".join(lines)
+
+
+def format_baseline_divergences(divergences: dict[str, Any]) -> str:
+    if not divergences:
+        return ""
+    lines = []
+    lines.append("")
+    lines.append(
+        "Distribution divergences (target vs. baseline aggregate):"
+    )
+    pb = divergences.get("pos_bigrams")
+    if pb:
+        lines.append(
+            f"  POS-bigrams: KL={pb.get('kl_to_baseline'):.4f}, "
+            f"JSD={pb.get('jsd_to_baseline'):.4f} "
+            f"(target n={pb.get('n_target_bigrams')}, "
+            f"baseline n={pb.get('n_baseline_bigrams')}, "
+            f"union {pb.get('n_unique_union')} types)"
+        )
+        lines.append(
+            "  KL > 0.15 against a register-matched human baseline is "
+            "a meaningful syntactic-template-collapse signal; cross-"
+            "human KL on matched genres is typically below 0.05."
         )
     return "\n".join(lines)
 
@@ -893,6 +1312,22 @@ def main() -> int:
         "--no-tier3", action="store_true",
         help="Skip Tier 3 metrics (adjacent-sentence cosine)."
     )
+    parser.add_argument(
+        "--window-size", type=int, default=0,
+        help="When > 0, also run a sliding-window pass over the document "
+             "with windows of this many words. Surfaces localized "
+             "compression that whole-document scores can mask."
+    )
+    parser.add_argument(
+        "--window-stride", type=int, default=0,
+        help="Word stride between sliding windows (default = window-size, "
+             "i.e. non-overlapping). Pass window-size // 2 for 50% overlap."
+    )
+    parser.add_argument(
+        "--window-only", action="store_true",
+        help="Skip the whole-document audit and emit only the sliding-"
+             "window pass. Requires --window-size > 0."
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON only.")
     parser.add_argument(
         "--quiet", action="store_true",
@@ -900,43 +1335,82 @@ def main() -> int:
     )
     args = parser.parse_args()
 
+    if args.window_only and args.window_size <= 0:
+        parser.error("--window-only requires --window-size > 0.")
+
     text = Path(args.input).read_text(encoding="utf-8", errors="ignore")
-    audit = audit_text(
-        text,
-        mattr_window=args.mattr_window,
-        do_tier2=not args.no_tier2,
-        do_tier3=not args.no_tier3,
-    )
-    compression = classify_compression(audit)
 
-    output: dict[str, Any] = {
-        "task_surface": TASK_SURFACE,
-        "audit": audit,
-        "compression": compression,
-    }
+    audit = None
+    compression = None
+    if not args.window_only:
+        audit = audit_text(
+            text,
+            mattr_window=args.mattr_window,
+            do_tier2=not args.no_tier2,
+            do_tier3=not args.no_tier3,
+        )
+        compression = classify_compression(audit)
 
+    output: dict[str, Any] = {"task_surface": TASK_SURFACE}
+    if audit is not None:
+        output["audit"] = audit
+        output["compression"] = compression
+
+    baseline_block: dict[str, Any] | None = None
     if args.baseline_dir and os.path.isdir(args.baseline_dir):
-        baseline = audit_baseline(
+        baseline_block = audit_baseline(
             args.baseline_dir,
             mattr_window=args.mattr_window,
             do_tier2=not args.no_tier2,
             do_tier3=not args.no_tier3,
         )
-        z_scores = compare_to_baseline(audit, baseline)
-        output["baseline"] = {
-            "n_files": baseline["n_files"],
-            "aggregate": baseline["aggregate"],
+        if audit is not None:
+            z_scores = compare_to_baseline(audit, baseline_block)
+            divergences = compare_distributions(audit, baseline_block)
+            output["baseline"] = {
+                "n_files": baseline_block["n_files"],
+                "aggregate": baseline_block["aggregate"],
+            }
+            output["baseline_comparison"] = z_scores
+            if divergences:
+                output["baseline_divergences"] = divergences
+        else:
+            # Window-only mode still surfaces the baseline summary.
+            output["baseline"] = {
+                "n_files": baseline_block["n_files"],
+                "aggregate": baseline_block["aggregate"],
+            }
+
+    if args.window_size > 0:
+        windows = audit_windows(
+            text,
+            args.window_size,
+            stride=args.window_stride or None,
+            baseline=baseline_block,
+            do_tier2=not args.no_tier2,
+            do_tier3=not args.no_tier3,
+            mattr_window=args.mattr_window,
+        )
+        output["windows"] = {
+            "window_size": args.window_size,
+            "stride": args.window_stride or args.window_size,
+            "n_windows": len(windows),
+            "results": windows,
         }
-        output["baseline_comparison"] = z_scores
 
     if args.json:
         print(json.dumps(output, indent=2, default=str))
         return 0
 
     if not args.quiet:
-        print(format_summary(audit, compression))
-        if "baseline_comparison" in output:
-            print(format_baseline_comparison(output["baseline_comparison"]))
+        if audit is not None:
+            print(format_summary(audit, compression))
+            if "baseline_comparison" in output:
+                print(format_baseline_comparison(output["baseline_comparison"]))
+            if "baseline_divergences" in output:
+                print(format_baseline_divergences(output["baseline_divergences"]))
+        if "windows" in output:
+            print(format_windows_dashboard(output["windows"]["results"]))
     return 0
 
 
