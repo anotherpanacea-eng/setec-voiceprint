@@ -1,0 +1,34 @@
+{
+  "name": "setec-voiceprint",
+  "metadata": {
+    "description": "SETEC stylometric framework: AI-prose smoothing diagnosis, voice-coherence comparison, manifest validation, and craft restoration."
+  },
+  "owner": {
+    "name": "anotherpanacea-eng",
+    "email": "anotherpanacea@gmail.com"
+  },
+  "plugins": [
+    {
+      "name": "setec-voiceprint",
+      "source": "./plugins/setec-voiceprint",
+      "description": "Stylometric tools for AI-prose detection and voice-coherence diagnosis. Four task surfaces: smoothing diagnosis (Layer A variance signals), voice-coherence comparison (Burrows-style Delta + cluster mode), validation (manifest integrity + ROC/PR harness), and craft-restoration reference (AIC flag families, source triage, rhetorical countermoves). Python tooling spans manuscript-level audits, sliding-window localization, length-matched bootstrap percentiles, and MVP empirical validation against labeled corpora.",
+      "author": {
+        "name": "anotherpanacea-eng",
+        "email": "anotherpanacea@gmail.com"
+      },
+      "homepage": "https://github.com/anotherpanacea-eng/setec-voiceprint",
+      "license": "GPL-3.0-or-later",
+      "keywords": [
+        "stylometry",
+        "ai-detection",
+        "voiceprint",
+        "writing",
+        "prose-analysis",
+        "burstiness",
+        "burrows-delta",
+        "validation-harness"
+      ],
+      "category": "writing"
+    }
+  ]
+}

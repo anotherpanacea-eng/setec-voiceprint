@@ -31,6 +31,12 @@ setec-voiceprint/
 ├── LICENSE-docs                    CC BY-SA 4.0 (canonical text, governs prose)
 ├── NOTICE                          dual-license scope: which files each license governs
 ├── requirements.txt                runtime deps (spaCy + SciPy + scikit-learn) and optional extras
+├── .claude-plugin/
+│   └── marketplace.json            Claude Code / Cowork plugin marketplace catalog
+├── plugins/
+│   └── setec-voiceprint/           plugin tree: manifest + 4 SKILL.md (one per task surface)
+│       ├── .claude-plugin/plugin.json
+│       └── skills/{smoothing-diagnosis,voice-coherence,validation,craft-restoration}/SKILL.md
 ├── references/
 │   ├── distributional-diagnostics.md   Layer A: 11 variance signals with math
 │   ├── aic-flags.md                Layer B: 7 flag families + nonfiction parallel set + genre tolerance table
@@ -68,6 +74,10 @@ The `manifest_validator.py` script enforces a privacy ratchet on `voice_profile`
 
 ## Installation
 
+setec-voiceprint can be installed two ways: **as a Claude Code / Cowork plugin** (skills become invocable from inside a session) or **as a standalone CLI** (run the Python scripts directly). Both paths share the same Python dependencies.
+
+### Python dependencies (both paths)
+
 The recommended path is a project-local virtual environment plus `requirements.txt`:
 
 ```
@@ -82,6 +92,49 @@ This installs spaCy (Tier 2: POS-bigrams, MDD per sentence), SciPy (length-match
 `requirements.txt` records the optional deps in commented form: `sentence-transformers` for calibrated cohesion cosines comparable to the literature's reference values (heavier — pulls in torch), and `textstat` / `nltk` if you want tightened FKGL or NLTK-driven idiolect tooling later.
 
 Tier 1 (sentence-length variance, MATTR, MTLD, Yule's K, Shannon entropy, FKGL, connective density, function-word ratio) runs on the standard library alone; the install above is what's needed for Tier 2 and Tier 3.
+
+### Plugin install — Claude Code CLI / Desktop
+
+```
+claude plugin marketplace add anotherpanacea-eng/setec-voiceprint
+claude plugin install setec-voiceprint@setec-voiceprint
+```
+
+Then invoke skills naturally from inside a Claude Code session ("audit this draft for AI smoothing", "build a voice profile from this corpus", etc.) or via explicit slash commands if you have them configured.
+
+**Updating from CLI / Desktop:**
+
+```
+claude plugin marketplace update setec-voiceprint
+claude plugin update setec-voiceprint
+# Then fully quit (Cmd-Q on Mac, not just close window) and relaunch.
+```
+
+A full quit-and-relaunch is required for skill changes to take effect; `/reload-plugins` reloads hooks/MCP/LSP only and does **not** reload skills.
+
+### Plugin install — Cowork SDK harness
+
+The Cowork harness loads plugins via `--plugin-dir` directly from a local checkout; the marketplace catalog system is bypassed entirely. Clone the repo and point Cowork at it:
+
+```
+git clone https://github.com/anotherpanacea-eng/setec-voiceprint.git
+# Configure Cowork to load --plugin-dir <path>/setec-voiceprint/plugins/setec-voiceprint
+```
+
+**Updating in Cowork:**
+
+```
+cd path/to/setec-voiceprint
+git pull
+# Then start a new Cowork session. Cowork has no /reload-plugins command;
+# the running session keeps the previously loaded plugin until restart.
+```
+
+If updates seem stuck, check that the `--plugin-dir` path resolves to the same checkout you just `git pull`ed. Multiple checkouts on disk are the most common failure mode for "I pulled but I still see the old plugin."
+
+### Standalone CLI (no plugin install)
+
+If you don't want the plugin, install the Python deps as above and run the scripts directly. See the Quick start section below.
 
 ## Quick start
 
