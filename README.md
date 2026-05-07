@@ -48,6 +48,7 @@ setec-voiceprint/
 │   ├── voice_distance.py               target-vs-baseline voice distance with cluster mode
 │   ├── voice_profile.py                private baseline voiceprint report
 │   ├── manifest_validator.py           schema and integrity checks for corpus_manifest.jsonl
+│   ├── length_bootstrap.py             length-matched window sampler + scipy.stats.bootstrap helpers
 │   └── test_data/                      smoke-test corpus
 └── baselines/
     ├── README.md                   structure and compilation strategy

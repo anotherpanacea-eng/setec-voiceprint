@@ -681,6 +681,40 @@ _BASELINE_PATH_TO_HEURISTIC: dict[str, str] = {
 }
 
 
+_SIGNAL_PATHS: list[tuple[str, tuple[str, ...]]] = [
+    ("tier1.sentence_length.sd", ("tier1", "sentence_length", "sd")),
+    ("tier1.sentence_length.burstiness_B", ("tier1", "sentence_length", "burstiness_B")),
+    ("tier1.mattr.value", ("tier1", "mattr", "value")),
+    ("tier1.mtld", ("tier1", "mtld")),
+    ("tier1.yules_k", ("tier1", "yules_k")),
+    ("tier1.shannon_entropy_bits", ("tier1", "shannon_entropy_bits")),
+    ("tier1.fkgl.sd", ("tier1", "fkgl", "sd")),
+    ("tier1.connective_density.per_1000_tokens",
+     ("tier1", "connective_density", "per_1000_tokens")),
+    ("tier1.function_words.function_word_ratio",
+     ("tier1", "function_words", "function_word_ratio")),
+    ("tier2.pos_bigrams.entropy_bits", ("tier2", "pos_bigrams", "entropy_bits")),
+    ("tier2.mdd.sd", ("tier2", "mdd", "sd")),
+    ("tier3.adjacent_cosine.mean", ("tier3", "adjacent_cosine", "mean")),
+    ("tier3.adjacent_cosine.sd", ("tier3", "adjacent_cosine", "sd")),
+]
+
+
+def _extract_signal(audit: dict[str, Any], key_path: tuple[str, ...]) -> float | None:
+    """Walk a tuple key-path through an audit dict; return the scalar at
+    the end or None if any intermediate key is missing or non-dict."""
+    d: Any = audit
+    for k in key_path:
+        if not isinstance(d, dict):
+            return None
+        d = d.get(k)
+        if d is None:
+            return None
+    if isinstance(d, (int, float)):
+        return float(d)
+    return None
+
+
 def compare_to_baseline(audit: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
     agg = baseline.get("aggregate", {})
     z_scores: dict[str, Any] = {}
@@ -735,6 +769,129 @@ def compare_to_baseline(audit: dict[str, Any], baseline: dict[str, Any]) -> dict
                     )
             z_scores[name] = entry
     return z_scores
+
+
+def bootstrap_compare(
+    audit: dict[str, Any],
+    baseline_dir: str,
+    *,
+    n_windows_per_file: int = 50,
+    max_total_windows: int = 500,
+    n_resamples: int = 9999,
+    confidence_level: float = 0.95,
+    seed: int | None = None,
+    do_tier2: bool = True,
+    do_tier3: bool = True,
+    mattr_window: int = 50,
+) -> dict[str, Any]:
+    """Length-matched bootstrap of every Layer A signal against the
+    baseline corpus. Returns a dict keyed by dotted signal path with the
+    target value, the empirical baseline distribution at the target's
+    length, the target's percentile in that distribution, and a
+    bootstrap confidence interval on the percentile.
+
+    Phase 1 step 3 of the validation spine. Replaces noisy z-scores at
+    small N: at length N the baseline file's mean and SD across full
+    files (often much longer than N) over- or under-estimate the
+    expected statistic value at that length. The empirical
+    length-matched distribution is the right comparison.
+
+    Re-reads the baseline files because ``audit_baseline()`` returns
+    aggregates rather than raw texts. Honors the same Tier flags as the
+    main audit so the bootstrap measures the statistic the user
+    actually computes.
+    """
+    try:
+        from length_bootstrap import (  # type: ignore
+            length_matched_bootstrap, HAS_SCIPY,
+        )
+    except ImportError:
+        return {
+            "available": False,
+            "reason": "length_bootstrap module not importable",
+        }
+    if not HAS_SCIPY:
+        return {
+            "available": False,
+            "reason": "scipy not installed; bootstrap CIs unavailable",
+        }
+
+    target_n_words = int(audit.get("summary", {}).get("n_words", 0))
+    if target_n_words <= 0:
+        return {
+            "available": False,
+            "reason": "target has zero words",
+        }
+
+    paths = (
+        sorted(Path(baseline_dir).glob("*.txt"))
+        + sorted(Path(baseline_dir).glob("*.md"))
+    )
+    paths = [p for p in paths if not p.name.lower().startswith("readme")]
+    baseline_texts: list[str] = []
+    baseline_files_loaded: list[str] = []
+    baseline_files_skipped: list[dict[str, str]] = []
+    for p in paths:
+        try:
+            baseline_texts.append(p.read_text(encoding="utf-8", errors="ignore"))
+            baseline_files_loaded.append(p.name)
+        except OSError as exc:
+            baseline_files_skipped.append({"file": p.name, "reason": str(exc)})
+
+    if not baseline_texts:
+        return {
+            "available": False,
+            "reason": "no readable baseline files",
+        }
+
+    audit_kwargs = dict(
+        do_tier2=do_tier2,
+        do_tier3=do_tier3,
+        mattr_window=mattr_window,
+    )
+
+    per_signal: dict[str, dict[str, Any]] = {}
+    for name, key_path in _SIGNAL_PATHS:
+        target_value = _extract_signal(audit, key_path)
+        if target_value is None:
+            continue
+
+        # The statistic_fn closure runs audit_text on a window slice and
+        # extracts the per-signal scalar. Captures key_path by default
+        # arg to avoid late-binding gotchas in the loop.
+        def _stat(text: str, _key_path: tuple[str, ...] = key_path) -> float | None:
+            try:
+                window_audit = audit_text(text, **audit_kwargs)
+                return _extract_signal(window_audit, _key_path)
+            except Exception:
+                return None
+
+        result = length_matched_bootstrap(
+            baseline_texts,
+            statistic_fn=_stat,
+            target_value=target_value,
+            target_n_words=target_n_words,
+            n_windows_per_file=n_windows_per_file,
+            max_total_windows=max_total_windows,
+            n_resamples=n_resamples,
+            confidence_level=confidence_level,
+            seed=seed,
+        )
+        per_signal[name] = result
+
+    return {
+        "available": True,
+        "target_n_words": target_n_words,
+        "n_baseline_files": len(baseline_files_loaded),
+        "baseline_files_loaded": baseline_files_loaded,
+        "baseline_files_skipped": baseline_files_skipped,
+        "n_windows_per_file": n_windows_per_file,
+        "max_total_windows": max_total_windows,
+        "n_resamples": n_resamples,
+        "confidence_level": confidence_level,
+        "seed": seed,
+        "per_signal": per_signal,
+    }
 
 
 def split_into_windows(
@@ -1262,6 +1419,78 @@ def format_windows_dashboard(windows: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
+def format_baseline_bootstrap(boot: dict[str, Any]) -> str:
+    if not boot or not boot.get("available"):
+        reason = boot.get("reason") if isinstance(boot, dict) else "(unavailable)"
+        return f"Length-matched bootstrap: unavailable ({reason})."
+
+    lines: list[str] = []
+    lines.append("Length-matched bootstrap (Phase 1 step 3):")
+    lines.append(
+        f"  target n_words={boot['target_n_words']}  "
+        f"baseline files={boot['n_baseline_files']}  "
+        f"resamples={boot['n_resamples']}  "
+        f"confidence={boot['confidence_level']:.2f}"
+    )
+    lines.append(
+        "  Each row reports the target's percentile in the empirical"
+    )
+    lines.append(
+        "  distribution of length-matched baseline windows, with a BCa"
+    )
+    lines.append(
+        "  CI on the percentile. CIs collapse to [1.000,1.000] or"
+    )
+    lines.append(
+        "  [0.000,0.000] when the target falls past the extreme of the"
+    )
+    lines.append(
+        "  baseline distribution (every resample produces the same"
+    )
+    lines.append(
+        "  percentile); the headline finding in those cases is the"
+    )
+    lines.append(
+        "  point estimate, not the interval."
+    )
+    lines.append("")
+    lines.append(
+        f"  {'signal':38s} {'target':>10s} {'pct':>6s} {'CI':>17s} "
+        f"{'p5':>9s} {'p50':>9s} {'p95':>9s} {'n':>4s}"
+    )
+
+    def fmt_num(v: float | None, width: int = 9) -> str:
+        if v is None:
+            return f"{'-':>{width}s}"
+        return f"{v:>{width}.4f}"
+
+    for sig, r in boot.get("per_signal", {}).items():
+        if not isinstance(r, dict) or not r.get("available"):
+            continue
+        b = r.get("bootstrap", {})
+        d = r.get("baseline_distribution", {})
+        qs = d.get("quantiles", {}) or {}
+        ci_low, ci_high = b.get("ci_low"), b.get("ci_high")
+        if ci_low is None or ci_high is None:
+            ci_str = f"({b.get('method', 'none')})"
+        else:
+            ci_str = f"[{ci_low:.3f},{ci_high:.3f}]"
+        lines.append(
+            f"  {sig:38s} {r['target_value']:10.4f} "
+            f"{b.get('percentile', 0.0):6.3f} {ci_str:>17s} "
+            f"{fmt_num(qs.get('p5'))} {fmt_num(qs.get('p50'))} "
+            f"{fmt_num(qs.get('p95'))} {b.get('n_baseline_windows', 0):4d}"
+        )
+
+    skipped = boot.get("baseline_files_skipped") or []
+    if skipped:
+        lines.append("")
+        lines.append("  Baseline files skipped:")
+        for s in skipped:
+            lines.append(f"    - {s.get('file', '?')}: {s.get('reason', '')}")
+    return "\n".join(lines)
+
+
 def format_baseline_divergences(divergences: dict[str, Any]) -> str:
     if not divergences:
         return ""
@@ -1328,6 +1557,38 @@ def main() -> int:
         help="Skip the whole-document audit and emit only the sliding-"
              "window pass. Requires --window-size > 0."
     )
+    parser.add_argument(
+        "--bootstrap", action="store_true",
+        help="When set with --baseline-dir, replace per-signal z-scores "
+             "with empirical percentiles drawn from length-matched windows "
+             "of the baseline corpus, plus BCa confidence intervals on "
+             "those percentiles via scipy.stats.bootstrap. Slower than the "
+             "z-score path because each signal is recomputed on every "
+             "window. Requires scipy."
+    )
+    parser.add_argument(
+        "--bootstrap-windows-per-file", type=int, default=50,
+        help="Length-matched windows to sample per baseline file "
+             "(default 50). Capped by --bootstrap-max-windows."
+    )
+    parser.add_argument(
+        "--bootstrap-max-windows", type=int, default=500,
+        help="Total cap on length-matched windows pooled across baseline "
+             "files (default 500)."
+    )
+    parser.add_argument(
+        "--bootstrap-resamples", type=int, default=9999,
+        help="Bootstrap resamples for the percentile CI (default 9999)."
+    )
+    parser.add_argument(
+        "--bootstrap-confidence", type=float, default=0.95,
+        help="Confidence level for the bootstrap CI (default 0.95)."
+    )
+    parser.add_argument(
+        "--bootstrap-seed", type=int, default=None,
+        help="Seed for the window sampler and the bootstrap resampler. "
+             "Set for reproducible runs."
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON only.")
     parser.add_argument(
         "--quiet", action="store_true",
@@ -1374,6 +1635,18 @@ def main() -> int:
             output["baseline_comparison"] = z_scores
             if divergences:
                 output["baseline_divergences"] = divergences
+            if args.bootstrap:
+                output["baseline_bootstrap"] = bootstrap_compare(
+                    audit, args.baseline_dir,
+                    n_windows_per_file=args.bootstrap_windows_per_file,
+                    max_total_windows=args.bootstrap_max_windows,
+                    n_resamples=args.bootstrap_resamples,
+                    confidence_level=args.bootstrap_confidence,
+                    seed=args.bootstrap_seed,
+                    do_tier2=not args.no_tier2,
+                    do_tier3=not args.no_tier3,
+                    mattr_window=args.mattr_window,
+                )
         else:
             # Window-only mode still surfaces the baseline summary.
             output["baseline"] = {
@@ -1409,6 +1682,8 @@ def main() -> int:
                 print(format_baseline_comparison(output["baseline_comparison"]))
             if "baseline_divergences" in output:
                 print(format_baseline_divergences(output["baseline_divergences"]))
+            if "baseline_bootstrap" in output:
+                print(format_baseline_bootstrap(output["baseline_bootstrap"]))
         if "windows" in output:
             print(format_windows_dashboard(output["windows"]["results"]))
     return 0

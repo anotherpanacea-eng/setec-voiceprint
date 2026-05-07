@@ -214,11 +214,13 @@ over n−1 non-root edges. Report MDD per sentence; take SD across sentences.
 
 The script `scripts/variance_audit.py` computes all eleven signals where dependencies are available. The script handles graceful degradation:
 
-- **Tier 1 (always works):** sentence-length stats, MATTR, MTLD, Yule's K, Shannon entropy, FKGL stats, connective density. Requires only Python + textstat + nltk.
+- **Tier 1 (always works):** sentence-length stats, MATTR, MTLD, Yule's K, Shannon entropy, FKGL stats, connective density. Requires only the Python standard library; `textstat` tightens FKGL when available and `nltk` is reserved for the future idiolect detector but neither is currently a hard dependency.
 - **Tier 2 (requires spaCy):** POS-bigram KL, MDD variance.
 - **Tier 3 (requires sentence-transformers or scikit-learn):** adjacent-sentence cosine similarity. Falls back to TF-IDF cosine if no sentence embedder is available.
 
-Output is JSON plus a human-readable summary. The script accepts an optional baseline corpus directory; with one supplied, it reports per-signal quantiles relative to the baseline. Without one, it reports absolute values and the skill interprets them against the genre-binned baselines shipped in `baselines/`.
+Output is JSON plus a human-readable summary. The script accepts an optional baseline corpus directory; with one supplied, it reports per-signal z-scores relative to the baseline aggregate, plus a length-floor warning when the target is below the heuristic's word-count floor.
+
+For more reliable inference at small N or with small baseline file counts, pass `--bootstrap` (with `--baseline-dir`) to replace per-signal z-scores with empirical percentiles drawn from length-matched windows of the baseline. The bootstrap samples random length-N word-slices from each baseline file, pools the per-window statistic values into an empirical distribution at the target's length, reports the target's percentile in that distribution, and uses `scipy.stats.bootstrap` to put a BCa confidence interval on the percentile. The empirical-percentile path is the recommended comparison for short targets (below 1,000 words) or small baselines (fewer than 10 files); the z-score path stays useful for quick interactive runs and matches what the literature reports.
 
 ## Interpreting the Bands
 

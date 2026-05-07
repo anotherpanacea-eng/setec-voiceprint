@@ -176,6 +176,25 @@ If `--baseline-dir DIR` is supplied, the script reads every `.txt` file in that 
 
 The `baselines/` directory in this skill is documented in its own README. v1 ships baseline structure but not the corpora themselves; users can populate the directory with their own prior unedited work or with public-domain texts in the relevant genre.
 
+### Length-matched bootstrap
+
+`--bootstrap` (with `--baseline-dir`) replaces the per-signal z-scores with empirical percentiles drawn from length-matched windows of the baseline corpus, plus BCa confidence intervals on the percentiles via `scipy.stats.bootstrap`. The motivation is that comparing a 300-word target against the mean and SD of full-file baseline statistics over- or under-estimates the expected statistic value at length 300; the empirical distribution at the right length is the right comparison.
+
+Mechanics: for each baseline file, the script samples `--bootstrap-windows-per-file` random length-N word slices (where N = the target's word count), pools the per-window statistic values into an empirical distribution at length N, then reports the target's mid-rank percentile in that distribution and a BCa CI on the percentile. Total windows are capped via `--bootstrap-max-windows` so long corpora do not dominate the pool. Files shorter than N contribute one whole-file sample.
+
+CIs collapse to `[1.000, 1.000]` or `[0.000, 0.000]` when the target falls strictly past the extreme of the baseline distribution: every resample produces the same percentile, so there is no resampling uncertainty. The headline finding in those cases is the point estimate, not the interval. The reported `method` field carries `BCa`, `percentile` (BCa fallback on degenerate jackknife), or `degenerate_no_ci` accordingly.
+
+Flags:
+
+- `--bootstrap` — turn on the bootstrap pass alongside the standard z-score comparison.
+- `--bootstrap-windows-per-file N` — windows per baseline file (default 50).
+- `--bootstrap-max-windows N` — total cap across files (default 500).
+- `--bootstrap-resamples N` — bootstrap resamples for the CI (default 9999).
+- `--bootstrap-confidence X` — confidence level (default 0.95).
+- `--bootstrap-seed N` — seed the window sampler and the resampler for reproducible runs.
+
+Cost: each bootstrap window runs the full Tier 1 (and Tier 2 / Tier 3 if enabled) audit. With the full stack, expect ~0.5 second per window on commodity hardware. Pass `--no-tier3` (and `--no-tier2`) to drop the slowest tiers if the bootstrap is dominating run time and you are willing to lose those signals' percentiles.
+
 ### Calibration notes
 
 The default thresholds (in `COMPRESSION_HEURISTICS`) are calibrated against fluent native-English fluent prose. They are heuristic fallbacks for users without a baseline corpus. With a baseline, z-scores are more reliable than absolute-threshold flagging.
