@@ -27,7 +27,9 @@ setec-voiceprint/
 ├── SKILL.md                        skill entry point: 3-layer arch, 2 modes, workflows
 ├── ROADMAP.md                      public-facing roadmap and project narrative
 ├── CHANGELOG.md                    release history and notable changes
-├── LICENSE                         license terms
+├── LICENSE                         GPL-3.0-or-later (canonical text, governs code)
+├── LICENSE-docs                    CC BY-SA 4.0 (canonical text, governs prose)
+├── NOTICE                          dual-license scope: which files each license governs
 ├── references/
 │   ├── distributional-diagnostics.md   Layer A: 11 variance signals with math
 │   ├── aic-flags.md                Layer B: 7 flag families + nonfiction parallel set + genre tolerance table
@@ -146,7 +148,14 @@ Implementation survey notes live in `references/implementation-survey.md`. The s
 
 ## License
 
-See `LICENSE`. Code under [LICENSE TBD]; documentation and reference markdown under [CC LICENSE TBD]. Personal baseline corpora and voice profiles are not part of this repository and are not redistributable from any baseline structure shipped here.
+Dual-licensed:
+
+- **Code** (everything under `scripts/`, plus root-level configuration files) is licensed under the **GNU General Public License, version 3 or later** (`GPL-3.0-or-later`). Canonical text in `LICENSE`.
+- **Documentation and reference prose** (`README.md`, `ROADMAP.md`, `CHANGELOG.md`, `SKILL.md`, `references/*.md`, `scripts/README.md`, `baselines/README.md` and the per-genre placeholders, this `NOTICE`) is licensed under **Creative Commons Attribution-ShareAlike 4.0 International** (`CC-BY-SA-4.0`). Canonical text in `LICENSE-docs`.
+
+See `NOTICE` for the file-by-file scope statement.
+
+Personal baseline corpora and generated voice profiles are not part of this repository and are not licensed for redistribution from any baseline directory structure shipped here.
 
 ## Status
 

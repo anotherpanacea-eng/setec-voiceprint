@@ -1,0 +1,57 @@
+setec-voiceprint
+================
+
+This project ships under a dual license:
+
+  Code: GNU General Public License, version 3 or later (GPL-3.0-or-later)
+        Canonical text: LICENSE
+        SPDX-License-Identifier: GPL-3.0-or-later
+
+  Documentation and reference prose:
+        Creative Commons Attribution-ShareAlike 4.0 International
+        (CC BY-SA 4.0)
+        Canonical text: LICENSE-docs
+        SPDX-License-Identifier: CC-BY-SA-4.0
+
+Scope
+-----
+
+Files governed by GPL-3.0-or-later (the "code" scope):
+
+  - scripts/*.py
+  - any other executable source code added to the repository
+  - root-level configuration files that ship with the code
+    (.gitignore, .gitattributes)
+
+Files governed by CC BY-SA 4.0 (the "documentation" scope):
+
+  - README.md
+  - ROADMAP.md
+  - CHANGELOG.md
+  - SKILL.md
+  - references/*.md
+  - scripts/README.md
+  - baselines/README.md and baselines/*/README.md
+  - this NOTICE file
+
+Out of scope
+------------
+
+Personal baseline corpora and generated voice profiles are not part of
+this repository. No license granted in this repository extends to them.
+They are not redistributable from any baseline directory structure
+shipped here, and the maintainer publishes them only by separate
+explicit grant outside this repository.
+
+Why dual-license
+----------------
+
+The Python tooling is software and benefits from a license designed
+for software; the Creative Commons FAQ explicitly recommends against
+using CC licenses for code. The reference prose in references/, SKILL.md,
+README.md, and ROADMAP.md is substantive editorial work and benefits
+from a license designed for creative works. CC BY-SA 4.0 is the
+canonical share-alike license for citation-friendly research artifacts
+and is one-way compatible with GPL-3.0-or-later for combined works at
+the discretion of the licensor under the CC BY-SA 4.0 compatibility
+provisions.
