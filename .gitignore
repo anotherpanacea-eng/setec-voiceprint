@@ -1,0 +1,56 @@
+# Personal baselines and voice profiles. These are voice-cloning inputs.
+# The recommended layout keeps them in a sibling directory outside this repo;
+# the patterns below are defensive in case any private corpus lands here.
+*_voice_profile.md
+*_voice_profile.json
+*PRIVATE*
+*private*
+
+# Internal working directory: working roadmap, session logs, design notes,
+# review correspondence, commit-slice plans, and other artifacts that inform
+# the project's evolution but are not part of the public release.
+internal/
+
+# Audit-output staging. Audit outputs against specific manuscripts should
+# live outside this repo entirely (in the private workspace next to the
+# manuscript itself), not be ignored *here* by name. This pattern is a
+# fallback for stray output files that haven't been relocated yet, but
+# the policy is: real audit outputs do not belong in this repo, ignored
+# or otherwise. Naming specific titles in a tracked file (even via .gitignore)
+# would itself disclose what the framework is meant to keep private.
+audits-private/
+output/
+runs/
+
+# Plugin or vendoring staging directories should live outside this repo;
+# this pattern is a fallback for stray files that haven't been relocated.
+*-integration/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editor/OS artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local environment files
+.env
+.env.local
