@@ -1,0 +1,34 @@
+License terms for setec-voiceprint
+==================================
+
+This project ships under a dual license:
+
+  Code (everything under scripts/) ......... [SOFTWARE LICENSE TBD]
+  Documentation (README, ROADMAP, references/, SKILL.md, baselines/README.md,
+                 CHANGELOG, this LICENSE notice) ........ [DOCUMENTATION LICENSE TBD]
+
+The maintainer is finalizing the license choice. Recommended candidates:
+
+  Code:
+    - MIT (permissive, maximum reusability)
+    - GNU GPL v3 (copyleft, share-alike for derivative software)
+
+  Documentation:
+    - CC BY-SA 4.0 (Creative Commons share-alike, the equivalent of GPL
+      for prose; canonical for citation-friendly research artifacts)
+    - CC BY 4.0 (permissive attribution-only equivalent)
+
+The project's prose artifacts (the four files in references/, SKILL.md, the
+README, the ROADMAP) are substantive editorial work and benefit from a license
+designed for creative works. The Python tooling is software and benefits from
+a license designed for software (CC licenses are not designed for code; the
+Creative Commons FAQ explicitly recommends against using CC licenses for
+software).
+
+Once the licenses are chosen, this file will be replaced with the canonical
+text of the chosen license(s) and any additional notices required by them.
+
+Until then, use of this repository is governed by the maintainer's intent to
+ship under one of the above pairings. Personal baseline corpora and voice
+profiles are not part of this repository and are not licensed for
+redistribution from any baseline structure shipped here.
