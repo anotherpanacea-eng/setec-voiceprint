@@ -11,7 +11,7 @@ What is shipped:
 - **Layer A scripts.** `variance_audit.py` (single-document distributional diagnostic with sliding-window mode), `manuscript_audit.py` (cross-chapter aggregate), `repetition_audit.py` (vocabulary over-representation), `manuscript_repetition_audit.py` (manuscript-aggregate habit vocabulary), `chapter_distinctiveness_audit.py` (leave-one-out internal-baseline distinctiveness).
 - **Voice-coherence scripts.** `voice_distance.py` (target-vs-baseline distance with feature-cluster mode), `voice_profile.py` (private voiceprint), `stylometry_core.py` (shared feature extraction).
 - **Validation scripts.** `manifest_validator.py` (schema and integrity checks for `corpus_manifest.jsonl`).
-- **References.** Layer A math (`distributional-diagnostics.md`), Layer B flag families with genre tolerance table (`aic-flags.md`), Layer C source triage (`source-triage.md`), figure-by-flag countermoves (`rhetorical-countermoves.md`).
+- **References.** Layer A math (`distributional-diagnostics.md`), Layer B flag families with genre tolerance table (`aic-flags.md`), Layer C source triage (`source-triage.md`), figure-by-flag countermoves (`rhetorical-countermoves.md`), and implementation/dependency survey notes (`implementation-survey.md`).
 
 Every script's JSON output carries a `task_surface` tag so downstream consumers can route by surface. The framework refuses the unifying "is this AI" verdict; the math does not entitle it.
 
@@ -50,6 +50,16 @@ The structural backbone for the validation spine. Steps 1 and 2 are shipped; ste
 3. **Length-matched bootstrap** for `voice_distance.py` and `variance_audit.py`. Replaces noisy z-scores at small N with empirical percentiles drawn from length-matched windows of the baseline corpus. Status: scoped.
 4. **`validation_harness.py`.** Reads the validated manifest, runs labeled samples through the surface-tagged scripts, reports performance by task surface × register × length × AI status. Status: scoped.
 5. **Report template: "what this result licenses / does not license."** Every harness output carries an explicit licensing block: inputs, comparison set, length range, register match, confidence interval, and the specific claim the result does and does not entitle. Status: scoped.
+
+### Borrow-before-building track
+
+The validation and idiolect roadmap should start from known implementations before local code gets written. `references/implementation-survey.md` records the current survey:
+
+- Use `scikit-learn` and `statsmodels` for validation metrics and confidence intervals.
+- Use SciPy's bootstrap machinery under SETEC's own length-matched window sampler.
+- Treat R `stylo` as the Delta / cosine / rolling-Delta / General-Imposters oracle before expanding voice-distance verification.
+- Treat `quanteda::textstat_keyness` and NLTK collocations as the design references for idiolect and preservation-list extraction.
+- Keep privacy guards, report claim language, task-surface routing, and craft triage local.
 
 ## Open architectural questions
 

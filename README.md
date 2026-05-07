@@ -32,7 +32,8 @@ setec-voiceprint/
 │   ├── distributional-diagnostics.md   Layer A: 11 variance signals with math
 │   ├── aic-flags.md                Layer B: 7 flag families + nonfiction parallel set + genre tolerance table
 │   ├── source-triage.md            Layer C: voice attribution, named patterns, earned/unearned triage
-│   └── rhetorical-countermoves.md  figure-by-flag pairings (fiction + nonfiction additions)
+│   ├── rhetorical-countermoves.md  figure-by-flag pairings (fiction + nonfiction additions)
+│   └── implementation-survey.md    dependency/reference survey for borrow-before-building work
 ├── scripts/
 │   ├── README.md                       script catalog and usage
 │   ├── variance_audit.py               Layer A computation; sliding-window mode
@@ -140,6 +141,8 @@ python3 scripts/variance_audit.py scripts/test_data/ai_sample.txt
 ## Citation and further reading
 
 The mathematical foundation for Layer A is documented in `references/distributional-diagnostics.md`. Core sources: Burrows (Delta), Stamatatos (POS n-grams), Liu and Futrell-Mahowald-Gibson (dependency distance), Tanaka-Ishii and Aihara (Yule's K constancy), Reviriego et al. (LLM lexical diversity), Muñoz-Ortiz et al. (LLM burstiness), Hans et al. (Binoculars), Bao et al. (Fast-DetectGPT), Thai et al. (EditLens), Emi and Spero (Pangram), Sadasivan et al. (paraphrase impossibility result).
+
+Implementation survey notes live in `references/implementation-survey.md`. The standing rule is borrow mature statistical machinery where it exists, use established stylometry packages as oracles where importing them would burden the CLI, and keep SETEC-specific claim framing, privacy guards, and craft triage local.
 
 ## License
 
