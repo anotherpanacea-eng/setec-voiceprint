@@ -67,6 +67,10 @@ DEFAULT_FUNCTION_WORDS = {
 
 WORD_RE = re.compile(r"[A-Za-z']+")
 
+
+# See variance_audit.TASK_SURFACE for the contract. Vocabulary
+# repetition is a lexical-compression diagnostic; its findings feed the
+# craft-restoration pass but the audit itself is diagnosis, not advice.
 TASK_SURFACE = "smoothing_diagnosis"
 
 
@@ -97,9 +101,56 @@ def cluster_max(tokens: list[str], target: str, window: int = 300) -> int:
     return best
 
 
-def find_repetitions(
-    target_text: str,
+class BaselineError(Exception):
+    """Raised when the baseline corpus is unusable (missing, empty, contaminated).
+
+    Lives in this module so both the single-document and manuscript-aggregate
+    audits raise the same exception type and CLIs can handle it uniformly.
+    """
+
+
+def list_baseline_paths(baseline_dir: str | Path) -> list[Path]:
+    """Return baseline corpus files (.txt + .md), excluding READMEs and dotfiles."""
+    base = Path(baseline_dir)
+    paths = sorted(base.glob("*.txt")) + sorted(base.glob("*.md"))
+    return [
+        p for p in paths
+        if not p.name.lower().startswith("readme")
+        and not p.name.startswith(".")
+    ]
+
+
+def load_baseline_counts(
     baseline_paths: list[Path],
+) -> tuple[Counter, int, list[Path], list[Path]]:
+    """Tokenize baseline files once.
+
+    Returns ``(counts, n_tokens, loaded, skipped)``. ``loaded`` lists the
+    paths that contributed tokens; ``skipped`` lists paths that could not
+    be read. Silent shrinkage is dangerous for a calibration tool: a
+    skipped file means words it would have contributed to the baseline
+    are absent, inflating their target ratios. Callers are expected to
+    surface ``skipped`` (typically via stderr) and may treat empty
+    ``loaded`` as a hard error.
+    """
+    base_tokens: list[str] = []
+    loaded: list[Path] = []
+    skipped: list[Path] = []
+    for p in baseline_paths:
+        try:
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            skipped.append(p)
+            continue
+        base_tokens.extend(tokenize(text))
+        loaded.append(p)
+    return Counter(base_tokens), len(base_tokens), loaded, skipped
+
+
+def score_against_baseline_counts(
+    target_text: str,
+    base_counts: Counter,
+    base_n: int,
     *,
     function_words: set[str],
     anchor_words: set[str],
@@ -108,26 +159,25 @@ def find_repetitions(
     cluster_window: int = 300,
     smoothing: float = 0.05,
     per: float = 1000.0,
-) -> list[dict]:
-    """Find words over-represented in target vs. baseline corpus."""
+    min_ratio: float = 1.0,
+) -> tuple[list[dict], int]:
+    """Score one target text against precomputed baseline counts.
+
+    Returns ``(candidates, n_target_tokens)``. Only words with
+    ``ratio >= min_ratio`` are returned: this is the over-representation
+    filter that the docstring of the parent audit always promised.
+    Without it, words that are *less* common in the target than in the
+    baseline still leak into the candidate list and downstream
+    aggregators may treat them as habit-vocabulary candidates.
+    """
     target_tokens = tokenize(target_text)
     target_n = len(target_tokens)
     if target_n == 0:
-        return []
+        return [], 0
     target_counts = Counter(target_tokens)
 
-    # Aggregate baseline
-    base_tokens: list[str] = []
-    for p in baseline_paths:
-        try:
-            base_tokens.extend(tokenize(p.read_text(encoding="utf-8", errors="ignore")))
-        except Exception:
-            continue
-    base_n = len(base_tokens)
-    base_counts = Counter(base_tokens)
-
     skip = function_words | anchor_words
-    candidates = []
+    candidates: list[dict] = []
     for word, c in target_counts.items():
         if word in skip:
             continue
@@ -139,6 +189,8 @@ def find_repetitions(
         base_freq = (base_counts.get(word, 0) / max(base_n, 1)) * per
         smoothed_base = max(base_freq, smoothing)
         ratio = target_freq / smoothed_base
+        if ratio < min_ratio:
+            continue
         cmax = cluster_max(target_tokens, word, cluster_window)
         candidates.append({
             "word": word,
@@ -150,6 +202,54 @@ def find_repetitions(
             "cluster_window": cluster_window,
         })
     candidates.sort(key=lambda x: (x["ratio"], x["count"]), reverse=True)
+    return candidates, target_n
+
+
+def find_repetitions(
+    target_text: str,
+    baseline_paths: list[Path],
+    *,
+    function_words: set[str],
+    anchor_words: set[str],
+    min_count: int = 3,
+    min_word_len: int = 4,
+    cluster_window: int = 300,
+    smoothing: float = 0.05,
+    per: float = 1000.0,
+    min_ratio: float = 1.0,
+) -> list[dict]:
+    """Find words over-represented in target vs. baseline corpus.
+
+    Thin wrapper around ``load_baseline_counts`` and
+    ``score_against_baseline_counts`` so the manuscript-aggregate audit
+    can share the scoring path. Default ``min_ratio`` of 1.0 enforces
+    the over-representation contract; pass ``min_ratio=0.0`` for the
+    legacy "all candidates" behavior.
+
+    Raises ``BaselineError`` if the baseline yields zero tokens.
+    Library callers that need per-file load metadata (the list of
+    skipped or loaded paths) should call ``load_baseline_counts``
+    directly and pass the result to ``score_against_baseline_counts``.
+    """
+    base_counts, base_n, _loaded, _skipped = load_baseline_counts(
+        baseline_paths
+    )
+    if base_n == 0:
+        raise BaselineError(
+            "Baseline yielded zero tokens. Verify the contents of the "
+            "supplied baseline paths."
+        )
+    candidates, _ = score_against_baseline_counts(
+        target_text, base_counts, base_n,
+        function_words=function_words,
+        anchor_words=anchor_words,
+        min_count=min_count,
+        min_word_len=min_word_len,
+        cluster_window=cluster_window,
+        smoothing=smoothing,
+        per=per,
+        min_ratio=min_ratio,
+    )
     return candidates
 
 
@@ -163,7 +263,6 @@ def render_report(
     lines.append(f"# Vocabulary Repetition Audit: {target_label}")
     lines.append("")
     lines.append(f"**Task surface:** `{TASK_SURFACE}`")
-    lines.append("")
     lines.append(f"**Target word count:** {target_words}")
     lines.append(f"**Candidates surfaced:** {len(candidates)} (showing top {top_n})")
     lines.append("")
@@ -223,6 +322,10 @@ def main() -> int:
                         help="Minimum word length to consider (default 4; skips short words).")
     parser.add_argument("--cluster-window", type=int, default=300,
                         help="Token window for clustering check (default 300).")
+    parser.add_argument("--min-ratio", type=float, default=1.0,
+                        help="Minimum target/baseline ratio for a word to "
+                             "count as over-represented (default 1.0). "
+                             "Pass 0 for legacy all-candidates behavior.")
     parser.add_argument(
         "--anchors",
         help="Path to a file listing project-anchor words to exclude (one per line "
@@ -241,8 +344,7 @@ def main() -> int:
     target_text = target_path.read_text(encoding="utf-8", errors="ignore")
     target_words = len(tokenize(target_text))
 
-    baseline_paths = sorted(Path(args.baseline_dir).glob("*.txt")) + \
-                     sorted(Path(args.baseline_dir).glob("*.md"))
+    baseline_paths = list_baseline_paths(args.baseline_dir)
     if not baseline_paths:
         print(f"No .txt or .md files in {args.baseline_dir}", file=sys.stderr)
         return 1
@@ -250,14 +352,34 @@ def main() -> int:
     function_words = set() if args.include_function_words else DEFAULT_FUNCTION_WORDS
     anchor_words = load_anchors(args.anchors)
 
-    candidates = find_repetitions(
-        target_text,
-        baseline_paths,
+    base_counts, base_n, loaded, skipped = load_baseline_counts(baseline_paths)
+    if skipped:
+        # Loud notice: a skipped file means words it would have
+        # contributed to the baseline are absent, which inflates the
+        # target's ratios. Calibration silence is dangerous here.
+        print(
+            "Warning: could not read baseline files: "
+            + ", ".join(p.name for p in skipped)
+            + ". Their tokens are absent from the baseline; ratios may "
+              "be inflated.",
+            file=sys.stderr,
+        )
+    if base_n == 0:
+        print(
+            "Baseline yielded zero tokens after reading. Check the "
+            "contents of --baseline-dir.",
+            file=sys.stderr,
+        )
+        return 1
+
+    candidates, _ = score_against_baseline_counts(
+        target_text, base_counts, base_n,
         function_words=function_words,
         anchor_words=anchor_words,
         min_count=args.min_count,
         min_word_len=args.min_word_len,
         cluster_window=args.cluster_window,
+        min_ratio=args.min_ratio,
     )
 
     if args.json:
@@ -265,7 +387,9 @@ def main() -> int:
             "task_surface": TASK_SURFACE,
             "target": str(target_path),
             "target_words": target_words,
-            "baseline_files": [str(p) for p in baseline_paths],
+            "baseline_files_loaded": [str(p) for p in loaded],
+            "baseline_files_skipped": [str(p) for p in skipped],
+            "baseline_tokens": base_n,
             "candidates": candidates,
         }, indent=2)
     else:

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""
+r"""
 manuscript_audit.py
 Cross-chapter aggregate of Layer A distributional diagnostics.
 
@@ -13,7 +13,7 @@ Usage:
     python3 manuscript_audit.py --chapter-dir CHAPTERS/ --baseline-dir BASELINE_DIR
     python3 manuscript_audit.py MANUSCRIPT.md --baseline-dir BASELINE_DIR --json
     python3 manuscript_audit.py MANUSCRIPT.md --baseline-dir BASELINE_DIR \\
-        --chapter-pattern '^#+\\s*Chapter\\s*(\\d+)'
+        --chapter-pattern '^#+\s*Chapter\s*(\d+)'
 """
 
 from __future__ import annotations
@@ -36,6 +36,10 @@ from variance_audit import (  # type: ignore
     classify_compression,
 )
 
+
+# See variance_audit.TASK_SURFACE for the contract. This script runs the
+# Layer A diagnostic across every chapter of a manuscript; the output is
+# the same prose-quality diagnosis at a different scope.
 TASK_SURFACE = "smoothing_diagnosis"
 
 
@@ -271,7 +275,6 @@ def render_dashboard(result: dict[str, Any]) -> str:
     lines.append("# Manuscript Variance Audit")
     lines.append("")
     lines.append(f"**Task surface:** `{TASK_SURFACE}`")
-    lines.append("")
     lines.append(f"**Chapters analyzed:** {len(chapters)}")
     if result["n_baseline_files"]:
         lines.append(f"**Baseline files:** {result['n_baseline_files']}")
