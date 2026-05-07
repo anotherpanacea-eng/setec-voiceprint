@@ -4,7 +4,7 @@ A framework and toolkit for diagnosing AI-prose patterns in fiction and argument
 
 The name tips its hat to *Sneakers* (1992): SETEC ASTRONOMY, "too many secrets." Voice profiles are voice-cloning inputs. The framework's outputs are useful to the writer who runs them; they are also leverage to anyone else who gets hold of them. The "setec" in the name is a reminder, not a flourish.
 
-The framework distinguishes four task surfaces, three diagnostic layers, and a vocabulary of named patterns. The Python tooling supports distributional diagnostics, voice-coherence comparison, vocabulary-repetition audits, and manifest validation. A future validation harness will close the empirical-calibration loop.
+The framework distinguishes four task surfaces, three diagnostic layers, and a vocabulary of named patterns. The Python tooling supports distributional diagnostics, voice-coherence comparison, vocabulary-repetition audits, manifest validation, and an MVP validation harness for empirical calibration.
 
 ## Four task surfaces
 
@@ -12,7 +12,7 @@ The framework distinguishes four task surfaces, three diagnostic layers, and a v
 |---|---|---|---|
 | **1. AI-prose smoothing diagnosis** | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py`; Layer A in audit | Has this prose been smoothed into a narrower-than-typical stylometric region? | Who wrote it; whether smoothing is artifact of register / scene / writer's natural style |
 | **2. Voice-coherence comparison** | `voice_distance.py`, `voice_profile.py` | How far is this draft from a writer's or register's own baseline? | Whether divergence is caused by AI involvement, register shift, time drift, or genuine voice change |
-| **3. Empirical performance validation** | `manifest_validator.py`, future `validation_harness.py` | How well do these signals discriminate against this labeled corpus, at these registers, at these lengths? | Whether the framework will work on unseen corpora outside the harness's coverage |
+| **3. Empirical performance validation** | `manifest_validator.py`, `validation_harness.py` | How well do these signals discriminate against this labeled corpus, at these registers, at these lengths? | Whether the framework will work on unseen corpora outside the harness's coverage |
 | **4. Craft restoration advice** | `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`; Layers B and C in audit | Which patterns are present, are they earned in context, and what revision moves apply? | Anything quantitative about provenance or distributional smoothing |
 
 The four surfaces share statistical signals because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same features. They answer different questions and license different claims. The framework refuses the unifying "is this AI" verdict because the underlying math does not entitle it.
@@ -48,6 +48,7 @@ setec-voiceprint/
 │   ├── voice_distance.py               target-vs-baseline voice distance with cluster mode
 │   ├── voice_profile.py                private baseline voiceprint report
 │   ├── manifest_validator.py           schema and integrity checks for corpus_manifest.jsonl
+│   ├── validation_harness.py           empirical validation over labeled manifest entries
 │   ├── length_bootstrap.py             length-matched window sampler + scipy.stats.bootstrap helpers
 │   └── test_data/                      smoke-test corpus
 └── baselines/
@@ -76,9 +77,9 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-This installs spaCy (Tier 2: POS-bigrams, MDD per sentence), SciPy (length-matched bootstrap), and scikit-learn (Tier 3 cohesion via TF-IDF fallback, plus validation-harness primitives). The spaCy English model `en_core_web_sm` is not on PyPI and must be downloaded separately.
+This installs spaCy (Tier 2: POS-bigrams, MDD per sentence), SciPy (length-matched bootstrap), scikit-learn (Tier 3 cohesion via TF-IDF fallback, plus validation-harness ranking metrics), and statsmodels (validation-harness confidence intervals). The spaCy English model `en_core_web_sm` is not on PyPI and must be downloaded separately.
 
-`requirements.txt` records the optional deps in commented form: `sentence-transformers` for calibrated cohesion cosines comparable to the literature's reference values (heavier — pulls in torch), `statsmodels` for proportion confidence intervals once the validation harness lands, and `textstat` / `nltk` if you want tightened FKGL or NLTK-driven idiolect tooling later.
+`requirements.txt` records the optional deps in commented form: `sentence-transformers` for calibrated cohesion cosines comparable to the literature's reference values (heavier — pulls in torch), and `textstat` / `nltk` if you want tightened FKGL or NLTK-driven idiolect tooling later.
 
 Tier 1 (sentence-length variance, MATTR, MTLD, Yule's K, Shannon entropy, FKGL, connective density, function-word ratio) runs on the standard library alone; the install above is what's needed for Tier 2 and Tier 3.
 
@@ -118,6 +119,9 @@ python3 scripts/voice_profile.py --baseline-dir ../ai-prose-baselines-private/fi
 
 # Validate a corpus manifest before any of the manifest-driven flows
 python3 scripts/manifest_validator.py corpus_manifest.jsonl
+
+# Evaluate smoothing-diagnosis scores against labeled validation entries
+python3 scripts/validation_harness.py corpus_manifest.jsonl --fpr-target 0.01
 ```
 
 ## Smoke test

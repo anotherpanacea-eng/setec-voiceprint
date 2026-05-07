@@ -48,8 +48,7 @@ scikit-learn>=1.3
 
 # Validation-harness confidence intervals for proportions (FPR/FNR/
 # precision/recall): Wilson, Agresti-Coull, Clopper-Pearson, Jeffreys.
-# Uncomment when validation_harness.py lands.
-# statsmodels>=0.14
+statsmodels>=0.14
 
 # Optional: calibrated sentence embeddings for Tier 3 cohesion
 # (Sentence-BERT / SimCSE-class). Heavier than scikit-learn TF-IDF but

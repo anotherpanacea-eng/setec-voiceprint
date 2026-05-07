@@ -1,8 +1,8 @@
 # Stylometry scripts
 
-The scripts in this directory split across two task surfaces. Most failure modes come from confusing them.
+The scripts in this directory split across three active task surfaces. Most failure modes come from confusing them.
 
-## Two task surfaces, five scripts
+## Active task surfaces
 
 ### Surface 1: AI-prose smoothing diagnosis
 
@@ -29,6 +29,15 @@ These scripts ask how far a target text is from a *specific writer's or register
 
 What these scripts cannot answer: whether the divergence is caused by AI involvement, register shift, time drift, or genuine voice change. The verdict they license is *"this draft has drifted from this baseline by this much"* — not *"AI involvement caused the drift"* and not *"the writer is no longer themselves."*
 
+### Surface 3: Empirical validation
+
+These scripts ask whether SETEC's signals behaved as expected on a labeled corpus.
+
+| Script | Scope | Use when |
+|---|---|---|
+| `manifest_validator.py` | Corpus manifest | Refuse contaminated or contradictory validation inputs before running |
+| `validation_harness.py` | Labeled validation entries | Measure performance by register, length, AI status, and language status |
+
 ### Surface tag in script output
 
 Every script's JSON output carries a top-level `task_surface` field, and every markdown report shows the surface near the header. The field tells downstream consumers which question the output is answering. Current values:
@@ -37,10 +46,10 @@ Every script's JSON output carries a top-level `task_surface` field, and every m
 |---|---|
 | `smoothing_diagnosis` | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
 | `voice_coherence` | `voice_distance.py`, `voice_profile.py` |
-| `validation` | future `validation_harness.py` |
+| `validation` | `manifest_validator.py`, `validation_harness.py` |
 | `craft_restoration` | not a script; lives in `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md` |
 
-The contract is enforceable at the data layer. A future validation harness can refuse to mix scores across surfaces because the surfaces answer different questions. Reports are now self-identifying so a reader (or an automated consumer) can route by surface without reading the script's filename or guessing from output shape.
+The contract is enforceable at the data layer. The validation harness refuses to mix scores across surfaces because the surfaces answer different questions. Reports are now self-identifying so a reader (or an automated consumer) can route by surface without reading the script's filename or guessing from output shape.
 
 ### Why the surfaces are kept distinct
 
@@ -48,13 +57,13 @@ The two surfaces share statistical signals (function-word distributions, lexical
 
 When you have a target document, ask first which question you're trying to answer. If you want to know *whether the prose looks AI-smoothed*, run the audit scripts (Surface 1). If you want to know *whether this draft sounds like the writer*, run the voice scripts (Surface 2). The two surfaces can both run on the same document; their findings should be read separately, not averaged.
 
-A third surface — empirical performance validation against a labeled corpus — is on the roadmap as `validation_harness.py`. Its job will be to report how well these signals discriminate against your labeled data, in your registers, at your text lengths. It produces claims about your corpus, not about the world. The first piece of the validation surface is shipped: `manifest_validator.py` checks the schema and integrity of `corpus_manifest.jsonl` so manifest-consuming tools can trust the manifest before running.
+A third surface — empirical performance validation against a labeled corpus — is shipped in two pieces. `manifest_validator.py` checks the schema and integrity of `corpus_manifest.jsonl` so manifest-consuming tools can trust the manifest before running. `validation_harness.py` reports how well smoothing-diagnosis scores discriminate against labeled validation entries, in the manifest's registers, text lengths, AI-status classes, and language-status classes. It produces claims about your corpus, not about the world.
 
 A fourth surface — craft restoration advice — lives in the skill's reference docs (`references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`). It diagnoses prose patterns that humans can read, decides whether each instance is earned in context, and recommends revision moves. It is not a script.
 
 ## Inputs
 
-All scripts accept a baseline directory. The voice scripts also accept an optional JSONL corpus manifest so later tools can select files by register, persona, AI status, split, and intended use. With a manifest, voice-coherence runs warn about mixed registers / personas / privacy classes that would confound the comparison.
+Most audit scripts accept a baseline directory. The voice scripts accept an optional JSONL corpus manifest so tools can select files by register, persona, AI status, split, and intended use. The validation scripts operate on the manifest directly. With a manifest, voice-coherence runs warn about mixed registers / personas / privacy classes that would confound the comparison.
 
 ---
 
@@ -405,6 +414,67 @@ result = validate_manifest("corpus_manifest.jsonl")
 if result["n_errors"] > 0:
     raise RuntimeError("Manifest has errors; refusing to run.")
 ```
+
+---
+
+## validation_harness.py
+
+Empirical validation over labeled manifest entries. MVP scope evaluates the
+`smoothing_diagnosis` surface by running `variance_audit.py` logic on entries
+tagged `use: validation` and scoring each document by
+`compression.compression_fraction`.
+
+### Usage
+
+```
+# Ranking metrics only: no thresholded rates without an operating point
+python3 validation_harness.py corpus_manifest.jsonl
+
+# Set an explicit operating point and report FPR/TPR/FNR/precision
+python3 validation_harness.py corpus_manifest.jsonl --fpr-target 0.01
+
+# JSON output for downstream dashboards
+python3 validation_harness.py corpus_manifest.jsonl --fpr-target 0.01 --json
+
+# Faster Tier-1-only validation pass
+python3 validation_harness.py corpus_manifest.jsonl --no-tier2 --no-tier3
+```
+
+### Labels
+
+Default positive `ai_status` values: `ai_generated`, `ai_assisted`,
+`ai_edited`, `mixed`. Default negative/control value: `pre_ai_human`.
+Entries with other `ai_status` values are included in record output but
+excluded from binary metrics unless you map them with repeated
+`--positive-status` or `--negative-status` flags.
+
+### Metrics
+
+The harness reports:
+
+- ROC AUC and average precision when a slice has at least one positive and one negative scored record.
+- Score distributions by label.
+- Optional thresholded confusion/rate metrics when `--fpr-target` is supplied.
+- Wilson confidence intervals for FPR, TPR/recall, FNR, specificity, and precision.
+- Slices by register, length bucket, language status, and AI status.
+
+`--fpr-target` is a fraction, not a percent: `0.01` means 1% FPR, while
+`0.0001` means 0.01% FPR. The latter is the accusation-grade target
+discussed in the roadmap; small smoke fixtures will usually be too small to
+make such a target informative.
+
+`scikit-learn` supplies the ranking metrics when installed; `statsmodels`
+supplies proportion intervals. The script has stdlib fallbacks for smoke tests
+in a minimal environment, but the recommended install path is
+`pip install -r requirements.txt`.
+
+### Claim license
+
+The report deliberately does not publish a single aggregate accuracy number.
+Thresholded rates appear only when the caller supplies an explicit FPR target.
+The claim it licenses is narrow: performance on this labeled manifest, at this
+operating point, sliced by the manifest metadata. It does not prove provenance
+for any individual document and does not generalize outside the validation set.
 
 ---
 
