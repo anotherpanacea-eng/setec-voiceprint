@@ -438,12 +438,18 @@ python3 validation_harness.py corpus_manifest.jsonl --fpr-target 0.01 --json
 
 # Faster Tier-1-only validation pass
 python3 validation_harness.py corpus_manifest.jsonl --no-tier2 --no-tier3
+
+# Reproducible smoke fixture
+python3 validation_harness.py test_data/validation_smoke_manifest.jsonl \
+  --no-tier2 --no-tier3 --fpr-target 0.01 --seed 7
 ```
 
 ### Labels
 
 Default positive `ai_status` values: `ai_generated`, `ai_assisted`,
-`ai_edited`, `mixed`. Default negative/control value: `pre_ai_human`.
+`ai_edited`. Default negative/control value: `pre_ai_human`. `mixed` is not
+part of the default binary frame; it remains visible in the per-`ai_status`
+slice and record output unless you explicitly map it.
 Entries with other `ai_status` values are included in record output but
 excluded from binary metrics unless you map them with repeated
 `--positive-status` or `--negative-status` flags.
@@ -452,16 +458,28 @@ excluded from binary metrics unless you map them with repeated
 
 The harness reports:
 
-- ROC AUC and average precision when a slice has at least one positive and one negative scored record.
+- ROC AUC and average precision, with paired bootstrap CIs, when a slice has at least one positive and one negative scored record.
 - Score distributions by label.
 - Optional thresholded confusion/rate metrics when `--fpr-target` is supplied.
 - Wilson confidence intervals for FPR, TPR/recall, FNR, specificity, and precision.
 - Slices by register, length bucket, language status, and AI status.
 
+Ranking CIs use a paired bootstrap over `(label, score)` rows. Set
+`--metric-bootstrap-resamples` to control the resample count (default 2000;
+pass 0 to disable), and `--seed` for reproducible resampling.
+
 `--fpr-target` is a fraction, not a percent: `0.01` means 1% FPR, while
 `0.0001` means 0.01% FPR. The latter is the accusation-grade target
 discussed in the roadmap; small smoke fixtures will usually be too small to
 make such a target informative.
+
+Thresholded rates are in-sample in the MVP: the threshold is selected and
+evaluated on the same validation entries. Treat those rates as calibration
+leads until a separate calibration/test split lands.
+
+Markdown reports show the first 100 records by default. Use
+`--records-limit 0` to show all records, `--no-records-table` to omit the
+table, or `--json` for complete structured output.
 
 `scikit-learn` supplies the ranking metrics when installed; `statsmodels`
 supplies proportion intervals. The script has stdlib fallbacks for smoke tests

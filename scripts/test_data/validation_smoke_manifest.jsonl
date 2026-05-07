@@ -1,0 +1,2 @@
+{"id":"capybara_human","path":"capybara_article.md","register":"blog_essay","genre":"article","ai_status":"pre_ai_human","language_status":"native","word_count":5706,"use":["validation"],"split":"test","privacy":"shareable"}
+{"id":"ai_smoke","path":"ai_sample.txt","register":"blog_essay","genre":"sample","ai_status":"ai_generated","language_status":"native","word_count":277,"use":["validation"],"split":"test","privacy":"shareable"}

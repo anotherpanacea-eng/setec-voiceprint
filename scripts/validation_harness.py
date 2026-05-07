@@ -20,11 +20,12 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import random
 import statistics
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Callable, Sequence
 
 from manifest_validator import resolve_path, validate_manifest
 from variance_audit import audit_text, classify_compression, split_words
@@ -37,9 +38,10 @@ DEFAULT_POSITIVE_STATUSES = (
     "ai_generated",
     "ai_assisted",
     "ai_edited",
-    "mixed",
 )
 DEFAULT_NEGATIVE_STATUSES = ("pre_ai_human",)
+DEFAULT_METRIC_BOOTSTRAP_RESAMPLES = 2000
+DEFAULT_RECORDS_LIMIT = 100
 
 LENGTH_BUCKETS = (
     (0, 199, "lt_200"),
@@ -272,7 +274,90 @@ def fallback_average_precision(labels: Sequence[int], scores: Sequence[float]) -
     return precision_sum / n_pos
 
 
-def ranking_metrics(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
+def _quantile(values: Sequence[float], q: float) -> float | None:
+    if not values:
+        return None
+    if len(values) == 1:
+        return float(values[0])
+    ordered = sorted(values)
+    idx = q * (len(ordered) - 1)
+    lo = int(math.floor(idx))
+    hi = int(math.ceil(idx))
+    frac = idx - lo
+    return ordered[lo] * (1 - frac) + ordered[hi] * frac
+
+
+def paired_bootstrap_ci(
+    labels: Sequence[int],
+    scores: Sequence[float],
+    metric_fn: Callable[[Sequence[int], Sequence[float]], float | None],
+    *,
+    n_resamples: int,
+    confidence_level: float,
+    seed: int | None,
+) -> dict[str, Any]:
+    """Percentile bootstrap CI over paired ``(label, score)`` rows.
+
+    Resamples that contain only one class are skipped because ROC AUC
+    and AP-as-validation-ranking both need positives and negatives to
+    answer the binary discrimination question.
+    """
+    if n_resamples <= 0:
+        return {
+            "available": False,
+            "reason": "metric bootstrap disabled",
+            "method": "none",
+            "n_resamples": 0,
+            "n_valid_resamples": 0,
+        }
+    pairs = list(zip(labels, scores))
+    if not pairs:
+        return {
+            "available": False,
+            "reason": "no scored records",
+            "method": "paired_percentile_bootstrap",
+            "n_resamples": n_resamples,
+            "n_valid_resamples": 0,
+        }
+    rng = random.Random(seed)
+    estimates: list[float] = []
+    for _ in range(n_resamples):
+        sample = [pairs[rng.randrange(len(pairs))] for _ in range(len(pairs))]
+        sample_labels = [y for y, _s in sample]
+        if 0 not in sample_labels or 1 not in sample_labels:
+            continue
+        sample_scores = [s for _y, s in sample]
+        value = metric_fn(sample_labels, sample_scores)
+        if value is None or not math.isfinite(float(value)):
+            continue
+        estimates.append(float(value))
+    if not estimates:
+        return {
+            "available": False,
+            "reason": "no bootstrap resamples contained both classes",
+            "method": "paired_percentile_bootstrap",
+            "n_resamples": n_resamples,
+            "n_valid_resamples": 0,
+        }
+    alpha = 1 - confidence_level
+    return {
+        "available": True,
+        "ci_low": _quantile(estimates, alpha / 2),
+        "ci_high": _quantile(estimates, 1 - alpha / 2),
+        "confidence_level": confidence_level,
+        "method": "paired_percentile_bootstrap",
+        "n_resamples": n_resamples,
+        "n_valid_resamples": len(estimates),
+    }
+
+
+def ranking_metrics(
+    records: Sequence[dict[str, Any]],
+    *,
+    bootstrap_resamples: int,
+    confidence_level: float,
+    seed: int | None,
+) -> dict[str, Any]:
     usable = scored_records(records)
     labels = [int(r["label"]) for r in usable]
     scores = [float(r["score"]) for r in usable]
@@ -293,10 +378,35 @@ def ranking_metrics(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
         out["roc_auc"] = float(sklearn_metrics.roc_auc_score(labels, scores))
         out["average_precision"] = float(sklearn_metrics.average_precision_score(labels, scores))
         out["method"] = "sklearn"
+
+        def average_precision_fn(ys: Sequence[int], xs: Sequence[float]) -> float | None:
+            return float(sklearn_metrics.average_precision_score(ys, xs))
     else:
         out["roc_auc"] = fallback_roc_auc(labels, scores)
         out["average_precision"] = fallback_average_precision(labels, scores)
         out["method"] = "stdlib_fallback"
+        average_precision_fn = fallback_average_precision
+    out["roc_auc_ci"] = paired_bootstrap_ci(
+        labels,
+        scores,
+        fallback_roc_auc,
+        n_resamples=bootstrap_resamples,
+        confidence_level=confidence_level,
+        seed=seed,
+    )
+    out["average_precision_ci"] = paired_bootstrap_ci(
+        labels,
+        scores,
+        average_precision_fn,
+        n_resamples=bootstrap_resamples,
+        confidence_level=confidence_level,
+        seed=None if seed is None else seed + 7919,
+    )
+    if out["roc_auc"] is not None and out["roc_auc"] < 0.5:
+        out["warning"] = (
+            "ROC AUC < 0.5; score polarity may be inverted relative to "
+            "the positive label mapping."
+        )
     return out
 
 
@@ -315,30 +425,50 @@ def choose_threshold_at_fpr(
         }
     candidates = {float(r["score"]) for r in usable}
     candidates.add(-math.inf)
-    chosen = None
+    chosen: dict[str, Any] | None = None
     for threshold in sorted(candidates):
         fp = sum(1 for s in negatives if s > threshold)
+        tp = sum(1 for s in positives if s > threshold)
         fpr = fp / len(negatives)
+        tpr = tp / len(positives) if positives else 0.0
         if fpr <= fpr_target:
-            chosen = threshold
-            break
+            if (
+                chosen is None
+                or tpr > chosen["tpr"]
+                or (tpr == chosen["tpr"] and fpr < chosen["fpr"])
+                or (
+                    tpr == chosen["tpr"]
+                    and fpr == chosen["fpr"]
+                    and threshold < chosen["threshold"]
+                )
+            ):
+                chosen = {"threshold": threshold, "fp": fp, "tp": tp, "fpr": fpr, "tpr": tpr}
     if chosen is None:
-        chosen = max(negatives)
-    fp = sum(1 for s in negatives if s > chosen)
-    tp = sum(1 for s in positives if s > chosen)
+        threshold = max(negatives)
+        fp = sum(1 for s in negatives if s > threshold)
+        tp = sum(1 for s in positives if s > threshold)
+        chosen = {
+            "threshold": threshold,
+            "fp": fp,
+            "tp": tp,
+            "fpr": fp / len(negatives),
+            "tpr": (tp / len(positives) if positives else 0.0),
+        }
     return {
         "available": True,
-        "threshold": chosen,
+        "threshold": chosen["threshold"],
         "fpr_target": fpr_target,
-        "empirical_control_fpr": fp / len(negatives),
+        "empirical_control_fpr": chosen["fpr"],
+        "empirical_tpr_at_threshold": chosen["tpr"],
         "n_controls": len(negatives),
         "n_positives": len(positives),
         "threshold_rule": (
-            "lowest score threshold whose empirical control FPR is <= fpr_target; "
-            "scores strictly greater than threshold are predicted positive"
+            "threshold that maximizes empirical TPR subject to control FPR "
+            "<= fpr_target; scores strictly greater than threshold are "
+            "predicted positive"
         ),
-        "control_false_positives_at_threshold": fp,
-        "positive_true_positives_at_threshold": tp,
+        "control_false_positives_at_threshold": chosen["fp"],
+        "positive_true_positives_at_threshold": chosen["tp"],
     }
 
 
@@ -449,6 +579,8 @@ def metric_block(
     threshold: float | None,
     confidence_level: float,
     ci_method: str,
+    metric_bootstrap_resamples: int,
+    seed: int | None,
 ) -> dict[str, Any]:
     counts = Counter(str(r.get("ai_status", "unknown")) for r in records)
     labels = Counter(
@@ -461,7 +593,12 @@ def metric_block(
         "counts_by_ai_status": dict(counts),
         "counts_by_label": dict(labels),
         "score_summary": summarize_scores(records),
-        "ranking": ranking_metrics(records),
+        "ranking": ranking_metrics(
+            records,
+            bootstrap_resamples=metric_bootstrap_resamples,
+            confidence_level=confidence_level,
+            seed=seed,
+        ),
     }
     tm = threshold_metrics(
         records,
@@ -482,12 +619,22 @@ def group_records(records: Sequence[dict[str, Any]], field: str) -> dict[str, li
     return dict(sorted(grouped.items(), key=lambda kv: kv[0]))
 
 
+def derive_seed(seed: int | None, *parts: str) -> int | None:
+    if seed is None:
+        return None
+    text = "|".join(parts)
+    offset = sum((i + 1) * ord(ch) for i, ch in enumerate(text))
+    return seed + offset
+
+
 def build_slices(
     records: Sequence[dict[str, Any]],
     *,
     threshold: float | None,
     confidence_level: float,
     ci_method: str,
+    metric_bootstrap_resamples: int,
+    seed: int | None,
 ) -> dict[str, Any]:
     slices: dict[str, Any] = {
         "overall": metric_block(
@@ -495,6 +642,8 @@ def build_slices(
             threshold=threshold,
             confidence_level=confidence_level,
             ci_method=ci_method,
+            metric_bootstrap_resamples=metric_bootstrap_resamples,
+            seed=seed,
         ),
         "by_register": {},
         "by_length_bucket": {},
@@ -513,6 +662,8 @@ def build_slices(
                 threshold=threshold,
                 confidence_level=confidence_level,
                 ci_method=ci_method,
+                metric_bootstrap_resamples=metric_bootstrap_resamples,
+                seed=derive_seed(seed, slice_name, key),
             )
     return slices
 
@@ -537,6 +688,14 @@ def _fmt_rate(rate: dict[str, Any] | None) -> str:
         f"{rate['value']:.3f} "
         f"[{_fmt(rate.get('ci_low'))}, {_fmt(rate.get('ci_high'))}]"
     )
+
+
+def _fmt_metric_ci(value: Any, ci: dict[str, Any] | None) -> str:
+    if value is None:
+        return "--"
+    if not ci or not ci.get("available"):
+        return _fmt(value)
+    return f"{_fmt(value)} [{_fmt(ci.get('ci_low'))}, {_fmt(ci.get('ci_high'))}]"
 
 
 def claim_license_block(result: dict[str, Any]) -> dict[str, Any]:
@@ -646,23 +805,37 @@ def render_report(result: dict[str, Any]) -> str:
 
     lines.append("## Records")
     lines.append("")
-    lines.append("| id | ai_status | label | register | language | words | score | band |")
-    lines.append("|---|---|---|---|---|---:|---:|---|")
-    for r in sorted(result["records"], key=lambda x: str(x.get("id"))):
-        label = "positive" if r.get("label") == 1 else "negative" if r.get("label") == 0 else "unlabeled"
-        lines.append(
-            f"| `{r.get('id')}` | {r.get('ai_status')} | {label} | "
-            f"{r.get('register')} | {r.get('language_status')} | "
-            f"{r.get('observed_word_count') or '--'} | {_fmt(r.get('score'))} | "
-            f"{r.get('band') or r.get('metric_exclusion_reason') or r.get('error') or '--'} |"
-        )
+    report_options = result.get("report_options", {})
+    if not report_options.get("include_records_table", True):
+        lines.append("Records table omitted from markdown; full records are present in JSON output.")
+    else:
+        record_limit = int(report_options.get("records_limit", DEFAULT_RECORDS_LIMIT) or 0)
+        sorted_records = sorted(result["records"], key=lambda x: str(x.get("id")))
+        shown_records = sorted_records[:record_limit] if record_limit > 0 else sorted_records
+        lines.append("| id | ai_status | label | register | language | words | score | band |")
+        lines.append("|---|---|---|---|---|---:|---:|---|")
+        for r in shown_records:
+            label = "positive" if r.get("label") == 1 else "negative" if r.get("label") == 0 else "unlabeled"
+            lines.append(
+                f"| `{r.get('id')}` | {r.get('ai_status')} | {label} | "
+                f"{r.get('register')} | {r.get('language_status')} | "
+                f"{r.get('observed_word_count') or '--'} | {_fmt(r.get('score'))} | "
+                f"{r.get('band') or r.get('metric_exclusion_reason') or r.get('error') or '--'} |"
+            )
+        if record_limit > 0 and len(sorted_records) > record_limit:
+            lines.append("")
+            lines.append(
+                f"Showing {record_limit} of {len(sorted_records)} records. "
+                "Use `--records-limit 0` for all records, `--no-records-table` "
+                "to omit this table, or `--json` for complete structured output."
+            )
     lines.append("")
     return "\n".join(lines)
 
 
 def _render_metric_table(blocks: dict[str, Any]) -> str:
     lines = [
-        "| slice | n | pos | neg | ROC AUC | Avg precision | FPR | TPR | Precision |",
+        "| slice | n | pos | neg | ROC AUC [CI] | Avg precision [CI] | FPR | TPR | Precision |",
         "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for name, block in blocks.items():
@@ -673,8 +846,8 @@ def _render_metric_table(blocks: dict[str, Any]) -> str:
         lines.append(
             f"| {name} | {block.get('n_records', 0)} | "
             f"{labels.get('positive', 0)} | {labels.get('negative', 0)} | "
-            f"{_fmt(ranking.get('roc_auc'))} | "
-            f"{_fmt(ranking.get('average_precision'))} | "
+            f"{_fmt_metric_ci(ranking.get('roc_auc'), ranking.get('roc_auc_ci'))} | "
+            f"{_fmt_metric_ci(ranking.get('average_precision'), ranking.get('average_precision_ci'))} | "
             f"{_fmt_rate(rates.get('fpr'))} | "
             f"{_fmt_rate(rates.get('tpr_recall'))} | "
             f"{_fmt_rate(rates.get('precision'))} |"
@@ -740,6 +913,15 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             "fpr_target": None,
         }
 
+    slices = build_slices(
+        records,
+        threshold=threshold,
+        confidence_level=args.confidence_level,
+        ci_method=args.ci_method,
+        metric_bootstrap_resamples=args.metric_bootstrap_resamples,
+        seed=args.seed,
+    )
+
     warnings: list[str] = []
     if not HAS_SKLEARN:
         warnings.append(
@@ -758,8 +940,28 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             f"Manifest validator emitted {manifest_result['n_warnings']} "
             "warnings. They are included in manifest_validation."
         )
+    if any(r.get("ai_status") == "mixed" and r.get("label") is None for r in records):
+        warnings.append(
+            "`mixed` entries are not mapped into the default binary label set. "
+            "They remain visible in the per-ai_status slice and record output; "
+            "map them explicitly with --positive-status mixed if that is the "
+            "research question."
+        )
     if not usable:
         warnings.append("No scored validation records were available for metrics.")
+    overall_auc = slices["overall"]["ranking"].get("roc_auc")
+    if isinstance(overall_auc, (int, float)) and overall_auc < 0.5:
+        warnings.append(
+            "Overall ROC AUC is below 0.5. Score polarity may be inverted "
+            "relative to the positive label mapping, or this corpus may "
+            "reverse the assumed direction."
+        )
+    if args.fpr_target is not None and operating_point.get("available"):
+        warnings.append(
+            "Operating-point threshold is selected and evaluated on the same "
+            "validation entries. Treat thresholded rates as in-sample until "
+            "a separate calibration/test split lands."
+        )
 
     result: dict[str, Any] = {
         "task_surface": TASK_SURFACE,
@@ -769,18 +971,22 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         "score_name": "compression_fraction",
         "positive_statuses": sorted(positive_statuses),
         "negative_statuses": sorted(negative_statuses),
+        "metric_bootstrap": {
+            "n_resamples": args.metric_bootstrap_resamples,
+            "confidence_level": args.confidence_level,
+            "seed": args.seed,
+        },
         "n_validation_entries": len(entries),
         "n_scored_records": len(usable),
         "manifest_validation": manifest_result,
         "operating_point": operating_point,
         "warnings": warnings,
+        "report_options": {
+            "include_records_table": not args.no_records_table,
+            "records_limit": args.records_limit,
+        },
         "records": records,
-        "slices": build_slices(
-            records,
-            threshold=threshold,
-            confidence_level=args.confidence_level,
-            ci_method=args.ci_method,
-        ),
+        "slices": slices,
     }
     result["claim_license"] = claim_license_block(result)
     return result
@@ -808,7 +1014,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help=(
             "ai_status value treated as positive. Repeatable. Defaults to "
-            "ai_generated, ai_assisted, ai_edited, mixed."
+            "ai_generated, ai_assisted, ai_edited. `mixed` is left as its "
+            "own unlabeled slice unless mapped explicitly."
         ),
     )
     parser.add_argument(
@@ -823,9 +1030,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=None,
         help=(
             "Explicit operating-point target. When supplied, the harness "
-            "selects the lowest score threshold whose empirical control "
-            "FPR is <= this value and reports thresholded rates. Omit to "
-            "report ranking metrics only."
+            "selects the score threshold that maximizes empirical TPR "
+            "subject to control FPR <= this value and reports thresholded "
+            "rates. Omit to report ranking metrics only."
         ),
     )
     parser.add_argument(
@@ -835,10 +1042,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Confidence level for proportion intervals (default 0.95).",
     )
     parser.add_argument(
+        "--metric-bootstrap-resamples",
+        type=int,
+        default=DEFAULT_METRIC_BOOTSTRAP_RESAMPLES,
+        help=(
+            "Paired bootstrap resamples for ROC AUC / average precision "
+            f"CIs (default {DEFAULT_METRIC_BOOTSTRAP_RESAMPLES}; pass 0 "
+            "to disable)."
+        ),
+    )
+    parser.add_argument(
         "--ci-method",
         default="wilson",
         help="statsmodels proportion_confint method when statsmodels is installed (default wilson).",
     )
+    parser.add_argument("--seed", type=int, default=None, help="Seed for metric bootstrap resampling.")
     parser.add_argument("--mattr-window", type=int, default=50)
     parser.add_argument("--no-tier2", action="store_true", help="Skip spaCy-backed Tier 2 metrics.")
     parser.add_argument("--no-tier3", action="store_true", help="Skip adjacent-cosine Tier 3 metrics.")
@@ -849,12 +1067,30 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
     parser.add_argument("--out", help="Write report to file instead of stdout.")
+    parser.add_argument(
+        "--no-records-table",
+        action="store_true",
+        help="Omit the per-record table from markdown reports. JSON still includes all records.",
+    )
+    parser.add_argument(
+        "--records-limit",
+        type=int,
+        default=DEFAULT_RECORDS_LIMIT,
+        help=(
+            f"Maximum records shown in markdown table (default {DEFAULT_RECORDS_LIMIT}; "
+            "0 means no limit). JSON always includes all records."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.fpr_target is not None and not 0 <= args.fpr_target <= 1:
         parser.error("--fpr-target must be between 0 and 1.")
     if not 0 < args.confidence_level < 1:
         parser.error("--confidence-level must be between 0 and 1.")
+    if args.metric_bootstrap_resamples < 0:
+        parser.error("--metric-bootstrap-resamples must be >= 0.")
+    if args.records_limit < 0:
+        parser.error("--records-limit must be >= 0.")
     if args.positive_status is None:
         args.positive_status = list(DEFAULT_POSITIVE_STATUSES)
     if args.negative_status is None:

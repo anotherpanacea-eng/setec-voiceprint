@@ -122,6 +122,10 @@ python3 scripts/manifest_validator.py corpus_manifest.jsonl
 
 # Evaluate smoothing-diagnosis scores against labeled validation entries
 python3 scripts/validation_harness.py corpus_manifest.jsonl --fpr-target 0.01
+
+# Validation-harness smoke fixture
+python3 scripts/validation_harness.py scripts/test_data/validation_smoke_manifest.jsonl \
+    --no-tier2 --no-tier3 --fpr-target 0.01 --seed 7
 ```
 
 ## Smoke test
