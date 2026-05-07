@@ -30,6 +30,7 @@ setec-voiceprint/
 ├── LICENSE                         GPL-3.0-or-later (canonical text, governs code)
 ├── LICENSE-docs                    CC BY-SA 4.0 (canonical text, governs prose)
 ├── NOTICE                          dual-license scope: which files each license governs
+├── requirements.txt                runtime deps (spaCy + SciPy + scikit-learn) and optional extras
 ├── references/
 │   ├── distributional-diagnostics.md   Layer A: 11 variance signals with math
 │   ├── aic-flags.md                Layer B: 7 flag families + nonfiction parallel set + genre tolerance table
@@ -65,20 +66,20 @@ The `manifest_validator.py` script enforces a privacy ratchet on `voice_profile`
 
 ## Installation
 
-```
-# Tier 1 (recommended minimum)
-pip install textstat nltk
-python -c "import nltk; nltk.download('punkt')"
+The recommended path is a project-local virtual environment plus `requirements.txt`:
 
-# Tier 2 (POS bigrams, MDD)
-pip install spacy
+```
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 python -m spacy download en_core_web_sm
-
-# Tier 3 (adjacent-sentence cosine)
-pip install sentence-transformers      # preferred
-# or
-pip install scikit-learn               # fallback to TF-IDF
 ```
+
+This installs spaCy (Tier 2: POS-bigrams, MDD per sentence), SciPy (length-matched bootstrap), and scikit-learn (Tier 3 cohesion via TF-IDF fallback, plus validation-harness primitives). The spaCy English model `en_core_web_sm` is not on PyPI and must be downloaded separately.
+
+`requirements.txt` records the optional deps in commented form: `sentence-transformers` for calibrated cohesion cosines comparable to the literature's reference values (heavier — pulls in torch), `statsmodels` for proportion confidence intervals once the validation harness lands, and `textstat` / `nltk` if you want tightened FKGL or NLTK-driven idiolect tooling later.
+
+Tier 1 (sentence-length variance, MATTR, MTLD, Yule's K, Shannon entropy, FKGL, connective density, function-word ratio) runs on the standard library alone; the install above is what's needed for Tier 2 and Tier 3.
 
 ## Quick start
 

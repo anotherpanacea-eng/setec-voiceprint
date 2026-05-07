@@ -60,6 +60,19 @@ ALLOWED_USE = {
 ALLOWED_EDITING_STATUS = {
     "raw_draft", "revised_human", "published_cleaned", "coauthored",
 }
+# Language status of the writer relative to the text's language. ESL
+# writing sits in the same low-variance region of stylometric space as
+# RLHF-aligned LLM output (Liang et al., Patterns 2023, found average
+# 61% FPR on TOEFL essays across seven AI-prose detectors). Mixing ESL
+# entries into a baseline marked 'use: baseline' for voice-coherence
+# work teaches the system that smoothing is part of the writer's voice.
+# This field lets the validator and the future validation harness slice
+# accordingly. Default 'unknown' rather than an error: corpora collected
+# before ESL labeling existed are still usable, just with a wider band.
+ALLOWED_LANGUAGE_STATUS = {
+    "native", "non_native_advanced", "non_native_intermediate",
+    "learner", "unknown",
+}
 
 # Fields required on every entry. Missing required fields are errors.
 REQUIRED_FIELDS = ("id", "path", "ai_status", "use")
@@ -69,6 +82,7 @@ KNOWN_FIELDS = {
     "id", "path", "project_area", "author", "persona", "register",
     "genre", "date_written", "ai_status", "editing_status",
     "word_count", "use", "split", "privacy", "source", "notes",
+    "language_status",
     # Extra fields surfaced by some manifests.
     "pov", "tags",
 }
@@ -239,6 +253,13 @@ def validate_entry(
             "warning", lineno, entry_id, "editing_status",
             f"Unknown editing_status '{editing_status}'.",
         ))
+    language_status = entry.get("language_status")
+    if isinstance(language_status, str) and language_status not in ALLOWED_LANGUAGE_STATUS:
+        issues.append(Issue(
+            "warning", lineno, entry_id, "language_status",
+            f"Unknown language_status '{language_status}'. "
+            f"Known values: {', '.join(sorted(ALLOWED_LANGUAGE_STATUS))}.",
+        ))
 
     # 'use' must be a list per the manifest spec.
     use = entry.get("use")
@@ -309,6 +330,38 @@ def validate_entry(
             "may indicate inconsistent provenance.",
         ))
 
+    # ESL ratchet for voice-coherence baselines and voice profiles.
+    # Non-native English prose sits in the low-variance region of
+    # stylometric space that AI-smoothing detectors flag; using such
+    # entries as a baseline for voice-coherence work teaches the system
+    # that smoothing is part of the writer's voice. This is a warning,
+    # not an error: ESL writing is a legitimate corpus, just not a
+    # legitimate voice-coherence baseline without explicit acknowledgment.
+    if (
+        isinstance(use, list)
+        and isinstance(language_status, str)
+        and language_status in {"non_native_advanced", "non_native_intermediate", "learner"}
+    ):
+        if "baseline" in use:
+            issues.append(Issue(
+                "warning", lineno, entry_id, "language_status",
+                f"Entry tagged 'use: baseline' has language_status="
+                f"'{language_status}'. ESL prose sits in the low-variance "
+                "region that AI-smoothing detectors flag; mixing it into a "
+                "voice-coherence baseline can teach the system that "
+                "smoothing is part of the writer's voice. Add an explicit "
+                "'notes' acknowledgment if this is intentional.",
+            ))
+        if "voice_profile" in use:
+            issues.append(Issue(
+                "warning", lineno, entry_id, "language_status",
+                f"Entry tagged 'use: voice_profile' has language_status="
+                f"'{language_status}'. Voice profiles built from ESL prose "
+                "carry a known low-variance bias; downstream comparisons "
+                "will under-flag AI smoothing. Acknowledge in 'notes' if "
+                "intentional.",
+            ))
+
     # word_count must be a non-negative number when present.
     wc = entry.get("word_count")
     if wc is not None:
@@ -342,6 +395,7 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
     by_use: Counter[str] = Counter()
     by_privacy: Counter[str] = Counter()
     by_persona: Counter[str] = Counter()
+    by_language_status: Counter[str] = Counter()
 
     if not path.exists():
         return {
@@ -425,6 +479,9 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
         persona = entry.get("persona")
         if isinstance(persona, str):
             by_persona[persona] += 1
+        language_status = entry.get("language_status")
+        if isinstance(language_status, str):
+            by_language_status[language_status] += 1
 
     n_errors = sum(1 for i in issues if i.severity == "error")
     n_warnings = sum(1 for i in issues if i.severity == "warning")
@@ -443,6 +500,7 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
             "by_use": dict(by_use),
             "by_privacy": dict(by_privacy),
             "by_persona": dict(by_persona),
+            "by_language_status": dict(by_language_status),
         },
     }
 
@@ -480,6 +538,7 @@ def render_report(result: dict[str, Any]) -> str:
             ("By use", "by_use"),
             ("By privacy", "by_privacy"),
             ("By persona", "by_persona"),
+            ("By language_status", "by_language_status"),
         ):
             lines.append(f"- **{label}:** {_fmt_counter(summary.get(key, {}))}")
         lines.append("")
