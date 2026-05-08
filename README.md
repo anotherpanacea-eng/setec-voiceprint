@@ -11,8 +11,8 @@ The framework distinguishes four task surfaces, three diagnostic layers, and a v
 | Surface | Tools | Question it answers | Question it does NOT answer |
 |---|---|---|---|
 | **1. AI-prose smoothing diagnosis** | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py`; Layer A in audit | Has this prose been smoothed into a narrower-than-typical stylometric region? | Who wrote it; whether smoothing is artifact of register / scene / writer's natural style |
-| **2. Voice-coherence comparison** | `voice_distance.py`, `voice_profile.py` | How far is this draft from a writer's or register's own baseline? | Whether divergence is caused by AI involvement, register shift, time drift, or genuine voice change |
-| **3. Empirical performance validation** | `manifest_validator.py`, `validation_harness.py` | How well do these signals discriminate against this labeled corpus, at these registers, at these lengths? | Whether the framework will work on unseen corpora outside the harness's coverage |
+| **2. Voice-coherence comparison** | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py` | How far is this draft from a writer's or register's own baseline, and which phrases should revision preserve? | Whether divergence is caused by AI involvement, register shift, time drift, or genuine voice change |
+| **3. Empirical performance validation** | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py` | How well do these signals discriminate against this labeled corpus, at these registers, at these lengths, after corpus hygiene checks? | Whether the framework will work on unseen corpora outside the harness's coverage |
 | **4. Craft restoration advice** | `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`; Layers B and C in audit | Which patterns are present, are they earned in context, and what revision moves apply? | Anything quantitative about provenance or distributional smoothing |
 
 The four surfaces share statistical signals because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same features. They answer different questions and license different claims. The framework refuses the unifying "is this AI" verdict because the underlying math does not entitle it.
@@ -30,7 +30,7 @@ setec-voiceprint/
 ├── LICENSE                         GPL-3.0-or-later (canonical text, governs code)
 ├── LICENSE-docs                    CC BY-SA 4.0 (canonical text, governs prose)
 ├── NOTICE                          dual-license scope: which files each license governs
-├── requirements.txt                runtime deps (spaCy + SciPy + scikit-learn) and optional extras
+├── requirements.txt                runtime deps (spaCy + SciPy + scikit-learn + NLTK) and optional extras
 ├── .claude-plugin/
 │   └── marketplace.json            Claude Code / Cowork plugin marketplace catalog
 ├── plugins/
@@ -53,7 +53,10 @@ setec-voiceprint/
 │   ├── stylometry_core.py              shared stylometric feature extraction + compute_clusters
 │   ├── voice_distance.py               target-vs-baseline voice distance with cluster mode
 │   ├── voice_profile.py                private baseline voiceprint report
+│   ├── idiolect_detector.py            keyness/collocation extraction for preservation lists
+│   ├── adversarial_fixtures.py         deterministic Unicode stress-fixture transforms
 │   ├── manifest_validator.py           schema and integrity checks for corpus_manifest.jsonl
+│   ├── check_corpus.py                 content-level non-prose contamination gate
 │   ├── validation_harness.py           empirical validation over labeled manifest entries
 │   ├── length_bootstrap.py             length-matched window sampler + scipy.stats.bootstrap helpers
 │   └── test_data/                      smoke-test corpus
@@ -68,9 +71,9 @@ setec-voiceprint/
 
 ## Privacy notice
 
-Voice profiles and personal baseline corpora are voice-cloning inputs. The `baselines/` directory ships with empty per-genre subdirectories meant to be populated locally with the user's own pre-AI-era work. The recommended layout keeps personal baselines in a separate private folder (a sibling to this repo) rather than inside it, with `voice_profile.py` defaulting to refusing output paths outside that private location unless `--allow-public-output` is passed explicitly.
+Voice profiles, idiolect reports, and personal baseline corpora are voice-cloning inputs. The `baselines/` directory ships with empty per-genre subdirectories meant to be populated locally with the user's own pre-AI-era work. The recommended layout keeps personal baselines in a separate private folder (a sibling to this repo) rather than inside it, with `voice_profile.py` and `idiolect_detector.py` defaulting to refusing output paths outside that private location unless `--allow-public-output` is passed explicitly.
 
-The `manifest_validator.py` script enforces a privacy ratchet on `voice_profile`-tagged manifest entries: any entry whose privacy is not literally `'private'` (including missing or non-string values) raises a warning. Treat voiceprints as cloning-grade inputs by default.
+The `manifest_validator.py` script enforces a privacy ratchet on `voice_profile`- and `idiolect`-tagged manifest entries: any entry whose privacy is not literally `'private'` (including missing or non-string values) raises a warning. Treat voiceprints as cloning-grade inputs by default.
 
 ## Installation
 
@@ -87,9 +90,9 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-This installs spaCy (Tier 2: POS-bigrams, MDD per sentence), SciPy (length-matched bootstrap), scikit-learn (Tier 3 cohesion via TF-IDF fallback, plus validation-harness ranking metrics), and statsmodels (validation-harness confidence intervals). The spaCy English model `en_core_web_sm` is not on PyPI and must be downloaded separately.
+This installs spaCy (Tier 2: POS-bigrams, MDD per sentence), SciPy (length-matched bootstrap), scikit-learn (Tier 3 cohesion via TF-IDF fallback, plus validation-harness ranking metrics), statsmodels (validation-harness confidence intervals), and NLTK (Brown reference corpus support for `idiolect_detector.py`). The spaCy English model `en_core_web_sm` is not on PyPI and must be downloaded separately.
 
-`requirements.txt` records the optional deps in commented form: `sentence-transformers` for calibrated cohesion cosines comparable to the literature's reference values (heavier — pulls in torch), and `textstat` / `nltk` if you want tightened FKGL or NLTK-driven idiolect tooling later.
+`requirements.txt` records the optional deps in commented form: `sentence-transformers` for calibrated cohesion cosines comparable to the literature's reference values (heavier — pulls in torch), and `textstat` if you want tightened FKGL later.
 
 Tier 1 (sentence-length variance, MATTR, MTLD, Yule's K, Shannon entropy, FKGL, connective density, function-word ratio) runs on the standard library alone; the install above is what's needed for Tier 2 and Tier 3.
 
@@ -173,11 +176,23 @@ python3 scripts/voice_distance.py path/to/draft.txt --baseline-dir ../ai-prose-b
 python3 scripts/voice_profile.py --baseline-dir ../ai-prose-baselines-private/fiction/ \
     --out ../ai-prose-baselines-private/fiction_voice_profile.md
 
+# Extract idiolect phrases to preserve during revision
+python3 scripts/idiolect_detector.py \
+    --target-dir ../ai-prose-baselines-private/fiction/target/ \
+    --reference-dir baselines/literary-fiction/ \
+    --out ../ai-prose-baselines-private/fiction_idiolect.md
+
 # Validate a corpus manifest before any of the manifest-driven flows
 python3 scripts/manifest_validator.py corpus_manifest.jsonl
 
+# Check corpus files for HTML/CSS/code/table contamination before calibration runs
+python3 scripts/check_corpus.py --manifest corpus_manifest.jsonl --filter use=baseline
+
 # Evaluate smoothing-diagnosis scores against labeled validation entries
 python3 scripts/validation_harness.py corpus_manifest.jsonl --fpr-target 0.01
+
+# Include the corpus-hygiene gate in a validation run
+python3 scripts/validation_harness.py corpus_manifest.jsonl --check-corpus
 
 # Validation-harness smoke fixture
 python3 scripts/validation_harness.py scripts/test_data/validation_smoke_manifest.jsonl \

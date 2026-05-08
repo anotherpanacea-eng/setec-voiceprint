@@ -27,6 +27,7 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any, Callable, Sequence
 
+from check_corpus import check_corpus_paths
 from manifest_validator import resolve_path, validate_manifest
 from preprocessing import available_rule_names, strip_non_prose
 from variance_audit import (
@@ -174,6 +175,9 @@ def score_smoothing_entry(
         "register": entry.get("register", "unknown"),
         "genre": entry.get("genre", "unknown"),
         "ai_status": entry.get("ai_status", "unknown"),
+        "adversarial_class": entry.get("adversarial_class", "none"),
+        "source_id": entry.get("source_id"),
+        "transform": entry.get("transform"),
         "language_status": entry.get("language_status", "unknown"),
         "persona": entry.get("persona", "unknown"),
         "declared_word_count": entry.get("word_count"),
@@ -860,12 +864,14 @@ def build_slices(
         "by_register": {},
         "by_length_bucket": {},
         "by_language_status": {},
+        "by_adversarial_class": {},
         "by_ai_status": {},
     }
     for slice_name, field in (
         ("by_register", "register"),
         ("by_length_bucket", "length_bucket"),
         ("by_language_status", "language_status"),
+        ("by_adversarial_class", "adversarial_class"),
         ("by_ai_status", "ai_status"),
     ):
         for key, group in group_records(records, field).items():
@@ -960,6 +966,31 @@ def render_report(result: dict[str, Any]) -> str:
                     f"- {issue.get('severity')} line {issue.get('lineno')}: "
                     f"{issue.get('message')}"
                 )
+        corpus_hygiene = result.get("corpus_hygiene") or {}
+        if corpus_hygiene.get("checked"):
+            lines.extend(["", "## Corpus Hygiene", ""])
+            lines.append(f"Status: `{corpus_hygiene.get('status')}`")
+            lines.append(
+                f"Files: {corpus_hygiene.get('n_files', 0)} "
+                f"({corpus_hygiene.get('n_clean', 0)} clean, "
+                f"{corpus_hygiene.get('n_warning', 0)} warning, "
+                f"{corpus_hygiene.get('n_fail', 0)} fail, "
+                f"{corpus_hygiene.get('n_error', 0)} error)"
+            )
+            lines.append("")
+            lines.append("| status | stripped | ratio | dominant rule | path | error |")
+            lines.append("|---|---:|---:|---|---|---|")
+            for record in corpus_hygiene.get("files", []):
+                if record.get("status") not in {"fail", "error", "warning"}:
+                    continue
+                lines.append(
+                    f"| {record.get('status')} | "
+                    f"{record.get('tokens_stripped', 0)} | "
+                    f"{float(record.get('strip_ratio', 0.0) or 0.0):.1%} | "
+                    f"{record.get('dominant_rule') or ''} | "
+                    f"`{record.get('path')}` | "
+                    f"{record.get('error') or ''} |"
+                )
         return "\n".join(lines)
 
     lines: list[str] = []
@@ -979,6 +1010,26 @@ def render_report(result: dict[str, Any]) -> str:
     lines.append(f"- **Does not license:** {claim['does_not_license']}")
     lines.append(f"- **Operating point:** {claim['operating_point']}")
     lines.append("")
+
+    corpus_hygiene = result.get("corpus_hygiene") or {}
+    if corpus_hygiene.get("checked"):
+        lines.append("## Corpus Hygiene")
+        lines.append("")
+        lines.append(f"- **Status:** `{corpus_hygiene.get('status')}`")
+        lines.append(
+            f"- **Files:** {corpus_hygiene.get('n_files', 0)} "
+            f"({corpus_hygiene.get('n_clean', 0)} clean, "
+            f"{corpus_hygiene.get('n_warning', 0)} warning, "
+            f"{corpus_hygiene.get('n_fail', 0)} fail, "
+            f"{corpus_hygiene.get('n_error', 0)} error)"
+        )
+        lines.append(
+            f"- **Aggregate stripped:** {corpus_hygiene.get('tokens_stripped', 0)} / "
+            f"{corpus_hygiene.get('input_tokens_before', 0)} tokens "
+            f"({float(corpus_hygiene.get('strip_ratio', 0.0) or 0.0):.1%}; "
+            f"dominant rule: {corpus_hygiene.get('dominant_rule') or 'none'})"
+        )
+        lines.append("")
 
     warnings = result.get("warnings") or []
     if warnings:
@@ -1032,6 +1083,7 @@ def render_report(result: dict[str, Any]) -> str:
         ("By Register", "by_register"),
         ("By Length Bucket", "by_length_bucket"),
         ("By Language Status", "by_language_status"),
+        ("By Adversarial Class", "by_adversarial_class"),
         ("By AI Status", "by_ai_status"),
     ):
         lines.append(f"## {title}")
@@ -1048,12 +1100,13 @@ def render_report(result: dict[str, Any]) -> str:
         record_limit = int(report_options.get("records_limit", DEFAULT_RECORDS_LIMIT) or 0)
         sorted_records = sorted(result["records"], key=lambda x: str(x.get("id")))
         shown_records = sorted_records[:record_limit] if record_limit > 0 else sorted_records
-        lines.append("| id | ai_status | label | register | language | words | score | band |")
-        lines.append("|---|---|---|---|---|---:|---:|---|")
+        lines.append("| id | ai_status | label | adversarial | register | language | words | score | band |")
+        lines.append("|---|---|---|---|---|---|---:|---:|---|")
         for r in shown_records:
             label = "positive" if r.get("label") == 1 else "negative" if r.get("label") == 0 else "unlabeled"
             lines.append(
                 f"| `{r.get('id')}` | {r.get('ai_status')} | {label} | "
+                f"{r.get('adversarial_class') or 'none'} | "
                 f"{r.get('register')} | {r.get('language_status')} | "
                 f"{r.get('observed_word_count') or '--'} | {_fmt(r.get('score'))} | "
                 f"{r.get('band') or r.get('metric_exclusion_reason') or r.get('error') or '--'} |"
@@ -1142,6 +1195,26 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         if _entry_uses(e, args.use)
         and not _entry_uses(e, "exclude")
     ]
+    corpus_hygiene: dict[str, Any] = {"checked": False}
+    if args.check_corpus:
+        corpus_hygiene = check_corpus_paths(
+            [e["_resolved_path"] for e in entries if e.get("_resolved_path")],
+            strip_rules=args.strip_rules,
+            strip_aggressive=args.strip_aggressive,
+            warn_threshold=args.corpus_warn_threshold,
+            fail_threshold=args.corpus_fail_threshold,
+        )
+        corpus_hygiene["checked"] = True
+        if corpus_hygiene.get("status") == "fail":
+            return {
+                "task_surface": TASK_SURFACE,
+                "evaluated_surface": args.surface,
+                "manifest_path": str(args.manifest),
+                "failed": True,
+                "reason": "corpus hygiene check failed",
+                "manifest_validation": manifest_result,
+                "corpus_hygiene": corpus_hygiene,
+            }
     positive_statuses = set(args.positive_status)
     negative_statuses = set(args.negative_status)
     records = [
@@ -1201,6 +1274,17 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             f"Manifest validator emitted {manifest_result['n_warnings']} "
             "warnings. They are included in manifest_validation."
         )
+    if corpus_hygiene.get("status") == "warning":
+        warnings.append(
+            "Corpus hygiene check emitted warnings. Inspect the "
+            "corpus_hygiene block before treating validation metrics as stable."
+        )
+    if args.allow_non_prose and args.check_corpus:
+        warnings.append(
+            "--allow-non-prose was supplied while --check-corpus was active. "
+            "The preflight reports what preprocessing would strip, but scoring "
+            "kept non-prose in the text."
+        )
     if any(r.get("ai_status") == "mixed" and r.get("label") is None for r in records):
         warnings.append(
             "`mixed` entries are not mapped into the default binary label set. "
@@ -1240,6 +1324,7 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         "n_validation_entries": len(entries),
         "n_scored_records": len(usable),
         "manifest_validation": manifest_result,
+        "corpus_hygiene": corpus_hygiene,
         "operating_point": operating_point,
         "warnings": warnings,
         "report_options": {
@@ -1342,6 +1427,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Fail if manifest validation emits warnings as well as errors.",
     )
+    parser.add_argument(
+        "--check-corpus",
+        action="store_true",
+        help=(
+            "Run the corpus-hygiene gate on selected validation entries before "
+            "scoring. Fails the harness if any selected file exceeds the "
+            "corpus fail threshold."
+        ),
+    )
+    parser.add_argument(
+        "--corpus-warn-threshold",
+        type=float,
+        default=0.01,
+        help="Strip-ratio warning threshold for --check-corpus (default 0.01).",
+    )
+    parser.add_argument(
+        "--corpus-fail-threshold",
+        type=float,
+        default=0.05,
+        help="Strip-ratio fail threshold for --check-corpus (default 0.05).",
+    )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
     parser.add_argument("--out", help="Write report to file instead of stdout.")
     parser.add_argument(
@@ -1368,6 +1474,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--metric-bootstrap-resamples must be >= 0.")
     if args.records_limit < 0:
         parser.error("--records-limit must be >= 0.")
+    if args.corpus_warn_threshold < 0 or args.corpus_fail_threshold < 0:
+        parser.error("Corpus hygiene thresholds must be non-negative.")
+    if args.corpus_warn_threshold > args.corpus_fail_threshold:
+        parser.error("--corpus-warn-threshold must be <= --corpus-fail-threshold.")
     try:
         strip_non_prose(
             "",

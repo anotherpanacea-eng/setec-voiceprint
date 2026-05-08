@@ -1,0 +1,4 @@
+{"id":"target_one","path":"target/target_one.txt","ai_status":"pre_ai_human","use":["idiolect"],"split":"baseline","privacy":"private","register":"testimony_policy","persona":"synthetic_voice","language_status":"native"}
+{"id":"target_two","path":"target/target_two.txt","ai_status":"pre_ai_human","use":["idiolect"],"split":"baseline","privacy":"private","register":"testimony_policy","persona":"synthetic_voice","language_status":"native"}
+{"id":"reference_one","path":"reference/reference_one.txt","ai_status":"pre_ai_human","use":["negative_baseline"],"split":"baseline","privacy":"shareable","register":"testimony_policy","persona":"synthetic_reference","language_status":"native"}
+{"id":"reference_two","path":"reference/reference_two.txt","ai_status":"pre_ai_human","use":["negative_baseline"],"split":"baseline","privacy":"shareable","register":"testimony_policy","persona":"synthetic_reference","language_status":"native"}

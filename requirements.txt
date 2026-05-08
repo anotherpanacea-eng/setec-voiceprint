@@ -63,7 +63,16 @@ statsmodels>=0.14
 # numbers for cross-document comparison. Uncomment if needed.
 # textstat>=0.7
 
-# Optional: NLTK collocation finders for the future idiolect detector.
-# Not currently imported anywhere; reserved for the voice_profile
-# expansion (Phase 5 step 1).
+# Optional: NLTK is used in two graceful-degradation paths:
+#   1. variance_audit.py uses nltk.tokenize.sent_tokenize when available
+#      (regex fallback when not); minor quality-of-life difference.
+#   2. idiolect_detector.py uses nltk.corpus.brown for the optional
+#      --reference-corpus brown built-in. The detector's core scoring
+#      path runs on user-supplied --reference-dir / --reference-manifest
+#      corpora without NLTK.
+# The collocation math in idiolect_detector.py is hand-rolled (Dunning's
+# G² for bigrams, PMI for trigrams), not NLTK-based, so the package adds
+# no runtime requirement for the default flow. Uncomment if you want
+# either of the optional paths above. After install, run
+# `python -m nltk.downloader brown` to fetch the Brown corpus data.
 # nltk>=3.8

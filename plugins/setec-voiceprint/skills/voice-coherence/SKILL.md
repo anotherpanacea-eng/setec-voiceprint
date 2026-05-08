@@ -6,10 +6,11 @@ description: >
   this draft to my baseline," "measure voice distance," "build a voice
   profile," "voiceprint this corpus," "has my voice drifted," "Burrows
   Delta against my prior work," "feature-cluster mode," "function-word
-  cluster directionality," or any request to audit voice coherence
+  cluster directionality," "extract my idiolect," "idiolect detector,"
+  "do not normalize these phrases," or any request to audit voice coherence
   against a personal or register-matched corpus. Also triggers on
   "voice distance," "voice profile," "voiceprint," "stylometric
-  drift," or "directional cluster."
+  drift," "directional cluster," or "idiolect."
 version: 1.0.0
 ---
 
@@ -28,6 +29,7 @@ This skill measures the stylometric distance between a target text and a writer-
 |---|---|---|
 | `voice_distance.py` | Target vs. baseline corpus | Asking how far a draft has drifted from a writer or register voiceprint |
 | `voice_profile.py` | Baseline corpus | Producing a private human-readable voiceprint document from the writer's own prior work |
+| `idiolect_detector.py` | Target corpus vs. reference corpus | Extracting distinctive words/phrases and a preservation list for revision prompts |
 
 ## Quick CLI
 
@@ -38,17 +40,26 @@ python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/voice_distance.py" path/to/draft.tx
 # Manifest-driven baseline selection (preferred when a corpus_manifest.jsonl is available)
 python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/voice_distance.py" path/to/draft.txt \
     --manifest path/to/corpus_manifest.jsonl \
-    --filter use=baseline,register=blog_essay,persona=anotherpanacea
+    --use baseline \
+    --register blog_essay \
+    --persona anotherpanacea
 
 # Build a private voice profile (refuses to write outside ai-prose-baselines-private/ unless --allow-public-output)
 python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/voice_profile.py" \
     --baseline-dir path/to/private-baseline/ \
     --out path/to/private-baseline/voice_profile.md
+
+# Extract a private idiolect preservation list
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/idiolect_detector.py" \
+    --target-dir path/to/private-target-corpus/ \
+    --reference-dir path/to/register-reference-corpus/ \
+    --out path/to/ai-prose-baselines-private/target_idiolect.md \
+    --preservation-output path/to/ai-prose-baselines-private/target_preserve.txt
 ```
 
 ## Privacy notice
 
-Voice profiles and personal baseline corpora are voice-cloning inputs. The signals these scripts compute (function-word distribution, character n-grams, POS trigrams, dependency-label n-grams, idiolectic phrases) are exactly what a stylometric voice-cloning system consumes. The `voice_profile.py` script defaults to refusing output paths outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed explicitly; the `manifest_validator.py` enforces a privacy ratchet on `voice_profile`-tagged manifest entries. Treat voiceprints as cloning-grade inputs by default and keep them out of any public repository.
+Voice profiles, idiolect reports, preservation lists, and personal baseline corpora are voice-cloning inputs. The signals these scripts compute (function-word distribution, character n-grams, POS trigrams, dependency-label n-grams, idiolectic phrases) are exactly what a stylometric voice-cloning system consumes. The `voice_profile.py` and `idiolect_detector.py` scripts default to refusing output paths outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed explicitly; the `manifest_validator.py` enforces a privacy ratchet on `voice_profile`- and `idiolect`-tagged manifest entries. Treat voiceprints as cloning-grade inputs by default and keep them out of any public repository.
 
 ## Feature-cluster mode
 

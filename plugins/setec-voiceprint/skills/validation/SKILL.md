@@ -5,18 +5,20 @@ description: >
   diagnosis or voice-coherence signals discriminate against labeled
   validation entries in that manifest. Use when the user asks to
   "validate the manifest," "check corpus_manifest.jsonl for errors,"
+  "check the corpus for contamination," "run check_corpus,"
   "run the validation harness," "ROC AUC for the variance audit,"
   "FPR target," "calibrate against a labeled corpus," "what does the
   variance audit's ROC curve look like on this corpus," or any request
   to evaluate SETEC's empirical performance. Also triggers on
-  "manifest validator," "validation_harness," "ROC AUC," "FPR/TPR/FNR,"
-  "BCa interval," "Wilson CI," or "labeled validation corpus."
+  "manifest validator," "check_corpus," "validation_harness," "ROC AUC,"
+  "FPR/TPR/FNR," "BCa interval," "Wilson CI," or
+  "labeled validation corpus."
 version: 1.0.0
 ---
 
 # Empirical Validation (SETEC Surface 3)
 
-This skill checks the integrity of a SETEC corpus manifest and reports how SETEC's smoothing-diagnosis signals performed on the manifest's labeled validation entries. It is the empirical-calibration surface: claims here are about how the framework behaved on a specific corpus, not about how it will behave on unseen corpora.
+This skill checks the integrity and content hygiene of a SETEC corpus, then reports how SETEC's smoothing-diagnosis signals performed on the manifest's labeled validation entries. It is the empirical-calibration surface: claims here are about how the framework behaved on a specific corpus, not about how it will behave on unseen corpora.
 
 ## What this surface licenses, and what it does not
 
@@ -28,6 +30,7 @@ This skill checks the integrity of a SETEC corpus manifest and reports how SETEC
 | Script | Scope | Use when |
 |---|---|---|
 | `manifest_validator.py` | One JSONL manifest | Refusing contaminated or contradictory inputs before any manifest-driven flow runs |
+| `check_corpus.py` | Files, directories, or manifest slice | Refusing HTML/CSS/code/table contamination before KL-sensitive or validation runs |
 | `validation_harness.py` | Labeled validation entries in a manifest | Measuring empirical performance by register, length, AI status, and language status |
 
 ## Quick CLI
@@ -42,8 +45,18 @@ python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manifest_validator.py" path/to/corp
 # Strict mode (warnings count as errors)
 python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manifest_validator.py" path/to/corpus_manifest.jsonl --strict
 
+# Content-level corpus hygiene check
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/check_corpus.py" \
+    --manifest path/to/corpus_manifest.jsonl \
+    --filter use=baseline
+
 # Validation harness (ranking metrics only — no thresholded rates)
 python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/validation_harness.py" path/to/corpus_manifest.jsonl
+
+# Validation harness with corpus hygiene preflight
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/validation_harness.py" \
+    path/to/corpus_manifest.jsonl \
+    --check-corpus
 
 # With an explicit operating-point target (publishes thresholded FPR/TPR/precision)
 python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/validation_harness.py" path/to/corpus_manifest.jsonl --fpr-target 0.01
@@ -58,7 +71,7 @@ The brief that informed this surface invokes Soheil Feizi's argument that 0.01% 
 
 ## ESL handling
 
-The manifest carries a `language_status` field (`native | non_native_advanced | non_native_intermediate | learner | unknown`). The validator warns when non-native entries land in `use: baseline` or `use: voice_profile` because ESL prose sits in the same low-variance region as RLHF-aligned LLM output (Liang et al., *Patterns* 2023, 61% average FPR on TOEFL essays across seven detectors). The harness slices by `language_status` so per-class FPR is reported separately rather than aggregated; a model that hits 0.5% overall FPR by averaging 0.1% native FPR with 5% ESL FPR is producing the wrong number.
+The manifest carries a `language_status` field (`native | non_native_advanced | non_native_intermediate | learner | unknown`). The validator warns when non-native entries land in `use: baseline`, `use: voice_profile`, or `use: idiolect` because ESL prose sits in the same low-variance region as RLHF-aligned LLM output (Liang et al., *Patterns* 2023, 61% average FPR on TOEFL essays across seven detectors). The harness slices by `language_status` so per-class FPR is reported separately rather than aggregated; a model that hits 0.5% overall FPR by averaging 0.1% native FPR with 5% ESL FPR is producing the wrong number.
 
 ## Setup prerequisite
 

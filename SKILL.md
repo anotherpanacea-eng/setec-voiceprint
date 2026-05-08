@@ -21,13 +21,13 @@ This skill ships tools that share statistical signals but answer four different 
 
 **Cannot answer.** Who wrote it. Whether the smoothing is an artifact of register, scene type, the writer's natural style, or AI involvement. What to do about it.
 
-### 2. Voice-coherence comparison  *(`voice_distance.py`, `voice_profile.py`)*
+### 2. Voice-coherence comparison  *(`voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`)*
 
-**Question.** How far is this draft from a writer's or register's own stylometric baseline?
+**Question.** How far is this draft from a writer's or register's own stylometric baseline, and which phrases should revision preserve?
 
-**Inputs.** A target text plus a writer/register baseline (corpus directory or manifest query). Voice-profile builds the baseline-side artifact.
+**Inputs.** A target text plus a writer/register baseline (corpus directory or manifest query). Voice-profile builds the baseline-side artifact. Idiolect detection compares a target corpus against a reference corpus.
 
-**Outputs.** Burrows-style Delta, cosine distances, per-family deviations, top features driving the divergence.
+**Outputs.** Burrows-style Delta, cosine distances, per-family deviations, top features driving the divergence, and a private "do not normalize" preservation list of idiolectic phrases.
 
 **Cannot answer.** Whether the divergence is caused by AI involvement, register shift, time drift, genuine voice change, or the writer working in an unusual mode. The verdict is "drifted from this baseline," not "AI-written."
 

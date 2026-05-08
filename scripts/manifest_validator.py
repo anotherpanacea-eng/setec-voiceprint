@@ -54,7 +54,7 @@ ALLOWED_REGISTER = {
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
 ALLOWED_USE = {
-    "baseline", "validation", "voice_profile",
+    "baseline", "validation", "voice_profile", "idiolect",
     "negative_baseline", "exclude",
 }
 ALLOWED_EDITING_STATUS = {
@@ -83,6 +83,7 @@ KNOWN_FIELDS = {
     "genre", "date_written", "ai_status", "editing_status",
     "word_count", "use", "split", "privacy", "source", "notes",
     "language_status",
+    "adversarial_class", "source_id", "transform",
     # Extra fields surfaced by some manifests.
     "pov", "tags",
 }
@@ -297,13 +298,20 @@ def validate_entry(
                 "Baseline use typically sits in 'split: baseline'.",
             ))
 
-    # Privacy ratchet for voiceprint sources. A voice profile is a
-    # voice-cloning input; sources that produce one should be marked
+    # Privacy ratchet for voiceprint sources. A voice profile or
+    # idiolect corpus is a voice-cloning input; sources should be marked
     # explicitly private. Any value other than 'private', including a
     # missing field or a non-string value, fails the ratchet: silence
     # is not consent for a voice-cloning source.
-    if isinstance(use, list) and "voice_profile" in use:
+    voiceprint_uses = {"voice_profile", "idiolect"}
+    found_voiceprint_uses = (
+        sorted(voiceprint_uses.intersection(use))
+        if isinstance(use, list)
+        else []
+    )
+    if found_voiceprint_uses:
         if privacy != "private":
+            tag_list = ", ".join(f"'{tag}'" for tag in found_voiceprint_uses)
             shown = (
                 f"'{privacy}'" if isinstance(privacy, str)
                 else f"{type(privacy).__name__} ({privacy!r})"
@@ -312,7 +320,8 @@ def validate_entry(
             )
             issues.append(Issue(
                 "warning", lineno, entry_id, "privacy",
-                f"Entry has 'use: voice_profile' but privacy={shown}. "
+                f"Entry has voiceprint use tag(s) "
+                f"{tag_list} but privacy={shown}. "
                 "Voiceprint sources should be marked privacy='private' "
                 "explicitly. Voiceprints are voice-cloning inputs.",
             ))
@@ -352,11 +361,12 @@ def validate_entry(
                 "smoothing is part of the writer's voice. Add an explicit "
                 "'notes' acknowledgment if this is intentional.",
             ))
-        if "voice_profile" in use:
+        if "voice_profile" in use or "idiolect" in use:
+            tag = "voice_profile" if "voice_profile" in use else "idiolect"
             issues.append(Issue(
                 "warning", lineno, entry_id, "language_status",
-                f"Entry tagged 'use: voice_profile' has language_status="
-                f"'{language_status}'. Voice profiles built from ESL prose "
+                f"Entry tagged 'use: {tag}' has language_status="
+                f"'{language_status}'. Voiceprint sources built from ESL prose "
                 "carry a known low-variance bias; downstream comparisons "
                 "will under-flag AI smoothing. Acknowledge in 'notes' if "
                 "intentional.",
@@ -396,6 +406,7 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
     by_privacy: Counter[str] = Counter()
     by_persona: Counter[str] = Counter()
     by_language_status: Counter[str] = Counter()
+    by_adversarial_class: Counter[str] = Counter()
 
     if not path.exists():
         return {
@@ -482,6 +493,9 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
         language_status = entry.get("language_status")
         if isinstance(language_status, str):
             by_language_status[language_status] += 1
+        adversarial_class = entry.get("adversarial_class")
+        if isinstance(adversarial_class, str):
+            by_adversarial_class[adversarial_class] += 1
 
     n_errors = sum(1 for i in issues if i.severity == "error")
     n_warnings = sum(1 for i in issues if i.severity == "warning")
@@ -501,6 +515,7 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
             "by_privacy": dict(by_privacy),
             "by_persona": dict(by_persona),
             "by_language_status": dict(by_language_status),
+            "by_adversarial_class": dict(by_adversarial_class),
         },
     }
 
@@ -539,6 +554,7 @@ def render_report(result: dict[str, Any]) -> str:
             ("By privacy", "by_privacy"),
             ("By persona", "by_persona"),
             ("By language_status", "by_language_status"),
+            ("By adversarial_class", "by_adversarial_class"),
         ):
             lines.append(f"- **{label}:** {_fmt_counter(summary.get(key, {}))}")
         lines.append("")

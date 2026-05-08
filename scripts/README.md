@@ -28,6 +28,7 @@ These scripts ask how far a target text is from a *specific writer's or register
 |---|---|---|
 | `voice_distance.py` | Single target vs. baseline | Ask how far a draft has drifted from a writer/register voiceprint |
 | `voice_profile.py` | Baseline corpus | Produce a private human-readable voiceprint from a corpus |
+| `idiolect_detector.py` | Target corpus vs. reference corpus | Extract distinctive words/phrases and a "do not normalize" preservation list |
 
 What these scripts cannot answer: whether the divergence is caused by AI involvement, register shift, time drift, or genuine voice change. The verdict they license is *"this draft has drifted from this baseline by this much"* — not *"AI involvement caused the drift"* and not *"the writer is no longer themselves."*
 
@@ -38,6 +39,7 @@ These scripts ask whether SETEC's signals behaved as expected on a labeled corpu
 | Script | Scope | Use when |
 |---|---|---|
 | `manifest_validator.py` | Corpus manifest | Refuse contaminated or contradictory validation inputs before running |
+| `check_corpus.py` | Corpus files / manifest slice | Refuse HTML/CSS/code/table contamination before calibration or KL-sensitive runs |
 | `validation_harness.py` | Labeled validation entries | Measure performance by register, length, AI status, and language status |
 
 ### Surface 4: Craft restoration
@@ -57,8 +59,8 @@ Every script's JSON output carries a top-level `task_surface` field, and every m
 | Field value | Scripts |
 |---|---|
 | `smoothing_diagnosis` | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
-| `voice_coherence` | `voice_distance.py`, `voice_profile.py` |
-| `validation` | `manifest_validator.py`, `validation_harness.py` |
+| `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py` |
+| `validation` | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py` |
 | `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md` |
 
 The contract is enforceable at the data layer. The validation harness refuses to mix scores across surfaces because the surfaces answer different questions. Reports are now self-identifying so a reader (or an automated consumer) can route by surface without reading the script's filename or guessing from output shape.
@@ -69,7 +71,7 @@ The two surfaces share statistical signals (function-word distributions, lexical
 
 When you have a target document, ask first which question you're trying to answer. If you want to know *whether the prose looks AI-smoothed*, run the audit scripts (Surface 1). If you want to know *whether this draft sounds like the writer*, run the voice scripts (Surface 2). The two surfaces can both run on the same document; their findings should be read separately, not averaged.
 
-A third surface — empirical performance validation against a labeled corpus — is shipped in two pieces. `manifest_validator.py` checks the schema and integrity of `corpus_manifest.jsonl` so manifest-consuming tools can trust the manifest before running. `validation_harness.py` reports how well smoothing-diagnosis scores discriminate against labeled validation entries, in the manifest's registers, text lengths, AI-status classes, and language-status classes. It produces claims about your corpus, not about the world.
+A third surface — empirical performance validation against a labeled corpus — is shipped in three pieces. `manifest_validator.py` checks the schema and integrity of `corpus_manifest.jsonl` so manifest-consuming tools can trust the manifest before running. `check_corpus.py` checks the files themselves for HTML/CSS/code/table contamination that a valid manifest cannot see. `validation_harness.py` reports how well smoothing-diagnosis scores discriminate against labeled validation entries, in the manifest's registers, text lengths, AI-status classes, and language-status classes. It produces claims about your corpus, not about the world.
 
 A fourth surface — craft restoration advice — lives primarily in the skill's reference docs (`references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`). It diagnoses prose patterns that humans can read, decides whether each instance is earned in context, and recommends revision moves. The earned/unearned verdict is irreducibly a writer's call. `aic_pattern_audit.py` provides a quantitative pre-pass that counts named-pattern density and surfaces candidate instances for that adjudication; the rest of the surface stays in prose.
 
@@ -558,7 +560,7 @@ Cross-entry:
 - Two ids pointing at one file is a warning (often legitimate but worth flagging).
 - `use: validation` AND `split: baseline` is an error: the holdout collapses into the training data.
 - `use: baseline` AND `split: train|test|holdout` is a warning.
-- `use: voice_profile` AND `privacy != private` is a warning (a voiceprint is a voice-cloning input).
+- `use: voice_profile` or `use: idiolect` AND `privacy != private` is a warning (a voiceprint is a voice-cloning input).
 - `ai_status: pre_ai_human` AND `editing_status: coauthored` is a warning (potentially contradictory provenance).
 
 ### Exit codes
@@ -584,6 +586,64 @@ if result["n_errors"] > 0:
 
 ---
 
+## check_corpus.py
+
+Content-level corpus hygiene gate. Where `manifest_validator.py` checks labels,
+paths, and provenance, `check_corpus.py` checks whether the text files contain
+suspected non-prose contamination that would be stripped by SETEC preprocessing:
+HTML/CSS/JS scaffolding, Markdown code, loose CSS blocks, JSON-shaped blocks,
+ASCII tables, YAML front matter, and related markup.
+
+### Usage
+
+```
+# Check a manifest-selected baseline slice
+python3 check_corpus.py --manifest corpus_manifest.jsonl --filter use=baseline
+
+# Check a loose directory or individual file
+python3 check_corpus.py --dir BASELINE_DIR
+python3 check_corpus.py --path draft.md --path companion.md
+
+# JSON for validation dashboards
+python3 check_corpus.py --manifest corpus_manifest.jsonl \
+  --filter use=baseline --json
+```
+
+### Thresholds
+
+Each file is classified by the fraction of tokens that preprocessing would
+strip:
+
+| status | condition |
+|---|---|
+| `clean` | below `--warn-threshold` |
+| `warning` | at or above `--warn-threshold`, below `--fail-threshold` |
+| `fail` | at or above `--fail-threshold` |
+
+Defaults are `--warn-threshold 0.01` and `--fail-threshold 0.05`. The fail
+threshold matches the 5% warning used in the audit scripts. The command exits
+1 when any file fails or cannot be read; otherwise it exits 0. This makes it
+usable as a preflight gate before validation or KL-sensitive baseline runs.
+
+### Output shape
+
+Markdown by default; JSON carries top-level `task_surface: "validation"`,
+aggregate stripped-token counts, rule totals, thresholds, and one record per
+file. Pass `--show-stripped` to include representative stripped snippets in
+JSON for debugging. The script never rewrites the source files.
+
+Importable:
+
+```python
+from check_corpus import check_corpus_paths
+
+result = check_corpus_paths(["baseline/file.md"])
+if result["status"] == "fail":
+    raise RuntimeError("Corpus hygiene gate failed")
+```
+
+---
+
 ## validation_harness.py
 
 Empirical validation over labeled manifest entries. MVP scope evaluates the
@@ -603,12 +663,19 @@ python3 validation_harness.py corpus_manifest.jsonl --fpr-target 0.01
 # JSON output for downstream dashboards
 python3 validation_harness.py corpus_manifest.jsonl --fpr-target 0.01 --json
 
+# Fail fast if selected validation entries contain HTML/CSS/code/table contamination
+python3 validation_harness.py corpus_manifest.jsonl --check-corpus
+
 # Faster Tier-1-only validation pass
 python3 validation_harness.py corpus_manifest.jsonl --no-tier2 --no-tier3
 
 # Reproducible smoke fixture
 python3 validation_harness.py test_data/validation_smoke_manifest.jsonl \
   --no-tier2 --no-tier3 --fpr-target 0.01 --seed 7
+
+# Unicode-layer adversarial fixture slice
+python3 validation_harness.py test_data/adversarial/validation_adversarial_manifest.jsonl \
+  --no-tier2 --no-tier3 --metric-bootstrap-resamples 0
 ```
 
 ### Labels
@@ -629,7 +696,8 @@ The harness reports:
 - Score distributions by label.
 - Optional thresholded confusion/rate metrics when `--fpr-target` is supplied.
 - Wilson confidence intervals for FPR, TPR/recall, FNR, specificity, and precision.
-- Slices by register, length bucket, language status, and AI status.
+- Slices by register, length bucket, language status, adversarial class, and AI status.
+- Optional corpus-hygiene preflight when `--check-corpus` is supplied.
 
 Ranking CIs use a paired bootstrap over `(label, score)` rows. Set
 `--metric-bootstrap-resamples` to control the resample count (default 2000;
@@ -647,6 +715,26 @@ leads until a separate calibration/test split lands.
 Markdown reports show the first 100 records by default. Use
 `--records-limit 0` to show all records, `--no-records-table` to omit the
 table, or `--json` for complete structured output.
+
+Pass `--check-corpus` to run `check_corpus.py`'s content gate on the selected
+validation entries before scoring. The harness exits 1 if any selected file
+hits the corpus fail threshold (`--corpus-fail-threshold`, default 0.05), and
+otherwise includes a `corpus_hygiene` block in JSON/Markdown. This is opt-in
+for now so historical validation runs stay reproducible; use it for any run
+where POS-bigram KL or other preprocessing-sensitive signals are part of the
+claim.
+
+### Adversarial fixtures
+
+`test_data/adversarial/` contains public-safe Unicode-layer stress fixtures
+derived from the bundled `ai_sample.txt`: zero-width-space insertion,
+Cyrillic homoglyph substitution, and soft-hyphen insertion. Their labels inherit
+the source sample's `ai_status`; the adversarial metadata lives in
+`adversarial_class`, `source_id`, and `transform` fields. The harness reports a
+`by_adversarial_class` slice so these stress cases do not disappear into the
+aggregate. The helper script `adversarial_fixtures.py` generates the deterministic
+Unicode transforms; paraphrase and humanizer fixtures remain a private/research
+follow-up.
 
 `scikit-learn` supplies the ranking metrics when installed; `statsmodels`
 supplies proportion intervals. The script has stdlib fallbacks for smoke tests
@@ -832,6 +920,67 @@ warning.
 
 ---
 
+## idiolect_detector.py
+
+Extracts unusually characteristic words and phrases from a target corpus against
+a reference corpus. This is a voice-coherence tool: its output is a preservation
+list for revision prompts ("do not normalize these phrases"), not an authorship
+or AI-provenance verdict.
+
+### Usage
+
+```
+# Target directory against a local reference directory
+python3 idiolect_detector.py \
+  --target-dir TARGET_CORPUS/ \
+  --reference-dir REFERENCE_CORPUS/ \
+  --out ../ai-prose-baselines-private/target_idiolect.md
+
+# Manifest-driven target and reference selections
+python3 idiolect_detector.py \
+  --manifest corpus_manifest.jsonl \
+  --filter use=idiolect,persona=essay_voice \
+  --reference-manifest corpus_manifest.jsonl \
+  --reference-filter use=negative_baseline,register=blog_essay \
+  --preservation-output ../ai-prose-baselines-private/essay_preserve.txt
+
+# Built-in broad reference, when NLTK Brown is installed/downloaded
+python3 idiolect_detector.py \
+  --target-dir TARGET_CORPUS/ \
+  --reference-corpus brown
+```
+
+### What it reports
+
+The script scores 1-, 2-, and 3-grams by default. Each row includes raw counts,
+per-1k rates, a smoothed log2 ratio, a keyness score, and (for multiword
+phrases) a collocation score. The default keyness method is log-likelihood
+(`G2`); alternatives are `chi_square`, `pmi`, and `fisher_exact`.
+
+Multiword candidates must pass both keyness and phrase-cohesion filters by
+default. Bigram cohesion uses a likelihood-ratio association score plus a PMI
+floor (`--min-collocation-lr 10.83`, `--min-collocation-pmi 3.0`). Trigrams use
+PMI fallback in the stdlib path. Pass `--no-collocation-filter` if you want the
+raw keyness list even when phrase association is weak.
+
+The preservation list uses per-n quotas by default: `--preservation-quotas
+20,20,10` for unigrams, bigrams, and trigrams, then backfills by score up to
+`--preservation-top` (default 50).
+
+### Privacy
+
+Idiolect output is voice-cloning-grade data. By default, `--out` and
+`--preservation-output` refuse to write outside a path containing
+`ai-prose-baselines-private/`. Pass `--allow-public-output` only for synthetic
+fixtures or an intentionally shareable corpus. Stdout is allowed for interactive
+work, but the script prints a privacy warning to stderr.
+
+The manifest validator recognizes `use: idiolect` and applies the same privacy
+ratchet as `use: voice_profile`: any value other than `privacy: private`,
+including a missing field, produces a warning.
+
+---
+
 ## Corpus manifest format
 
 A manifest is JSONL: one JSON object per file. Paths may be absolute or relative
@@ -856,6 +1005,6 @@ Recommended fields:
 | `date_written` | Enables drift tracking |
 | `ai_status` | `pre_ai_human`, `ai_generated`, `ai_assisted`, `ai_edited`, `mixed`, `unknown` |
 | `editing_status` | `raw_draft`, `revised_human`, `published_cleaned`, etc. |
-| `use` | Usually includes `baseline`, `voice_profile`, `validation`, or `exclude` |
+| `use` | Usually includes `baseline`, `voice_profile`, `idiolect`, `negative_baseline`, `validation`, or `exclude` |
 | `split` | `baseline`, `train`, `test`, `holdout` |
 | `privacy` | `private`, `shareable`, `public_domain` |
