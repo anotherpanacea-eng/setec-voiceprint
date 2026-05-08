@@ -1,6 +1,6 @@
 # Stylometry scripts
 
-The scripts in this directory split across three active task surfaces. Most failure modes come from confusing them.
+The scripts in this directory split across four active task surfaces. Most failure modes come from confusing them.
 
 ## Active task surfaces
 
@@ -17,7 +17,6 @@ These scripts ask whether the prose has been smoothed into a narrower-than-typic
 | `chapter_distinctiveness_audit.py` | Whole manuscript, vocabulary level | Surfacing words distinctive to one chapter against the rest of the manuscript (leave-one-out, no external baseline) |
 | `bigram_diff.py` | Single document vs. cluster, syntactic level | Variance-audit POS-bigram KL elevated and you want to see which specific bigrams are driving the divergence |
 | `manuscript_bigram_diff.py` | Corpus A vs. corpus B, syntactic level | Comparing the syntactic-template footprint of two corpora at the aggregate level (e.g. AI-collaborated cohort vs. pre-AI archive) |
-| `aic_pattern_audit.py` | Single document, named-pattern level (Layer B/C) | Counting named rhetorical patterns (correctio, pseudo-aphorism, manifesto cadence, triplet, professional-parallel stack, plus four nonfiction parallel patterns) at per-thousand-word density, optionally vs. baseline corpus |
 
 What these scripts cannot answer: who wrote it, whether the smoothing is an artifact of register or scene type, what to revise. The verdict they license is *"this prose shows characteristics of AI smoothing"* — not *"this prose was written by AI."*
 
@@ -41,6 +40,16 @@ These scripts ask whether SETEC's signals behaved as expected on a labeled corpu
 | `manifest_validator.py` | Corpus manifest | Refuse contaminated or contradictory validation inputs before running |
 | `validation_harness.py` | Labeled validation entries | Measure performance by register, length, AI status, and language status |
 
+### Surface 4: Craft restoration
+
+This surface is primarily a reference-prose surface (the Layer B/C named-pattern taxonomy and source-triage methodology live in `references/aic-flags.md`, `references/source-triage.md`, and `references/rhetorical-countermoves.md`), with one quantitative pre-pass script that surfaces candidate instances for the writer's source-triage adjudication.
+
+| Script | Scope | Use when |
+|---|---|---|
+| `aic_pattern_audit.py` | Single document, named-pattern level (Layer B/C) | Counting named rhetorical patterns (correctio, pseudo-aphorism, manifesto cadence, triplet, professional-parallel stack, plus four nonfiction parallel patterns) at per-thousand-word density, optionally vs. baseline corpus |
+
+What this script cannot answer: the earned/unearned verdict on any individual instance. That is a Layer C source-triage call the writer has to make in context. The script reports density and surfaces flagged sentences; the writer adjudicates per instance using `references/source-triage.md`.
+
 ### Surface tag in script output
 
 Every script's JSON output carries a top-level `task_surface` field, and every markdown report shows the surface near the header. The field tells downstream consumers which question the output is answering. Current values:
@@ -50,7 +59,7 @@ Every script's JSON output carries a top-level `task_surface` field, and every m
 | `smoothing_diagnosis` | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
 | `voice_coherence` | `voice_distance.py`, `voice_profile.py` |
 | `validation` | `manifest_validator.py`, `validation_harness.py` |
-| `craft_restoration` | not a script; lives in `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md` |
+| `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md` |
 
 The contract is enforceable at the data layer. The validation harness refuses to mix scores across surfaces because the surfaces answer different questions. Reports are now self-identifying so a reader (or an automated consumer) can route by surface without reading the script's filename or guessing from output shape.
 
@@ -62,7 +71,7 @@ When you have a target document, ask first which question you're trying to answe
 
 A third surface — empirical performance validation against a labeled corpus — is shipped in two pieces. `manifest_validator.py` checks the schema and integrity of `corpus_manifest.jsonl` so manifest-consuming tools can trust the manifest before running. `validation_harness.py` reports how well smoothing-diagnosis scores discriminate against labeled validation entries, in the manifest's registers, text lengths, AI-status classes, and language-status classes. It produces claims about your corpus, not about the world.
 
-A fourth surface — craft restoration advice — lives in the skill's reference docs (`references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`). It diagnoses prose patterns that humans can read, decides whether each instance is earned in context, and recommends revision moves. It is not a script.
+A fourth surface — craft restoration advice — lives primarily in the skill's reference docs (`references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`). It diagnoses prose patterns that humans can read, decides whether each instance is earned in context, and recommends revision moves. The earned/unearned verdict is irreducibly a writer's call. `aic_pattern_audit.py` provides a quantitative pre-pass that counts named-pattern density and surfaces candidate instances for that adjudication; the rest of the surface stays in prose.
 
 ## Inputs
 
@@ -505,7 +514,7 @@ Markdown by default. Header reports target word count, total pattern hits, and (
 
 For each pattern with one or more hits, the report renders the flagged instances with sentence indexes, full sentence text, and the regex-matched substring. The writer reviews these for Layer C source-triage adjudication.
 
-`--json` switches to machine-readable output preserving the same structure with `task_surface: smoothing_diagnosis`. Useful for piping into a revision pass: a downstream tool can read the JSON, extract flagged sentences, and ask an LLM for revision suggestions on those specific sentences.
+`--json` switches to machine-readable output preserving the same structure with `task_surface: craft_restoration`. Useful for piping into a revision pass: a downstream tool can read the JSON, extract flagged sentences, and ask an LLM for revision suggestions on those specific sentences.
 
 ### Markdown blockquote handling
 

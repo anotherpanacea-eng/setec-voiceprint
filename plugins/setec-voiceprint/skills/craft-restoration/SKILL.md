@@ -18,7 +18,7 @@ version: 1.0.0
 
 # Craft Restoration (SETEC Surface 4)
 
-This skill is a craft-pattern diagnostic and revision adviser. It identifies the seven AIC (AI craft) flag families that survive across model generations because they are structural rather than lexical, decides whether each instance is earned in context, and recommends specific revision moves. It is **not** a script — this surface lives entirely in the framework's reference markdown.
+This skill is a craft-pattern diagnostic and revision adviser. It identifies the seven AIC (AI craft) flag families that survive across model generations because they are structural rather than lexical, decides whether each instance is earned in context, and recommends specific revision moves. The surface is primarily reference markdown — the named-pattern taxonomy, source-triage methodology, and rhetorical countermoves all live in prose because the earned/unearned verdict is irreducibly a writer's call per instance. One quantitative pre-pass script (`aic_pattern_audit.py`) counts named-pattern density and surfaces candidate instances for that adjudication; everything else on this surface stays in the reference docs.
 
 ## What this surface licenses, and what it does not
 

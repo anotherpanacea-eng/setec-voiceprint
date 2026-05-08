@@ -84,7 +84,7 @@ except ImportError:
         # Fallback if running without the framework on path
         return re.split(r"(?<=[.!?])\s+", text.strip())
 
-TASK_SURFACE = "smoothing_diagnosis"
+TASK_SURFACE = "craft_restoration"
 
 
 # ---------- pattern detectors ----------
