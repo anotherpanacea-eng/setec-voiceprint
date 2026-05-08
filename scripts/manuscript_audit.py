@@ -35,6 +35,7 @@ from variance_audit import (  # type: ignore
     audit_baseline,
     classify_compression,
 )
+from preprocessing import aggregate_preprocessing_metadata, available_rule_names, strip_non_prose
 
 
 # See variance_audit.TASK_SURFACE for the contract. This script runs the
@@ -144,11 +145,23 @@ def audit_manuscript(
     *,
     do_tier2: bool = True,
     do_tier3: bool = True,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
 ) -> dict[str, Any]:
     """Run audit_text on each chapter; aggregate baseline; compute z-scores."""
     chapter_audits = []
+    chapter_preprocessing: dict[str, dict[str, Any]] = {}
     for ch in chapters:
-        a = audit_text(ch["text"], do_tier2=do_tier2, do_tier3=do_tier3)
+        a = audit_text(
+            ch["text"],
+            do_tier2=do_tier2,
+            do_tier3=do_tier3,
+            allow_non_prose=allow_non_prose,
+            strip_rules=strip_rules,
+            strip_aggressive=strip_aggressive,
+        )
+        chapter_preprocessing[ch["label"]] = a.get("preprocessing", {})
         comp = classify_compression(a)
         chapter_audits.append({
             "label": ch["label"],
@@ -159,10 +172,19 @@ def audit_manuscript(
 
     baseline_stats: dict[str, dict[str, float]] = {}
     n_baseline_files = 0
+    baseline_preprocessing: dict[str, Any] | None = None
     if baseline_dir:
-        baseline_block = audit_baseline(baseline_dir, do_tier2=do_tier2, do_tier3=do_tier3)
+        baseline_block = audit_baseline(
+            baseline_dir,
+            do_tier2=do_tier2,
+            do_tier3=do_tier3,
+            allow_non_prose=allow_non_prose,
+            strip_rules=strip_rules,
+            strip_aggressive=strip_aggressive,
+        )
         n_baseline_files = baseline_block.get("n_files", 0)
         baseline_stats = aggregate_baseline_stats(baseline_block.get("audits", []))
+        baseline_preprocessing = baseline_block.get("preprocessing")
 
     # Per-chapter z-scores
     for ch in chapter_audits:
@@ -184,6 +206,21 @@ def audit_manuscript(
 
     return {
         "task_surface": TASK_SURFACE,
+        "preprocessing": {
+            "chapters": aggregate_preprocessing_metadata(
+                chapter_preprocessing,
+                rules_active=list(
+                    next(iter(chapter_preprocessing.values()), {}).get("rules_active") or []
+                ),
+                applied=bool(
+                    next(iter(chapter_preprocessing.values()), {}).get("applied", True)
+                ),
+                opt_out=bool(
+                    next(iter(chapter_preprocessing.values()), {}).get("opt_out", False)
+                ),
+            ),
+            "baseline": baseline_preprocessing,
+        },
         "n_chapters": len(chapter_audits),
         "n_baseline_files": n_baseline_files,
         "chapters": chapter_audits,
@@ -396,6 +433,21 @@ def main() -> int:
         "--no-tier3", action="store_true",
         help="Skip Tier 3 metrics (adjacent-sentence cosine)."
     )
+    parser.add_argument(
+        "--allow-non-prose", action="store_true",
+        help="Skip default corpus-hygiene stripping for chapters and baseline files."
+    )
+    parser.add_argument(
+        "--strip-rules",
+        help="Comma-separated preprocessing rules to enable. Default: all "
+             "conservative rules. Available: "
+             + ", ".join(available_rule_names()) + "."
+    )
+    parser.add_argument(
+        "--strip-aggressive", action="store_true",
+        help="Also strip URL-only lines, image URLs, link wrappers, footnotes, "
+             "and citations."
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON instead of markdown.")
     parser.add_argument("--out", help="Write output to file instead of stdout.")
 
@@ -403,6 +455,15 @@ def main() -> int:
 
     if not args.manuscript and not args.chapter_dir:
         parser.error("Provide either a manuscript file or --chapter-dir.")
+    try:
+        strip_non_prose(
+            "",
+            args.strip_rules,
+            allow_non_prose=args.allow_non_prose,
+            strip_aggressive=args.strip_aggressive,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     if args.manuscript:
         text = Path(args.manuscript).read_text(encoding="utf-8", errors="ignore")
@@ -419,6 +480,9 @@ def main() -> int:
         args.baseline_dir,
         do_tier2=not args.no_tier2,
         do_tier3=not args.no_tier3,
+        allow_non_prose=args.allow_non_prose,
+        strip_rules=args.strip_rules,
+        strip_aggressive=args.strip_aggressive,
     )
 
     if args.json:

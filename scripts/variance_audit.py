@@ -50,6 +50,12 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from preprocessing import (
+    aggregate_preprocessing_metadata,
+    available_rule_names,
+    strip_non_prose,
+)
+
 # ---------- Optional dependencies ----------
 try:
     import textstat  # type: ignore
@@ -423,6 +429,94 @@ def pos_bigram_distance(
     }
 
 
+def normalize_pos_bigram_counts(
+    counts: dict[str, int],
+    keys: set[str] | None = None,
+    *,
+    alpha: float = 0.0,
+) -> dict[str, float]:
+    """Normalize POS-bigram counts to probabilities.
+
+    Optional Laplace add-α smoothing over ``keys`` (if provided) or the
+    distribution's own keys. ``alpha=0`` returns raw normalized
+    frequencies; ``alpha=1.0`` matches ``pos_bigram_distance``'s
+    Laplace smoothing convention. Returns an empty dict if the
+    smoothed total is zero.
+    """
+    base = keys if keys is not None else set(counts.keys())
+    if alpha > 0:
+        smoothed: dict[str, float] = {k: counts.get(k, 0) + alpha for k in base}
+    else:
+        smoothed = {k: float(counts.get(k, 0)) for k in base}
+    total = sum(smoothed.values())
+    if total == 0:
+        return {}
+    return {k: v / total for k, v in smoothed.items()}
+
+
+def pos_bigram_kl_contributions(
+    target_probs: dict[str, float],
+    baseline_probs: dict[str, float],
+    *,
+    target_counts: dict[str, int] | None = None,
+    baseline_counts: dict[str, int] | None = None,
+    eps: float = 1e-9,
+    min_count: int = 1,
+) -> list[dict[str, Any]]:
+    """Decompose POS-bigram KL into per-bigram contributions.
+
+    For each bigram ``b`` in the union of seen bigrams (after the
+    optional ``min_count`` filter), returns a row carrying the bigram
+    string, raw counts (when supplied), smoothed probabilities, the
+    delta and log2 ratio of those probabilities, and the per-bigram KL
+    contribution ``p * log2(p / q)``. Rows are sorted by ``abs(kl_contrib)``
+    descending so the largest-magnitude contributors appear first.
+
+    Smoothing is applied as add-``eps`` to each probability followed by
+    renormalization, so ``log2(p/q)`` is always defined. Pre-smooth at
+    the count level via ``normalize_pos_bigram_counts(alpha=...)`` if
+    Laplace add-α smoothing is preferred (the convention used by
+    ``pos_bigram_distance``).
+
+    ``min_count`` filters out bigrams where neither corpus reaches the
+    count threshold. Suppresses sampling noise from rare bigrams. Has
+    no effect if ``target_counts`` and ``baseline_counts`` are not
+    supplied.
+    """
+    keys = set(target_probs) | set(baseline_probs)
+    if min_count > 1 and target_counts is not None and baseline_counts is not None:
+        keys = {
+            k for k in keys
+            if max(target_counts.get(k, 0), baseline_counts.get(k, 0)) >= min_count
+        }
+    if not keys:
+        return []
+    p_smoothed = {k: target_probs.get(k, 0.0) + eps for k in keys}
+    q_smoothed = {k: baseline_probs.get(k, 0.0) + eps for k in keys}
+    p_total = sum(p_smoothed.values())
+    q_total = sum(q_smoothed.values())
+    rows: list[dict[str, Any]] = []
+    for k in keys:
+        p = p_smoothed[k] / p_total
+        q = q_smoothed[k] / q_total
+        log2_ratio = math.log2(p / q)
+        row: dict[str, Any] = {
+            "bigram": k,
+            "target_prob": p,
+            "baseline_prob": q,
+            "delta": p - q,
+            "log2_ratio": log2_ratio,
+            "kl_contrib": p * log2_ratio,
+        }
+        if target_counts is not None:
+            row["target_count"] = target_counts.get(k, 0)
+        if baseline_counts is not None:
+            row["baseline_count"] = baseline_counts.get(k, 0)
+        rows.append(row)
+    rows.sort(key=lambda r: abs(r["kl_contrib"]), reverse=True)
+    return rows
+
+
 def mdd_stats(text: str) -> dict[str, Any] | None:
     if not HAS_SPACY or _NLP is None:
         return None
@@ -528,17 +622,32 @@ def audit_text(
     mattr_window: int = 50,
     do_tier2: bool = True,
     do_tier3: bool = True,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
+    collect_stripped: bool = False,
 ) -> dict[str, Any]:
+    original_text = text
+    text, preprocessing = strip_non_prose(
+        original_text,
+        strip_rules,
+        allow_non_prose=allow_non_prose,
+        strip_aggressive=strip_aggressive,
+        collect_stripped=collect_stripped,
+    )
     sentences = split_sentences(text)
     words = split_words(text)
     n_words = len(words)
     n_sentences = len(sentences)
 
     out: dict[str, Any] = {
+        "preprocessing": preprocessing,
         "summary": {
             "n_words": n_words,
+            "n_words_original": preprocessing.get("input_tokens_before", n_words),
             "n_sentences": n_sentences,
             "reliable": n_words >= 200,
+            "preprocessing_applied": preprocessing.get("applied", False),
         },
         "tier1": {},
     }
@@ -574,19 +683,94 @@ def audit_baseline(baseline_dir: str, **kwargs: Any) -> dict[str, Any]:
     paths = sorted(Path(baseline_dir).glob("*.txt")) + sorted(Path(baseline_dir).glob("*.md"))
     paths = [p for p in paths if not p.name.lower().startswith("readme")]
     audits = []
+    preprocessing_by_file: dict[str, dict[str, Any]] = {}
     for p in paths:
         try:
             txt = p.read_text(encoding="utf-8", errors="ignore")
             a = audit_text(txt, **kwargs)
+            preprocessing_by_file[p.name] = a.get("preprocessing", {})
             audits.append({"file": str(p.name), "audit": a})
         except Exception as e:
+            print(f"Warning: failed baseline file {p}: {e}", file=sys.stderr)
             audits.append({"file": str(p.name), "error": str(e)})
+    rules_active: list[str] = []
+    applied = True
+    opt_out = False
+    if preprocessing_by_file:
+        first = next(iter(preprocessing_by_file.values()))
+        rules_active = list(first.get("rules_active") or [])
+        applied = bool(first.get("applied", True))
+        opt_out = bool(first.get("opt_out", False))
     return {
         "n_files": len(paths),
         "audits": audits,
         "aggregate": _aggregate_baseline(audits),
         "pos_bigram_aggregate": _aggregate_pos_bigrams(audits),
+        "preprocessing": aggregate_preprocessing_metadata(
+            preprocessing_by_file,
+            rules_active=rules_active,
+            applied=applied,
+            opt_out=opt_out,
+        ),
     }
+
+
+def _emit_preprocessing_warning(
+    meta: dict[str, Any] | None,
+    *,
+    label: str,
+    threshold: float,
+) -> None:
+    if not meta or not meta.get("applied", False):
+        return
+    ratio = meta.get("strip_ratio", 0.0)
+    if not isinstance(ratio, (int, float)) or ratio <= threshold:
+        return
+    stripped = int(meta.get("tokens_stripped", 0) or 0)
+    dominant = meta.get("dominant_rule") or "unknown"
+    print(
+        f"Warning: preprocessing stripped {stripped} tokens from {label} "
+        f"({ratio:.1%}; dominant rule: {dominant}). "
+        "See JSON preprocessing block for details.",
+        file=sys.stderr,
+    )
+
+
+def _emit_baseline_preprocessing_warnings(
+    baseline_meta: dict[str, Any] | None,
+    *,
+    threshold: float,
+) -> None:
+    if not baseline_meta or not baseline_meta.get("applied", False):
+        return
+    for name, meta in (baseline_meta.get("per_file") or {}).items():
+        _emit_preprocessing_warning(
+            meta,
+            label=f"baseline file {name}",
+            threshold=threshold,
+        )
+
+
+def _write_stripped_debug(
+    meta: dict[str, Any] | None,
+    destination: str | None,
+) -> None:
+    if not destination or not meta:
+        return
+    by_rule = meta.get("stripped_text_by_rule") or {}
+    if not by_rule:
+        message = "(No stripped text captured.)\n"
+    else:
+        chunks: list[str] = []
+        for rule, snippets in by_rule.items():
+            chunks.append(f"## {rule}")
+            chunks.extend(str(s) for s in snippets)
+            chunks.append("")
+        message = "\n".join(chunks)
+    if destination == "-":
+        print(message, file=sys.stderr)
+    else:
+        Path(destination).write_text(message, encoding="utf-8")
 
 
 def _aggregate_pos_bigrams(
@@ -783,6 +967,9 @@ def bootstrap_compare(
     do_tier2: bool = True,
     do_tier3: bool = True,
     mattr_window: int = 50,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
 ) -> dict[str, Any]:
     """Length-matched bootstrap of every Layer A signal against the
     baseline corpus. Returns a dict keyed by dotted signal path with the
@@ -848,6 +1035,9 @@ def bootstrap_compare(
         do_tier2=do_tier2,
         do_tier3=do_tier3,
         mattr_window=mattr_window,
+        allow_non_prose=allow_non_prose,
+        strip_rules=strip_rules,
+        strip_aggressive=strip_aggressive,
     )
 
     per_signal: dict[str, dict[str, Any]] = {}
@@ -972,6 +1162,9 @@ def audit_windows(
     do_tier2: bool = True,
     do_tier3: bool = True,
     mattr_window: int = 50,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
 ) -> list[dict[str, Any]]:
     """Run ``audit_text`` + ``classify_compression`` on each sliding window.
 
@@ -994,8 +1187,14 @@ def audit_windows(
             do_tier2=do_tier2,
             do_tier3=do_tier3,
             mattr_window=mattr_window,
+            allow_non_prose=allow_non_prose,
+            strip_rules=strip_rules,
+            strip_aggressive=strip_aggressive,
         )
-        c = classify_compression(a)
+        divergences: dict[str, Any] | None = None
+        if baseline is not None:
+            divergences = compare_distributions(a, baseline)
+        c = classify_compression(a, divergences=divergences)
         entry = {
             "start_word": w["start_word"],
             "end_word": w["end_word"],
@@ -1007,7 +1206,6 @@ def audit_windows(
         }
         if baseline is not None:
             entry["baseline_comparison"] = compare_to_baseline(a, baseline)
-            divergences = compare_distributions(a, baseline)
             if divergences:
                 entry["baseline_divergences"] = divergences
         results.append(entry)
@@ -1086,7 +1284,41 @@ COMPRESSION_HEURISTICS: dict[str, tuple[float, str, float, int]] = {
 }
 
 
-def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
+# POS-bigram KL divergence against a baseline aggregate. Unlike the 11
+# heuristics above, this signal is baseline-relative and only
+# participates in the band classification when a baseline is supplied
+# (and POS-bigram counts are available, which requires Tier 2 / spaCy).
+#
+# Empirical motivation: on AI-composed prose where every variance
+# metric (burstiness, MATTR, MTLD, Yule's K, Shannon entropy, FKGL SD,
+# MDD SD, function-word ratio, sentence-length SD) reads inside human
+# bounds against the writer's own pre-AI baseline, POS-bigram KL has
+# elevated as the single signal carrying the syntactic-template-collapse
+# evidence. The 2026 multi-model collaborative regime (notes -> AI ->
+# comments -> AI fix) preserves surface variance because human editing
+# reintroduces it; what remains different from the writer's idiolect is
+# the syntactic palette the models draw from. KL catches that.
+#
+# Threshold 0.15 from the literature anchor in
+# references/distributional-diagnostics.md ("KL > 0.15 against a
+# register-matched human baseline is a meaningful syntactic-template-
+# collapse signal"). Cross-human KL on matched genres typically below
+# 0.05; human-vs-LLM KL typically 0.10-0.30.
+#
+# Weight 2.0 matches burstiness_B and connective_density (the two
+# highest-weighted variance signals). This is a starting calibration;
+# pending recalibration against the validation harness on a labeled
+# corpus, where the empirical ROC will tell us whether KL deserves a
+# higher weight than the variance signals on this generation of AI
+# assistance.
+POS_BIGRAM_KL_HEURISTIC: tuple[float, str, float, int] = (0.15, "gt", 2.0, 500)
+
+
+def classify_compression(
+    audit: dict[str, Any],
+    *,
+    divergences: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     flagged: list[str] = []
     skipped: list[str] = []
     notes: dict[str, str] = {}
@@ -1144,6 +1376,44 @@ def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
         check("adjacent_cosine_mean", adj.get("mean"))
         check("adjacent_cosine_sd", adj.get("sd"))
 
+    # POS-bigram KL divergence against baseline aggregate. Only
+    # participates when a baseline is supplied and the POS-bigram
+    # divergence was computed (which requires Tier 2 / spaCy on both
+    # sides). When in scope, this signal often carries more diagnostic
+    # weight than any single variance metric on AI-composed prose where
+    # human editing has restored surface variance.
+    pos_bigram_kl_info: dict[str, Any] | None = None
+    if divergences is not None:
+        pos_pb = divergences.get("pos_bigrams")
+        if isinstance(pos_pb, dict) and "kl_to_baseline" in pos_pb:
+            kl_value = pos_pb["kl_to_baseline"]
+            kl_threshold, kl_direction, kl_weight, kl_floor = POS_BIGRAM_KL_HEURISTIC
+            pos_bigram_kl_info = {
+                "value": kl_value,
+                "threshold": kl_threshold,
+                "weight": kl_weight,
+                "length_floor": kl_floor,
+                "n_target_bigrams": pos_pb.get("n_target_bigrams"),
+                "n_baseline_bigrams": pos_pb.get("n_baseline_bigrams"),
+                "in_band": False,
+                "compressed": False,
+            }
+            if n_words < kl_floor:
+                skipped.append(
+                    f"pos_bigram_kl (need {kl_floor}+ words, have {n_words})"
+                )
+            elif isinstance(kl_value, (int, float)):
+                available_weight += kl_weight
+                pos_bigram_kl_info["in_band"] = True
+                kl_compressed = (
+                    (kl_direction == "lt" and kl_value < kl_threshold)
+                    or (kl_direction == "gt" and kl_value > kl_threshold)
+                )
+                if kl_compressed:
+                    flagged.append("pos_bigram_kl")
+                    weighted_score += kl_weight
+                    pos_bigram_kl_info["compressed"] = True
+
     # Band assignment by *fraction* of available signal weight. The
     # absolute weighted_score depends on which signals had data and
     # which were skipped for length, so a fixed-score threshold reads
@@ -1184,7 +1454,24 @@ def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
             "fraction-of-available statement, not an absolute count."
         )
 
-    return {
+    thresholds_used = {
+        k: {"threshold": t, "direction": d, "weight": w, "length_floor": lf}
+        for k, (t, d, w, lf) in COMPRESSION_HEURISTICS.items()
+    }
+    # POS-bigram KL is a baseline-relative signal; surface its threshold
+    # so consumers see what cutoff the band call used. The
+    # `requires_baseline` flag distinguishes it from the variance
+    # heuristics that participate in every run.
+    kl_thresh, kl_direction, kl_weight, kl_floor = POS_BIGRAM_KL_HEURISTIC
+    thresholds_used["pos_bigram_kl"] = {
+        "threshold": kl_thresh,
+        "direction": kl_direction,
+        "weight": kl_weight,
+        "length_floor": kl_floor,
+        "requires_baseline": True,
+    }
+
+    result: dict[str, Any] = {
         "band": band,
         "weighted_score": round(weighted_score, 2),
         "available_weight": round(available_weight, 2),
@@ -1197,11 +1484,11 @@ def classify_compression(audit: dict[str, Any]) -> dict[str, Any]:
         "skipped_signals": skipped,
         "n_flagged": len(flagged),
         "notes": notes,
-        "thresholds_used": {
-            k: {"threshold": t, "direction": d, "weight": w, "length_floor": lf}
-            for k, (t, d, w, lf) in COMPRESSION_HEURISTICS.items()
-        },
+        "thresholds_used": thresholds_used,
     }
+    if pos_bigram_kl_info is not None:
+        result["pos_bigram_kl"] = pos_bigram_kl_info
+    return result
 
 
 # ---------- Output formatting ----------
@@ -1214,6 +1501,19 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
     lines.append(f"task_surface: {TASK_SURFACE}")
     lines.append("=" * 60)
     lines.append(f"Words: {s.get('n_words', 0)}    Sentences: {s.get('n_sentences', 0)}")
+    prep = audit.get("preprocessing") or {}
+    if prep:
+        if prep.get("opt_out"):
+            lines.append("Preprocessing: skipped by --allow-non-prose")
+        else:
+            stripped = int(prep.get("tokens_stripped", 0) or 0)
+            ratio = prep.get("strip_ratio", 0.0)
+            dominant = prep.get("dominant_rule") or "none"
+            ratio_str = f"{ratio:.1%}" if isinstance(ratio, (int, float)) else "n/a"
+            lines.append(
+                f"Preprocessing: stripped {stripped} tokens "
+                f"({ratio_str}; dominant rule: {dominant})"
+            )
     if not s.get("reliable", True):
         lines.append("WARNING: Document below 200 words; results are noisy.")
     lines.append("")
@@ -1227,6 +1527,31 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
         f"weighted score: {compression.get('weighted_score', 0)} of "
         f"{compression.get('available_weight', 0)} available)"
     )
+    # Surface POS-bigram KL prominently in the headline. On AI-composed
+    # prose where every variance metric reads clean against the writer's
+    # baseline, KL is often the single signal carrying the diagnostic
+    # weight; users reading only the band line should see it without
+    # scrolling to the divergences block.
+    pb_kl = compression.get("pos_bigram_kl")
+    if isinstance(pb_kl, dict):
+        kl_value = pb_kl.get("value")
+        kl_thresh = pb_kl.get("threshold")
+        in_band = pb_kl.get("in_band", False)
+        compressed = pb_kl.get("compressed", False)
+        kl_value_str = (
+            f"{kl_value:.3f}" if isinstance(kl_value, (int, float)) else "n/a"
+        )
+        if in_band and compressed:
+            verdict = "FIRED  (above threshold; contributed to band call)"
+        elif in_band:
+            verdict = "below threshold"
+        else:
+            verdict = "below length floor; not in band"
+        lines.append(
+            f"POS-bigram KL: {kl_value_str}  "
+            f"(threshold {kl_thresh}, weight {pb_kl.get('weight')})  "
+            f"-- {verdict}"
+        )
     if compression["flagged_signals"]:
         lines.append("Flagged signals (compression observed):")
         for sig in compression["flagged_signals"]:
@@ -1542,6 +1867,38 @@ def main() -> int:
         help="Skip Tier 3 metrics (adjacent-sentence cosine)."
     )
     parser.add_argument(
+        "--allow-non-prose", action="store_true",
+        help="Skip default corpus-hygiene stripping. Use only when "
+             "intentionally auditing code-heavy or markup-heavy text."
+    )
+    parser.add_argument(
+        "--strip-rules",
+        help="Comma-separated preprocessing rules to enable. Default: all "
+             "conservative rules. Available conservative rules: "
+             + ", ".join(available_rule_names()) + "."
+    )
+    parser.add_argument(
+        "--strip-aggressive", action="store_true",
+        help="Also strip URL-only lines, Markdown image URLs, link wrappers, "
+             "footnote markers, and high-confidence citations."
+    )
+    parser.add_argument(
+        "--strip-warn-threshold",
+        type=float,
+        default=0.05,
+        help="Emit a stderr warning when preprocessing strips more than "
+             "this fraction of tokens from target or any baseline file "
+             "(default 0.05)."
+    )
+    parser.add_argument(
+        "--show-stripped",
+        nargs="?",
+        const="-",
+        default=None,
+        help="Write stripped target portions to stderr, or to the provided "
+             "path when a path is supplied."
+    )
+    parser.add_argument(
         "--window-size", type=int, default=0,
         help="When > 0, also run a sliding-window pass over the document "
              "with windows of this many words. Surfaces localized "
@@ -1598,6 +1955,15 @@ def main() -> int:
 
     if args.window_only and args.window_size <= 0:
         parser.error("--window-only requires --window-size > 0.")
+    try:
+        strip_non_prose(
+            "",
+            args.strip_rules,
+            allow_non_prose=args.allow_non_prose,
+            strip_aggressive=args.strip_aggressive,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     text = Path(args.input).read_text(encoding="utf-8", errors="ignore")
 
@@ -1609,50 +1975,76 @@ def main() -> int:
             mattr_window=args.mattr_window,
             do_tier2=not args.no_tier2,
             do_tier3=not args.no_tier3,
+            allow_non_prose=args.allow_non_prose,
+            strip_rules=args.strip_rules,
+            strip_aggressive=args.strip_aggressive,
+            collect_stripped=args.show_stripped is not None,
         )
-        compression = classify_compression(audit)
+        _emit_preprocessing_warning(
+            audit.get("preprocessing"),
+            label=Path(args.input).name,
+            threshold=args.strip_warn_threshold,
+        )
+        _write_stripped_debug(audit.get("preprocessing"), args.show_stripped)
 
     output: dict[str, Any] = {"task_surface": TASK_SURFACE}
-    if audit is not None:
-        output["audit"] = audit
-        output["compression"] = compression
 
+    # Compute the baseline (and any baseline-derived comparisons) before
+    # classification, so POS-bigram KL can participate in the band call
+    # when a baseline is supplied. Without a baseline, the band rests on
+    # the 11 variance heuristics alone.
     baseline_block: dict[str, Any] | None = None
+    z_scores: dict[str, Any] | None = None
+    divergences: dict[str, Any] | None = None
     if args.baseline_dir and os.path.isdir(args.baseline_dir):
         baseline_block = audit_baseline(
             args.baseline_dir,
             mattr_window=args.mattr_window,
             do_tier2=not args.no_tier2,
             do_tier3=not args.no_tier3,
+            allow_non_prose=args.allow_non_prose,
+            strip_rules=args.strip_rules,
+            strip_aggressive=args.strip_aggressive,
+        )
+        _emit_baseline_preprocessing_warnings(
+            baseline_block.get("preprocessing"),
+            threshold=args.strip_warn_threshold,
         )
         if audit is not None:
             z_scores = compare_to_baseline(audit, baseline_block)
             divergences = compare_distributions(audit, baseline_block)
-            output["baseline"] = {
-                "n_files": baseline_block["n_files"],
-                "aggregate": baseline_block["aggregate"],
-            }
+
+    if audit is not None:
+        compression = classify_compression(audit, divergences=divergences)
+        output["preprocessing"] = audit.get("preprocessing", {})
+        output["audit"] = audit
+        output["compression"] = compression
+
+    if baseline_block is not None:
+        output["baseline"] = {
+            "n_files": baseline_block["n_files"],
+            "aggregate": baseline_block["aggregate"],
+            "preprocessing": baseline_block.get("preprocessing", {}),
+        }
+        if z_scores is not None:
             output["baseline_comparison"] = z_scores
-            if divergences:
-                output["baseline_divergences"] = divergences
-            if args.bootstrap:
-                output["baseline_bootstrap"] = bootstrap_compare(
-                    audit, args.baseline_dir,
-                    n_windows_per_file=args.bootstrap_windows_per_file,
-                    max_total_windows=args.bootstrap_max_windows,
-                    n_resamples=args.bootstrap_resamples,
-                    confidence_level=args.bootstrap_confidence,
-                    seed=args.bootstrap_seed,
-                    do_tier2=not args.no_tier2,
-                    do_tier3=not args.no_tier3,
-                    mattr_window=args.mattr_window,
-                )
-        else:
-            # Window-only mode still surfaces the baseline summary.
-            output["baseline"] = {
-                "n_files": baseline_block["n_files"],
-                "aggregate": baseline_block["aggregate"],
-            }
+        if divergences:
+            output["baseline_divergences"] = divergences
+        if audit is not None and args.bootstrap:
+            output["baseline_bootstrap"] = bootstrap_compare(
+                audit, args.baseline_dir,
+                n_windows_per_file=args.bootstrap_windows_per_file,
+                max_total_windows=args.bootstrap_max_windows,
+                n_resamples=args.bootstrap_resamples,
+                confidence_level=args.bootstrap_confidence,
+                seed=args.bootstrap_seed,
+                do_tier2=not args.no_tier2,
+                do_tier3=not args.no_tier3,
+                mattr_window=args.mattr_window,
+                allow_non_prose=args.allow_non_prose,
+                strip_rules=args.strip_rules,
+                strip_aggressive=args.strip_aggressive,
+            )
 
     if args.window_size > 0:
         windows = audit_windows(
@@ -1663,6 +2055,9 @@ def main() -> int:
             do_tier2=not args.no_tier2,
             do_tier3=not args.no_tier3,
             mattr_window=args.mattr_window,
+            allow_non_prose=args.allow_non_prose,
+            strip_rules=args.strip_rules,
+            strip_aggressive=args.strip_aggressive,
         )
         output["windows"] = {
             "window_size": args.window_size,

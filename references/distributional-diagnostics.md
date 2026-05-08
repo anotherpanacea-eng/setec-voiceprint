@@ -179,6 +179,8 @@ JSD(P, Q) = ½·KL(P‖M) + ½·KL(Q‖M),  M = ½(P + Q)
 
 **Where it lives in the toolkit.** `variance_audit.py` reports POS-bigram entropy of the target alone in every run (a target-only diagnostic of how concentrated the distribution is). When `--baseline-dir` is supplied, the script also aggregates POS-bigram counts across the baseline corpus and reports KL(target ‖ baseline) and JSD(target, baseline) under `baseline_divergences.pos_bigrams`, with Laplace smoothing on the union of bigrams seen in either distribution. Cross-human KL on matched genres typically falls below 0.05; KL above 0.15 against a register-matched human baseline is the meaningful syntactic-template-collapse signal the literature describes.
 
+**Corpus-hygiene guard.** POS-bigram KL is computed on preprocessed text by default. The preprocessor strips suspected non-prose (HTML/CSS/JS scaffolding, code fences, loose CSS blocks, conservative HTML tags, JSON-shaped blocks, ASCII tables, and YAML front matter) before spaCy sees either the target or the baseline. This is symmetric: a rule applied to the target is also applied to every baseline file. The JSON `preprocessing` block records token counts by rule and names the dominant stripping source so users can tell whether a KL reading was protected from markup contamination or deliberately run with `--allow-non-prose`.
+
 ### 10. Mean Dependency Distance Variance
 
 **What it measures.** Variation in syntactic complexity across sentences, measured through dependency parse distances.

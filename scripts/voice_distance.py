@@ -15,6 +15,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from preprocessing import available_rule_names, strip_non_prose
 from stylometry_core import compare_to_baseline, load_entries, read_text
 
 
@@ -129,6 +130,18 @@ def render_report(
     )
     lines.append("")
     lines.append(f"**Target words:** {target.get('n_words', 0)}")
+    prep = (result.get("preprocessing") or {}).get("target") or {}
+    if prep:
+        if prep.get("opt_out"):
+            lines.append("**Preprocessing:** skipped by `--allow-non-prose`")
+        else:
+            ratio = prep.get("strip_ratio", 0.0)
+            ratio_str = f"{ratio:.1%}" if isinstance(ratio, (int, float)) else "n/a"
+            lines.append(
+                f"**Preprocessing:** stripped {prep.get('tokens_stripped', 0)} "
+                f"tokens ({ratio_str}; dominant rule: "
+                f"{prep.get('dominant_rule') or 'none'})"
+            )
     lines.append(
         f"**Baseline:** {baseline.get('n_files', 0)} files, "
         f"{baseline.get('total_words', 0)} words "
@@ -229,12 +242,32 @@ def main() -> int:
                         help="Skip the cluster aggregation pass.")
     parser.add_argument("--no-spacy", action="store_true",
                         help="Skip POS and dependency feature families.")
+    parser.add_argument("--allow-non-prose", action="store_true",
+                        help="Skip default corpus-hygiene stripping. Use "
+                             "only when intentionally measuring code-heavy "
+                             "or markup-heavy text.")
+    parser.add_argument("--strip-rules",
+                        help="Comma-separated preprocessing rules to enable. "
+                             "Default: all conservative rules. Available: "
+                             + ", ".join(available_rule_names()) + ".")
+    parser.add_argument("--strip-aggressive", action="store_true",
+                        help="Also strip URL-only lines, image URLs, link "
+                             "wrappers, footnotes, and citations.")
     parser.add_argument("--json", action="store_true", help="Output JSON.")
     parser.add_argument("--out", help="Write report to file instead of stdout.")
     args = parser.parse_args()
 
     if not args.baseline_dir and not args.manifest:
         parser.error("Provide either --baseline-dir or --manifest.")
+    try:
+        strip_non_prose(
+            "",
+            args.strip_rules,
+            allow_non_prose=args.allow_non_prose,
+            strip_aggressive=args.strip_aggressive,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     target_path = Path(args.target)
     baseline_entries = load_entries(
@@ -291,6 +324,9 @@ def main() -> int:
         limits=build_limits(args),
         include_clusters=not args.no_clusters,
         cluster_min_features=args.cluster_min_features,
+        allow_non_prose=args.allow_non_prose,
+        strip_rules=args.strip_rules,
+        strip_aggressive=args.strip_aggressive,
     )
     result["task_surface"] = TASK_SURFACE
 

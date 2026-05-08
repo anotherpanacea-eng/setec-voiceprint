@@ -148,6 +148,9 @@ python3 scripts/variance_audit.py path/to/draft.txt --json
 # Compare against a personal baseline
 python3 scripts/variance_audit.py path/to/draft.txt --baseline-dir baselines/personal/
 
+# Opt out of default HTML/CSS/code stripping when intentionally auditing non-prose
+python3 scripts/variance_audit.py path/to/draft.txt --allow-non-prose
+
 # Sliding-window scan to localize compression within a long document
 python3 scripts/variance_audit.py path/to/draft.txt --window-size 1000 --window-stride 500
 

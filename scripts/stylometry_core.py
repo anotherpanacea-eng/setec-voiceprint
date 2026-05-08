@@ -18,6 +18,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from preprocessing import aggregate_preprocessing_metadata, strip_non_prose
+
 from variance_audit import (  # type: ignore
     FUNCTION_WORDS,
     HAS_SPACY,
@@ -387,7 +389,20 @@ def dependency_ngram_features(text: str, ns: tuple[int, ...] = (2, 3)) -> dict[s
     return frequencies(counts, total)
 
 
-def extract_features(text: str, *, include_spacy: bool = True) -> dict[str, Any]:
+def extract_features(
+    text: str,
+    *,
+    include_spacy: bool = True,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
+) -> dict[str, Any]:
+    text, preprocessing = strip_non_prose(
+        text,
+        strip_rules,
+        allow_non_prose=allow_non_prose,
+        strip_aggressive=strip_aggressive,
+    )
     words = word_tokens(text)
     sentences = split_sentences(text)
     paras = paragraphs(text)
@@ -412,11 +427,14 @@ def extract_features(text: str, *, include_spacy: bool = True) -> dict[str, Any]
     return {
         "summary": {
             "n_words": len(words),
+            "n_words_original": preprocessing.get("input_tokens_before", len(words)),
             "n_sentences": len(sentences),
             "n_paragraphs": len(paras),
             "spacy_available": HAS_SPACY,
+            "preprocessing_applied": preprocessing.get("applied", False),
         },
         "features": features,
+        "preprocessing": preprocessing,
     }
 
 
@@ -523,16 +541,30 @@ def load_entries(
     raise ValueError("Provide either baseline_dir or manifest")
 
 
-def extract_entry_features(entries: list[dict[str, Any]], *, include_spacy: bool = True) -> list[dict[str, Any]]:
+def extract_entry_features(
+    entries: list[dict[str, Any]],
+    *,
+    include_spacy: bool = True,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
+) -> list[dict[str, Any]]:
     out = []
     for entry in entries:
-        feat = extract_features(entry["text"], include_spacy=include_spacy)
+        feat = extract_features(
+            entry["text"],
+            include_spacy=include_spacy,
+            allow_non_prose=allow_non_prose,
+            strip_rules=strip_rules,
+            strip_aggressive=strip_aggressive,
+        )
         out.append({
             "id": entry["id"],
             "path": entry["path"],
             "metadata": entry.get("metadata", {}),
             "summary": feat["summary"],
             "features": feat["features"],
+            "preprocessing": feat.get("preprocessing", {}),
         })
     return out
 
@@ -754,18 +786,34 @@ def compare_to_baseline(
     limits: dict[str, int] | None = None,
     include_clusters: bool = True,
     cluster_min_features: int = 2,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
 ) -> dict[str, Any]:
     if not baseline_entries:
         raise ValueError("Baseline contains no usable entries")
 
-    target_features = extract_features(target_text, include_spacy=include_spacy)
-    baseline_features = extract_entry_features(baseline_entries, include_spacy=include_spacy)
+    target_features = extract_features(
+        target_text,
+        include_spacy=include_spacy,
+        allow_non_prose=allow_non_prose,
+        strip_rules=strip_rules,
+        strip_aggressive=strip_aggressive,
+    )
+    baseline_features = extract_entry_features(
+        baseline_entries,
+        include_spacy=include_spacy,
+        allow_non_prose=allow_non_prose,
+        strip_rules=strip_rules,
+        strip_aggressive=strip_aggressive,
+    )
     selected = select_feature_names(baseline_features, limits=limits)
     target_item = {
         "id": "target",
         "path": None,
         "summary": target_features["summary"],
         "features": target_features["features"],
+        "preprocessing": target_features.get("preprocessing", {}),
     }
 
     families = {}
@@ -798,7 +846,20 @@ def compare_to_baseline(
 
     overall_delta = weighted_total / weight_sum if weight_sum else 0.0
     warnings = comparison_warnings(target_features["summary"], baseline_entries, baseline_features)
+    baseline_preprocessing = {
+        item["id"]: item.get("preprocessing", {}) for item in baseline_features
+    }
+    first_preprocessing = target_features.get("preprocessing", {})
     return {
+        "preprocessing": {
+            "target": target_features.get("preprocessing", {}),
+            "baseline": aggregate_preprocessing_metadata(
+                baseline_preprocessing,
+                rules_active=list(first_preprocessing.get("rules_active") or []),
+                applied=bool(first_preprocessing.get("applied", True)),
+                opt_out=bool(first_preprocessing.get("opt_out", False)),
+            ),
+        },
         "target_summary": target_features["summary"],
         "baseline_summary": summarize_entries(baseline_features),
         "selected_features": {k: len(v) for k, v in selected.items()},
@@ -910,10 +971,19 @@ def build_profile(
     *,
     include_spacy: bool = True,
     limits: dict[str, int] | None = None,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
 ) -> dict[str, Any]:
     if not baseline_entries:
         raise ValueError("Baseline contains no usable entries")
-    baseline_features = extract_entry_features(baseline_entries, include_spacy=include_spacy)
+    baseline_features = extract_entry_features(
+        baseline_entries,
+        include_spacy=include_spacy,
+        allow_non_prose=allow_non_prose,
+        strip_rules=strip_rules,
+        strip_aggressive=strip_aggressive,
+    )
     selected = select_feature_names(baseline_features, limits=limits)
 
     families = {}
@@ -945,6 +1015,21 @@ def build_profile(
 
     return {
         "privacy": "PRIVATE - DO NOT SHARE. A voice profile is a voice-cloning input.",
+        "preprocessing": aggregate_preprocessing_metadata(
+            {item["id"]: item.get("preprocessing", {}) for item in baseline_features},
+            rules_active=list(
+                (baseline_features[0].get("preprocessing", {}) if baseline_features else {})
+                .get("rules_active") or []
+            ),
+            applied=bool(
+                (baseline_features[0].get("preprocessing", {}) if baseline_features else {})
+                .get("applied", True)
+            ),
+            opt_out=bool(
+                (baseline_features[0].get("preprocessing", {}) if baseline_features else {})
+                .get("opt_out", False)
+            ),
+        ),
         "baseline_summary": summarize_entries(baseline_features),
         "selected_features": {k: len(v) for k, v in selected.items()},
         "warnings": profile_warnings(baseline_entries, baseline_features),

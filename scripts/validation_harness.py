@@ -28,7 +28,14 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from manifest_validator import resolve_path, validate_manifest
-from variance_audit import audit_text, classify_compression, split_words
+from preprocessing import available_rule_names, strip_non_prose
+from variance_audit import (
+    _SIGNAL_PATHS,
+    _extract_signal,
+    audit_text,
+    classify_compression,
+    split_words,
+)
 
 
 TASK_SURFACE = "validation"
@@ -134,6 +141,9 @@ def score_smoothing_entry(
     mattr_window: int = 50,
     do_tier2: bool = True,
     do_tier3: bool = True,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
     positive_statuses: set[str],
     negative_statuses: set[str],
 ) -> dict[str, Any]:
@@ -166,25 +176,40 @@ def score_smoothing_entry(
         })
         return base_record
 
-    n_words = len(split_words(text))
+    raw_n_words = len(split_words(text))
     audit = audit_text(
         text,
         mattr_window=mattr_window,
         do_tier2=do_tier2,
         do_tier3=do_tier3,
+        allow_non_prose=allow_non_prose,
+        strip_rules=strip_rules,
+        strip_aggressive=strip_aggressive,
     )
+    n_words = int(audit.get("summary", {}).get("n_words", raw_n_words) or 0)
     compression = classify_compression(audit)
     score = _finite_score(compression.get("compression_fraction"))
 
+    # Extract per-signal scalars for the per-signal AUC table. Signals
+    # that are unavailable on this entry (Tier 2 missing, length floor
+    # not met for that signal) come through as None and are skipped at
+    # the metric layer.
+    per_signal_scores: dict[str, float | None] = {}
+    for name, key_path in _SIGNAL_PATHS:
+        per_signal_scores[name] = _extract_signal(audit, key_path)
+
     base_record.update({
+        "raw_word_count": raw_n_words,
         "observed_word_count": n_words,
         "length_bucket": length_bucket(n_words),
+        "preprocessing": audit.get("preprocessing", {}),
         "score": score,
         "band": compression.get("band"),
         "weighted_score": compression.get("weighted_score"),
         "available_weight": compression.get("available_weight"),
         "flagged_signals": compression.get("flagged_signals", []),
         "skipped_signals": compression.get("skipped_signals", []),
+        "per_signal_scores": per_signal_scores,
         "usable_for_metrics": score is not None and base_record["label"] in (0, 1),
     })
     if score is None:
@@ -892,6 +917,9 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             mattr_window=args.mattr_window,
             do_tier2=not args.no_tier2,
             do_tier3=not args.no_tier3,
+            allow_non_prose=args.allow_non_prose,
+            strip_rules=args.strip_rules,
+            strip_aggressive=args.strip_aggressive,
             positive_statuses=positive_statuses,
             negative_statuses=negative_statuses,
         )
@@ -1061,6 +1089,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--no-tier2", action="store_true", help="Skip spaCy-backed Tier 2 metrics.")
     parser.add_argument("--no-tier3", action="store_true", help="Skip adjacent-cosine Tier 3 metrics.")
     parser.add_argument(
+        "--allow-non-prose",
+        action="store_true",
+        help="Skip default corpus-hygiene stripping for validation entries.",
+    )
+    parser.add_argument(
+        "--strip-rules",
+        help="Comma-separated preprocessing rules to enable. Default: all "
+             "conservative rules. Available: "
+             + ", ".join(available_rule_names()) + ".",
+    )
+    parser.add_argument(
+        "--strip-aggressive",
+        action="store_true",
+        help="Also strip URL-only lines, image URLs, link wrappers, footnotes, and citations.",
+    )
+    parser.add_argument(
         "--strict-manifest",
         action="store_true",
         help="Fail if manifest validation emits warnings as well as errors.",
@@ -1091,6 +1135,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--metric-bootstrap-resamples must be >= 0.")
     if args.records_limit < 0:
         parser.error("--records-limit must be >= 0.")
+    try:
+        strip_non_prose(
+            "",
+            args.strip_rules,
+            allow_non_prose=args.allow_non_prose,
+            strip_aggressive=args.strip_aggressive,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.positive_status is None:
         args.positive_status = list(DEFAULT_POSITIVE_STATUSES)
     if args.negative_status is None:

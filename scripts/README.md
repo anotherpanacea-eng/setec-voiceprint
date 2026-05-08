@@ -78,6 +78,7 @@ python3 variance_audit.py INPUT.txt
 python3 variance_audit.py INPUT.txt --json
 python3 variance_audit.py INPUT.txt --baseline-dir ../baselines/literary-fiction/
 python3 variance_audit.py INPUT.txt --no-tier2 --no-tier3
+python3 variance_audit.py INPUT.txt --allow-non-prose
 ```
 
 ### Tiers and dependencies
@@ -125,6 +126,20 @@ Or fallback to TF-IDF cosine via scikit-learn:
 pip install scikit-learn
 ```
 
+### Corpus-hygiene preprocessing
+
+By default, `variance_audit.py` strips suspected non-prose before tokenization and POS-tagging: HTML/CSS/JS blocks, Markdown code fences, indented code blocks, inline code, loose CSS rules, conservative HTML tags, JSON-shaped blocks, ASCII tables, and YAML front matter. The same preprocessing rules apply symmetrically to every baseline file, because target-only cleanup would make the baseline comparison dishonest.
+
+Relevant flags:
+
+- `--allow-non-prose` — opt out of stripping. JSON records the opt-out because KL/JSD readings may include markup or code contamination.
+- `--strip-rules a,b,c` — enable only the named conservative rules.
+- `--strip-aggressive` — additionally strip URL-only lines, Markdown image URLs, link wrappers, footnote markers, and high-confidence citations.
+- `--strip-warn-threshold X` — warn on stderr when target or any baseline file loses more than this fraction of whitespace tokens (default `0.05`).
+- `--show-stripped [path]` — write stripped target fragments to stderr or to the supplied path for debugging.
+
+JSON carries a top-level `preprocessing` block for the target and `baseline.preprocessing` for the corpus aggregate, including `per_file` detail so contaminated baseline sources can be identified.
+
 ### Output format
 
 Default output is a human-readable summary printed to stdout. Pass `--json` for a complete JSON object suitable for piping into another tool.
@@ -134,6 +149,17 @@ The JSON shape:
 ```json
 {
   "task_surface": "smoothing_diagnosis",
+  "preprocessing": {
+    "applied": true,
+    "rules_active": [...],
+    "input_tokens_before": ...,
+    "input_tokens_after": ...,
+    "tokens_stripped": ...,
+    "tokens_stripped_by_rule": {...},
+    "strip_ratio": ...,
+    "dominant_rule": "css_rule_block",
+    "warning": null
+  },
   "audit": {
     "summary": {"n_words": ..., "n_sentences": ..., "reliable": ...},
     "tier1": { ... },
@@ -151,7 +177,7 @@ The JSON shape:
     "notes": {...},
     "thresholds_used": {...}
   },
-  "baseline": { ... },
+  "baseline": { "n_files": ..., "aggregate": {...}, "preprocessing": {...} },
   "baseline_comparison": { ... },
   "baseline_divergences": { "pos_bigrams": {...} }
 }

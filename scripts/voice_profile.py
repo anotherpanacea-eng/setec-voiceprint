@@ -17,6 +17,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from preprocessing import available_rule_names, strip_non_prose
 from stylometry_core import build_profile, load_entries
 
 
@@ -79,6 +80,18 @@ def render_report(profile: dict[str, Any], top_n: int) -> str:
     lines.append("")
     lines.append(f"**Files:** {baseline.get('n_files', 0)}")
     lines.append(f"**Total words:** {baseline.get('total_words', 0)}")
+    prep = profile.get("preprocessing") or {}
+    if prep:
+        if prep.get("opt_out"):
+            lines.append("**Preprocessing:** skipped by `--allow-non-prose`")
+        else:
+            ratio = prep.get("strip_ratio", 0.0)
+            ratio_str = f"{ratio:.1%}" if isinstance(ratio, (int, float)) else "n/a"
+            lines.append(
+                f"**Preprocessing:** stripped {prep.get('tokens_stripped', 0)} "
+                f"tokens ({ratio_str}; dominant rule: "
+                f"{prep.get('dominant_rule') or 'none'})"
+            )
     lines.append(
         f"**Words per file:** mean {baseline.get('mean_words', 0):.0f}, "
         f"range {baseline.get('min_words', 0)}-{baseline.get('max_words', 0)}"
@@ -146,6 +159,17 @@ def main() -> int:
                         help="Rows to show per table (default 20).")
     parser.add_argument("--no-spacy", action="store_true",
                         help="Skip POS and dependency feature families.")
+    parser.add_argument("--allow-non-prose", action="store_true",
+                        help="Skip default corpus-hygiene stripping. Use "
+                             "only when intentionally profiling code-heavy "
+                             "or markup-heavy text.")
+    parser.add_argument("--strip-rules",
+                        help="Comma-separated preprocessing rules to enable. "
+                             "Default: all conservative rules. Available: "
+                             + ", ".join(available_rule_names()) + ".")
+    parser.add_argument("--strip-aggressive", action="store_true",
+                        help="Also strip URL-only lines, image URLs, link "
+                             "wrappers, footnotes, and citations.")
     parser.add_argument("--json", action="store_true", help="Output JSON.")
     parser.add_argument("--out", help="Write report to file instead of stdout.")
     parser.add_argument(
@@ -157,6 +181,15 @@ def main() -> int:
 
     if not args.baseline_dir and not args.manifest:
         parser.error("Provide either --baseline-dir or --manifest.")
+    try:
+        strip_non_prose(
+            "",
+            args.strip_rules,
+            allow_non_prose=args.allow_non_prose,
+            strip_aggressive=args.strip_aggressive,
+        )
+    except ValueError as exc:
+        parser.error(str(exc))
 
     entries = load_entries(
         baseline_dir=args.baseline_dir,
@@ -175,6 +208,9 @@ def main() -> int:
         entries,
         include_spacy=not args.no_spacy,
         limits=build_limits(args),
+        allow_non_prose=args.allow_non_prose,
+        strip_rules=args.strip_rules,
+        strip_aggressive=args.strip_aggressive,
     )
     profile["task_surface"] = TASK_SURFACE
 
