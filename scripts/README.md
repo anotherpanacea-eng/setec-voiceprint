@@ -15,6 +15,8 @@ These scripts ask whether the prose has been smoothed into a narrower-than-typic
 | `repetition_audit.py` | Single document, vocabulary level | Layer A flagged lexical compression and you want specific candidates for restoration |
 | `manuscript_repetition_audit.py` | Whole manuscript, vocabulary level | Surfacing dispersed habit-vocabulary that recurs across chapters |
 | `chapter_distinctiveness_audit.py` | Whole manuscript, vocabulary level | Surfacing words distinctive to one chapter against the rest of the manuscript (leave-one-out, no external baseline) |
+| `bigram_diff.py` | Single document vs. cluster, syntactic level | Variance-audit POS-bigram KL elevated and you want to see which specific bigrams are driving the divergence |
+| `manuscript_bigram_diff.py` | Corpus A vs. corpus B, syntactic level | Comparing the syntactic-template footprint of two corpora at the aggregate level (e.g. AI-collaborated cohort vs. pre-AI archive) |
 
 What these scripts cannot answer: who wrote it, whether the smoothing is an artifact of register or scene type, what to revise. The verdict they license is *"this prose shows characteristics of AI smoothing"* — not *"this prose was written by AI."*
 
@@ -388,6 +390,75 @@ Unreadable baseline files (permission errors, missing files mid-run, encoding fa
 ### Reading the output
 
 Treat the dispersed list as the priority candidates for a manuscript-wide variation pass. Words that show up in the per-chapter view but not the dispersed list are usually local issues; words in the dispersed list are habit signatures that need to be addressed across the manuscript or accepted as voice. Concentrated repetition is the section to read with `aic-flags.md` Layer C source-triage in hand: high cluster_max plus thematic relevance is often earned.
+
+---
+
+## bigram_diff.py
+
+Per-bigram POS-bigram diff between one target document and a comparison cluster. Use after `variance_audit.py`'s POS-bigram KL signal elevates against a baseline and you want to know *which* bigrams are driving the divergence — the granular evidence that aggregate KL hides.
+
+### Usage
+
+```
+python3 bigram_diff.py target.txt --cluster-dir comparators/
+python3 bigram_diff.py target.md --cluster-files a.txt b.txt c.txt
+python3 bigram_diff.py target.md --cluster-dir comparators/ \
+    --cluster-mode mean --top 25 --min-count 5 --json
+```
+
+### Cluster aggregation modes
+
+`--cluster-mode` toggles three strategies:
+
+- `pooled`: sum POS-bigram counts across cluster files, normalize once. Long files dominate the cluster distribution. Use when the cluster represents one source or you want "what is the cluster doing on aggregate."
+- `mean`: average per-file probability distributions (each file weighted equally regardless of length). Use when cluster file lengths vary and you want "what is the cluster typically doing."
+- `both` (default): run both, report side-by-side.
+
+The two modes can disagree meaningfully when cluster files differ in length: a short essay with idiosyncratic syntax has equal weight in `mean` but is drowned out in `pooled`. Reading both lets you see whether a flagged divergence is robust across aggregations.
+
+### Output
+
+Markdown by default with two ranked tables per mode (over-represented in target, under-represented in target). Each row carries the bigram in `POS+POS` form, raw probabilities (target % and cluster %), `Δ pp`, `log₂(p/q)`, the per-bigram KL contribution, and up to two example token pairs. The aggregate KL for the chosen mode is a sum of all per-bigram contributions and matches the variance audit's `pos_bigrams.kl_to_baseline` for the pooled-counts case.
+
+`--json` switches to machine-readable output with `task_surface: smoothing_diagnosis` and per-row dicts containing the same fields.
+
+### Smoothing and frequency floor
+
+`--smoothing-alpha` defaults to 1.0 (Laplace add-1, matching `variance_audit.py`'s POS-bigram KL convention) and applies to the pooled-counts path. The mean path uses ε smoothing on the averaged probabilities because count-level smoothing of an averaged distribution is not well-defined.
+
+`--min-count` filters out bigrams where neither the target nor the cluster reaches the count threshold. Suppresses tail noise from rare bigrams. Default 1 (no filter); 5 to 10 is a reasonable starting point for typical-length documents. Note: the floor only fires in pooled-counts mode in this single-document script. The corpus-vs-corpus `manuscript_bigram_diff.py` applies the floor in both modes.
+
+---
+
+## manuscript_bigram_diff.py
+
+Same per-bigram math as `bigram_diff.py`, lifted to compare two corpora at the aggregate level. Use for register-shaped questions ("what does my AI-collaborated cohort do differently than my pre-AI archive at the syntactic-template level?") rather than document-level outlier questions.
+
+### Usage
+
+```
+python3 manuscript_bigram_diff.py \
+    --corpus-a-dir post_ai/ --label-a "post-ai" \
+    --corpus-b-dir pre_ai/  --label-b "pre-ai"
+python3 manuscript_bigram_diff.py \
+    --corpus-a-files a1.txt a2.txt --corpus-b-files b1.txt b2.txt \
+    --label-a "personas A" --label-b "personas B" \
+    --aggregation pooled --top 25 --min-count 10 --json
+```
+
+### Aggregation modes
+
+`--aggregation` mirrors `bigram_diff.py`'s `--cluster-mode`: `pooled`, `mean`, or `both`. Same trade-offs apply within each corpus.
+
+### Output
+
+Markdown by default with two ranked tables per aggregation mode (over-represented in corpus A, over-represented in corpus B). Same row schema as `bigram_diff.py`. Header reports loaded/skipped file counts per corpus and the labels used.
+
+The `kl_total` reported per aggregation is the sum of per-bigram contributions over the union of bigrams that passed the `min_count` floor; it can differ from `variance_audit.py`'s baseline KL because the audit treats one document as target and the corpus as baseline, while this script aggregates within each corpus before comparing.
+
+### When to reach for it
+
+The variance audit and `bigram_diff.py` operate at the document level. `manuscript_bigram_diff.py` is the cohort-level companion: when you have a labeled corpus split (pre-AI vs. post-AI, native vs. ESL, voice A vs. voice B) and want to know what the syntactic signature of the difference actually is, this script surfaces the bigram-level evidence behind the aggregate KL number.
 
 ---
 

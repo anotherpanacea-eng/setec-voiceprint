@@ -32,6 +32,8 @@ This skill measures whether a target document occupies a narrower-than-typical r
 | `repetition_audit.py` | Single document, vocabulary level | Layer A flagged lexical compression and you want specific habit-vocabulary candidates |
 | `manuscript_repetition_audit.py` | Manuscript, vocabulary level | Surfacing dispersed habit-vocabulary that recurs across chapters at moderate frequency |
 | `chapter_distinctiveness_audit.py` | Manuscript, vocabulary level | Surfacing words distinctive to one chapter against the rest of the manuscript (leave-one-out) |
+| `bigram_diff.py` | Single document vs. cluster, syntactic level | The variance audit's POS-bigram KL elevated against a baseline and you want to know which specific POS-bigrams are driving the divergence |
+| `manuscript_bigram_diff.py` | Corpus A vs. corpus B, syntactic level | Comparing the syntactic-template footprint of two corpora (e.g. AI-collaborated cohort vs. pre-AI archive) at the aggregate level |
 
 ## Quick CLI
 
@@ -61,6 +63,16 @@ python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manuscript_repetition_audit.py" pat
 
 # Chapter-distinctiveness audit (leave-one-out internal baseline; no external baseline needed)
 python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/chapter_distinctiveness_audit.py" path/to/manuscript.md
+
+# Per-bigram diff: target document vs. cluster of comparators (both pooled and per-file mean)
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/bigram_diff.py" path/to/target.md \
+    --cluster-dir path/to/comparators/ --top 20 --min-count 5
+
+# Per-bigram diff: corpus A vs. corpus B at the aggregate level
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manuscript_bigram_diff.py" \
+    --corpus-a-dir path/to/post_ai/ --label-a "post-ai" \
+    --corpus-b-dir path/to/pre_ai/  --label-b "pre-ai" \
+    --top 20 --min-count 10
 ```
 
 ## Setup prerequisite
