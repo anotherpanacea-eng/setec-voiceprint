@@ -17,6 +17,7 @@ These scripts ask whether the prose has been smoothed into a narrower-than-typic
 | `chapter_distinctiveness_audit.py` | Whole manuscript, vocabulary level | Surfacing words distinctive to one chapter against the rest of the manuscript (leave-one-out, no external baseline) |
 | `bigram_diff.py` | Single document vs. cluster, syntactic level | Variance-audit POS-bigram KL elevated and you want to see which specific bigrams are driving the divergence |
 | `manuscript_bigram_diff.py` | Corpus A vs. corpus B, syntactic level | Comparing the syntactic-template footprint of two corpora at the aggregate level (e.g. AI-collaborated cohort vs. pre-AI archive) |
+| `aic_pattern_audit.py` | Single document, named-pattern level (Layer B/C) | Counting named rhetorical patterns (correctio, pseudo-aphorism, manifesto cadence, triplet, professional-parallel stack, plus four nonfiction parallel patterns) at per-thousand-word density, optionally vs. baseline corpus |
 
 What these scripts cannot answer: who wrote it, whether the smoothing is an artifact of register or scene type, what to revise. The verdict they license is *"this prose shows characteristics of AI smoothing"* — not *"this prose was written by AI."*
 
@@ -459,6 +460,66 @@ The `kl_total` reported per aggregation is the sum of per-bigram contributions o
 ### When to reach for it
 
 The variance audit and `bigram_diff.py` operate at the document level. `manuscript_bigram_diff.py` is the cohort-level companion: when you have a labeled corpus split (pre-AI vs. post-AI, native vs. ESL, voice A vs. voice B) and want to know what the syntactic signature of the difference actually is, this script surfaces the bigram-level evidence behind the aggregate KL number.
+
+---
+
+## aic_pattern_audit.py
+
+The framework's first scriptable Layer B/C tool. Counts named rhetorical patterns from `references/aic-flags.md` and `references/source-triage.md` in a target document, reports per-thousand-word density, and (with `--baseline-dir`) compares against a baseline corpus to flag patterns whose density exceeds the writer's voice envelope.
+
+The variance audit and bigram diffs operate at Layer A distributional signals. This script operates one level up at the rhetorical-figure level: it counts the same kinds of patterns the source-triage skill catches manually. Layer C source triage (earned vs. unearned per instance) still requires the writer's judgment; the script's role is to surface candidates and quantitative density signals so the writer can adjudicate efficiently.
+
+### Usage
+
+```
+python3 aic_pattern_audit.py target.md
+python3 aic_pattern_audit.py target.md --baseline-dir personal_pre_ai/
+python3 aic_pattern_audit.py target.md --pattern correctio --pattern pseudo_aphorism --top 30
+python3 aic_pattern_audit.py target.md --baseline-dir personal_pre_ai/ --json
+```
+
+### Patterns detected (v1)
+
+Fiction patterns (per `source-triage.md`):
+
+- **negation_hedge**: `Not X.` followed by an affirming sentence. Earned when the writer is actively sorting; unearned when the negation is narrator pose.
+- **correctio**: inline `not X, but Y` plus the `It is not X. It is Y` frame. Cuts on the payoff test if the affirm sentence repeats the negate.
+- **pseudo_aphorism**: gnomic generalization frames (`X as Y`, `is the Y of Z`, `There is a kind of X in every Y`).
+- **manifesto_cadence**: 3+ consecutive sentences with the same anaphoric head. Earned when each escalates, restricts, or reveals.
+
+Structural / craft patterns:
+
+- **triplet**: 3- or 4-item comma-and lists. Classical figure but at high density reads as rhythmic fill.
+- **professional_parallel_stack**: 3+ adjacent paragraphs with the same opening clause structure (`A X may use them`, `A Z may use them`).
+
+Nonfiction parallel patterns (per `source-triage.md`):
+
+- **false_balance**: `while reasonable people may disagree`, both-sidesing without specifying the disagreement.
+- **hedge_and_affirm**: `while X is generally true, in some cases Y` performs caution while saying nothing definite.
+- **recommendation_template**: `DC must commit to`, `we urge X`, generic-actor + modal + generic-verb.
+- **authority_laundering**: `research has shown`, `experts agree` without naming the research or the experts.
+
+### Output
+
+Markdown by default. Header reports target word count, total pattern hits, and (with baseline) the loaded baseline file count. Summary table shows per-pattern hit count, target density per 1k words, baseline density per 1k words (if supplied), Δ per 1k, and a heuristic severity flag (above 2× baseline, +5/k above baseline, or absent in baseline).
+
+For each pattern with one or more hits, the report renders the flagged instances with sentence indexes, full sentence text, and the regex-matched substring. The writer reviews these for Layer C source-triage adjudication.
+
+`--json` switches to machine-readable output preserving the same structure with `task_surface: smoothing_diagnosis`. Useful for piping into a revision pass: a downstream tool can read the JSON, extract flagged sentences, and ask an LLM for revision suggestions on those specific sentences.
+
+### Markdown blockquote handling
+
+By default the script strips lines starting with `>` (markdown blockquote lines) before processing, on the assumption that quoted passages usually contain other writers' prose and should not inflate the writer's own pattern density. Pass `--keep-quotes` to disable this stripping.
+
+### Known v1 limitations
+
+The disguised-correctio detector matches only the explicit `not X, but Y` inline form and the `It is not X. It is Y` frame. Subtler multi-sentence correctios (`Detection measures X. What it cannot do is Y` and similar non-pronominal-subject pivots) are not captured. v2 will add a sentence-pair detector that looks for negation-then-affirmation patterns across two adjacent sentences with semantic overlap.
+
+Two patterns from the source-triage taxonomy are deferred to v2 because they require richer analysis: **abstraction shielding** (needs named-entity recognition + abstractness scoring to distinguish "stakeholders, communities of color" gestures from earned class-noun usage) and **indefinite-pronoun gesture** (needs context analysis to distinguish narrator-tic from cognitively-loaded indefinite reference).
+
+### Layer C verdict still belongs to the writer
+
+The script reports candidate instances. It does not tell the writer which instances are earned. The framework's deepest principle is that source triage is the writer's call per instance; the script is a diagnostic that surfaces patterns to triage, not an automated triage verdict.
 
 ---
 

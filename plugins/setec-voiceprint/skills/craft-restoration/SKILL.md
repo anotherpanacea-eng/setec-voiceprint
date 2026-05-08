@@ -37,9 +37,30 @@ The four reference documents are at `${CLAUDE_PLUGIN_ROOT}/../../references/`:
 ## Workflow
 
 1. **Identify candidate passages** with the smoothing-diagnosis skill (Surface 1) — Layer A surfaces compressed regions worth a craft pass.
-2. **Run the AIC scan** by reading the passage with `aic-flags.md`'s seven-family taxonomy in mind. Note the genre tolerance band for each flag fired.
-3. **Source-triage every flag** using `source-triage.md`. Three verdicts: earned (the pattern serves a craft purpose in context), unearned (the pattern is symptomatic, not thematic), or earned by frame (the surrounding prose explicitly diagnoses the pattern).
+2. **Run the AIC scan** by reading the passage with `aic-flags.md`'s seven-family taxonomy in mind. Note the genre tolerance band for each flag fired. For a quantitative pre-pass on the named patterns from `source-triage.md`, run `aic_pattern_audit.py` (see CLI block below) which counts negation hedge, disguised correctio, pseudo-aphorism, manifesto cadence, triplet, professional-parallel stack, and the four nonfiction parallel patterns (false-balance, hedge-and-affirm, recommendation template, authority laundering) at per-thousand-word density and (with `--baseline-dir`) flags densities that exceed the writer's pre-AI baseline.
+3. **Source-triage every flag** using `source-triage.md`. Three verdicts: earned (the pattern serves a craft purpose in context), unearned (the pattern is symptomatic, not thematic), or earned by frame (the surrounding prose explicitly diagnoses the pattern). The script reports candidates and density; the earned/unearned verdict is irreducibly the writer's call per instance.
 4. **Recommend revision moves** for unearned flags using `rhetorical-countermoves.md`. The three universal principles steer the move: payoff test (does the pattern pay off in the passage's craft economy?), soft n-gram preservation (don't normalize phrases that carry voice signal), variance reinjection (restore the sub-Gaussian-with-fat-tails shape of the underlying distributions, not just the surface).
+
+## Quick CLI
+
+```bash
+# Per-pattern density audit, no baseline (general thresholds only)
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py" path/to/draft.md
+
+# With personal pre-AI baseline for register-matched comparison
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py" path/to/draft.md \
+    --baseline-dir path/to/personal_pre_ai/
+
+# Filter to specific named patterns
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py" path/to/draft.md \
+    --pattern correctio --pattern pseudo_aphorism --top 30
+
+# JSON output for piping into a revision pass or downstream tooling
+python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py" path/to/draft.md \
+    --baseline-dir path/to/personal_pre_ai/ --json
+```
+
+The audit strips markdown blockquote lines (`>`) by default so quoted passages from other writers do not inflate the writer's pattern density. Pass `--keep-quotes` to disable. Known v1 limitation: the disguised-correctio detector matches only the explicit "not X, but Y" inline form and the "It is not X. It is Y" frame; subtler multi-sentence correctios are not yet captured. v2 will add a sentence-pair detector.
 
 ## The deepest principle
 
