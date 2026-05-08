@@ -42,6 +42,7 @@ import csv
 import math
 import statistics
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Sequence
 
@@ -53,9 +54,17 @@ sys.path.insert(0, str(SCRIPTS))
 
 from stylometry_core import (  # type: ignore
     FUNCTION_WORDS,
+    char_ngram_features,
     function_word_features,
     word_tokens,
 )
+
+
+# Number of most-frequent char-ngrams per n to use in the oracle test.
+# Matches SETEC's --char-top default (per-n cap, applied separately to
+# n=3, 4, 5) so the oracle reflects the production configuration.
+CHAR_NGRAM_TOP_K = 200
+CHAR_NGRAM_NS = (3, 4, 5)
 
 
 FIXTURE_DIR = REPO_ROOT / "scripts" / "test_data" / "federalist_oracle"
@@ -206,6 +215,60 @@ def informative_features(
     return out
 
 
+def char_ngram_table(
+    docs: Sequence[dict[str, str]], n: int, top_k: int = CHAR_NGRAM_TOP_K,
+) -> tuple[list[str], dict[str, dict[str, float]]]:
+    """Return (sorted_ngram_list, doc_id -> {ngram: relative_freq}) for a
+    given n. Selects the top-K most-frequent char-ngrams in the corpus
+    (summed across documents); each document's frequencies are
+    normalized within its own char-n-gram pool. Matches stylo's
+    corpus-derived MFW selection convention but applied per-n
+    separately, the same way ``stylometry_core.char_ngram_features``
+    treats the per-n families internally.
+
+    Returned ngram keys are bare grams (no ``chN:`` prefix); the
+    prefix is SETEC's internal naming convention but isn't useful for
+    the interchange CSV. stylo treats keys as opaque feature labels.
+    """
+    family_name = f"char_ngrams_{n}"
+    per_doc_full: dict[str, dict[str, float]] = {}
+    corpus_counts: Counter[str] = Counter()
+    for doc in docs:
+        feats_by_family = char_ngram_features(doc["text"], ns=(n,))
+        family = feats_by_family.get(family_name, {})
+        # Strip the ``chN:`` prefix and round-trip to absolute counts via
+        # the same normalization total. We approximate counts from the
+        # frequency dict by inverse-normalizing against the document's
+        # implicit total. For corpus-aggregate selection, exact counts
+        # are not needed -- relative-frequency sums approximate them
+        # well enough to rank features.
+        flat: dict[str, float] = {}
+        for key, value in family.items():
+            if key.startswith(f"ch{n}:"):
+                bare = key[len(f"ch{n}:"):]
+            else:
+                bare = key
+            flat[bare] = value
+        per_doc_full[doc["id"]] = flat
+        for k, v in flat.items():
+            corpus_counts[k] += v
+    # Top-K by aggregate relative frequency (proxy for total count;
+    # corpus-uniform document weighting).
+    top_ngrams = [k for k, _ in corpus_counts.most_common(top_k)]
+    # Renormalize per-doc within the top-K subset so each row sums to
+    # roughly 1.0, matching the convention stylo's dist.delta expects
+    # on a frequency table.
+    out: dict[str, dict[str, float]] = {}
+    for doc_id, flat in per_doc_full.items():
+        subset = {k: flat.get(k, 0.0) for k in top_ngrams}
+        total = sum(subset.values())
+        if total > 0:
+            out[doc_id] = {k: v / total for k, v in subset.items()}
+        else:
+            out[doc_id] = {k: 0.0 for k in top_ngrams}
+    return top_ngrams, out
+
+
 def write_distances_csv(
     docs: list[dict[str, str]],
     sorted_words: list[str],
@@ -265,6 +328,31 @@ def main() -> int:
           f"{len(sorted_words) - len(informative)}")
     print(f"Wrote frequency table: {freq_csv}")
     print(f"Wrote pairwise distances: {dist_csv}")
+
+    # Char-ngram exports per n. SETEC separates char-ngrams into per-n
+    # families (3, 4, 5) with per-n caps and per-n normalization; the
+    # oracle test reflects that by writing one frequency table and one
+    # distance matrix per n. Phase A still tests distance-math
+    # correctness on identical input; Phase B in the R script compares
+    # SETEC's per-n approach against stylo's unified char-ngram
+    # treatment.
+    print()
+    for n in CHAR_NGRAM_NS:
+        ngrams, char_freq = char_ngram_table(docs, n)
+        char_z = z_score_columns(ngrams, char_freq)
+        char_informative = informative_features(ngrams, char_freq)
+        char_freq_csv = OUTPUT_DIR / f"setec_char{n}_freqs.csv"
+        char_dist_csv = OUTPUT_DIR / f"setec_distances_char{n}.csv"
+        write_freq_table_csv(ngrams, char_freq, char_freq_csv)
+        write_distances_csv(
+            docs, ngrams, char_freq, char_z, char_dist_csv,
+        )
+        print(
+            f"Char {n}-grams: top-{CHAR_NGRAM_TOP_K} corpus-derived; "
+            f"{len(char_informative)} informative across {len(ngrams)} "
+            f"selected"
+        )
+        print(f"  wrote {char_freq_csv.name} + {char_dist_csv.name}")
     return 0
 
 

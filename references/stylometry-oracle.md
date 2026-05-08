@@ -73,14 +73,16 @@ The oracle test's Phase A operates on function words only (where SETEC and stylo
 
 ## Results (initial run on the Federalist fixture)
 
-**Phase A (distance correctness on identical input): perfect match.**
+**Phase A (distance correctness on identical input): perfect match across all four feature spaces.**
 
-| Metric | Pearson r | Spearman ρ | Mean \|Δ\| | Max \|Δ\| |
+| Feature space | Burrows-Delta Pearson r | Burrows-Delta Mean \|Δ\| | Cosine Pearson r | Cosine Mean \|Δ\| |
 |---|---:|---:|---:|---:|
-| `burrows_delta` | 1.0000 | 1.0000 | 0.000000 | 0.000000 |
-| `cosine_distance` | 1.0000 | 1.0000 | 0.000000 | 0.000000 |
+| Function words (135 fixed list) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
+| Char-3-grams (top-200 corpus-derived) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
+| Char-4-grams (top-200 corpus-derived) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
+| Char-5-grams (top-200 corpus-derived) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
 
-SETEC's pairwise Burrows-Delta and cosine distance computations match stylo's `dist.delta` and `dist.cosine` to floating-point precision when both operate on the same frequency table. The math is verified.
+SETEC's pairwise Burrows-Delta and cosine distance computations match stylo's `dist.delta` and `dist.cosine` to floating-point precision when both operate on the same frequency table, across all four feature spaces SETEC supports. The math is verified for the function-word path *and* for each per-n char-ngram path. SETEC's design choice to separate char-ngrams into per-n families (3, 4, 5) with per-n caps (default 200) and per-n normalization is internally consistent — each per-n table behaves like a standalone Burrows-Delta input, exactly as stylo treats single-MFW tables.
 
 One bug surfaced and fixed during this oracle test: an earlier draft of `scripts/oracle/setec_to_stylo.py` averaged Burrows-Delta over all features in the fixed wordlist, including constant-zero columns (function words from the Mosteller-Wallace + extensions list that don't appear in the Federalist fixture). That produced a systematic factor-of-(n_informative / n_total) ≈ 8/9 underestimate of stylo's Delta — same Pearson 1.0 (perfect linear correlation, identical ranking) but a constant offset on absolute values. Fixed by averaging only over informative features (those with non-zero SD across the corpus), matching both stylo's convention and the production `stylometry_core.family_distance` behavior (which already accumulated abs(z) only when `sd > 0`). The production code was already correct; the oracle harness was wrong. Worth noting because the discovery validates the production path: had the oracle harness's earlier behavior matched production, the test would have falsely reported a math discrepancy. The fix in the oracle harness is recorded in `setec_to_stylo.py`'s `burrows_delta` docstring.
 
@@ -107,8 +109,10 @@ Per issue #4:
 
 ## Limitations and follow-up work
 
-Six documents and 135 function words is a small fixture. The Pearson and Spearman estimates have wide CIs at this N. A larger oracle fixture (e.g., the full Federalist set with disputed authorship, ~85 papers) would tighten the comparison and add a discrimination test (does Spearman ρ between SETEC and stylo hold up when we add Madison's contested papers vs. Hamilton's known papers?).
+Six documents and 135 function words (plus 200 char-ngrams per n) is a small fixture. The Pearson and Spearman estimates have wide CIs at this N. A larger oracle fixture (e.g., the full Federalist set with disputed authorship, ~85 papers) would tighten the comparison and add a discrimination test (does Spearman ρ between SETEC and stylo hold up when we add Madison's contested papers vs. Hamilton's known papers?).
 
-Character n-gram comparison is documented but not tested. Adding a parallel character-n-gram oracle would round out the function-word + char-n-gram + POS-trigram + dependency-n-gram coverage SETEC's `voice_distance.py` provides.
+**Char-n-gram Phase B is roadmap.** The current Phase A confirms SETEC's per-n char-ngram math matches stylo on identical input. A Phase B that lets stylo do its own char-ngram tokenization (`stylo::txt.to.features(parsed, features="c", ngram.size=n)`) and SETEC do its own — then compares — would surface any divergence in the *tokenization* layer (whitespace handling, character normalization, n-gram boundary rules). Lower priority than Phase A correctness; useful for users who want to interpret cross-tool char-ngram results.
+
+**POS-trigram and dependency-n-gram oracle passes are not yet written.** SETEC's `voice_distance.py` reports six feature families total (function words, char-3, char-4, char-5, POS-trigrams, dependency n-grams). The first four are now oracle-verified. POS-trigrams and dependency n-grams require spaCy parses on both sides; stylo doesn't natively do POS or dependency parsing, so the oracle would need a different reference (or a hand-rolled NLTK + stylo bridge). Roadmap.
 
 The fixture is bounded by the public-domain commit constraint. Joshua's personal baseline corpus is not committed (it's voice-cloning input), so the oracle test cannot speak directly to the framework's distance-correctness on his actual data. The Federalist fixture is a valid proxy: same Burrows-Delta math, different register.

@@ -190,6 +190,9 @@ def _fmt(value: float | None, digits: int) -> str:
     return f"{value:.{digits}f}"
 
 
+CHAR_NGRAM_NS = (3, 4, 5)
+
+
 def main() -> int:
     setec_csv = OUTPUT_DIR / "setec_distances.csv"
     stylo_a_csv = OUTPUT_DIR / "stylo_distances_phase_a.csv"
@@ -228,6 +231,24 @@ def main() -> int:
             ),
             setec_csv,
             stylo_a_csv,
+        ),
+        *(
+            render_phase_block(
+                f"Phase A char-ngrams (n={n}): distance correctness on identical input",
+                (
+                    f"SETEC's per-n character n-gram pipeline at n={n}. "
+                    f"Both sides operate on the top-200 corpus-derived "
+                    f"char-{n}-gram frequency table that SETEC's "
+                    f"`stylometry_core.char_ngram_features` produces (per-n "
+                    f"normalization, prefix stripped from feature names for "
+                    f"the interchange CSV). If SETEC's distance math is "
+                    f"correct, the agreement should match floating-point "
+                    f"noise as in the function-word case."
+                ),
+                OUTPUT_DIR / f"setec_distances_char{n}.csv",
+                OUTPUT_DIR / f"stylo_distances_phase_a_char{n}.csv",
+            )
+            for n in CHAR_NGRAM_NS
         ),
         render_phase_block(
             "Phase B: end-to-end on raw text",

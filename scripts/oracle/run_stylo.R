@@ -173,4 +173,42 @@ write.csv(
 )
 cat("  wrote ", mfw_path, "\n", sep = "")
 
+# ---- Phase A char-ngrams: distance correctness on identical input --
+
+# SETEC separates char-ngrams into per-n families (3, 4, 5) with
+# per-n caps (default 200) and per-n normalization. The oracle
+# reflects that: one frequency table per n, each tested independently.
+# This phase tests distance-math correctness on identical input; an
+# end-to-end Phase B for char-ngrams (stylo's own char-ngram
+# tokenization vs. SETEC's) is roadmap.
+
+cat("\nPhase A char-ngrams: distance correctness on identical input\n")
+char_ngram_ns <- c(3, 4, 5)
+for (n in char_ngram_ns) {
+  in_csv <- file.path(output_dir, sprintf("setec_char%d_freqs.csv", n))
+  if (!file.exists(in_csv)) {
+    cat(sprintf("  skip n=%d: %s missing\n", n, basename(in_csv)))
+    next
+  }
+  char_df <- read.csv(in_csv, stringsAsFactors = FALSE, check.names = FALSE)
+  doc_ids_char <- char_df$doc_id
+  char_mat <- as.matrix(char_df[, -1, drop = FALSE])
+  rownames(char_mat) <- doc_ids_char
+  mode(char_mat) <- "numeric"
+
+  delta <- as.matrix(stylo::dist.delta(char_mat))
+  cosine <- as.matrix(stylo::dist.cosine(char_mat))
+
+  out_csv <- file.path(
+    output_dir, sprintf("stylo_distances_phase_a_char%d.csv", n)
+  )
+  file.create(out_csv)
+  write_long(delta, "burrows_delta", out_csv, append = FALSE)
+  write_long(cosine, "cosine_distance", out_csv, append = TRUE)
+  cat(sprintf(
+    "  n=%d: %d documents x %d char-ngrams -> %s\n",
+    n, nrow(char_mat), ncol(char_mat), basename(out_csv)
+  ))
+}
+
 cat("\nDone.\n")

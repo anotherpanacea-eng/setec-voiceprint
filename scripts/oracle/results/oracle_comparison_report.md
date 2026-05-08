@@ -21,6 +21,33 @@ Both sides operate on SETEC's function-word frequency table (135 words from the 
 | `burrows_delta` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
 | `cosine_distance` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
 
+## Phase A char-ngrams (n=3): distance correctness on identical input
+
+SETEC's per-n character n-gram pipeline at n=3. Both sides operate on the top-200 corpus-derived char-3-gram frequency table that SETEC's `stylometry_core.char_ngram_features` produces (per-n normalization, prefix stripped from feature names for the interchange CSV). If SETEC's distance math is correct, the agreement should match floating-point noise as in the function-word case.
+
+| Metric | n pairs | Pearson r | Spearman ρ | Mean |Δ| | Max |Δ| | Relative MAE |
+|---|---:|---:|---:|---:|---:|---:|
+| `burrows_delta` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+| `cosine_distance` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+
+## Phase A char-ngrams (n=4): distance correctness on identical input
+
+SETEC's per-n character n-gram pipeline at n=4. Both sides operate on the top-200 corpus-derived char-4-gram frequency table that SETEC's `stylometry_core.char_ngram_features` produces (per-n normalization, prefix stripped from feature names for the interchange CSV). If SETEC's distance math is correct, the agreement should match floating-point noise as in the function-word case.
+
+| Metric | n pairs | Pearson r | Spearman ρ | Mean |Δ| | Max |Δ| | Relative MAE |
+|---|---:|---:|---:|---:|---:|---:|
+| `burrows_delta` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+| `cosine_distance` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+
+## Phase A char-ngrams (n=5): distance correctness on identical input
+
+SETEC's per-n character n-gram pipeline at n=5. Both sides operate on the top-200 corpus-derived char-5-gram frequency table that SETEC's `stylometry_core.char_ngram_features` produces (per-n normalization, prefix stripped from feature names for the interchange CSV). If SETEC's distance math is correct, the agreement should match floating-point noise as in the function-word case.
+
+| Metric | n pairs | Pearson r | Spearman ρ | Mean |Δ| | Max |Δ| | Relative MAE |
+|---|---:|---:|---:|---:|---:|---:|
+| `burrows_delta` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+| `cosine_distance` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+
 ## Phase B: end-to-end on raw text
 
 SETEC's full pipeline vs. stylo's full pipeline on the raw fixture. SETEC uses its fixed Mosteller-Wallace + extensions wordlist; stylo uses its corpus-derived MFW ranking at the same N. Disagreement here is expected (different feature sets) and is informative about how much the design choice matters for this fixture. Spearman rank correlation is the appropriate measure: we want the same authorship clusters to surface even if absolute distances differ.
