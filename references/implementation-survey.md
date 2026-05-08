@@ -2,6 +2,16 @@
 
 This note records where SETEC should use established libraries, where it should treat existing projects as reference implementations, and where local code is still the right choice. The point is not dependency maximalism. The point is to stop hand-rolling mature statistical machinery when a tested implementation already exists.
 
+## License Compatibility
+
+SETEC ships dual-licensed: GPL-3.0-or-later for code, CC BY-SA 4.0 for documentation prose. That posture constrains which packages can be vendored or hard-required:
+
+- **MIT / BSD libraries** — unconditionally compatible. scikit-learn (BSD-3), SciPy (BSD-3), statsmodels (BSD-3), `jsonschema` (MIT), Pydantic (MIT), spaCy (MIT), sentence-transformers (Apache-2.0). Safe to depend on directly.
+- **Apache-2.0 libraries** — one-way compatible with GPL-3, per [Apache's own GPL-compatibility note](https://www.apache.org/licenses/GPL-compatibility.html). NLTK (Apache-2.0) falls here. SETEC including these in a GPL-3 distribution is fine; the Apache-licensed components keep their license, the SETEC-original code stays GPL-3.
+- **GPL-3 R packages** — compatible at the source-license level. `stylo` (GPL-3), `quanteda` (GPL-3). The practical cost is pulling R into the Python toolchain, which is why we treat them as oracles (run-once-when-validating) rather than runtime dependencies.
+
+Sentence-transformers worth a closer look: the package is Apache-2.0 but the underlying model weights it ships with (e.g. `all-MiniLM-L6-v2`) carry their own licenses — typically Apache-2.0 or CC-BY-SA, but model-specific. If we ever auto-download a model, the license check at adoption time should cover both the package and the chosen model.
+
 ## Decision Rule
 
 Use an external dependency when all of these are true:
@@ -114,13 +124,22 @@ Keyphrase extractors such as YAKE, TextRank-style libraries, `pke`, or `textacy`
 
 ## Implementation Queue
 
-1. **Length-matched bootstrap.** Use SETEC's own window sampler plus `scipy.stats.bootstrap` for confidence intervals over baseline-window statistics. SciPy is already required for the install path; this is now an integration task on existing infrastructure rather than a new dependency. Pairs with the sliding-window mode shipped in `variance_audit.py`.
-2. **Validation harness MVP.** Shipped for `smoothing_diagnosis`: scikit-learn supplies ROC AUC / average precision when installed, statsmodels supplies proportion intervals when installed, and the harness adds paired bootstrap CIs for ranking metrics. The harness reports by register, length bucket, AI status, and **language status** (see ESL handling below), makes the operating-point assumption explicit, and refuses to publish a single aggregate accuracy number absent a stated FPR target. Next pass: add per-signal evaluation, voice-coherence evaluation, and richer labeled fixtures.
-3. **ESL test class for the validation harness.** The brief identifies non-native-English writing as the field's most durable false-positive failure mode (Liang et al. *Patterns* 2023: TOEFL essays produced average FPR 61.22% across seven detectors). Add an `ESL` slice to the validation manifest using `language_status` as the manifest discriminator, and produce a separate FPR report for it. The harness should report ESL-FPR and native-FPR side by side rather than aggregating; a model that achieves 0.5% overall FPR by averaging 0.1% native FPR with 5% ESL FPR is producing the wrong number.
-4. **Adversarial test classes.** Beyond the basic known-AI / AI-edited / mixed split, the harness should evaluate against three adversarial families to be honest about the deployment surface: paraphrase attacks (DIPPER-class T5 paraphrasers; Krishna et al. NeurIPS 2023 baseline), humanizer tools (commercial humanization services like StealthGPT, UndetectableAI, Quillbot — pre-baked smoothing-reversal pipelines), and Unicode-layer attacks (homoglyph swap, zero-width-space insertion; RAID 2024 documents 40%+ accuracy drop on five detectors against unnormalized homoglyphs). Each adversarial class should be a labeled `use: validation` slice with explicit `notes` provenance; the harness reports per-class TPR at the chosen FPR.
-5. **Stylometry oracle checks.** Add a small public fixture and compare SETEC's Delta/cosine outputs against `stylo` results documented in a reproducible note. Keep R optional.
-6. **Idiolect extraction.** Build a keyness/collocation helper inspired by `quanteda::textstat_keyness` and NLTK collocations. Feed the output into `voice_profile.py` as a preservation list, not as a provenance verdict.
-7. **Manifest schema versioning.** When the manifest becomes nested or versioned, introduce `jsonschema` for per-entry structure and keep semantic cross-entry checks in `manifest_validator.py`.
+### Shipped
+
+1. **Length-matched bootstrap.** ✅ Shipped (issue #3, commit `9326005`). `scripts/length_bootstrap.py` provides the window sampler + `scipy.stats.bootstrap` CI machinery; `variance_audit.py --bootstrap` consumes it for per-signal empirical-percentile reporting with BCa CIs.
+2. **Validation harness MVP.** ✅ Shipped (issue #2, commits `3e7d263` + `b5719cc` + `ec76869`). scikit-learn supplies ROC AUC / average precision when installed, statsmodels supplies proportion intervals when installed, and the harness adds paired bootstrap CIs for ranking metrics. Reports by register, length bucket, AI status, and language status; makes the operating-point assumption explicit; refuses to publish a single aggregate accuracy number absent a stated FPR target. Per-signal AUC table with polarity check (`COMPRESSION_HEURISTICS` direction vs. empirical) shipped 2026-05-07.
+3. **Stylometry oracle checks.** ✅ Shipped (issue #4, commit `f70935b`). Federalist Papers fixture at `scripts/test_data/federalist_oracle/`; harness at `scripts/oracle/`; results captured at `references/stylometry-oracle.md`. Phase A: SETEC matches stylo to floating-point precision. Phase B: cosine Spearman 0.97, Burrows-Delta Spearman 0.65 (the fixed-list-vs-corpus-derived-MFW divergence is a documented design choice).
+4. **ESL field on the manifest.** ✅ Shipped (commit `4fb2177`). `language_status` field with the ratchet that warns when non-native entries land in `use: baseline` or `use: voice_profile`. The validation harness slices by `language_status`, so per-class FPR is reported separately rather than aggregated.
+
+### Roadmap (in priority order)
+
+5. **Idiolect extraction.** Build a keyness/collocation helper inspired by `quanteda::textstat_keyness` (chi-square, Fisher exact, likelihood-ratio, PMI) and NLTK collocations (bigram/trigram association measures with frequency floors). Feed the output into `voice_profile.py` as a "do not normalize these phrases" preservation list, not as a provenance verdict. This is issue #5; the next non-trivial substantive feature.
+6. **Adversarial test classes for the harness.** Beyond the basic known-AI / AI-edited / mixed split, the harness should evaluate against three adversarial families: paraphrase attacks (DIPPER-class T5 paraphrasers; Krishna et al. NeurIPS 2023 baseline), humanizer tools (commercial humanization services like StealthGPT, UndetectableAI, Quillbot — pre-baked smoothing-reversal pipelines), and Unicode-layer attacks (homoglyph swap, zero-width-space insertion; RAID 2024 documents 40%+ accuracy drop on five detectors against unnormalized homoglyphs). Each adversarial class should be a labeled `use: validation` slice with explicit `notes` provenance; the harness reports per-class TPR at the chosen FPR.
+7. **Larger ESL test class for the validation harness.** The smoke fixture has zero ESL entries. A real ESL slice using `language_status: non_native_*` as the discriminator would let the harness report ESL-FPR and native-FPR side by side. Liang et al. (*Patterns* 2023) found 61.22% average FPR on TOEFL essays across seven detectors; that's the deployment failure mode this slice would catch.
+8. **Voice-coherence validation harness.** Surface 2 sibling to `validation_harness.py`. Currently the validation surface only evaluates smoothing-diagnosis scores; voice-coherence evaluation needs its own labeled fixture (a corpus where the writer's-baseline-voice ground truth is known) and metric machinery.
+9. **Character-n-gram oracle pass.** The current `references/stylometry-oracle.md` covers function words only. The same harness shape should run on character n-grams (per-n: 3, 4, 5) with `stylo`'s defaults, to confirm SETEC's per-n separation behaves correctly against stylo's unified-family approach.
+10. **Manifest schema versioning.** When the manifest becomes nested or versioned, introduce `jsonschema` for per-entry structure and keep semantic cross-entry checks in `manifest_validator.py`. This is issue #6; deferred until the schema actually grows.
+11. **Stylo additional oracles.** As local stylometry features mature: `stylo::rolling.delta` as a reference for sliding-window voice localization; `stylo::imposters` as a reference for impostor-baseline verification work.
 
 ## Long-Horizon: Local LLM Cross-Perplexity (Phase 7+)
 
