@@ -30,12 +30,29 @@ from typing import Any, Callable, Sequence
 from manifest_validator import resolve_path, validate_manifest
 from preprocessing import available_rule_names, strip_non_prose
 from variance_audit import (
+    COMPRESSION_HEURISTICS,
+    _BASELINE_PATH_TO_HEURISTIC,
     _SIGNAL_PATHS,
     _extract_signal,
     audit_text,
     classify_compression,
     split_words,
 )
+
+
+def _expected_polarity_direction(signal_name: str) -> str | None:
+    """Return 'gt' or 'lt' for signals where COMPRESSION_HEURISTICS
+    encodes a direction ('compressed when value > threshold' or
+    'compressed when value < threshold'); None for signals with no
+    heuristic entry (e.g. function_word_ratio at the audit level
+    without a baseline). The harness uses this to label whether an
+    empirical AUC < 0.5 is the expected polarity for the signal or an
+    unexpected inversion that may indicate a calibration issue."""
+    heuristic_key = _BASELINE_PATH_TO_HEURISTIC.get(signal_name)
+    if heuristic_key is None or heuristic_key not in COMPRESSION_HEURISTICS:
+        return None
+    _, direction, _, _ = COMPRESSION_HEURISTICS[heuristic_key]
+    return direction if direction in ("gt", "lt") else None
 
 
 TASK_SURFACE = "validation"
@@ -598,6 +615,162 @@ def threshold_metrics(
     }
 
 
+def per_signal_ranking_metrics(
+    records: Sequence[dict[str, Any]],
+    *,
+    bootstrap_resamples: int,
+    confidence_level: float,
+    seed: int | None,
+) -> dict[str, Any]:
+    """Run ranking metrics per Layer A signal.
+
+    For each signal in ``_SIGNAL_PATHS`` (the 13 dotted paths exposed by
+    ``variance_audit``), build a ``(label, signal_value)`` paired
+    sample over records where the signal is computable AND the record
+    has a binary label, then compute ROC AUC + average precision +
+    paired bootstrap CIs. Signals where one class lacks at least two
+    usable records are reported with ``method='not_computable'`` and
+    a reason string.
+
+    Polarity note: AUC < 0.5 indicates the signal moves inversely to
+    the positive label class on this corpus. For some signals this is
+    expected (function-word ratio rises with AI compression; MATTR
+    falls with AI compression). The harness reports raw AUC; readers
+    interpret the direction. The ``polarity_hint`` field flags
+    inverted-direction signals so consumers can decide whether to
+    flip them.
+
+    Returns a dict keyed by dotted signal path. Signals are reported
+    in ``_SIGNAL_PATHS`` order, which matches the variance audit's
+    JSON output for cross-referencing.
+    """
+    out: dict[str, Any] = {}
+    for name, _key_path in _SIGNAL_PATHS:
+        # Build paired arrays for this signal
+        pairs: list[tuple[int, float]] = []
+        for r in records:
+            label = r.get("label")
+            if label not in (0, 1):
+                continue
+            sig_scores = r.get("per_signal_scores") or {}
+            v = sig_scores.get(name)
+            if not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+                continue
+            pairs.append((int(label), float(v)))
+
+        labels = [p[0] for p in pairs]
+        scores = [p[1] for p in pairs]
+        n_pos = sum(1 for y in labels if y == 1)
+        n_neg = sum(1 for y in labels if y == 0)
+
+        signal_block: dict[str, Any] = {
+            "n_scored": len(pairs),
+            "n_positive": n_pos,
+            "n_negative": n_neg,
+            "roc_auc": None,
+            "average_precision": None,
+            "method": "not_computable",
+        }
+
+        if n_pos == 0 or n_neg == 0:
+            signal_block["reason"] = (
+                "per-signal ranking requires at least one record per class "
+                "with this signal computable; skipped due to insufficient "
+                "labeled coverage"
+            )
+            out[name] = signal_block
+            continue
+
+        if HAS_SKLEARN:
+            signal_block["roc_auc"] = float(
+                sklearn_metrics.roc_auc_score(labels, scores)
+            )
+            signal_block["average_precision"] = float(
+                sklearn_metrics.average_precision_score(labels, scores)
+            )
+            signal_block["method"] = "sklearn"
+
+            def average_precision_fn(
+                ys: Sequence[int], xs: Sequence[float],
+            ) -> float | None:
+                return float(sklearn_metrics.average_precision_score(ys, xs))
+        else:
+            signal_block["roc_auc"] = fallback_roc_auc(labels, scores)
+            signal_block["average_precision"] = fallback_average_precision(
+                labels, scores,
+            )
+            signal_block["method"] = "stdlib_fallback"
+            average_precision_fn = fallback_average_precision
+
+        # Per-signal bootstrap seed derives from the global seed plus
+        # the signal name so reruns are reproducible per signal and
+        # different signals don't share the same resampling realization.
+        per_signal_seed = derive_seed(seed, "per_signal", name)
+        signal_block["roc_auc_ci"] = paired_bootstrap_ci(
+            labels, scores, fallback_roc_auc,
+            n_resamples=bootstrap_resamples,
+            confidence_level=confidence_level,
+            seed=per_signal_seed,
+        )
+        signal_block["average_precision_ci"] = paired_bootstrap_ci(
+            labels, scores, average_precision_fn,
+            n_resamples=bootstrap_resamples,
+            confidence_level=confidence_level,
+            seed=None if per_signal_seed is None else per_signal_seed + 7919,
+        )
+
+        # Polarity check: COMPRESSION_HEURISTICS encodes the expected
+        # direction per signal (compressed when value 'gt' threshold or
+        # 'lt' threshold). 'gt' signals (yules_k, connective_density,
+        # function_word_ratio, adjacent_cosine_mean) should yield AUC
+        # > 0.5 if the AI=positive label aligns with compression; 'lt'
+        # signals (burstiness_B, mattr, mtld, shannon_entropy, fkgl_sd,
+        # mdd_sd, sentence_length_sd, adjacent_cosine_sd) should yield
+        # AUC < 0.5. The harness reports raw AUC and labels whether
+        # the empirical direction matches the expected one.
+        auc = signal_block["roc_auc"]
+        expected_direction = _expected_polarity_direction(name)
+        if isinstance(auc, (int, float)):
+            signal_block["expected_direction"] = expected_direction
+            if expected_direction == "gt":
+                expected_polarity = "AUC > 0.5"
+                polarity_match = auc > 0.5
+            elif expected_direction == "lt":
+                expected_polarity = "AUC < 0.5"
+                polarity_match = auc < 0.5
+            else:
+                expected_polarity = None
+                polarity_match = None
+            signal_block["polarity_match"] = polarity_match
+            if expected_polarity is None:
+                if auc < 0.5:
+                    signal_block["polarity_hint"] = (
+                        "raw AUC < 0.5 (no expected direction encoded "
+                        "for this signal; reader interprets)"
+                    )
+                elif auc == 0.5:
+                    signal_block["polarity_hint"] = (
+                        "raw AUC == 0.5 -- signal is non-informative on "
+                        "this corpus"
+                    )
+            elif polarity_match is True:
+                signal_block["polarity_hint"] = (
+                    f"matches expected direction ({expected_polarity})"
+                )
+            elif polarity_match is False:
+                signal_block["polarity_hint"] = (
+                    f"does NOT match expected direction "
+                    f"(heuristic predicts {expected_polarity}; "
+                    f"empirical AUC={auc:.3f}). May indicate "
+                    "calibration drift or label-polarity inversion on "
+                    "this corpus."
+                )
+
+        out[name] = signal_block
+
+    return out
+
+
 def metric_block(
     records: Sequence[dict[str, Any]],
     *,
@@ -606,6 +779,7 @@ def metric_block(
     ci_method: str,
     metric_bootstrap_resamples: int,
     seed: int | None,
+    include_per_signal: bool = False,
 ) -> dict[str, Any]:
     counts = Counter(str(r.get("ai_status", "unknown")) for r in records)
     labels = Counter(
@@ -633,6 +807,18 @@ def metric_block(
     )
     if tm is not None:
         block["threshold_metrics"] = tm
+    # Per-signal ranking metrics surface which Layer A signals are
+    # actually carrying the discrimination on this corpus, beyond the
+    # aggregate compression_fraction. Only computed for the overall
+    # slice; per-slice per-signal would explode report size and slice
+    # samples are typically too small for stable per-signal CIs.
+    if include_per_signal:
+        block["per_signal_ranking"] = per_signal_ranking_metrics(
+            records,
+            bootstrap_resamples=metric_bootstrap_resamples,
+            confidence_level=confidence_level,
+            seed=seed,
+        )
     return block
 
 
@@ -669,6 +855,7 @@ def build_slices(
             ci_method=ci_method,
             metric_bootstrap_resamples=metric_bootstrap_resamples,
             seed=seed,
+            include_per_signal=True,
         ),
         "by_register": {},
         "by_length_bucket": {},
@@ -817,6 +1004,30 @@ def render_report(result: dict[str, Any]) -> str:
     lines.append(_render_metric_table({"overall": result["slices"]["overall"]}))
     lines.append("")
 
+    overall_block = result["slices"].get("overall") or {}
+    per_signal = overall_block.get("per_signal_ranking")
+    if per_signal:
+        lines.append("## Per-Signal Discrimination")
+        lines.append("")
+        lines.append(
+            "ROC AUC and average precision computed for each Layer A "
+            "signal independently against the binary AI-vs-human label. "
+            "Signals are computed on stripped-prose text (after the "
+            "corpus-hygiene preprocessor), with records skipped when the "
+            "signal is unavailable for them (Tier 2 missing, length floor "
+            "not met, etc.). AUC < 0.5 indicates the signal moves "
+            "inversely to the positive class on this corpus -- expected "
+            "for some signals (e.g. MATTR, MTLD, FKGL std fall under "
+            "compression; function-word ratio, Yule's K, connective "
+            "density rise under compression). Bootstrap CIs are paired "
+            "(label, signal_value) resamples; for small validation "
+            "corpora these intervals will be wide, which is the right "
+            "signal that per-signal calibration awaits more labeled data."
+        )
+        lines.append("")
+        lines.append(_render_per_signal_table(per_signal))
+        lines.append("")
+
     for title, key in (
         ("By Register", "by_register"),
         ("By Length Bucket", "by_length_bucket"),
@@ -855,6 +1066,28 @@ def render_report(result: dict[str, Any]) -> str:
                 "to omit this table, or `--json` for complete structured output."
             )
     lines.append("")
+    return "\n".join(lines)
+
+
+def _render_per_signal_table(per_signal: dict[str, Any]) -> str:
+    lines = [
+        "| Signal | n | pos | neg | ROC AUC [CI] | Avg precision [CI] | Notes |",
+        "|---|---:|---:|---:|---:|---:|:--|",
+    ]
+    for name, block in per_signal.items():
+        notes_parts: list[str] = []
+        if block.get("polarity_hint"):
+            notes_parts.append(block["polarity_hint"])
+        if block.get("reason"):
+            notes_parts.append(block["reason"])
+        notes = "; ".join(notes_parts) or "--"
+        lines.append(
+            f"| `{name}` | {block.get('n_scored', 0)} | "
+            f"{block.get('n_positive', 0)} | {block.get('n_negative', 0)} | "
+            f"{_fmt_metric_ci(block.get('roc_auc'), block.get('roc_auc_ci'))} | "
+            f"{_fmt_metric_ci(block.get('average_precision'), block.get('average_precision_ci'))} | "
+            f"{notes} |"
+        )
     return "\n".join(lines)
 
 
