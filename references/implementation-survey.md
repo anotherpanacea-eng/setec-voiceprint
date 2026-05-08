@@ -71,9 +71,11 @@ Source: [`jsonschema` validation docs](https://python-jsonschema.readthedocs.io/
 
 Use `stylo` as the main stylometry oracle for Delta-family correctness checks. SETEC already computes Burrows-style distance and cosine distance; `stylo` has battle-tested implementations of Delta variants, cosine distance, rolling Delta, and General Imposters.
 
-Good uses:
+Status: **first comparison shipped.** The Burrows-Delta + cosine-distance correctness check landed in `references/stylometry-oracle.md` with a six-paper Federalist fixture under `scripts/test_data/federalist_oracle/` and the harness at `scripts/oracle/`. Phase-A result: SETEC matches stylo to floating-point precision on both metrics. Phase-B result: cosine Spearman 0.97 (close), Burrows-Delta Spearman 0.65 (the fixed-list-vs-corpus-derived-MFW choice diverges meaningfully on this fixture and is documented as a design choice).
 
-- Compare SETEC's feature-matrix distances against `stylo::dist.delta` and `stylo::dist.cosine` on synthetic and public corpora.
+Good uses (next passes, not yet shipped):
+
+- Compare SETEC's character-n-gram distances against `stylo` on the same fixture (the current oracle covers function words only).
 - Use `stylo::perform.delta` behavior as a reference for classifier-style candidate ranking.
 - Study `stylo::rolling.delta` before building richer sliding-window voice localization.
 - Study `stylo::imposters` before building impostor-baseline verification.
