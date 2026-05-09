@@ -1,0 +1,52 @@
+{
+  "task_surface": "voice_coherence",
+  "tool": "voice_profile",
+  "privacy": "Private; voice-cloning input.",
+  "baseline_summary": {
+    "n_files": 47,
+    "total_words": 142318,
+    "mean_words": 3028.0,
+    "min_words": 412,
+    "max_words": 8920
+  },
+  "selected_features": {
+    "function_words": 22,
+    "punctuation": 7,
+    "char_ngrams_3": 18
+  },
+  "families": {
+    "function_words": {
+      "top_features": [
+        {"name": "the", "mean": 6.21, "sd": 0.41, "cv": 0.066},
+        {"name": "of", "mean": 3.18, "sd": 0.22, "cv": 0.069}
+      ],
+      "most_stable_features": [
+        {"name": "the", "mean": 6.21, "sd": 0.41, "cv": 0.066},
+        {"name": "of", "mean": 3.18, "sd": 0.22, "cv": 0.069},
+        {"name": "and", "mean": 2.94, "sd": 0.27, "cv": 0.092},
+        {"name": "is", "mean": 1.43, "sd": 0.18, "cv": 0.126},
+        {"name": "to", "mean": 2.71, "sd": 0.31, "cv": 0.114}
+      ]
+    },
+    "punctuation": {
+      "top_features": [
+        {"name": "comma_per_100w", "mean": 7.82, "sd": 0.45, "cv": 0.058}
+      ],
+      "most_stable_features": [
+        {"name": "punct_total_per_100w", "mean": 15.87, "sd": 0.76, "cv": 0.048},
+        {"name": "comma_per_100w", "mean": 7.82, "sd": 0.45, "cv": 0.058},
+        {"name": "period_per_100w", "mean": 5.04, "sd": 0.32, "cv": 0.063},
+        {"name": "question_per_100s", "mean": 6.45, "sd": 1.45, "cv": 0.225}
+      ]
+    },
+    "char_ngrams_3": {
+      "top_features": [
+        {"name": "the", "mean": 12.4, "sd": 0.6, "cv": 0.048}
+      ],
+      "most_stable_features": [
+        {"name": "the", "mean": 12.4, "sd": 0.6, "cv": 0.048},
+        {"name": "_th", "mean": 10.3, "sd": 0.7, "cv": 0.068}
+      ]
+    }
+  }
+}

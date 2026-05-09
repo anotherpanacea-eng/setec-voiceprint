@@ -6,6 +6,37 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.20.0] - 2026-05-09
+
+Author-facing voice insights report generation. Closes the v2 deliverable from the 2026-05-08 spec: `generate_voice_report.py` consumes the JSON outputs of `voice_profile.py`, `voice_drift_tracker.py`, and `idiolect_detector.py` and emits a markdown report shaped like the canonical template at `references/templates/voice_insights_report.template.md`. The architectural split the framework considers load-bearing — numerical sections populated programmatically, interpretive sections emitted as `{TODO: interpret}` markers for an LLM/human editorial pass — is enforced by a hard test invariant (`test_no_auto_prose_in_interpretive_sections`).
+
+### Added
+
+- **`scripts/generate_voice_report.py`** with three report shapes auto-selected by which inputs are present:
+  - **Profile-only.** `--voice-profile` only. Sections: Header, Durable voiceprint, Idiolectic vocabulary, Three observations, What this cannot say, What's distinctive.
+  - **Profile + drift.** Adds an Era / drift section if `--voice-drift` is supplied.
+  - **Profile + drift + comparison.** Adds a Comparison-to-control section if `--comparison-drift` is supplied alongside `--voice-drift`.
+- **Numerical sections populated automatically** from the corresponding JSON outputs:
+  - Header counts (`baseline_summary.n_files`, `total_words`, optional date range from drift periods).
+  - Durable voiceprint tables: per-family `most_stable_features` filtered to features whose CV is at or below `--cv-ceiling` (default 0.10) and whose mean is non-zero.
+  - Idiolect tables: phrases from `idiolect_detector.py` n=1, n=2, n=3 outputs aggregated and split into topic-domain vs. rhetorical-move buckets via a leading-function-word + stopword-ratio heuristic (the editor can rebalance after reading the tables).
+  - Drift cross-period magnitudes: weighted Burrows-Delta + cosine distance per period pair.
+  - Drift drifting/stable feature lists: per-family with CV and mean values.
+  - Comparison headline magnitudes: subject's vs. control's max-pair Burrows-Delta. The framing reflects the spec's calibration finding that drift magnitude alone is not diagnostic — drift shape is.
+- **Interpretive sections emit `{TODO: interpret: <hint>}`** markers carrying enough context (which feature, which direction, which magnitude) for an LLM/human editor to write the prose downstream without re-reading the source JSON. Sections that are entirely manual: durable-voiceprint prose, idiolect interpretation (topic vs. voice), drift cluster paragraphs, comparison diagnostic signatures, three observations, what's distinctive. The `cannot say` section is template boilerplate with substitutions for `--register` and `--ai-disclosure`.
+- **`references/templates/voice_insights_report.template.md`** moved from `internal/templates/` so it ships with the plugin install. The script reads the default template path from `${CLAUDE_PLUGIN_ROOT}/references/templates/...`; users can supply a custom template via the existing `--out` redirect pattern (the script writes the populated report; users compare against the template themselves).
+- **Privacy guard.** Reports contain voiceprint signatures — voice-cloning input. Default `--out` paths must live under `ai-prose-baselines-private/`; the marker-based check refuses non-private output unless `--allow-public-output` is set. Stdout is allowed without the override flag for interactive use (the user is the audience).
+- **Synthetic JSON fixture set** under `plugins/setec-voiceprint/scripts/test_data/voice_report_fixture/`: `voice_profile.json`, `voice_drift.json`, `idiolect_n1.json`, `idiolect_n2.json`, `control_drift.json`. All shaped to match the real script outputs; fixture values are illustrative (not real corpus measurements).
+- **38 new regression tests** in `scripts/tests/test_generate_voice_report.py`: helper unit coverage (`todo` marker format, `_format_value` buckets, `_baseline_summary` defensive read, `_stable_features` CV filter and zero-mean drop, idiolect aggregation across n-gram sizes, topic-vs-rhetorical split heuristic, date-range extraction); per-section renderer coverage (header counts + disclosure block visibility, durable voiceprint table + TODO + thin-corpus fallback, idiolect topic + rhetorical tables, drift cross-period table + drifting/stable summaries, comparison headline magnitudes); full-report shape coverage (all section headers present when all inputs supplied, optional sections omitted when inputs absent, no auto-generated prose in interpretive sections, blank-line collapse, trailing newline); end-to-end `run()` coverage (writes to `--out` with privacy guard, stdout fallback, profile-only invocation, missing-input exit code); CLI surface coverage (every flag in `--help`, argparse rejects missing required flags).
+
+### Notes
+
+- **297 tests pass + 2 skipped** (was 259 + 2 in 1.19.0; +38 new). Tests do not require any acquisition deps; only stdlib + the plugin's own modules.
+- The framework's deepest principle is encoded as a test invariant: `test_no_auto_prose_in_interpretive_sections` asserts that the Three Observations and What's Distinctive sections each emit exactly 3 `{TODO: interpret}` markers and contain no auto-generated prose paragraphs. Future revisions of the section renderers must preserve this contract.
+- The script's TODO hints are designed for LLM consumption: each carries the section's purpose, the feature/phrase names from the data the editor should reference, and (where applicable) the direction or magnitude they should comment on. Users running an LLM pass over the report can paste the report verbatim into their editor and the model will have enough context to fill the TODOs.
+- Three-way version sync at 1.20.0 across `plugin.json :: version`, `marketplace.json :: metadata.version`, `marketplace.json :: plugins[0].version`. New keyword `voice-insights-report` added to both files.
+- The 2026-05-08 impostor-corpus spec's v1 lanes (live blog, Blogger Takeout, PDF library, online magazine) all shipped 1.15.0 / 1.17.0 / 1.18.0 / 1.19.0. The v2 voice-insights deliverable now ships in 1.20.0. Remaining roadmap items: General Imposters validation harness wireup, additional magazine modules, frequency-table-only acquisition mode, calibration toolchain extensions (RAID + MAGE benchmark fetchers).
+
 ## [1.19.0] - 2026-05-09
 
 Online literary-horror magazine acquisition. Closes the second v1 acquisition lane from `internal/2026-05-08-impostor-corpus-spec.md`: site-specific scraper modules for Nightmare and The Dark behind a uniform CLI, producing register-matched literary-horror prose for the General Imposters impostor pool. With this release, **all four v1 acquisition lanes ship** — live blog (1.15.0), offline Blogger Takeout (1.17.0), PDF library (1.18.0), and online magazines (1.19.0).

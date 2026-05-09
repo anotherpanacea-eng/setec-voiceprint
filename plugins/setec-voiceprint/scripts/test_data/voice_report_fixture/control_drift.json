@@ -1,0 +1,23 @@
+{
+  "task_surface": "voice_coherence",
+  "tool": "voice_drift_tracker",
+  "granularity": "year",
+  "n_periods": 2,
+  "periods": [
+    {"label": "2018", "n_docs": 28, "n_words": 70112},
+    {"label": "2022", "n_docs": 30, "n_words": 80020}
+  ],
+  "cross_period_distances_weighted": [
+    {"period_a": "2018", "period_b": "2022",
+     "burrows_delta": 0.268, "cosine_distance": 0.0058}
+  ],
+  "drift_scores": {
+    "function_words": {
+      "drifting": [
+        {"name": "we", "cv": 0.310, "mean_across_periods": 1.21,
+         "sd_across_periods": 0.37}
+      ],
+      "stable": []
+    }
+  }
+}

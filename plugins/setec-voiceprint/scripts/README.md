@@ -1403,6 +1403,87 @@ drift.
 
 ---
 
+## generate_voice_report.py
+
+Consumes the JSON outputs of `voice_profile.py`, `voice_drift_tracker.py`, and
+`idiolect_detector.py` and emits an author-facing markdown report shaped like
+the canonical template at `references/templates/voice_insights_report.template.md`.
+
+The report follows an architectural split the framework considers load-
+bearing:
+
+- **Numerical sections** are populated programmatically — header counts,
+  durable voiceprint tables (CV-filtered features per family), idiolect
+  tables (topic-domain + rhetorical-move signatures), cross-period distance
+  matrix, drifting / stable feature lists, comparison-to-control headline
+  magnitudes.
+- **Interpretive sections** are emitted as `{TODO: interpret: <hint>}`
+  markers with enough context (which feature, which direction, which
+  magnitude) for an LLM/human pass to write the prose downstream. The script
+  does not try to auto-generate the interpretive readings; the framework's
+  deepest principle is that the writer's local read decides.
+
+Three report shapes are auto-selected by which inputs are present: profile-
+only (`--voice-profile` only), profile + drift (adds drift section), profile
++ drift + comparison (adds comparison-to-control section).
+
+### Usage
+
+```
+# Profile + drift + idiolect, no comparison:
+python3 scripts/generate_voice_report.py \
+    --voice-profile path/to/voice_profile.json \
+    --voice-drift path/to/drift.json \
+    --idiolect-n1 path/to/idiolect_n1.json \
+    --idiolect-n2 path/to/idiolect_n2.json \
+    --idiolect-n3 path/to/idiolect_n3.json \
+    --author-name "Author Name" \
+    --corpus-label "Author's blog" \
+    --register blog_essay \
+    --ai-disclosure "no AI use on this blog at any point" \
+    --out ../ai-prose-baselines-private/voice_insights.md
+
+# With a confirmed-human matched-window control for comparison:
+python3 scripts/generate_voice_report.py \
+    --voice-profile subject_profile.json \
+    --voice-drift subject_drift.json \
+    --comparison-drift control_drift.json \
+    --idiolect-n1 idiolect_n1.json \
+    --idiolect-n2 idiolect_n2.json \
+    --author-name "Subject" \
+    --corpus-label "Subject's blog" \
+    --control-writer-name "Control Writer" \
+    --register blog_essay \
+    --out ../ai-prose-baselines-private/cross_boundary_report.md
+```
+
+### LLM editorial pass
+
+The emitted report is a draft. Run an LLM pass over it (or write the
+interpretations by hand) to fill the `{TODO: interpret}` markers. The hints
+in each marker carry enough context that an LLM with the report as input
+can produce reasonable interpretive prose without needing the source JSON.
+Save the populated report alongside the original draft for diff review.
+
+### Privacy
+
+Reports contain voiceprint signatures — voice-cloning input. Default `--out`
+paths must live under `ai-prose-baselines-private/`. Stdout is allowed
+without the override flag for interactive use; piping into a file outside
+the private root requires `--allow-public-output`.
+
+### Reference reports
+
+Three reference reports produced during framework development sit (privately,
+under the user's `ai-prose-baselines-private/`) at `impostors/blog_essay/
+critical_animal_blog/_analysis/critical_animal_voice_insights.md` (single-
+corpus profile shape), `joshua_voice_drift/joshua_drift_insights.md` (profile
++ drift shape), and `scu_voice_drift/scu_drift_insights_and_comparison.md`
+(profile + drift + comparison shape). These are not committable but pin what
+the populated report should look like after the LLM pass.
+
+---
+
 ## Corpus manifest format
 
 A manifest is JSONL: one JSON object per file. Paths may be absolute or relative

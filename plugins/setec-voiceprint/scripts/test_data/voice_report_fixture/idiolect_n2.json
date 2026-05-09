@@ -1,0 +1,24 @@
+{
+  "task_surface": "voice_coherence",
+  "tool": "idiolect_detector",
+  "rankings": {
+    "2": {
+      "idiolectic": [
+        {"phrase": "I think", "display": "I think", "n": 2,
+         "target_count": 142, "reference_count": 38,
+         "target_per_1000": 1.0, "reference_per_1000": 0.04,
+         "log2_ratio": 4.6, "score": 311.0, "score_name": "g2"},
+        {"phrase": "in other words", "display": "in other words", "n": 2,
+         "target_count": 28, "reference_count": 5,
+         "target_per_1000": 0.20, "reference_per_1000": 0.005,
+         "log2_ratio": 5.3, "score": 124.0, "score_name": "g2"},
+        {"phrase": "the question", "display": "the question of", "n": 2,
+         "target_count": 33, "reference_count": 12,
+         "target_per_1000": 0.23, "reference_per_1000": 0.013,
+         "log2_ratio": 4.2, "score": 102.0, "score_name": "g2"}
+      ],
+      "common": []
+    }
+  },
+  "preservation_list": []
+}

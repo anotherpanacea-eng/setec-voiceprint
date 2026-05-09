@@ -1,0 +1,20 @@
+{
+  "task_surface": "voice_coherence",
+  "tool": "idiolect_detector",
+  "rankings": {
+    "1": {
+      "idiolectic": [
+        {"phrase": "ontology", "display": "ontology", "n": 1,
+         "target_count": 84, "reference_count": 1,
+         "target_per_1000": 0.59, "reference_per_1000": 0.001,
+         "log2_ratio": 9.12, "score": 412.0, "score_name": "g2"},
+        {"phrase": "epistemology", "display": "epistemology", "n": 1,
+         "target_count": 51, "reference_count": 1,
+         "target_per_1000": 0.36, "reference_per_1000": 0.001,
+         "log2_ratio": 8.6, "score": 257.0, "score_name": "g2"}
+      ],
+      "common": []
+    }
+  },
+  "preservation_list": []
+}

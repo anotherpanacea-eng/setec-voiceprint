@@ -1,0 +1,47 @@
+{
+  "task_surface": "voice_coherence",
+  "tool": "voice_drift_tracker",
+  "granularity": "year",
+  "n_periods": 2,
+  "periods": [
+    {"label": "2018", "n_docs": 22, "n_words": 71400},
+    {"label": "2022", "n_docs": 25, "n_words": 70918}
+  ],
+  "dropped_periods": [],
+  "cross_period_distances_per_family": {
+    "function_words": [
+      {"period_a": "2018", "period_b": "2022",
+       "burrows_delta": 0.412, "cosine_distance": 0.0074}
+    ]
+  },
+  "cross_period_distances_weighted": [
+    {"period_a": "2018", "period_b": "2022",
+     "burrows_delta": 0.272, "cosine_distance": 0.0061}
+  ],
+  "drift_scores": {
+    "function_words": {
+      "drifting": [
+        {"name": "I", "cv": 0.310, "mean_across_periods": 1.84,
+         "sd_across_periods": 0.57},
+        {"name": "we", "cv": 0.275, "mean_across_periods": 0.92,
+         "sd_across_periods": 0.25}
+      ],
+      "stable": [
+        {"name": "the", "cv": 0.041, "mean_across_periods": 6.21,
+         "sd_across_periods": 0.25},
+        {"name": "of", "cv": 0.052, "mean_across_periods": 3.18,
+         "sd_across_periods": 0.16}
+      ]
+    },
+    "punctuation": {
+      "drifting": [
+        {"name": "exclamation_per_100w", "cv": 0.422,
+         "mean_across_periods": 0.18, "sd_across_periods": 0.076}
+      ],
+      "stable": [
+        {"name": "punct_total_per_100w", "cv": 0.044,
+         "mean_across_periods": 15.87, "sd_across_periods": 0.70}
+      ]
+    }
+  }
+}
