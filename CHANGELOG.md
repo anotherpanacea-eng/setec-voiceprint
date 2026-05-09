@@ -6,6 +6,14 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.12.1] - 2026-05-08
+
+Roadmap pass: records the next bounded calibration-corpus follow-ups + flags `voice_drift_tracker.py` as the active next pick under cathedral upgrade #6. No code changes.
+
+### Changed
+
+- `ROADMAP.md`: new "Calibration corpus track" section documenting three bounded follow-ups to the 1.10.0 calibration toolchain — `fetch_raid.py` (RAID benchmark, Apache-2.0, openly redistributable; the most comprehensive openly-licensed AI-detection benchmark), `fetch_mage.py` (MAGE benchmark, MIT; companion to RAID), and `PROVENANCE_TEMPLATE.md` (walkthrough for new users on collecting and labeling personal pre-AI baseline corpora — the irreducible piece of the corpus pool). Each is independently shippable; ordered by leverage. Cathedral upgrade #6 status line updated to flag `voice_drift_tracker.py` as the active next pick (bounded code work on `stylometry_core` primitives, no exotic borrow), with `pov_voice_profile.py` queued behind it.
+
 ## [1.12.0] - 2026-05-08
 
 Closes cathedral upgrade #7 v2. The post-check loop that v1 (1.11.0) left as a manual workflow is now automated: `scripts/before_after_restoration.py` reads "before" and "after" diagnostic JSONs (plus the original `restoration_packet.py` output) and reports per-target verdicts with a metric-gaming detector. The framework's metric-gaming resistance now has both a *preventive* surface (the targetability taxonomy in 1.11.0 refuses to issue revision instructions on aggregate divergences) and a *detective* surface (this release's gaming heuristic flags improved targets whose improvement coincides with worsening avoid-direct aggregates).
@@ -332,7 +340,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.1...HEAD
+[1.12.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.2...v1.11.0
 [1.10.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.1...v1.10.2

@@ -36,7 +36,7 @@ The substantive design moves the roadmap is organized around:
 
 5. **Sliding-window localization.** Whole-chapter distance is blunt. Cathedral version says "the drift is concentrated in paragraphs 12-19, mostly function words and sentence cohesion" with a heatmap. Status: sliding-window mode shipped in `variance_audit.py` with band classification per window; heatmap visualization is roadmap.
 
-6. **Voice profile expansion.** Add idiolectic phrase extraction, collocations, sentence-shape distributions, readability spread, MTLD/MATTR/Yule ranges, time drift, POV-specific profiles, and a "do not normalize these phrases" preservation list. Status: core profile shipped in `voice_profile.py` with function-word, character-n-gram, punctuation cadence, paragraph/dialogue, and pronoun-modal-negation features. Idiolect extraction shipped as `idiolect_detector.py`; time-drift tracking remains roadmap.
+6. **Voice profile expansion.** Add idiolectic phrase extraction, collocations, sentence-shape distributions, readability spread, MTLD/MATTR/Yule ranges, time drift, POV-specific profiles, and a "do not normalize these phrases" preservation list. Status: core profile shipped in `voice_profile.py` with function-word, character-n-gram, punctuation cadence, paragraph/dialogue, and pronoun-modal-negation features. Idiolect extraction shipped as `idiolect_detector.py`. Time-drift tracking (`voice_drift_tracker.py`) is the active next pick — bounded code work on top of the existing `stylometry_core` primitives, no exotic borrow. POV-specific profiles (`pov_voice_profile.py`) follow.
 
 7. **Before/after restoration loop.** Run a draft, revise, rerun, and compare whether the changes restored voice or just gamed the metrics. Without this loop, the tool eventually teaches metric-chasing. Status: scoped, not yet built. Next scoped slice: metric-targeted restoration packets that translate diagnostic outputs into revision-safe prompt targets, then require a SETEC post-check.
 
@@ -117,6 +117,18 @@ The validation and idiolect roadmap should start from known implementations befo
 - Treat R `stylo` as the Delta / cosine / rolling-Delta / General-Imposters oracle before expanding voice-distance verification.
 - Treat `quanteda::textstat_keyness` and NLTK collocations as the design references for idiolect and preservation-list extraction.
 - Keep privacy guards, report claim language, task-surface routing, and craft triage local.
+
+### Calibration corpus track
+
+Cathedral upgrade #3 (validation harness) and the threshold-calibration prerequisite need labeled human-vs-AI corpora. The calibration toolchain shipped in 1.10.0 already includes a license-aware fetcher for Pangram Labs' EditLens (CC BY-NC-SA 4.0, gated; local-only). Two openly redistributable benchmarks remain on the roadmap as bounded follow-ups:
+
+- **`scripts/calibration/fetch_raid.py`.** RAID benchmark (Dugan et al., NAACL 2024; Apache-2.0 dataset on HuggingFace at `liamdugan/raid`). 10M+ generations across 11 generators × 8 domains × 4 decoding strategies × 11 adversarial transforms — the most comprehensive openly-licensed AI-detection benchmark available. Fetcher mirrors `fetch_pangram_editlens.py` shape but without the CC-NC restrictions; can ship calibrated thresholds derived from RAID without the local-only constraint EditLens imposes. Highest-leverage corpus addition because it's both large and unrestrictively-licensed.
+
+- **`scripts/calibration/fetch_mage.py`.** MAGE benchmark (Yichen Li et al., ACL 2024; MIT-licensed; HF `yaful/MAGE`). ~447K examples across 10 datasets. Companion to RAID; the four-benchmark empirical frame `references/implementation-survey.md` records is RAID + MAGE + MAGE-extension + Ghostbuster. Fetcher is a port of the EditLens pattern.
+
+- **`scripts/calibration/PROVENANCE_TEMPLATE.md`.** Walkthrough for new users on collecting and labeling their personal pre-AI baseline corpus — the irreducible piece of the corpus pool that has to come from the user themselves, not online. Documents the manifest conventions, the date-tagging and register-tagging patterns, the privacy-ratchet rules in `manifest_validator.py`, and the borrow-before-building decision tree (when to use Project Gutenberg / PAN authorship corpora as impostor baselines vs. when to curate from personal sources).
+
+The three are independently shippable. RAID first (highest leverage), MAGE second (companion), template third (docs). Each unblocks a calibration run that the current toolchain can already consume.
 
 ## Open architectural questions
 
