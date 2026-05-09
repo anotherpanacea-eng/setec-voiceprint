@@ -1,0 +1,26 @@
+# Calibration-only dependencies for SETEC's threshold calibration toolchain.
+#
+# Install on demand:
+#   pip install -r requirements-calibration.txt
+#
+# These are required by scripts/calibration/* only. Ordinary SETEC
+# variance audits, voice distance, validation harness, and stylometry
+# oracle runs do NOT need them. The core requirements live in
+# requirements.txt; this layer is opt-in.
+#
+# See internal/SPEC_calibration_toolchain.md for the design of the
+# calibration toolchain and the legal posture (CC-NC-SA corpora are
+# downloaded into ai-prose-baselines-private/ and never redistributed).
+
+# HuggingFace dataset download. Pangram's EditLens corpus is gated on
+# HF; users must accept the license terms on the HF dataset page
+# before fetch_pangram_editlens.py can pull it. The pin range bounds
+# both the snapshot_download API stability and the gated-dataset auth
+# flow at the time these scripts were written.
+huggingface_hub>=0.23,<1
+
+# Parquet read for HF dataset payloads. EditLens is distributed as
+# parquet, not CSV. pandas would also work; pyarrow is the lighter
+# dependency and the HF datasets ecosystem already uses it under the
+# hood.
+pyarrow>=14

@@ -55,8 +55,11 @@ import sys
 from pathlib import Path
 from typing import Any, Sequence
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = REPO_ROOT / "scripts"
+# After 1.16.0, scripts live inside the plugin directory.
+# parents[4] is the repo root in dev (and the marketplace root after
+# install); parents[1] is the scripts/ dir for the sys.path import.
+REPO_ROOT = Path(__file__).resolve().parents[4]
+SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 

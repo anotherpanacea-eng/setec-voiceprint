@@ -27,7 +27,7 @@ This skill is a craft-pattern diagnostic and revision adviser. It identifies the
 
 ## Where the content lives
 
-The four reference documents are at `${CLAUDE_PLUGIN_ROOT}/../../references/`:
+The four reference documents are at `${CLAUDE_PLUGIN_ROOT}/references/`:
 
 - **`aic-flags.md`** — Layer B reference. Seven flag families with distributional signatures, named subtypes (Negation hedge, Indefinite-pronoun gesture, Disguised correctio, Pseudo-aphorism, Manifesto cadence), nonfiction parallel pattern set, genre tolerance quick-reference table (7 flags × 6 genres with three tolerance bands plus footnotes), and pattern-synthesis flag compounds.
 - **`source-triage.md`** — Layer C reference. The earned / unearned / earned-by-frame triage methodology, voice-attribution work, voice-slip-vs-lost-callback distinction, multi-register-narrator handling.
@@ -45,18 +45,18 @@ The four reference documents are at `${CLAUDE_PLUGIN_ROOT}/../../references/`:
 
 ```bash
 # Per-pattern density audit, no baseline (general thresholds only)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py" path/to/draft.md
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/aic_pattern_audit.py" path/to/draft.md
 
 # With personal pre-AI baseline for register-matched comparison
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py" path/to/draft.md \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/aic_pattern_audit.py" path/to/draft.md \
     --baseline-dir path/to/personal_pre_ai/
 
 # Filter to specific named patterns
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py" path/to/draft.md \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/aic_pattern_audit.py" path/to/draft.md \
     --pattern correctio --pattern pseudo_aphorism --top 30
 
 # JSON output for piping into a revision pass or downstream tooling
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py" path/to/draft.md \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/aic_pattern_audit.py" path/to/draft.md \
     --baseline-dir path/to/personal_pre_ai/ --json
 ```
 

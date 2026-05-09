@@ -37,32 +37,32 @@ This skill checks the integrity and content hygiene of a SETEC corpus, then repo
 
 ```bash
 # Manifest schema and integrity check
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manifest_validator.py" path/to/corpus_manifest.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest_validator.py" path/to/corpus_manifest.jsonl
 
 # JSON output for piping
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manifest_validator.py" path/to/corpus_manifest.jsonl --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest_validator.py" path/to/corpus_manifest.jsonl --json
 
 # Strict mode (warnings count as errors)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manifest_validator.py" path/to/corpus_manifest.jsonl --strict
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manifest_validator.py" path/to/corpus_manifest.jsonl --strict
 
 # Content-level corpus hygiene check
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/check_corpus.py" \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/check_corpus.py" \
     --manifest path/to/corpus_manifest.jsonl \
     --filter use=baseline
 
 # Validation harness (ranking metrics only — no thresholded rates)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/validation_harness.py" path/to/corpus_manifest.jsonl
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validation_harness.py" path/to/corpus_manifest.jsonl
 
 # Validation harness with corpus hygiene preflight
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/validation_harness.py" \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validation_harness.py" \
     path/to/corpus_manifest.jsonl \
     --check-corpus
 
 # With an explicit operating-point target (publishes thresholded FPR/TPR/precision)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/validation_harness.py" path/to/corpus_manifest.jsonl --fpr-target 0.01
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validation_harness.py" path/to/corpus_manifest.jsonl --fpr-target 0.01
 
 # Refuse to run on a manifest with warnings (not just errors)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/validation_harness.py" path/to/corpus_manifest.jsonl --strict-manifest
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/validation_harness.py" path/to/corpus_manifest.jsonl --strict-manifest
 ```
 
 ## The 0.01% FPR framing
@@ -76,7 +76,7 @@ The manifest carries a `language_status` field (`native | non_native_advanced | 
 ## Setup prerequisite
 
 ```bash
-pip install -r "${CLAUDE_PLUGIN_ROOT}/../../requirements.txt"
+pip install -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
 python -m spacy download en_core_web_sm
 ```
 

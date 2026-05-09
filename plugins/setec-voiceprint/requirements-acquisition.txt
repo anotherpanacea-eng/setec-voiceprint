@@ -1,0 +1,66 @@
+# Acquisition-only dependencies for SETEC's impostor-corpus tooling.
+#
+# Install on demand:
+#   pip install -r requirements-acquisition.txt
+#
+# These are required by `scripts/acquire_blog.py`,
+# `scripts/acquire_magazine.py`, `scripts/pdf_inventory.py`, and
+# `scripts/pdf_extract.py` only. Ordinary SETEC variance audits, voice
+# distance, validation harness, and stylometry oracle runs do NOT need
+# them. The core requirements live in `requirements.txt`; this layer is
+# opt-in like `requirements-calibration.txt`.
+#
+# Acquisition tools acquire long-form prose from third-party sources
+# (Substacks, WordPress / Ghost blogs, generic HTML archives, online
+# magazines, and existing PDF libraries) for the impostor corpus that
+# the future General Imposters validation harness consumes. See
+# `internal/2026-05-08-impostor-corpus-spec.md` and
+# `references/manifest-schema.md` for context. Per-script provenance
+# is recorded in each acquired entry's `acquired_via` manifest field.
+#
+# Network tools honor robots.txt by default; v1 ships no override
+# flag. Acquired text is stored under the same private directory as
+# the user's own baselines (`ai-prose-baselines-private/impostors/`)
+# and is never redistributed.
+
+# HTTP client. Used by the network-bound acquisition scripts for feed,
+# sitemap, archive, and post fetches.
+requests>=2.31
+
+# RSS / Atom feed parsing. Substack and WordPress / Ghost expose feeds
+# at `<url>/feed`, `/feed/`, or `/feed/atom/`; feedparser handles all
+# three uniformly and exposes per-entry `content`, `summary`, `link`,
+# and `published` fields.
+feedparser>=6.0
+
+# HTML parsing for blog and magazine post bodies. lxml is the parser
+# backend BeautifulSoup uses for production HTML; faster and more
+# tolerant than the stdlib `html.parser` fallback.
+beautifulsoup4>=4.12
+lxml>=4.9
+
+# Date parsing across feed and HTML formats. RSS / Atom feeds emit
+# RFC822 dates; magazine archives emit a mix of ISO and human-readable
+# dates. python-dateutil normalizes all of those to `datetime.date`.
+python-dateutil>=2.8
+
+# PDF inventory and text-layer extraction (commit 3 of the impostor-
+# corpus spec). Lighter than `pdfminer.six` for the inventory pass and
+# robust enough for text extraction on academic papers.
+pypdf>=4.0
+
+# Optional: Wayback Machine access for shut-down blogs (Slate Star
+# Codex archive, defunct Substacks). The `wayback` package wraps the
+# CDX API. Acquisition scripts handle ImportError gracefully — if you
+# don't pass `--wayback`, you don't need this dependency.
+# wayback>=0.4
+
+# OCR support for image-only PDFs (commit 3 of the impostor-corpus
+# spec). `ocrmypdf` requires system binaries (tesseract, ghostscript,
+# qpdf) installed separately:
+#
+#   brew install tesseract ghostscript qpdf
+#
+# Acquisition scripts emit a clear "install OCR dependencies or pass
+# --skip-ocr" message when ocrmypdf is unavailable.
+# ocrmypdf>=15

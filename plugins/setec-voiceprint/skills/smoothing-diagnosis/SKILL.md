@@ -37,39 +37,39 @@ This skill measures whether a target document occupies a narrower-than-typical r
 
 ## Quick CLI
 
-The plugin's scripts live at the repo root, two levels up from this skill. Use `${CLAUDE_PLUGIN_ROOT}` to reach them portably:
+The plugin's scripts ship inside the plugin directory at `${CLAUDE_PLUGIN_ROOT}/scripts/`. Use `${CLAUDE_PLUGIN_ROOT}` to reach them portably:
 
 ```bash
 # Whole-document Layer A audit
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/variance_audit.py" path/to/draft.txt
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt
 
 # JSON output for downstream piping
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/variance_audit.py" path/to/draft.txt --json
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt --json
 
 # Compare against a personal baseline (z-scores)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/variance_audit.py" path/to/draft.txt --baseline-dir path/to/baseline/
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt --baseline-dir path/to/baseline/
 
 # Length-matched bootstrap percentiles (recommended at small N or small baselines)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/variance_audit.py" path/to/draft.txt --baseline-dir path/to/baseline/ --bootstrap
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt --baseline-dir path/to/baseline/ --bootstrap
 
 # Sliding-window scan to localize compression within a long document
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/variance_audit.py" path/to/draft.txt --window-size 1000 --window-stride 500
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt --window-size 1000 --window-stride 500
 
 # Cross-chapter manuscript dashboard
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manuscript_audit.py" path/to/manuscript.md --baseline-dir path/to/baseline/
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manuscript_audit.py" path/to/manuscript.md --baseline-dir path/to/baseline/
 
 # Manuscript-aggregate habit-vocabulary audit
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manuscript_repetition_audit.py" path/to/manuscript.md --baseline-dir path/to/baseline/
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manuscript_repetition_audit.py" path/to/manuscript.md --baseline-dir path/to/baseline/
 
 # Chapter-distinctiveness audit (leave-one-out internal baseline; no external baseline needed)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/chapter_distinctiveness_audit.py" path/to/manuscript.md
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/chapter_distinctiveness_audit.py" path/to/manuscript.md
 
 # Per-bigram diff: target document vs. cluster of comparators (both pooled and per-file mean)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/bigram_diff.py" path/to/target.md \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/bigram_diff.py" path/to/target.md \
     --cluster-dir path/to/comparators/ --top 20 --min-count 5
 
 # Per-bigram diff: corpus A vs. corpus B at the aggregate level
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manuscript_bigram_diff.py" \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/manuscript_bigram_diff.py" \
     --corpus-a-dir path/to/post_ai/ --label-a "post-ai" \
     --corpus-b-dir path/to/pre_ai/  --label-b "pre-ai" \
     --top 20 --min-count 10
@@ -80,7 +80,7 @@ python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/manuscript_bigram_diff.py" \
 Before invoking any script, confirm dependencies are installed in the user's Python environment. The plugin's `requirements.txt` declares the runtime stack:
 
 ```bash
-pip install -r "${CLAUDE_PLUGIN_ROOT}/../../requirements.txt"
+pip install -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
 python -m spacy download en_core_web_sm
 ```
 
@@ -88,6 +88,6 @@ The scripts degrade gracefully when Tier 2 (spaCy) or Tier 3 (sentence-transform
 
 ## Interpreting the output
 
-Every script's JSON output and markdown header carry `task_surface: smoothing_diagnosis` so downstream consumers route correctly. The variance audit reports an aggregate band classification plus the eleven per-signal evidence items. Reference math lives at `${CLAUDE_PLUGIN_ROOT}/../../references/distributional-diagnostics.md`. Length floors, calibration warnings, and the writer-specific calibration note are documented there.
+Every script's JSON output and markdown header carry `task_surface: smoothing_diagnosis` so downstream consumers route correctly. The variance audit reports an aggregate band classification plus the eleven per-signal evidence items. Reference math lives at `${CLAUDE_PLUGIN_ROOT}/references/distributional-diagnostics.md`. Length floors, calibration warnings, and the writer-specific calibration note are documented there.
 
 When a baseline is supplied, prefer `--bootstrap` over the default z-score path at small target N (under 1,000 words) or small baseline file counts (under 10 files): the empirical length-matched percentile with a BCa CI is more reliable than a z-score against full-file baseline aggregates.
