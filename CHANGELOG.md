@@ -6,6 +6,23 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.9.2] - 2026-05-08
+
+Step 0 of the calibration toolchain (per `internal/SPEC_calibration_toolchain.md` v2.1): replace the tuple-based `COMPRESSION_HEURISTICS` registry with a `ThresholdSpec` dataclass that carries calibration metadata. Unblocks the rest of the calibration toolchain by giving each per-signal threshold a place to record its provenance slug and provisional flag.
+
+### Changed
+
+- `scripts/variance_audit.py`: `COMPRESSION_HEURISTICS` and `POS_BIGRAM_KL_HEURISTIC` are now `ThresholdSpec` dataclass instances instead of `(threshold, direction, weight, length_floor)` tuples. New fields: `signal_path` (the dotted audit-output path the validation harness uses for score extraction), `provenance` (slug into `scripts/calibration/PROVENANCE.md`, `None` for heuristic thresholds), `provisional` (bool; `True` for heuristic, `False` for calibrated). The registry shape is identical in semantics — every existing field is preserved — but consumers now use attribute access (`spec.value`, `spec.weight`, etc.) rather than tuple unpacking.
+- Mutual-exclusion contract enforced in `ThresholdSpec.__post_init__`: a threshold cannot be both `provisional=True` and have a non-`None` `provenance` slug, and vice versa. Setting `provenance` to a slug requires clearing `provisional`. Bad direction values (anything other than `"gt"` or `"lt"`) also raise. Catches calibration-vs-heuristic confusion at registry definition time, not at output time.
+- Updated all `COMPRESSION_HEURISTICS` consumers to use attribute access: `classify_compression()` (band classifier), `compare_to_baseline()` (length-floor lookup for z-score warnings), POS-bigram KL handling, and `validation_harness.py`'s `_expected_polarity_direction()` polarity check. Behavior is unchanged; the refactor is a code-shape change only.
+- `classify_compression()` JSON output gains a new `calibration_status` block: `{n_calibrated, n_provisional, n_total, calibrated_signals, provisional_signals}`. Each entry in `thresholds_used` now also carries `signal_path`, `provenance`, and `provisional` fields. Backward-compatible (only new fields added; existing fields untouched).
+- `format_summary()` markdown output gains a "Calibration status" footer line that reports "X of Y signal thresholds carry calibration provenance" and points users at `scripts/calibration/PROVENANCE.md`. v1 release ships with `0 of 11 ... all are heuristic` as expected; the footer flips automatically once calibrated thresholds land.
+
+### Added
+
+- New helpers `provisional_signals(heuristics) -> list[str]` and `calibrated_signals(heuristics) -> list[str]` partition the registry by calibration status. Used by the report renderer; will be used by `scripts/calibration/calibrate_thresholds.py` (Step 4 of the toolchain) to look up which signal paths still need calibration runs.
+- `scripts/tests/test_threshold_spec.py`: nine regression tests covering the dataclass contract (default = provisional + no provenance; calibrated must declare provenance; mutex enforcement; direction validation), registry well-formedness (every entry has a non-empty signal_path, valid direction, positive length_floor + weight), `POS_BIGRAM_KL_HEURISTIC` shape, the partition invariant on the `provisional_signals` / `calibrated_signals` helpers, and a "v1 is all provisional" assertion that flips when the first calibrated threshold lands.
+
 ## [1.9.1] - 2026-05-08
 
 Roadmap pass on cathedral upgrade #7 (before/after restoration loop): records the metric-targeted restoration packets framing as the next scoped slice.
@@ -209,7 +226,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.1...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.2...HEAD
+[1.9.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.2...v1.9.0
 [1.8.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.1...v1.8.2

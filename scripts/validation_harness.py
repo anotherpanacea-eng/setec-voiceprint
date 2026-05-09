@@ -52,7 +52,7 @@ def _expected_polarity_direction(signal_name: str) -> str | None:
     heuristic_key = _BASELINE_PATH_TO_HEURISTIC.get(signal_name)
     if heuristic_key is None or heuristic_key not in COMPRESSION_HEURISTICS:
         return None
-    _, direction, _, _ = COMPRESSION_HEURISTICS[heuristic_key]
+    direction = COMPRESSION_HEURISTICS[heuristic_key].direction
     return direction if direction in ("gt", "lt") else None
 
 

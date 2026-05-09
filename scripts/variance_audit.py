@@ -35,6 +35,7 @@ import os
 import re
 import statistics
 import sys
+from dataclasses import dataclass
 
 # Task-surface tag. The framework distinguishes four surfaces:
 #   - smoothing_diagnosis: prose-quality diagnosis, regardless of provenance
@@ -941,7 +942,7 @@ def compare_to_baseline(audit: dict[str, Any], baseline: dict[str, Any]) -> dict
             }
             heuristic_key = _BASELINE_PATH_TO_HEURISTIC.get(name)
             if heuristic_key and heuristic_key in COMPRESSION_HEURISTICS:
-                _, _, _, length_floor = COMPRESSION_HEURISTICS[heuristic_key]
+                length_floor = COMPRESSION_HEURISTICS[heuristic_key].length_floor
                 entry["length_floor"] = length_floor
                 entry["length_floor_satisfied"] = n_words >= length_floor
                 if n_words < length_floor:
@@ -1245,43 +1246,144 @@ def compare_distributions(
 #   - direction is "lt" (compressed when value < threshold) or "gt" (when value > threshold)
 #   - weight is the contribution to band classification (signals differ in reliability)
 #   - length_floor is the minimum word count for the heuristic to be reliable
-COMPRESSION_HEURISTICS: dict[str, tuple[float, str, float, int]] = {
+#
+# Each threshold is a ThresholdSpec dataclass. v1 thresholds carry
+# `provisional=True` and `provenance=None`; calibrated thresholds set
+# `provenance` to a slug from `scripts/calibration/PROVENANCE.md` and
+# clear `provisional`. The two are mutually exclusive (enforced in
+# __post_init__). See `internal/SPEC_calibration_toolchain.md` for
+# the calibration toolchain that populates `provenance`.
+@dataclass
+class ThresholdSpec:
+    """Per-signal threshold specification + calibration metadata.
+
+    `signal_path` is the dotted audit-output path the validation
+    harness uses to extract scores (e.g., `tier1.sentence_length.
+    burstiness_B`). `direction` is the polarity ("gt" = compressed
+    when score > threshold; "lt" = compressed when score < threshold).
+    `weight` and `length_floor` carry through from the original
+    tuple-registry shape.
+
+    Mutual exclusion: `provenance` (calibrated) and `provisional`
+    (heuristic) cannot both be set. A non-provisional threshold must
+    declare a provenance slug; a provisional threshold must not.
+    """
+
+    signal_path: str
+    value: float
+    direction: str
+    weight: float
+    length_floor: int
+    provenance: str | None = None
+    provisional: bool = True
+
+    def __post_init__(self) -> None:
+        if self.direction not in ("gt", "lt"):
+            raise ValueError(
+                f"ThresholdSpec.direction must be 'gt' or 'lt', "
+                f"got {self.direction!r}"
+            )
+        if self.provenance is not None and self.provisional:
+            raise ValueError(
+                "ThresholdSpec: provenance and provisional are "
+                "mutually exclusive. Setting provenance to a slug "
+                "must clear provisional."
+            )
+        if self.provenance is None and not self.provisional:
+            raise ValueError(
+                "ThresholdSpec: a non-provisional threshold must "
+                "declare a provenance slug."
+            )
+
+
+COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     # Burstiness magnitude is the most reliable single signal.
     # Calibration note: literature suggests B < -0.2 is compressed, but real
     # human essayistic prose with long sentences can reach B = -0.4 naturally
     # (verified on pre-AI testimony at B = -0.40). Threshold tightened to -0.4
     # so the heuristic catches the genuine AI mode-collapse case (B < -0.4
     # in the smoke-test AI passage) while sparing essayistic human registers.
-    "burstiness_B": (-0.4, "lt", 2.0, 200),
+    "burstiness_B": ThresholdSpec(
+        signal_path="tier1.sentence_length.burstiness_B",
+        value=-0.4, direction="lt", weight=2.0, length_floor=200,
+    ),
     # Connective density: AI-prose runs 25-50 per 1000 tokens; humans 5-15.
-    "connective_density": (20.0, "gt", 2.0, 200),
+    "connective_density": ThresholdSpec(
+        signal_path="tier1.connective_density.per_1000_tokens",
+        value=20.0, direction="gt", weight=2.0, length_floor=200,
+    ),
     # MATTR: literary fluent fiction runs 0.70-0.82 at window 50.
-    "mattr": (0.65, "lt", 1.0, 300),
+    "mattr": ThresholdSpec(
+        signal_path="tier1.mattr.value",
+        value=0.65, direction="lt", weight=1.0, length_floor=300,
+    ),
     # MTLD: noisy below ~500 words; threshold tightened.
-    "mtld": (60.0, "lt", 1.0, 500),
+    "mtld": ThresholdSpec(
+        signal_path="tier1.mtld",
+        value=60.0, direction="lt", weight=1.0, length_floor=500,
+    ),
     # Yule's K: concentration on frequent types.
-    "yules_k": (200.0, "gt", 1.0, 500),
+    "yules_k": ThresholdSpec(
+        signal_path="tier1.yules_k",
+        value=200.0, direction="gt", weight=1.0, length_floor=500,
+    ),
     # Shannon entropy: the literature reports 9.5-10.5 bits/token for native
     # fiction, but this depends heavily on vocabulary scope and register.
     # Empirical testing on pre-AI human prose across registers found values
     # 8.0-9.6, so the threshold has been removed (set very low) to avoid
     # firing false positives on writers whose vocabulary is naturally focused.
     # Use a personal baseline for entropy comparison instead of the heuristic.
-    "shannon_entropy": (7.0, "lt", 1.0, 2000),
+    "shannon_entropy": ThresholdSpec(
+        signal_path="tier1.shannon_entropy_bits",
+        value=7.0, direction="lt", weight=1.0, length_floor=2000,
+    ),
     # FKGL SD: human prose typically 3-5 across sentences; LLM 0.8-1.5.
-    "fkgl_sd": (1.5, "lt", 1.5, 200),
+    "fkgl_sd": ThresholdSpec(
+        signal_path="tier1.fkgl.sd",
+        value=1.5, direction="lt", weight=1.5, length_floor=200,
+    ),
     # Sentence-length SD is unreliable as a standalone signal because mean
     # sentence length varies dramatically by register (fiction with fragments
     # has SD 6-9; essay has SD 15-20). Burstiness B normalizes for mean and
     # carries this signal more reliably. Threshold raised so it almost never
     # fires; rely on B and on personal baseline z-scores instead.
-    "sentence_length_sd": (5.0, "lt", 0.5, 5000),
+    "sentence_length_sd": ThresholdSpec(
+        signal_path="tier1.sentence_length.sd",
+        value=5.0, direction="lt", weight=0.5, length_floor=5000,
+    ),
     # Adjacent-sentence cosine: tight cohesion is the LLM tell.
-    "adjacent_cosine_mean": (0.60, "gt", 1.5, 200),
-    "adjacent_cosine_sd": (0.12, "lt", 1.0, 300),
+    "adjacent_cosine_mean": ThresholdSpec(
+        signal_path="tier3.adjacent_cosine.mean",
+        value=0.60, direction="gt", weight=1.5, length_floor=200,
+    ),
+    "adjacent_cosine_sd": ThresholdSpec(
+        signal_path="tier3.adjacent_cosine.sd",
+        value=0.12, direction="lt", weight=1.0, length_floor=300,
+    ),
     # MDD-SD: compressed syntactic variation.
-    "mdd_sd": (0.7, "lt", 1.0, 300),
+    "mdd_sd": ThresholdSpec(
+        signal_path="tier2.mdd.sd",
+        value=0.7, direction="lt", weight=1.0, length_floor=300,
+    ),
 }
+
+
+def provisional_signals(
+    heuristics: dict[str, ThresholdSpec] = COMPRESSION_HEURISTICS,
+) -> list[str]:
+    """Return the keys of any threshold whose `provisional` flag is
+    set (i.e., not yet calibrated). Used by report renderers to
+    surface a "X of Y signal thresholds carry calibration provenance"
+    footer."""
+    return [k for k, spec in heuristics.items() if spec.provisional]
+
+
+def calibrated_signals(
+    heuristics: dict[str, ThresholdSpec] = COMPRESSION_HEURISTICS,
+) -> list[str]:
+    """Inverse of `provisional_signals`. Returns keys whose threshold
+    carries a calibration `provenance` slug."""
+    return [k for k, spec in heuristics.items() if not spec.provisional]
 
 
 # POS-bigram KL divergence against a baseline aggregate. Unlike the 11
@@ -1311,7 +1413,10 @@ COMPRESSION_HEURISTICS: dict[str, tuple[float, str, float, int]] = {
 # corpus, where the empirical ROC will tell us whether KL deserves a
 # higher weight than the variance signals on this generation of AI
 # assistance.
-POS_BIGRAM_KL_HEURISTIC: tuple[float, str, float, int] = (0.15, "gt", 2.0, 500)
+POS_BIGRAM_KL_HEURISTIC: ThresholdSpec = ThresholdSpec(
+    signal_path="baseline_divergences.pos_bigrams.kl",
+    value=0.15, direction="gt", weight=2.0, length_floor=500,
+)
 
 
 def classify_compression(
@@ -1338,7 +1443,10 @@ def classify_compression(
             return
         if signal not in COMPRESSION_HEURISTICS:
             return
-        thresh, direction, weight, length_floor = COMPRESSION_HEURISTICS[signal]
+        spec = COMPRESSION_HEURISTICS[signal]
+        thresh, direction, weight, length_floor = (
+            spec.value, spec.direction, spec.weight, spec.length_floor
+        )
         if n_words < length_floor:
             skipped.append(f"{signal} (need {length_floor}+ words, have {n_words})")
             return
@@ -1387,7 +1495,10 @@ def classify_compression(
         pos_pb = divergences.get("pos_bigrams")
         if isinstance(pos_pb, dict) and "kl_to_baseline" in pos_pb:
             kl_value = pos_pb["kl_to_baseline"]
-            kl_threshold, kl_direction, kl_weight, kl_floor = POS_BIGRAM_KL_HEURISTIC
+            kl_threshold = POS_BIGRAM_KL_HEURISTIC.value
+            kl_direction = POS_BIGRAM_KL_HEURISTIC.direction
+            kl_weight = POS_BIGRAM_KL_HEURISTIC.weight
+            kl_floor = POS_BIGRAM_KL_HEURISTIC.length_floor
             pos_bigram_kl_info = {
                 "value": kl_value,
                 "threshold": kl_threshold,
@@ -1448,27 +1559,54 @@ def classify_compression(
             "Cross-check against Layer B."
         )
     if available_weight > 0 and available_weight < 5.0:
+        max_weight = sum(spec.weight for spec in COMPRESSION_HEURISTICS.values())
         notes["evidence"] = (
-            f"Only {available_weight:.1f} of {sum(w for _, _, w, _ in COMPRESSION_HEURISTICS.values()):.1f} "
+            f"Only {available_weight:.1f} of {max_weight:.1f} "
             "max signal weight cleared its length floor. Band is a "
             "fraction-of-available statement, not an absolute count."
         )
 
     thresholds_used = {
-        k: {"threshold": t, "direction": d, "weight": w, "length_floor": lf}
-        for k, (t, d, w, lf) in COMPRESSION_HEURISTICS.items()
+        k: {
+            "threshold": spec.value,
+            "direction": spec.direction,
+            "weight": spec.weight,
+            "length_floor": spec.length_floor,
+            "signal_path": spec.signal_path,
+            "provenance": spec.provenance,
+            "provisional": spec.provisional,
+        }
+        for k, spec in COMPRESSION_HEURISTICS.items()
     }
     # POS-bigram KL is a baseline-relative signal; surface its threshold
     # so consumers see what cutoff the band call used. The
     # `requires_baseline` flag distinguishes it from the variance
     # heuristics that participate in every run.
-    kl_thresh, kl_direction, kl_weight, kl_floor = POS_BIGRAM_KL_HEURISTIC
     thresholds_used["pos_bigram_kl"] = {
-        "threshold": kl_thresh,
-        "direction": kl_direction,
-        "weight": kl_weight,
-        "length_floor": kl_floor,
+        "threshold": POS_BIGRAM_KL_HEURISTIC.value,
+        "direction": POS_BIGRAM_KL_HEURISTIC.direction,
+        "weight": POS_BIGRAM_KL_HEURISTIC.weight,
+        "length_floor": POS_BIGRAM_KL_HEURISTIC.length_floor,
+        "signal_path": POS_BIGRAM_KL_HEURISTIC.signal_path,
+        "provenance": POS_BIGRAM_KL_HEURISTIC.provenance,
+        "provisional": POS_BIGRAM_KL_HEURISTIC.provisional,
         "requires_baseline": True,
+    }
+
+    # Calibration status block: surfaces which signal thresholds carry
+    # calibration provenance vs. which are still provisional/heuristic.
+    # Populated by the calibration toolchain at scripts/calibration/
+    # (see internal/SPEC_calibration_toolchain.md). v1 release ships
+    # with all signals provisional; thresholds get `provenance` slugs
+    # set as calibrated values land.
+    calibrated = calibrated_signals(COMPRESSION_HEURISTICS)
+    provisional = provisional_signals(COMPRESSION_HEURISTICS)
+    calibration_status = {
+        "n_calibrated": len(calibrated),
+        "n_provisional": len(provisional),
+        "n_total": len(COMPRESSION_HEURISTICS),
+        "calibrated_signals": calibrated,
+        "provisional_signals": provisional,
     }
 
     result: dict[str, Any] = {
@@ -1485,6 +1623,7 @@ def classify_compression(
         "n_flagged": len(flagged),
         "notes": notes,
         "thresholds_used": thresholds_used,
+        "calibration_status": calibration_status,
     }
     if pos_bigram_kl_info is not None:
         result["pos_bigram_kl"] = pos_bigram_kl_info
@@ -1565,6 +1704,22 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
     if compression["notes"]:
         for k, v in compression["notes"].items():
             lines.append(f"Note ({k}): {v}")
+    cal_status = compression.get("calibration_status")
+    if isinstance(cal_status, dict):
+        n_calibrated = cal_status.get("n_calibrated", 0)
+        n_total = cal_status.get("n_total", 0)
+        if n_calibrated == 0:
+            lines.append(
+                f"Calibration status: 0 of {n_total} signal thresholds carry "
+                f"calibration provenance; all are heuristic. See "
+                f"scripts/calibration/PROVENANCE.md once thresholds land."
+            )
+        else:
+            lines.append(
+                f"Calibration status: {n_calibrated} of {n_total} signal "
+                f"thresholds carry calibration provenance. See "
+                f"scripts/calibration/PROVENANCE.md for derivation details."
+            )
     lines.append("")
 
     t1 = audit.get("tier1", {})
