@@ -48,6 +48,40 @@ SETEC's per-n character n-gram pipeline at n=5. Both sides operate on the top-20
 | `burrows_delta` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
 | `cosine_distance` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
 
+## Phase A POS-trigrams: distance correctness on identical input
+
+SETEC's POS-trigrams pipeline, exported as a top-300 corpus-derived frequency table. Both sides operate on the same table; if SETEC's distance math is correct, the agreement should match floating-point noise as in the function-word and char-ngram cases. spaCy is the parser of record on both sides (the R side reads SETEC's parse TSVs); Phase A' below verifies the n-gramming code paths independently of distance math.
+
+| Metric | n pairs | Pearson r | Spearman ρ | Mean |Δ| | Max |Δ| | Relative MAE |
+|---|---:|---:|---:|---:|---:|---:|
+| `burrows_delta` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+| `cosine_distance` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+
+## Phase A dependency n-grams (n=2,3): distance correctness on identical input
+
+SETEC's dependency n-grams (n=2,3) pipeline, exported as a top-300 corpus-derived frequency table. Both sides operate on the same table; if SETEC's distance math is correct, the agreement should match floating-point noise as in the function-word and char-ngram cases. spaCy is the parser of record on both sides (the R side reads SETEC's parse TSVs); Phase A' below verifies the n-gramming code paths independently of distance math.
+
+| Metric | n pairs | Pearson r | Spearman ρ | Mean |Δ| | Max |Δ| | Relative MAE |
+|---|---:|---:|---:|---:|---:|---:|
+| `burrows_delta` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+| `cosine_distance` | 30 | 1.0000 | 1.0000 | 0.000000 | 0.000000 | 0.0000 |
+
+## Phase A' POS-trigrams: frequency-table correctness on identical parse
+
+SETEC's per-document spaCy parses are exported to TSV (`results/parses/<doc_id>.tsv`). The R side reads those TSVs and rebuilds the POS-trigrams frequency table from scratch: per-sentence reset, same key format (`pos:A-B-C` / `dep{n}:X-Y[-Z]`), same top-300 corpus-aggregate selection, same per-doc renormalization within the top-K subset. Cell-by-cell agreement here verifies that SETEC's n-gramming + frequency-table-construction code path matches a from-scratch reimplementation, independent of the distance math. setec-only and stylo-only feature counts should be 0 (both sides select the same top-K from the same corpus).
+
+| n cells | setec-only feats | stylo-only feats | Pearson r | Spearman ρ | Mean |Δ| | Max |Δ| |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1800 | 0 | 0 | 1.0000 | 1.0000 | 0.000000 | 0.000000 |
+
+## Phase A' dependency n-grams (n=2,3): frequency-table correctness on identical parse
+
+SETEC's per-document spaCy parses are exported to TSV (`results/parses/<doc_id>.tsv`). The R side reads those TSVs and rebuilds the dependency n-grams (n=2,3) frequency table from scratch: per-sentence reset, same key format (`pos:A-B-C` / `dep{n}:X-Y[-Z]`), same top-300 corpus-aggregate selection, same per-doc renormalization within the top-K subset. Cell-by-cell agreement here verifies that SETEC's n-gramming + frequency-table-construction code path matches a from-scratch reimplementation, independent of the distance math. setec-only and stylo-only feature counts should be 0 (both sides select the same top-K from the same corpus).
+
+| n cells | setec-only feats | stylo-only feats | Pearson r | Spearman ρ | Mean |Δ| | Max |Δ| |
+|---:|---:|---:|---:|---:|---:|---:|
+| 1800 | 0 | 0 | 1.0000 | 1.0000 | 0.000000 | 0.000000 |
+
 ## Phase B: end-to-end on raw text
 
 SETEC's full pipeline vs. stylo's full pipeline on the raw fixture. SETEC uses its fixed Mosteller-Wallace + extensions wordlist; stylo uses its corpus-derived MFW ranking at the same N. Disagreement here is expected (different feature sets) and is informative about how much the design choice matters for this fixture. Spearman rank correlation is the appropriate measure: we want the same authorship clusters to surface even if absolute distances differ.

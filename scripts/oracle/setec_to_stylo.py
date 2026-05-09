@@ -24,16 +24,36 @@ Usage:
 
 Output files (under ``scripts/oracle/results/``):
 
-    setec_function_word_freqs.csv   docs x function-words frequency table
-                                    (relative frequencies, SETEC's fixed
-                                    Mosteller-Wallace + extensions wordlist)
-    setec_distances.csv             long-format pairwise distances
-                                    (doc_a, doc_b, metric, value)
+    setec_function_word_freqs.csv      docs x function-words frequency table
+                                       (relative frequencies, SETEC's fixed
+                                       Mosteller-Wallace + extensions wordlist)
+    setec_distances.csv                long-format pairwise distances
+                                       (doc_a, doc_b, metric, value)
+    setec_char{3,4,5}_freqs.csv        per-n char-ngram frequency tables
+                                       (top-200 corpus-derived per n)
+    setec_distances_char{3,4,5}.csv    per-n char-ngram pairwise distances
+    setec_pos_trigram_freqs.csv        POS-trigram frequency table
+                                       (top-300 corpus-derived)
+    setec_distances_pos_trigrams.csv   POS-trigram pairwise distances
+    setec_dep_ngram_freqs.csv          dependency n-gram (n=2,3) freq table
+                                       (top-300 corpus-derived, single pool)
+    setec_distances_dep_ngrams.csv     dep-n-gram pairwise distances
+    parses/<doc_id>.tsv                per-document spaCy parse interchange
+                                       (sent_idx, tok_idx, pos, dep) for the
+                                       R side's independent n-gramming pass
 
-The first file is the input for ``run_stylo.R``'s Phase A test
-(distance correctness on identical input). The second is SETEC's
-own pairwise Delta + cosine matrix, which the comparison script
-compares against stylo's outputs.
+The frequency-table files are inputs for ``run_stylo.R``'s Phase A
+tests (distance correctness on identical input, one feature space
+per file). The distance files are SETEC's own pairwise Delta +
+cosine matrices, which the comparison script reads against stylo's
+outputs. The parse TSVs let the R side rebuild POS-trigram and
+dep-n-gram frequency tables independently of SETEC's n-gramming
+code, so the n-gramming + frequency-table-construction code paths
+are verified separately from the distance math (Phase A' in
+``compare.py``).
+
+The POS / dep pass requires spaCy; without it, those exports are
+skipped and the rest of the oracle still runs.
 """
 
 from __future__ import annotations
@@ -54,6 +74,8 @@ sys.path.insert(0, str(SCRIPTS))
 
 from stylometry_core import (  # type: ignore
     FUNCTION_WORDS,
+    HAS_SPACY,
+    _NLP,
     char_ngram_features,
     function_word_features,
     word_tokens,
@@ -65,6 +87,14 @@ from stylometry_core import (  # type: ignore
 # n=3, 4, 5) so the oracle reflects the production configuration.
 CHAR_NGRAM_TOP_K = 200
 CHAR_NGRAM_NS = (3, 4, 5)
+
+# Top-K cap for POS-trigram and dependency-n-gram families, matching
+# stylometry_core's family_caps for "pos_trigrams" and
+# "dependency_ngrams". The oracle applies the same selection on the
+# SETEC side so the R-side replication operates on a comparable
+# feature set.
+POS_DEP_TOP_K = 300
+DEP_NGRAM_NS = (2, 3)
 
 
 FIXTURE_DIR = REPO_ROOT / "scripts" / "test_data" / "federalist_oracle"
@@ -269,6 +299,162 @@ def char_ngram_table(
     return top_ngrams, out
 
 
+def parse_documents(
+    docs: Sequence[dict[str, str]],
+) -> dict[str, list[tuple[int, int, str, str]]]:
+    """Parse each document with spaCy and return per-document token
+    records.
+
+    Each record is ``(sent_idx, tok_idx_in_sent, pos, dep)``.
+    ``is_space`` tokens are filtered out so the surviving sequence
+    matches what ``stylometry_core.pos_trigram_features`` and
+    ``dependency_ngram_features`` iterate over: their inner loop is
+    ``[t.pos_ for t in sent if not t.is_space]`` (and the dep
+    counterpart). ``tok_idx_in_sent`` is 0-indexed within the
+    post-filter sentence, so it's a position within the sequence the
+    n-gram windows actually slide over -- not the raw spaCy token
+    offset.
+
+    Returns an empty dict if spaCy is not available; the calling code
+    is responsible for skipping the POS / dep oracle pass in that
+    case.
+    """
+    if not HAS_SPACY or _NLP is None:
+        return {}
+    out: dict[str, list[tuple[int, int, str, str]]] = {}
+    for doc in docs:
+        parsed = _NLP(doc["text"])
+        records: list[tuple[int, int, str, str]] = []
+        for sent_idx, sent in enumerate(parsed.sents):
+            tok_i = 0
+            for tok in sent:
+                if tok.is_space:
+                    continue
+                records.append((sent_idx, tok_i, tok.pos_, tok.dep_))
+                tok_i += 1
+        out[doc["id"]] = records
+    return out
+
+
+def write_parse_tsvs(
+    parses: dict[str, list[tuple[int, int, str, str]]],
+    parse_dir: Path,
+) -> None:
+    """Write one TSV per document at ``<parse_dir>/<doc_id>.tsv`` with
+    columns ``sent_idx``, ``tok_idx``, ``pos``, ``dep``. The TSV is the
+    interchange format the R side reads to do its own independent
+    n-gramming, so the n-gramming + frequency-table-construction code
+    paths can be verified independently of the spaCy parse itself."""
+    parse_dir.mkdir(parents=True, exist_ok=True)
+    for doc_id, records in parses.items():
+        path = parse_dir / f"{doc_id}.tsv"
+        with path.open("w", encoding="utf-8") as fh:
+            fh.write("sent_idx\ttok_idx\tpos\tdep\n")
+            for sent_idx, tok_idx, pos, dep in records:
+                fh.write(f"{sent_idx}\t{tok_idx}\t{pos}\t{dep}\n")
+
+
+def _pos_trigram_freqs(
+    records: list[tuple[int, int, str, str]],
+) -> dict[str, float]:
+    """Replicate ``stylometry_core.pos_trigram_features`` on parsed
+    records. Per-sentence reset, no n-gram windows cross sentence
+    boundaries. Keys are ``pos:A-B-C`` (matching the production naming
+    convention so the interchange CSVs preserve readable feature
+    labels)."""
+    counts: Counter[str] = Counter()
+    total = 0
+    by_sent: dict[int, list[str]] = {}
+    for sent_idx, _tok_idx, pos, _dep in records:
+        by_sent.setdefault(sent_idx, []).append(pos)
+    for tags in by_sent.values():
+        for a, b, c in zip(tags, tags[1:], tags[2:]):
+            counts[f"pos:{a}-{b}-{c}"] += 1
+            total += 1
+    if total == 0:
+        return {}
+    return {k: v / total for k, v in counts.items()}
+
+
+def _dep_ngram_freqs(
+    records: list[tuple[int, int, str, str]],
+    ns: tuple[int, ...] = DEP_NGRAM_NS,
+) -> dict[str, float]:
+    """Replicate ``stylometry_core.dependency_ngram_features``.
+    Per-sentence reset; n-gram windows do not cross sentence
+    boundaries. Single normalization pool spans all n-values (matching
+    production), so ``dep2`` and ``dep3`` keys share one denominator
+    per document."""
+    counts: Counter[str] = Counter()
+    total = 0
+    by_sent: dict[int, list[str]] = {}
+    for sent_idx, _tok_idx, _pos, dep in records:
+        by_sent.setdefault(sent_idx, []).append(dep)
+    for labels in by_sent.values():
+        for n in ns:
+            for gram in zip(*(labels[i:] for i in range(n))):
+                counts[f"dep{n}:{'-'.join(gram)}"] += 1
+                total += 1
+    if total == 0:
+        return {}
+    return {k: v / total for k, v in counts.items()}
+
+
+def pos_trigram_table(
+    parses: dict[str, list[tuple[int, int, str, str]]],
+    top_k: int = POS_DEP_TOP_K,
+) -> tuple[list[str], dict[str, dict[str, float]]]:
+    """Return (sorted_feature_list, doc_id -> {feature: relative_freq})
+    for POS-trigrams. Selection mirrors the char-ngram pattern:
+    top-K corpus-aggregate features, with each document's frequencies
+    renormalized within the top-K subset so rows sum to ~1.0."""
+    per_doc_full: dict[str, dict[str, float]] = {}
+    corpus_counts: Counter[str] = Counter()
+    for doc_id, records in parses.items():
+        feats = _pos_trigram_freqs(records)
+        per_doc_full[doc_id] = feats
+        for k, v in feats.items():
+            corpus_counts[k] += v
+    top = [k for k, _ in corpus_counts.most_common(top_k)]
+    out: dict[str, dict[str, float]] = {}
+    for doc_id, feats in per_doc_full.items():
+        subset = {k: feats.get(k, 0.0) for k in top}
+        total = sum(subset.values())
+        if total > 0:
+            out[doc_id] = {k: v / total for k, v in subset.items()}
+        else:
+            out[doc_id] = {k: 0.0 for k in top}
+    return top, out
+
+
+def dep_ngram_table(
+    parses: dict[str, list[tuple[int, int, str, str]]],
+    top_k: int = POS_DEP_TOP_K,
+    ns: tuple[int, ...] = DEP_NGRAM_NS,
+) -> tuple[list[str], dict[str, dict[str, float]]]:
+    """Return (sorted_feature_list, doc_id -> {feature: relative_freq})
+    for dep n-grams. Same per-doc renormalization on the top-K subset
+    as pos_trigram_table; ``dep2`` and ``dep3`` features share the
+    same pool (matching production)."""
+    per_doc_full: dict[str, dict[str, float]] = {}
+    corpus_counts: Counter[str] = Counter()
+    for doc_id, records in parses.items():
+        feats = _dep_ngram_freqs(records, ns=ns)
+        per_doc_full[doc_id] = feats
+        for k, v in feats.items():
+            corpus_counts[k] += v
+    top = [k for k, _ in corpus_counts.most_common(top_k)]
+    out: dict[str, dict[str, float]] = {}
+    for doc_id, feats in per_doc_full.items():
+        subset = {k: feats.get(k, 0.0) for k in top}
+        total = sum(subset.values())
+        if total > 0:
+            out[doc_id] = {k: v / total for k, v in subset.items()}
+        else:
+            out[doc_id] = {k: 0.0 for k in top}
+    return top, out
+
+
 def write_distances_csv(
     docs: list[dict[str, str]],
     sorted_words: list[str],
@@ -353,6 +539,55 @@ def main() -> int:
             f"selected"
         )
         print(f"  wrote {char_freq_csv.name} + {char_dist_csv.name}")
+
+    # POS-trigram and dependency-n-gram exports. Require spaCy: if not
+    # available, skip with a notice rather than failing - the function-
+    # word and char-ngram passes still run. The R side reads both the
+    # frequency tables (for distance verification) and the parse TSVs
+    # (for independent n-gramming verification).
+    print()
+    parses = parse_documents(docs)
+    if not parses:
+        print("POS / dep oracle pass: spaCy not available; skipping.")
+        print("  Install spaCy + en_core_web_sm via .venv to enable.")
+    else:
+        parse_dir = OUTPUT_DIR / "parses"
+        write_parse_tsvs(parses, parse_dir)
+        rel = parse_dir.relative_to(REPO_ROOT)
+        print(f"POS / dep oracle pass: wrote per-document parse TSVs to {rel}/")
+
+        pos_features, pos_freq = pos_trigram_table(parses)
+        pos_z = z_score_columns(pos_features, pos_freq)
+        pos_informative = informative_features(pos_features, pos_freq)
+        pos_freq_csv = OUTPUT_DIR / "setec_pos_trigram_freqs.csv"
+        pos_dist_csv = OUTPUT_DIR / "setec_distances_pos_trigrams.csv"
+        write_freq_table_csv(pos_features, pos_freq, pos_freq_csv)
+        write_distances_csv(
+            docs, pos_features, pos_freq, pos_z, pos_dist_csv,
+        )
+        print(
+            f"  POS-trigrams: top-{POS_DEP_TOP_K} corpus-derived; "
+            f"{len(pos_informative)} informative across {len(pos_features)} "
+            f"selected"
+        )
+        print(f"    wrote {pos_freq_csv.name} + {pos_dist_csv.name}")
+
+        dep_features, dep_freq = dep_ngram_table(parses)
+        dep_z = z_score_columns(dep_features, dep_freq)
+        dep_informative = informative_features(dep_features, dep_freq)
+        dep_freq_csv = OUTPUT_DIR / "setec_dep_ngram_freqs.csv"
+        dep_dist_csv = OUTPUT_DIR / "setec_distances_dep_ngrams.csv"
+        write_freq_table_csv(dep_features, dep_freq, dep_freq_csv)
+        write_distances_csv(
+            docs, dep_features, dep_freq, dep_z, dep_dist_csv,
+        )
+        print(
+            f"  Dep-n-grams (n={','.join(str(n) for n in DEP_NGRAM_NS)}): "
+            f"top-{POS_DEP_TOP_K} corpus-derived; "
+            f"{len(dep_informative)} informative across {len(dep_features)} "
+            f"selected"
+        )
+        print(f"    wrote {dep_freq_csv.name} + {dep_dist_csv.name}")
     return 0
 
 

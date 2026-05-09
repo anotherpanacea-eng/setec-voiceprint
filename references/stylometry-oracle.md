@@ -6,16 +6,18 @@
 
 Six Federalist Papers (3 Hamilton, 3 Madison; ~13,700 words total) at `scripts/test_data/federalist_oracle/` are the public-domain fixture. The Hamilton-vs-Madison binary is the canonical Mosteller-Wallace stylometric benchmark, originally settled by Mosteller and Wallace's 1964 *Inference and Disputed Authorship*. Both SETEC and stylo should produce distance matrices where within-author distances cluster together and cross-author distances open up.
 
-Two complementary phases:
+Three complementary phases:
 
-**Phase A — distance correctness on identical input.** SETEC's function-word frequency table is exported to CSV. stylo runs `dist.delta` and `dist.cosine` on the same table; SETEC runs its own Burrows-Delta and cosine distance on the same table. If the two implementations agree on the math, the numbers should match to floating-point noise (~1e-10). Disagreement at any larger scale is a math bug. This phase isolates the *distance computation* from feature-selection and tokenization differences.
+**Phase A — distance correctness on identical input.** SETEC exports its frequency table per feature family (function words, char-3-grams, char-4-grams, char-5-grams, POS-trigrams, dependency n-grams) to CSV. stylo runs `dist.delta` and `dist.cosine` on each table; SETEC runs its own Burrows-Delta and cosine distance on the same table. If the two implementations agree on the math, the numbers should match to floating-point noise (~1e-10). Disagreement at any larger scale is a math bug. This phase isolates the *distance computation* from feature-selection and tokenization differences.
 
-**Phase B — end-to-end on raw text.** stylo's full pipeline (its own tokenization, its own corpus-derived MFW ranking) vs. SETEC's full pipeline (its own tokenization, its fixed Mosteller-Wallace + extensions wordlist) on the same raw fixture. Disagreement here is *expected* and *informative*: it shows how much SETEC's design choice (fixed wordlist) diverges from stylo's (corpus-derived ranking) on a real text. Spearman rank correlation is the appropriate measure — we want the Hamilton-vs-Madison cluster structure to surface in both regardless of absolute distance values.
+**Phase A' — frequency-table correctness on identical parse (POS / dep only).** stylo doesn't natively do POS or dependency parsing, so for the POS-trigram and dep-n-gram families the parser of record is spaCy on both sides: SETEC writes per-document parse TSVs, and the R side reads them and rebuilds n-gram frequency tables from scratch using its own per-sentence reset, its own n-gram window construction, its own selection. Cell-by-cell agreement here verifies the n-gramming + frequency-table-construction code path independently of distance math.
+
+**Phase B — end-to-end on raw text (function-words only).** stylo's full pipeline (its own tokenization, its own corpus-derived MFW ranking) vs. SETEC's full pipeline (its own tokenization, its fixed Mosteller-Wallace + extensions wordlist) on the same raw fixture. Disagreement here is *expected* and *informative*: it shows how much SETEC's design choice (fixed wordlist) diverges from stylo's (corpus-derived ranking) on a real text. Spearman rank correlation is the appropriate measure — we want the Hamilton-vs-Madison cluster structure to surface in both regardless of absolute distance values.
 
 The harness lives at `scripts/oracle/`:
 
-- `setec_to_stylo.py` — SETEC side. Reads the fixture, computes the function-word frequency table, computes pairwise Burrows-Delta and cosine distances, writes both as CSVs.
-- `run_stylo.R` — stylo side. Reads the same frequency table for Phase A, runs stylo's full pipeline on the raw `.txt` files for Phase B, writes pairwise distance matrices for both.
+- `setec_to_stylo.py` — SETEC side. Reads the fixture, computes per-family frequency tables (function words, char-3/4/5-grams, POS-trigrams, dep-n-grams) and pairwise Burrows-Delta + cosine distances; for the POS / dep families also writes per-document spaCy parse TSVs to `results/parses/<doc_id>.tsv`.
+- `run_stylo.R` — stylo side. For each frequency table runs `stylo::dist.delta` / `dist.cosine` (Phase A); for the function-word fixture runs stylo's full pipeline on the raw `.txt` files (Phase B); for the POS / dep families reads the parse TSVs and independently rebuilds frequency tables (Phase A'). Writes pairwise distance matrices and reconstructed frequency tables.
 - `compare.py` — generates the markdown comparison report from both sides' outputs.
 
 To run:
@@ -73,7 +75,7 @@ The oracle test's Phase A operates on function words only (where SETEC and stylo
 
 ## Results (initial run on the Federalist fixture)
 
-**Phase A (distance correctness on identical input): perfect match across all four feature spaces.**
+**Phase A (distance correctness on identical input): perfect match across all six feature spaces.**
 
 | Feature space | Burrows-Delta Pearson r | Burrows-Delta Mean \|Δ\| | Cosine Pearson r | Cosine Mean \|Δ\| |
 |---|---:|---:|---:|---:|
@@ -81,8 +83,19 @@ The oracle test's Phase A operates on function words only (where SETEC and stylo
 | Char-3-grams (top-200 corpus-derived) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
 | Char-4-grams (top-200 corpus-derived) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
 | Char-5-grams (top-200 corpus-derived) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
+| POS-trigrams (top-300 corpus-derived) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
+| Dependency n-grams n=2,3 (top-300, single pool) | 1.0000 | 0.000000 | 1.0000 | 0.000000 |
 
-SETEC's pairwise Burrows-Delta and cosine distance computations match stylo's `dist.delta` and `dist.cosine` to floating-point precision when both operate on the same frequency table, across all four feature spaces SETEC supports. The math is verified for the function-word path *and* for each per-n char-ngram path. SETEC's design choice to separate char-ngrams into per-n families (3, 4, 5) with per-n caps (default 200) and per-n normalization is internally consistent — each per-n table behaves like a standalone Burrows-Delta input, exactly as stylo treats single-MFW tables.
+SETEC's pairwise Burrows-Delta and cosine distance computations match stylo's `dist.delta` and `dist.cosine` to floating-point precision when both operate on the same frequency table, across all six feature spaces SETEC supports. The math is verified for the function-word path, for each per-n char-ngram path, for the POS-trigram path, and for the combined dep-2-gram + dep-3-gram path. SETEC's design choice to separate char-ngrams into per-n families (3, 4, 5) with per-n caps (default 200) and per-n normalization is internally consistent — each per-n table behaves like a standalone Burrows-Delta input, exactly as stylo treats single-MFW tables. SETEC's design choice to share a single normalization pool for dep-2 and dep-3 grams (rather than per-n separation) is also internally consistent — the combined table behaves like a single-MFW table at top-300.
+
+**Phase A' (frequency-table reconstruction on identical parse): perfect match for POS-trigrams and dep-n-grams.**
+
+| Feature space | n cells compared | setec-only feats | stylo-only feats | Pearson r | Mean \|Δ\| |
+|---|---:|---:|---:|---:|---:|
+| POS-trigrams | 1800 | 0 | 0 | 1.0000 | 0.000000 |
+| Dependency n-grams (n=2,3) | 1800 | 0 | 0 | 1.0000 | 0.000000 |
+
+Phase A' is the load-bearing addition of the POS / dep oracle pass. SETEC's per-document spaCy parses are exported to TSV (`scripts/oracle/results/parses/<doc_id>.tsv`); the R side reads those TSVs and rebuilds the POS-trigram and dep-n-gram frequency tables from scratch using its own per-sentence reset, its own n-gram window construction, its own key-format string assembly (`pos:A-B-C`, `dep{n}:X-Y[-Z]`), its own top-K corpus-aggregate selection, and its own per-doc renormalization. Cell-by-cell agreement at zero difference (and zero feature-set asymmetry) confirms that SETEC's `pos_trigram_features` / `dependency_ngram_features` + selection + normalization code paths match a from-scratch reimplementation. The only remaining unverified component is the spaCy parse itself, which is the parser of record on both sides — verifying spaCy is out of scope for an oracle test of SETEC's stylometric math.
 
 One bug surfaced and fixed during this oracle test: an earlier draft of `scripts/oracle/setec_to_stylo.py` averaged Burrows-Delta over all features in the fixed wordlist, including constant-zero columns (function words from the Mosteller-Wallace + extensions list that don't appear in the Federalist fixture). That produced a systematic factor-of-(n_informative / n_total) ≈ 8/9 underestimate of stylo's Delta — same Pearson 1.0 (perfect linear correlation, identical ranking) but a constant offset on absolute values. Fixed by averaging only over informative features (those with non-zero SD across the corpus), matching both stylo's convention and the production `stylometry_core.family_distance` behavior (which already accumulated abs(z) only when `sd > 0`). The production code was already correct; the oracle harness was wrong. Worth noting because the discovery validates the production path: had the oracle harness's earlier behavior matched production, the test would have falsely reported a math discrepancy. The fix in the oracle harness is recorded in `setec_to_stylo.py`'s `burrows_delta` docstring.
 
@@ -113,6 +126,8 @@ Six documents and 135 function words (plus 200 char-ngrams per n) is a small fix
 
 **Char-n-gram Phase B is roadmap.** The current Phase A confirms SETEC's per-n char-ngram math matches stylo on identical input. A Phase B that lets stylo do its own char-ngram tokenization (`stylo::txt.to.features(parsed, features="c", ngram.size=n)`) and SETEC do its own — then compares — would surface any divergence in the *tokenization* layer (whitespace handling, character normalization, n-gram boundary rules). Lower priority than Phase A correctness; useful for users who want to interpret cross-tool char-ngram results.
 
-**POS-trigram and dependency-n-gram oracle passes are not yet written.** SETEC's `voice_distance.py` reports six feature families total (function words, char-3, char-4, char-5, POS-trigrams, dependency n-grams). The first four are now oracle-verified. POS-trigrams and dependency n-grams require spaCy parses on both sides; stylo doesn't natively do POS or dependency parsing, so the oracle would need a different reference (or a hand-rolled NLTK + stylo bridge). Roadmap.
+**POS-trigram and dependency-n-gram oracle passes are now oracle-verified.** SETEC's `voice_distance.py` reports six feature families total (function words, char-3, char-4, char-5, POS-trigrams, dependency n-grams). All six are now oracle-verified at floating-point precision. The POS / dep pass uses spaCy as the parser of record on both sides (the R side reads SETEC's per-document parse TSVs at `scripts/oracle/results/parses/`); the load-bearing comparison is Phase A' frequency-table reconstruction, where R independently rebuilds the n-gram frequency tables from the parses and the result matches SETEC's exports cell-by-cell. The pass requires spaCy installed in the runtime; without spaCy, the SETEC side skips the POS / dep export with a notice and the rest of the oracle still runs.
 
-The fixture is bounded by the public-domain commit constraint. Joshua's personal baseline corpus is not committed (it's voice-cloning input), so the oracle test cannot speak directly to the framework's distance-correctness on his actual data. The Federalist fixture is a valid proxy: same Burrows-Delta math, different register.
+**Rolling-window Delta oracle is blocked on the stylo API.** `stylo::rolling.delta` exposes only four parameters in its function signature (gui, path, primary.corpus.dir, secondary.corpus.dir); the window controls a SETEC user would want to verify against (`text.slice.length`, `text.slice.overlap`, `mfw`, `distance.measure`) are baked into the function body as local defaults. The documented `config.txt` override path hangs the R process under the conditions tested. If rolling-window verification becomes load-bearing later, the right move is a SETEC-internal pytest contract test on the windowing logic rather than a cross-tool oracle pass — `stylo::rolling.delta` was never going to provide a clean cross-tool reference at this API surface. The cross-tool oracle stays focused on what `stylo` is well-suited to be a reference for: feature-set frequency tables and pairwise distance math on those tables.
+
+The fixture is bounded by the public-domain commit constraint. The author's personal baseline corpus is not committed (it's voice-cloning input), so the oracle test cannot speak directly to the framework's distance-correctness on production data. The Federalist fixture is a valid proxy: same Burrows-Delta math, different register.

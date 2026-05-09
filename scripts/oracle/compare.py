@@ -190,7 +190,92 @@ def _fmt(value: float | None, digits: int) -> str:
     return f"{value:.{digits}f}"
 
 
+def load_wide_freq_csv(path: Path) -> dict[tuple[str, str], float]:
+    """Read a wide-format frequency CSV (rows = doc_id, cols = features)
+    and return {(doc_id, feature): value}. Used by Phase A' to compare
+    frequency tables cell-by-cell across SETEC and stylo independent
+    n-gramming reconstructions."""
+    out: dict[tuple[str, str], float] = {}
+    with path.open("r", encoding="utf-8") as fh:
+        reader = csv.reader(fh)
+        header = next(reader)
+        feats = header[1:]
+        for row in reader:
+            doc_id = row[0]
+            for feat, val in zip(feats, row[1:]):
+                out[(doc_id, feat)] = float(val)
+    return out
+
+
+def render_freq_table_phase_block(
+    title: str,
+    description: str,
+    setec_path: Path,
+    stylo_path: Path,
+) -> str:
+    """Phase A' helper: cell-by-cell comparison of two wide-format
+    frequency tables. Reports n cells, Pearson r, Spearman ρ, mean |Δ|,
+    max |Δ|, and feature-set overlap (cells in setec only / stylo only),
+    in the same shape as render_phase_block but with cells in place of
+    pairs and with the overlap column added.
+
+    A cell is a (doc_id, feature) pair. The comparison only runs over
+    the intersection of cells; setec-only and stylo-only counts are
+    reported separately as a feature-set agreement signal."""
+    lines: list[str] = [f"## {title}", "", description, ""]
+    if not setec_path.exists():
+        lines.append(f"_Setec output not found at `{setec_path}`._")
+        return "\n".join(lines)
+    if not stylo_path.exists():
+        lines.append(
+            f"_Stylo output not found at `{stylo_path}`. "
+            f"Run `scripts/oracle/run_stylo.R` to generate it._"
+        )
+        return "\n".join(lines)
+
+    setec = load_wide_freq_csv(setec_path)
+    stylo = load_wide_freq_csv(stylo_path)
+    common = sorted(set(setec) & set(stylo))
+    setec_only = len(set(setec) - set(stylo))
+    stylo_only = len(set(stylo) - set(setec))
+
+    if not common:
+        lines.append(
+            "_No shared (doc, feature) cells between SETEC and stylo "
+            "frequency tables. Check that both sides selected the same "
+            "top-K features._"
+        )
+        return "\n".join(lines)
+
+    s_vals = [setec[k] for k in common]
+    r_vals = [stylo[k] for k in common]
+    pear = pearson(s_vals, r_vals)
+    spear = spearman(s_vals, r_vals)
+    d = discrepancy_summary(s_vals, r_vals)
+
+    lines.append(
+        "| n cells | setec-only feats | stylo-only feats | "
+        "Pearson r | Spearman ρ | Mean |Δ| | Max |Δ| |"
+    )
+    lines.append("|---:|---:|---:|---:|---:|---:|---:|")
+    lines.append(
+        f"| {len(common)} | {setec_only} | {stylo_only} | "
+        f"{_fmt(pear, 4)} | {_fmt(spear, 4)} | "
+        f"{_fmt(d['mae'], 6)} | {_fmt(d['max_abs_diff'], 6)} |"
+    )
+    lines.append("")
+    return "\n".join(lines)
+
+
 CHAR_NGRAM_NS = (3, 4, 5)
+# (distance_slug, freq_slug, human_label). The distance-CSV naming
+# convention uses plural ('pos_trigrams') and the freq-CSV naming
+# convention uses singular ('pos_trigram'); the explicit pair avoids
+# a fragile rstrip('s').
+POS_DEP_FAMILIES = (
+    ("pos_trigrams", "pos_trigram", "POS-trigrams"),
+    ("dep_ngrams", "dep_ngram", "dependency n-grams (n=2,3)"),
+)
 
 
 def main() -> int:
@@ -249,6 +334,48 @@ def main() -> int:
                 OUTPUT_DIR / f"stylo_distances_phase_a_char{n}.csv",
             )
             for n in CHAR_NGRAM_NS
+        ),
+        *(
+            render_phase_block(
+                f"Phase A {label}: distance correctness on identical input",
+                (
+                    f"SETEC's {label} pipeline, exported as a top-300 "
+                    f"corpus-derived frequency table. Both sides operate "
+                    f"on the same table; if SETEC's distance math is "
+                    f"correct, the agreement should match floating-point "
+                    f"noise as in the function-word and char-ngram cases. "
+                    f"spaCy is the parser of record on both sides (the R "
+                    f"side reads SETEC's parse TSVs); Phase A' below "
+                    f"verifies the n-gramming code paths independently "
+                    f"of distance math."
+                ),
+                OUTPUT_DIR / f"setec_distances_{dist_slug}.csv",
+                OUTPUT_DIR / f"stylo_distances_phase_a_{dist_slug}.csv",
+            )
+            for dist_slug, _freq_slug, label in POS_DEP_FAMILIES
+        ),
+        *(
+            render_freq_table_phase_block(
+                f"Phase A' {label}: frequency-table correctness on identical parse",
+                (
+                    f"SETEC's per-document spaCy parses are exported to "
+                    f"TSV (`results/parses/<doc_id>.tsv`). The R side "
+                    f"reads those TSVs and rebuilds the {label} "
+                    f"frequency table from scratch: per-sentence reset, "
+                    f"same key format (`pos:A-B-C` / `dep{{n}}:X-Y[-Z]`), "
+                    f"same top-300 corpus-aggregate selection, same "
+                    f"per-doc renormalization within the top-K subset. "
+                    f"Cell-by-cell agreement here verifies that SETEC's "
+                    f"n-gramming + frequency-table-construction code "
+                    f"path matches a from-scratch reimplementation, "
+                    f"independent of the distance math. setec-only and "
+                    f"stylo-only feature counts should be 0 (both sides "
+                    f"select the same top-K from the same corpus)."
+                ),
+                OUTPUT_DIR / f"setec_{freq_slug}_freqs.csv",
+                OUTPUT_DIR / f"stylo_{freq_slug}_freqs.csv",
+            )
+            for _dist_slug, freq_slug, label in POS_DEP_FAMILIES
         ),
         render_phase_block(
             "Phase B: end-to-end on raw text",

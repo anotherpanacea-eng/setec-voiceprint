@@ -6,6 +6,19 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.8.0] - 2026-05-08
+
+POS-trigram and dependency-n-gram oracle pass against R `stylo`. Closes the last footnote on cross-tool stylometric verification: all six feature families that `voice_distance.py` reports are now oracle-verified at floating-point precision.
+
+### Added
+
+- POS-trigram and dependency-n-gram oracle pass extending `scripts/oracle/`. The function-word oracle and the per-n char-n-gram oracle pass (1.4.0 + 1.7.0) verified SETEC's Burrows-Delta + cosine math on those four feature spaces; this extension does the same for the two spaCy-derived families. Because stylo doesn't natively do POS or dependency parsing, spaCy is the parser of record on both sides: `setec_to_stylo.py` writes per-document parse TSVs to `scripts/oracle/results/parses/<doc_id>.tsv`, and `run_stylo.R` reads them to do its own independent n-gramming. Three checks per family: Phase A (distance correctness on SETEC's frequency table) — both Burrows-Delta and cosine match to floating-point precision (Pearson 1.0, mean |Δ| ≈ 2e-9); Phase A' (frequency-table reconstruction from identical parses) — bit-exact match cell-by-cell (1800 cells, zero setec-only feats, zero stylo-only feats, mean |Δ| = 0.00). The Phase A' result confirms SETEC's `pos_trigram_features` / `dependency_ngram_features` + selection + normalization code paths match a from-scratch reimplementation; the only remaining unverified component is the spaCy parse itself, which is the parser of record on both sides. New SETEC-side helpers `parse_documents`, `write_parse_tsvs`, `pos_trigram_table`, `dep_ngram_table` mirror the existing char-ngram pattern. New R-side helpers `build_pos_trigrams`, `build_dep_ngrams`, `build_corpus_table` reimplement n-gram window construction independently. New `compare.py` helper `render_freq_table_phase_block` compares wide-format frequency tables cell-by-cell. POS / dep pass requires spaCy in the runtime; without spaCy, those exports are skipped with a notice and the rest of the oracle still runs.
+- Rolling-window Delta oracle blocker recorded in `references/stylometry-oracle.md`: `stylo::rolling.delta` exposes only four parameters (`gui`, `path`, `primary.corpus.dir`, `secondary.corpus.dir`); window controls (`text.slice.length`, `text.slice.overlap`, `mfw`, `distance.measure`) are baked into the function body as local defaults; `config.txt` override hangs the R process under the conditions tested. Recommended next step if rolling-window verification becomes load-bearing: SETEC-internal pytest contract test rather than cross-tool oracle, since `stylo::rolling.delta`'s API was never going to provide a clean cross-tool reference at this surface.
+
+### Changed
+
+- `references/stylometry-oracle.md` results table extended from four feature spaces to six. Phase A' results table added for POS-trigrams and dep-n-grams. Methodology section reframed from "two complementary phases" to "three complementary phases" (A, A', B) reflecting Phase A''s addition for the spaCy-parsed families.
+
 ## [1.7.1] - 2026-05-08
 
 Documentation pass on the Cowork install / update flow with empirical cache findings.
@@ -147,7 +160,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.1...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.0...HEAD
+[1.8.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.5.2...v1.6.0
