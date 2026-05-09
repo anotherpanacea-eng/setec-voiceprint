@@ -305,7 +305,11 @@ OCR_SYSTEM_DEPS = [
     ),
 ]
 
-# Tier 3: calibration.
+# Tier 3: calibration. Both calibration deps are optional within the
+# tier — fetch_pangram_editlens_github.py downloads the same corpus
+# from the public GitHub mirror with stdlib only (no HF token, no
+# parquet). Users who pick the GitHub path don't need huggingface_hub
+# or pyarrow.
 CALIBRATION_PYTHON_DEPS = [
     PythonDep(
         name="huggingface_hub",
@@ -313,14 +317,20 @@ CALIBRATION_PYTHON_DEPS = [
         pip_name="huggingface_hub",
         summary=(
             "HuggingFace dataset download for fetch_pangram_editlens.py "
-            "(EditLens corpus)."
+            "(license-gated path; the GitHub mirror at "
+            "fetch_pangram_editlens_github.py is stdlib-only)."
         ),
+        optional_in_tier=True,
     ),
     PythonDep(
         name="pyarrow",
         import_name="pyarrow",
         pip_name="pyarrow",
-        summary="Parquet read for HuggingFace dataset payloads.",
+        summary=(
+            "Parquet read for HuggingFace dataset payloads. Not needed "
+            "for the GitHub-fetcher path (CSV-only)."
+        ),
+        optional_in_tier=True,
     ),
 ]
 

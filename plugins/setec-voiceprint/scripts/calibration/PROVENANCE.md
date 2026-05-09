@@ -24,9 +24,27 @@ Calibration status footer.
 
 To populate this ledger:
 
-1. Install calibration deps: `pip install -r requirements-calibration.txt`
-2. Fetch the corpus: `python3 scripts/calibration/fetch_pangram_editlens.py --split nonnative_english`
-3. Convert to manifest: `python3 scripts/calibration/editlens_to_manifest.py --source <fetched-parquet> --preset editlens_nonnative --out ai-prose-baselines-private/editlens/manifest_nonnative.jsonl --text-dir ai-prose-baselines-private/editlens/nonnative_text`
+1. Install calibration deps: `pip install -r requirements-calibration.txt` (only required for the HuggingFace fetch path; the GitHub path below is stdlib-only).
+2. Fetch the corpus. **Two paths**, equivalent CC BY-NC-SA 4.0 license posture:
+   - **GitHub (recommended for first-time runs).** No auth, no license-acceptance UI, no HF token. Stdlib only:
+     ```
+     python3 scripts/calibration/fetch_pangram_editlens_github.py \
+         --split nonnative_english
+     # or pin a specific upstream commit for reproducibility:
+     python3 scripts/calibration/fetch_pangram_editlens_github.py \
+         --split nonnative_english \
+         --commit-sha <sha>
+     ```
+     The GitHub fetcher writes the same `NOTICE.md` license + provenance block as the HuggingFace fetcher and a `.fetch_record.json` containing the pinned commit SHA + per-file SHA-256 hashes for tamper detection.
+   - **HuggingFace (license-card check, dataset-revision pin).** Requires `HF_TOKEN` and license acceptance at https://huggingface.co/datasets/pangram/editlens_iclr:
+     ```
+     python3 scripts/calibration/fetch_pangram_editlens.py \
+         --split nonnative_english
+     ```
+     The HuggingFace path additionally verifies the dataset card declares CC BY-NC-SA 4.0 at fetch time. Use this path when the calibration run's provenance entry should reference an HF dataset revision rather than a GitHub commit.
+
+   Both fetchers write to `ai-prose-baselines-private/editlens/` and both produce CSVs the next step's preset shapes consume. `calibrate_thresholds.py` reads `.fetch_record.json` and writes the corpus pin into the provenance entry's `corpus` field; both fetcher records use a `revision` key (the GitHub fetcher's commit SHA aliases as `revision` for HF-compat) so the downstream calibrator doesn't care which fetcher produced the file.
+3. Convert to manifest: `python3 scripts/calibration/editlens_to_manifest.py --source <fetched-csv> --preset editlens_nonnative --out ai-prose-baselines-private/editlens/manifest_nonnative.jsonl --text-dir ai-prose-baselines-private/editlens/nonnative_text`
 4. **Survey** every signal in `COMPRESSION_HEURISTICS` (all 11) before picking the first to encode (see "Selection criteria" below — do not assume any specific signal is the first to land). The survey wrapper handles the loop, the aggregation, and the gate evaluation:
    ```
    python3 scripts/calibration/calibration_survey.py \
