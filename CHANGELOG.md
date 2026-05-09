@@ -6,6 +6,31 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.25.0] - 2026-05-09
+
+Calibration sub-sampling for pipeline checks. The full calibration run takes a few hours of Tier 2/3 compute on the ~130-essay ESL slice. That's a real commitment for a maintainer trying to verify the toolchain works end-to-end before spending the time. This release adds `--max-entries N` to both `calibrate_thresholds.py` (inner) and `calibration_survey.py` (wrapper), letting the maintainer run a 10% (or any %) partial first to catch environment / dependency / SSL / spaCy issues, get a wall-clock estimate for the full run, and verify the survey produces the expected output shape. Sub-sampled rows carry visible "PIPELINE CHECK" markers throughout (provenance entry `notes` prefix, `sub_sample` block, survey `is_pipeline_check` flag, markdown banner) so they can never be silently treated as a calibration.
+
+### Added
+
+- **`--max-entries N`** flag on `calibrate_thresholds.py`. Caps the manifest entries fed into the variance audit. Sub-sampling is **label-stratified** — proportional to class size with a floor of 1 per non-empty class — so a small cap can't accidentally collapse one label to zero (which would make the threshold sweep undefined). Sampling is **deterministic** via the bootstrap seed (or `--max-entries-seed` if the maintainer wants to override the sample seed without changing the bootstrap CI seed), so partial runs are reproducible.
+- **Provenance tagging.** When sub-sampling is applied, the resulting provenance entry gains:
+  - A `sub_sample` block: `{applied: true, n_used: <int>, n_full: <int>, fraction: <float>, seed: <int>}`.
+  - A `notes` field that starts with `"PIPELINE CHECK (sub-sampled run, NOT a calibration). N/M entries used. Do not commit this entry to the ledger as a calibrated threshold; small-N gates won't pass meaningfully."` followed by the original notes content.
+  Both are belt-and-suspenders against accidental commit of a sub-sampled threshold to `thresholds_calibrated.json`. Future ledger consumers can branch on `sub_sample` to refuse rows where `n_used < n_full`.
+- **`--max-entries` and `--max-entries-seed`** plumbed through `calibration_survey.py`. The wrapper forwards the flags to every signal's inner `derive_threshold` call so all 11 signals score the SAME sampled essays (consistency across the survey). The survey JSON gains:
+  - `max_entries: N` and `max_entries_seed: S` (echo the flags).
+  - `is_pipeline_check: bool` flag for downstream consumers.
+- **Pipeline-check banner** at the top of `calibration_survey.py`'s markdown output when `is_pipeline_check: true`. Prominent enough that a maintainer reading the table can't miss that this is not a calibration; small-N gates won't pass meaningfully and the resulting thresholds must not be committed.
+- **`PROVENANCE.md` updated** with the partial-run pattern. Documents a 10% pipeline check (`--max-entries 13` against the 130-essay ESL slice) followed by the full run as the recommended first-time-calibration sequence. Also notes that `--no-tier2` and `--no-tier3` make the partial run faster still — useful for the absolute-cheapest first pass.
+- **15 new regression tests** in `scripts/tests/test_calibration_subsample.py`: inner CLI accepts `--max-entries` + `--max-entries-seed`; sub-sample caps total entries to the requested N; sub-sample is label-stratified (both classes preserved with floor of 1); sub-sample is deterministic under the same seed; different seeds produce different samples; `--max-entries-seed` correctly overrides `--bootstrap-seed`; sub-sample is a no-op when `max_entries >= full count`; survey wrapper forwards both flags to the inner; survey marks `is_pipeline_check: true` only when `--max-entries` is set; survey markdown shows the `PIPELINE CHECK` banner only on partial runs; CLI surface tests on both scripts.
+
+### Notes
+
+- **417 tests pass + 2 skipped** (was 402 + 2 in 1.24.0; +15 new). Tests use a mocked `score_smoothing_entry` so they don't require the EditLens corpus or Tier 2/3 deps; sub-sampling logic is pure-Python and exercised through `derive_threshold` with stubbed manifest entries.
+- The partial-run pattern doesn't make calibration cheaper *per se* — it adds an optional cheap pipeline check before the expensive full run. The trade-off is "a few minutes for a 10% pre-flight" against "a few hours for a full run that fails on the last signal because spaCy isn't installed." Recommended workflow: run `--max-entries 13 --no-tier2 --no-tier3` first to verify deps + SSL + manifest shape, then run the full survey.
+- Calibration runs whose results commit to the ledger MUST NOT use `--max-entries`. The provenance ledger's `test_calibration_provenance` regression tests will not specifically refuse rows with a `sub_sample` block (the `notes` prefix and the block itself are the visible warning), but the `PIPELINE CHECK` notes prefix is loud enough that a maintainer copying the entry into the committed ledger will see it before they save the file.
+- Three-way version sync at 1.25.0. No new keyword.
+
 ## [1.24.0] - 2026-05-09
 
 GitHub-mirror fetcher for the EditLens corpus. Pangram Labs publishes the same EditLens data the calibration toolchain consumes in two places: the license-gated HuggingFace dataset at `pangram/editlens_iclr` (requires `HF_TOKEN` + license-acceptance UI) and the public companion code repo at `pangramlabs/EditLens` (plain `git clone`, no auth). The 1.10.0 fetcher targeted the HF path; this release adds a sibling fetcher for the GitHub path. Both produce identical CSVs; both write the same NOTICE.md license posture; downstream `editlens_to_manifest.py` consumes either output unchanged. The HF path is preserved for users who want the dataset-card revision pin and license-card check; the GitHub path unblocks anyone who can't or doesn't want to do the HF auth dance — including most maintainers' first calibration runs.

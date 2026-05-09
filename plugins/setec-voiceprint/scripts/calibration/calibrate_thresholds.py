@@ -344,6 +344,59 @@ def derive_threshold(
             f"No entries with use={args.use!r} in {manifest_path}."
         )
 
+    full_entry_count = len(entries)
+    max_entries = getattr(args, "max_entries", None)
+    if max_entries is not None and max_entries > 0 and max_entries < full_entry_count:
+        # Label-stratified sub-sampling so the cap doesn't accidentally
+        # collapse one class to zero (which would make the threshold
+        # sweep trivially undefined). Deterministic via the bootstrap
+        # seed so partial runs are reproducible: same seed, same cap,
+        # same essays.
+        positive_statuses = set(DEFAULT_POSITIVE_STATUSES)
+        negative_statuses = set(DEFAULT_NEGATIVE_STATUSES)
+        positives = [
+            e for e in entries
+            if e.get("ai_status") in positive_statuses
+        ]
+        negatives = [
+            e for e in entries
+            if e.get("ai_status") in negative_statuses
+        ]
+        # Proportional sampling per class. Floor each side at 1 if the
+        # class has any entries at all so the threshold sweep has both
+        # labels present even on aggressive caps.
+        total = len(positives) + len(negatives)
+        if total > 0:
+            n_pos_target = max(
+                1 if positives else 0,
+                int(round(max_entries * len(positives) / total)),
+            )
+            n_neg_target = max(0, max_entries - n_pos_target)
+            if n_neg_target == 0 and negatives:
+                n_neg_target = 1
+                n_pos_target = max(1, max_entries - 1)
+        else:
+            n_pos_target = n_neg_target = 0
+
+        rng_seed = getattr(args, "max_entries_seed", None)
+        if rng_seed is None:
+            rng_seed = getattr(args, "bootstrap_seed", 42) or 42
+        import random
+        rng = random.Random(int(rng_seed))
+        if positives:
+            rng.shuffle(positives)
+        if negatives:
+            rng.shuffle(negatives)
+        sampled = positives[:n_pos_target] + negatives[:n_neg_target]
+        rng.shuffle(sampled)
+        sys.stdout.write(
+            f"Sub-sampling: {len(sampled)} of {full_entry_count} entries "
+            f"({n_pos_target} pos + {n_neg_target} neg, seed={rng_seed}). "
+            "This is a PIPELINE CHECK, not a calibration — "
+            "small-N gates won't pass meaningfully.\n"
+        )
+        entries = sampled
+
     sys.stdout.write(
         f"Scoring {len(entries)} entries via variance audit "
         f"(this can take a while if Tier 2/3 are enabled)...\n"
@@ -449,6 +502,31 @@ def derive_threshold(
             "heldout test split is added."
         ),
     }
+
+    # Sub-sample provenance: when --max-entries was applied, record
+    # the cap and the seed in the entry. The downstream `notes` text
+    # gets a leading "PIPELINE CHECK" tag so this row is visibly
+    # distinct from full-corpus calibrations in the ledger. Future
+    # ledger consumers can branch on `sub_sample` to refuse rows
+    # whose `n_used < n_full`.
+    if max_entries is not None and len(entries) < full_entry_count:
+        entry["sub_sample"] = {
+            "applied": True,
+            "n_used": len(entries),
+            "n_full": full_entry_count,
+            "fraction": round(len(entries) / full_entry_count, 4),
+            "seed": int(
+                getattr(args, "max_entries_seed", None)
+                or getattr(args, "bootstrap_seed", 42) or 42
+            ),
+        }
+        entry["notes"] = (
+            "PIPELINE CHECK (sub-sampled run, NOT a calibration). "
+            f"{entry['sub_sample']['n_used']}/{full_entry_count} entries used. "
+            "Do not commit this entry to the ledger as a calibrated "
+            "threshold; small-N gates won't pass meaningfully. "
+            + entry["notes"]
+        )
     return entry
 
 
@@ -528,6 +606,26 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Free-text caveat for the provenance entry. Default mentions "
             "in-sample / calibration_only."
+        ),
+    )
+    parser.add_argument(
+        "--max-entries", type=int, default=None,
+        help=(
+            "Cap the number of manifest entries used for scoring. "
+            "Sub-sampling is label-stratified and seeded by "
+            "--bootstrap-seed (or --max-entries-seed if set), so "
+            "partial runs are reproducible. Use this for pipeline "
+            "checks before committing to a full calibration; "
+            "small-N runs will not pass the FPR-resolution and TPR-"
+            "interpretability gates and the resulting threshold "
+            "should NOT be committed to the ledger."
+        ),
+    )
+    parser.add_argument(
+        "--max-entries-seed", type=int, default=None,
+        help=(
+            "Override the seed used for stratified sub-sampling. "
+            "Defaults to --bootstrap-seed."
         ),
     )
 

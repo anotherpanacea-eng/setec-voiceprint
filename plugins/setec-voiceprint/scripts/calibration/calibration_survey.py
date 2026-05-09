@@ -314,6 +314,10 @@ def _build_inner_args(
         tier2=parent_args.tier2,
         tier3=parent_args.tier3,
         notes=None,
+        # Forward the sub-sample knob so partial surveys hit the
+        # same essays across signals (deterministic per seed).
+        max_entries=getattr(parent_args, "max_entries", None),
+        max_entries_seed=getattr(parent_args, "max_entries_seed", None),
     )
 
 
@@ -411,6 +415,9 @@ def run_survey(
         )
     rows.sort(key=_rank_key)
 
+    max_entries = getattr(parent_args, "max_entries", None)
+    is_pipeline_check = max_entries is not None and max_entries > 0
+
     return {
         "task_surface": TASK_SURFACE,
         "tool": TOOL_NAME,
@@ -422,6 +429,9 @@ def run_survey(
         "tier3": parent_args.tier3,
         "tpr_floor": tpr_floor,
         "aggressiveness_tolerance": aggressiveness_tolerance,
+        "max_entries": max_entries,
+        "max_entries_seed": getattr(parent_args, "max_entries_seed", None),
+        "is_pipeline_check": is_pipeline_check,
         "n_signals": len(rows),
         "n_signals_all_gates_pass": sum(1 for r in rows if r.gates.all_pass),
         "rows": [r.to_dict() for r in rows],
@@ -461,9 +471,19 @@ def render_markdown_table(survey: dict[str, Any]) -> str:
     ok_rows = [r for r in rows if r.get("error") is None]
     err_rows = [r for r in rows if r.get("error") is not None]
 
-    lines = [
-        "# Calibration survey",
-        "",
+    lines: list[str] = ["# Calibration survey", ""]
+    if survey.get("is_pipeline_check"):
+        lines.extend([
+            "> **PIPELINE CHECK** — `--max-entries "
+            f"{survey['max_entries']}` was set. This is NOT a "
+            "calibration; small-N gates won't pass meaningfully and "
+            "the resulting thresholds must NOT be committed to "
+            "`thresholds_calibrated.json`. Use this output to verify "
+            "the pipeline runs end-to-end and to estimate wall-clock "
+            "for the full run.",
+            "",
+        ])
+    lines.extend([
         f"- **Manifest:** `{survey['manifest']}`",
         f"- **FPR target:** {survey['fpr_target']}",
         f"- **Use filter:** `{survey['use']}`",
@@ -484,7 +504,7 @@ def render_markdown_table(survey: dict[str, Any]) -> str:
         "1 | 2 | 3 | 4 | 5 |",
         "|---|:-:|---:|---:|---:|---:|---:|---:|---:|"
         ":-:|:-:|:-:|:-:|:-:|",
-    ]
+    ])
     for r in ok_rows:
         gates = r["gates"]
         lines.append(
@@ -579,6 +599,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "Gate 5 tolerance: calibrated threshold differing "
                        "from the heuristic by at most this fraction "
                        "passes regardless of direction. Default 0.05."
+                   ))
+    p.add_argument("--max-entries", type=int, default=None,
+                   help=(
+                       "Cap the manifest entries scored per signal. "
+                       "Label-stratified sub-sampling (seeded). Use for "
+                       "pipeline checks before committing to a full run "
+                       "— small-N gates won't pass meaningfully. The "
+                       "survey marks rows from a sub-sampled run with "
+                       "a 'pipeline check' flag so the JSON output "
+                       "is visibly distinct from a full-corpus survey."
+                   ))
+    p.add_argument("--max-entries-seed", type=int, default=None,
+                   help=(
+                       "Override the sub-sample seed. Defaults to "
+                       "--bootstrap-seed so the same essays are scored "
+                       "across signals (consistency across the survey)."
                    ))
     p.add_argument("--json-only", action="store_true",
                    help="Emit only the JSON ledger; skip the markdown table.")

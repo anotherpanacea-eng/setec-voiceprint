@@ -55,10 +55,25 @@ To populate this ledger:
    ```
    The wrapper runs every signal through `calibrate_thresholds.derive_threshold`, evaluates the four automatable selection-criteria gates (polarity, FPR resolution, TPR ≥ floor, calibrated-vs-heuristic aggressiveness), leaves Gate 2 (AUC/AP not embarrassing) for maintainer judgment, and prints a single ranked markdown table to stdout plus a JSON ledger to `--out`. The survey JSON is private (treat as scratch); only the first signal that earns provenance under the criteria below lands in the committed `thresholds_calibrated.json`.
 
-   Two flags worth knowing about:
+   Three flags worth knowing about:
 
    - `--no-tier2` and `--no-tier3` skip the spaCy POS-bigram and SBERT/TF-IDF cohesion features for a faster Tier-1-only sweep. Useful as a cheap first pass while you decide which signals are worth the full compute.
    - `--signal <name>` restricts the survey to one signal. Useful for re-checking a specific calibration after the corpus or the registry changed.
+   - `--max-entries N` caps the manifest entries scored per signal. Label-stratified sub-sampling, deterministic via the bootstrap seed (or `--max-entries-seed`). **Use this for pipeline checks before committing to a full calibration run.** A partial run verifies the toolchain works end-to-end (deps, SSL, spaCy model, manifest shape), surfaces any environment friction, and gives you a wall-clock estimate for the full run. Small-N runs will not pass the FPR-resolution and TPR-interpretability gates and the resulting threshold MUST NOT be committed to the ledger — the survey output marks `--max-entries` runs as `is_pipeline_check: true` and the inner `derive_threshold` tags the resulting provenance entry's `notes` with a "PIPELINE CHECK" prefix and a `sub_sample` block. Example partial-run sequence:
+     ```
+     # 10% pipeline check (~13 essays of the 130-essay ESL slice):
+     python3 scripts/calibration/calibration_survey.py \
+         --manifest ai-prose-baselines-private/editlens/manifest_nonnative.jsonl \
+         --fpr-target 0.01 \
+         --max-entries 13 \
+         --no-tier2 --no-tier3 \
+         --out /tmp/_pipeline_check.json
+     # If that runs cleanly, commit to the full run:
+     python3 scripts/calibration/calibration_survey.py \
+         --manifest ai-prose-baselines-private/editlens/manifest_nonnative.jsonl \
+         --fpr-target 0.01 \
+         --out ai-prose-baselines-private/editlens/_survey_2026-XX-XX.json
+     ```
 5. Pick the first signal whose calibration entry passes the **Selection criteria**.
 6. Edit `scripts/variance_audit.py`'s `COMPRESSION_HEURISTICS[<signal>]` to set `provenance=<slug>`, `provisional=False`, and `value=<derived>`.
 7. Add a section to this file documenting the calibration run.
