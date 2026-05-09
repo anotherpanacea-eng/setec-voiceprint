@@ -6,6 +6,18 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.10.1] - 2026-05-08
+
+Pre-registers the standards a calibration entry must meet before it lands in `COMPRESSION_HEURISTICS`. No behavior change; documentation only. The calibration toolchain shipped in 1.10.0 now has explicit selection criteria and an "in-sample calibration" epistemic-seatbelt convention recorded *before* any actual calibration run, so the first calibrated threshold (a future commit) is held to standards that pre-date the data rather than being chosen retrospectively.
+
+### Changed
+
+- `scripts/calibration/PROVENANCE.md`: four new sections.
+  - **Selection criteria for a calibration entry.** Five gates, all pre-registered: expected polarity matches; AUC/AP not embarrassing; enough negative controls for the requested FPR (with a soft check on TPR-CI width even when `fpr_resolution` is satisfied); interpretable threshold (not "predict almost nothing"); ESL slice behaves conservatively (calibrating against `nonnative_english.csv` should not produce a more aggressive threshold than the heuristic — the ethical commitment is that ESL prose is not the failure mode the band classifier should flag).
+  - **In-sample calibration.** Defines the epistemic-seatbelt phrase used in every committed provenance entry: empirical metrics are computed on the same corpus the threshold was derived from; a heldout split is roadmap; the threshold's evidentiary weight is "this value separates the two classes on this fixture under this calibration method," not "this value generalizes." The phrase lives in the JSON ledger entry's `notes`, the Markdown ledger entry's **Notes** bullet, and every calibrated-threshold CHANGELOG entry until a heldout split lands.
+  - **Calibration commit shape.** Pre-registers the four-artifact diff a calibration commit produces: one `COMPRESSION_HEURISTICS` registry edit (value + provenance + provisional flipped together; the dataclass mutex enforces it), one new PROVENANCE.md section, one ledger entry appended, CHANGELOG entry + version bump (PATCH or MINOR depending on whether the new value will shift band verdicts on borderline documents).
+  - **To populate this ledger** workflow updated: explicit "survey first, pick second" pattern. The previous draft used `burstiness_B` in the example calibrate command; the workflow now lists candidate signals (`burstiness_B`, `connective_density`, `fkgl_sd`, `mattr`, `mtld`, `adjacent_cosine_mean`, `adjacent_cosine_sd`) and explicitly requires the maintainer to survey several before committing the first signal that earns provenance under the criteria above.
+
 ## [1.10.0] - 2026-05-08
 
 Per-signal threshold calibration toolchain. Steps 1-8 of `internal/SPEC_calibration_toolchain.md` v2.1, implementing the toolchain on top of the `ThresholdSpec` registry refactor that landed in 1.9.2.
@@ -246,7 +258,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.0...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.1...HEAD
+[1.10.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.2...v1.10.0
 [1.9.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.0...v1.9.1

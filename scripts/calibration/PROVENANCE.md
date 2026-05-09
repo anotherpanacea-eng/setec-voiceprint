@@ -27,10 +27,61 @@ To populate this ledger:
 1. Install calibration deps: `pip install -r requirements-calibration.txt`
 2. Fetch the corpus: `python3 scripts/calibration/fetch_pangram_editlens.py --split nonnative_english`
 3. Convert to manifest: `python3 scripts/calibration/editlens_to_manifest.py --source <fetched-parquet> --preset editlens_nonnative --out ai-prose-baselines-private/editlens/manifest_nonnative.jsonl --text-dir ai-prose-baselines-private/editlens/nonnative_text`
-4. Calibrate one signal: `python3 scripts/calibration/calibrate_thresholds.py --manifest ai-prose-baselines-private/editlens/manifest_nonnative.jsonl --use validation --signal burstiness_B --fpr-target 0.01`
-5. Edit `scripts/variance_audit.py`'s `COMPRESSION_HEURISTICS["burstiness_B"]` to set `provenance=<slug>`, `provisional=False`, and `value=<derived>`.
-6. Add a section to this file documenting the calibration run.
-7. Commit + push as a new PATCH release.
+4. **Survey** several eligible signals before picking the first to encode (see "Selection criteria" below — do not assume any specific signal is the first to land). E.g.:
+   ```
+   for sig in burstiness_B connective_density fkgl_sd mattr mtld adjacent_cosine_mean adjacent_cosine_sd; do
+       python3 scripts/calibration/calibrate_thresholds.py \
+           --manifest ai-prose-baselines-private/editlens/manifest_nonnative.jsonl \
+           --use validation --signal "$sig" --fpr-target 0.01 \
+           --out /tmp/survey_thresholds.json
+   done
+   ```
+   The survey ledger is private (treat as scratch); only the first signal that earns provenance under the criteria below lands in the committed `thresholds_calibrated.json`.
+5. Pick the first signal whose calibration entry passes the **Selection criteria**.
+6. Edit `scripts/variance_audit.py`'s `COMPRESSION_HEURISTICS[<signal>]` to set `provenance=<slug>`, `provisional=False`, and `value=<derived>`.
+7. Add a section to this file documenting the calibration run.
+8. Commit the first calibrated threshold (small diff: registry + this file + ledger + CHANGELOG/version) + push.
+
+## Selection criteria for a calibration entry
+
+Pre-registered before any data was inspected. A signal earns its first committed `provenance` slug only when all five gates pass. A signal that fails any gate is documented as a calibration *finding* (recorded in the survey, not in the committed ledger), not a threshold to encode.
+
+1. **Expected polarity matches.** Empirical AUC ≥ 0.5 in the registry's declared `direction`. If the registry says a signal is `lt` (compressed when low) but the calibration sweep finds the opposite direction discriminates better, the corpus's polarity inverts the registry's. That's a *finding* about the corpus or about the registry's polarity convention, not a threshold to commit.
+2. **AUC / AP not embarrassing.** No fixed cutoff baked into the toolchain — left to maintainer judgment per signal. Low-discrimination signals (AUC ~0.55-0.65) become part of the visible record via the provenance entry rather than something the threshold value alone can hide. The bar a calibrated threshold should clear is "the empirical evidence in the entry would not embarrass a careful reviewer."
+3. **Enough negative controls for the requested FPR.** The toolchain's `fpr_resolution = 1 / n_neg` check enforces the lower bound. The softer question this gate adds: *even if the FPR target is reachable, is the resulting TPR statistically interpretable?* Wide bootstrap CIs on TPR at the chosen threshold mean the operating point is noisy; commit anyway only with explicit acknowledgement in the entry's `notes` field.
+4. **Interpretable threshold (not "predict almost nothing").** If the highest-TPR threshold within the FPR ceiling fires the signal on 1/130 positives, the threshold is technically valid but operationally meaningless. Look for thresholds with TPR substantially above zero at the chosen FPR target.
+5. **ESL slice behaves conservatively.** When calibrating against `nonnative_english.csv` (the ESL slice), the calibrated threshold is implicitly tuned to spare ESL writers from false-positive labeling. If the threshold ends up *more aggressive* than the heuristic on this corpus, that is surprising — investigate before committing. The framework's ethical commitment is that ESL prose is not the failure mode the band classifier should aggressively flag.
+
+## In-sample calibration
+
+The empirical metrics in every committed provenance entry (AUC, AP, TPR / FPR / precision at the chosen threshold, bootstrap CIs) are computed on the same corpus the threshold was derived from. They are not heldout-test performance claims.
+
+A heldout test split is roadmap. Until then, every committed threshold's evidentiary weight is:
+
+> "This value separates the two classes on this fixture under this calibration method."
+
+It is not:
+
+> "This value generalizes to other corpora, registers, or AI-prose generations."
+
+That distinction lives in three places to keep it from drifting:
+
+- The `notes` field of every JSON ledger entry (`thresholds_calibrated.json`).
+- The **Notes** bullet in every Markdown ledger entry (this file).
+- The CHANGELOG entry's prose for every calibrated-threshold commit, until a heldout split lands.
+
+When the heldout split lands, the seatbelt phrase changes from "in-sample" to "out-of-sample" and prior entries can be re-evaluated against held-out data and either confirmed (provenance gains a `heldout_validation` block) or flagged (entry annotated with the divergence).
+
+## Calibration commit shape
+
+Pre-registered. Each calibration commit should be a small reviewable diff covering exactly four artifacts:
+
+- One `COMPRESSION_HEURISTICS` registry edit (`value` + `provenance` + `provisional` flipped together — the `ThresholdSpec` dataclass enforces the `provisional` / `provenance` mutex in `__post_init__`).
+- One new section in this file using the **Template for new entries** below.
+- One element appended to `scripts/calibration/thresholds_calibrated.json` (the calibrator does this automatically; review the diff).
+- CHANGELOG entry + `plugin.json` version bump. PATCH if the calibration is documentation-shaped (no behavior change because the new value lands close to the old heuristic); MINOR if the band classifier's verdict will shift on borderline documents under realistic inputs.
+
+The 9 corpus-independent regression tests in `scripts/tests/test_calibration_provenance.py` will catch any drift across the four artifacts before the commit can land. The 10th test (corpus-dependent re-derive) will additionally re-run calibration in environments where the private corpus is available.
 
 ## Calibrated thresholds
 
