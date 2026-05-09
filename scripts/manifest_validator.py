@@ -50,12 +50,44 @@ ALLOWED_AI_STATUS = {
 ALLOWED_REGISTER = {
     "literary_fiction", "blog_essay", "academic_philosophy",
     "testimony_policy", "personal", "policy_advocacy",
+    "literary_horror",
 }
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
 ALLOWED_USE = {
     "baseline", "validation", "voice_validation", "voice_profile",
+    "voice_impostor",
     "idiolect", "negative_baseline", "exclude",
+}
+
+# Impostor-corpus support (per internal/2026-05-08-impostor-corpus-spec.md).
+# corpus_role distinguishes the writer's own baseline material from
+# impostor-pool entries the General Imposters validation harness will
+# need (Koppel et al. 2014, Kestemont et al. 2016). identity_baseline
+# is the default for backward compatibility when the field is absent;
+# new acquisition scripts emit it explicitly.
+ALLOWED_CORPUS_ROLE = {
+    "identity_baseline", "impostor", "distractor", "adversarial",
+}
+# register_match and topic_match describe how closely an impostor
+# entry's register / topic resembles the target persona's. Used by
+# the future GI harness to weight impostor candidates.
+ALLOWED_REGISTER_MATCH = {"high", "medium", "low"}
+ALLOWED_TOPIC_MATCH = {"high", "medium", "low"}
+# consent_status records the legal/ethical posture for redistributing
+# anything derived from this entry. The validator ratchets impostor
+# entries with consent_status='undocumented'; future public-report
+# harnesses must escalate that ratchet to a refusal.
+ALLOWED_CONSENT_STATUS = {
+    "public_record", "cc_licensed", "fair_use_research",
+    "author_consent", "undocumented",
+}
+# era is finer than ai_status for impostor calibration: pre-ChatGPT
+# (Nov 2022) prose is the cleanest impostor pool; post-AI-widespread
+# (mid-2024+) entries may include AI-collaborated writing that
+# contaminates the human-impostor signal.
+ALLOWED_ERA = {
+    "pre_chatgpt", "pre_ai_widespread", "post_ai_widespread", "undated",
 }
 ALLOWED_EDITING_STATUS = {
     "raw_draft", "revised_human", "published_cleaned", "coauthored",
@@ -86,6 +118,9 @@ KNOWN_FIELDS = {
     "adversarial_class", "source_id", "transform",
     # Extra fields surfaced by some manifests.
     "pov", "tags",
+    # Impostor-corpus fields (see ALLOWED_CORPUS_ROLE etc. above).
+    "corpus_role", "impostor_for", "register_match", "topic_match",
+    "consent_status", "era", "acquired_via", "content_hash",
 }
 
 
@@ -381,6 +416,139 @@ def validate_entry(
                 f"word_count must be a non-negative number. Got {wc!r}.",
             ))
 
+    # ---------- Impostor-corpus fields ---------------------
+    # Per internal/2026-05-08-impostor-corpus-spec.md. corpus_role
+    # defaults to "identity_baseline" when absent (backward compat
+    # for pre-impostor manifests). Most ratchets fire only when
+    # corpus_role is explicitly set, so old manifests don't suddenly
+    # generate new errors.
+    corpus_role = entry.get("corpus_role")
+    if corpus_role is not None:
+        if not isinstance(corpus_role, str) or corpus_role not in ALLOWED_CORPUS_ROLE:
+            issues.append(Issue(
+                "warning", lineno, entry_id, "corpus_role",
+                f"Unknown corpus_role {corpus_role!r}. "
+                f"Known: {', '.join(sorted(ALLOWED_CORPUS_ROLE))}.",
+            ))
+    register_match = entry.get("register_match")
+    if register_match is not None:
+        if not isinstance(register_match, str) or register_match not in ALLOWED_REGISTER_MATCH:
+            issues.append(Issue(
+                "warning", lineno, entry_id, "register_match",
+                f"Unknown register_match {register_match!r}. "
+                f"Known: {', '.join(sorted(ALLOWED_REGISTER_MATCH))}.",
+            ))
+    topic_match = entry.get("topic_match")
+    if topic_match is not None:
+        if not isinstance(topic_match, str) or topic_match not in ALLOWED_TOPIC_MATCH:
+            issues.append(Issue(
+                "warning", lineno, entry_id, "topic_match",
+                f"Unknown topic_match {topic_match!r}. "
+                f"Known: {', '.join(sorted(ALLOWED_TOPIC_MATCH))}.",
+            ))
+    consent_status = entry.get("consent_status")
+    if consent_status is not None:
+        if not isinstance(consent_status, str) or consent_status not in ALLOWED_CONSENT_STATUS:
+            issues.append(Issue(
+                "warning", lineno, entry_id, "consent_status",
+                f"Unknown consent_status {consent_status!r}. "
+                f"Known: {', '.join(sorted(ALLOWED_CONSENT_STATUS))}.",
+            ))
+    era = entry.get("era")
+    if era is not None:
+        if not isinstance(era, str) or era not in ALLOWED_ERA:
+            issues.append(Issue(
+                "warning", lineno, entry_id, "era",
+                f"Unknown era {era!r}. "
+                f"Known: {', '.join(sorted(ALLOWED_ERA))}.",
+            ))
+    impostor_for = entry.get("impostor_for")
+    if impostor_for is not None and not (
+        isinstance(impostor_for, list)
+        and all(isinstance(s, str) for s in impostor_for)
+    ):
+        issues.append(Issue(
+            "error", lineno, entry_id, "impostor_for",
+            "impostor_for must be a list of strings (persona slugs "
+            f"this impostor serves). Got {type(impostor_for).__name__}.",
+        ))
+
+    # Ratchet 1: impostor entries require the impostor metadata block.
+    if corpus_role == "impostor":
+        for required in (
+            "impostor_for", "register_match", "topic_match",
+            "consent_status", "era", "acquired_via",
+        ):
+            value = entry.get(required)
+            missing = (
+                value is None
+                or (isinstance(value, str) and not value.strip())
+                or (isinstance(value, list) and not value)
+            )
+            if missing:
+                issues.append(Issue(
+                    "error", lineno, entry_id, required,
+                    f"Entry has corpus_role='impostor' but {required!r} "
+                    f"is missing or empty. Impostor entries must carry "
+                    f"the full impostor metadata block (impostor_for, "
+                    f"register_match, topic_match, consent_status, era, "
+                    f"acquired_via).",
+                ))
+
+    # Ratchet 3: impostor + undocumented consent → warn. Future
+    # public-report harnesses should escalate this to a refusal
+    # unless identities are anonymized and no raw text is emitted.
+    if corpus_role == "impostor" and consent_status == "undocumented":
+        issues.append(Issue(
+            "warning", lineno, entry_id, "consent_status",
+            "Entry has corpus_role='impostor' with consent_status="
+            "'undocumented'. Public-report harnesses should refuse "
+            "to name or quote this impostor unless the consent "
+            "status is upgraded.",
+        ))
+
+    # Ratchet 4: impostor + post-AI-widespread era → warn. Post-2024
+    # prose may include AI-collaborated writing that contaminates
+    # the human-impostor signal.
+    if corpus_role == "impostor" and era == "post_ai_widespread":
+        issues.append(Issue(
+            "warning", lineno, entry_id, "era",
+            "Entry has corpus_role='impostor' with era="
+            "'post_ai_widespread'. Impostor entries from this era may "
+            "include AI-collaborated prose, which contaminates the "
+            "human-impostor signal. Calibrate against current-era "
+            "contemporaries only when intentional.",
+        ))
+
+    # Ratchet 5: identity_baseline (explicit or defaulted) + missing
+    # era → informational warning, but only for entries that
+    # actually feed impostor calibration. Era is meant to support
+    # impostor-pool stratification (pre-ChatGPT vs. post-AI-
+    # widespread); validation-only entries (use: validation) and
+    # purely-excluded entries don't need it. This keeps the warning
+    # signal-to-noise high.
+    effective_role = corpus_role if isinstance(corpus_role, str) else "identity_baseline"
+    impostor_relevant_uses = {
+        "baseline", "voice_profile", "voice_validation",
+        "idiolect", "voice_impostor",
+    }
+    use_set = set(use) if isinstance(use, list) else set()
+    if (
+        effective_role == "identity_baseline"
+        and era is None
+        and use_set & impostor_relevant_uses
+    ):
+        issues.append(Issue(
+            "warning", lineno, entry_id, "era",
+            "Entry has effective corpus_role='identity_baseline' and "
+            "feeds impostor-relevant use(s) "
+            f"({sorted(use_set & impostor_relevant_uses)}) but no "
+            "'era' field. Recommended values: pre_chatgpt, "
+            "pre_ai_widespread, post_ai_widespread, undated. Era "
+            "supports impostor-pool stratification even on baseline "
+            "entries.",
+        ))
+
     return issues
 
 
@@ -407,6 +575,16 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
     by_persona: Counter[str] = Counter()
     by_language_status: Counter[str] = Counter()
     by_adversarial_class: Counter[str] = Counter()
+    # Impostor-corpus summary buckets (per the impostor-corpus spec).
+    by_corpus_role: Counter[str] = Counter()
+    by_era: Counter[str] = Counter()
+    by_consent_status: Counter[str] = Counter()
+    by_register_match: Counter[str] = Counter()
+    # For ratchet 2 (cross-entry persona-reference check), record
+    # registered personas from identity-baseline entries plus the
+    # impostor entries we'll validate after the main pass.
+    persona_to_registers: dict[str, set[str]] = {}
+    impostor_entries: list[tuple[int, dict[str, Any]]] = []
 
     if not path.exists():
         return {
@@ -496,6 +674,88 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
         adversarial_class = entry.get("adversarial_class")
         if isinstance(adversarial_class, str):
             by_adversarial_class[adversarial_class] += 1
+        # Impostor-corpus summary buckets.
+        corpus_role_value = entry.get("corpus_role")
+        if isinstance(corpus_role_value, str):
+            by_corpus_role[corpus_role_value] += 1
+        else:
+            # Default-as-identity_baseline for the summary so the
+            # bucket reflects the effective semantics the validator
+            # uses everywhere else.
+            by_corpus_role["identity_baseline"] += 1
+        era_value = entry.get("era")
+        if isinstance(era_value, str):
+            by_era[era_value] += 1
+        consent_value = entry.get("consent_status")
+        if isinstance(consent_value, str):
+            by_consent_status[consent_value] += 1
+        register_match_value = entry.get("register_match")
+        if isinstance(register_match_value, str):
+            by_register_match[register_match_value] += 1
+
+        # Build the persona->register map for ratchet 2. Only entries
+        # whose effective corpus_role is identity_baseline contribute
+        # registered personas; impostor entries are the queries
+        # against this map.
+        effective_role = (
+            corpus_role_value
+            if isinstance(corpus_role_value, str) else "identity_baseline"
+        )
+        if effective_role == "identity_baseline":
+            persona_value = entry.get("persona")
+            if isinstance(persona_value, str) and isinstance(register, str):
+                persona_to_registers.setdefault(persona_value, set()).add(register)
+        elif effective_role == "impostor":
+            impostor_entries.append((lineno, entry))
+
+    # Ratchet 2: cross-entry persona-reference + cross-register
+    # warnings. An impostor's `impostor_for` should name personas
+    # that exist in the manifest's identity-baseline entries; a
+    # high-register-match impostor whose own register doesn't
+    # appear in any of the named target persona's registers is a
+    # likely misconfiguration.
+    for lineno_imp, imp_entry in impostor_entries:
+        imp_id = (
+            imp_entry.get("id") if isinstance(imp_entry.get("id"), str) else None
+        )
+        targets = imp_entry.get("impostor_for")
+        if not isinstance(targets, list):
+            continue
+        for target in targets:
+            if not isinstance(target, str):
+                continue
+            if target not in persona_to_registers:
+                issues.append(Issue(
+                    "warning", lineno_imp, imp_id, "impostor_for",
+                    f"impostor_for references persona {target!r} but no "
+                    f"identity-baseline entry in the manifest claims "
+                    f"that persona. Either the slug is a typo or the "
+                    f"target persona's baseline isn't in this manifest.",
+                ))
+        # High register-match should mean the impostor's own register
+        # actually overlaps the target persona's register space.
+        imp_register = imp_entry.get("register")
+        register_match_imp = imp_entry.get("register_match")
+        if (
+            isinstance(imp_register, str)
+            and register_match_imp == "high"
+        ):
+            for target in targets:
+                if not isinstance(target, str):
+                    continue
+                target_registers = persona_to_registers.get(target)
+                if target_registers is None or not target_registers:
+                    continue
+                if imp_register not in target_registers:
+                    issues.append(Issue(
+                        "warning", lineno_imp, imp_id, "register_match",
+                        f"register_match='high' but impostor's register "
+                        f"{imp_register!r} does not appear in the target "
+                        f"persona {target!r}'s register set "
+                        f"{sorted(target_registers)}. Lower register_match "
+                        f"to 'medium' or 'low', or pick a target persona "
+                        f"whose baseline includes this register.",
+                    ))
 
     n_errors = sum(1 for i in issues if i.severity == "error")
     n_warnings = sum(1 for i in issues if i.severity == "warning")
@@ -516,6 +776,10 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
             "by_persona": dict(by_persona),
             "by_language_status": dict(by_language_status),
             "by_adversarial_class": dict(by_adversarial_class),
+            "by_corpus_role": dict(by_corpus_role),
+            "by_era": dict(by_era),
+            "by_consent_status": dict(by_consent_status),
+            "by_register_match": dict(by_register_match),
         },
     }
 
@@ -555,6 +819,10 @@ def render_report(result: dict[str, Any]) -> str:
             ("By persona", "by_persona"),
             ("By language_status", "by_language_status"),
             ("By adversarial_class", "by_adversarial_class"),
+            ("By corpus_role", "by_corpus_role"),
+            ("By era", "by_era"),
+            ("By consent_status", "by_consent_status"),
+            ("By register_match", "by_register_match"),
         ):
             lines.append(f"- **{label}:** {_fmt_counter(summary.get(key, {}))}")
         lines.append("")

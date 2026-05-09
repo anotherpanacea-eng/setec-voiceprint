@@ -1,0 +1,1 @@
+Synthetic test fixture for the impostor manifest validator. Content does not need to be stylometrically distinguished. Filename: impostor_register_mismatch

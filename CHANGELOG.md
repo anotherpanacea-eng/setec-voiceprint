@@ -6,6 +6,30 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.14.3] - 2026-05-09
+
+Manifest schema + validator extensions for impostor-corpus support. Commit 1 of three for the impostor-corpus tooling spec (`internal/2026-05-08-impostor-corpus-spec.md`); Commit 2 (`acquire_blog.py`) and Commit 3 (`acquire_magazine.py` / `pdf_inventory.py` / `pdf_extract.py`) follow. The General Imposters validation harness (Koppel et al. 2014, Kestemont et al. 2016) the framework will eventually wire up needs an impostor pool labeled with provenance, consent, register-match strength, era, and corpus-role; this release ships the schema and the validator ratchets that catch impostor-pool misconfiguration at manifest-load time.
+
+### Added
+
+- **Manifest schema additions** (per `references/manifest-schema.md`, the new canonical schema reference). `corpus_role` (default `identity_baseline` for backward compatibility), `impostor_for`, `register_match`, `topic_match`, `consent_status`, `era`, `acquired_via`, `content_hash` are now recognized fields in `KNOWN_FIELDS`. `voice_impostor` added to `ALLOWED_USE`. `literary_horror` added to `ALLOWED_REGISTER` (one of the magazine-acquisition genres in Commit 3). New enum constants: `ALLOWED_CORPUS_ROLE`, `ALLOWED_REGISTER_MATCH`, `ALLOWED_TOPIC_MATCH`, `ALLOWED_CONSENT_STATUS`, `ALLOWED_ERA`.
+- **Five new ratchet rules** in `manifest_validator.validate_entry` and `validate_manifest`:
+  1. **Impostor required fields** (error). Entries with `corpus_role: impostor` must carry the full impostor metadata block (`impostor_for`, `register_match`, `topic_match`, `consent_status`, `era`, `acquired_via`). Missing any → error.
+  2. **Persona-reference + cross-register cross-check** (warning). The validator builds a `persona → set(register)` map from identity-baseline entries during the first pass; impostor entries are then validated in a post-pass against that map. An impostor's `impostor_for` referencing a persona absent from any identity-baseline entry warns. An impostor with `register_match: high` whose own register doesn't appear in the target persona's register set warns.
+  3. **Consent-status redistribution ratchet** (warning). `corpus_role: impostor` + `consent_status: undocumented` warns. Future public-report harnesses should escalate this to a refusal unless identities are anonymized and no raw text is emitted.
+  4. **Post-AI-era warning** (warning). `corpus_role: impostor` + `era: post_ai_widespread` warns. Post-2024 prose may include AI-collaborated writing that contaminates the human-impostor signal; the user can override intentionally.
+  5. **Identity-baseline era recommendation** (warning). Entries with effective `corpus_role: identity_baseline` AND `use` overlapping `{baseline, voice_profile, voice_validation, idiolect, voice_impostor}` AND missing `era` warn. Validation-only entries are exempt — era is for impostor calibration, not for labeled-AI test data.
+- **New summary buckets** in the validator's report and JSON output: `by_corpus_role`, `by_era`, `by_consent_status`, `by_register_match`. These appear alongside the existing `by_register` / `by_ai_status` / etc. buckets.
+- **`references/manifest-schema.md`**: canonical schema reference. Required fields, common optional fields, impostor fields, allowed enum values, ratchet rules, summary block, and three example entries (identity baseline, impostor, validation). The schema previously lived across `scripts/README.md`, `manifest_validator.py`, and various examples; this consolidation gives downstream contributors and Codex sessions one place to look.
+- **`scripts/test_data/impostor_corpus/manifest.jsonl`**: 10-entry synthetic mixed-manifest fixture exercising every ratchet path. Includes a clean impostor, a high-register-match impostor that does pass, an impostor pointing at an unknown persona, an impostor with `register_match: high` but a different register from its target, an undocumented-consent impostor, a post-AI-era impostor, an impostor missing the full required block, an identity-baseline missing `era` with impostor-relevant `use`, and a validation-only entry that's exempt from the era warning. Plus 10 stub `.txt` files so path validation passes.
+- **`scripts/tests/test_impostor_manifest_ratchets.py`**: 18 regression tests covering constants surface (the new enum sets, `voice_impostor` in `ALLOWED_USE`, `literary_horror` in `ALLOWED_REGISTER`, new fields in `KNOWN_FIELDS`), all five ratchets with both passing and failing cases, the validation-only-exempt-from-era path, and the new summary-bucket counts (concrete numbers pinned: 7 impostor + 3 identity_baseline, 6 pre_chatgpt + 1 post_ai_widespread, etc.).
+
+### Notes
+
+- This is Commit 1 of three. Commits 2 and 3 (`acquire_blog.py` and the magazine + PDF acquisition tools) require new dependencies (`requests`, `feedparser`, `beautifulsoup4`, `lxml`, `python-dateutil`, `pypdf`, optional `ocrmypdf`) and will land in `requirements-acquisition.txt` per the existing opt-in pattern. They're independently shippable; the schema work shipped here is the prerequisite they all consume.
+- Backward compatibility: pre-impostor manifests still validate. `corpus_role` defaults to `identity_baseline` when absent. The era-recommendation ratchet only fires on entries that actually feed impostor calibration, so old `use: validation` manifests don't suddenly generate noise.
+- 163 tests pass + 1 skipped (was 145 + 1 in 1.14.2; +18 new ratchet tests).
+
 ## [1.14.2] - 2026-05-09
 
 Two further reviewer-flagged P2s on the voice-drift and per-POV trackers (1.13.0 / 1.14.0 / 1.14.1). Both are bugs that surfaced because the tools' behavior was technically working but pedagogically training users into the wrong habits.
@@ -429,7 +453,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.2...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.3...HEAD
+[1.14.3]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.2...v1.14.3
 [1.14.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.13.0...v1.14.0
