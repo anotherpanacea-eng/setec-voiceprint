@@ -619,6 +619,38 @@ def threshold_metrics(
     }
 
 
+def collect_signal_records(
+    records: Sequence[dict[str, Any]],
+    signal_path: str,
+) -> list[tuple[int, float]]:
+    """Return a `(label_int, score_float)` paired sample for the named
+    dotted signal path, drawn from `records`.
+
+    Used by both `per_signal_ranking_metrics` (which aggregates into
+    AUC/AP) and `scripts/calibration/calibrate_thresholds.py` (which
+    sweeps thresholds direction-aware on the raw arrays). Centralizing
+    the per-signal extraction here guarantees both consumers operate
+    on identical paired samples — important when the calibrator's
+    derived threshold is later checked against the harness's reported
+    AUC.
+
+    Records lacking a binary label or a finite numeric value for the
+    signal are silently dropped, matching the existing harness
+    behavior.
+    """
+    pairs: list[tuple[int, float]] = []
+    for r in records:
+        label = r.get("label")
+        if label not in (0, 1):
+            continue
+        sig_scores = r.get("per_signal_scores") or {}
+        v = sig_scores.get(signal_path)
+        if not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+            continue
+        pairs.append((int(label), float(v)))
+    return pairs
+
+
 def per_signal_ranking_metrics(
     records: Sequence[dict[str, Any]],
     *,
@@ -630,11 +662,10 @@ def per_signal_ranking_metrics(
 
     For each signal in ``_SIGNAL_PATHS`` (the 13 dotted paths exposed by
     ``variance_audit``), build a ``(label, signal_value)`` paired
-    sample over records where the signal is computable AND the record
-    has a binary label, then compute ROC AUC + average precision +
-    paired bootstrap CIs. Signals where one class lacks at least two
-    usable records are reported with ``method='not_computable'`` and
-    a reason string.
+    sample via `collect_signal_records` and compute ROC AUC + average
+    precision + paired bootstrap CIs. Signals where one class lacks at
+    least two usable records are reported with ``method='not_computable'``
+    and a reason string.
 
     Polarity note: AUC < 0.5 indicates the signal moves inversely to
     the positive label class on this corpus. For some signals this is
@@ -650,18 +681,10 @@ def per_signal_ranking_metrics(
     """
     out: dict[str, Any] = {}
     for name, _key_path in _SIGNAL_PATHS:
-        # Build paired arrays for this signal
-        pairs: list[tuple[int, float]] = []
-        for r in records:
-            label = r.get("label")
-            if label not in (0, 1):
-                continue
-            sig_scores = r.get("per_signal_scores") or {}
-            v = sig_scores.get(name)
-            if not isinstance(v, (int, float)) or not math.isfinite(float(v)):
-                continue
-            pairs.append((int(label), float(v)))
-
+        # Build paired arrays for this signal via the shared helper so
+        # `collect_signal_records` and this loop are guaranteed to
+        # produce identical paired samples.
+        pairs = collect_signal_records(records, name)
         labels = [p[0] for p in pairs]
         scores = [p[1] for p in pairs]
         n_pos = sum(1 for y in labels if y == 1)

@@ -6,6 +6,26 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.10.0] - 2026-05-08
+
+Per-signal threshold calibration toolchain. Steps 1-8 of `internal/SPEC_calibration_toolchain.md` v2.1, implementing the toolchain on top of the `ThresholdSpec` registry refactor that landed in 1.9.2.
+
+### Added
+
+- `requirements-calibration.txt` at the repo root, pinning `huggingface_hub>=0.23,<1` and `pyarrow>=14`. Calibration-only dependencies; opt-in install via `pip install -r requirements-calibration.txt`. Core `requirements.txt` is untouched. Users who don't run calibration never pay the dependency cost.
+- `scripts/calibration/fetch_pangram_editlens.py`: downloads Pangram Labs' EditLens corpus from HuggingFace (`pangram/editlens_iclr`) into `ai-prose-baselines-private/editlens/`. Verifies the dataset card declares CC BY-NC-SA 4.0 (refuses to proceed if the license has drifted). Records HF revision SHA. Auto-writes `NOTICE.md` with attribution + license + redistribution prohibition. Idempotent. Supports `--split` (default `nonnative_english`, the smallest ESL slice) and `--token` (HF access token; required because the dataset is gated). Refuses gracefully when `huggingface_hub` isn't installed, with a clear pointer to `requirements-calibration.txt`.
+- `scripts/calibration/editlens_to_manifest.py`: schema-discovery-first conversion of CSV/parquet labeled corpora into SETEC `corpus_manifest.jsonl` slices. `--inspect` mode prints columns + a sample row; explicit `--text-column` / `--label-column` / `--label-map` flags required unless a `--preset` matches (`editlens_nonnative`, `editlens_test`, `editlens_human_detectors` are bundled). Per-row text files spilled to a sibling directory; refuses to write outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed. Reference-detector scores from each row (`fastdetectgpt_score`, `binoculars_score`, EditLens model scores, Pangram v3.2 score) are preserved in the entry's `notes` field for cross-tool comparison. Validates the output manifest via `manifest_validator.validate_manifest` before exit.
+- `scripts/calibration/calibrate_thresholds.py`: direction-aware per-signal threshold sweep + provenance writer. Looks up direction (`gt`/`lt`) and dotted signal path from `COMPRESSION_HEURISTICS[signal].direction` and `.signal_path` (the registry is the single source of truth). FPR-resolution check refuses targets below `1/n_neg`. Picks the highest-TPR threshold whose empirical FPR ≤ target. Computes fixed-threshold paired-bootstrap CIs on TPR / FPR / precision at the chosen threshold (selection uncertainty / nested bootstrap is roadmap). Bootstrap seed derivation uses SHA-256 (per the 1.9.0 voice-harness fix) so reproducibility holds across processes. Writes a complete provenance entry to `scripts/calibration/thresholds_calibrated.json` including corpus name + HF revision SHA + license, calibration metrics, CI bounds, SETEC commit, command, derivation date, and a `split_role: calibration_only` tag flagging the in-sample empirical metrics.
+- `scripts/calibration/PROVENANCE.md`: human-readable companion to the JSON ledger. v1 ships with no calibrated entries (the toolchain is the deliverable, not the calibrations themselves) but documents the entry format, the calibration workflow, and the legal posture. Entries land via PR as the maintainer's local calibration runs produce them.
+- `scripts/calibration/thresholds_calibrated.json`: machine-readable provenance ledger. Initially `[]`; entries appended by `calibrate_thresholds.py`.
+- `scripts/tests/test_calibration_provenance.py`: nine regression tests covering ledger integrity (parseability, well-formed slugs, required fields, registry↔ledger referential integrity for slug + signal_path + direction, calibrated value matches ledger derived_value), regardless of whether the private corpus is available. A tenth test re-derives each calibrated threshold via `calibrate_thresholds.derive_threshold` and asserts a match within tolerance — skipped silently when the private corpus is absent (CI-safe), runs in the maintainer's local environment.
+- `validation_harness.collect_signal_records(records, signal_path)`: new helper exposing `(label, score)` paired samples for the calibrator. Refactor extracts the per-signal extraction logic that `per_signal_ranking_metrics` previously did inline; both consumers now share the same loop, guaranteeing they operate on identical paired samples (important when the calibrator's derived threshold is later checked against the harness's reported AUC).
+
+### Changed
+
+- `references/implementation-survey.md`: new Implementation Queue item #10 ("Per-signal threshold calibration toolchain — ✅ Shipped (1.10.0)"). Item #12 ("Larger ESL test class") now notes the unblock via `fetch_pangram_editlens.py --split nonnative_english`. Items #13 (band-threshold calibration) and #14 (directional-cluster consistency calibration) added to roadmap as separate methodology passes that build on the v1 toolchain pattern.
+- `README.md` Installation section adds a "Calibration toolchain (opt-in)" paragraph noting `requirements-calibration.txt`, the local-only design, and pointers to PROVENANCE.md + the spec.
+
 ## [1.9.2] - 2026-05-08
 
 Step 0 of the calibration toolchain (per `internal/SPEC_calibration_toolchain.md` v2.1): replace the tuple-based `COMPRESSION_HEURISTICS` registry with a `ThresholdSpec` dataclass that carries calibration metadata. Unblocks the rest of the calibration toolchain by giving each per-signal threshold a place to record its provenance slug and provisional flag.
@@ -226,7 +246,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.2...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.0...HEAD
+[1.10.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.2...v1.10.0
 [1.9.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.1...v1.9.2
 [1.9.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.2...v1.9.0

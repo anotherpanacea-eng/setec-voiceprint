@@ -96,6 +96,8 @@ This installs spaCy (Tier 2: POS-bigrams, MDD per sentence), SciPy (length-match
 
 Tier 1 (sentence-length variance, MATTR, MTLD, Yule's K, Shannon entropy, FKGL, connective density, function-word ratio) runs on the standard library alone; the install above is what's needed for Tier 2 and Tier 3.
 
+**Calibration toolchain (opt-in).** `scripts/calibration/` provides a per-signal threshold calibration toolchain that consumes labeled corpora (e.g., Pangram Labs' EditLens, CC BY-NC-SA 4.0, gated). It's not part of the core install; opt in with `pip install -r requirements-calibration.txt` (adds `huggingface_hub` + `pyarrow`). The toolchain is local-only by design — corpora download into `ai-prose-baselines-private/` (gitignored) and aggregate derived thresholds get encoded in `COMPRESSION_HEURISTICS` with a `provenance` slug pointing at `scripts/calibration/PROVENANCE.md`. See `scripts/calibration/PROVENANCE.md` for the calibration ledger and `internal/SPEC_calibration_toolchain.md` (gitignored) for the design.
+
 ### Plugin install — Claude Code CLI / Desktop
 
 ```
