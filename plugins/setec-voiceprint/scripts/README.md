@@ -1137,6 +1137,176 @@ other.
 
 ---
 
+## pdf_inventory.py
+
+Inventories an existing PDF library so the user can review which files should
+join the impostor pool before extraction. Walks `--root`, opens every `.pdf`
+found, samples the first 5 pages, and emits a JSONL row per file:
+
+- `text_extractable` — first-five-pages sample > 100 chars; `pdf_extract.py`
+  will use the text layer.
+- `image_only` — sample is empty; `pdf_extract.py` will need OCR (or skip).
+- `mixed` — sample is 1–100 chars; partial OCR layer or partial text. OCR
+  recommended for completeness.
+- `corrupted` — `pypdf` failed to open the file; `notes` carries the exception
+  class so the user can spot category failures.
+
+Each row also reports `metadata_quality` (`good` / `partial` / `none` based on
+title / author / creation_date completeness), an `estimated_words` count
+extrapolated from the sample, a `has_ocr_layer` heuristic (text + images on
+the same page suggest a prior OCR pass), and the file's SHA-256 for inter-row
+deduplication.
+
+The inventory is the **review surface**. It never writes cleaned text and
+never emits a manifest entry. The user keeps the rows that should join the
+pool, annotates them with persona / register / consent metadata (see below),
+and feeds the filtered file to `pdf_extract.py`.
+
+### Usage
+
+```
+python3 scripts/pdf_inventory.py \
+    --root ~/Documents/papers \
+    --output ../ai-prose-baselines-private/pdf_inventory.jsonl
+
+# Restrict to subset:
+python3 scripts/pdf_inventory.py \
+    --root ~/Documents/papers \
+    --include-glob '**/honig*.pdf' \
+    --include-glob '**/arendt*.pdf' \
+    --max-files 50 \
+    --output draft_inventory.jsonl
+
+# Verbose progress on a large library:
+python3 scripts/pdf_inventory.py \
+    --root ~/Documents/papers \
+    --workers 4 \
+    --verbose \
+    --output ../ai-prose-baselines-private/pdf_inventory.jsonl
+```
+
+### Filtering between inventory and extraction
+
+After `pdf_inventory.py`, the user edits the JSONL to:
+
+1. Drop rows that shouldn't join the impostor pool (corrupted files, unwanted
+   topics, image-only PDFs that aren't worth the OCR cost).
+2. Add the impostor metadata fields the manifest validator requires:
+   `persona`, `register`, `register_match` (`high` / `medium` / `low`),
+   `topic_match`, `consent_status`, `era`, `impostor_for` (list of target
+   personas).
+
+A small `jq` recipe to add the same metadata to every row:
+
+```
+jq -c '. + {persona: "honig_bonnie_personal", register: "academic_philosophy",
+            register_match: "high", topic_match: "medium",
+            consent_status: "fair_use_research", era: "pre_chatgpt",
+            impostor_for: ["philosophy"]}' \
+   pdf_inventory.jsonl > pdf_inventory_filtered.jsonl
+```
+
+Privacy: PDF metadata can leak personal information. The privacy guard treats
+the `--output` path the same way `voice_profile.py` treats voice profiles —
+must live under any directory named `ai-prose-baselines-private` unless
+`--allow-public-output` is set.
+
+### Dependencies
+
+`pypdf` from `requirements-acquisition.txt`. The inventory step does not
+require OCR.
+
+---
+
+## pdf_extract.py
+
+Extracts plain text from PDFs flagged in a filtered inventory. Text-extractable
+files go through `pypdf`; image-only / mixed files go through `ocrmypdf` (when
+available). Each successful extraction produces:
+
+- `<output-dir>/<persona-slug>/<YYYY-MM-DD>_<title-slug>.txt` (cleaned text,
+  same `preprocessing.py` corpus-hygiene gate as identity baselines and live
+  blog acquisition).
+- A `.meta.json` sidecar (source path, raw byte length, content hash, full
+  preprocessing metadata block, `acquired_via: pdf_extract_<text_layer|
+  ocrmypdf>_<date>`).
+- A draft manifest entry with `corpus_role: impostor`,
+  `use: ["voice_impostor"]`, `split: "baseline"`, `privacy: "private"`, and
+  every impostor-required field copied from the filtered inventory row.
+
+### Usage
+
+```
+# Fast first pass: only text-extractable entries, no OCR.
+python3 scripts/pdf_extract.py \
+    --inventory pdf_inventory_filtered.jsonl \
+    --output-dir ../ai-prose-baselines-private/impostors/academic_philosophy/ \
+    --skip-ocr
+
+# Full pass with OCR (requires ocrmypdf + tesseract + ghostscript + qpdf).
+python3 scripts/pdf_extract.py \
+    --inventory pdf_inventory_filtered.jsonl \
+    --output-dir ../ai-prose-baselines-private/impostors/academic_philosophy/ \
+    --workers 2
+
+# Dry run to see what would be extracted:
+python3 scripts/pdf_extract.py \
+    --inventory pdf_inventory_filtered.jsonl \
+    --output-dir ../ai-prose-baselines-private/impostors/academic_philosophy/ \
+    --dry-run
+```
+
+### Skips
+
+`pdf_extract.py` is conservative about what it writes:
+
+- Inventory rows with `classification: corrupted` are skipped silently.
+- Rows missing any impostor-required field (`persona`, `register`,
+  `register_match`, `topic_match`, `consent_status`, `era`, `impostor_for`)
+  are skipped with a stderr notice — the validator would reject the resulting
+  manifest, so we catch it earliest.
+- Files that hash-match an already-acquired entry in the same author subdir
+  are skipped as duplicates. Two PDFs of the same essay (a journal preprint
+  and a republished collection version, for example) hash the same after
+  preprocessing and one wins.
+- Image-only / mixed entries are skipped when `--skip-ocr` is set or when the
+  OCR dependency layer (`ocrmypdf` + tesseract + ghostscript + qpdf) is
+  unavailable. The first row that needs OCR triggers a one-time stderr notice
+  explaining how to install the layer; subsequent skips are quiet.
+
+### OCR notes
+
+`ocrmypdf` is the best wrapper around tesseract because it handles deskew,
+despeckle, and image preprocessing automatically. For academic PDF photocopies
+the default settings produce 85–95% character accuracy — sufficient for
+stylometric work where POS-bigram and function-word distributions are robust
+to occasional errors.
+
+OCR is slow: figure 30–90 seconds per 20-page paper depending on image quality
+and DPI. For thousands of files, batched processing with `--workers N` helps.
+Realistic throughput on a modern Mac: 100–200 papers per hour.
+
+Install the OCR layer on macOS:
+
+```
+pip install ocrmypdf
+brew install tesseract ghostscript qpdf
+```
+
+If any of those is missing, `pdf_extract.py` reports the missing component and
+either skips the OCR-needing rows or refuses cleanly when `--skip-ocr` is not
+set.
+
+### Privacy
+
+Default output goes under
+`ai-prose-baselines-private/impostors/<register>/<persona>/`. The privacy
+guard refuses non-private output paths unless `--allow-public-output` is set.
+Extracted PDF text is voice-cloning input from someone else's prose; treat it
+exactly like the user's own baseline corpus.
+
+---
+
 ## Corpus manifest format
 
 A manifest is JSONL: one JSON object per file. Paths may be absolute or relative
