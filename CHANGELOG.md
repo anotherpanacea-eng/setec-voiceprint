@@ -6,6 +6,14 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.9.1] - 2026-05-08
+
+Roadmap pass on cathedral upgrade #7 (before/after restoration loop): records the metric-targeted restoration packets framing as the next scoped slice.
+
+### Changed
+
+- `ROADMAP.md` cathedral upgrade #7 status line now names the next scoped slice ("metric-targeted restoration packets that translate diagnostic outputs into revision-safe prompt targets, then require a SETEC post-check"). New "Metric-targeted restoration packets" subsection between the adversarial-test-classes and Phase 7+ sections, with the targetability taxonomy (direct targets / translated targets / investigate-first targets / avoid-direct targeting) named so the framework's promised craft-restoration surface has a concrete v1 shape. New cross-layer architectural question added: "which diagnostic signals are safe restoration targets?" — captures that POS bigram/trigram drift is the central test case (diagnostic in raw form, revision-useful only after translation into prose moves).
+
 ## [1.9.0] - 2026-05-08
 
 Voice-coherence validation harness. Closes the asymmetry where Surface 1 (smoothing diagnosis) had `validation_harness.py` with ROC AUC + bootstrap CIs + ESL slicing + FPR-target framing, and Surface 2 (voice coherence) had only literature anchoring (Mosteller-Wallace 1964) but no labeled-fixture validation in the repo.
@@ -201,7 +209,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.0...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.1...HEAD
+[1.9.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.0...v1.9.1
 [1.9.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.2...v1.9.0
 [1.8.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.0...v1.8.1

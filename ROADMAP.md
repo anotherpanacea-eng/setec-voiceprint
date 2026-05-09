@@ -38,7 +38,7 @@ The substantive design moves the roadmap is organized around:
 
 6. **Voice profile expansion.** Add idiolectic phrase extraction, collocations, sentence-shape distributions, readability spread, MTLD/MATTR/Yule ranges, time drift, POV-specific profiles, and a "do not normalize these phrases" preservation list. Status: core profile shipped in `voice_profile.py` with function-word, character-n-gram, punctuation cadence, paragraph/dialogue, and pronoun-modal-negation features. Idiolect extraction shipped as `idiolect_detector.py`; time-drift tracking remains roadmap.
 
-7. **Before/after restoration loop.** Run a draft, revise, rerun, and compare whether the changes restored voice or just gamed the metrics. Without this loop, the tool eventually teaches metric-chasing. Status: scoped, not yet built.
+7. **Before/after restoration loop.** Run a draft, revise, rerun, and compare whether the changes restored voice or just gamed the metrics. Without this loop, the tool eventually teaches metric-chasing. Status: scoped, not yet built. Next scoped slice: metric-targeted restoration packets that translate diagnostic outputs into revision-safe prompt targets, then require a SETEC post-check.
 
 8. **Privacy and packaging guards.** The system refuses to export private baselines, voice profiles, and idiolect preservation lists into publishable plugin folders. Status: `voice_profile.py` and `idiolect_detector.py` refuse output paths outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed; `manifest_validator.py` enforces a privacy ratchet on `voice_profile`- and `idiolect`-tagged entries.
 
@@ -85,6 +85,21 @@ Beyond the basic known-AI / AI-edited / mixed split, the harness will evaluate a
 
 Each adversarial class is a labeled `use: validation` slice with explicit `notes` provenance. The harness refuses to mix scores across classes and reports per-class TPR independently.
 
+### Metric-targeted restoration packets
+
+The before/after restoration loop needs a translation layer between "the diagnostic signal moved" and "revise this passage." Some signals are direct craft targets; some are only promptable after translation; some are poor direct targets and should trigger a deeper causal read.
+
+Planned artifact: a separate `metric-targeted-restoration` skill under the `craft_restoration` task surface, plus `references/metric-targeted-restoration.md` and a packet-generator script (`scripts/restoration_packet.py`). The packet generator will consume existing JSON outputs from `variance_audit.py`, `bigram_diff.py`, `voice_distance.py`, `idiolect_detector.py`, and `aic_pattern_audit.py`, then emit bounded revision packets with a claim license, targetability class, local evidence, plain-language translation, allowed moves, guardrails, and post-check commands.
+
+Targetability classes:
+
+- **Direct targets.** Connective density, sentence-length variance, FKGL spread, adjacent-cosine tidiness, repeated generic vocabulary, idiolect preservation lists, and named AIC pattern density.
+- **Translated targets.** POS bigrams/trigrams, selected dependency n-grams, function-word clusters, and voice-distance contributors. Raw tags such as `DET+ADJ+NOUN` become prose instructions such as "replace generic descriptor packages with concrete actors, objects, or verbs."
+- **Investigate-first targets.** MATTR, MTLD, Yule's K, Shannon entropy, and some function-word/dependency drift. These ask "what local cause produced the signal?" before any revision.
+- **Avoid direct targeting.** Overall KL/JSD, Burrows Delta, cosine distance, char n-grams, and validation metrics. These are evidence summaries, not writing goals.
+
+Status: scoped. The first version should not rewrite prose; it should produce prompt packets and require a before/after SETEC post-check so the writer can see whether the revision restored the intended signal without damaging neighboring signals or idiolect.
+
 ### Phase 7+ horizon: local LLM cross-perplexity
 
 Classical stylometry is structurally blind to the homogeneous-mixing case where AI rewrites human ideas in AI's style: the surface form is fully AI, even though the underlying ideas are human, and any detector that operates on the surface form alone will score the entire text as AI. Hans et al. (Binoculars, ICML 2024) and Bao et al. (Fast-DetectGPT, ICLR 2024) show the cleanest current zero-shot detectors operate on cross-perplexity ratios between paired language models sharing a tokenizer.
@@ -127,6 +142,7 @@ The validation and idiolect roadmap should start from known implementations befo
 - Calibration of the band-classification fraction thresholds (0.15, 0.40) against a labeled corpus. Currently fractions of available signal weight, not absolute percentages of evidence.
 - POS-bigram KL/JSD smoothing constant. Currently add-one Laplace smoothing on the union of bigrams; literature suggests add-α with α<1 may be more principled. Calibration against a labeled corpus is the right time to tighten this.
 - **Dosage signal is missing.** The 2026-05-08 corpus run (9 post-2022 essays each annotated by AI-involvement degree, cleaned of CSS contamination, evaluated against a 50-file pre-AI baseline) found heavy-AI-cluster mean KL = 0.167 and lighter-AI-cluster mean KL = 0.156. Statistically indistinguishable. POS-bigram KL detects the post-AI cohort against a pre-AI baseline; it does not grade AI-involvement amount within the post-AI cohort, on the corpora tested. If the framework wants a dosage signal, it needs different machinery than POS-bigram KL alone. Candidates worth investigating: model-specific bigram fingerprints (the multi-model collaborative regime may carry distinguishable per-model residue), word-level n-gram template residue (the existing `manuscript_repetition_audit.py` and `chapter_distinctiveness_audit.py` operate at word-level rather than POS-level and might pick up signal that POS-bigram KL doesn't), sentence-rhythm features (clause-balance ratios, parallelism density, antithesis frequency — the AI-shaping fingerprints the framework's named patterns don't yet catch).
+- **Which diagnostic signals are safe restoration targets?** Directly prompting an LLM to optimize KL, Delta, entropy, or char n-gram distance invites metric gaming. The restoration surface needs a targetability taxonomy: direct craft targets, translated syntax targets, investigate-first diagnostics, and avoid-direct metrics. POS bigram/trigram drift is the central test case because it is diagnostic in raw form but only revision-useful after translation into prose moves.
 
 ## Voice fingerprint risk surface
 
@@ -151,3 +167,5 @@ The framework's privacy posture is therefore protective by default. Personal bas
 **POS-bigram KL detects the post-AI cohort, not AI-involvement amount.** On corpora tested through 2026-05, KL reliably separates pre-AI prose from post-AI prose against a register-matched pre-AI baseline, but does not reliably distinguish "lightly AI-involved" from "heavily AI-composed" within the post-AI cohort. The framework's claim language should match: a post-AI cohort indicator with a calibrated TPR/FPR statement at a stated operating point, not a dosage gauge. The validation harness output is the right venue for that statement; folk thresholds in script docs are the wrong one.
 
 **The Layer A band is necessary but not sufficient on edited collaboration outputs.** The 2026 multi-model collaborative regime (notes → AI draft → human comment → AI revision) reintroduces surface variance that the eleven variance heuristics measure. Layer A passes; Layer B and source triage do the work that catches the LLM's underlying preferences for antithesis density, paragraph-closure consistency, and structural symmetry. The framework's marketing language has at times implied Layer A alone is the detector; the architecture has always disclaimed that, and the doc language should match.
+
+**Do not target raw metrics in revision prompts.** Metrics diagnose drift; they are not prose goals. A good restoration prompt names the local prose pattern and the allowed move, not the number. "Reduce `DET+ADJ+NOUN` packages by replacing generic descriptor labels with concrete actors or verbs" is a usable instruction. "Lower POS-bigram KL" is not.
