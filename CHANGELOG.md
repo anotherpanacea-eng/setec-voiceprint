@@ -6,6 +6,20 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.15.1] - 2026-05-09
+
+Marketplace metadata catch-up. The `description` field in `.claude-plugin/marketplace.json` had been drifting since the cathedral upgrades landed (1.10.x onward) — it stopped at "MVP empirical validation against labeled corpora" and never picked up voice drift, per-POV voiceprints, restoration packets, before/after verdicts, calibration toolchain, or impostor-corpus acquisition. Marketplace browsers were seeing a stale feature list. The repo carries no separate version field on marketplace.json, but the plugin description is what users see when they search the marketplace, so this is a real surface to keep current.
+
+### Changed
+
+- `.claude-plugin/marketplace.json`: top-level `metadata.description` and per-plugin `description` rewritten to match the current feature surface (voice-coherence including drift / per-POV / impostor pool, validation including voice-validation harness and calibration toolchain, craft-restoration including before/after verdicts, blog acquisition for the impostor pool).
+- Both `plugin.json` and `marketplace.json` now share the same expanded `keywords` list: `voice-drift`, `pov-analysis`, `impostor-corpus`, `general-imposters`, `craft-restoration`, `calibration` added alongside the existing eight. The two files are kept in sync so marketplace search results match the installed plugin's metadata.
+
+### Notes
+
+- No code or test changes; documentation/metadata only. 194 tests pass + 2 skipped (unchanged from 1.15.0).
+- Future releases should keep `marketplace.json`'s `description` and `keywords` in sync with `plugin.json` whenever a feature lands. A small lint at release time (or a pre-commit hook) would catch drift earlier; deferred to a maintenance pass.
+
 ## [1.15.0] - 2026-05-09
 
 Blog acquisition tooling for the impostor corpus. Commit 2 of three for the impostor-corpus spec (`internal/2026-05-08-impostor-corpus-spec.md`); Commit 1 (1.14.3) shipped the schema, Commit 3 (`acquire_magazine.py` + `pdf_inventory.py` + `pdf_extract.py`) follows. The General Imposters validation harness still has to be wired up separately, but with this release the framework can now build the impostor pool the harness needs from any Substack, WordPress / Ghost blog, or generic-HTML archive.
