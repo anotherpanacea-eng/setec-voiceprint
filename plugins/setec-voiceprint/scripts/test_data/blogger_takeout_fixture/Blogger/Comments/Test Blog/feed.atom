@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns='http://www.w3.org/2005/Atom'>
+  <id>tag:blogger.com,1999:blog-123456789.comments</id>
+  <title>Test Blog Comments</title>
+  <entry>
+    <id>tag:blogger.com,1999:blog-123456789.comment-5555555555555555</id>
+    <published>2019-03-04T12:15:00.000Z</published>
+    <updated>2019-03-04T12:16:00.000Z</updated>
+    <title>Comment</title>
+    <content type='html'>&lt;p&gt;This comment feed should not be discovered by default.&lt;/p&gt;</content>
+  </entry>
+</feed>

@@ -1,0 +1,38 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<feed xmlns='http://www.w3.org/2005/Atom'>
+  <id>tag:blogger.com,1999:blog-123456789</id>
+  <title>Test Blog</title>
+  <entry>
+    <id>tag:blogger.com,1999:blog-123456789.post-1111111111111111</id>
+    <published>2019-03-04T10:15:00.000Z</published>
+    <updated>2019-03-04T10:16:00.000Z</updated>
+    <title>The Long Essay</title>
+    <link rel='alternate' type='text/html' href='https://example.blogspot.com/2019/03/the-long-essay.html'/>
+    <category scheme='tag:blogger.com,1999:blog-123456789' term='essays'/>
+    <content type='html'>&lt;p&gt;This is a long Blogger post with enough prose to survive the minimum word filter. It moves through several clauses, has ordinary punctuation, and gives the importer a realistic paragraph to clean. The archive may include links, &lt;a href=&quot;https://example.com&quot;&gt;references&lt;/a&gt;, and small bits of formatting, but the extracted text should preserve the author's sentences rather than the HTML wrapper.&lt;/p&gt;&lt;p&gt;A second paragraph gives the test more body. It mentions attention, memory, study, argument, and voice, because those are normal words for this fixture and not secret data. The point is simply to check that Atom content becomes plain text, then a private manifest row.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <id>tag:blogger.com,1999:blog-123456789.post-2222222222222222</id>
+    <published>2019-03-04T11:15:00.000Z</published>
+    <updated>2019-03-04T11:16:00.000Z</updated>
+    <title></title>
+    <link rel='alternate' type='text/html' href='https://example.blogspot.com/2019/03/untitled.html'/>
+    <content type='html'>&lt;p&gt;This titleless Blogger post is still a real entry. The importer should not throw it away just because Blogger stored a blank title. Instead it should fall back to the stable post identifier so the filename is unique and another titleless post from the same day cannot overwrite it. The text here is long enough to be acquired in the regression test and short enough to remain readable.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <id>tag:blogger.com,1999:blog-123456789.post-3333333333333333</id>
+    <published>2024-01-01T00:00:00.000Z</published>
+    <updated>2024-01-01T00:00:00.000Z</updated>
+    <title>After The Window</title>
+    <link rel='alternate' type='text/html' href='https://example.blogspot.com/2024/01/after-window.html'/>
+    <content type='html'>&lt;p&gt;This later post should be filtered by the --until window in tests, even though it contains enough words to be useful in another run. It exists to make sure the date filter is wired to Blogger timestamps instead of being ignored.&lt;/p&gt;</content>
+  </entry>
+  <entry>
+    <id>tag:blogger.com,1999:blog-123456789.post-4444444444444444</id>
+    <published>2018-01-01T00:00:00.000Z</published>
+    <updated>2018-01-01T00:00:00.000Z</updated>
+    <title>Too Short</title>
+    <link rel='alternate' type='text/html' href='https://example.blogspot.com/2018/01/too-short.html'/>
+    <content type='html'>&lt;p&gt;Tiny note only.&lt;/p&gt;</content>
+  </entry>
+</feed>

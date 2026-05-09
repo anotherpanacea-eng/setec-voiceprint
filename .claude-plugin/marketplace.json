@@ -1,8 +1,8 @@
 {
   "name": "setec-voiceprint",
   "metadata": {
-    "version": "1.16.0",
-    "description": "SETEC stylometric framework: AI-prose smoothing diagnosis, voice-coherence comparison (drift, per-POV, impostor pool), manifest validation, calibration toolchain, and craft restoration."
+    "version": "1.17.0",
+    "description": "SETEC stylometric framework: AI-prose smoothing diagnosis, voice-coherence comparison (drift, per-POV, impostor pool), manifest validation, calibration toolchain, craft restoration, and offline Blogger Takeout acquisition."
   },
   "owner": {
     "name": "anotherpanacea-eng",
@@ -12,8 +12,8 @@
     {
       "name": "setec-voiceprint",
       "source": "./plugins/setec-voiceprint",
-      "version": "1.16.0",
-      "description": "Stylometric tools for AI-prose detection and voice-coherence diagnosis. Four task surfaces: smoothing diagnosis (Layer A variance signals), voice-coherence comparison (Burrows-style Delta + cluster mode + idiolect preservation lists + voice drift tracking across time periods + per-POV voiceprints with voice-collapse detection + impostor-pool acquisition for the General Imposters method), validation (manifest integrity + corpus-hygiene gate + ROC/PR harness on smoothing and voice-coherence + voice-validation harness + calibration toolchain with provenance ledger), and craft-restoration (AIC flag families, source triage, rhetorical countermoves, metric-targeted restoration packets that translate diagnostic outputs into bounded revision-safe prompts, before/after restoration verdicts with metric-gaming detection). Python tooling spans manuscript-level audits, sliding-window localization, length-matched bootstrap percentiles, R `stylo` oracle verification, MVP empirical validation against labeled corpora, and blog acquisition (Substack / WordPress / generic-HTML / Wayback) for the impostor pool.",
+      "version": "1.17.0",
+      "description": "Stylometric tools for AI-prose detection and voice-coherence diagnosis. Four task surfaces: smoothing diagnosis (Layer A variance signals), voice-coherence comparison (Burrows-style Delta + cluster mode + idiolect preservation lists + voice drift tracking across time periods + per-POV voiceprints with voice-collapse detection + impostor-pool acquisition for the General Imposters method), validation (manifest integrity + corpus-hygiene gate + ROC/PR harness on smoothing and voice-coherence + voice-validation harness + calibration toolchain with provenance ledger), and craft-restoration (AIC flag families, source triage, rhetorical countermoves, metric-targeted restoration packets that translate diagnostic outputs into bounded revision-safe prompts, before/after restoration verdicts with metric-gaming detection). Python tooling spans manuscript-level audits, sliding-window localization, length-matched bootstrap percentiles, R `stylo` oracle verification, MVP empirical validation against labeled corpora, live blog acquisition (Substack / WordPress / generic-HTML / Wayback), and offline Blogger Takeout import for the impostor pool.",
       "author": {
         "name": "anotherpanacea-eng",
         "email": "anotherpanacea@gmail.com"
@@ -34,7 +34,8 @@
         "impostor-corpus",
         "general-imposters",
         "craft-restoration",
-        "calibration"
+        "calibration",
+        "blogger-takeout"
       ],
       "category": "writing"
     }

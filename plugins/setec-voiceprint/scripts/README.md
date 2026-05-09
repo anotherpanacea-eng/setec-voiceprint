@@ -1101,6 +1101,42 @@ the Substack extraction path.
 
 ---
 
+## acquire_blogger_takeout.py
+
+Imports a Google Takeout Blogger export into the same impostor-pool format as
+`acquire_blog.py`, without touching the live site. This is the preferred path
+when an author has shared their Blogger/Blogspot Takeout archive: it is more
+complete than Blogger's public feed caps, avoids network scraping, and preserves
+stable Blogger post IDs in sidecar metadata.
+
+By default, the importer only reads `Blogger/Blogs/*/feed.atom`. It excludes
+`Blogger/Comments/*/feed.atom` unless `--include-comments` is passed, because
+comment feeds are a different register and may contain conversational context or
+other people's prose.
+
+### Usage
+
+```
+python3 scripts/acquire_blogger_takeout.py /path/to/Takeout \
+    --persona critical_animal_blog \
+    --author "Critical Animal" \
+    --impostor-for anotherpanacea_blog \
+    --register blog_essay \
+    --consent-status author_consent \
+    --era pre_chatgpt \
+    --until 2022-11-01 \
+    --min-words 250
+```
+
+The positional path may be the Takeout root, a `Blogger/` directory, or a single
+`feed.atom` file. Output defaults to
+`<baselines>/impostors/<register>/<persona>/`; pass `--output-dir` and
+`--emit-manifest` to override. Untitled Blogger posts are retained with stable
+`untitled-<post-id>` filenames so same-day titleless posts do not overwrite each
+other.
+
+---
+
 ## Corpus manifest format
 
 A manifest is JSONL: one JSON object per file. Paths may be absolute or relative

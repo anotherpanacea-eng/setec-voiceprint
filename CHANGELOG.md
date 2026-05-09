@@ -6,6 +6,50 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.17.0] - 2026-05-09
+
+Offline Blogger Takeout acquisition for the impostor corpus. This is the local
+archive sibling to `acquire_blog.py`: when an author shares a Google Takeout
+Blogger export, SETEC can now import the full `Blogger/Blogs/*/feed.atom`
+payload without scraping the live site or being capped by Blogger's public feed
+limits.
+
+### Added
+
+- **`scripts/acquire_blogger_takeout.py`** — imports a Takeout root, `Blogger/`
+  directory, or single `feed.atom` file into the standard impostor-pool artifact
+  shape: cleaned `.txt` files, `.meta.json` sidecars, and a draft manifest with
+  `corpus_role: "impostor"`, `use: ["voice_impostor"]`, content hashes, consent
+  posture, era, `impostor_for`, and `acquired_via`.
+- **Comment feeds excluded by default.** The importer reads
+  `Blogger/Blogs/*/feed.atom` and ignores `Blogger/Comments/*/feed.atom` unless
+  `--include-comments` is passed explicitly. Comment feeds are a different
+  register and may contain conversational context or other people's prose.
+- **Blogger-specific provenance in sidecars.** Each `.meta.json` records the
+  Blogger entry id, stable short id, labels, update timestamp, and source feed
+  path. Untitled Blogger entries are retained with stable
+  `untitled-<post-id>` filenames so same-day titleless posts do not overwrite
+  each other.
+- **Fixture coverage.** `scripts/test_data/blogger_takeout_fixture/` adds a
+  synthetic Takeout-shaped export with a blog feed, comment feed, titleless
+  entry, out-of-window entry, and too-short entry. `test_acquire_blogger_takeout.py`
+  covers feed discovery, comment-feed refusal, titleless-entry retention,
+  locator-only body skipping, end-to-end manifest emission, and required
+  `--impostor-for`.
+- **Docs.** `scripts/README.md` now documents the Takeout importer and explains
+  why it is preferred over live Blogger feed acquisition when a Takeout archive
+  is available.
+
+### Notes
+
+- Manual private smoke run against a shared Blogger Takeout archive produced
+  463 acquired posts, 463 sidecars, a validator-clean draft manifest with 0
+  errors, and 321,206 cleaned words after `--until 2022-11-01` and
+  `--min-words 250`. The only manifest warnings were expected standalone-draft
+  `impostor_for` warnings because the target identity baseline is not included
+  in the draft manifest.
+- 209 tests pass + 2 skipped (was 203 + 2 in 1.16.0; +6 Blogger Takeout tests).
+
 ## [1.16.0] - 2026-05-09
 
 Plugin packaging fix: scripts now ship with the plugin install. Pre-1.16.0, `scripts/`, `references/`, and `requirements*.txt` lived at the repo root and the plugin dir at `plugins/setec-voiceprint/` only contained `.claude-plugin/plugin.json` + 5 SKILL.md files. SKILL.md script paths used `${CLAUDE_PLUGIN_ROOT}/../../scripts/`, which assumes the marketplace install ships the whole repo — but in practice it ships only the plugin source dir. Result: a fresh marketplace install of setec-voiceprint had `voice_distance.py`, `acquire_blog.py`, every other script, and every reference doc missing. Users would invoke a skill, follow its example command, and hit `python3: can't open file '.../scripts/voice_distance.py': No such file or directory`.
