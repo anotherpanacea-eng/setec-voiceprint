@@ -58,6 +58,7 @@ task_surface: voice_coherence.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import math
 import re
@@ -110,16 +111,29 @@ FAMILY_NAMES = (
 # --------------- Date parsing -------------------------------
 
 
+# Strict ISO format: YYYY, YYYY-MM, or YYYY-MM-DD with no trailing
+# garbage. Anchored at both ends so values like "2020-01-foo" are
+# rejected outright (silent suffix-stripping was a real risk for
+# misclassifying drift periods).
 _ISO_DATE_RE = re.compile(
-    r"^(?P<y>\d{4})(?:-(?P<m>\d{1,2}))?(?:-(?P<d>\d{1,2}))?"
+    r"^(?P<y>\d{4})(?:-(?P<m>\d{2})(?:-(?P<d>\d{2}))?)?$"
 )
 
 
 def _parse_iso_date(s: str) -> tuple[int, int, int] | None:
-    """Parse a partial ISO date (year, year-month, or year-month-day).
+    """Parse a strict ISO date (year, year-month, or year-month-day).
     Returns (year, month_or_0, day_or_0) or None on failure. Coarser
-    dates (year-only) get month=0, day=0; the caller decides how to
-    handle the missing components when grouping into periods."""
+    dates (year-only or year-month) get the missing components set
+    to 0; the caller decides how to handle them when grouping into
+    periods.
+
+    Strictness: the format must be exactly ``YYYY``, ``YYYY-MM``, or
+    ``YYYY-MM-DD`` with no trailing characters. Full year-month-day
+    values are validated via ``datetime.date`` so impossible dates
+    like ``2020-02-31`` are rejected (they would otherwise silently
+    misclassify documents into periods). Year-month partials get a
+    range check on the month component.
+    """
     if not isinstance(s, str):
         return None
     m = _ISO_DATE_RE.match(s.strip())
@@ -127,16 +141,23 @@ def _parse_iso_date(s: str) -> tuple[int, int, int] | None:
         return None
     try:
         y = int(m.group("y"))
-        mo = int(m.group("m") or 0)
-        d = int(m.group("d") or 0)
+        mo = int(m.group("m")) if m.group("m") else 0
+        d = int(m.group("d")) if m.group("d") else 0
     except (ValueError, TypeError):
         return None
     if y < 1500 or y > 3000:
         return None
-    if mo and (mo < 1 or mo > 12):
-        return None
-    if d and (d < 1 or d > 31):
-        return None
+    # Full date: validate via datetime.date so impossible dates
+    # (Feb 31, Apr 31, etc.) are rejected.
+    if mo and d:
+        try:
+            _dt.date(y, mo, d)
+        except ValueError:
+            return None
+    # Year-month partial: month range check only.
+    elif mo:
+        if mo < 1 or mo > 12:
+            return None
     return y, mo, d
 
 
@@ -456,23 +477,31 @@ def cross_period_distances(
     distance between period centroids. Returns {family: {(p_a, p_b):
     {burrows_delta, cosine_distance}}}.
 
-    The z-score column stats are computed once over the SET OF PERIOD
-    CENTROIDS (not over individual docs) — this measures inter-period
-    drift, not within-period dispersion. The informative-feature
-    filter applies the same convention as voice_validation_harness:
-    columns with sd=0 across periods are excluded from the Burrows-
-    Delta average."""
+    Z-score column stats are computed over the per-DOCUMENT feature
+    vectors across all periods (NOT over the period centroids
+    themselves). This is critical for two-period reports: with stats
+    computed over only K=2 centroids, every informative feature gets
+    symmetric z-scores ±sqrt(2)/2, so |z_a - z_b| collapses to a
+    constant sqrt(2) ≈ 1.414 regardless of the actual magnitude of
+    drift. Per-document stats restore the magnitude signal: a small
+    centroid shift relative to within-period dispersion gives small
+    z-deltas; a large centroid shift gives large z-deltas. Same
+    pattern as voice_validation_harness, which computes stats over
+    the entire selected slice rather than over per-pair vectors.
+    """
     out: dict[str, dict[tuple[str, str], dict[str, float | None]]] = {}
     period_labels = sorted(profiles.keys())
     for family, names in selected_features.items():
         if not names:
             continue
-        # Build centroid vectors per period for stats.
-        centroids = [
-            profiles[p].period_centroids.get(family, {})
-            for p in period_labels
-        ]
-        stats = vector_stats(centroids, names)
+        # Per-doc feature vectors across all periods (the population
+        # we z-score against). Period centroids are then z-scored
+        # against this distribution.
+        per_doc_vectors: list[dict[str, float]] = []
+        for p in period_labels:
+            for item in profiles[p].feature_items:
+                per_doc_vectors.append(feature_vector(item, family, names))
+        stats = vector_stats(per_doc_vectors, names)
         informative = _informative_keys(stats, names)
         family_distances: dict[tuple[str, str], dict[str, float | None]] = {}
         for i, p_a in enumerate(period_labels):
@@ -1047,6 +1076,22 @@ def main(argv: list[str] | None = None) -> int:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(md, encoding="utf-8")
     if not json_path and not out_path:
+        # Stdout is also voice-cloning-sensitive output. The privacy
+        # guard's path-based check would have blocked any file outside
+        # ai-prose-baselines-private/; stdout was previously a hole
+        # because it has no path. Refuse stdout output unless
+        # --allow-public-output is passed (mirrors the file-path
+        # check), so the default-private posture holds end-to-end.
+        if not args.allow_public_output:
+            sys.stderr.write(
+                "Refusing to write voice-drift report to stdout "
+                "without --allow-public-output. POV / voice-drift "
+                "output is voice-cloning input; default-private "
+                "posture requires either --out / --json-out into "
+                "ai-prose-baselines-private/, or --allow-public-"
+                "output for non-personal corpora (e.g., Federalist).\n"
+            )
+            return 2
         sys.stdout.write(md)
     return 0
 

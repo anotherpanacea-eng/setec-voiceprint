@@ -6,6 +6,21 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.14.1] - 2026-05-09
+
+Three reviewer-flagged P2 fixes against the voice-drift and per-POV trackers shipped in 1.13.0–1.14.0. The Burrows-Delta one is the substantive one: numeric output for two-period or two-POV reports changes from the (broken) constant `sqrt(2)` to magnitude-sensitive values. Date parser strictness and stdout privacy posture also tightened.
+
+### Fixed
+
+- **Burrows-Delta two-group degeneracy** in `voice_drift_tracker.cross_period_distances` and `pov_voice_profile.cross_pov_distances` + `pov_vs_corpus_mean_distances`. The pre-fix implementation computed z-score column stats over the K period/POV centroids themselves; with K=2 (the natural pre/post or two-character workflow), every informative feature collapsed to symmetric z-scores ±sqrt(2)/2, forcing |z_a − z_b| to a constant `sqrt(2) ≈ 1.4142` regardless of actual drift magnitude. Reproduced by the reviewer with both a tiny shift and a huge shift returning bit-identical Burrows-Delta values. Fixed by computing column stats over the per-DOCUMENT feature vectors across all groups (matches the convention `voice_validation_harness` already uses). Numeric output changes for any two-period or two-POV report; calibrated values from prior runs are not comparable. Cosine-distance values are unchanged (cosine doesn't z-score). Two new regression tests per tracker assert the value is no longer the suspicious sqrt(2) constant on the Federalist fixture, plus synthetic micro-fixtures verify large-drift Burrows-Delta > small-drift Burrows-Delta — the magnitude signal the pre-fix degeneracy threw away.
+- **Date parser accepted malformed suffixes and impossible calendar dates** in `voice_drift_tracker._parse_iso_date`. The pre-fix regex was prefix-anchored only, so `"2020-01-foo"` parsed as January 2020. Day-of-month wasn't validated against the month, so `"2020-02-31"` parsed as a real date. Both failure modes silently misclassified documents into wrong periods. Fixed: regex now anchored at both ends and requires fixed-width components (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`); full year-month-day values are validated via `datetime.date` so impossible combinations (Feb 30/31, Apr 31, non-leap-year Feb 29, etc.) are rejected. Year-only and year-month partials still accepted. Three new regression tests cover trailing-garbage rejection, impossible-date rejection (including leap-year edge cases for 2020 vs. 2021), and continued acceptance of valid partials.
+- **Stdout privacy bypass** in both `voice_drift_tracker.main` and `pov_voice_profile.main`. The privacy guard checked only `--out` and `--json-out` paths; when both were omitted, the report wrote to stdout without going through the guard. Voice-drift and POV-voiceprint output is voice-cloning input, and stdout writes can leak voiceprint details into terminal logs / CI artifacts / shell history. Fixed: stdout output now also requires `--allow-public-output`; without the override, `main()` exits with code 2 and a stderr message pointing at the file-output flags. Two new regression tests per tracker verify the refusal path and the allow-flag override path.
+
+### Notes
+
+- The Burrows-Delta fix changes numeric output. Anyone who recorded specific values from the 1.13.0 / 1.14.0 trackers should re-run after this update; the old values were degenerate (constant `sqrt(2)` for two-group reports).
+- All 138 tests pass + 1 skipped (was 126 + 1 in 1.14.0; +12 new regression tests for these three fixes).
+
 ## [1.14.0] - 2026-05-09
 
 Closes cathedral upgrade #6 (voice profile expansion). `pov_voice_profile.py` is the second sub-item — per-POV-character voiceprints for multi-POV fiction, with a heuristic voice-collapse detector flagging pairs of POVs that share too much voice space to be reliably distinguished. Pairs with `voice_distance.py` (writer vs. own baseline) and `voice_drift_tracker.py` (baseline disaggregated by time) to give the framework a complete voice-coherence diagnostic stack: drift across writers, drift across time, drift across characters.
@@ -400,7 +415,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.0...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.1...HEAD
+[1.14.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.1...v1.13.0
 [1.12.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.0...v1.12.1

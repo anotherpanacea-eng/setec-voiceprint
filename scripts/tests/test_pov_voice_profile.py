@@ -354,3 +354,142 @@ def test_cli_refuses_public_output_without_allow_flag(tmp_path) -> None:
                 "--out", str(out_md),
             ])
         assert exc.value.code == 2
+
+
+def test_cli_refuses_stdout_without_allow_flag() -> None:
+    """Reviewer catch: when no --out / --json-out is supplied, the
+    report previously went to stdout without going through the
+    privacy guard. POV voiceprints are voice-cloning input;
+    default-private posture must hold for stdout too."""
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist POV manifest not available")
+        return
+    if pytest is not None:
+        rc = pvp.main(["--manifest", str(MANIFEST)])
+        assert rc == 2
+
+
+def test_cli_allows_stdout_with_allow_flag(capsys) -> None:
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist POV manifest not available")
+        return
+    rc = pvp.main([
+        "--manifest", str(MANIFEST),
+        "--allow-public-output",
+    ])
+    assert rc == 0
+    captured = capsys.readouterr() if pytest is not None else None
+    if captured:
+        assert "Per-POV Voiceprint Report" in captured.out
+
+
+# ---- Burrows-Delta magnitude regression --------------------
+
+
+def test_burrows_delta_is_not_the_two_pov_constant() -> None:
+    """Reviewer catch: with stats computed over only K=2 POV
+    centroids, every informative feature gets symmetric z-scores
+    ±sqrt(2)/2, so |z_a - z_b| collapses to a constant sqrt(2)
+    regardless of actual drift magnitude. The fix uses per-document
+    stats. On the Federalist POV fixture, the result must NOT equal
+    sqrt(2)."""
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist POV manifest not available")
+        return
+    result = pvp.run(_args())
+    pair = result["weighted_distances"][("Hamilton", "Madison")]
+    delta = pair["burrows_delta"]
+    assert delta is not None
+    SQRT_2 = 2 ** 0.5
+    assert abs(delta - SQRT_2) > 0.01, (
+        f"POV Burrows-Delta {delta!r} is suspiciously close to "
+        f"sqrt(2). The 2-POV centroid-stats degeneracy may have "
+        f"returned."
+    )
+
+
+def test_pov_vs_corpus_mean_is_not_the_two_pov_constant() -> None:
+    """Same check on pov_vs_corpus_mean_distances: the per-POV-vs-
+    midpoint computation also previously used K-small centroid
+    stats and would degenerate when K=2."""
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist POV manifest not available")
+        return
+    result = pvp.run(_args())
+    pov_vs_mean = result["pov_vs_mean"]
+    h_delta = pov_vs_mean["Hamilton"]["burrows_delta"]
+    SQRT_2 = 2 ** 0.5
+    assert h_delta is not None
+    # The pre-fix value was exactly sqrt(2). With the fix using
+    # per-doc stats, this won't be sqrt(2).
+    assert abs(h_delta - SQRT_2) > 0.01, (
+        f"POV-vs-corpus-mean Burrows-Delta {h_delta!r} is "
+        f"suspiciously close to sqrt(2)."
+    )
+
+
+def test_pov_burrows_delta_varies_with_voice_distinctness() -> None:
+    """Synthetic regression: two POV configurations, one where the
+    POVs are voice-distinct (large cross-POV shift) and one where
+    they're nearly-collapsed (small shift). Burrows-Delta values
+    must differ; pre-fix both would have been sqrt(2)."""
+    from pov_voice_profile import cross_pov_distances, POVProfile
+
+    selected_features = {"function_words": ["the", "and", "of", "to"]}
+
+    def _build_profile(label: str, per_doc_freqs: list[dict[str, float]]) -> POVProfile:
+        items = [
+            {"id": f"{label}_doc{i}", "features": {"function_words": doc}}
+            for i, doc in enumerate(per_doc_freqs)
+        ]
+        names = ["the", "and", "of", "to"]
+        centroid = {
+            n: sum(d.get(n, 0.0) for d in per_doc_freqs) / len(per_doc_freqs)
+            for n in names
+        }
+        return POVProfile(
+            label=label,
+            n_docs=len(per_doc_freqs),
+            n_words=sum(1000 for _ in per_doc_freqs),
+            feature_items=items,
+            pov_centroids={"function_words": centroid},
+        )
+
+    # Voice-collapsed POVs: nearly identical per-doc frequencies.
+    collapsed_a = _build_profile("A", [
+        {"the": 0.10, "and": 0.05, "of": 0.04, "to": 0.03},
+        {"the": 0.11, "and": 0.05, "of": 0.04, "to": 0.03},
+    ])
+    collapsed_b = _build_profile("B", [
+        {"the": 0.10, "and": 0.06, "of": 0.04, "to": 0.03},
+        {"the": 0.11, "and": 0.05, "of": 0.05, "to": 0.03},
+    ])
+    collapsed_dist = cross_pov_distances(
+        {"A": collapsed_a, "B": collapsed_b}, selected_features,
+    )
+    collapsed_delta = collapsed_dist["function_words"][("A", "B")]["burrows_delta"]
+
+    # Voice-distinct POVs.
+    distinct_a = _build_profile("A", [
+        {"the": 0.05, "and": 0.02, "of": 0.02, "to": 0.01},
+        {"the": 0.06, "and": 0.02, "of": 0.02, "to": 0.01},
+    ])
+    distinct_b = _build_profile("B", [
+        {"the": 0.20, "and": 0.10, "of": 0.08, "to": 0.06},
+        {"the": 0.21, "and": 0.10, "of": 0.09, "to": 0.06},
+    ])
+    distinct_dist = cross_pov_distances(
+        {"A": distinct_a, "B": distinct_b}, selected_features,
+    )
+    distinct_delta = distinct_dist["function_words"][("A", "B")]["burrows_delta"]
+
+    assert collapsed_delta is not None
+    assert distinct_delta is not None
+    assert distinct_delta > collapsed_delta, (
+        f"Voice-distinct POVs Burrows-Delta {distinct_delta!r} "
+        f"should exceed voice-collapsed {collapsed_delta!r}."
+    )

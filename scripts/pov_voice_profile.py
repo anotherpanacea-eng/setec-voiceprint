@@ -273,16 +273,28 @@ def cross_pov_distances(
     selected_features: dict[str, list[str]],
 ) -> dict[str, dict[tuple[str, str], dict[str, float | None]]]:
     """For each family, pairwise Burrows-Delta + cosine between POV
-    centroids. Z-score column stats computed over the SET OF POV
-    CENTROIDS (measures inter-POV distinctness). Informative-feature
-    filter same as oracle / drift tracker / voice-validation harness."""
+    centroids. Z-score column stats computed over the per-DOCUMENT
+    feature vectors across all POVs (NOT over POV centroids alone).
+
+    Why per-doc and not per-centroid: with K=2 POVs, stats over only
+    the two centroids force every informative feature to symmetric
+    z-scores ±sqrt(2)/2, collapsing |z_a - z_b| to a constant sqrt(2)
+    regardless of magnitude. Per-document stats restore the
+    magnitude signal: a small centroid shift relative to within-POV
+    dispersion gives small z-deltas; a large centroid shift gives
+    large z-deltas. Mirrors the fix in voice_drift_tracker.cross_
+    period_distances and the convention in voice_validation_harness.
+    """
     out: dict[str, dict[tuple[str, str], dict[str, float | None]]] = {}
     pov_labels = sorted(profiles.keys())
     for family, names in selected_features.items():
         if not names:
             continue
-        centroids = [profiles[p].pov_centroids.get(family, {}) for p in pov_labels]
-        stats = vector_stats(centroids, names)
+        per_doc_vectors: list[dict[str, float]] = []
+        for p in pov_labels:
+            for item in profiles[p].feature_items:
+                per_doc_vectors.append(feature_vector(item, family, names))
+        stats = vector_stats(per_doc_vectors, names)
         informative = _informative_keys(stats, names)
         family_distances: dict[tuple[str, str], dict[str, float | None]] = {}
         for i, p_a in enumerate(pov_labels):
@@ -370,6 +382,22 @@ def pov_vs_corpus_mean_distances(
             vals = [c.get(name, 0.0) for c in per_pov_centroids]
             corpus_centroid[name] = sum(vals) / len(vals)
         corpus_centroids[family] = corpus_centroid
+    # Build per-document stats once across all POVs (the population
+    # we z-score against). Same fix as cross_pov_distances:
+    # centroid-only stats collapse to a constant when K is small.
+    per_doc_stats_by_family: dict[str, dict[str, dict[str, float]]] = {}
+    informative_by_family: dict[str, list[str]] = {}
+    for family, names in selected_features.items():
+        if not names:
+            continue
+        per_doc_vectors: list[dict[str, float]] = []
+        for p in pov_labels:
+            for item in profiles[p].feature_items:
+                per_doc_vectors.append(feature_vector(item, family, names))
+        stats = vector_stats(per_doc_vectors, names)
+        per_doc_stats_by_family[family] = stats
+        informative_by_family[family] = _informative_keys(stats, names)
+
     # For each POV, compute weighted distance to corpus mean
     for pov in pov_labels:
         delta_contribs: list[tuple[float, float]] = []
@@ -379,13 +407,8 @@ def pov_vs_corpus_mean_distances(
                 continue
             pov_centroid = profiles[pov].pov_centroids.get(family, {})
             corpus_centroid = corpus_centroids[family]
-            other_centroids = [
-                profiles[p].pov_centroids.get(family, {})
-                for p in pov_labels if p != pov
-            ]
-            other_centroids.append(corpus_centroid)
-            stats = vector_stats(other_centroids, names)
-            informative = _informative_keys(stats, names)
+            stats = per_doc_stats_by_family[family]
+            informative = informative_by_family[family]
             delta = _pair_burrows_delta(
                 pov_centroid, corpus_centroid, informative, stats,
             )
@@ -878,6 +901,21 @@ def main(argv: list[str] | None = None) -> int:
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(md, encoding="utf-8")
     if not json_path and not out_path:
+        # Stdout is also voice-cloning-sensitive output. The privacy
+        # guard's path-based check would have blocked any file
+        # outside ai-prose-baselines-private/; stdout has no path
+        # and was previously a hole. Refuse stdout writes unless
+        # --allow-public-output is passed.
+        if not args.allow_public_output:
+            sys.stderr.write(
+                "Refusing to write per-POV voiceprint report to "
+                "stdout without --allow-public-output. POV "
+                "voiceprints are voice-cloning input; default-"
+                "private posture requires either --out / --json-out "
+                "into ai-prose-baselines-private/, or --allow-public-"
+                "output for non-personal corpora (e.g., Federalist).\n"
+            )
+            return 2
         sys.stdout.write(md)
     return 0
 

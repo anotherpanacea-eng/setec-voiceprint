@@ -75,6 +75,38 @@ def test_parse_iso_date_rejects_garbage() -> None:
     assert vdt._parse_iso_date("3001") is None  # year out of range
 
 
+def test_parse_iso_date_rejects_trailing_garbage() -> None:
+    """Reviewer catch: prefix-only regex previously accepted
+    '2020-01-foo' as January 2020. Anchored regex must reject."""
+    assert vdt._parse_iso_date("2020-01-foo") is None
+    assert vdt._parse_iso_date("2020-01-15-extra") is None
+    assert vdt._parse_iso_date("2020 January") is None
+    assert vdt._parse_iso_date("2020-1") is None  # single-digit month
+    assert vdt._parse_iso_date("2020-01-1") is None  # single-digit day
+
+
+def test_parse_iso_date_rejects_impossible_calendar_dates() -> None:
+    """Reviewer catch: '2020-02-31' previously parsed as a real
+    date because day-of-month wasn't validated against the month.
+    datetime.date validation now catches Feb 30/31, Apr 31, etc."""
+    assert vdt._parse_iso_date("2020-02-31") is None  # Feb 31
+    assert vdt._parse_iso_date("2020-02-30") is None  # Feb 30
+    assert vdt._parse_iso_date("2020-04-31") is None  # Apr 31
+    assert vdt._parse_iso_date("2020-06-31") is None  # Jun 31
+    # Leap year edge cases:
+    assert vdt._parse_iso_date("2020-02-29") == (2020, 2, 29)  # 2020 is leap
+    assert vdt._parse_iso_date("2021-02-29") is None  # 2021 isn't
+
+
+def test_parse_iso_date_accepts_valid_partials_and_fulls() -> None:
+    """Sanity: the strictness fix doesn't break legitimate dates."""
+    assert vdt._parse_iso_date("2022") == (2022, 0, 0)
+    assert vdt._parse_iso_date("2022-04") == (2022, 4, 0)
+    assert vdt._parse_iso_date("2022-04-15") == (2022, 4, 15)
+    assert vdt._parse_iso_date("1787-10-27") == (1787, 10, 27)
+    assert vdt._parse_iso_date("1788-01-16") == (1788, 1, 16)
+
+
 def test_period_key_year_granularity() -> None:
     assert vdt._period_key((2022, 4, 15), "year") == "2022"
     assert vdt._period_key((2023, 0, 0), "year") == "2023"
@@ -338,3 +370,139 @@ def test_cli_refuses_public_output_without_allow_flag(tmp_path) -> None:
                 "--out", str(out_md),
             ])
         assert exc.value.code == 2
+
+
+def test_cli_refuses_stdout_without_allow_flag() -> None:
+    """Reviewer catch: when no --out / --json-out is supplied, the
+    report previously went to stdout without going through the
+    privacy guard. Voice-drift output is voice-cloning input;
+    stdout is also default-private. Without --allow-public-output,
+    the script must refuse stdout output (exit 2)."""
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist drift manifest not available")
+        return
+    if pytest is not None:
+        rc = vdt.main([
+            "--manifest", str(MANIFEST),
+            "--min-docs-per-period", "1",
+        ])
+        assert rc == 2
+
+
+def test_cli_allows_stdout_with_allow_flag(capsys) -> None:
+    """With --allow-public-output, stdout works as before."""
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist drift manifest not available")
+        return
+    rc = vdt.main([
+        "--manifest", str(MANIFEST),
+        "--min-docs-per-period", "1",
+        "--allow-public-output",
+    ])
+    assert rc == 0
+    captured = capsys.readouterr() if pytest is not None else None
+    if captured:
+        assert "Voice Drift Report" in captured.out
+
+
+# ---- Burrows-Delta magnitude regression --------------------
+
+
+def test_burrows_delta_is_not_the_two_period_constant() -> None:
+    """Reviewer catch: with stats computed over only K=2 period
+    centroids, every informative feature gets symmetric z-scores
+    ±sqrt(2)/2, so |z_a - z_b| collapses to a constant sqrt(2) ≈
+    1.414 regardless of actual drift magnitude. The fix uses per-
+    document stats. On the Federalist fixture (Hamilton 1787 vs.
+    Madison 1788), the result must NOT equal sqrt(2)."""
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist drift manifest not available")
+        return
+    result = vdt.run(_args())
+    pair = result["weighted_distances"][("1787", "1788")]
+    delta = pair["burrows_delta"]
+    assert delta is not None
+    # The pre-fix degenerate value was exactly sqrt(2) ≈ 1.4142135.
+    # If the fix regresses, this value will return.
+    SQRT_2 = 2 ** 0.5  # 1.4142135623730951
+    assert abs(delta - SQRT_2) > 0.01, (
+        f"Burrows-Delta {delta!r} is suspiciously close to sqrt(2). "
+        f"The 2-period centroid-stats degeneracy may have returned."
+    )
+
+
+def test_burrows_delta_varies_with_drift_magnitude() -> None:
+    """Direct regression test on cross_period_distances: build two
+    synthetic period-profile scenarios, one with small drift and one
+    with large drift, and assert the Burrows-Delta values differ.
+    Pre-fix, both would return ~sqrt(2)."""
+    from voice_drift_tracker import cross_period_distances, PeriodProfile
+
+    selected_features = {"function_words": ["the", "and", "of", "to"]}
+
+    def _build_profile(label: str, per_doc_freqs: list[dict[str, float]]) -> PeriodProfile:
+        items = [
+            {"id": f"{label}_doc{i}", "features": {"function_words": doc}}
+            for i, doc in enumerate(per_doc_freqs)
+        ]
+        names = ["the", "and", "of", "to"]
+        centroid = {
+            n: sum(d.get(n, 0.0) for d in per_doc_freqs) / len(per_doc_freqs)
+            for n in names
+        }
+        return PeriodProfile(
+            label=label,
+            n_docs=len(per_doc_freqs),
+            n_words=sum(1000 for _ in per_doc_freqs),
+            feature_items=items,
+            period_centroids={"function_words": centroid},
+        )
+
+    # Small drift: period A and period B have very similar per-doc
+    # frequencies. The within-period dispersion is comparable to the
+    # tiny cross-period shift.
+    small_a = _build_profile("A", [
+        {"the": 0.10, "and": 0.05, "of": 0.04, "to": 0.03},
+        {"the": 0.11, "and": 0.06, "of": 0.04, "to": 0.03},
+        {"the": 0.10, "and": 0.05, "of": 0.05, "to": 0.03},
+    ])
+    small_b = _build_profile("B", [
+        {"the": 0.11, "and": 0.06, "of": 0.04, "to": 0.04},
+        {"the": 0.12, "and": 0.05, "of": 0.05, "to": 0.03},
+        {"the": 0.11, "and": 0.06, "of": 0.04, "to": 0.03},
+    ])
+    small_distances = cross_period_distances(
+        {"A": small_a, "B": small_b}, selected_features,
+    )
+    small_delta = small_distances["function_words"][("A", "B")]["burrows_delta"]
+
+    # Large drift: cross-period shift far exceeds within-period
+    # dispersion. The same algorithm should produce a much bigger
+    # Burrows-Delta.
+    large_a = _build_profile("A", [
+        {"the": 0.05, "and": 0.02, "of": 0.02, "to": 0.01},
+        {"the": 0.05, "and": 0.02, "of": 0.02, "to": 0.01},
+        {"the": 0.06, "and": 0.03, "of": 0.02, "to": 0.01},
+    ])
+    large_b = _build_profile("B", [
+        {"the": 0.20, "and": 0.10, "of": 0.08, "to": 0.06},
+        {"the": 0.21, "and": 0.11, "of": 0.09, "to": 0.06},
+        {"the": 0.20, "and": 0.10, "of": 0.08, "to": 0.07},
+    ])
+    large_distances = cross_period_distances(
+        {"A": large_a, "B": large_b}, selected_features,
+    )
+    large_delta = large_distances["function_words"][("A", "B")]["burrows_delta"]
+
+    assert small_delta is not None
+    assert large_delta is not None
+    # The old degenerate value would force both to exactly sqrt(2).
+    # The fix gives them different values; large drift > small drift.
+    assert large_delta > small_delta, (
+        f"Large drift Burrows-Delta {large_delta!r} should exceed "
+        f"small drift {small_delta!r}. If they're equal (or both ≈ "
+        f"sqrt(2)), the centroid-stats degeneracy has returned."
+    )
