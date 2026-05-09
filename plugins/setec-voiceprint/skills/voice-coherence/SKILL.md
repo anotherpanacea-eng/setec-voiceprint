@@ -35,22 +35,22 @@ This skill measures the stylometric distance between a target text and a writer-
 
 ```bash
 # Voice-distance against a register-matched private baseline
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/voice_distance.py" path/to/draft.txt --baseline-dir path/to/baseline/
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/voice_distance.py" path/to/draft.txt --baseline-dir path/to/baseline/
 
 # Manifest-driven baseline selection (preferred when a corpus_manifest.jsonl is available)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/voice_distance.py" path/to/draft.txt \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/voice_distance.py" path/to/draft.txt \
     --manifest path/to/corpus_manifest.jsonl \
     --use baseline \
     --register blog_essay \
     --persona anotherpanacea
 
 # Build a private voice profile (refuses to write outside ai-prose-baselines-private/ unless --allow-public-output)
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/voice_profile.py" \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/voice_profile.py" \
     --baseline-dir path/to/private-baseline/ \
     --out path/to/private-baseline/voice_profile.md
 
 # Extract a private idiolect preservation list
-python3 "${CLAUDE_PLUGIN_ROOT}/../../scripts/idiolect_detector.py" \
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/idiolect_detector.py" \
     --target-dir path/to/private-target-corpus/ \
     --reference-dir path/to/register-reference-corpus/ \
     --out path/to/ai-prose-baselines-private/target_idiolect.md \
@@ -68,8 +68,8 @@ Voice profiles, idiolect reports, preservation lists, and personal baseline corp
 ## Setup prerequisite
 
 ```bash
-pip install -r "${CLAUDE_PLUGIN_ROOT}/../../requirements.txt"
+pip install -r "${CLAUDE_PLUGIN_ROOT}/requirements.txt"
 python -m spacy download en_core_web_sm
 ```
 
-Reference docs live at `${CLAUDE_PLUGIN_ROOT}/../../references/distributional-diagnostics.md` (signal math) and `${CLAUDE_PLUGIN_ROOT}/../../references/source-triage.md` (Layer C voice-attribution methodology, including the multi-register-narrator and "earned by frame" cases).
+Reference docs live at `${CLAUDE_PLUGIN_ROOT}/references/distributional-diagnostics.md` (signal math) and `${CLAUDE_PLUGIN_ROOT}/references/source-triage.md` (Layer C voice-attribution methodology, including the multi-register-narrator and "earned by frame" cases).

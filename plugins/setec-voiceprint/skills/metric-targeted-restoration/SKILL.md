@@ -52,21 +52,21 @@ Every diagnostic signal falls into one of four classes:
 3. **Investigate-first target.** Signal says "something is off" but not which revision should happen. Packet asks a diagnostic question and points to local evidence. *Examples: low MATTR/MTLD, high Yule's K, low Shannon entropy.*
 4. **Avoid direct targeting.** Signal should not become a prompt target. Mentioned as evidence; never as a revision instruction. *Examples: aggregate POS-bigram KL/JSD, overall Burrows Delta, character n-gram distance, AUC, compression band.*
 
-The full taxonomy with translation tables lives in `${CLAUDE_PLUGIN_ROOT}/../../references/metric-targeted-restoration.md`.
+The full taxonomy with translation tables lives in `${CLAUDE_PLUGIN_ROOT}/references/metric-targeted-restoration.md`.
 
 ## Workflow
 
 1. **Run the underlying diagnostics first.** This skill consumes their JSON outputs.
-   - Layer A: `python3 ${CLAUDE_PLUGIN_ROOT}/../../scripts/variance_audit.py target.txt --json --baseline-dir baseline/ > variance.json`
-   - POS-bigram drift: `python3 ${CLAUDE_PLUGIN_ROOT}/../../scripts/bigram_diff.py target.txt --cluster-dir comparators/ --json > bigram.json`
-   - Voice distance: `python3 ${CLAUDE_PLUGIN_ROOT}/../../scripts/voice_distance.py target.txt --baseline-dir baseline/ --json > voice.json`
-   - Idiolect preservation: `python3 ${CLAUDE_PLUGIN_ROOT}/../../scripts/idiolect_detector.py --target-dir writer/ --reference-dir reference/ --json > idiolect.json`
-   - Layer B/C named patterns: `python3 ${CLAUDE_PLUGIN_ROOT}/../../scripts/aic_pattern_audit.py target.txt --baseline-dir baseline/ --json > aic.json`
+   - Layer A: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py target.txt --json --baseline-dir baseline/ > variance.json`
+   - POS-bigram drift: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/bigram_diff.py target.txt --cluster-dir comparators/ --json > bigram.json`
+   - Voice distance: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/voice_distance.py target.txt --baseline-dir baseline/ --json > voice.json`
+   - Idiolect preservation: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/idiolect_detector.py --target-dir writer/ --reference-dir reference/ --json > idiolect.json`
+   - Layer B/C named patterns: `python3 ${CLAUDE_PLUGIN_ROOT}/scripts/aic_pattern_audit.py target.txt --baseline-dir baseline/ --json > aic.json`
 
 2. **Generate the packet:**
 
    ```bash
-   python3 ${CLAUDE_PLUGIN_ROOT}/../../scripts/restoration_packet.py \
+   python3 ${CLAUDE_PLUGIN_ROOT}/scripts/restoration_packet.py \
        --variance-json variance.json \
        --bigram-json bigram.json \
        --idiolect-json idiolect.json \
@@ -139,8 +139,8 @@ Prompt packets can contain idiolectic phrases and voice-profile evidence. Treat 
 
 ## Related references
 
-- `${CLAUDE_PLUGIN_ROOT}/../../references/metric-targeted-restoration.md` — the targetability taxonomy + POS-bigram/trigram + dep-n-gram translation tables. Canonical reference.
-- `${CLAUDE_PLUGIN_ROOT}/../../references/distributional-diagnostics.md` — Layer A signals.
-- `${CLAUDE_PLUGIN_ROOT}/../../references/aic-flags.md` — Layer B named-pattern taxonomy (drives `aic_pattern_audit.py`).
-- `${CLAUDE_PLUGIN_ROOT}/../../references/source-triage.md` — Layer C earned/unearned/earned-by-frame methodology.
-- `${CLAUDE_PLUGIN_ROOT}/../../references/rhetorical-countermoves.md` — figure-by-flag pairings.
+- `${CLAUDE_PLUGIN_ROOT}/references/metric-targeted-restoration.md` — the targetability taxonomy + POS-bigram/trigram + dep-n-gram translation tables. Canonical reference.
+- `${CLAUDE_PLUGIN_ROOT}/references/distributional-diagnostics.md` — Layer A signals.
+- `${CLAUDE_PLUGIN_ROOT}/references/aic-flags.md` — Layer B named-pattern taxonomy (drives `aic_pattern_audit.py`).
+- `${CLAUDE_PLUGIN_ROOT}/references/source-triage.md` — Layer C earned/unearned/earned-by-frame methodology.
+- `${CLAUDE_PLUGIN_ROOT}/references/rhetorical-countermoves.md` — figure-by-flag pairings.

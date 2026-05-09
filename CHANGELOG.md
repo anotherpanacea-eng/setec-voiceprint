@@ -6,6 +6,26 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.16.0] - 2026-05-09
+
+Plugin packaging fix: scripts now ship with the plugin install. Pre-1.16.0, `scripts/`, `references/`, and `requirements*.txt` lived at the repo root and the plugin dir at `plugins/setec-voiceprint/` only contained `.claude-plugin/plugin.json` + 5 SKILL.md files. SKILL.md script paths used `${CLAUDE_PLUGIN_ROOT}/../../scripts/`, which assumes the marketplace install ships the whole repo — but in practice it ships only the plugin source dir. Result: a fresh marketplace install of setec-voiceprint had `voice_distance.py`, `acquire_blog.py`, every other script, and every reference doc missing. Users would invoke a skill, follow its example command, and hit `python3: can't open file '.../scripts/voice_distance.py': No such file or directory`.
+
+This is a structural fix to ship scripts inside the plugin where every other plugin in the same marketplace ecosystem keeps them (APODICTIC's `plugins/apodictic/scripts/` and `skills/<name>/scripts/` are the model). The MINOR bump is for the structural change; no behavior changes for existing dev-checkout workflows because top-level paths are preserved via symlinks.
+
+### Changed
+
+- **Scripts moved into the plugin directory.** `scripts/` → `plugins/setec-voiceprint/scripts/`; `references/` → `plugins/setec-voiceprint/references/`; `requirements.txt` / `requirements-acquisition.txt` / `requirements-calibration.txt` → `plugins/setec-voiceprint/`. Files moved with `git mv` so blame history is preserved.
+- **Top-level paths preserved as symlinks.** `<repo>/scripts -> plugins/setec-voiceprint/scripts`, same pattern for `references` and the three `requirements*.txt`. Git stores symlinks (mode `120000`); `python3 scripts/foo.py`, `pip install -r requirements.txt`, and every existing dev workflow keeps working from the repo root with no changes.
+- **SKILL.md script paths updated.** `${CLAUDE_PLUGIN_ROOT}/../../scripts/foo.py` → `${CLAUDE_PLUGIN_ROOT}/scripts/foo.py` across all five skills (44 total replacements). After this change, the path is correct under both the dev-checkout layout (where `${CLAUDE_PLUGIN_ROOT}` is `<repo>/plugins/setec-voiceprint/`) and the marketplace install (where it's `<install-root>/plugins/setec-voiceprint/`).
+- **`parents[N]` indices updated** in scripts that resolved their location relative to repo root: `scripts/acquisition_core.py:resolve_baselines_dir` (was `parents[1]`, now `parents[3]`); `scripts/calibration/calibrate_thresholds.py`, `editlens_to_manifest.py`, `fetch_pangram_editlens.py` (were `parents[2]`, now `parents[4]`). The new indices reflect that scripts now live two levels deeper under `plugins/setec-voiceprint/`.
+
+### Notes
+
+- 203 tests pass + 2 skipped (unchanged from 1.15.3). Verified via both `python3 -m pytest scripts/tests/` (top-level symlink path) and `python3 -m pytest plugins/setec-voiceprint/scripts/tests/` (canonical path).
+- Marketplace browsers should now resolve to `1.16.0` and the scripts should be present at `${CLAUDE_PLUGIN_ROOT}/scripts/...` on a fresh install.
+- Three version fields stay in sync at 1.16.0: `plugin.json :: version`, `marketplace.json :: metadata.version`, `marketplace.json :: plugins[0].version`.
+- Symlink behavior across platforms: macOS and Linux honor symlinks transparently. Windows users would need `core.symlinks=true` (default-on with admin / dev-mode); for users who can't do that, the canonical paths under `plugins/setec-voiceprint/` continue to work without symlinks.
+
 ## [1.15.3] - 2026-05-09
 
 Five reviewer-flagged P2 fixes against `acquire_blog.py` + `acquisition_core.py` (1.15.0). The cluster is exactly where impostor-corpus tooling needs to be honest: completeness of Substack archive capture, robots.txt and user-agent honesty, paywall handling on direct-HTML fetches, and manifest validity at exit. None of these change cleaned-text shape or downstream semantics; they all close gaps where the script could silently miss content, misrepresent itself to upstream sites, or emit drafts that immediately fail validation.

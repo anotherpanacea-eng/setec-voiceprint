@@ -247,7 +247,11 @@ def resolve_baselines_dir(env_var: str = DEFAULT_BASELINES_ENV) -> Path:
     env_val = os.environ.get(env_var)
     if env_val:
         return Path(env_val).expanduser()
-    repo_root = Path(__file__).resolve().parents[1]
+    # After 1.16.0, this file lives at
+    # ``<repo>/plugins/setec-voiceprint/scripts/acquisition_core.py``.
+    # parents[3] is the repo root in dev (and the marketplace root
+    # in install); the sibling lives next to it.
+    repo_root = Path(__file__).resolve().parents[3]
     sibling = repo_root.parent / PRIVATE_DIR_NAME
     if sibling.exists():
         return sibling

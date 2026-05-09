@@ -52,7 +52,14 @@ import os
 import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[2]
+# Resolve REPO_ROOT robustly. After 1.16.0, scripts ship inside the
+# plugin directory, so the file lives at
+# ``<repo>/plugins/setec-voiceprint/scripts/calibration/foo.py``.
+# parents[4] is the repo root in dev. When run from a marketplace
+# install (no .git), the same parents[4] still resolves to the
+# marketplace root, and the script still finds its sibling-of-repo
+# private directory the same way it did before.
+REPO_ROOT = Path(__file__).resolve().parents[4]
 PRIVATE_DIR = REPO_ROOT / "ai-prose-baselines-private"
 TARGET_DIR = PRIVATE_DIR / "editlens"
 
