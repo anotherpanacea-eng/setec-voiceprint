@@ -1,0 +1,20 @@
+{
+  "task_surface": "smoothing_diagnosis",
+  "tool": "variance_audit",
+  "tier1": {
+    "sentence_length": {"mean": 19.2, "sd": 5.6, "burstiness_B": -0.30, "min": 5, "max": 38},
+    "mattr": {"value": 0.66, "window": 50},
+    "mtld": 64.0,
+    "yules_k": 198.0,
+    "shannon_entropy_bits": 9.3,
+    "fkgl": {"sd": 1.5, "mean": 12.1, "min": 9.0, "max": 15.5, "n": 120},
+    "connective_density": {"per_1000_tokens": 22.0, "count": 53}
+  },
+  "tier3": {"adjacent_cosine": {"mean": 0.65, "sd": 0.10, "method": "tfidf"}},
+  "compression": {
+    "band": "Lightly smoothed",
+    "compression_fraction": 0.18,
+    "flagged_signals": [],
+    "pos_bigram_kl": {"value": 0.12, "threshold": 0.15, "in_band": true, "compressed": false}
+  }
+}

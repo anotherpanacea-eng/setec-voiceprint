@@ -1,0 +1,13 @@
+{
+  "task_surface": "smoothing_diagnosis",
+  "tool": "bigram_diff",
+  "diffs": {
+    "pooled": {
+      "kl_total": 0.082,
+      "rows": [
+        {"bigram": "ADJ-NOUN", "kl_contrib": 0.037, "target_prob": 0.062, "baseline_prob": 0.041},
+        {"bigram": "NOUN-NOUN", "kl_contrib": 0.025, "target_prob": 0.038, "baseline_prob": 0.024}
+      ]
+    }
+  }
+}

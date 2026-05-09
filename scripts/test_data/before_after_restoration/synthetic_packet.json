@@ -1,0 +1,76 @@
+{
+  "task_surface": "craft_restoration",
+  "tool": "restoration_packet",
+  "n_packets": 5,
+  "packets": [
+    {
+      "id": "variance_burstiness_B_direct",
+      "targetability": "direct",
+      "signal": "variance_audit signal 'burstiness_B'",
+      "direction": "over_represented",
+      "severity": "moderate",
+      "evidence": {"metric": "burstiness_B", "value": -0.48},
+      "plain_language_diagnosis": "Sentence-length variance is compressed.",
+      "revision_moves": ["Reduce uniformity at the long end of the distribution."],
+      "guardrails": ["Do not add new facts."],
+      "post_check": ["Rerun scripts/variance_audit.py with the same baseline."]
+    },
+    {
+      "id": "variance_connective_density_direct",
+      "targetability": "direct",
+      "signal": "variance_audit signal 'connective_density'",
+      "direction": "over_represented",
+      "severity": "moderate",
+      "evidence": {"metric": "connective_density", "value": 28.0},
+      "plain_language_diagnosis": "Connective density is elevated.",
+      "revision_moves": ["Cut explicit discourse markers; let adjacency carry transitions."],
+      "guardrails": ["Do not add new facts."],
+      "post_check": ["Rerun scripts/variance_audit.py with the same baseline."]
+    },
+    {
+      "id": "pos_bigram_ADJ_NOUN_over_represented",
+      "targetability": "translated",
+      "signal": "POS bigram ADJ-NOUN",
+      "direction": "over_represented",
+      "severity": "moderate",
+      "evidence": {"metric": "kl_contribution", "value": 0.037},
+      "plain_language_diagnosis": "Evaluative label clusters.",
+      "revision_moves": ["Replace generic modifiers with concrete nouns/verbs."],
+      "guardrails": ["Do not add new facts."],
+      "post_check": ["Rerun scripts/bigram_diff.py on the revised passage."]
+    },
+    {
+      "id": "variance_pos_bigram_kl_aggregate",
+      "targetability": "avoid_direct",
+      "signal": "POS-bigram KL aggregate against baseline",
+      "direction": "over_represented",
+      "severity": "moderate",
+      "evidence": {"metric": "kl_to_baseline", "value": 0.18, "threshold": 0.15},
+      "plain_language_diagnosis": "Aggregate POS-bigram divergence; optimizing it directly encourages syntactic gaming.",
+      "revision_moves": ["Do not optimize aggregate KL directly."],
+      "guardrails": ["Do not add new facts."],
+      "post_check": ["Rerun scripts/variance_audit.py with the same baseline."]
+    },
+    {
+      "id": "idiolect_preservation",
+      "targetability": "direct",
+      "signal": "idiolect preservation list",
+      "direction": "unspecified",
+      "severity": "unspecified",
+      "evidence": {
+        "metric": "preservation_list",
+        "n_phrases": 4,
+        "phrases_preview": [
+          "moral allocation",
+          "as a practical matter",
+          "load-bearing",
+          "policy adjacent"
+        ]
+      },
+      "plain_language_diagnosis": "Writer-specific phrases and collocations to preserve.",
+      "revision_moves": ["Preserve these words/phrases verbatim during revision."],
+      "guardrails": ["Do not replace writer-specific phrases from the preservation list."],
+      "post_check": ["Rerun scripts/idiolect_detector.py against the revised passage."]
+    }
+  ]
+}

@@ -6,6 +6,40 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.12.0] - 2026-05-08
+
+Closes cathedral upgrade #7 v2. The post-check loop that v1 (1.11.0) left as a manual workflow is now automated: `scripts/before_after_restoration.py` reads "before" and "after" diagnostic JSONs (plus the original `restoration_packet.py` output) and reports per-target verdicts with a metric-gaming detector. The framework's metric-gaming resistance now has both a *preventive* surface (the targetability taxonomy in 1.11.0 refuses to issue revision instructions on aggregate divergences) and a *detective* surface (this release's gaming heuristic flags improved targets whose improvement coincides with worsening avoid-direct aggregates).
+
+### Added
+
+- `scripts/before_after_restoration.py` (~600 lines): post-check verdict reporter. Reads any subset of the standard SETEC diagnostic JSONs (variance audit, bigram diff, voice distance, idiolect detector) for both before and after states, plus the original packet output. Two modes:
+  - **Packet-driven mode** (`--packet-json` supplied): evaluates each target in the packet against its before/after value with direction-aware improvement logic. For variance signals, looks up the registry's `ThresholdSpec.direction` to know which way is improvement (`lt` signals like `burstiness_B` improve when value rises; `gt` signals like `connective_density` improve when value falls). For bigram packets, improvement = `|kl_contrib|` decreases regardless of sign direction. Per-target verdicts: `improved` / `no_change` / `degraded` / `gamed` / `not_measurable`. Per-signal noise thresholds in `NOISE_THRESHOLDS` constant prevent micro-fluctuations from registering as verdicts.
+  - **Diff-only mode** (no packet): raw before/after deltas across every measurable signal. Useful for general "what changed" inspection without committing to a pre-registered set of targets.
+- **Metric-gaming detector.** When any actionable (direct or translated) target improves AND a registered avoid-direct aggregate (POS-bigram KL total, voice-distance overall) moves *against* improvement by more than its noise threshold, the verdict flips from `improved` to `gamed`. The note explains why: the revision optimized the local target without addressing the underlying drift — exactly the failure mode that the v1 targetability taxonomy refuses to issue revision instructions on, now caught after the fact when a writer or LLM optimized one anyway.
+- **Preservation-list survival check.** When `--original-text` and `--revised-text` are supplied, the report includes a case-insensitive substring search confirming whether each phrase from the idiolect packet's preservation list appears in the revised text. Reports survival rate + list of missing phrases (capped at 30 to keep the output bounded).
+- `scripts/test_data/before_after_restoration/`: synthetic fixtures simulating each verdict path (improved, gamed, degraded) plus paired bigram fixtures and two revised-text fixtures (one preserves all phrases, one drops two).
+- `scripts/tests/test_before_after_restoration.py`: 19 regression tests covering each verdict path (direction-aware classification for both `lt` and `gt` registry signals; bigram `|kl_contrib|`-reduction logic; degradation), the metric-gaming detector (gaming flag fires when aggregate KL rose; doesn't fire when aggregate fell), avoid-direct packets never claiming improvement, preservation-list survival (full survival + partial survival + skip-when-no-text), diff-only mode (with band-shift detection), JSON / markdown rendering, and CLI smoke tests.
+
+### Changed
+
+- `scripts/README.md` Surface 4 entry extended to mention `before_after_restoration.py` alongside `aic_pattern_audit.py` and `restoration_packet.py`. Surface tag table updated.
+- `plugins/setec-voiceprint/.claude-plugin/plugin.json` description refresh to include "before/after restoration verdicts with metric-gaming detection."
+
+### Cathedral status
+
+After 1.12.0:
+
+- ✅ #1 Manifest as law
+- ✅ #2 Length-matched bootstrap
+- ✅ #3 Validation harness (both surfaces)
+- 🚧 #4 Impostor baselines — corpus-bound; no code unlock pending
+- ✅ #5 Sliding-window localization
+- 🚧 #6 Voice profile expansion — `voice_drift_tracker.py` + `pov_voice_profile.py` are bounded code work
+- ✅ #7 Before/after restoration loop (v1 packet generator + v2 post-check verdict reporter both shipped)
+- ✅ #8 Privacy / packaging guards
+
+Six of eight cathedral upgrades are shipped. Two remain partly open: #4 (corpus-bound) and #6 (bounded code work). The framework now has both the prevention surface (refuse to issue revision instructions on aggregate divergences) and the detection surface (flag improved targets that came at the cost of worse aggregates) for metric-gaming resistance.
+
 ## [1.11.0] - 2026-05-08
 
 Metric-targeted restoration: cathedral upgrade #7's first scoped slice. Closes the bridge between SETEC's diagnostic surfaces (Surface 1 smoothing-diagnosis, Surface 2 voice-coherence) and its revision-advisor surface (Surface 4 craft-restoration). The new skill consumes diagnostic JSON and emits bounded prompt packets that classify each signal as direct / translated / investigate-first / avoid-direct, with named guardrails and required post-check commands. The framework's metric-gaming resistance lives in the targetability taxonomy.
@@ -298,7 +332,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.11.0...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.2...v1.11.0
 [1.10.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.0...v1.10.1

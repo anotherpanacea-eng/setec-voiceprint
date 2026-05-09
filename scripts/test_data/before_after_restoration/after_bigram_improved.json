@@ -1,0 +1,14 @@
+{
+  "task_surface": "smoothing_diagnosis",
+  "tool": "bigram_diff",
+  "_test_intent": "ADJ-NOUN kl_contrib reduced from 0.037 to 0.008. The translated packet should report 'improved'.",
+  "diffs": {
+    "pooled": {
+      "kl_total": 0.024,
+      "rows": [
+        {"bigram": "ADJ-NOUN", "kl_contrib": 0.008, "target_prob": 0.046, "baseline_prob": 0.041},
+        {"bigram": "NOUN-NOUN", "kl_contrib": 0.012, "target_prob": 0.028, "baseline_prob": 0.024}
+      ]
+    }
+  }
+}

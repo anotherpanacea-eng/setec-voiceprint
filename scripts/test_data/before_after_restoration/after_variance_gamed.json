@@ -1,0 +1,21 @@
+{
+  "task_surface": "smoothing_diagnosis",
+  "tool": "variance_audit",
+  "_test_intent": "Targeted signals (burstiness_B, connective_density) improved, but the avoid_direct aggregate POS-bigram KL got significantly worse. The metric-gaming heuristic should flag the improved targets as 'gamed'.",
+  "tier1": {
+    "sentence_length": {"mean": 19.0, "sd": 5.3, "burstiness_B": -0.32, "min": 6, "max": 36},
+    "mattr": {"value": 0.62, "window": 50},
+    "mtld": 58.0,
+    "yules_k": 215.0,
+    "shannon_entropy_bits": 9.1,
+    "fkgl": {"sd": 1.4, "mean": 12.0, "min": 9.5, "max": 14.5, "n": 120},
+    "connective_density": {"per_1000_tokens": 23.0, "count": 55}
+  },
+  "tier3": {"adjacent_cosine": {"mean": 0.71, "sd": 0.08, "method": "tfidf"}},
+  "compression": {
+    "band": "Moderately smoothed",
+    "compression_fraction": 0.40,
+    "flagged_signals": [],
+    "pos_bigram_kl": {"value": 0.26, "threshold": 0.15, "in_band": true, "compressed": true}
+  }
+}

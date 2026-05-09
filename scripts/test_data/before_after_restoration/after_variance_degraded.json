@@ -1,0 +1,21 @@
+{
+  "task_surface": "smoothing_diagnosis",
+  "tool": "variance_audit",
+  "_test_intent": "Targets moved opposite to the intended direction. burstiness_B got more compressed, connective_density rose.",
+  "tier1": {
+    "sentence_length": {"mean": 18.4, "sd": 3.1, "burstiness_B": -0.62, "min": 12, "max": 26},
+    "mattr": {"value": 0.61, "window": 50},
+    "mtld": 56.0,
+    "yules_k": 218.0,
+    "shannon_entropy_bits": 9.0,
+    "fkgl": {"sd": 1.0, "mean": 12.0, "min": 10.5, "max": 13.5, "n": 120},
+    "connective_density": {"per_1000_tokens": 33.0, "count": 79}
+  },
+  "tier3": {"adjacent_cosine": {"mean": 0.74, "sd": 0.05, "method": "tfidf"}},
+  "compression": {
+    "band": "Heavily smoothed",
+    "compression_fraction": 0.62,
+    "flagged_signals": ["burstiness_B", "connective_density", "fkgl_sd"],
+    "pos_bigram_kl": {"value": 0.20, "threshold": 0.15, "in_band": true, "compressed": true}
+  }
+}
