@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Something Old — Test Nightmare Magazine</title>
+</head>
+<body>
+  <article>
+    <h1 class="entry-title">Something Old</h1>
+    <div class="byline">
+      By <a class="author" href="/author/excluded-writer/">Excluded Writer</a>
+    </div>
+    <time class="entry-date" datetime="2019-04-01">April 1, 2019</time>
+    <div class="entry-content">
+      <p>This story exists so the test can verify that --filter-author skips it.
+      If --filter-author "Synthetic Author A" "Synthetic Author B" is set, this
+      story by Excluded Writer must not produce a .txt file or a manifest entry,
+      and the run summary must record the skip with reason "filter-author".</p>
+      <p>The body is intentionally short to keep the fixture small; the filter
+      check happens before the size check.</p>
+    </div>
+  </article>
+</body>
+</html>

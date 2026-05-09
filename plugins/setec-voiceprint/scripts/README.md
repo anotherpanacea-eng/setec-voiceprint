@@ -1307,6 +1307,102 @@ exactly like the user's own baseline corpus.
 
 ---
 
+## acquire_magazine.py
+
+Acquires literary-horror short fiction from online magazine archives. Site-
+specific scraper modules behind a uniform CLI. v1 ships with two working
+magazines (Nightmare and The Dark); both run on WordPress with similar
+issue-archive shapes. Additional magazines are deferred to v2 unless trivial.
+
+The intended use case is impostor-pool acquisition for the General Imposters
+validation harness: a register-matched sample of contemporary literary-horror
+prose from named writers (`--filter-author Brian Evenson Kelly Link`) that
+the harness can compare against the user's own fiction baseline.
+
+### Usage
+
+```
+# All Nightmare stories by Brian Evenson and Kelly Link, 2014–2022:
+python3 scripts/acquire_magazine.py \
+    --magazine nightmare \
+    --persona-from-author \
+    --register literary_horror \
+    --consent-status fair_use_research \
+    --era pre_chatgpt \
+    --filter-author "Brian Evenson" "Kelly Link" \
+    --since 2014-01-01 --until 2022-11-01 \
+    --impostor-for fiction
+
+# Everything in The Dark since 2018, capped at 30 stories:
+python3 scripts/acquire_magazine.py \
+    --magazine the_dark \
+    --persona-from-author \
+    --register literary_horror \
+    --consent-status fair_use_research \
+    --since 2018-01-01 \
+    --max-stories 30 \
+    --impostor-for fiction
+```
+
+### Per-magazine modules
+
+`MAGAZINE_MODULES` registry in `acquire_magazine.py` keys each module by its
+CLI choice; the entry holds CSS selectors for the issue archive, issue TOC,
+story permalink, story body, byline, title, date, and a `strip_after_selector`
+that removes post-body cruft (the Nightmare "Author Spotlight" interview
+block, The Dark's ebook-purchase widget). Adding a new magazine is a one-entry
+extension once you've identified the right selectors.
+
+### Persona slug rule
+
+`--persona-from-author` (default) mints one persona slug per author following
+the documented `lastname_firstname_personal` rule: normalize to ASCII,
+lowercase, strip punctuation, split on whitespace/hyphen, then emit
+`<lastname>_<firstname>_personal` for two-or-more-token names. Same author →
+same slug across runs, so the impostor pool stays per-author sliceable.
+
+`--persona STRING` overrides the rule and lumps every acquired story under
+one slug. Rarely useful for impostor work; included per spec.
+
+### Author filter
+
+`--filter-author` is a case-insensitive substring match against the byline
+text (after stripping the leading `By ` prefix magazines often add). Pass
+multiple author names to match any of them. Filter is applied both at
+issue-TOC discovery (when bylines are present in the TOC) and again on the
+story page (the canonical byline source) so a TOC truncation can't slip a
+filtered-out story through.
+
+### Output and manifest
+
+Per-piece output: `<output-dir>/<persona-slug>/<YYYY-MM-DD>_<title-slug>.txt`
+plus a `.meta.json` sidecar; manifest entries carry
+`acquired_via: acquire_magazine_<magazine-name>_<date>`. Default output dir is
+`<baselines>/impostors/<register>/<magazine>/`; pass `--output-dir` to
+override.
+
+Same `preprocessing.py` corpus-hygiene gate as identity baselines and live
+blog acquisition. Within-persona dedupe by content hash (a story republished
+in two issues hashes the same and only the first wins).
+
+### Privacy and robots
+
+Output path checked against the marker-based privacy guard
+(`ai-prose-baselines-private/...`); `--allow-public-output` to override. v1
+honors robots.txt and ships no override flag. Per-host rate limit
+(`--rate-limit SECONDS`, default 2.0) prevents hammering a single archive.
+
+### Manual live-smoke
+
+CI tests run against fixture HTML responses (`scripts/test_data/
+acquisition_magazine_fixture/`) for reproducibility. The maintainer's
+documented manual live-smoke command from the spec: Nightmare filtered to
+Brian Evenson and Kelly Link, since 2014, until 2022-11. Expected
+historically: 5–15 stories total across both authors, subject to archive
+drift.
+
+---
+
 ## Corpus manifest format
 
 A manifest is JSONL: one JSON object per file. Paths may be absolute or relative
