@@ -360,18 +360,31 @@ def pov_vs_corpus_mean_distances(
     profiles: dict[str, POVProfile],
     selected_features: dict[str, list[str]],
 ) -> dict[str, dict[str, float | None]]:
-    """For each POV, compute the distance between its centroid and
-    the corpus-mean centroid (mean across all POV centroids).
-    Returns {pov_label: {burrows_delta, cosine_distance}} (weighted
-    aggregate across families). Use case: "which POV is closest to
-    the writer's neutral default?" Often the writer's first-person
-    or default-narrator POV.
+    """For each POV, compute the distance between its centroid and a
+    word-weighted corpus-mean centroid. Returns
+    {pov_label: {burrows_delta, cosine_distance}} (weighted aggregate
+    across families). Use case: "which POV is closest to the
+    writer's neutral default?" Often the writer's first-person or
+    default-narrator POV; the word-weighting reflects that long
+    chapters carry more voice than short ones.
+
+    Word-weighting is meaningful for K ≥ 3 and for K = 2 with
+    unequal word counts. With K = 2 and equal word counts, both
+    POVs are still equidistant from the midpoint by construction;
+    the markdown renderer suppresses this section in the K = 2 case
+    (and the writer can read the JSON for raw values when judgment
+    is needed).
     """
     pov_labels = sorted(profiles.keys())
     if len(pov_labels) < 2:
         return {}
     out: dict[str, dict[str, float | None]] = {}
-    # Compute corpus-mean centroid per family
+    # Word-weighted corpus-mean centroid per family. Each POV's
+    # centroid contributes proportionally to its n_words; the
+    # writer's "majority voice" pulls the mean toward itself, which
+    # is what makes the diagnostic non-trivially interpretable.
+    weights = {p: max(profiles[p].n_words, 1) for p in pov_labels}
+    weight_total = sum(weights.values())
     corpus_centroids: dict[str, dict[str, float]] = {}
     for family, names in selected_features.items():
         if not names:
@@ -379,8 +392,10 @@ def pov_vs_corpus_mean_distances(
         per_pov_centroids = [profiles[p].pov_centroids.get(family, {}) for p in pov_labels]
         corpus_centroid = {}
         for name in names:
-            vals = [c.get(name, 0.0) for c in per_pov_centroids]
-            corpus_centroid[name] = sum(vals) / len(vals)
+            corpus_centroid[name] = sum(
+                weights[pov_labels[i]] * c.get(name, 0.0)
+                for i, c in enumerate(per_pov_centroids)
+            ) / weight_total
         corpus_centroids[family] = corpus_centroid
     # Build per-document stats once across all POVs (the population
     # we z-score against). Same fix as cross_pov_distances:
@@ -519,21 +534,30 @@ def voice_collapse_verdict(
 def _check_output_privacy(
     paths: list[Path | None], *, allow_public: bool,
 ) -> None:
+    """Marker-based check: matches the convention `voice_profile.py`
+    uses. A path is private if any component in its resolved-
+    absolute form is named `ai-prose-baselines-private`. This
+    accepts both repo-internal `<repo>/ai-prose-baselines-private/`
+    and the documented sibling `../ai-prose-baselines-private/`
+    layouts. The previous repo-rooted allowlist refused the sibling
+    path, training users to pass --allow-public-output as a
+    workaround; that defeated the privacy posture.
+    """
     if allow_public:
         return
-    repo_root = Path(__file__).resolve().parent.parent
-    private_dir = repo_root / "ai-prose-baselines-private"
     for p in paths:
         if p is None:
             continue
-        try:
-            p.resolve().relative_to(private_dir.resolve())
-        except ValueError:
+        if "ai-prose-baselines-private" not in p.expanduser().resolve().parts:
             sys.stderr.write(
-                f"Refusing to write {p} outside {private_dir}. POV "
-                f"voiceprints are voice-cloning input. Pass "
-                f"--allow-public-output to override (only for non-"
-                f"personal corpora like Federalist).\n"
+                f"Refusing to write {p}: not under any directory "
+                f"named 'ai-prose-baselines-private'. POV "
+                f"voiceprints are voice-cloning input. Either write "
+                f"into a directory named "
+                f"'ai-prose-baselines-private' (repo-internal or "
+                f"sibling — both are accepted), or pass "
+                f"--allow-public-output for non-personal corpora "
+                f"(e.g., Federalist).\n"
             )
             sys.exit(2)
 
@@ -694,14 +718,16 @@ def render_markdown(
             )
         lines.append("")
 
-    if pov_vs_mean:
-        lines.append("## POV vs. corpus mean")
+    if pov_vs_mean and len(pov_labels) >= 3:
+        lines.append("## POV vs. corpus mean (word-weighted)")
         lines.append("")
         lines.append(
-            "Each POV's distance from the corpus-mean centroid "
-            "(mean across all POVs). Smaller = closer to the "
-            "writer's neutral default; useful for identifying "
-            "which POV is the writer's home register."
+            "Each POV's distance from a word-weighted corpus-mean "
+            "centroid (long chapters carry more voice; the mean is "
+            "biased toward the POV(s) that dominate the manuscript). "
+            "Smaller = closer to the writer's neutral default. "
+            "Useful for identifying which POV is the writer's home "
+            "register on multi-POV manuscripts."
         )
         lines.append("")
         lines.append("| POV | Burrows-Delta | Cosine |")
@@ -711,6 +737,28 @@ def render_markdown(
                 f"| `{pov}` | {_fmt(row.get('burrows_delta'))} | "
                 f"{_fmt(row.get('cosine_distance'))} |"
             )
+        lines.append("")
+    elif pov_vs_mean and len(pov_labels) == 2:
+        # With K = 2, the diagnostic is fragile: word-weighted means
+        # do produce non-symmetric values when the POVs have
+        # different word counts, but the "home register" framing
+        # collapses to "this POV has more text in the manuscript,"
+        # which is tautological with the input. Suppress the table
+        # in markdown; raw values remain in the JSON output for
+        # callers who want to use them with the caveat in mind.
+        lines.append("## POV vs. corpus mean")
+        lines.append("")
+        lines.append(
+            "_Suppressed: with only 2 POVs, the corpus-mean "
+            "comparison is structurally weak — the word-weighted "
+            "midpoint is biased toward whichever POV has more text, "
+            "which doesn't tell you which voice is the writer's "
+            "default; it tells you which POV got more pages. The "
+            "raw values are available in the JSON output's "
+            "`pov_vs_corpus_mean` field; interpret with the K = 2 "
+            "caveat in mind. The diagnostic becomes meaningful at "
+            "K ≥ 3._"
+        )
         lines.append("")
 
     if distinguishing:

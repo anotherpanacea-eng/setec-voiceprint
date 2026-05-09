@@ -272,6 +272,42 @@ def test_privacy_guard_allows_with_flag(tmp_path) -> None:
     vdt._check_output_privacy([out_path], allow_public=True)
 
 
+def test_privacy_guard_accepts_sibling_private_path(tmp_path) -> None:
+    """Reviewer catch: the documented standard layout uses a
+    SIBLING `../ai-prose-baselines-private/` directory next to the
+    repo, not a repo-internal path. The pre-fix guard rooted the
+    allowlist at <repo>/ai-prose-baselines-private/ and refused
+    sibling paths, training users to bypass the guard with
+    --allow-public-output. The marker-based check accepts any path
+    under any directory named `ai-prose-baselines-private`,
+    matching `voice_profile.py`'s convention."""
+    sibling = tmp_path / "ai-prose-baselines-private"
+    sibling.mkdir()
+    out_path = sibling / "drift.md"
+    # No exception expected.
+    vdt._check_output_privacy([out_path], allow_public=False)
+
+
+def test_privacy_guard_accepts_nested_private_path(tmp_path) -> None:
+    """Marker check accepts the private directory anywhere in the
+    path's components, not just at a fixed root. Reflects real-
+    world layouts where users may have private/ at varying depths."""
+    nested = tmp_path / "some" / "intermediate" / "ai-prose-baselines-private" / "subdir"
+    nested.mkdir(parents=True)
+    out_path = nested / "drift.md"
+    vdt._check_output_privacy([out_path], allow_public=False)
+
+
+def test_privacy_guard_refuses_path_without_marker(tmp_path) -> None:
+    """Marker check still refuses paths that lack the
+    `ai-prose-baselines-private` component."""
+    out_path = tmp_path / "innocent_folder" / "drift.md"
+    out_path.parent.mkdir(parents=True)
+    if pytest is not None:
+        with pytest.raises(SystemExit):
+            vdt._check_output_privacy([out_path], allow_public=False)
+
+
 # ---- JSON / Markdown output --------------------------------
 
 

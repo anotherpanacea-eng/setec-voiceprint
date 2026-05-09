@@ -6,6 +6,20 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.14.2] - 2026-05-09
+
+Two further reviewer-flagged P2s on the voice-drift and per-POV trackers (1.13.0 / 1.14.0 / 1.14.1). Both are bugs that surfaced because the tools' behavior was technically working but pedagogically training users into the wrong habits.
+
+### Fixed
+
+- **Privacy-guard allowlist mismatch** in `voice_drift_tracker._check_output_privacy` and `pov_voice_profile._check_output_privacy`. The previous implementation rooted the allowlist at `<repo>/ai-prose-baselines-private/`, but the README and the documented standard layout use a SIBLING `../ai-prose-baselines-private/` directory next to the repo. Users following the documented safe path were hitting the refusal and learning to bypass it with `--allow-public-output` — which trained them to disable the privacy guard. Fixed by switching to the marker-based check `voice_profile.py` already uses (`is_private_output_path`): a path is treated as private if any component in its resolved-absolute form is named `ai-prose-baselines-private`. Repo-internal, sibling, and any other location named that all pass; everywhere else still requires the explicit override. Three new regression tests per tracker cover the sibling-path acceptance, the nested-path acceptance, and the still-refused-without-marker path.
+- **Two-POV corpus-mean overclaim** in `pov_voice_profile.pov_vs_corpus_mean_distances`. The previous implementation computed an unweighted midpoint of POV centroids; with K=2, both POVs were equidistant from that midpoint by construction (the existing test asserted this equidistance). The markdown report's framing — "identifies which POV is closest to the writer's neutral default" — was a false claim in the K=2 case. Two-part fix: (a) the function now computes a **word-weighted** corpus-mean centroid (long chapters carry more voice; the mean is biased toward the POV(s) that dominate the manuscript), restoring real signal for K≥2 with unequal word counts and any K≥3; (b) the markdown renderer **suppresses** the corpus-mean section when K=2 with an explicit caveat noting that the diagnostic is structurally weak at two POVs (the word-weighted midpoint just measures which POV got more pages, which is tautological with the input). JSON output retains the raw values either way for callers who want them with the caveat in mind. The existing equidistance test was replaced with a word-weighted-asymmetry test (Madison, with 7848 words on the Federalist fixture, is now closer to the weighted mean than Hamilton with 5888) plus a synthetic test (POV with 10000 words is closer to the weighted mean than POV with 1000) and a markdown-suppression test (the K=2 caveat fires; the per-POV table doesn't render).
+
+### Notes
+
+- Both fixes are reviewer-flagged P2s on top of 1.14.1 — the framework caught them because the tools' technically-correct behavior was training users into the wrong instincts (bypass the privacy guard; trust a structurally-meaningless diagnostic). The CHANGELOG records both because future contributions should know which framings are verified vs. which carry asterisks.
+- 145 tests pass + 1 skipped (was 138 + 1 in 1.14.1; +7 new regression tests).
+
 ## [1.14.1] - 2026-05-09
 
 Three reviewer-flagged P2 fixes against the voice-drift and per-POV trackers shipped in 1.13.0–1.14.0. The Burrows-Delta one is the substantive one: numeric output for two-period or two-POV reports changes from the (broken) constant `sqrt(2)` to magnitude-sensitive values. Date parser strictness and stdout privacy posture also tightened.
@@ -415,7 +429,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.1...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.2...HEAD
+[1.14.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.1...v1.14.2
 [1.14.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.0...v1.14.1
 [1.14.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.1...v1.13.0

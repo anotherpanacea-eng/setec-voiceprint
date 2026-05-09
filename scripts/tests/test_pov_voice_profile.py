@@ -150,7 +150,19 @@ def test_distinguishing_features_per_pov() -> None:
         assert key in sample
 
 
-def test_pov_vs_corpus_mean() -> None:
+def test_pov_vs_corpus_mean_uses_word_weighted_midpoint() -> None:
+    """Reviewer catch: the previous implementation used an
+    UNWEIGHTED midpoint, which made every K=2 case equidistant by
+    construction — the diagnostic was structurally meaningless. The
+    fix uses a word-weighted corpus mean: long-chapter POVs pull
+    the mean toward themselves, so two POVs with unequal word
+    counts produce non-equal distances.
+
+    On the Federalist fixture, Hamilton has 5888 words across 3
+    docs; Madison has 7848 across 3. The weighted mean is biased
+    toward Madison (more text), so Madison is closer to the mean
+    than Hamilton.
+    """
     if not MANIFEST.exists():
         if pytest is not None:
             pytest.skip("Federalist POV manifest not available")
@@ -159,12 +171,90 @@ def test_pov_vs_corpus_mean() -> None:
     pov_vs_mean = result["pov_vs_mean"]
     assert "Hamilton" in pov_vs_mean
     assert "Madison" in pov_vs_mean
-    assert pov_vs_mean["Hamilton"]["burrows_delta"] is not None
-    # With exactly 2 POVs, both are equidistant from the midpoint; the
-    # values are equal by construction. With 3+ POVs they'll diverge.
     h_delta = pov_vs_mean["Hamilton"]["burrows_delta"]
     m_delta = pov_vs_mean["Madison"]["burrows_delta"]
-    assert abs(h_delta - m_delta) < 1e-6
+    assert h_delta is not None and m_delta is not None
+    # The word-weighted mean is biased toward the higher-word POV
+    # (Madison, 7848 words). Madison should be closer to the mean
+    # than Hamilton.
+    assert m_delta < h_delta, (
+        f"With word-weighted corpus mean, Madison (7848 words) "
+        f"should be closer to the mean than Hamilton (5888 words). "
+        f"Got Hamilton {h_delta!r}, Madison {m_delta!r}. If they're "
+        f"equal, the unweighted-midpoint degeneracy may have "
+        f"returned."
+    )
+
+
+def test_pov_vs_corpus_mean_suppressed_in_markdown_for_two_povs() -> None:
+    """The K=2 case is structurally fragile (the word-weighted
+    midpoint just measures which POV has more text). Markdown
+    output should suppress the table and surface a caveat
+    explaining the limitation. JSON keeps the raw values for
+    callers who want them."""
+    if not MANIFEST.exists():
+        if pytest is not None:
+            pytest.skip("Federalist POV manifest not available")
+        return
+    result = pvp.run(_args())
+    md = pvp.render_markdown(
+        profiles=result["profiles"],
+        weighted_distances=result["weighted_distances"],
+        pov_vs_mean=result["pov_vs_mean"],
+        distinguishing=result["distinguishing"],
+        collapse_verdict=result["collapse_verdict"],
+        dropped_povs=result["dropped_povs"],
+        collapse_threshold=0.5,
+    )
+    assert "POV vs. corpus mean" in md  # heading present
+    assert "Suppressed" in md  # caveat fired
+    # The actual per-POV table must NOT appear (no Hamilton+Burrows
+    # row in markdown).
+    assert "| `Hamilton` |" not in md or "Burrows-Delta" not in md.split("Suppressed")[0].split("POV vs. corpus mean")[1]
+
+
+def test_pov_vs_corpus_mean_weighted_signal_with_synthetic_unequal_povs() -> None:
+    """Direct regression on `pov_vs_corpus_mean_distances`: two
+    synthetic POVs with very unequal word counts produce
+    asymmetric distances (the heavier-word POV is closer to the
+    weighted mean). Pre-fix (unweighted midpoint), they would have
+    been equidistant by construction."""
+    from pov_voice_profile import (
+        pov_vs_corpus_mean_distances, POVProfile,
+    )
+
+    selected_features = {"function_words": ["the", "and", "of", "to"]}
+
+    def _build_profile(label: str, n_words: int, freqs: dict[str, float]) -> POVProfile:
+        items = [
+            {"id": f"{label}_doc0", "features": {"function_words": freqs}}
+        ]
+        return POVProfile(
+            label=label,
+            n_docs=1,
+            n_words=n_words,
+            feature_items=items,
+            pov_centroids={"function_words": dict(freqs)},
+        )
+
+    a = _build_profile("A", n_words=10000, freqs={
+        "the": 0.10, "and": 0.05, "of": 0.04, "to": 0.03,
+    })
+    b = _build_profile("B", n_words=1000, freqs={
+        "the": 0.20, "and": 0.10, "of": 0.08, "to": 0.06,
+    })
+    result = pov_vs_corpus_mean_distances(
+        {"A": a, "B": b}, selected_features,
+    )
+    # A has 10x more words; weighted mean is heavily biased toward A.
+    # A should be much closer to the mean than B.
+    a_delta = result["A"]["burrows_delta"]
+    b_delta = result["B"]["burrows_delta"]
+    assert a_delta is not None and b_delta is not None
+    assert a_delta < b_delta, (
+        f"A (10000 words) should be closer to weighted mean than "
+        f"B (1000 words); got A {a_delta!r}, B {b_delta!r}."
+    )
 
 
 # ---- Voice-collapse verdict --------------------------------
@@ -243,6 +333,27 @@ def test_privacy_guard_refuses_public_path_without_allow(tmp_path) -> None:
 def test_privacy_guard_allows_with_flag(tmp_path) -> None:
     out_path = tmp_path / "pov.md"
     pvp._check_output_privacy([out_path], allow_public=True)
+
+
+def test_privacy_guard_accepts_sibling_private_path(tmp_path) -> None:
+    """Reviewer catch: the documented standard layout uses a
+    SIBLING `../ai-prose-baselines-private/` next to the repo. The
+    pre-fix repo-rooted guard refused that path, training users to
+    bypass with --allow-public-output. The marker-based check
+    accepts any path under any directory named
+    `ai-prose-baselines-private`."""
+    sibling = tmp_path / "ai-prose-baselines-private"
+    sibling.mkdir()
+    out_path = sibling / "pov.md"
+    pvp._check_output_privacy([out_path], allow_public=False)
+
+
+def test_privacy_guard_refuses_path_without_marker(tmp_path) -> None:
+    out_path = tmp_path / "innocent_folder" / "pov.md"
+    out_path.parent.mkdir(parents=True)
+    if pytest is not None:
+        with pytest.raises(SystemExit):
+            pvp._check_output_privacy([out_path], allow_public=False)
 
 
 # ---- JSON / Markdown output --------------------------------

@@ -644,21 +644,37 @@ def drift_scores(
 def _check_output_privacy(
     paths: list[Path | None], *, allow_public: bool,
 ) -> None:
+    """Marker-based check: a path is treated as private if any
+    component in its resolved-absolute form is named
+    ``ai-prose-baselines-private``. Mirrors the convention
+    ``voice_profile.py`` already uses (``is_private_output_path``).
+
+    The previous implementation rooted the allowlist at
+    ``<repo>/ai-prose-baselines-private/``, but the README and the
+    documented standard layout use a SIBLING directory next to the
+    repo (``../ai-prose-baselines-private/``). Users following the
+    documented safe path were hitting the refusal and learning to
+    pass ``--allow-public-output`` as a workaround — which trains
+    them to bypass the privacy guard. The marker check accepts both
+    repo-internal and sibling private roots without compromising the
+    intent: any path the user has consciously placed under a
+    directory named ``ai-prose-baselines-private`` is treated as
+    private; anywhere else requires the explicit override.
+    """
     if allow_public:
         return
-    repo_root = Path(__file__).resolve().parent.parent
-    private_dir = repo_root / "ai-prose-baselines-private"
     for p in paths:
         if p is None:
             continue
-        try:
-            p.resolve().relative_to(private_dir.resolve())
-        except ValueError:
+        if "ai-prose-baselines-private" not in p.expanduser().resolve().parts:
             sys.stderr.write(
-                f"Refusing to write {p} outside {private_dir}. Voice "
-                f"drift output is voice-cloning input. Pass "
-                f"--allow-public-output to override (only for non-"
-                f"personal corpora like Federalist).\n"
+                f"Refusing to write {p}: not under any directory "
+                f"named 'ai-prose-baselines-private'. Voice drift "
+                f"output is voice-cloning input. Either write into "
+                f"a directory named 'ai-prose-baselines-private' "
+                f"(repo-internal or sibling — both are accepted), "
+                f"or pass --allow-public-output for non-personal "
+                f"corpora (e.g., Federalist).\n"
             )
             sys.exit(2)
 
