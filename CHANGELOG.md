@@ -6,6 +6,15 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.8.2] - 2026-05-08
+
+Followup doc fix to 1.8.1: the generated comparison report's Phase A' description still said "same per-doc renormalization within the top-K subset," which is the opposite of what 1.8.1 fixed. The implementation was correct but the report description contradicted it.
+
+### Fixed
+
+- `scripts/oracle/compare.py` Phase A' description text in `render_freq_table_phase_block` now says "full-family relative frequencies preserved (no selected-subset renormalization, matching production `stylometry_core.py`)" and notes that "Row sums are typically < 1.0." The previous phrasing was a leftover from the pre-1.8.1 oracle and contradicted the fix that 1.8.1 actually shipped.
+- `scripts/oracle/results/oracle_comparison_report.md` regenerated with the corrected Phase A' description. Numerical content unchanged (Phase A and Phase A' still report Pearson 1.0, mean |Δ| 0.0 across all six feature families).
+
 ## [1.8.1] - 2026-05-08
 
 Oracle frequency-table denominator fix: the oracle now exports production-shaped selected-feature vectors instead of selected-subset-renormalized vectors. The Phase A agreement with R `stylo` was previously verifying the math on an altered table whose denominators didn't match production; the fix realigns the oracle with `stylometry_core.py`'s actual feature space.
@@ -175,7 +184,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.1...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.2...HEAD
+[1.8.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.0...v1.7.1
