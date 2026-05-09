@@ -6,6 +6,34 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.11.0] - 2026-05-08
+
+Metric-targeted restoration: cathedral upgrade #7's first scoped slice. Closes the bridge between SETEC's diagnostic surfaces (Surface 1 smoothing-diagnosis, Surface 2 voice-coherence) and its revision-advisor surface (Surface 4 craft-restoration). The new skill consumes diagnostic JSON and emits bounded prompt packets that classify each signal as direct / translated / investigate-first / avoid-direct, with named guardrails and required post-check commands. The framework's metric-gaming resistance lives in the targetability taxonomy.
+
+### Added
+
+- `references/metric-targeted-restoration.md` (343 lines): the canonical reference. Four-class targetability taxonomy with examples for each class (direct, translated, investigate_first, avoid_direct); POS-bigram and POS-trigram translation tables; dependency-n-gram handling; the restoration-packet JSON schema; prompt-packet field requirements; before/after verification protocol; privacy guard rules. Cross-references the existing Surface 4 reference docs (`aic-flags.md`, `source-triage.md`, `rhetorical-countermoves.md`, `distributional-diagnostics.md`) so the new surface integrates with the existing craft-restoration reference prose.
+- `scripts/restoration_packet.py` (~700 lines): the packet generator. Consumes JSON outputs from any subset of `variance_audit.py`, `bigram_diff.py`, `voice_distance.py`, `idiolect_detector.py`, and `aic_pattern_audit.py` (at least one required). Classifies each signal via `DIRECT_TARGETS`, `POS_BIGRAM_TRANSLATIONS`, `POS_TRIGRAM_TRANSLATIONS`, `DEP_NGRAM_TRANSLATIONS`, `INVESTIGATE_FIRST`, and `AVOID_DIRECT` constants. Direction-aware translation (over- vs. under-represented bigrams emit different diagnoses). Severity classification (`light` / `moderate` / `heavy`) from KL contribution or z-score magnitude. `--max-targets` caps actionable (direct + translated) targets per packet at 3 by default, since combining five metric instructions produces incoherent revision pressure. CLI emits both JSON (`--json-out`) and markdown (`--out`); the markdown report is copy/paste-ready as a prompt with the named guardrails attached. Privacy guard refuses output outside `ai-prose-baselines-private/` when private inputs (`--idiolect-json` or `--voice-json`) are supplied unless `--allow-public-output` is passed. `task_surface: craft_restoration`.
+- `plugins/setec-voiceprint/skills/metric-targeted-restoration/SKILL.md`: new plugin skill (the framework's fifth public skill, sibling to `craft-restoration` rather than a replacement). Trigger phrases include "reverse this smoothing trend," "make a revision prompt from this diagnostic," "what can an LLM safely target," "metric-targeted restoration," "translate POS bigrams/trigrams," and "post-check this revision." Documents the four-class targetability taxonomy, the workflow (run diagnostics → generate packet → read sections → apply prompt → run post-check), the guardrails, and the privacy posture.
+- `scripts/test_data/restoration_packet/`: three synthetic JSON fixtures (`synthetic_bigram_diff.json`, `synthetic_variance.json`, `synthetic_idiolect.json`) crafted to fire specific packet IDs. The bigram fixture's top contributor is `DET-ADJ-NOUN` (a trigram, skipped by bigram translations); the next-ranked `ADJ-NOUN` lands as the first translated packet. `PRON-VERB` has negative `kl_contrib` to test the under-represented direction branch. An unknown bigram (`X-Y`) tests the unknown-bigram skip path.
+- `scripts/tests/test_restoration_packet.py`: 20 regression tests covering taxonomy correctness (the load-bearing thing — the framework's metric-gaming resistance lives here), each surface's packet generator, top-level packet assembly + ordering + the actionable cap, render correctness for both JSON and markdown (including the "raw POS labels never appear without a plain-language gloss" check), and a CLI smoke test. The taxonomy tests assert that aggregate divergences (`pos_bigram_kl_total`, `burrows_delta_overall`, `char_ngram_distance`) NEVER appear in the direct/translated/investigate buckets — guards against silent regression of the framework's metric-gaming resistance.
+
+### Changed
+
+- `scripts/README.md`: Surface 4 entry extended to mention `restoration_packet.py` alongside `aic_pattern_audit.py`. Surface tag table updated. Explicit note that `restoration_packet.py` does NOT rewrite prose, claim AI provenance, or optimize metrics directly — the metric-gaming resistance lives in the targetability taxonomy.
+- `.claude-plugin/marketplace.json`: plugin description extended to mention "metric-targeted restoration packets that translate diagnostic outputs into bounded revision-safe prompts," plus the calibration toolchain and voice-validation harness that landed in 1.9.0 + 1.10.0.
+- `plugins/setec-voiceprint/.claude-plugin/plugin.json`: same description refresh.
+
+### Notes on cathedral status
+
+This commit ships cathedral upgrade #7's v1: metric-targeted restoration packets. The remaining v2 piece is an automated before/after restoration script (`scripts/before_after_restoration.py`) that reruns the diagnostics on the revised text and compares deltas; v1 makes that step manual via the post-check commands embedded in every packet.
+
+After 1.11.0, three of the eight cathedral upgrades remain partly open:
+
+- **#4 Impostor baselines** — still corpus-bound; no code unlock pending.
+- **#6 Voice profile expansion** — `voice_drift_tracker.py`, `pov_voice_profile.py` are bounded code work, no exotic borrows.
+- **#7 Before/after restoration loop** — v1 (this release) ships the packet generator + post-check workflow; v2 automation is roadmap.
+
 ## [1.10.2] - 2026-05-08
 
 Audit `derive_seed` in `validation_harness.py` for the same `hash()` bug pattern the reviewer caught in `voice_validation_harness._stable_seed` during 1.9.0. Finding: NOT buggy. `derive_seed` uses `(i+1)*ord(ch)` accumulation, which is stable across Python processes because Unicode code points don't depend on `PYTHONHASHSEED`. Confirmed empirically (two independent Python invocations produce identical seeds). Adds documentation + a pinned-value regression test so a future "modernizer" can't silently replace the implementation with `hash((parts...))` thinking they're improving it.
@@ -270,7 +298,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.2...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.11.0...HEAD
+[1.11.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.2...v1.11.0
 [1.10.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.2...v1.10.0

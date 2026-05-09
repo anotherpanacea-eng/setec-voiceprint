@@ -1,0 +1,53 @@
+{
+  "task_surface": "smoothing_diagnosis",
+  "tool": "variance_audit",
+  "target_path": "synthetic_target.txt",
+  "summary": {
+    "n_words": 2400,
+    "n_sentences": 120
+  },
+  "tier1": {
+    "sentence_length": {
+      "mean": 18.5,
+      "sd": 4.2,
+      "burstiness_B": -0.48,
+      "min": 8,
+      "max": 32
+    },
+    "mattr": {"value": 0.62, "window": 50},
+    "mtld": 58.0,
+    "yules_k": 215.0,
+    "shannon_entropy_bits": 9.1,
+    "fkgl": {"sd": 1.2, "mean": 12.0, "min": 9.5, "max": 14.5, "n": 120},
+    "connective_density": {
+      "per_1000_tokens": 28.0,
+      "count": 67
+    }
+  },
+  "tier3": {
+    "adjacent_cosine": {"mean": 0.71, "sd": 0.08, "method": "tfidf"}
+  },
+  "compression": {
+    "band": "Moderately smoothed",
+    "weighted_score": 6.5,
+    "available_weight": 13.5,
+    "compression_fraction": 0.48,
+    "flagged_signals": [
+      "burstiness_B",
+      "connective_density",
+      "fkgl_sd",
+      "mattr",
+      "adjacent_cosine_mean"
+    ],
+    "skipped_signals": [],
+    "n_flagged": 5,
+    "notes": {},
+    "pos_bigram_kl": {
+      "value": 0.18,
+      "threshold": 0.15,
+      "weight": 2.0,
+      "in_band": true,
+      "compressed": true
+    }
+  }
+}

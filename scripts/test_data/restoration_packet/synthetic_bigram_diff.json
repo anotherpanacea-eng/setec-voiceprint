@@ -1,0 +1,74 @@
+{
+  "task_surface": "smoothing_diagnosis",
+  "tool": "bigram_diff",
+  "target": "synthetic_target.txt",
+  "target_bigrams": 1200,
+  "target_unique": 240,
+  "smoothing_alpha": 1.0,
+  "min_count": 1,
+  "diffs": {
+    "pooled": {
+      "kl_total": 0.082,
+      "rows": [
+        {
+          "bigram": "DET-ADJ-NOUN",
+          "target_prob": 0.045,
+          "baseline_prob": 0.024,
+          "delta": 0.021,
+          "log2_ratio": 0.91,
+          "kl_contrib": 0.041,
+          "target_count": 54,
+          "baseline_count": 28
+        },
+        {
+          "bigram": "ADJ-NOUN",
+          "target_prob": 0.062,
+          "baseline_prob": 0.041,
+          "delta": 0.021,
+          "log2_ratio": 0.60,
+          "kl_contrib": 0.037,
+          "target_count": 74,
+          "baseline_count": 49
+        },
+        {
+          "bigram": "NOUN-NOUN",
+          "target_prob": 0.038,
+          "baseline_prob": 0.024,
+          "delta": 0.014,
+          "log2_ratio": 0.66,
+          "kl_contrib": 0.025,
+          "target_count": 46,
+          "baseline_count": 29
+        },
+        {
+          "bigram": "ADV-ADJ",
+          "target_prob": 0.018,
+          "baseline_prob": 0.011,
+          "delta": 0.007,
+          "log2_ratio": 0.71,
+          "kl_contrib": 0.013,
+          "target_count": 22,
+          "baseline_count": 13
+        },
+        {
+          "bigram": "PRON-VERB",
+          "target_prob": 0.022,
+          "baseline_prob": 0.038,
+          "delta": -0.016,
+          "log2_ratio": -0.79,
+          "kl_contrib": -0.017,
+          "target_count": 26,
+          "baseline_count": 46
+        },
+        {
+          "bigram": "X-Y",
+          "target_prob": 0.005,
+          "baseline_prob": 0.002,
+          "delta": 0.003,
+          "log2_ratio": 1.32,
+          "kl_contrib": 0.007
+        }
+      ]
+    }
+  }
+}

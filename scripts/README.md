@@ -49,8 +49,11 @@ This surface is primarily a reference-prose surface (the Layer B/C named-pattern
 | Script | Scope | Use when |
 |---|---|---|
 | `aic_pattern_audit.py` | Single document, named-pattern level (Layer B/C) | Counting named rhetorical patterns (correctio, pseudo-aphorism, manifesto cadence, triplet, professional-parallel stack, plus four nonfiction parallel patterns) at per-thousand-word density, optionally vs. baseline corpus |
+| `restoration_packet.py` | Translates Surface 1/2 diagnostic JSON into bounded revision-safe prompt packets | Turning variance audit / bigram diff / voice distance / idiolect / AIC outputs into a packet that classifies each signal as direct / translated / investigate-first / avoid-direct. Sibling to the `craft-restoration` skill, which reads prose and AIC flags; this script reads diagnostic JSON and emits revision instructions with named guardrails and required post-check commands. See `references/metric-targeted-restoration.md` for the targetability taxonomy. |
 
-What this script cannot answer: the earned/unearned verdict on any individual instance. That is a Layer C source-triage call the writer has to make in context. The script reports density and surfaces flagged sentences; the writer adjudicates per instance using `references/source-triage.md`.
+What `aic_pattern_audit.py` cannot answer: the earned/unearned verdict on any individual instance. That is a Layer C source-triage call the writer has to make in context. The script reports density and surfaces flagged sentences; the writer adjudicates per instance using `references/source-triage.md`.
+
+What `restoration_packet.py` does NOT do: rewrite prose, claim AI provenance, or optimize metrics directly. The framework's metric-gaming resistance lives in the four-class targetability taxonomy: aggregate divergence and overall distances are explicitly `avoid_direct` and never become prompt instructions. v1 produces target packets and prompt text; the actual revision is a human- or LLM-in-the-loop pass with required SETEC post-checks.
 
 ### Surface tag in script output
 
@@ -61,7 +64,7 @@ Every script's JSON output carries a top-level `task_surface` field, and every m
 | `smoothing_diagnosis` | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
 | `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py` |
 | `validation` | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py` |
-| `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md` |
+| `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass), `restoration_packet.py` (metric-targeted revision packets); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`, and `references/metric-targeted-restoration.md` |
 
 The contract is enforceable at the data layer. The validation harness refuses to mix scores across surfaces because the surfaces answer different questions. Reports are now self-identifying so a reader (or an automated consumer) can route by surface without reading the script's filename or guessing from output shape.
 

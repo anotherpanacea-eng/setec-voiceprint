@@ -1,0 +1,17 @@
+{
+  "task_surface": "voice_coherence",
+  "tool": "idiolect_detector",
+  "target_corpus": "synthetic_writer/",
+  "preservation_list": [
+    "moral allocation",
+    "as a practical matter",
+    "the relevant frame here is",
+    "policy adjacent",
+    "load-bearing",
+    "in the limit case",
+    "the case for X is the case against Y"
+  ],
+  "n_idiolectic_unigrams": 12,
+  "n_idiolectic_bigrams": 18,
+  "n_idiolectic_trigrams": 7
+}
