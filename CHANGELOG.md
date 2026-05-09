@@ -6,6 +6,14 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.7.1] - 2026-05-08
+
+Documentation pass on the Cowork install / update flow with empirical cache findings.
+
+### Changed
+
+- `README.md` Plugin install section for Cowork rewritten. The marketplace path (re-add `anotherpanacea-eng/setec-voiceprint` through Cowork's Plugins UI) is documented as the recommended install and the only path that supports updates. The `--plugin-dir` path is documented as a one-time snapshot: empirical testing on 2026-05-08 found that `git pull` on a `--plugin-dir`-installed local checkout does NOT propagate updates to the running Cowork install even after a version bump and a Cowork restart, with the cache located at `~/Library/Application Support/Claude/local-agent-mode-sessions/<session>/rpm/plugin_<id>/`. This is stronger than the previous catch-up commit's claim (which said only that content changes within an unchanged version field don't invalidate). Working remediation is to remove the `--plugin-dir` install and re-add via the marketplace path. Diagnostic command for users hitting the symptom is included.
+
 ## [1.7.0] - 2026-05-08
 
 Char-n-gram correctness pass against R `stylo`, extending the function-word oracle to all three per-n character n-gram families.
@@ -139,7 +147,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.5.1...v1.5.2

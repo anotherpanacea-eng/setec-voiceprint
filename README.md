@@ -115,25 +115,27 @@ claude plugin update setec-voiceprint
 
 A full quit-and-relaunch is required for skill changes to take effect; `/reload-plugins` reloads hooks/MCP/LSP only and does **not** reload skills.
 
-### Plugin install — Cowork SDK harness
+### Plugin install — Cowork desktop
 
-The Cowork harness loads plugins via `--plugin-dir` directly from a local checkout; the marketplace catalog system is bypassed entirely. Clone the repo and point Cowork at it:
+Cowork has two install paths and they behave differently. The marketplace path is what works for ongoing updates.
 
-```
-git clone https://github.com/anotherpanacea-eng/setec-voiceprint.git
-# Configure Cowork to load --plugin-dir <path>/setec-voiceprint/plugins/setec-voiceprint
-```
+**Recommended: install via the Cowork plugins UI from the GitHub repo.** In Cowork, open the Plugins panel and add the marketplace by entering `anotherpanacea-eng/setec-voiceprint`. Cowork fetches the plugin from GitHub and surfaces its skills in the next session. This is the path that supports updates: when new commits land on the remote, re-add the marketplace through the same UI and Cowork will detect the version bump and prompt to update.
 
 **Updating in Cowork:**
 
-```
-cd path/to/setec-voiceprint
-git pull
-# Then start a new Cowork session. Cowork has no /reload-plugins command;
-# the running session keeps the previously loaded plugin until restart.
-```
+After pushing a new release (with the version bumped in `plugins/setec-voiceprint/.claude-plugin/plugin.json`), in Cowork: Plugins → re-add the marketplace path `anotherpanacea-eng/setec-voiceprint` → accept the update prompt that appears. The cached plugin snapshot under `~/Library/Application Support/Claude/local-agent-mode-sessions/<session>/rpm/plugin_<id>/` will refresh to the new version.
 
-If updates seem stuck, check that the `--plugin-dir` path resolves to the same checkout you just `git pull`ed. Multiple checkouts on disk are the most common failure mode for "I pulled but I still see the old plugin."
+**Alternative path: `--plugin-dir` against a local clone.** Cowork can also be pointed at a local checkout, but `--plugin-dir`-installed plugins are treated as one-time snapshots: `git pull` on the local checkout does NOT propagate updates to the running Cowork install, even with a version bump and a Cowork restart. Empirical finding (2026-05-08): the cache is invalidated only by the marketplace re-add path. If you've installed via `--plugin-dir`, the working update flow is to remove the `--plugin-dir` install and re-add via the marketplace path above. This is plausibly a Cowork product gap and worth filing if you hit it.
+
+If you've previously installed via `--plugin-dir` and updates seem stuck, the diagnostic is:
+
+```
+ls "$HOME/Library/Application Support/Claude/local-agent-mode-sessions/"
+# Each session directory has its own rpm/plugin_<id>/ snapshot. Compare
+# the served plugin.json version against the source version in your local
+# clone or on GitHub. Stale = the cache hasn't refreshed; remediation is
+# the marketplace re-add described above.
+```
 
 ### Standalone CLI (no plugin install)
 
