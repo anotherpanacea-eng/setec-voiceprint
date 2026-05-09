@@ -987,6 +987,120 @@ including a missing field, produces a warning.
 
 ---
 
+## acquire_blog.py
+
+Acquires a single author's blog or Substack archive into the impostor pool that
+the future General Imposters validation harness will consume. Auto-detects which
+extraction path to use based on the URL pattern and probe responses:
+
+- **Substack** (`*.substack.com` or Substack-shaped feed at `<url>/feed`) — RSS
+  for recent posts (full text) plus `sitemap.xml` for the full archive.
+- **WordPress / Ghost** (responds with WP/Ghost-shaped feed at `/feed/` or
+  `/rss/`) — feed parse plus a per-post HTML fetch when the feed body is short.
+- **Generic HTML archive** (no recognizable feed) — requires `--archive-pattern`
+  pointing at the index page; default link heuristic catches `/YYYY/MM/`-style
+  and `/posts/` URLs.
+- **Wayback Machine** (`--wayback`) — uses the CDX API to enumerate snapshots
+  within the date window; for shut-down blogs.
+
+### Usage
+
+```
+# Substack (auto-detected from hostname):
+python3 scripts/acquire_blog.py https://jehsmith.substack.com \
+    --persona smith_jeh_substack \
+    --impostor-for blog \
+    --register blog_essay \
+    --consent-status fair_use_research \
+    --era pre_chatgpt \
+    --since 2018-01-01 --until 2022-11-01 \
+    --max-posts 25
+
+# WordPress / Ghost:
+python3 scripts/acquire_blog.py https://example.com \
+    --wordpress \
+    --persona example_author_blog \
+    --impostor-for blog \
+    --register blog_essay \
+    --consent-status fair_use_research
+
+# Generic HTML archive (e.g., Marginal Revolution):
+python3 scripts/acquire_blog.py https://marginalrevolution.com \
+    --html-archive \
+    --archive-pattern 'https://marginalrevolution.com/marginalrevolution/2019/03' \
+    --persona cowen_tyler_blog \
+    --impostor-for blog \
+    --register blog_essay \
+    --consent-status fair_use_research
+
+# Wayback Machine for shut-down blogs:
+python3 scripts/acquire_blog.py https://slatestarcodex.com \
+    --wayback \
+    --persona alexander_scott_blog \
+    --impostor-for blog \
+    --register blog_essay \
+    --consent-status fair_use_research \
+    --since 2014-01-01 --until 2020-06-01
+```
+
+### Output
+
+Per acquired post: `<output-dir>/<YYYY-MM-DD>_<title-slug>.txt` (cleaned text)
+plus a `<...>.meta.json` sidecar (URL, date, hash, raw byte length, scraper
+version, full preprocessing metadata block). Default output dir is
+`<baselines>/impostors/<register>/<persona>/`; the baselines root resolves
+through `$SETEC_BASELINES_DIR`, then a sibling `ai-prose-baselines-private/`
+next to the repo, then a fallback under `~/Documents/`.
+
+Draft manifest written to `<output>/draft_manifest.jsonl` by default. Each entry
+carries `corpus_role: "impostor"`, `use: ["voice_impostor"]`, `split: "baseline"`,
+`privacy: "private"`, plus all five impostor-required fields (`impostor_for`,
+`register_match`, `topic_match`, `consent_status`, `era`) and `acquired_via`
+keyed by source-type and date. After review, the user merges the draft into
+`corpus_manifest.jsonl`.
+
+### Privacy
+
+Acquired text is voice-cloning input from someone else's prose. By default, the
+output dir, manifest, and `--out` summary all live under a path containing
+`ai-prose-baselines-private/`; the privacy guard refuses non-private paths
+unless `--allow-public-output` is set (rare; only for non-personal corpora).
+Impostor entries are never published or distributed; future public-report
+harnesses must anonymize impostor identities by default.
+
+### Robots.txt
+
+The script honors robots.txt by default and ships no `--ignore-robots` flag in
+v1. Per-host rate limiting (`--rate-limit SECONDS`, default 2.0) prevents
+hammering a single archive.
+
+### Paid Substack content
+
+Paid posts come excerpt-only and are detected via class markers (`paywall`,
+`subscriber-only`) and the `audience: only_paid` feed field. v1 always skips
+them; the run summary records `Skipped (paid-only): N`.
+
+### Dependencies
+
+Install the opt-in acquisition layer:
+
+```
+pip install -r requirements-acquisition.txt
+```
+
+This pulls `requests`, `feedparser`, `beautifulsoup4`, `lxml`, `python-dateutil`,
+and `pypdf`. Ordinary diagnostics, validation, voice distance, and plugin
+installation do NOT need this layer.
+
+### Manual live-smoke
+
+CI tests run against fixture HTTP responses (`scripts/test_data/acquisition_blog_fixture/`)
+for reproducibility. The maintainer's manual live-smoke command is documented
+in `internal/2026-05-08-impostor-corpus-spec.md`; run it after any change to
+the Substack extraction path.
+
+---
+
 ## Corpus manifest format
 
 A manifest is JSONL: one JSON object per file. Paths may be absolute or relative

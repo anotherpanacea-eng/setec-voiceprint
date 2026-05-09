@@ -1,0 +1,870 @@
+#!/usr/bin/env python3
+"""acquisition_core.py — shared helpers for impostor-corpus acquisition.
+
+The acquisition scripts (`acquire_blog.py`, future `acquire_magazine.py`,
+and `pdf_extract.py`) share a common pipeline:
+
+  fetch → extract plain text → preprocess (corpus hygiene) → hash →
+    deduplicate → write `.txt` + `.meta.json` → emit draft manifest entry.
+
+This module factors out the parts that don't vary by source: slug rules,
+content hashing, the output-path convention, the fetcher protocol that
+tests can substitute, the per-file write, the manifest entry composer,
+and the run-summary aggregator. Acquisition scripts import these
+helpers instead of reimplementing them, keeping per-script code focused
+on source-specific extraction (Substack selectors vs. WordPress
+selectors vs. PDF text-layer extraction).
+
+Privacy: all output paths are checked against the marker-based
+`ai-prose-baselines-private` rule that voice-profile tools already use
+(`voice_profile.is_private_output_path`, mirrored in
+`voice_drift_tracker._check_output_privacy`). Impostor text is voice-
+cloning input from someone else's prose; it is never published or
+distributed. The acquisition pipeline writes only into a private path
+unless the user explicitly opts out with `--allow-public-output`.
+
+Network behavior: the `Fetcher` class is the only place HTTP happens.
+Tests inject a `FixtureFetcher` that maps URLs to local fixture files,
+so the acquisition scripts can be exercised end-to-end without network
+access. Production runs construct a `RequestsFetcher` that honors
+`robots.txt`, applies a per-host rate limit, and identifies itself
+with a SETEC user-agent header.
+"""
+
+from __future__ import annotations
+
+import datetime as _dt
+import hashlib
+import json
+import re
+import sys
+import time
+import unicodedata
+import urllib.parse
+import urllib.robotparser
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+from typing import Any, Callable, Iterable, Optional
+
+
+# Task-surface tag. Acquisition is upstream of every voice-coherence
+# tool that consumes the impostor pool, so it gets its own surface.
+TASK_SURFACE = "voice_coherence_acquisition"
+
+# Default User-Agent advertised to upstream sites. Identifies the
+# framework + a stable contact route so site operators can correlate
+# traffic and reach out if our scraping bothers them.
+DEFAULT_USER_AGENT = (
+    "setec-voiceprint/{version} (+https://github.com/anotherpanacea-eng/"
+    "setec-voiceprint)"
+)
+
+# Marker directory name for the private-safe path check. Mirrors the
+# existing `voice_profile.is_private_output_path` convention.
+PRIVATE_DIR_NAME = "ai-prose-baselines-private"
+
+# Default base directory for acquired text. Resolved through the
+# `SETEC_BASELINES_DIR` env var if set, else falls back to a sibling
+# of the repo (the documented standard layout).
+DEFAULT_BASELINES_ENV = "SETEC_BASELINES_DIR"
+DEFAULT_BASELINES_FALLBACK = (
+    Path.home() / "Documents" / "Claude Cowork Working Folder"
+    / "ai-prose-baselines-private"
+)
+
+
+# --------------- Slug + hash utilities -----------------------------
+
+
+_SLUG_NON_ALNUM_RE = re.compile(r"[^a-z0-9]+")
+_SLUG_TRIM_RE = re.compile(r"^-+|-+$")
+
+
+def slugify(text: str, *, max_length: int = 80) -> str:
+    """Filename-safe slug: ASCII-folded, lowercase, hyphenated.
+
+    Unicode is normalized to NFKD then encoded as ASCII (with
+    non-encodable characters dropped) so European diacritics and
+    smart quotes don't leak into filenames. The result is bounded
+    to ``max_length`` to keep paths well under typical filesystem
+    limits even after parent directories are prepended.
+
+    Empty results (text that was all punctuation or non-ASCII)
+    return ``"untitled"`` rather than an empty string so callers
+    don't accidentally write to a directory-named file.
+    """
+    if not text:
+        return "untitled"
+    folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    lowered = folded.lower()
+    slug = _SLUG_NON_ALNUM_RE.sub("-", lowered)
+    slug = _SLUG_TRIM_RE.sub("", slug)
+    if not slug:
+        return "untitled"
+    if len(slug) > max_length:
+        # Trim at a word boundary if possible.
+        slug = slug[:max_length].rsplit("-", 1)[0] or slug[:max_length]
+    return slug
+
+
+def author_to_persona_slug(author: str, *, suffix: str = "personal") -> str:
+    """Generate a deterministic persona slug from an author's name.
+
+    Rule: ``lastname_firstname_<suffix>`` for two-or-more-token names,
+    ``<single>_<suffix>`` for one-token names. Unicode is normalized
+    to ASCII; punctuation stripped; tokens joined on underscore.
+
+    The spec calls this out for `acquire_magazine.py`'s
+    ``--persona-from-author`` mode but the rule is generic enough to
+    factor here. Tests pin the slug for stability across runs.
+    """
+    folded = unicodedata.normalize("NFKD", author or "")
+    folded = folded.encode("ascii", "ignore").decode("ascii")
+    cleaned = re.sub(r"[^A-Za-z0-9\s-]", " ", folded).strip()
+    parts = [p for p in re.split(r"[\s-]+", cleaned) if p]
+    if not parts:
+        return f"unknown_{suffix}"
+    if len(parts) == 1:
+        return f"{parts[0].lower()}_{suffix}"
+    last = parts[-1].lower()
+    first = "_".join(p.lower() for p in parts[:-1])
+    return f"{last}_{first}_{suffix}"
+
+
+def compute_content_hash(text: str) -> str:
+    """SHA-256 of cleaned text, prefixed ``sha256:``.
+
+    The prefix matches the manifest convention in
+    ``references/manifest-schema.md`` and lets future hash families
+    (e.g., a normalized-text fingerprint) coexist without ambiguity.
+    """
+    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    return f"sha256:{digest}"
+
+
+# --------------- Date parsing -------------------------------------
+
+
+_ISO_DATE_RE = re.compile(r"^(\d{4})(?:-(\d{2})(?:-(\d{2}))?)?$")
+
+
+def parse_iso_date(text: str | None) -> _dt.date | None:
+    """Parse an ISO partial date (`YYYY`, `YYYY-MM`, or `YYYY-MM-DD`).
+
+    Returns ``None`` for null/empty/unparseable input rather than
+    raising — acquisition data is messy and a malformed date should
+    skip a single entry's date filter rather than abort the run.
+
+    Bare-year and year-month strings are anchored to January 1 / day 1
+    so callers can compare with ``<=`` / ``>=`` against a window.
+    """
+    if not text:
+        return None
+    text = str(text).strip()
+    m = _ISO_DATE_RE.match(text)
+    if not m:
+        # Try python-dateutil if installed for non-ISO feed formats.
+        try:
+            from dateutil import parser as _du_parser  # type: ignore
+        except ImportError:
+            return None
+        try:
+            parsed = _du_parser.parse(text, default=_dt.datetime(1970, 1, 1))
+        except (ValueError, OverflowError):
+            return None
+        return parsed.date()
+    year = int(m.group(1))
+    month = int(m.group(2)) if m.group(2) else 1
+    day = int(m.group(3)) if m.group(3) else 1
+    try:
+        return _dt.date(year, month, day)
+    except ValueError:
+        return None
+
+
+# --------------- Privacy guard ------------------------------------
+
+
+def is_private_safe_path(path: Path) -> bool:
+    """Marker-based private-path check.
+
+    Returns True iff any component of the resolved absolute path is
+    named ``ai-prose-baselines-private``. Mirrors
+    ``voice_profile.is_private_output_path`` and
+    ``voice_drift_tracker._check_output_privacy``. Both repo-internal
+    and sibling private roots are accepted; the documented standard
+    layout uses a sibling directory.
+    """
+    return PRIVATE_DIR_NAME in path.expanduser().resolve().parts
+
+
+def check_output_privacy(
+    paths: Iterable[Path], *, allow_public: bool, tool: str,
+) -> None:
+    """Enforce the marker-based private-path rule across output paths.
+
+    Acquisition tools call this once after computing every path they
+    plan to write (output dir, manifest path, summary report). When
+    ``allow_public`` is False and any path is outside a private root,
+    the tool prints a refusal explaining both options (write into a
+    private root, or pass ``--allow-public-output`` for non-personal
+    corpora) and exits with code 2.
+    """
+    if allow_public:
+        return
+    for p in paths:
+        if p is None:
+            continue
+        if not is_private_safe_path(Path(p)):
+            sys.stderr.write(
+                f"Refusing to write {p}: not under any directory "
+                f"named '{PRIVATE_DIR_NAME}'. {tool} output is voice-"
+                f"cloning input. Either write into a directory named "
+                f"'{PRIVATE_DIR_NAME}' (repo-internal or sibling — "
+                f"both are accepted), or pass --allow-public-output "
+                f"for non-personal corpora.\n"
+            )
+            sys.exit(2)
+
+
+# --------------- Output-path conventions --------------------------
+
+
+def resolve_baselines_dir(env_var: str = DEFAULT_BASELINES_ENV) -> Path:
+    """Return the configured baselines root.
+
+    Order of resolution:
+      1. ``$SETEC_BASELINES_DIR`` if set.
+      2. Sibling ``ai-prose-baselines-private`` next to the repo, if
+         it exists.
+      3. ``DEFAULT_BASELINES_FALLBACK``.
+
+    Acquisition output goes under ``<baselines>/impostors/<register>/
+    <author_slug>/`` by default; the per-script ``--output-dir`` flag
+    overrides.
+    """
+    import os
+    env_val = os.environ.get(env_var)
+    if env_val:
+        return Path(env_val).expanduser()
+    repo_root = Path(__file__).resolve().parents[1]
+    sibling = repo_root.parent / PRIVATE_DIR_NAME
+    if sibling.exists():
+        return sibling
+    return DEFAULT_BASELINES_FALLBACK
+
+
+def default_output_dir(
+    register: str, author_slug: str, *, base: Path | None = None,
+) -> Path:
+    """Default output directory: ``<base>/impostors/<register>/<slug>/``."""
+    base = base or resolve_baselines_dir()
+    return base / "impostors" / register / author_slug
+
+
+# --------------- Fetcher protocol ---------------------------------
+
+
+@dataclass
+class FetchResult:
+    """Outcome of a single fetch.
+
+    ``status`` mirrors HTTP status codes (200 OK, 404 Not Found, 0 for
+    network errors). ``text`` carries the response body decoded as
+    UTF-8 with replacement; ``content_type`` is the response's
+    ``Content-Type`` header verbatim or ``""`` when unavailable.
+    """
+    url: str
+    status: int
+    text: str
+    content_type: str = ""
+    final_url: str = ""
+
+    @property
+    def ok(self) -> bool:
+        return 200 <= self.status < 300
+
+
+class Fetcher:
+    """Abstract HTTP fetcher.
+
+    Subclasses implement ``_do_fetch(url)``; the base class layers on
+    rate limiting, robots.txt enforcement, and book-keeping. Tests use
+    `FixtureFetcher`; production scripts use `RequestsFetcher`.
+
+    Why an abstraction: the spec requires fixture-backed CI tests
+    that don't depend on network access. Without a swappable fetcher,
+    tests would have to monkey-patch ``requests.get`` and ``feedparser
+    .parse`` in ways that are brittle across Python versions and
+    library updates. With this abstraction, each acquisition script
+    accepts an optional ``fetcher`` argument that defaults to
+    `RequestsFetcher` and is overridden in tests.
+    """
+
+    def __init__(
+        self,
+        *,
+        rate_limit_seconds: float = 2.0,
+        user_agent: str = "",
+        respect_robots: bool = True,
+    ) -> None:
+        self.rate_limit_seconds = max(0.0, rate_limit_seconds)
+        self.user_agent = user_agent or DEFAULT_USER_AGENT
+        self.respect_robots = respect_robots
+        self._last_fetch_per_host: dict[str, float] = {}
+        self._robots_cache: dict[str, urllib.robotparser.RobotFileParser | None] = {}
+        self.fetch_count = 0
+
+    def fetch(self, url: str) -> FetchResult:
+        """Fetch a URL with rate limiting and robots.txt enforcement."""
+        if self.respect_robots and not self._robots_allows(url):
+            return FetchResult(
+                url=url, status=403, text="",
+                content_type="text/plain",
+                final_url=url,
+            )
+        self._wait_for_rate_limit(url)
+        result = self._do_fetch(url)
+        self._record_fetch(url)
+        self.fetch_count += 1
+        return result
+
+    def _do_fetch(self, url: str) -> FetchResult:  # pragma: no cover
+        raise NotImplementedError
+
+    def _wait_for_rate_limit(self, url: str) -> None:
+        host = urllib.parse.urlparse(url).netloc
+        last = self._last_fetch_per_host.get(host)
+        if last is None or self.rate_limit_seconds <= 0:
+            return
+        elapsed = time.monotonic() - last
+        if elapsed < self.rate_limit_seconds:
+            time.sleep(self.rate_limit_seconds - elapsed)
+
+    def _record_fetch(self, url: str) -> None:
+        host = urllib.parse.urlparse(url).netloc
+        self._last_fetch_per_host[host] = time.monotonic()
+
+    def _robots_allows(self, url: str) -> bool:
+        parsed = urllib.parse.urlparse(url)
+        host_key = f"{parsed.scheme}://{parsed.netloc}"
+        rp = self._robots_cache.get(host_key)
+        if rp is None and host_key not in self._robots_cache:
+            rp = self._load_robots(host_key)
+            self._robots_cache[host_key] = rp
+        if rp is None:
+            # No robots.txt or fetch failed → allow (fail-open is the
+            # robots.txt convention; a missing robots.txt is not a
+            # restriction).
+            return True
+        # Check our advertised UA, then fall back to '*'.
+        return rp.can_fetch(self.user_agent, url) or rp.can_fetch("*", url)
+
+    def _load_robots(
+        self, host_key: str,
+    ) -> urllib.robotparser.RobotFileParser | None:
+        rp = urllib.robotparser.RobotFileParser()
+        rp.set_url(f"{host_key}/robots.txt")
+        result = self._do_fetch(f"{host_key}/robots.txt")
+        if not result.ok or not result.text:
+            return None
+        # urllib.robotparser parses from a list of lines.
+        rp.parse(result.text.splitlines())
+        return rp
+
+
+class FixtureFetcher(Fetcher):
+    """Test fetcher backed by a URL→fixture mapping.
+
+    Tests construct one of these with a dict mapping URLs to fixture
+    file paths (or directly to FetchResult objects), then pass it to
+    the acquisition script's main routine. Unmapped URLs return a 404,
+    which lets tests assert that the script handles missing pages
+    gracefully without raising.
+    """
+
+    def __init__(
+        self,
+        url_map: dict[str, str | FetchResult | Path],
+        *,
+        fixture_dir: Path | None = None,
+        rate_limit_seconds: float = 0.0,
+        respect_robots: bool = False,
+    ) -> None:
+        super().__init__(
+            rate_limit_seconds=rate_limit_seconds,
+            respect_robots=respect_robots,
+        )
+        self.url_map = url_map
+        self.fixture_dir = fixture_dir
+        self.fetched_urls: list[str] = []
+
+    def _do_fetch(self, url: str) -> FetchResult:
+        self.fetched_urls.append(url)
+        target = self.url_map.get(url)
+        if target is None:
+            return FetchResult(url=url, status=404, text="", final_url=url)
+        if isinstance(target, FetchResult):
+            return target
+        # Path or string path to a fixture file.
+        path = Path(target)
+        if self.fixture_dir is not None and not path.is_absolute():
+            path = self.fixture_dir / path
+        if not path.is_file():
+            return FetchResult(url=url, status=404, text="", final_url=url)
+        text = path.read_text(encoding="utf-8")
+        # Infer content-type from extension.
+        ext = path.suffix.lower()
+        content_type = {
+            ".xml": "application/xml",
+            ".rss": "application/rss+xml",
+            ".atom": "application/atom+xml",
+            ".html": "text/html",
+            ".htm": "text/html",
+            ".txt": "text/plain",
+            ".json": "application/json",
+        }.get(ext, "application/octet-stream")
+        return FetchResult(
+            url=url, status=200, text=text,
+            content_type=content_type, final_url=url,
+        )
+
+
+def make_requests_fetcher(
+    *,
+    version: str = "0.0.0",
+    rate_limit_seconds: float = 2.0,
+    timeout: float = 30.0,
+) -> Fetcher:
+    """Construct a production fetcher backed by the `requests` library.
+
+    Imported lazily so scripts and tests that don't actually fetch
+    over the network can run without `requests` installed.
+    """
+    try:
+        import requests  # type: ignore
+    except ImportError as e:  # pragma: no cover
+        raise RuntimeError(
+            "requests is not installed. Install acquisition dependencies "
+            "with: pip install -r requirements-acquisition.txt"
+        ) from e
+
+    user_agent = DEFAULT_USER_AGENT.format(version=version)
+
+    class RequestsFetcher(Fetcher):
+        def _do_fetch(self, url: str) -> FetchResult:
+            try:
+                resp = requests.get(
+                    url,
+                    headers={"User-Agent": self.user_agent},
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
+            except Exception as exc:
+                sys.stderr.write(f"  network error: {url}: {exc}\n")
+                return FetchResult(
+                    url=url, status=0, text="", final_url=url,
+                )
+            try:
+                # Force UTF-8 with replacement to avoid surprises on
+                # latin-1 default decoding.
+                if resp.encoding is None or resp.encoding.lower() == "iso-8859-1":
+                    resp.encoding = resp.apparent_encoding or "utf-8"
+                text = resp.text
+            except UnicodeDecodeError:
+                text = resp.content.decode("utf-8", errors="replace")
+            return FetchResult(
+                url=url,
+                status=resp.status_code,
+                text=text,
+                content_type=resp.headers.get("Content-Type", ""),
+                final_url=resp.url,
+            )
+
+    return RequestsFetcher(
+        rate_limit_seconds=rate_limit_seconds,
+        user_agent=user_agent,
+        respect_robots=True,
+    )
+
+
+# --------------- Preprocessing pipe-through -----------------------
+
+
+def preprocess_text(
+    text: str,
+    *,
+    rules: str | Iterable[str] | None = None,
+    allow_non_prose: bool = False,
+    strip_aggressive: bool = False,
+) -> tuple[str, dict[str, Any]]:
+    """Run text through ``scripts/preprocessing.py`` corpus-hygiene gate.
+
+    Acquisition scripts pipe extracted text through this so impostor
+    entries are subject to the same content-level guards as identity
+    baselines. Returns ``(cleaned_text, metadata)``; metadata is the
+    same shape ``preprocessing.strip_non_prose`` returns.
+    """
+    # Imported lazily so that test code paths that don't exercise
+    # preprocessing don't depend on this module's full surface.
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import preprocessing  # type: ignore
+    finally:
+        sys.path.pop(0)
+    return preprocessing.strip_non_prose(
+        text,
+        rules=rules,
+        allow_non_prose=allow_non_prose,
+        strip_aggressive=strip_aggressive,
+    )
+
+
+# --------------- Per-piece dataclass ------------------------------
+
+
+@dataclass
+class AcquiredPiece:
+    """One acquired text artifact, ready for write + manifest emission.
+
+    Holds the cleaned text and all the metadata the manifest entry
+    will carry. Acquisition scripts construct one of these per fetched
+    piece and pass it to ``write_piece`` for atomic on-disk emission.
+    """
+    title: str
+    author: str
+    persona: str
+    register: str
+    date_written: _dt.date | None
+    source_url: str
+    cleaned_text: str
+    raw_byte_length: int
+    preprocessing_meta: dict[str, Any]
+    acquired_via: str
+    consent_status: str
+    era: str
+    register_match: str = "high"
+    topic_match: str = "medium"
+    impostor_for: list[str] = field(default_factory=list)
+    notes: str = ""
+
+    @property
+    def content_hash(self) -> str:
+        return compute_content_hash(self.cleaned_text)
+
+    @property
+    def word_count(self) -> int:
+        return len(re.findall(r"\S+", self.cleaned_text))
+
+    def filename_stem(self) -> str:
+        if self.date_written:
+            date_part = self.date_written.isoformat()
+        else:
+            date_part = "undated"
+        return f"{date_part}_{slugify(self.title)}"
+
+
+# --------------- Run summary --------------------------------------
+
+
+@dataclass
+class RunSummary:
+    """Aggregate statistics for an acquisition run.
+
+    Acquisition scripts mutate one of these as they go and print it on
+    stderr at the end. The shape is stable across acquisition modes so
+    downstream tooling (a future cross-script dashboard) can parse the
+    same JSON.
+    """
+    acquired: int = 0
+    skipped_paid: int = 0
+    skipped_duplicate: int = 0
+    skipped_parse_error: int = 0
+    skipped_network_error: int = 0
+    skipped_filtered: int = 0
+    skipped_robots: int = 0
+    total_cleaned_words: int = 0
+    per_rule_strips: dict[str, int] = field(default_factory=dict)
+    skip_log: list[dict[str, str]] = field(default_factory=list)
+    draft_manifest_path: Optional[str] = None
+    output_dir: Optional[str] = None
+
+    def record_strip_meta(self, meta: dict[str, Any]) -> None:
+        for rule, count in (meta.get("tokens_stripped_by_rule") or {}).items():
+            self.per_rule_strips[rule] = (
+                self.per_rule_strips.get(rule, 0) + int(count)
+            )
+
+    def log_skip(self, *, reason: str, url: str, detail: str = "") -> None:
+        self.skip_log.append({"reason": reason, "url": url, "detail": detail})
+
+    def render_stderr(self) -> str:
+        lines = [
+            f"Acquired: {self.acquired} files",
+            f"Skipped (paid-only): {self.skipped_paid}",
+            f"Skipped (duplicate hash): {self.skipped_duplicate}",
+            f"Skipped (parse error): {self.skipped_parse_error}",
+            f"Skipped (network error): {self.skipped_network_error}",
+            f"Skipped (filter): {self.skipped_filtered}",
+            f"Skipped (robots): {self.skipped_robots}",
+            f"Total cleaned words: {self.total_cleaned_words:,}",
+        ]
+        if self.draft_manifest_path:
+            lines.append(f"Draft manifest written to: {self.draft_manifest_path}")
+        if self.per_rule_strips:
+            strip_str = ", ".join(
+                f"{k}={v}" for k, v in sorted(self.per_rule_strips.items())
+            )
+            lines.append(f"Per-rule preprocessing strips: {strip_str}")
+        return "\n".join(lines) + "\n"
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        return d
+
+
+# --------------- Write + manifest emission ------------------------
+
+
+def write_piece(
+    piece: AcquiredPiece,
+    *,
+    output_dir: Path,
+    scraper_version: str,
+) -> tuple[Path, Path]:
+    """Write one acquired piece to disk.
+
+    Produces:
+      - ``<output_dir>/<YYYY-MM-DD>_<title-slug>.txt``  (cleaned text)
+      - ``<output_dir>/<YYYY-MM-DD>_<title-slug>.meta.json`` (sidecar)
+
+    Returns the (text_path, meta_path) tuple. Caller is responsible
+    for deduplication; this function will overwrite an existing file
+    silently (callers should call ``content_hash_already_present``
+    first).
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    stem = piece.filename_stem()
+    text_path = output_dir / f"{stem}.txt"
+    meta_path = output_dir / f"{stem}.meta.json"
+    text_path.write_text(piece.cleaned_text, encoding="utf-8")
+    meta = {
+        "source_url": piece.source_url,
+        "title": piece.title,
+        "author": piece.author,
+        "date_written": piece.date_written.isoformat() if piece.date_written else None,
+        "raw_byte_length": piece.raw_byte_length,
+        "content_hash": piece.content_hash,
+        "word_count": piece.word_count,
+        "acquired_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "scraper": piece.acquired_via,
+        "scraper_version": scraper_version,
+        "preprocessing": piece.preprocessing_meta,
+    }
+    meta_path.write_text(
+        json.dumps(meta, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return text_path, meta_path
+
+
+def content_hash_already_present(
+    content_hash: str, output_dir: Path,
+) -> Path | None:
+    """Scan ``output_dir`` for an existing ``.meta.json`` with a
+    matching ``content_hash``. Returns the matching meta path, or
+    ``None`` if not found.
+
+    v1 dedupes within the target output directory only. Manifest-wide
+    dedupe is a follow-up — for now, two impostor pools targeting the
+    same author should share the same output directory.
+    """
+    if not output_dir.exists():
+        return None
+    for meta_file in output_dir.glob("*.meta.json"):
+        try:
+            data = json.loads(meta_file.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if data.get("content_hash") == content_hash:
+            return meta_file
+    return None
+
+
+def compose_manifest_entry(
+    piece: AcquiredPiece,
+    *,
+    text_path: Path,
+    manifest_relative_to: Path,
+    use: list[str] | None = None,
+    privacy: str = "private",
+    split: str = "baseline",
+    corpus_role: str = "impostor",
+    ai_status: str = "pre_ai_human",
+    language_status: str = "native",
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compose one draft manifest entry from an `AcquiredPiece`.
+
+    The entry conforms to ``references/manifest-schema.md`` for
+    impostor-corpus entries:
+      - ``corpus_role: "impostor"``
+      - ``use: ["voice_impostor"]``
+      - ``split: "baseline"`` (reference pool, not identity baseline)
+      - ``privacy: "private"``
+      - all five impostor required fields present
+      - ``content_hash`` populated
+
+    ``manifest_relative_to`` is the directory the manifest will live
+    in; the entry's ``path`` is computed relative to that directory
+    when possible (and absolute otherwise).
+    """
+    use = use or ["voice_impostor"]
+    rel_path: str
+    try:
+        rel_path = str(text_path.resolve().relative_to(
+            manifest_relative_to.resolve()
+        ))
+    except ValueError:
+        rel_path = str(text_path.resolve())
+    entry: dict[str, Any] = {
+        "id": text_path.stem,
+        "path": rel_path,
+        "author": piece.author,
+        "persona": piece.persona,
+        "register": piece.register,
+        "date_written": piece.date_written.isoformat() if piece.date_written else None,
+        "ai_status": ai_status,
+        "language_status": language_status,
+        "word_count": piece.word_count,
+        "use": list(use),
+        "split": split,
+        "privacy": privacy,
+        "corpus_role": corpus_role,
+        "content_hash": piece.content_hash,
+        "source": piece.source_url,
+    }
+    # Drop None values so the validator's "unknown enum" warnings
+    # don't fire for date_written: null on undated entries.
+    if entry["date_written"] is None:
+        del entry["date_written"]
+    # Impostor-required fields. Always emit for impostor entries; the
+    # validator errors on missing ones.
+    if corpus_role == "impostor":
+        entry["impostor_for"] = list(piece.impostor_for)
+        entry["register_match"] = piece.register_match
+        entry["topic_match"] = piece.topic_match
+        entry["consent_status"] = piece.consent_status
+        entry["era"] = piece.era
+        entry["acquired_via"] = piece.acquired_via
+    if piece.notes:
+        entry["notes"] = piece.notes
+    if extra:
+        entry.update(extra)
+    return entry
+
+
+def append_manifest_entry(
+    manifest_path: Path, entry: dict[str, Any],
+) -> None:
+    """Append one JSON entry as a JSONL line to ``manifest_path``.
+
+    Creates the file (and parent directories) if it doesn't exist.
+    Each entry is on its own line, newline-terminated, sorted-key
+    serialized for stable diffs.
+    """
+    manifest_path.parent.mkdir(parents=True, exist_ok=True)
+    line = json.dumps(entry, sort_keys=True, ensure_ascii=False)
+    with manifest_path.open("a", encoding="utf-8") as f:
+        f.write(line + "\n")
+
+
+# --------------- HTML extraction helpers --------------------------
+
+
+def html_to_text(
+    html: str,
+    *,
+    content_selector: str | None = None,
+    strip_selectors: Iterable[str] = (),
+) -> tuple[str, str | None]:
+    """Extract plain text from an HTML document.
+
+    Pipeline:
+      1. Parse with BeautifulSoup (lxml backend if available).
+      2. Drop noise elements globally: ``<script>``, ``<style>``,
+         ``<noscript>``, ``<svg>``, ``<form>``, ``<nav>``, ``<aside>``,
+         ``<footer>``, anything in ``strip_selectors``.
+      3. If ``content_selector`` is set and matches, restrict to that
+         subtree; else use the document body.
+      4. Convert to text with ``.get_text(separator='\\n')`` and
+         normalize whitespace.
+
+    Returns ``(text, title)`` where ``title`` is the HTML ``<title>``
+    if present (used as a fallback when site-specific title selectors
+    don't match).
+    """
+    try:
+        from bs4 import BeautifulSoup  # type: ignore
+    except ImportError as e:  # pragma: no cover
+        raise RuntimeError(
+            "beautifulsoup4 is not installed. Install acquisition "
+            "dependencies with: "
+            "pip install -r requirements-acquisition.txt"
+        ) from e
+
+    # Try lxml first; fall back to the stdlib parser if lxml isn't
+    # installed.
+    try:
+        soup = BeautifulSoup(html, "lxml")
+    except Exception:
+        soup = BeautifulSoup(html, "html.parser")
+
+    title = None
+    if soup.title and soup.title.string:
+        title = soup.title.string.strip()
+
+    # Globally drop noise.
+    for tag_name in (
+        "script", "style", "noscript", "svg", "form", "nav",
+        "aside", "footer", "iframe",
+    ):
+        for tag in soup.find_all(tag_name):
+            tag.decompose()
+    for sel in strip_selectors:
+        for tag in soup.select(sel):
+            tag.decompose()
+
+    # Restrict to content_selector if it matches.
+    container = None
+    if content_selector:
+        try:
+            container = soup.select_one(content_selector)
+        except Exception:
+            container = None
+    if container is None:
+        container = soup.body or soup
+
+    text = container.get_text(separator="\n")
+    # Collapse runs of whitespace; preserve paragraph breaks.
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip(), title
+
+
+def html_text_is_clean(text: str) -> bool:
+    """Sanity check: the cleaned text must not still contain raw HTML.
+
+    Used in tests to assert that extraction is working. False if the
+    text contains anything that looks like an HTML tag, a script
+    block, or stray sidebar boilerplate.
+    """
+    if "<script" in text.lower() or "<style" in text.lower():
+        return False
+    # A bare ``<word>`` or ``</word>`` pattern surviving extraction
+    # means the parser didn't drop the tag. Allow ``< ``, ``< 5``,
+    # ``<="..."`` etc. — those are real prose.
+    if re.search(r"</?[a-zA-Z][a-zA-Z0-9]*[\s/>]", text):
+        return False
+    return True

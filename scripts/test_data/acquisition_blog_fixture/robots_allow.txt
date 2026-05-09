@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://teststack.substack.com/sitemap.xml

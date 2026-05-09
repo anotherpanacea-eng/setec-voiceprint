@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:dc="http://purl.org/dc/elements/1.1/" version="2.0">
+  <channel>
+    <title>Test Substack — Notes On A Method</title>
+    <link>https://teststack.substack.com</link>
+    <description>Long-form essays on craft and philosophy.</description>
+    <item>
+      <title>On the Particular and the General</title>
+      <link>https://teststack.substack.com/p/on-the-particular-and-the-general</link>
+      <pubDate>Mon, 14 Mar 2018 09:00:00 GMT</pubDate>
+      <dc:creator>Test Author</dc:creator>
+      <guid>https://teststack.substack.com/p/on-the-particular-and-the-general</guid>
+      <content:encoded><![CDATA[
+        <div class="body markup">
+          <p>The particular thinks itself central. It mistakes its own visibility for importance, and so it always feels as though we are talking about it specifically when we are talking about anything at all.</p>
+          <p>And yet to abandon the particular for the general is to slip into a kind of administrative haze, where every actual thing dissolves into its category, and the work of attention — which is the only work worth doing — becomes impossible.</p>
+          <p>The trick, if it can be called a trick, is to keep both in view at once: to see the cup and to see the cup as an instance of cups, to feel the fact and to feel the structure beneath the fact. This requires a discipline that I have only intermittently practiced and rarely mastered.</p>
+          <p>What I have learned, however, is this: when the general has eclipsed the particular, the writing goes flat in a way you can almost taste. The sentences become reasonable. The reader nods along. Nothing is at stake, because nothing is specifically at stake. And when this happens — at least when it happens to me — the only fix is to go find something concrete and look at it for a long time, until the strange details come back, and the writing has somewhere to put its weight.</p>
+          <p>So: what does this paragraph weigh? What does it sit on? What is it pointing at, and could a stranger walk to that thing using only the directions inside the words? If not, it is not yet finished.</p>
+        </div>
+      ]]></content:encoded>
+    </item>
+    <item>
+      <title>Field Notes from a Difficult Week</title>
+      <link>https://teststack.substack.com/p/field-notes-from-a-difficult-week</link>
+      <pubDate>Wed, 22 May 2019 14:30:00 GMT</pubDate>
+      <dc:creator>Test Author</dc:creator>
+      <guid>https://teststack.substack.com/p/field-notes-from-a-difficult-week</guid>
+      <content:encoded><![CDATA[
+        <div class="body markup paywall">
+          <p>This post is for paid subscribers</p>
+          <p>Subscribe to read</p>
+        </div>
+      ]]></content:encoded>
+      <audience>only_paid</audience>
+    </item>
+    <item>
+      <title>The Long Way Around</title>
+      <link>https://teststack.substack.com/p/the-long-way-around</link>
+      <pubDate>Sun, 08 Sep 2019 11:00:00 GMT</pubDate>
+      <dc:creator>Test Author</dc:creator>
+      <guid>https://teststack.substack.com/p/the-long-way-around</guid>
+      <content:encoded><![CDATA[
+        <div class="body markup">
+          <p>I have spent most of my writing life going the long way around, which is to say arriving at conclusions by routes that anyone with more directness in their nature would have ruled out as inefficient. There is, I think, something to be said for inefficiency in this domain.</p>
+          <p>The shortest distance between two points is a straight line, but a straight line through a thought is rarely a thought worth recording. The interesting parts are at the corners, where the eye has had to slow down and notice that the path is bending. Without those corners, you have a sentence; with them, you may have a paragraph that gives back something more than it took.</p>
+          <p>This is not an argument for digression as a virtue in itself. Digression for its own sake is a vice; I have been guilty of it often enough to recognize the symptoms. The discipline lies in distinguishing the digression that opens out from the digression that merely wanders. The opening-out kind earns its keep by returning, eventually, to the main road, but with a new piece of luggage that the main road needed and did not know it needed. The wandering kind comes back empty.</p>
+          <p>How to tell the difference at the moment of writing? I cannot reliably. I have made my peace with this. The first draft is for the wandering; the revision is for the cutting. What survives the cutting tends, in my experience, to be the part where the digression and the main road meet — the joint, the seam, the place where two thoughts press against one another and produce a third.</p>
+        </div>
+      ]]></content:encoded>
+    </item>
+  </channel>
+</rss>

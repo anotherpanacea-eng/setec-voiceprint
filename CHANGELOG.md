@@ -6,6 +6,53 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.15.0] - 2026-05-09
+
+Blog acquisition tooling for the impostor corpus. Commit 2 of three for the impostor-corpus spec (`internal/2026-05-08-impostor-corpus-spec.md`); Commit 1 (1.14.3) shipped the schema, Commit 3 (`acquire_magazine.py` + `pdf_inventory.py` + `pdf_extract.py`) follows. The General Imposters validation harness still has to be wired up separately, but with this release the framework can now build the impostor pool the harness needs from any Substack, WordPress / Ghost blog, or generic-HTML archive.
+
+### Added
+
+- **`scripts/acquire_blog.py`** — single-author blog/Substack archive acquisition with auto-detection across four extraction paths:
+  1. **Substack** (`*.substack.com` or Substack-shaped feed at `<url>/feed`) — RSS for recent posts (full text) plus `sitemap.xml` for the full archive. Paid-only posts are detected via class markers / `audience: only_paid` and skipped with a flag; v1 ships no `--include-paid` because authenticated fetch is out of scope.
+  2. **WordPress / Ghost** (responds with WP/Ghost-shaped feed at `/feed/` or `/rss/`) — feed parse plus a per-post HTML fetch when feed body looks short.
+  3. **Generic HTML archive** (no recognizable feed) — requires `--archive-pattern` pointing at the index page; default link heuristic catches `/YYYY/MM/`-style and `/posts/` URLs.
+  4. **Wayback Machine** (`--wayback`) — uses the CDX API to enumerate snapshots within the date window; fetches the most recent snapshot per URL.
+- **CLI surface** mirrors the spec: `--persona`, `--impostor-for`, `--register`, `--register-match`, `--topic-match`, `--consent-status`, `--era`, `--since` / `--until`, `--max-posts`, `--rate-limit`, `--user-agent`, `--dry-run`, `--emit-manifest`, `--output-dir`, `--out`, `--allow-non-prose` / `--strip-rules` / `--strip-aggressive` (passed through to `preprocessing.py`), `--allow-public-output` (privacy guard override), and source-type override flags (`--substack` / `--wordpress` / `--html-archive` / `--wayback`). Site-config registry seeded for `marginalrevolution.com`, `slatestarcodex.com`, `overcomingbias.com`, `jehsmith.substack.com`, `thedarkmagazine.com`.
+- **Per-piece output convention.** Each acquired post produces `<output>/<YYYY-MM-DD>_<title-slug>.txt` (cleaned text) plus a `.meta.json` sidecar (URL, date, hash, raw byte length, scraper version, full preprocessing metadata block). Default output dir is `<baselines>/impostors/<register>/<author_slug>/`; baselines root resolves through `$SETEC_BASELINES_DIR`, then the documented sibling-of-repo `ai-prose-baselines-private/`, then a fallback under `~/Documents/`. Draft manifest written to `<output>/draft_manifest.jsonl` by default; user merges into `corpus_manifest.jsonl` after review.
+- **Impostor manifest emission.** Every emitted entry carries `corpus_role: "impostor"`, `use: ["voice_impostor"]`, `split: "baseline"`, `privacy: "private"`, plus all five impostor-required fields (`impostor_for`, `register_match`, `topic_match`, `consent_status`, `era`) and `acquired_via` keyed by source-type and date (e.g. `acquire_blog_substack_rss_2026-05-09`). `content_hash` (SHA-256 of cleaned text, prefix `sha256:`) populated for dedupe.
+- **`scripts/acquisition_core.py`** — shared helpers for the impostor-corpus pipeline. Will be reused by Commit 3's magazine + PDF tools:
+  - `slugify` (Unicode-folded ASCII slug with `max_length` and word-boundary trim) and `author_to_persona_slug` (deterministic `lastname_firstname_<suffix>` with collision suffixes).
+  - `compute_content_hash` (SHA-256 with `sha256:` prefix, matching the manifest schema).
+  - `parse_iso_date` (anchored `YYYY[-MM[-DD]]` + python-dateutil fallback for human formats; returns `None` rather than raising on garbage).
+  - `is_private_safe_path` and `check_output_privacy` — marker-based privacy guard mirroring `voice_profile.is_private_output_path` (any path component named `ai-prose-baselines-private` qualifies; repo-internal, sibling, and absolute paths all pass).
+  - `Fetcher` abstract base + `FixtureFetcher` (test mock; URL → fixture-file mapping) + `make_requests_fetcher` (production wrapper around `requests` with rate limiting per host, robots.txt enforcement via `urllib.robotparser`, and SETEC user-agent header). The fetcher abstraction is what lets the regression tests run without network access.
+  - `html_to_text` (BeautifulSoup with lxml backend, drops `<script>` / `<style>` / `<nav>` / `<aside>` / `<footer>` / `<form>` / `<svg>` globally, plus user-supplied strip selectors, then restricts to a CSS content selector with sensible fallbacks). `html_text_is_clean` is the corresponding test predicate that asserts no HTML tags survived.
+  - `AcquiredPiece` dataclass (one acquired text artifact) + `RunSummary` dataclass (acquisition-run aggregate; renders the `Acquired: N files / Skipped (paid-only): N / ...` block on stderr).
+  - `write_piece` (atomic `.txt` + `.meta.json` write), `content_hash_already_present` (within-output-dir dedupe scan), `compose_manifest_entry` (impostor-schema-conforming dict), `append_manifest_entry` (append-only JSONL writer with stable key ordering).
+  - `preprocess_text` — pipe-through to `scripts/preprocessing.py` so impostor entries are subject to the same content-level guards as identity baselines.
+- **`requirements-acquisition.txt`** — opt-in dependency layer matching the existing `requirements-calibration.txt` pattern. Pins `requests`, `feedparser`, `beautifulsoup4`, `lxml`, `python-dateutil`, `pypdf` (for Commit 3); the optional `wayback` and `ocrmypdf` lines are commented with install notes. Ordinary diagnostics, validation, voice distance, and plugin installation do NOT need this layer.
+- **Fixture corpus** under `scripts/test_data/acquisition_blog_fixture/`: `substack_feed.xml` (one full-text post + one paid/excerpt-only post + one extra full-text post), `substack_sitemap.xml` (six URLs spanning 2017–2024 for date-window tests), `substack_post_archive.html` (the sitemap-only post fetched via HTML extraction), `wordpress_feed.xml`, `generic_archive.html` (with two post links plus a non-post `/about/` link), `generic_post_quiet_room.html` and `generic_post_attention.html` (with sidebar/script/nav noise that must be stripped), `robots_allow.txt`, `robots_disallow.txt`. All synthetic-prose-only; no real third-party content.
+- **`scripts/tests/test_acquire_blog.py`** — 32 regression tests covering the full surface:
+  - `acquisition_core` unit tests: slugify (basic + Unicode + max_length), persona-slug rule, content hash determinism, ISO date parser partials, marker-based private-path check, `html_to_text` script/style/nav stripping, `html_text_is_clean` predicate.
+  - Substack feed parsing: full-text extraction + paid-marker detection across three flavors + RFC822 date parsing.
+  - Sitemap URL filtering by date window.
+  - Source-type auto-detection across hostname / feed-probe / generic-fallback.
+  - End-to-end Substack acquisition: 3 written posts (paid skipped, sitemap-only one fetched via HTML), manifest entries carry every impostor schema field, cleaned text passes the no-HTML-residue check, no `Subscribe` widget leaks, no trailing comments block, content hashes unique, preprocessing metadata present per sidecar, manifest validates clean.
+  - End-to-end WordPress and generic-HTML acquisition with the same invariants.
+  - Dedupe-by-content-hash within output dir (a second run against the same dir writes nothing new).
+  - Privacy guard refusal path (non-private output → `sys.exit(2)`) + acceptance path (sibling-style private root works).
+  - Robots.txt: `Disallow: /` blocks all fetches (zero posts written); `Allow: /` lets fetches through.
+  - `--since` / `--until` filters posts by date_written.
+  - `--dry-run` writes nothing.
+  - `compose_manifest_entry` direct check — every required field present, no None values that would trip validator warnings.
+  - End-to-end manifest-validator integration: emitted manifest validates clean (zero errors) when an identity_baseline entry naming the impostor's target persona is added.
+
+### Notes
+
+- This is Commit 2 of three. Commit 3 (`acquire_magazine.py` + `pdf_inventory.py` + `pdf_extract.py`) reuses the `acquisition_core` helpers shipped here. The General Imposters validation harness — the consumer that turns the impostor pool into calibrated attribution claims — is roadmap-tracked separately.
+- Privacy posture: acquired text is voice-cloning input from someone else's prose. Default output goes under `ai-prose-baselines-private/impostors/<register>/<author_slug>/`; the privacy guard refuses non-private paths unless `--allow-public-output` is set; impostor entries are never published or distributed; future public-report harnesses must anonymize impostor identities by default and refuse to name `consent_status: undocumented` writers.
+- 194 tests pass + 2 skipped (was 163 + 1 in 1.14.3; +32 new acquisition tests, with one previous test reclassified between buckets). One additional `voice_validation_harness.test_manifest_validator_accepts_voice_validation_use` is now part of the count after the impostor schema landed; net change is +31 tests, +1 reclassified.
+
 ## [1.14.3] - 2026-05-09
 
 Manifest schema + validator extensions for impostor-corpus support. Commit 1 of three for the impostor-corpus tooling spec (`internal/2026-05-08-impostor-corpus-spec.md`); Commit 2 (`acquire_blog.py`) and Commit 3 (`acquire_magazine.py` / `pdf_inventory.py` / `pdf_extract.py`) follow. The General Imposters validation harness (Koppel et al. 2014, Kestemont et al. 2016) the framework will eventually wire up needs an impostor pool labeled with provenance, consent, register-match strength, era, and corpus-role; this release ships the schema and the validator ratchets that catch impostor-pool misconfiguration at manifest-load time.
