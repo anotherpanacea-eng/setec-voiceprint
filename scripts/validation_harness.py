@@ -858,6 +858,26 @@ def group_records(records: Sequence[dict[str, Any]], field: str) -> dict[str, li
 
 
 def derive_seed(seed: int | None, *parts: str) -> int | None:
+    """Per-(slice, signal) seed derivation that is stable across
+    Python processes.
+
+    Cross-process stability requires that the derivation NOT use
+    Python's built-in ``hash()`` of strings or tuples — those are
+    salted per process via ``PYTHONHASHSEED`` (random by default), so
+    a stable ``--bootstrap-seed`` combined with ``hash((slice, signal))``
+    would produce different RNG sequences on every run, breaking the
+    reproducibility guarantee that's part of the validation-harness
+    contract.
+
+    This implementation uses ``(i + 1) * ord(ch)`` accumulation
+    instead. ``ord()`` returns a Unicode code point, which is stable
+    across processes regardless of ``PYTHONHASHSEED``. The voice-
+    coherence harness uses a SHA-256-based variant (`_stable_seed`)
+    for the same invariant; the two algorithms produce different
+    numeric seeds but both satisfy the cross-process-stable contract.
+    See `test_validation_harness_seeds.py` for the regression test
+    that pins this behavior.
+    """
     if seed is None:
         return None
     text = "|".join(parts)

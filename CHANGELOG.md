@@ -6,6 +6,18 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.10.2] - 2026-05-08
+
+Audit `derive_seed` in `validation_harness.py` for the same `hash()` bug pattern the reviewer caught in `voice_validation_harness._stable_seed` during 1.9.0. Finding: NOT buggy. `derive_seed` uses `(i+1)*ord(ch)` accumulation, which is stable across Python processes because Unicode code points don't depend on `PYTHONHASHSEED`. Confirmed empirically (two independent Python invocations produce identical seeds). Adds documentation + a pinned-value regression test so a future "modernizer" can't silently replace the implementation with `hash((parts...))` thinking they're improving it.
+
+### Changed
+
+- `scripts/validation_harness.py` `derive_seed`: docstring expanded to document the cross-process-stable contract and the reasoning behind the `(i+1)*ord(ch)` choice over `hash()`. Behavior unchanged.
+
+### Added
+
+- `scripts/tests/test_validation_harness_seeds.py`: four regression tests pinning the cross-process-stable behavior of `derive_seed`. Pins specific output values (e.g., `derive_seed(42, "per_signal", "burstiness_B") == 29082`) so any algorithm change fails immediately. Also tests that distinct `parts` tuples produce distinct seeds (collision check ensures per-slice bootstrap RNGs stay independent), and that a `None` base seed propagates correctly (preserves the system-entropy fallback when no seed is supplied). Companion to the `voice_validation_harness._stable_seed` regression test from 1.9.0; the two harnesses use different algorithms (validation: `(i+1)*ord(ch)` accumulation, voice: SHA-256 of joined parts) but both satisfy the same cross-process-stable contract.
+
 ## [1.10.1] - 2026-05-08
 
 Pre-registers the standards a calibration entry must meet before it lands in `COMPRESSION_HEURISTICS`. No behavior change; documentation only. The calibration toolchain shipped in 1.10.0 now has explicit selection criteria and an "in-sample calibration" epistemic-seatbelt convention recorded *before* any actual calibration run, so the first calibrated threshold (a future commit) is held to standards that pre-date the data rather than being chosen retrospectively.
@@ -258,7 +270,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.1...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.2...HEAD
+[1.10.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.1...v1.10.2
 [1.10.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.0...v1.10.1
 [1.10.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.2...v1.10.0
 [1.9.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.1...v1.9.2
