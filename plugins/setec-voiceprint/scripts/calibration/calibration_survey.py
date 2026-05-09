@@ -1,0 +1,634 @@
+#!/usr/bin/env python3
+"""calibration_survey.py — survey every COMPRESSION_HEURISTICS signal.
+
+Runs `calibrate_thresholds.derive_threshold` against every key in the
+registry under one labeled corpus + one FPR target, then aggregates
+the results into a single comparison table the maintainer reads to
+pick the **first** signal whose calibration entry passes the five
+selection criteria documented in
+``scripts/calibration/PROVENANCE.md``.
+
+Pre-1.23.0, the documented workflow asked the maintainer to run
+`calibrate_thresholds.py` once per signal in a shell loop and read
+the JSON output by hand. Two friction points the wrapper closes:
+
+  * **Coverage drift.** The PROVENANCE.md shell loop enumerated 7
+    of the 11 signals; ``yules_k``, ``shannon_entropy``,
+    ``sentence_length_sd``, and ``mdd_sd`` were silently missing.
+    This wrapper iterates the registry directly so coverage is
+    always 11/11.
+  * **Comparison cost.** Picking which signal earns the first
+    committed threshold means weighing AUC, TPR-at-target-FPR,
+    threshold interpretability, n_neg sufficiency, and ESL
+    conservatism across all candidates. Reading 11 separate JSON
+    files to make that judgment is enough friction that the
+    workflow stalled. The wrapper produces one markdown table plus
+    one JSON survey ledger — judgment becomes one read, not eleven.
+
+What the wrapper does NOT do: pick the winning signal. The five
+selection criteria explicitly include "AUC / AP not embarrassing
+(no fixed cutoff baked into the toolchain — left to maintainer
+judgment per signal)" and the ESL conservatism gate is context-
+dependent. The wrapper marks the automatable gates (polarity, FPR
+resolution, TPR-above-floor, calibrated-vs-heuristic
+aggressiveness) and leaves the judgment to the maintainer.
+
+Usage:
+
+    # Survey all 11 signals at FPR 0.01:
+    python3 scripts/calibration/calibration_survey.py \\
+        --manifest ai-prose-baselines-private/editlens/manifest_nonnative.jsonl \\
+        --fpr-target 0.01 \\
+        --out /tmp/calibration_survey_2026-05-09.json
+
+    # Only the cheap stylometric signals (skip Tier 2 spaCy + Tier 3 cohesion):
+    python3 scripts/calibration/calibration_survey.py \\
+        --manifest ai-prose-baselines-private/editlens/manifest_nonnative.jsonl \\
+        --fpr-target 0.01 \\
+        --no-tier2 --no-tier3 \\
+        --out /tmp/survey_tier1.json
+
+    # JSON-only output (no markdown table on stdout):
+    python3 scripts/calibration/calibration_survey.py \\
+        --manifest ... --fpr-target 0.01 --json-only
+
+The output ledger's ``rows[*].gates`` block records which
+selection-criteria gates each signal passes. The maintainer reads
+this, picks the winner, and follows the existing 5-step commit
+sequence in PROVENANCE.md (edit registry, add markdown section,
+append to ledger, bump version).
+"""
+
+from __future__ import annotations
+
+import argparse
+import datetime as _dt
+import json
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any, Sequence
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+import calibrate_thresholds as ct  # noqa: E402
+
+# Reach the variance audit registry without triggering a heavy
+# spaCy import: COMPRESSION_HEURISTICS is a pure dataclass dict.
+PARENT_SCRIPTS = SCRIPT_DIR.parent
+if str(PARENT_SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(PARENT_SCRIPTS))
+from variance_audit import COMPRESSION_HEURISTICS  # type: ignore  # noqa: E402
+
+TASK_SURFACE = "smoothing_diagnosis_calibration"
+TOOL_NAME = "calibration_survey"
+SCRIPT_VERSION = "1.0"
+
+
+# ---- Selection-criteria gates ------------------------------------
+
+
+# TPR floor below which a calibrated threshold is "predicts almost
+# nothing." Per PROVENANCE.md gate 4: a threshold that fires on
+# 1/130 positives is technically valid but operationally
+# meaningless. The 5% floor is intentionally permissive — the
+# maintainer can lower it via --tpr-floor if they're calibrating
+# against a corpus where the AI-prose signal is genuinely rare.
+DEFAULT_TPR_FLOOR = 0.05
+
+# Tolerance for the "calibrated threshold not more aggressive than
+# heuristic" gate. Per PROVENANCE.md gate 5: when calibrating
+# against ESL, the calibrated threshold should NOT be more
+# aggressive than the heuristic (which would mean the calibration
+# wants to flag MORE ESL essays as compressed). A small relaxation
+# (default 5% of the heuristic value) catches cases where the
+# direction-of-aggressiveness flipped without complaining about
+# noise-level disagreement.
+DEFAULT_AGGRESSIVENESS_TOLERANCE = 0.05
+
+
+@dataclass
+class GateResults:
+    """Five gates from PROVENANCE.md "Selection criteria" section.
+
+    Each gate is True / False / None. None = not evaluable in this
+    survey (e.g. gate 2 is maintainer judgment, gate 5 requires the
+    ESL slice, etc.). The maintainer reads the booleans + the
+    accompanying numerics and decides.
+    """
+    polarity_matches: bool | None = None      # gate 1
+    auc_ap_not_embarrassing: bool | None = None  # gate 2 (judgment)
+    enough_negatives: bool | None = None       # gate 3
+    interpretable_threshold: bool | None = None  # gate 4
+    esl_conservative: bool | None = None       # gate 5
+
+    @property
+    def all_pass(self) -> bool:
+        """All evaluable gates pass. None values count as 'unknown';
+        a row with any None is not all-pass."""
+        return all(
+            g is True for g in (
+                self.polarity_matches,
+                self.auc_ap_not_embarrassing,
+                self.enough_negatives,
+                self.interpretable_threshold,
+                self.esl_conservative,
+            )
+        )
+
+    @property
+    def n_passes(self) -> int:
+        """Count of gates that explicitly pass."""
+        return sum(
+            1 for g in (
+                self.polarity_matches,
+                self.auc_ap_not_embarrassing,
+                self.enough_negatives,
+                self.interpretable_threshold,
+                self.esl_conservative,
+            )
+            if g is True
+        )
+
+    @property
+    def n_evaluated(self) -> int:
+        """Count of gates we evaluated (not None)."""
+        return sum(
+            1 for g in (
+                self.polarity_matches,
+                self.auc_ap_not_embarrassing,
+                self.enough_negatives,
+                self.interpretable_threshold,
+                self.esl_conservative,
+            )
+            if g is not None
+        )
+
+
+def evaluate_gates(
+    entry: dict[str, Any],
+    *,
+    heuristic_value: float | None,
+    direction: str,
+    tpr_floor: float,
+    aggressiveness_tolerance: float,
+) -> GateResults:
+    """Map a derive_threshold provenance entry → gate booleans.
+
+    Gates 1, 3, 4 are automatable (polarity, FPR resolution, TPR
+    floor). Gate 5 is automatable when a heuristic value is
+    available (the registry always has one). Gate 2 stays None —
+    maintainer judgment.
+    """
+    g = GateResults()
+    empirical = entry.get("empirical") or {}
+    sweep = entry.get("sweep") or {}
+
+    # Gate 1: polarity. AUC ≥ 0.5 in the declared direction means the
+    # signal does discriminate as the registry expects. derive_threshold
+    # already computes AUC in the registry's direction; we just check
+    # the value.
+    auc = empirical.get("auc")
+    if isinstance(auc, (int, float)):
+        g.polarity_matches = float(auc) >= 0.5
+    else:
+        g.polarity_matches = None
+
+    # Gate 3: enough negatives for the requested FPR. The toolchain's
+    # `fpr_resolution = 1 / n_neg` check is structural; pass-fail is
+    # whether fpr_resolution ≤ fpr_target.
+    fpr_target = entry.get("fpr_target")
+    fpr_resolution = sweep.get("fpr_resolution")
+    if isinstance(fpr_resolution, (int, float)) and isinstance(fpr_target, (int, float)):
+        g.enough_negatives = float(fpr_resolution) <= float(fpr_target)
+
+    # Gate 4: interpretable threshold (TPR substantially above zero
+    # at the chosen FPR target).
+    tpr = empirical.get("tpr_at_threshold")
+    if isinstance(tpr, (int, float)):
+        g.interpretable_threshold = float(tpr) >= tpr_floor
+
+    # Gate 5: calibrated NOT more aggressive than heuristic.
+    # "More aggressive" = flags MORE positives. For a `gt` signal
+    # (compressed when value high), more aggressive = lower threshold.
+    # For a `lt` signal (compressed when value low), more aggressive =
+    # higher threshold.
+    threshold = sweep.get("threshold")
+    if (
+        isinstance(threshold, (int, float))
+        and isinstance(heuristic_value, (int, float))
+    ):
+        diff = float(threshold) - float(heuristic_value)
+        rel = abs(diff) / max(abs(float(heuristic_value)), 1e-9)
+        if rel <= aggressiveness_tolerance:
+            # Within tolerance — count as conservative.
+            g.esl_conservative = True
+        elif direction == "gt":
+            # gt signal: calibrated threshold lower than heuristic =
+            # more aggressive (flags more). Conservative = ≥ heuristic.
+            g.esl_conservative = float(threshold) >= float(heuristic_value)
+        elif direction == "lt":
+            # lt signal: calibrated threshold higher than heuristic =
+            # more aggressive. Conservative = ≤ heuristic.
+            g.esl_conservative = float(threshold) <= float(heuristic_value)
+        else:
+            g.esl_conservative = None
+
+    # Gate 2 stays None — judgment. We surface AUC + AP for the
+    # maintainer to weigh.
+    return g
+
+
+# ---- Survey runner -----------------------------------------------
+
+
+@dataclass
+class SurveyRow:
+    """One signal's row in the comparison table.
+
+    Mirrors the columns the maintainer needs to make a pick:
+    signal name + direction + AUC / AP for ranking sense + threshold
+    + TPR-at-threshold + FPR-at-threshold + n_neg + fpr_resolution
+    + the gate booleans.
+    """
+    signal: str
+    direction: str
+    heuristic_value: float | None
+    auc: float | None = None
+    ap: float | None = None
+    threshold: float | None = None
+    tpr_at_threshold: float | None = None
+    fpr_at_threshold: float | None = None
+    n_pos: int | None = None
+    n_neg: int | None = None
+    fpr_resolution: float | None = None
+    gates: GateResults = field(default_factory=GateResults)
+    error: str | None = None  # populated if derive_threshold raised
+    full_entry: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "signal": self.signal,
+            "direction": self.direction,
+            "heuristic_value": self.heuristic_value,
+            "auc": self.auc,
+            "ap": self.ap,
+            "threshold": self.threshold,
+            "tpr_at_threshold": self.tpr_at_threshold,
+            "fpr_at_threshold": self.fpr_at_threshold,
+            "n_pos": self.n_pos,
+            "n_neg": self.n_neg,
+            "fpr_resolution": self.fpr_resolution,
+            "gates": {
+                "polarity_matches": self.gates.polarity_matches,
+                "auc_ap_not_embarrassing": self.gates.auc_ap_not_embarrassing,
+                "enough_negatives": self.gates.enough_negatives,
+                "interpretable_threshold": self.gates.interpretable_threshold,
+                "esl_conservative": self.gates.esl_conservative,
+                "n_passes": self.gates.n_passes,
+                "n_evaluated": self.gates.n_evaluated,
+                "all_pass": self.gates.all_pass,
+            },
+            "error": self.error,
+        }
+
+
+def _build_inner_args(
+    parent_args: argparse.Namespace, signal: str,
+) -> argparse.Namespace:
+    """Build the argparse.Namespace `derive_threshold` expects from
+    the survey-wrapper's args + a target signal."""
+    return argparse.Namespace(
+        manifest=parent_args.manifest,
+        use=parent_args.use,
+        signal=signal,
+        fpr_target=parent_args.fpr_target,
+        out=None,  # never used; we don't write per-signal ledger
+        slug=None,
+        replace=False,
+        bootstrap_resamples=parent_args.bootstrap_resamples,
+        bootstrap_confidence=parent_args.bootstrap_confidence,
+        bootstrap_seed=parent_args.bootstrap_seed,
+        tier2=parent_args.tier2,
+        tier3=parent_args.tier3,
+        notes=None,
+    )
+
+
+def survey_one_signal(
+    signal: str,
+    parent_args: argparse.Namespace,
+    *,
+    tpr_floor: float,
+    aggressiveness_tolerance: float,
+) -> SurveyRow:
+    """Run derive_threshold against one signal; return a SurveyRow.
+
+    Catches the common failure modes — derive_threshold raises
+    `SystemExit` on registry mismatch / unscored corpus / missing
+    manifest entries / unreachable FPR target — and stores them as
+    the row's `error` field so a single bad signal doesn't abort
+    the whole survey.
+    """
+    spec = COMPRESSION_HEURISTICS[signal]
+    direction = spec.direction
+    heuristic_value = getattr(spec, "value", None)
+    if not isinstance(heuristic_value, (int, float)):
+        heuristic_value = None
+
+    inner = _build_inner_args(parent_args, signal)
+    row = SurveyRow(
+        signal=signal,
+        direction=direction,
+        heuristic_value=heuristic_value,
+    )
+    try:
+        entry = ct.derive_threshold(inner)
+    except SystemExit as exc:
+        row.error = str(exc) or "derive_threshold raised SystemExit"
+        return row
+    except Exception as exc:
+        row.error = f"{type(exc).__name__}: {exc}"
+        return row
+
+    empirical = entry.get("empirical") or {}
+    sweep = entry.get("sweep") or {}
+    row.auc = empirical.get("auc")
+    row.ap = empirical.get("ap")
+    row.threshold = sweep.get("threshold")
+    row.tpr_at_threshold = empirical.get("tpr_at_threshold")
+    row.fpr_at_threshold = empirical.get("fpr_at_threshold")
+    row.n_pos = empirical.get("n_pos")
+    row.n_neg = empirical.get("n_neg")
+    row.fpr_resolution = sweep.get("fpr_resolution")
+    row.gates = evaluate_gates(
+        entry,
+        heuristic_value=heuristic_value,
+        direction=direction,
+        tpr_floor=tpr_floor,
+        aggressiveness_tolerance=aggressiveness_tolerance,
+    )
+    row.full_entry = entry
+    return row
+
+
+def run_survey(
+    parent_args: argparse.Namespace,
+    *,
+    signals: Sequence[str] | None = None,
+    tpr_floor: float = DEFAULT_TPR_FLOOR,
+    aggressiveness_tolerance: float = DEFAULT_AGGRESSIVENESS_TOLERANCE,
+) -> dict[str, Any]:
+    """Run `derive_threshold` against every signal in `signals`
+    (default: all 11) and aggregate the results."""
+    if signals is None:
+        signals = list(COMPRESSION_HEURISTICS.keys())
+
+    sys.stderr.write(
+        f"Surveying {len(signals)} signal(s) at FPR target "
+        f"{parent_args.fpr_target}...\n"
+    )
+    rows: list[SurveyRow] = []
+    for signal in signals:
+        sys.stderr.write(f"  --> {signal}\n")
+        row = survey_one_signal(
+            signal, parent_args,
+            tpr_floor=tpr_floor,
+            aggressiveness_tolerance=aggressiveness_tolerance,
+        )
+        rows.append(row)
+
+    # Rank rows: signals that pass all evaluable gates float to the
+    # top, then by descending AUC (with None pushed to the bottom),
+    # then by descending TPR.
+    def _rank_key(r: SurveyRow) -> tuple:
+        return (
+            -r.gates.n_passes,
+            -(r.auc if r.auc is not None else -1),
+            -(r.tpr_at_threshold if r.tpr_at_threshold is not None else -1),
+        )
+    rows.sort(key=_rank_key)
+
+    return {
+        "task_surface": TASK_SURFACE,
+        "tool": TOOL_NAME,
+        "version": SCRIPT_VERSION,
+        "manifest": str(parent_args.manifest),
+        "fpr_target": parent_args.fpr_target,
+        "use": parent_args.use,
+        "tier2": parent_args.tier2,
+        "tier3": parent_args.tier3,
+        "tpr_floor": tpr_floor,
+        "aggressiveness_tolerance": aggressiveness_tolerance,
+        "n_signals": len(rows),
+        "n_signals_all_gates_pass": sum(1 for r in rows if r.gates.all_pass),
+        "rows": [r.to_dict() for r in rows],
+        "date": _dt.date.today().isoformat(),
+    }
+
+
+# ---- Rendering ---------------------------------------------------
+
+
+def _fmt(v: Any, places: int = 4) -> str:
+    if v is None:
+        return "—"
+    if isinstance(v, bool):
+        return "yes" if v else "no"
+    if isinstance(v, float):
+        return f"{v:.{places}f}"
+    return str(v)
+
+
+def _gate_glyph(gate: bool | None) -> str:
+    if gate is True:
+        return "✓"
+    if gate is False:
+        return "✗"
+    return "?"
+
+
+def render_markdown_table(survey: dict[str, Any]) -> str:
+    """Markdown comparison table: one row per signal.
+
+    Columns are chosen to match the maintainer's decision criteria.
+    Errors render as a separate table beneath the main one so they
+    don't pollute the comparison view.
+    """
+    rows = survey["rows"]
+    ok_rows = [r for r in rows if r.get("error") is None]
+    err_rows = [r for r in rows if r.get("error") is not None]
+
+    lines = [
+        "# Calibration survey",
+        "",
+        f"- **Manifest:** `{survey['manifest']}`",
+        f"- **FPR target:** {survey['fpr_target']}",
+        f"- **Use filter:** `{survey['use']}`",
+        f"- **Tier 2:** {survey['tier2']}, **Tier 3:** {survey['tier3']}",
+        f"- **TPR floor (gate 4):** {survey['tpr_floor']}",
+        f"- **Aggressiveness tol. (gate 5):** "
+        f"{survey['aggressiveness_tolerance']}",
+        f"- **Signals all-gates-pass:** "
+        f"{survey['n_signals_all_gates_pass']} / {survey['n_signals']}",
+        f"- **Date:** {survey['date']}",
+        "",
+        "Gate legend: ✓ = pass, ✗ = fail, ? = not evaluated.",
+        "Gates: 1 polarity, 2 AUC/AP not embarrassing (judgment, "
+        "always shown ?), 3 enough negatives, 4 TPR ≥ floor, "
+        "5 not more aggressive than heuristic.",
+        "",
+        "| signal | dir | heur | AUC | AP | thresh | TPR | FPR | n_neg | "
+        "1 | 2 | 3 | 4 | 5 |",
+        "|---|:-:|---:|---:|---:|---:|---:|---:|---:|"
+        ":-:|:-:|:-:|:-:|:-:|",
+    ]
+    for r in ok_rows:
+        gates = r["gates"]
+        lines.append(
+            "| `{signal}` | {dir} | {heur} | {auc} | {ap} | {thr} | "
+            "{tpr} | {fpr} | {nneg} | {g1} | {g2} | {g3} | {g4} | {g5} |".format(
+                signal=r["signal"],
+                dir=r["direction"],
+                heur=_fmt(r["heuristic_value"]),
+                auc=_fmt(r["auc"]),
+                ap=_fmt(r["ap"]),
+                thr=_fmt(r["threshold"]),
+                tpr=_fmt(r["tpr_at_threshold"]),
+                fpr=_fmt(r["fpr_at_threshold"]),
+                nneg=_fmt(r["n_neg"], places=0) if r["n_neg"] is not None else "—",
+                g1=_gate_glyph(gates["polarity_matches"]),
+                g2=_gate_glyph(gates["auc_ap_not_embarrassing"]),
+                g3=_gate_glyph(gates["enough_negatives"]),
+                g4=_gate_glyph(gates["interpretable_threshold"]),
+                g5=_gate_glyph(gates["esl_conservative"]),
+            )
+        )
+    if err_rows:
+        lines.extend([
+            "",
+            "## Signals that failed to derive a threshold",
+            "",
+            "| signal | error |",
+            "|---|---|",
+        ])
+        for r in err_rows:
+            lines.append(f"| `{r['signal']}` | {r['error']} |")
+    lines.append("")
+    lines.append(
+        "Read this table top-down: signals with more pass-glyphs "
+        "(✓) come first. Pick the signal whose gate row is "
+        "all-✓ AND whose AUC / AP feel substantive, then follow the "
+        "5-step commit sequence in `scripts/calibration/PROVENANCE.md`."
+    )
+    return "\n".join(lines) + "\n"
+
+
+# ---- CLI ---------------------------------------------------------
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog=TOOL_NAME,
+        description=(
+            "Survey every COMPRESSION_HEURISTICS signal at one FPR "
+            "target and aggregate the results into a single table the "
+            "maintainer reads to pick the first signal to commit. "
+            "See scripts/calibration/PROVENANCE.md for the workflow."
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    p.add_argument("--manifest", required=True,
+                   help="Path to the labeled corpus manifest JSONL.")
+    p.add_argument("--fpr-target", type=float, required=True,
+                   help="FPR ceiling for the threshold sweep (e.g. 0.01).")
+    p.add_argument("--use", default="validation",
+                   help="Manifest 'use' tag to filter on (default validation).")
+    p.add_argument("--out",
+                   help=(
+                       "Write the survey JSON ledger here. "
+                       "Defaults to /tmp/calibration_survey_<date>.json."
+                   ))
+    p.add_argument("--signal", action="append", default=[],
+                   help=(
+                       "Restrict survey to this signal (repeatable). "
+                       "Default: every key in COMPRESSION_HEURISTICS."
+                   ))
+    p.add_argument("--tier2", action="store_true", default=True,
+                   help="Run Tier 2 features (POS bigrams + MDD-SD).")
+    p.add_argument("--no-tier2", dest="tier2", action="store_false",
+                   help="Skip Tier 2 features (faster).")
+    p.add_argument("--tier3", action="store_true", default=True,
+                   help="Run Tier 3 features (cohesion).")
+    p.add_argument("--no-tier3", dest="tier3", action="store_false",
+                   help="Skip Tier 3 features (faster).")
+    p.add_argument("--bootstrap-resamples", type=int, default=2000)
+    p.add_argument("--bootstrap-confidence", type=float, default=0.95)
+    p.add_argument("--bootstrap-seed", type=int, default=42)
+    p.add_argument("--tpr-floor", type=float, default=DEFAULT_TPR_FLOOR,
+                   help=(
+                       "Gate 4 TPR floor: thresholds that fire on fewer "
+                       "than this fraction of positives are 'predict almost "
+                       "nothing'. Default 0.05."
+                   ))
+    p.add_argument("--aggressiveness-tolerance", type=float,
+                   default=DEFAULT_AGGRESSIVENESS_TOLERANCE,
+                   help=(
+                       "Gate 5 tolerance: calibrated threshold differing "
+                       "from the heuristic by at most this fraction "
+                       "passes regardless of direction. Default 0.05."
+                   ))
+    p.add_argument("--json-only", action="store_true",
+                   help="Emit only the JSON ledger; skip the markdown table.")
+    return p
+
+
+def run(args: argparse.Namespace) -> int:
+    if args.fpr_target <= 0 or args.fpr_target >= 1:
+        sys.stderr.write(
+            f"--fpr-target must be in (0, 1); got {args.fpr_target}\n"
+        )
+        return 2
+    signals = args.signal or None
+    if signals:
+        unknown = [s for s in signals if s not in COMPRESSION_HEURISTICS]
+        if unknown:
+            sys.stderr.write(
+                f"Unknown signal(s): {unknown}. "
+                f"Known: {sorted(COMPRESSION_HEURISTICS)}\n"
+            )
+            return 2
+
+    survey = run_survey(
+        args, signals=signals,
+        tpr_floor=args.tpr_floor,
+        aggressiveness_tolerance=args.aggressiveness_tolerance,
+    )
+
+    out_path = (
+        Path(args.out).expanduser() if args.out
+        else Path(f"/tmp/calibration_survey_{survey['date']}.json")
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(
+        json.dumps(survey, indent=2, default=str) + "\n",
+        encoding="utf-8",
+    )
+    sys.stderr.write(f"\nSurvey JSON written to: {out_path}\n")
+
+    if not args.json_only:
+        sys.stdout.write(render_markdown_table(survey))
+
+    return 0 if survey["n_signals_all_gates_pass"] > 0 else 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    return run(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

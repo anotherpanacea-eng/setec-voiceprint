@@ -27,16 +27,20 @@ To populate this ledger:
 1. Install calibration deps: `pip install -r requirements-calibration.txt`
 2. Fetch the corpus: `python3 scripts/calibration/fetch_pangram_editlens.py --split nonnative_english`
 3. Convert to manifest: `python3 scripts/calibration/editlens_to_manifest.py --source <fetched-parquet> --preset editlens_nonnative --out ai-prose-baselines-private/editlens/manifest_nonnative.jsonl --text-dir ai-prose-baselines-private/editlens/nonnative_text`
-4. **Survey** several eligible signals before picking the first to encode (see "Selection criteria" below — do not assume any specific signal is the first to land). E.g.:
+4. **Survey** every signal in `COMPRESSION_HEURISTICS` (all 11) before picking the first to encode (see "Selection criteria" below — do not assume any specific signal is the first to land). The survey wrapper handles the loop, the aggregation, and the gate evaluation:
    ```
-   for sig in burstiness_B connective_density fkgl_sd mattr mtld adjacent_cosine_mean adjacent_cosine_sd; do
-       python3 scripts/calibration/calibrate_thresholds.py \
-           --manifest ai-prose-baselines-private/editlens/manifest_nonnative.jsonl \
-           --use validation --signal "$sig" --fpr-target 0.01 \
-           --out /tmp/survey_thresholds.json
-   done
+   python3 scripts/calibration/calibration_survey.py \
+       --manifest ai-prose-baselines-private/editlens/manifest_nonnative.jsonl \
+       --fpr-target 0.01 \
+       --use validation \
+       --out ai-prose-baselines-private/editlens/_survey_2026-XX-XX.json
    ```
-   The survey ledger is private (treat as scratch); only the first signal that earns provenance under the criteria below lands in the committed `thresholds_calibrated.json`.
+   The wrapper runs every signal through `calibrate_thresholds.derive_threshold`, evaluates the four automatable selection-criteria gates (polarity, FPR resolution, TPR ≥ floor, calibrated-vs-heuristic aggressiveness), leaves Gate 2 (AUC/AP not embarrassing) for maintainer judgment, and prints a single ranked markdown table to stdout plus a JSON ledger to `--out`. The survey JSON is private (treat as scratch); only the first signal that earns provenance under the criteria below lands in the committed `thresholds_calibrated.json`.
+
+   Two flags worth knowing about:
+
+   - `--no-tier2` and `--no-tier3` skip the spaCy POS-bigram and SBERT/TF-IDF cohesion features for a faster Tier-1-only sweep. Useful as a cheap first pass while you decide which signals are worth the full compute.
+   - `--signal <name>` restricts the survey to one signal. Useful for re-checking a specific calibration after the corpus or the registry changed.
 5. Pick the first signal whose calibration entry passes the **Selection criteria**.
 6. Edit `scripts/variance_audit.py`'s `COMPRESSION_HEURISTICS[<signal>]` to set `provenance=<slug>`, `provisional=False`, and `value=<derived>`.
 7. Add a section to this file documenting the calibration run.
