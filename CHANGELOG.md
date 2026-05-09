@@ -6,6 +6,36 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.14.0] - 2026-05-09
+
+Closes cathedral upgrade #6 (voice profile expansion). `pov_voice_profile.py` is the second sub-item — per-POV-character voiceprints for multi-POV fiction, with a heuristic voice-collapse detector flagging pairs of POVs that share too much voice space to be reliably distinguished. Pairs with `voice_distance.py` (writer vs. own baseline) and `voice_drift_tracker.py` (baseline disaggregated by time) to give the framework a complete voice-coherence diagnostic stack: drift across writers, drift across time, drift across characters.
+
+### Added
+
+- `scripts/pov_voice_profile.py` (~600 lines): per-POV voiceprint generator. Reads a manifest with the `pov` field on selected entries (filterable by `--use`, default `voice_profile`). Per-POV centroid in shared feature space; pairwise Burrows-Delta + cosine across POVs; weighted-family aggregate using `FAMILY_WEIGHTS` and `OVERALL_FAMILY_DELTA_CAP`. Reports POV-vs-corpus-mean distance (which POV is closest to the writer's neutral default — useful for identifying the writer's home register). Reports top distinguishing features per POV (per-POV centroid vs. mean of OTHER POVs, not the corpus mean — that would dilute the comparison by including this POV itself). Voice-collapse verdict flags pairs whose weighted Burrows-Delta falls below the configurable `--collapse-threshold` (heuristic default 0.5; calibration roadmap). Refuses to run when fewer than 2 POVs survive `--min-docs-per-pov` filtering. `task_surface: voice_coherence`. Privacy guard refuses output paths outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed.
+- `scripts/test_data/federalist_pov_manifest.jsonl`: synthetic POV-tagged manifest pointing at the existing public-domain Federalist Papers fixture. Maps the 6 documents to two POVs (Hamilton, Madison; 3 docs each) — same trick the drift tracker uses. Cross-POV Burrows-Delta = 1.4142 (different writers in function-word space); collapse verdict correctly does NOT fire at the default 0.5 threshold.
+- `scripts/tests/test_pov_voice_profile.py`: 18 regression tests covering manifest loading + POV grouping + min-docs filter, end-to-end run on Federalist (Burrows-Delta > 0.5, distinguishing features surface, POV-vs-mean equidistant for the 2-POV case), no-collapse-flag at default threshold, collapse-flag-fires with aggressive threshold, refusal paths (only one POV after filtering, no POV-tagged entries), privacy guard, JSON / markdown rendering (with collapse section appearing only when flagged), CLI smoke test.
+
+### Changed
+
+- `scripts/README.md` Surface 2 entry extended to mention `pov_voice_profile.py`. Surface tag table updated.
+- `plugins/setec-voiceprint/.claude-plugin/plugin.json` description extended to include "per-POV voiceprints with voice-collapse detection."
+
+### Cathedral status
+
+After 1.14.0, **cathedral upgrade #6 is fully shipped:**
+
+- ✅ #1 Manifest as law
+- ✅ #2 Length-matched bootstrap
+- ✅ #3 Validation harness (both surfaces)
+- 🚧 #4 Impostor baselines — corpus-bound; the only upgrade still genuinely blocked on a non-code prerequisite
+- ✅ #5 Sliding-window localization
+- ✅ **#6 Voice profile expansion** — core (1.0.0), idiolect (1.6.0), time drift (1.13.0), per-POV profiles (this release)
+- ✅ #7 Before/after restoration loop
+- ✅ #8 Privacy / packaging guards
+
+Seven of eight cathedral upgrades are shipped. The framework's voice-coherence stack now answers four distinct questions: "how far is this draft from baseline?" (`voice_distance.py`), "what phrases must survive revision?" (`idiolect_detector.py`), "has the writer's voice changed across time?" (`voice_drift_tracker.py`), and "are this writer's POV characters voice-distinct?" (`pov_voice_profile.py`).
+
 ## [1.13.0] - 2026-05-08
 
 Cathedral upgrade #6 — voice profile expansion: time-drift tracking. `voice_drift_tracker.py` disaggregates the writer's baseline by time period, computes cross-period voice distance, and identifies drifting vs. stable features. Pairs with `voice_distance.py` to distinguish "drift between draft and baseline" (recent) from "drift across the writer's own history" (long-term).
@@ -370,7 +400,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.13.0...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.14.0...HEAD
+[1.14.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.13.0...v1.14.0
 [1.13.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.1...v1.13.0
 [1.12.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.11.0...v1.12.0

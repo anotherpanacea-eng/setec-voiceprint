@@ -30,6 +30,7 @@ These scripts ask how far a target text is from a *specific writer's or register
 | `voice_profile.py` | Baseline corpus | Produce a private human-readable voiceprint from a corpus |
 | `idiolect_detector.py` | Target corpus vs. reference corpus | Extract distinctive words/phrases and a "do not normalize" preservation list |
 | `voice_drift_tracker.py` | Date-tagged baseline corpus | Disaggregate the writer's baseline by time period; see which features are stable vs. drifting across the writer's history. Pairs with `voice_distance.py` to distinguish "drift between draft and baseline" (recent) from "drift across the writer's own history" (long-term) |
+| `pov_voice_profile.py` | POV-tagged baseline corpus (multi-POV fiction) | Disaggregate the writer's baseline by POV character; see whether the writer differentiates POVs in voice space or has collapsed multiple characters into one neutral default. Reports pairwise POV voice-distance, distinguishing features per POV, and a heuristic voice-collapse verdict for pairs whose Burrows-Delta falls below threshold |
 
 What these scripts cannot answer: whether the divergence is caused by AI involvement, register shift, time drift, or genuine voice change. The verdict they license is *"this draft has drifted from this baseline by this much"* — not *"AI involvement caused the drift"* and not *"the writer is no longer themselves."* `voice_drift_tracker.py` adds a temporal axis: it can tell you *which* features have been moving across the writer's history, but not *why* — natural stylistic evolution and symptomatic distortion both produce drift.
 
@@ -64,7 +65,7 @@ Every script's JSON output carries a top-level `task_surface` field, and every m
 | Field value | Scripts |
 |---|---|
 | `smoothing_diagnosis` | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
-| `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `voice_validation_harness.py` |
+| `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `pov_voice_profile.py`, `voice_validation_harness.py` |
 | `validation` | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py` |
 | `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass), `restoration_packet.py` (metric-targeted revision packets), `before_after_restoration.py` (post-check loop); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`, and `references/metric-targeted-restoration.md` |
 
