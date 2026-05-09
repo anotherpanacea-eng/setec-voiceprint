@@ -6,6 +6,20 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.15.2] - 2026-05-09
+
+Marketplace version-field completeness. The Claude Code marketplace UI reads version from `marketplace.json`'s `metadata.version` and `plugins[*].version` — not from the source-pointed `plugin.json` — so without those fields, marketplace browsers show stale or fall-through values regardless of how often `plugin.json` bumps. The APODICTIC plugin's `marketplace.json` carries both fields; setec-voiceprint's didn't. New installs were showing 1.7-era metadata as a result.
+
+### Fixed
+
+- `.claude-plugin/marketplace.json`: added `metadata.version` (top-level) and `plugins[0].version` (per-plugin). Both pinned to `1.15.2` and kept in sync with `plugin.json` going forward.
+- Cross-check: `python3 -c "..."` script verifies that `plugin.json`'s `version` equals `marketplace.json`'s `metadata.version` equals `marketplace.json`'s `plugins[0].version`. The release process should keep all three locked together; future drift is the same kind of bug that produced the 1.7 fall-through.
+
+### Notes
+
+- Three version fields total: `plugins/setec-voiceprint/.claude-plugin/plugin.json :: version`, `.claude-plugin/marketplace.json :: metadata.version`, `.claude-plugin/marketplace.json :: plugins[0].version`. All bumped together every release.
+- No code changes; metadata only. 194 tests pass + 2 skipped (unchanged from 1.15.1).
+
 ## [1.15.1] - 2026-05-09
 
 Marketplace metadata catch-up. The `description` field in `.claude-plugin/marketplace.json` had been drifting since the cathedral upgrades landed (1.10.x onward) — it stopped at "MVP empirical validation against labeled corpora" and never picked up voice drift, per-POV voiceprints, restoration packets, before/after verdicts, calibration toolchain, or impostor-corpus acquisition. Marketplace browsers were seeing a stale feature list. The repo carries no separate version field on marketplace.json, but the plugin description is what users see when they search the marketplace, so this is a real surface to keep current.
