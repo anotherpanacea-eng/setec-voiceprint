@@ -6,6 +6,36 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.13.0] - 2026-05-08
+
+Cathedral upgrade #6 — voice profile expansion: time-drift tracking. `voice_drift_tracker.py` disaggregates the writer's baseline by time period, computes cross-period voice distance, and identifies drifting vs. stable features. Pairs with `voice_distance.py` to distinguish "drift between draft and baseline" (recent) from "drift across the writer's own history" (long-term).
+
+### Added
+
+- `scripts/voice_drift_tracker.py` (~600 lines): time-drift surface for cathedral upgrade #6. Reads date-tagged baseline documents from a manifest (with `date_written`) or a directory (with date-prefixed filenames via configurable regex), or accepts an explicit `--periods-json` mapping. Groups documents into periods at the requested granularity (`year` / `quarter` / `month` / `custom` with explicit boundaries). Per-period voiceprint computed via `stylometry_core.extract_features` + `select_feature_names` + per-doc-mean centroid. Cross-period distance: pairwise Burrows-Delta + cosine in a shared feature space (centroids z-scored over the set of period centroids; informative-feature filter same as oracle and voice-validation harness). Weighted-family aggregate using `FAMILY_WEIGHTS` and `OVERALL_FAMILY_DELTA_CAP`. Per-feature drift scoring: coefficient of variation across period centroids. Reports top drifting + top stable features per family. Refuses to run when fewer than 2 periods survive `--min-docs-per-period` filtering. `task_surface: voice_coherence`. Privacy guard: refuses output paths outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed (voice drift output is voice-cloning input).
+- `scripts/test_data/federalist_drift_manifest.jsonl`: synthetic date-tagged manifest pointing at the existing public-domain Federalist Papers fixture. Six entries spanning 1787-10-27 through 1788-01-16. Year granularity yields 2 periods (1787 with 5 docs, 1788 with 1 doc); the cross-period distance reflects authorship change (Hamilton vs. Madison) which is detectable as voice change. Useful for exercising the code paths even though it's not single-writer time drift.
+- `scripts/tests/test_voice_drift_tracker.py`: 20 regression tests covering date parsing (partial dates, granularity-specific period keys, custom boundaries), manifest loading + filtering by `use`, period grouping with `min-docs-per-period` filter, end-to-end run on the Federalist fixture (Burrows-Delta > 0.5 between Hamilton and Madison periods, drifting features surface for `function_words`), refusal-when-only-one-period, privacy guard (refuses public output without `--allow-public-output`), JSON / markdown rendering, and CLI smoke tests.
+
+### Changed
+
+- `scripts/README.md` Surface 2 entry extended to mention `voice_drift_tracker.py`. Surface tag table updated. Added explanatory note: drift tracker can tell *which* features are drifting but not *why* — natural stylistic evolution and symptomatic distortion both produce drift; the writer's local read decides.
+- `plugins/setec-voiceprint/.claude-plugin/plugin.json` description extended to include "voice drift tracking across time periods."
+
+### Cathedral status
+
+After 1.13.0, **6 of 8 cathedral upgrades are shipped or partly shipped** with the gap reduced:
+
+- ✅ #1 Manifest as law
+- ✅ #2 Length-matched bootstrap
+- ✅ #3 Validation harness (both surfaces)
+- 🚧 #4 Impostor baselines — corpus-bound; no code unlock pending
+- ✅ #5 Sliding-window localization
+- 🟡 #6 Voice profile expansion — time drift shipped (this release); `pov_voice_profile.py` is the remaining sub-item
+- ✅ #7 Before/after restoration loop
+- ✅ #8 Privacy / packaging guards
+
+Two upgrades remain partly open: #4 (corpus-bound) and #6 sub-item #2 (`pov_voice_profile.py` for multi-POV fiction).
+
 ## [1.12.1] - 2026-05-08
 
 Roadmap pass: records the next bounded calibration-corpus follow-ups + flags `voice_drift_tracker.py` as the active next pick under cathedral upgrade #6. No code changes.
@@ -340,7 +370,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.1...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.1...v1.13.0
 [1.12.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.12.0...v1.12.1
 [1.12.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.11.0...v1.12.0
 [1.11.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.10.2...v1.11.0
