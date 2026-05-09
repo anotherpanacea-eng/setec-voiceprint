@@ -105,6 +105,15 @@ SITE_CONFIGS: dict[str, dict[str, Any]] = {
         "type": "wordpress",
         "feed_url": "https://thedarkmagazine.com/feed/",
     },
+    "criticalanimal.com": {
+        # Blogger / Blogspot blog on a custom domain. The default
+        # `/feed/` and `/rss/` paths return 404; Blogger's Atom feed
+        # lives at `/feeds/posts/default`. feedparser handles the
+        # Atom payload via the same `entry.content[0].value` path
+        # the wordpress source uses, so type="wordpress" is correct.
+        "type": "wordpress",
+        "feed_url": "https://www.criticalanimal.com/feeds/posts/default?max-results=500",
+    },
 }
 
 
