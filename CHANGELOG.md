@@ -6,6 +6,21 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.8.1] - 2026-05-08
+
+Oracle frequency-table denominator fix: the oracle now exports production-shaped selected-feature vectors instead of selected-subset-renormalized vectors. The Phase A agreement with R `stylo` was previously verifying the math on an altered table whose denominators didn't match production; the fix realigns the oracle with `stylometry_core.py`'s actual feature space.
+
+### Fixed
+
+- `scripts/oracle/setec_to_stylo.py` `char_ngram_table()`, `pos_trigram_table()`, and `dep_ngram_table()` no longer renormalize each document's selected feature vector by the selected-subset total. The exported value for each selected feature is now its full-family relative frequency — the same denominator `stylometry_core.char_ngram_features` / `pos_trigram_features` / `dependency_ngram_features` produces internally before selection. Row sums are typically < 1.0 (the mass not captured by the top-K is the share of features outside the selection); earlier versions divided by the subset total so rows summed to 1.0, which produced an internally-consistent but non-production table. The bug existed in `char_ngram_table()` since it shipped in 1.7.0, and was reproduced in `pos_trigram_table()` / `dep_ngram_table()` when those landed in 1.8.0; this commit fixes all three. Reproduction recorded in `internal/SPEC_oracle_frequency_table_denominator_fix.md`: production `pos:ADP-DET-NOUN` for the first Federalist document was 0.045188, oracle was 0.054225 (8% drift); after the fix, both equal 0.045188.
+- `scripts/oracle/run_stylo.R` `build_corpus_table()` no longer divides each row of the selected-feature matrix by the row total. The exported frequencies are preserved exactly from the input full-family-normalized per-document vectors, matching the SETEC-side fix.
+- All committed oracle CSVs regenerated with the fixed denominators: `setec_char{3,4,5}_freqs.csv`, `setec_distances_char{3,4,5}.csv`, `setec_pos_trigram_freqs.csv`, `setec_dep_ngram_freqs.csv`, `setec_distances_pos_trigrams.csv`, `setec_distances_dep_ngrams.csv`, `stylo_pos_trigram_freqs.csv`, `stylo_dep_ngram_freqs.csv`, and the corresponding `stylo_distances_phase_a_*` files. Function-word outputs unchanged (the function-word path uses a fixed wordlist with no top-K selection so was unaffected). The comparison report content is unchanged because Phase A and Phase A' agreement remain at perfect (Pearson 1.0, mean |Δ| 0.0) on the production-shaped tables — the fix changes *what is being verified*, not the *answer*.
+- Documentation in `references/stylometry-oracle.md` updated to remove "rows sum to 1.0" framing for selected top-K tables and to reframe Phase A and Phase A' as verifying production-shaped selected-feature vectors with full-family denominators preserved.
+
+### Added
+
+- `scripts/tests/test_oracle_frequency_tables.py`: regression tests guarding against the renormalization sneaking back in. Four tests: per-family (char-ngrams, POS-trigrams, dep-n-grams) verify that exported oracle values equal full-family relative frequencies and at least one row sum is < 1.0; a fourth test compares the committed `setec_*_freqs.csv` against `stylo_*_freqs.csv` cell-by-cell to verify the Phase A' acceptance condition without requiring R/stylo at test time.
+
 ## [1.8.0] - 2026-05-08
 
 POS-trigram and dependency-n-gram oracle pass against R `stylo`. Closes the last footnote on cross-tool stylometric verification: all six feature families that `voice_distance.py` reports are now oracle-verified at floating-point precision.
@@ -160,7 +175,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.0...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.1...HEAD
+[1.8.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.1...v1.8.0
 [1.7.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.6.0...v1.7.0

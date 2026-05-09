@@ -251,10 +251,20 @@ def char_ngram_table(
     """Return (sorted_ngram_list, doc_id -> {ngram: relative_freq}) for a
     given n. Selects the top-K most-frequent char-ngrams in the corpus
     (summed across documents); each document's frequencies are
-    normalized within its own char-n-gram pool. Matches stylo's
-    corpus-derived MFW selection convention but applied per-n
-    separately, the same way ``stylometry_core.char_ngram_features``
-    treats the per-n families internally.
+    full-family relative frequencies preserved exactly from
+    ``stylometry_core.char_ngram_features`` (i.e., normalized over the
+    full per-n family before selection).
+
+    The exported table is the production-shaped selected-feature
+    vector: production builds the same full-family freq dict, selects
+    feature names for distance computation, and does NOT renormalize
+    over the selected subset. Earlier versions of this oracle divided
+    each row by the subset total so rows summed to 1.0; that produced
+    an internally consistent but non-production table, and the Phase A
+    agreement with stylo only verified the math on the altered table,
+    not on production-shaped vectors. The selected-subset
+    renormalization has been removed; row sums will typically be
+    < 1.0 (the mass not captured by the top-K).
 
     Returned ngram keys are bare grams (no ``chN:`` prefix); the
     prefix is SETEC's internal naming convention but isn't useful for
@@ -266,12 +276,10 @@ def char_ngram_table(
     for doc in docs:
         feats_by_family = char_ngram_features(doc["text"], ns=(n,))
         family = feats_by_family.get(family_name, {})
-        # Strip the ``chN:`` prefix and round-trip to absolute counts via
-        # the same normalization total. We approximate counts from the
-        # frequency dict by inverse-normalizing against the document's
-        # implicit total. For corpus-aggregate selection, exact counts
-        # are not needed -- relative-frequency sums approximate them
-        # well enough to rank features.
+        # Strip the ``chN:`` prefix for the interchange CSV. Values are
+        # preserved exactly from production -- they are full-family
+        # relative frequencies, the same denominator stylometry_core
+        # uses internally for selection-and-distance.
         flat: dict[str, float] = {}
         for key, value in family.items():
             if key.startswith(f"ch{n}:"):
@@ -285,17 +293,12 @@ def char_ngram_table(
     # Top-K by aggregate relative frequency (proxy for total count;
     # corpus-uniform document weighting).
     top_ngrams = [k for k, _ in corpus_counts.most_common(top_k)]
-    # Renormalize per-doc within the top-K subset so each row sums to
-    # roughly 1.0, matching the convention stylo's dist.delta expects
-    # on a frequency table.
+    # Export selected features with their original full-family
+    # relative frequencies. Absent features fill with 0.0. NO subset
+    # renormalization (see docstring above).
     out: dict[str, dict[str, float]] = {}
     for doc_id, flat in per_doc_full.items():
-        subset = {k: flat.get(k, 0.0) for k in top_ngrams}
-        total = sum(subset.values())
-        if total > 0:
-            out[doc_id] = {k: v / total for k, v in subset.items()}
-        else:
-            out[doc_id] = {k: 0.0 for k in top_ngrams}
+        out[doc_id] = {k: flat.get(k, 0.0) for k in top_ngrams}
     return top_ngrams, out
 
 
@@ -405,9 +408,13 @@ def pos_trigram_table(
     top_k: int = POS_DEP_TOP_K,
 ) -> tuple[list[str], dict[str, dict[str, float]]]:
     """Return (sorted_feature_list, doc_id -> {feature: relative_freq})
-    for POS-trigrams. Selection mirrors the char-ngram pattern:
-    top-K corpus-aggregate features, with each document's frequencies
-    renormalized within the top-K subset so rows sum to ~1.0."""
+    for POS-trigrams. Top-K corpus-aggregate selection; each
+    document's exported frequencies are full-family relative
+    frequencies (the same denominator
+    ``stylometry_core.pos_trigram_features`` uses) -- no subset
+    renormalization. Row sums will typically be < 1.0; the mass not
+    captured by the top-K is the share of trigrams outside the
+    selection."""
     per_doc_full: dict[str, dict[str, float]] = {}
     corpus_counts: Counter[str] = Counter()
     for doc_id, records in parses.items():
@@ -418,12 +425,7 @@ def pos_trigram_table(
     top = [k for k, _ in corpus_counts.most_common(top_k)]
     out: dict[str, dict[str, float]] = {}
     for doc_id, feats in per_doc_full.items():
-        subset = {k: feats.get(k, 0.0) for k in top}
-        total = sum(subset.values())
-        if total > 0:
-            out[doc_id] = {k: v / total for k, v in subset.items()}
-        else:
-            out[doc_id] = {k: 0.0 for k in top}
+        out[doc_id] = {k: feats.get(k, 0.0) for k in top}
     return top, out
 
 
@@ -433,9 +435,10 @@ def dep_ngram_table(
     ns: tuple[int, ...] = DEP_NGRAM_NS,
 ) -> tuple[list[str], dict[str, dict[str, float]]]:
     """Return (sorted_feature_list, doc_id -> {feature: relative_freq})
-    for dep n-grams. Same per-doc renormalization on the top-K subset
-    as pos_trigram_table; ``dep2`` and ``dep3`` features share the
-    same pool (matching production)."""
+    for dep n-grams. Same selection-without-renormalization shape as
+    pos_trigram_table; ``dep2`` and ``dep3`` features share the same
+    full-family normalization pool (matching production
+    ``stylometry_core.dependency_ngram_features``)."""
     per_doc_full: dict[str, dict[str, float]] = {}
     corpus_counts: Counter[str] = Counter()
     for doc_id, records in parses.items():
@@ -446,12 +449,7 @@ def dep_ngram_table(
     top = [k for k, _ in corpus_counts.most_common(top_k)]
     out: dict[str, dict[str, float]] = {}
     for doc_id, feats in per_doc_full.items():
-        subset = {k: feats.get(k, 0.0) for k in top}
-        total = sum(subset.values())
-        if total > 0:
-            out[doc_id] = {k: v / total for k, v in subset.items()}
-        else:
-            out[doc_id] = {k: 0.0 for k in top}
+        out[doc_id] = {k: feats.get(k, 0.0) for k in top}
     return top, out
 
 

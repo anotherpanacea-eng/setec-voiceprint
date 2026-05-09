@@ -337,8 +337,18 @@ build_dep_ngrams <- function(parse_df, ns = c(2, 3)) {
 # Aggregate per-doc named freq vectors into a wide top-K corpus-table.
 # corpus_counts is the sum of relative-frequency contributions across
 # documents (matches the SETEC-side ranking proxy in char_ngram_table /
-# pos_trigram_table). Top-K by this rank, then per-doc renormalize
-# within the subset so each row sums to ~1.0.
+# pos_trigram_table). Top-K by this rank.
+#
+# Exported frequencies are preserved exactly from the input per_doc
+# vectors -- the input is already full-family-normalized
+# (build_pos_trigrams / build_dep_ngrams divide by the document's
+# total trigram / dep-n-gram count). NO subset renormalization: the
+# production stylometry_core path does not divide selected-feature
+# vectors by the selected-subset total, so the oracle should not
+# either. Earlier versions did, which produced internally-consistent
+# but non-production tables (and hid the discrepancy from Phase A).
+# Row sums will typically be < 1.0; the mass not captured by the
+# top-K is the share of features outside the selection.
 build_corpus_table <- function(per_doc, top_k) {
   all_feats <- unique(unlist(lapply(per_doc, names)))
   corpus_counts <- setNames(numeric(length(all_feats)), all_feats)
@@ -360,10 +370,7 @@ build_corpus_table <- function(per_doc, top_k) {
     if (length(common) > 0) {
       mat[doc_id, common] <- feats[common]
     }
-    row_total <- sum(mat[doc_id, ])
-    if (row_total > 0) {
-      mat[doc_id, ] <- mat[doc_id, ] / row_total
-    }
+    # Preserve full-family relative frequencies; do not row-normalize.
   }
   mat
 }
