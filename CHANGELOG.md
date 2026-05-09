@@ -6,6 +6,23 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.9.0] - 2026-05-08
+
+Voice-coherence validation harness. Closes the asymmetry where Surface 1 (smoothing diagnosis) had `validation_harness.py` with ROC AUC + bootstrap CIs + ESL slicing + FPR-target framing, and Surface 2 (voice coherence) had only literature anchoring (Mosteller-Wallace 1964) but no labeled-fixture validation in the repo.
+
+### Added
+
+- `scripts/voice_validation_harness.py`: Surface 2 sibling to `validation_harness.py`. Quantifies how well SETEC's voice-distance feature machinery discriminates same-author document pairs from different-author document pairs on a labeled fixture. Structurally different from the smoothing harness: scores PAIRS (not individual documents), labels by `same_author = (doc_a.author == doc_b.author)`, ranks pairs by per-family Burrows-Delta or cosine distance. Feature-space construction matches production: `select_feature_names` over the entire selected validation slice, `vector_stats` (column mean + SD) over the slice, then per-pair Burrows-Delta as mean absolute z-difference over informative features (sd > 0). Does NOT call `family_distance()` for pairs — that helper is baseline-oriented and a one-document baseline has zero SD on every feature. New CLI: `--manifest`, `--use voice_validation`, `--bootstrap-method {document_cluster,naive_pair}`, `--bootstrap-resamples`, `--bootstrap-confidence`, `--bootstrap-seed`, `--fpr-target`, `--label-by {author,persona}`. Module-level `TASK_SURFACE = "voice_coherence"`; importable as `voice_validation_harness.run_harness(args) -> dict` for downstream gating. Refuses to publish a single aggregate accuracy / TPR / FPR number absent an explicit `--fpr-target` operating point, matching the smoothing harness convention.
+- Document-cluster bootstrap CI as the preferred uncertainty estimate: resample documents with replacement within each author stratum, deduplicate, rebuild unordered pairs over the surviving distinct documents, recompute AUC. Skips resamples that lack both same-author and different-author pairs. Treats documents (not pairs) as the unit of evidence, since pair records are dependent — each document appears in multiple pairs. The naive paired-record bootstrap is still available via `--bootstrap-method naive_pair` and is labeled in JSON output with a note that pair dependence makes the interval smoke-test-only.
+- Per-family ranking table: AUC + AP + bootstrap CI + n_pairs + polarity check ("OK" if AUC ≥ 0.5 in the expected direction; "INVERTED" if not) for each (family, metric) pair across `function_words`, `char_ngrams_3/4/5`, `pos_trigrams`, `dependency_ngrams`, `punctuation`, `paragraph_dialogue`, `pronoun_modal_negation`. Optional weighted-family aggregate row using `FAMILY_WEIGHTS` and `OVERALL_FAMILY_DELTA_CAP` matching production `voice_distance.py`'s overall-score shape.
+- `scripts/test_data/federalist_voice_validation_manifest.jsonl`: smoke fixture pointing at the existing public-domain Federalist Papers fixture. Six entries (3 Hamilton + 3 Madison), all `public_domain`, all `pre_ai_human`, all `native`, all `register: policy_advocacy`. Hamilton vs. Madison is the canonical Mosteller-Wallace voice-attribution benchmark. Six docs → 15 unordered pairs (6 same-author, 9 different-author). On this tiny fixture the smoke values are: function-word Burrows-Delta AUC ≈ 0.65, function-word cosine AUC ≈ 0.81. These are smoke regression values, not calibration claims; the fixture is too small for a calibration study.
+- `scripts/tests/test_voice_validation_harness.py`: six regression tests covering the smoke run, pair-label correctness, function-word AUC tolerance band against the documented smoke values, refusal-of-aggregate-accuracy claim license, operating-point appearance under `--fpr-target`, and `manifest_validator.ALLOWED_USE` round-trip.
+
+### Changed
+
+- `manifest_validator.ALLOWED_USE` extended with `voice_validation`. The new value coexists with `validation` (which routes to the smoothing harness) so a single manifest entry can be tagged `use: ["voice_validation", "validation"]` if it serves both surfaces.
+- `references/implementation-survey.md` Implementation Queue item #9 ("Voice-coherence validation harness — Surface 2 sibling to `validation_harness.py`") moves from Roadmap to Shipped.
+
 ## [1.8.2] - 2026-05-08
 
 Followup doc fix to 1.8.1: the generated comparison report's Phase A' description still said "same per-doc renormalization within the top-K subset," which is the opposite of what 1.8.1 fixed. The implementation was correct but the report description contradicted it.
@@ -184,7 +201,8 @@ Initial Cowork plugin release. Packages the SETEC stylometric framework as a Cla
 - README length-floor table now matches `COMPRESSION_HEURISTICS` for all 11 signals (Burstiness B 200, Shannon entropy 2000, Sentence-length SD 5000 corrected from prior stale values).
 - Genre tolerance table internal contradictions resolved. Three cells (AIC-3 blog, AIC-7 blog, AIC-3 testimony) now use `Mixed` with footnotes splitting the tolerance by subtype rather than the single-band labels that contradicted the explanatory prose.
 
-[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.2...HEAD
+[Unreleased]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.9.0...HEAD
+[1.9.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.2...v1.9.0
 [1.8.2]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.1...v1.8.2
 [1.8.1]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.8.0...v1.8.1
 [1.8.0]: https://github.com/anotherpanacea-eng/setec-voiceprint/compare/v1.7.1...v1.8.0

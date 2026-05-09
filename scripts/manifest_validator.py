@@ -54,8 +54,8 @@ ALLOWED_REGISTER = {
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
 ALLOWED_USE = {
-    "baseline", "validation", "voice_profile", "idiolect",
-    "negative_baseline", "exclude",
+    "baseline", "validation", "voice_validation", "voice_profile",
+    "idiolect", "negative_baseline", "exclude",
 }
 ALLOWED_EDITING_STATUS = {
     "raw_draft", "revised_human", "published_cleaned", "coauthored",
