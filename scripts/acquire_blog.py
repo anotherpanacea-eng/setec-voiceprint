@@ -295,9 +295,17 @@ def parse_sitemap_urls(
 ) -> list[tuple[str, _dt.date | None]]:
     """Pull `(url, lastmod_date)` pairs from a sitemap.xml payload.
 
-    Substack's sitemap-index splits the archive into several daughter
-    sitemaps; this parser handles a single sitemap (the daughter case)
-    and returns URL/date pairs filtered by the date window.
+    Handles both flat sitemaps (``<urlset>`` containing ``<url>``
+    nodes) and sitemap indexes (``<sitemapindex>`` containing
+    ``<sitemap>`` nodes). Substack's ``/sitemap.xml`` is most often
+    a sitemap-index pointing at daughter sitemaps; the previous
+    parser only looked at ``<url>`` nodes and silently returned an
+    empty list on indexes, which made the daughter-fetch path in
+    ``acquire_substack`` never run and archive-only posts were
+    invisible. The fix accepts both element kinds — they share the
+    same ``<loc>`` / ``<lastmod>`` shape — and the caller's
+    daughter-detection (URLs ending in ``.xml`` with ``sitemap`` in
+    the basename) handles the recursion.
 
     Stdlib XML parser to avoid a strict feedparser dependency on the
     sitemap path (sitemaps aren't RSS/Atom).
@@ -312,7 +320,7 @@ def parse_sitemap_urls(
     pairs: list[tuple[str, _dt.date | None]] = []
     for elem in root.iter():
         tag = ns_re.sub("", elem.tag)
-        if tag != "url":
+        if tag not in ("url", "sitemap"):
             continue
         loc = None
         lastmod = None
@@ -671,6 +679,22 @@ def acquire_substack(
                 detail=f"status={post_result.status}",
             )
             continue
+        # Paid-post check on the direct-HTML path. Feed-entry items
+        # already get this via FeedItem.is_paid in pass 1, but
+        # sitemap-only posts skipped that gate. A paid Substack page
+        # served as raw HTML carries the same paywall markers
+        # (`subscriber-only` / `paywall` classes, "Subscribe to
+        # read", etc.); without this check we would write the
+        # subscription wrapper as if it were the post body and emit
+        # an impostor entry containing only paywall text.
+        if _is_paid_excerpt(post_result.text, {}):
+            summary.skipped_paid += 1
+            summary.log_skip(
+                reason="paid-only",
+                url=post_url,
+                detail="paywall markers in HTML",
+            )
+            continue
         # Title from the HTML's <title> tag — picked up by html_to_text.
         # Date from sitemap lastmod when available; otherwise None.
         piece = process_one_post(
@@ -969,8 +993,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--author",
                    help=("Author display name. Defaults to a humanized "
                          "version of the persona slug."))
-    p.add_argument("--impostor-for", nargs="+", default=[],
-                   help="Persona slug(s) this impostor serves.")
+    # Required: every emitted entry hard-codes corpus_role: impostor,
+    # and the manifest validator errors on impostor entries with empty
+    # impostor_for. Allowing the flag to default to [] meant the script
+    # could exit 0 while writing a draft manifest that immediately
+    # failed validation. The required=True turns that into an
+    # argparse-time error users see before they spend network budget.
+    p.add_argument("--impostor-for", nargs="+", required=True,
+                   help=("Persona slug(s) this impostor serves "
+                         "(required; the schema rejects empty)."))
     p.add_argument("--register", required=True,
                    help="Manifest register; e.g. blog_essay.")
     p.add_argument("--register-match",
@@ -1081,6 +1112,7 @@ def run(
         fetcher = ac.make_requests_fetcher(
             version=SCRAPER_VERSION,
             rate_limit_seconds=args.rate_limit,
+            user_agent=getattr(args, "user_agent", None) or None,
         )
 
     # Resolve persona / author.

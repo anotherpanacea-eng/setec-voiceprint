@@ -357,8 +357,16 @@ class Fetcher:
             # robots.txt convention; a missing robots.txt is not a
             # restriction).
             return True
-        # Check our advertised UA, then fall back to '*'.
-        return rp.can_fetch(self.user_agent, url) or rp.can_fetch("*", url)
+        # `urllib.robotparser.can_fetch` already implements the
+        # user-agent matching algorithm: if the named UA matches a
+        # specific block, those rules apply; if not, it falls back
+        # to the ``*`` block. The previous implementation OR-ed an
+        # explicit ``*`` check on top, which let a site's
+        # specific-disallow rule for our UA be overridden by an open
+        # ``*`` block (we'd proceed even though the site asked us
+        # specifically to stay out). One call is the correct
+        # behavior — and it honors a UA-specific opt-out.
+        return rp.can_fetch(self.user_agent, url)
 
     def _load_robots(
         self, host_key: str,
@@ -435,11 +443,19 @@ def make_requests_fetcher(
     version: str = "0.0.0",
     rate_limit_seconds: float = 2.0,
     timeout: float = 30.0,
+    user_agent: str | None = None,
 ) -> Fetcher:
     """Construct a production fetcher backed by the `requests` library.
 
     Imported lazily so scripts and tests that don't actually fetch
     over the network can run without `requests` installed.
+
+    ``user_agent`` overrides the default SETEC-identifying string;
+    pass ``None`` (the default) to use ``DEFAULT_USER_AGENT.format(
+    version=version)``. The chosen value is what the fetcher
+    advertises both on outgoing HTTP requests AND when consulting
+    robots.txt — both checks must agree, so the user-agent threading
+    is end-to-end.
     """
     try:
         import requests  # type: ignore
@@ -449,7 +465,8 @@ def make_requests_fetcher(
             "with: pip install -r requirements-acquisition.txt"
         ) from e
 
-    user_agent = DEFAULT_USER_AGENT.format(version=version)
+    if not user_agent:
+        user_agent = DEFAULT_USER_AGENT.format(version=version)
 
     class RequestsFetcher(Fetcher):
         def _do_fetch(self, url: str) -> FetchResult:

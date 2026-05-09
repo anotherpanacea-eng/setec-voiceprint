@@ -872,6 +872,267 @@ def test_emitted_manifest_passes_validator(tmp_path):
         f"persona-reference warnings unexpected: {persona_warns}"
 
 
+# ============== Reviewer-flagged P2 regressions (1.15.3) ==========
+#
+# Five reviewer-flagged P2s against 1.15.0 land below: sitemap-index
+# parsing, robots-specific-disallow, --user-agent threading, paid-post
+# skip on the direct-HTML path, and --impostor-for required at
+# argparse time. Each test pins one fix; together they cover the
+# completeness/honesty gaps the reviewer identified.
+
+
+# --- Fix 1: sitemap-index parsing -----------------------------------
+
+
+def test_parse_sitemap_handles_sitemap_index():
+    """A <sitemapindex> document with <sitemap><loc> children must
+    return those daughter URLs. Pre-fix, the parser only inspected
+    <url> nodes and silently dropped sitemap indexes — making the
+    daughter-fetch path in `acquire_substack` never run.
+    """
+    text = (FIXTURE_DIR / "substack_sitemap_index.xml").read_text(
+        encoding="utf-8"
+    )
+    pairs = ab.parse_sitemap_urls(text, since=None, until=None)
+    urls = [u for u, _ in pairs]
+    assert any(
+        "sitemap_posts_2018.xml" in u for u in urls
+    ), "sitemap-index daughter URL #1 missing"
+    assert any(
+        "sitemap_posts_2019.xml" in u for u in urls
+    ), "sitemap-index daughter URL #2 missing"
+
+
+def test_substack_recurses_through_sitemap_index(tmp_path):
+    """End-to-end: a Substack whose top-level sitemap is an INDEX
+    pointing at a daughter sitemap should still surface posts that
+    only appear in the daughter. Pre-fix, the daughter wasn't
+    fetched and `an-only-in-daughter-sitemap-essay` was invisible.
+    """
+    output_dir = tmp_path / "ai-prose-baselines-private" / "smindex"
+    manifest_path = output_dir / "draft.jsonl"
+    args = make_args(
+        url=SUBSTACK_URL,
+        substack=True,
+        output_dir=str(output_dir),
+        emit_manifest=str(manifest_path),
+    )
+    fetcher = make_fetcher({
+        # Empty feed → forces the sitemap path to be the only source.
+        f"{SUBSTACK_URL}/feed": "substack_feed.xml",
+        # Top-level sitemap is an INDEX (not a flat sitemap).
+        f"{SUBSTACK_URL}/sitemap.xml": "substack_sitemap_index.xml",
+        # Daughter sitemap with the only-in-daughter post.
+        f"{SUBSTACK_URL}/sitemap_posts_2018.xml":
+            "substack_sitemap_daughter.xml",
+        f"{SUBSTACK_URL}/sitemap_posts_2019.xml":
+            "substack_sitemap_daughter.xml",
+        # The two posts named in the daughter.
+        f"{SUBSTACK_URL}/p/older-essay-from-the-archive":
+            "substack_post_archive.html",
+        f"{SUBSTACK_URL}/p/an-only-in-daughter-sitemap-essay":
+            "substack_post_only_in_daughter.html",
+    })
+    rc = ab.run(args, fetcher=fetcher)
+    assert rc == 0
+
+    written_names = [p.name for p in output_dir.glob("*.txt")]
+    # The only-in-daughter post must appear; pre-fix it was missed.
+    assert any(
+        "only-in-daughter" in name for name in written_names
+    ), (
+        "sitemap-index recursion failed: only-in-daughter post not "
+        f"acquired. Written files: {written_names}"
+    )
+
+
+# --- Fix 2: robots specific-disallow honored ------------------------
+
+
+def test_robots_specific_disallow_blocks_even_when_star_allows(tmp_path):
+    """A robots.txt that disallows our UA specifically must block
+    fetches even if `User-agent: *` is wide-open. Pre-fix, the
+    fetcher's `or` fallback to `*` overrode the specific opt-out.
+
+    The fixture's robots.txt is:
+        User-agent: setec-voiceprint
+        Disallow: /
+        User-agent: *
+        Allow: /
+    With our default UA prefix `setec-voiceprint/...`, the specific
+    block matches and we should be blocked.
+    """
+    fetcher = make_fetcher({
+        f"{SUBSTACK_URL}/feed": "substack_feed.xml",
+        f"{SUBSTACK_URL}/sitemap.xml": "substack_sitemap.xml",
+        "https://teststack.substack.com/p/older-essay-from-the-archive":
+            "substack_post_archive.html",
+        f"{SUBSTACK_URL}/robots.txt": "robots_disallow_specific.txt",
+    })
+    fetcher.respect_robots = True
+    fetcher.user_agent = "setec-voiceprint/1.0 (+https://example.com)"
+
+    output_dir = tmp_path / "ai-prose-baselines-private" / "rspec"
+    args = make_args(
+        url=SUBSTACK_URL,
+        substack=True,
+        output_dir=str(output_dir),
+        emit_manifest=str(output_dir / "draft.jsonl"),
+    )
+    ab.run(args, fetcher=fetcher)
+
+    written = list(output_dir.glob("*.txt"))
+    assert written == [], (
+        "robots.txt UA-specific Disallow must block even with "
+        f"`User-agent: *` Allow; got {[f.name for f in written]}"
+    )
+
+
+def test_robots_check_returns_only_specific_ua_decision():
+    """Unit test: `Fetcher._robots_allows` must consult only the
+    fetcher's advertised UA. Pre-fix, it OR-ed with a `*` check
+    that overrode UA-specific disallows.
+    """
+    import urllib.robotparser
+    rp = urllib.robotparser.RobotFileParser()
+    rp.parse([
+        "User-agent: setec-voiceprint",
+        "Disallow: /",
+        "",
+        "User-agent: *",
+        "Allow: /",
+    ])
+    # Build a minimal Fetcher subclass that returns the synthetic
+    # robots parser regardless of fetch outcome.
+    class StubFetcher(ac.Fetcher):
+        def _do_fetch(self, url):
+            return ac.FetchResult(url=url, status=200, text="", final_url=url)
+    f = StubFetcher(
+        rate_limit_seconds=0.0,
+        user_agent="setec-voiceprint/1.0",
+        respect_robots=True,
+    )
+    f._robots_cache["https://example.com"] = rp
+    # Our UA is specifically disallowed; the answer must be False
+    # despite `*: Allow: /`.
+    assert f._robots_allows("https://example.com/anything") is False
+
+
+# --- Fix 3: --user-agent threading ----------------------------------
+
+
+def test_make_requests_fetcher_accepts_user_agent_override():
+    """Production fetcher must honor an explicit `user_agent` kwarg.
+    The integration in `run()` reads `args.user_agent` and passes
+    it through; without the kwarg, the override would be silently
+    dropped on the floor.
+    """
+    fetcher = ac.make_requests_fetcher(
+        version="9.9.9",
+        rate_limit_seconds=0.0,
+        user_agent="custom-ua/2.0 (+https://example.test)",
+    )
+    assert fetcher.user_agent == "custom-ua/2.0 (+https://example.test)"
+
+
+def test_make_requests_fetcher_default_user_agent_uses_version():
+    """When no user_agent is passed, the default formats with the
+    version (so the UA changes visibly across releases)."""
+    fetcher = ac.make_requests_fetcher(
+        version="9.9.9", rate_limit_seconds=0.0,
+    )
+    assert "9.9.9" in fetcher.user_agent
+    assert "setec-voiceprint" in fetcher.user_agent
+
+
+# --- Fix 4: paid-post skip on direct-HTML path ---------------------
+
+
+def test_sitemap_fetched_paid_post_is_skipped(tmp_path):
+    """A Substack post fetched directly from sitemap (i.e., not via
+    feed) whose HTML carries paywall markers must not be written
+    as an impostor entry. Pre-fix, only feed-entry items got the
+    is_paid check; sitemap-only direct-HTML fetches went straight
+    to process_one_post and could emit paywall wrapper text.
+    """
+    output_dir = tmp_path / "ai-prose-baselines-private" / "paidsm"
+    manifest_path = output_dir / "draft.jsonl"
+    args = make_args(
+        url=SUBSTACK_URL,
+        substack=True,
+        output_dir=str(output_dir),
+        emit_manifest=str(manifest_path),
+    )
+
+    # Custom fetcher: feed entries are non-Substack so no feed pass
+    # adds the URL; the sitemap then points only at the paid HTML
+    # page. Without the fix, the direct-HTML fetch path would emit
+    # the paywall wrapper as a written impostor entry.
+    fetcher = make_fetcher({
+        # WordPress feed reused so the feed pass extracts nothing
+        # for the substack path (different domain → no link matches).
+        f"{SUBSTACK_URL}/feed": "wordpress_feed.xml",
+        f"{SUBSTACK_URL}/sitemap.xml": "substack_sitemap_paid_only.xml",
+        f"{SUBSTACK_URL}/p/a-paid-only-essay":
+            "substack_post_paid_html.html",
+    })
+
+    ab.run(args, fetcher=fetcher)
+
+    # No .txt should have been written for the paid post.
+    written = list(output_dir.glob("*.txt"))
+    assert not any("paid-only-essay" in p.name for p in written), (
+        f"Paid sitemap-fetched post must be skipped; written: "
+        f"{[p.name for p in written]}"
+    )
+    # Manifest should have no entry for the paid URL.
+    entries = read_manifest(manifest_path)
+    assert not any(
+        "a-paid-only-essay" in (e.get("source") or "") for e in entries
+    ), "Paid post should not have a manifest entry"
+
+
+# --- Fix 5: --impostor-for required at argparse time ---------------
+
+
+def test_argparse_rejects_missing_impostor_for():
+    """`build_arg_parser().parse_args()` must error when --impostor-for
+    is omitted. Pre-fix, the flag defaulted to [] and the validator
+    rejected the resulting manifest at load time, after the run had
+    already spent its network budget.
+    """
+    parser = ab.build_arg_parser()
+    if pytest is not None:
+        with pytest.raises(SystemExit):
+            parser.parse_args([
+                "https://example.com",
+                "--register", "blog_essay",
+                "--consent-status", "fair_use_research",
+            ])
+    else:
+        try:
+            parser.parse_args([
+                "https://example.com",
+                "--register", "blog_essay",
+                "--consent-status", "fair_use_research",
+            ])
+            assert False, "argparse should have rejected missing --impostor-for"
+        except SystemExit:
+            pass
+
+
+def test_argparse_accepts_impostor_for_when_provided():
+    """The required-flag change must not break the normal-use path."""
+    parser = ab.build_arg_parser()
+    args = parser.parse_args([
+        "https://example.com",
+        "--register", "blog_essay",
+        "--consent-status", "fair_use_research",
+        "--impostor-for", "blog",
+    ])
+    assert args.impostor_for == ["blog"]
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
