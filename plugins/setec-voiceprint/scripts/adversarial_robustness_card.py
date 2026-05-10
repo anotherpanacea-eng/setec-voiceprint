@@ -34,7 +34,8 @@ The card answers two questions per signal:
      polarity assumption is wrong on that fixture's prose.
 
 The card lands as a robustness label per (signal, transformation):
-``stable`` / ``fragile`` / ``inverted`` / ``unknown``.
+``stable`` / ``moderate`` / ``fragile`` / ``inverted_polarity`` /
+``small_base`` / ``unstable_small_base`` / ``unknown``.
 
 This is **infrastructure**, not a fixture catalog. The fixture
 acquisition (DIPPER paraphrases, humanizer outputs, etc.) lives
@@ -150,7 +151,10 @@ def _classify_movement(
 
     Relative change is `(fixture - base) / |base|` for non-zero
     base; for near-zero base we report the absolute change with
-    the label ``small_base`` to signal the comparison is unstable.
+    the label ``small_base`` (small absolute movement, comparison
+    uninterpretable) or ``unstable_small_base`` (large absolute
+    movement from a near-zero baseline — clearly notable but the
+    relative-change figure can't quantify it).
 
     Labels:
       - ``stable`` — |Δ| ≤ stability_threshold (default 10%)
@@ -159,15 +163,25 @@ def _classify_movement(
       - ``inverted_polarity`` — flagged when the fixture sign-flips
         a signal that was clearly non-zero
       - ``unknown`` — base or fixture missing
-      - ``small_base`` — base too small for stable relative comparison
+      - ``small_base`` — base near-zero AND fixture near-zero;
+        the comparison is uninterpretable (and uninteresting)
+      - ``unstable_small_base`` — base near-zero but fixture
+        moved noticeably (|fixture| ≥ stability_threshold). The
+        signal isn't stable under this fixture; the relative-
+        change figure can't quantify it because the base is
+        effectively zero.
     """
     if base_value is None or fixture_value is None:
         return "unknown", None
     if abs(base_value) < 1e-6:
-        # Near-zero base; use absolute change.
+        # Near-zero base; use absolute change. Distinguish the
+        # tiny-fixture case (truly stable, label ``small_base``)
+        # from the large-fixture case (the signal moved a lot
+        # despite the base being effectively zero — this is
+        # notable, label ``unstable_small_base``).
         if abs(fixture_value) < stability_threshold:
             return "small_base", fixture_value
-        return "small_base", fixture_value
+        return "unstable_small_base", fixture_value
 
     rel = (fixture_value - base_value) / abs(base_value)
     abs_rel = abs(rel)
@@ -230,15 +244,27 @@ def build_robustness_card(
                 ),
                 "label": label,
             }
+            # ``unknown`` and the truly-uninterpretable
+            # ``small_base`` are dropped from labels_seen.
+            # ``unstable_small_base`` IS counted: it means the
+            # base was effectively zero but the fixture moved
+            # noticeably, which is itself a robustness signal
+            # (the relative-change figure can't quantify it,
+            # but the report should not hide it).
             if label not in {"unknown", "small_base"}:
                 labels_seen.append(label)
 
         # Overall summary across fixtures.
         if not labels_seen:
             overall = "unknown"
-        elif "fragile" in labels_seen or "inverted_polarity" in labels_seen:
-            # Any fragile or inverted reading means the signal is
-            # not robust across the supplied transformations.
+        elif (
+            "fragile" in labels_seen
+            or "inverted_polarity" in labels_seen
+            or "unstable_small_base" in labels_seen
+        ):
+            # Any fragile / inverted / unstable_small_base reading
+            # means the signal is not robust across the supplied
+            # transformations.
             overall = "fragile"
         elif all(l == "stable" for l in labels_seen):
             overall = "stable"
@@ -273,6 +299,13 @@ def build_robustness_card(
             for f in s.get("per_fixture", {}).values()
         )
     )
+    n_unstable_small_base = sum(
+        1 for s in per_signal.values()
+        if any(
+            f.get("label") == "unstable_small_base"
+            for f in s.get("per_fixture", {}).values()
+        )
+    )
 
     return {
         "task_surface": TASK_SURFACE,
@@ -286,6 +319,7 @@ def build_robustness_card(
         "n_robust_signals": n_robust,
         "n_fragile_signals": n_fragile,
         "n_inverted_polarity_readings": n_inverted,
+        "n_unstable_small_base_readings": n_unstable_small_base,
         "per_signal": per_signal,
     }
 
@@ -306,10 +340,11 @@ def _claim_license_block(card: dict[str, Any]) -> str:
             "the card reports the relative change vs. the base "
             "reading and a robustness label "
             "(stable / moderate / fragile / inverted_polarity / "
-            "small_base / unknown). The overall per-signal "
-            "robustness is fragile if any fixture flagged fragile "
-            "or inverted_polarity, stable if all readings were "
-            "stable, mixed otherwise."
+            "small_base / unstable_small_base / unknown). The "
+            "overall per-signal robustness is fragile if any "
+            "fixture flagged fragile, inverted_polarity, or "
+            "unstable_small_base; stable if all readings were "
+            "stable; mixed otherwise."
         ),
         does_not_license=(
             "A verdict on whether a signal is generally robust. "
@@ -336,10 +371,15 @@ def _claim_license_block(card: dict[str, Any]) -> str:
             "Stability and fragility thresholds are heuristic "
             "(default ± 10% / 30% relative change). Calibration-"
             "pending against a labeled-fixture corpus.",
-            "Near-zero base values trigger the `small_base` "
-            "label — the relative-change comparison is unstable "
-            "when |base| < 1e-6, and ratio readings would be "
-            "misleading.",
+            "Near-zero base values trigger one of two labels: "
+            "`small_base` when the fixture is also near-zero "
+            "(uninterpretable AND uninteresting), or "
+            "`unstable_small_base` when the fixture moved "
+            "noticeably (clearly notable, but the relative-change "
+            "figure can't quantify it because |base| < 1e-6). "
+            "The aggregator treats `unstable_small_base` like "
+            "`fragile`; it does NOT silently drop large absolute "
+            "movements from a near-zero baseline.",
             "The card's interpretive value scales with the number "
             "and quality of fixtures supplied. A single-fixture "
             "card answers \"how does this signal move under THIS \"\n            \"transformation\" — useful but narrower than a "
@@ -355,6 +395,7 @@ _LABEL_GLYPH = {
     "fragile": "✗",
     "inverted_polarity": "↺",
     "small_base": "?",
+    "unstable_small_base": "!",
     "unknown": "—",
 }
 
@@ -375,12 +416,15 @@ def render_report(card: dict[str, Any]) -> str:
         f"**Robust signals:** {card.get('n_robust_signals', 0)}  "
         f"**Fragile signals:** {card.get('n_fragile_signals', 0)}  "
         f"**Inverted-polarity readings:** "
-        f"{card.get('n_inverted_polarity_readings', 0)}",
+        f"{card.get('n_inverted_polarity_readings', 0)}  "
+        f"**Unstable small-base readings:** "
+        f"{card.get('n_unstable_small_base_readings', 0)}",
         "",
         "## Robustness card",
         "",
         "Glyph legend: ✓ stable, · moderate, ✗ fragile, "
-        "↺ inverted polarity, ? small base, — unknown.",
+        "↺ inverted polarity, ? small base, ! unstable small base, "
+        "— unknown.",
         "",
     ]
 

@@ -95,19 +95,62 @@ def _read_smoothing_level(variance: dict[str, Any] | None) -> SmoothingLevel:
 
 
 def _read_voice_drift_level(voice_distance: dict[str, Any] | None) -> DriftLevel:
+    """Map voice_distance audit output to a drift level.
+
+    Reads the actual band strings produced by
+    ``stylometry_core.voice_distance_band``:
+
+      - ``Close to baseline (...)``  → ``low``
+      - ``Light drift (...)``        → ``moderate``
+      - ``Strong drift (...)``       → ``high``
+      - ``Off-baseline (...)``       → ``high``
+
+    Falls back to ``overall.weighted_delta`` thresholds when the
+    band string is missing or unrecognized (the same cutoffs the
+    band assignment itself uses: 0.75 / 1.25 / 2.0). Substring
+    matches on legacy / synonym strings (``near``, ``far``,
+    ``moderate``, ``distant``) are kept as a last resort so older
+    test fixtures and any custom band strings still parse.
+    """
     if not voice_distance:
         return "unknown"
     overall = voice_distance.get("overall") or {}
     band = overall.get("band")
-    if not band:
-        return "unknown"
-    band_lower = band.lower()
-    if "near" in band_lower or "close" in band_lower:
-        return "low"
-    if "moderate" in band_lower:
-        return "moderate"
-    if "far" in band_lower or "distant" in band_lower:
+
+    # Primary path: known band strings from voice_distance_band().
+    if isinstance(band, str) and band:
+        band_norm = band.split("(", 1)[0].strip().lower()
+        if band_norm == "close to baseline":
+            return "low"
+        if band_norm == "light drift":
+            return "moderate"
+        if band_norm == "strong drift":
+            return "high"
+        if band_norm == "off-baseline" or band_norm == "off baseline":
+            return "high"
+
+    # Secondary path: weighted_delta numeric fallback (matches the
+    # cutoffs voice_distance_band itself uses: < 0.75 close,
+    # < 1.25 light, < 2.0 strong, ≥ 2.0 off-baseline).
+    score = overall.get("weighted_delta")
+    if isinstance(score, (int, float)):
+        if score < 0.75:
+            return "low"
+        if score < 1.25:
+            return "moderate"
         return "high"
+
+    # Tertiary path: legacy / synonym substring match for older
+    # fixtures and custom band labels.
+    if isinstance(band, str) and band:
+        band_lower = band.lower()
+        if "near" in band_lower or "close" in band_lower:
+            return "low"
+        if "moderate" in band_lower:
+            return "moderate"
+        if "far" in band_lower or "distant" in band_lower:
+            return "high"
+
     return "unknown"
 
 
@@ -128,12 +171,23 @@ def _read_gi_decision(gi: dict[str, Any] | None) -> PoolDecision:
 
 def _read_pos_bigram_kl(variance: dict[str, Any] | None) -> str:
     """Return ``high`` / ``moderate`` / ``low`` / ``unknown`` for
-    POS-bigram KL against baseline. Reads the variance audit's
-    ``pos_bigram_kl`` block when present."""
+    POS-bigram KL against baseline.
+
+    The POS-bigram KL block is emitted at
+    ``variance["compression"]["pos_bigram_kl"]`` (the variable lives
+    inside ``classify_compression()`` whose return is assigned to
+    the ``compression`` key in the audit JSON). A legacy top-level
+    ``variance["pos_bigram_kl"]`` shape is accepted as a fallback
+    so any older fixture or hand-built input still parses.
+    """
     if not variance:
         return "unknown"
-    kl_info = variance.get("pos_bigram_kl") or {}
-    if not kl_info.get("in_band"):
+    compression = variance.get("compression") or {}
+    kl_info = compression.get("pos_bigram_kl")
+    if not isinstance(kl_info, dict):
+        # Legacy / fixture fallback.
+        kl_info = variance.get("pos_bigram_kl") or {}
+    if not isinstance(kl_info, dict) or not kl_info.get("in_band"):
         return "unknown"
     if kl_info.get("compressed"):
         return "high"
@@ -149,15 +203,39 @@ def _read_pos_bigram_kl(variance: dict[str, Any] | None) -> str:
 
 
 def _read_aic_density(aic: dict[str, Any] | None) -> str:
+    """Return a directional reading for AIC named-pattern density.
+
+    aic_pattern_audit emits ``patterns.<pattern_key>.density_per_1k``
+    (one entry per named pattern). We pick the maximum target
+    density across patterns. A legacy top-level
+    ``aic["pattern_densities"]`` flat-dict shape is accepted as a
+    fallback so older fixtures still parse.
+    """
     if not aic:
         return "unknown"
-    densities = aic.get("pattern_densities") or {}
+
+    densities: list[float] = []
+    patterns = aic.get("patterns")
+    if isinstance(patterns, dict) and patterns:
+        for block in patterns.values():
+            if not isinstance(block, dict):
+                continue
+            d = block.get("density_per_1k")
+            if isinstance(d, (int, float)):
+                densities.append(float(d))
+
+    if not densities:
+        # Legacy / fixture fallback shape.
+        legacy = aic.get("pattern_densities") or {}
+        if isinstance(legacy, dict):
+            densities = [
+                float(d) for d in legacy.values()
+                if isinstance(d, (int, float))
+            ]
+
     if not densities:
         return "unknown"
-    max_d = max(
-        (d for d in densities.values() if isinstance(d, (int, float))),
-        default=0.0,
-    )
+    max_d = max(densities)
     if max_d >= 1.5:
         return "high"
     if max_d >= 0.5:

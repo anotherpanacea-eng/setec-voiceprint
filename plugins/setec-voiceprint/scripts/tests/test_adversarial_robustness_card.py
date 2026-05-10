@@ -113,11 +113,31 @@ class TestClassifyMovement:
         assert arc._classify_movement(None, 1.0)[0] == "unknown"
         assert arc._classify_movement(1.0, None)[0] == "unknown"
 
-    def test_small_base_handles_near_zero(self):
+    def test_small_base_when_fixture_also_near_zero(self):
+        # Near-zero base + near-zero fixture → uninterpretable
+        # AND uninteresting; label `small_base`.
         label, _ = arc._classify_movement(
-            base_value=1e-9, fixture_value=0.5,
+            base_value=1e-9, fixture_value=0.05,
         )
         assert label == "small_base"
+
+    def test_unstable_small_base_when_fixture_moves(self):
+        # Near-zero base + large absolute fixture movement →
+        # `unstable_small_base`. Reviewer-reproduced regression:
+        # the previous code returned `small_base` here, which the
+        # aggregator dropped, so a 0.0 → 0.5 movement showed up as
+        # `overall_robustness=unknown`. The fix distinguishes the
+        # two cases.
+        label, _ = arc._classify_movement(
+            base_value=0.0, fixture_value=0.5,
+        )
+        assert label == "unstable_small_base"
+
+    def test_unstable_small_base_for_negative_fixture(self):
+        label, _ = arc._classify_movement(
+            base_value=1e-9, fixture_value=-0.4,
+        )
+        assert label == "unstable_small_base"
 
 
 # ---------- build_robustness_card ----------
@@ -172,6 +192,46 @@ class TestBuildRobustnessCard:
         )
         # burstiness is fragile across fixtures (paraphrase inverted it).
         assert card["n_inverted_polarity_readings"] >= 1
+
+    def test_unstable_small_base_aggregates_to_fragile(self):
+        # Reviewer-reproduced regression: compression_fraction
+        # 0.0 → 0.5 in a fixture should NOT silently fall to
+        # `overall_robustness=unknown`. The fix flags
+        # `unstable_small_base` at the cell level and aggregates
+        # it to `fragile` overall.
+        base = _make_audit(compression_fraction=0.0)
+        fixture = _make_audit(compression_fraction=0.5)
+        card = arc.build_robustness_card(
+            base=base, fixtures=[("paraphrase", fixture)],
+        )
+        info = card["per_signal"]["compression_fraction"]
+        cell = info["per_fixture"]["paraphrase"]
+        assert cell["label"] == "unstable_small_base"
+        assert info["overall_robustness"] == "fragile"
+
+    def test_unstable_small_base_counted_in_aggregate(self):
+        base = _make_audit(compression_fraction=0.0)
+        fixture = _make_audit(compression_fraction=0.5)
+        card = arc.build_robustness_card(
+            base=base, fixtures=[("paraphrase", fixture)],
+        )
+        assert card["n_unstable_small_base_readings"] >= 1
+        # And the signal counts as fragile in the aggregate.
+        assert card["n_fragile_signals"] >= 1
+
+    def test_pure_small_base_does_not_aggregate_to_fragile(self):
+        # Both base and fixture near zero → label `small_base`,
+        # NOT counted toward fragile.
+        base = _make_audit(compression_fraction=0.0)
+        fixture = _make_audit(compression_fraction=0.01)
+        card = arc.build_robustness_card(
+            base=base, fixtures=[("light_copyedit", fixture)],
+        )
+        info = card["per_signal"]["compression_fraction"]
+        cell = info["per_fixture"]["light_copyedit"]
+        assert cell["label"] == "small_base"
+        # No labels_seen → unknown (preserves existing behavior).
+        assert info["overall_robustness"] == "unknown"
 
     def test_threshold_customization(self):
         # Tighten thresholds: 5% / 15%. A 10% change becomes

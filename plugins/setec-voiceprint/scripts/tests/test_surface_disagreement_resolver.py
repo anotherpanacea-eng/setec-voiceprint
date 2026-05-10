@@ -54,6 +54,61 @@ class TestVoiceDriftReader:
     def test_none_unknown(self):
         assert sdr._read_voice_drift_level(None) == "unknown"
 
+    # --- Real band strings emitted by stylometry_core.voice_distance_band.
+    # Reviewer-reproduced regression: substring matches over
+    # `near` / `close` / `moderate` / `far` / `distant` returned
+    # `unknown` on production strings. The fix maps the actual
+    # bands directly and falls back to weighted_delta thresholds.
+
+    def test_close_to_baseline_real_string_is_low(self):
+        r = sdr._read_voice_drift_level(
+            {"overall": {"band": "Close to baseline (note)"}},
+        )
+        assert r == "low"
+
+    def test_light_drift_real_string_is_moderate(self):
+        r = sdr._read_voice_drift_level(
+            {"overall": {"band": "Light drift (note)"}},
+        )
+        assert r == "moderate"
+
+    def test_strong_drift_real_string_is_high(self):
+        r = sdr._read_voice_drift_level(
+            {"overall": {"band": "Strong drift (note)"}},
+        )
+        assert r == "high"
+
+    def test_off_baseline_real_string_is_high(self):
+        r = sdr._read_voice_drift_level(
+            {"overall": {"band": "Off-baseline (note)"}},
+        )
+        assert r == "high"
+
+    def test_real_strings_without_parens(self):
+        # Without the parenthetical PROVISIONAL_BAND_NOTE.
+        for band, expected in (
+            ("Close to baseline", "low"),
+            ("Light drift", "moderate"),
+            ("Strong drift", "high"),
+            ("Off-baseline", "high"),
+        ):
+            r = sdr._read_voice_drift_level({"overall": {"band": band}})
+            assert r == expected, f"{band!r} → {r!r}, want {expected}"
+
+    def test_weighted_delta_fallback_when_band_missing(self):
+        # Band absent but weighted_delta present → fall back to
+        # the same thresholds voice_distance_band uses.
+        for delta, expected in (
+            (0.30, "low"),
+            (1.00, "moderate"),
+            (1.50, "high"),
+            (3.00, "high"),
+        ):
+            r = sdr._read_voice_drift_level(
+                {"overall": {"weighted_delta": delta}},
+            )
+            assert r == expected, f"delta={delta} → {r!r}, want {expected}"
+
 
 class TestGiDecisionReader:
     def test_consistent(self):
@@ -63,6 +118,160 @@ class TestGiDecisionReader:
     def test_gray_zone(self):
         r = sdr._read_gi_decision({"decision": "gray_zone_refused"})
         assert r == "gray_zone"
+
+
+class TestPosBigramKlReader:
+    """Reviewer-reproduced regression: the resolver was reading
+    ``variance['pos_bigram_kl']`` directly, but the variance audit
+    actually emits the block at ``compression.pos_bigram_kl`` (it
+    is added by ``classify_compression`` whose return is assigned
+    to the audit's ``compression`` key)."""
+
+    def test_reads_compression_pos_bigram_kl_path(self):
+        variance = {
+            "compression": {
+                "band": "Lightly smoothed",
+                "pos_bigram_kl": {
+                    "in_band": True,
+                    "compressed": True,
+                    "value": 0.30,
+                    "threshold": 0.15,
+                },
+            },
+        }
+        assert sdr._read_pos_bigram_kl(variance) == "high"
+
+    def test_compression_pos_bigram_kl_moderate(self):
+        variance = {
+            "compression": {
+                "pos_bigram_kl": {
+                    "in_band": True,
+                    "compressed": False,
+                    "value": 0.18,
+                    "threshold": 0.15,
+                },
+            },
+        }
+        # >= threshold (0.15) but < 1.5*threshold (0.225) → moderate.
+        assert sdr._read_pos_bigram_kl(variance) == "moderate"
+
+    def test_compression_pos_bigram_kl_low(self):
+        variance = {
+            "compression": {
+                "pos_bigram_kl": {
+                    "in_band": True,
+                    "compressed": False,
+                    "value": 0.05,
+                    "threshold": 0.15,
+                },
+            },
+        }
+        assert sdr._read_pos_bigram_kl(variance) == "low"
+
+    def test_compression_pos_bigram_kl_out_of_band_unknown(self):
+        variance = {
+            "compression": {
+                "pos_bigram_kl": {"in_band": False},
+            },
+        }
+        assert sdr._read_pos_bigram_kl(variance) == "unknown"
+
+    def test_legacy_top_level_path_still_works(self):
+        # Hand-built fixtures or older callers may put the block
+        # at the top level. Keep that shape working.
+        variance = {
+            "pos_bigram_kl": {
+                "in_band": True,
+                "compressed": True,
+                "value": 0.30,
+                "threshold": 0.15,
+            },
+        }
+        assert sdr._read_pos_bigram_kl(variance) == "high"
+
+    def test_no_pos_bigram_kl_returns_unknown(self):
+        # No baseline supplied → no pos_bigram_kl block at all.
+        assert sdr._read_pos_bigram_kl({"compression": {}}) == "unknown"
+        assert sdr._read_pos_bigram_kl({}) == "unknown"
+
+    def test_resolver_e2e_routes_correct_path(self):
+        # Full resolver call: high pos_bigram_kl + low/moderate
+        # smoothing should fire syntactic_template_shift.
+        variance = {
+            "compression": {
+                "band": "Lightly smoothed",
+                "pos_bigram_kl": {
+                    "in_band": True,
+                    "compressed": True,
+                    "value": 0.30,
+                    "threshold": 0.15,
+                },
+            },
+        }
+        report = sdr.resolve(variance=variance)
+        names = [m["name"] for m in report["matched_interpretations"]]
+        assert "syntactic_template_shift" in names
+
+
+class TestAicDensityReader:
+    """Reviewer-reproduced regression: the resolver was reading
+    ``aic['pattern_densities']`` (a flat dict that aic_pattern_audit
+    never emits). The actual shape is
+    ``aic['patterns'][<key>]['density_per_1k']`` per pattern."""
+
+    def test_reads_real_patterns_density_path(self):
+        aic = {
+            "patterns": {
+                "correctio": {
+                    "label": "correctio",
+                    "count": 5,
+                    "density_per_1k": 2.5,
+                },
+                "manifesto_cadence": {
+                    "label": "manifesto_cadence",
+                    "count": 1,
+                    "density_per_1k": 0.4,
+                },
+            },
+        }
+        assert sdr._read_aic_density(aic) == "high"
+
+    def test_real_patterns_moderate(self):
+        aic = {
+            "patterns": {
+                "correctio": {"density_per_1k": 0.8},
+                "other": {"density_per_1k": 0.2},
+            },
+        }
+        assert sdr._read_aic_density(aic) == "moderate"
+
+    def test_real_patterns_low(self):
+        aic = {
+            "patterns": {
+                "correctio": {"density_per_1k": 0.1},
+                "other": {"density_per_1k": 0.0},
+            },
+        }
+        assert sdr._read_aic_density(aic) == "low"
+
+    def test_legacy_pattern_densities_dict_still_works(self):
+        # Older fixture shape: flat dict at the top level.
+        aic = {"pattern_densities": {"correctio": 2.0}}
+        assert sdr._read_aic_density(aic) == "high"
+
+    def test_empty_patterns_unknown(self):
+        assert sdr._read_aic_density({"patterns": {}}) == "unknown"
+        assert sdr._read_aic_density({}) == "unknown"
+
+    def test_resolver_e2e_fires_rhetorical_habit_pattern(self):
+        # High AIC density + lightly-smoothed variance should
+        # fire the rhetorical_habit_not_smoothing pattern.
+        report = sdr.resolve(
+            variance={"compression": {"band": "Lightly smoothed"}},
+            aic={"patterns": {"correctio": {"density_per_1k": 2.0}}},
+        )
+        names = [m["name"] for m in report["matched_interpretations"]]
+        assert "rhetorical_habit_not_smoothing" in names
 
 
 class TestIdiolectSurvival:
