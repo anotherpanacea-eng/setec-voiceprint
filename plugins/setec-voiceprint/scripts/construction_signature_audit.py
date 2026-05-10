@@ -425,6 +425,14 @@ _CONSTRUCTION_REGISTRY: tuple[tuple[str, str, str, bool], ...] = (
     ),
 )
 
+# Public list of construction keys, exposed so the CLI's
+# argparse `choices` and external callers can validate filter
+# names against the registry without depending on the private
+# tuple shape.
+CONSTRUCTION_KEYS: tuple[str, ...] = tuple(
+    c[0] for c in _CONSTRUCTION_REGISTRY
+)
+
 
 def _new_results() -> dict[str, ConstructionResult]:
     """Initialize empty per-construction result containers."""
@@ -595,10 +603,17 @@ def aggregate_baseline_densities(
     baseline_dir: Path,
     *,
     keep_quotes: bool = False,
+    target_path: Path | None = None,
 ) -> tuple[dict[str, float], int, list[Path], list[Path]]:
     """Walk a baseline directory and aggregate per-construction
     density-per-1k. Returns ``(densities, total_words, loaded,
     skipped)``.
+
+    When ``target_path`` is supplied, any baseline entry whose
+    resolved path equals the resolved target path is filtered
+    out — same self-overlap-guard convention `paragraph_audit`
+    (1.34.1), `general_imposters` (1.29.1), and `controls_audit`
+    (1.37.1) use. The audited target must not be its own baseline.
 
     Mirrors the aggregation shape `aic_pattern_audit` uses.
     """
@@ -618,12 +633,24 @@ def aggregate_baseline_densities(
     loaded: list[Path] = []
     skipped: list[Path] = []
 
+    target_resolved = (
+        target_path.resolve() if target_path else None
+    )
+
     for path in sorted(baseline_dir.rglob("*")):
         if not path.is_file():
             continue
         if path.suffix.lower() not in {
             ".txt", ".md", ".markdown", ".rst",
         }:
+            skipped.append(path)
+            continue
+        # Self-overlap guard: drop the target itself if it lives
+        # under the baseline directory.
+        if (
+            target_resolved is not None
+            and path.resolve() == target_resolved
+        ):
             skipped.append(path)
             continue
         try:
@@ -914,8 +941,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--construction", action="append", dest="constructions",
+        choices=list(CONSTRUCTION_KEYS),
         help="Restrict to specific constructions. Repeat for "
-             "multiple. Default: all.",
+             "multiple. Default: all. argparse `choices` rejects "
+             "typos at parse time so a misspelled construction "
+             "name fails loudly rather than producing an empty "
+             "audit.",
     )
     p.add_argument(
         "--keep-quotes", action="store_true",
@@ -964,14 +995,17 @@ def main(argv: list[str] | None = None) -> int:
             ) = aggregate_baseline_densities(
                 Path(args.baseline_dir).expanduser(),
                 keep_quotes=args.keep_quotes,
+                target_path=target_path,
             )
         except (FileNotFoundError, NotADirectoryError) as exc:
             sys.stderr.write(f"--baseline-dir: {exc}\n")
             return 2
         if not baseline_loaded:
             sys.stderr.write(
-                "--baseline-dir: no readable .txt/.md/.rst files "
-                "found.\n"
+                "--baseline-dir: no readable .txt/.md/.rst "
+                "baseline files remained after filtering. The "
+                "target file cannot also be its own baseline; "
+                "supply a directory of OTHER files.\n"
             )
             return 2
 

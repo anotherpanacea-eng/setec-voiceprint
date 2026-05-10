@@ -295,6 +295,118 @@ class TestDetectDrift:
 # ---------- Render ----------
 
 
+class TestSchemaChangeDrift:
+    """Reviewer-reproduced regression: `_compare_signals` emitted
+    `added` / `removed` verdicts but `detect_drift` only counted
+    `drifted`, so a signal disappearing or newly appearing did
+    NOT trigger `infrastructure_drift_detected: true`."""
+
+    def test_added_signal_counts_as_drift(self, tmp_path):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        curr = copy.deepcopy(snap)
+        first_bench = next(iter(curr["benchmarks"].keys()))
+        curr["benchmarks"][first_bench]["signals"]["new_signal"] = (
+            42.0
+        )
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        assert report["infrastructure_drift_detected"] is True
+        assert report["n_signals_schema_changed"] >= 1
+        assert first_bench in report["drifted_benchmarks"]
+
+    def test_removed_signal_counts_as_drift(self, tmp_path):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        curr = copy.deepcopy(snap)
+        first_bench = next(iter(curr["benchmarks"].keys()))
+        # Remove an existing signal from the current run.
+        signals = curr["benchmarks"][first_bench]["signals"]
+        if signals:
+            removed_key = next(iter(signals.keys()))
+            del signals[removed_key]
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        assert report["infrastructure_drift_detected"] is True
+        assert report["n_signals_schema_changed"] >= 1
+
+    def test_added_and_removed_with_stack_change_recommends_recalibration(
+        self, tmp_path,
+    ):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        curr = copy.deepcopy(snap)
+        curr["stack"]["spacy_version"] = "9.99.0"
+        first_bench = next(iter(curr["benchmarks"].keys()))
+        curr["benchmarks"][first_bench]["signals"]["new_signal"] = (
+            42.0
+        )
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        assert report["recalibration_recommended"] is True
+
+    def test_per_benchmark_records_added_removed_counts(
+        self, tmp_path,
+    ):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        curr = copy.deepcopy(snap)
+        first_bench = next(iter(curr["benchmarks"].keys()))
+        curr["benchmarks"][first_bench]["signals"]["new_signal"] = (
+            42.0
+        )
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        bench_info = report["per_benchmark"][first_bench]
+        assert bench_info.get("n_signals_added", 0) >= 1
+        assert "n_signals_removed" in bench_info
+        assert "n_signals_schema_changed" in bench_info
+
+
+class TestEmptyBenchmarkDirRejected:
+    """Reviewer-reproduced regression: a directory containing
+    only empty / whitespace files produced n_benchmarks=0 with
+    a successful exit. CI drift checks would silently pass
+    without measuring anything."""
+
+    def test_only_empty_files_raises(self, tmp_path):
+        bdir = tmp_path / "empty_benchmarks"
+        bdir.mkdir()
+        (bdir / "empty.txt").write_text("", encoding="utf-8")
+        (bdir / "whitespace.md").write_text(
+            "   \n\n   \n", encoding="utf-8",
+        )
+        with pytest.raises(FileNotFoundError, match="non-empty"):
+            cdm.take_snapshot(bdir, do_tier2=False)
+
+    def test_cli_empty_files_only_returns_2(self, tmp_path):
+        bdir = tmp_path / "empty_benchmarks"
+        bdir.mkdir()
+        (bdir / "empty.txt").write_text("", encoding="utf-8")
+        snap_path = tmp_path / "snap.json"
+        rc = cdm.main([
+            "snapshot",
+            "--benchmark-dir", str(bdir),
+            "--out", str(snap_path),
+            "--no-tier2",
+        ])
+        assert rc == 2
+        # The snapshot file should NOT exist (writes happen
+        # only after the snapshot succeeds).
+        assert not snap_path.exists()
+
+    def test_skipped_empty_recorded_when_some_files_succeed(
+        self, tmp_path,
+    ):
+        bdir = tmp_path / "mixed"
+        bdir.mkdir()
+        # One real benchmark + one empty file.
+        (bdir / "real.txt").write_text(
+            _SAMPLE_TEXT, encoding="utf-8",
+        )
+        (bdir / "empty.txt").write_text("", encoding="utf-8")
+        snapshot = cdm.take_snapshot(bdir, do_tier2=False)
+        # The real file measured; empty was skipped.
+        assert snapshot["n_benchmarks"] == 1
+        assert "skipped_empty" in snapshot
+
+
 class TestRender:
     def test_no_drift_renders_clean_report(self, tmp_path):
         bdir = _write_benchmarks(tmp_path)

@@ -41,6 +41,15 @@ class TestConstructionRegistry:
         for r in results.values():
             assert r.count == 0
 
+    def test_construction_keys_public_constant(self):
+        # Public CONSTRUCTION_KEYS must mirror the registry so
+        # the CLI's argparse choices and external callers can
+        # validate filter names without depending on the private
+        # tuple shape.
+        assert len(csa.CONSTRUCTION_KEYS) == 12
+        for key, *_ in csa._CONSTRUCTION_REGISTRY:
+            assert key in csa.CONSTRUCTION_KEYS
+
 
 # ---------- Regex detectors ----------
 
@@ -511,6 +520,74 @@ class TestCli:
         # Per-construction blocks should carry the delta.
         ex_block = payload["constructions"]["existential_there"]
         assert "baseline_density_per_1k" in ex_block
+
+    def test_cli_baseline_dir_self_overlap_filtered(self, tmp_path):
+        """Reviewer-reproduced regression: when the audited
+        target lives inside --baseline-dir, the target was
+        included in its own baseline (delta_per_1k computed
+        against the target's own counts)."""
+        bdir = tmp_path / "baseline"
+        bdir.mkdir()
+        # Target lives INSIDE the baseline directory.
+        target = bdir / "target.md"
+        target.write_text(
+            "There is a problem. What matters is voice.",
+            encoding="utf-8",
+        )
+        # Add one OTHER file as the only legitimate baseline.
+        (bdir / "other.md").write_text(
+            "It was clear that the prose held together. "
+            "Although flawed, the draft cohered.",
+            encoding="utf-8",
+        )
+        out = tmp_path / "audit.json"
+        rc = csa.main([
+            str(target),
+            "--baseline-dir", str(bdir),
+            "--json", "--out", str(out),
+        ])
+        assert rc == 0
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        # Only the OTHER file should have been counted.
+        assert payload["baseline_files_loaded_count"] == 1
+
+    def test_cli_baseline_dir_self_overlap_only_returns_2(
+        self, tmp_path,
+    ):
+        """When the baseline dir contains ONLY the target file,
+        the post-filter baseline is empty → rc=2 + helpful
+        stderr message."""
+        bdir = tmp_path / "baseline"
+        bdir.mkdir()
+        target = bdir / "target.md"
+        target.write_text(
+            "There is a problem. What matters is voice.",
+            encoding="utf-8",
+        )
+        rc = csa.main([
+            str(target),
+            "--baseline-dir", str(bdir),
+        ])
+        assert rc == 2
+
+    def test_cli_unknown_construction_rejected_by_argparse(
+        self, tmp_path,
+    ):
+        """Reviewer-reproduced regression: a typo in
+        --construction silently produced an empty constructions
+        block with rc=0. argparse `choices` now rejects unknown
+        construction names at parse time (rc=2)."""
+        target = tmp_path / "draft.md"
+        target.write_text(
+            "There is a problem. What matters is voice.",
+            encoding="utf-8",
+        )
+        with pytest.raises(SystemExit) as exc_info:
+            csa.main([
+                str(target),
+                "--construction", "completely_unknown_construction",
+            ])
+        assert exc_info.value.code == 2
 
     def test_cli_construction_filter(self, tmp_path):
         target = tmp_path / "draft.md"

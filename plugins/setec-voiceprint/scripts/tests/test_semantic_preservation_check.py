@@ -177,6 +177,101 @@ class TestDiffLists:
         assert shared == ["a"]
 
 
+class TestClassifyCountOnlyVerdict:
+    """Reviewer-reproduced regression: claim_inventory passed
+    empty added/dropped lists into _classify_verdict, whose
+    large-count branches require non-empty diffs to fire — so
+    a 5 → 10 declarative-count change returned `preserved`."""
+
+    def test_count_only_5_to_10_is_shifted_added(self):
+        v = sp._classify_count_only_verdict(
+            count_before=5, count_after=10,
+        )
+        assert v == "shifted_added"
+
+    def test_count_only_10_to_5_is_shifted_dropped(self):
+        v = sp._classify_count_only_verdict(
+            count_before=10, count_after=5,
+        )
+        assert v == "shifted_dropped"
+
+    def test_count_only_5_to_5_is_preserved(self):
+        v = sp._classify_count_only_verdict(
+            count_before=5, count_after=5,
+        )
+        assert v == "preserved"
+
+    def test_count_only_zero_zero_is_unknown(self):
+        v = sp._classify_count_only_verdict(
+            count_before=0, count_after=0,
+        )
+        assert v == "unknown"
+
+    def test_count_only_small_count_floor(self):
+        # 2 → 3 (small count, only +1 absolute) → preserved.
+        assert sp._classify_count_only_verdict(
+            count_before=2, count_after=3,
+        ) == "preserved"
+        # 2 → 4 (small count, +2 absolute) → shifted_added.
+        assert sp._classify_count_only_verdict(
+            count_before=2, count_after=4,
+        ) == "shifted_added"
+
+
+class TestClaimInventoryRegression:
+    """Reviewer-reproduced end-to-end: 5 → 10 declaratives
+    must NOT report preserved at the category or overall level."""
+
+    def test_5_to_10_declaratives_flagged_in_check_preservation(self):
+        before = (
+            "She walked. He ran. They paused. Cars stopped. "
+            "Birds flew."
+        )
+        after = (
+            "She walked. He ran. They paused. Cars stopped. "
+            "Birds flew. The rain began. The wind rose. "
+            "Lights flickered. Doors slammed. Voices called."
+        )
+        report = sp.check_preservation(
+            before_text=before, after_text=after,
+        )
+        cat = report["categories"]["claim_inventory"]
+        # 5 declaratives → 10 declaratives is a doubling — must be
+        # shifted_added at the category level.
+        assert cat["verdict"] == "shifted_added"
+        # Overall verdict propagates from claim_inventory's flag.
+        assert report["overall_verdict"] == "shifted_added"
+
+
+class TestUnknownCategoryFilter:
+    """Reviewer-reproduced regression: a typo in --category
+    silently filtered every category out, then _overall_verdict
+    returned `preserved` via the empty `all(...)` path."""
+
+    def test_unknown_category_raises_value_error(self):
+        with pytest.raises(ValueError, match="typo"):
+            sp.check_preservation(
+                before_text="Test text.",
+                after_text="Test text.",
+                category_filter=["typo"],
+            )
+
+    def test_known_category_filter_still_works(self):
+        report = sp.check_preservation(
+            before_text="Test text.",
+            after_text="Test text.",
+            category_filter=["modal_verbs"],
+        )
+        assert list(report["categories"].keys()) == ["modal_verbs"]
+
+    def test_overall_verdict_unknown_for_empty_categories(self):
+        # Defense-in-depth: if some future call path produced
+        # an empty categories dict, the aggregator must NOT
+        # collapse to `preserved`.
+        from semantic_preservation_check import _overall_verdict
+        assert _overall_verdict({}) == "unknown"
+
+
 class TestClassifyVerdict:
     def test_preserved_when_unchanged(self):
         v = sp._classify_verdict(
@@ -459,6 +554,21 @@ class TestCli:
         rc = sp.main([
             "--before", str(before_path),
             "--after", str(after_path),
+        ])
+        assert rc == 2
+
+    def test_cli_unknown_category_returns_2(self, tmp_path):
+        # Reviewer-reproduced regression: a typo in --category
+        # silently produced an empty categories dict + overall
+        # verdict `preserved`. CLI now hard-fails rc=2.
+        before = tmp_path / "before.md"
+        after = tmp_path / "after.md"
+        before.write_text("Test.", encoding="utf-8")
+        after.write_text("Test.", encoding="utf-8")
+        rc = sp.main([
+            "--before", str(before),
+            "--after", str(after),
+            "--category", "completely_unknown_category",
         ])
         assert rc == 2
 

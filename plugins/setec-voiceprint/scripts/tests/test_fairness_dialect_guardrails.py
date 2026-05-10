@@ -111,6 +111,101 @@ class TestManifestReading:
         assert counts["native"] == 1
         assert counts["non_native_advanced"] == 1
 
+    def test_jsonl_manifest_reads_baseline_entries(self, tmp_path):
+        """Reviewer-reproduced regression: a `.jsonl` manifest
+        fell through to the TSV parser and silently produced
+        empty baseline_backgrounds."""
+        manifest = tmp_path / "manifest.jsonl"
+        manifest.write_text(
+            json.dumps({"use": "baseline", "language_status": "non_native_advanced"}) + "\n"
+            + json.dumps({"use": "baseline", "language_status": "non_native_advanced"}) + "\n"
+            + json.dumps({"use": "target", "language_status": "native"}) + "\n",
+            encoding="utf-8",
+        )
+        counts = fdg._read_manifest_language_backgrounds(manifest)
+        assert counts.get("non_native_advanced") == 2
+        # Target excluded from baseline counts.
+        assert "native" not in counts
+
+    def test_jsonl_manifest_with_blank_lines(self, tmp_path):
+        manifest = tmp_path / "manifest.jsonl"
+        manifest.write_text(
+            "\n"
+            + json.dumps({"use": "baseline", "language_status": "native"})
+            + "\n\n"
+            + json.dumps({"use": "baseline", "language_status": "native"})
+            + "\n",
+            encoding="utf-8",
+        )
+        counts = fdg._read_manifest_language_backgrounds(manifest)
+        assert counts.get("native") == 2
+
+    def test_jsonl_malformed_line_raises(self, tmp_path):
+        manifest = tmp_path / "manifest.jsonl"
+        manifest.write_text(
+            json.dumps({"use": "baseline"}) + "\n"
+            + "{ malformed json line\n",
+            encoding="utf-8",
+        )
+        with pytest.raises(ValueError, match="line 2"):
+            fdg._read_manifest_language_backgrounds(manifest)
+
+    def test_json_manifest_list_valued_use(self, tmp_path):
+        """Reviewer-reproduced regression: `entry["use"] !=
+        "baseline"` skipped entries whose `use` was a LIST like
+        `["baseline", "target"]`."""
+        manifest = tmp_path / "manifest.json"
+        manifest.write_text(
+            json.dumps([
+                {"use": ["baseline", "target"], "language_status": "non_native_advanced"},
+                {"use": ["target"], "language_status": "native"},
+                {"use": "baseline", "language_status": "non_native_advanced"},
+            ]),
+            encoding="utf-8",
+        )
+        counts = fdg._read_manifest_language_backgrounds(manifest)
+        # Two entries marked baseline (one list, one scalar);
+        # both non_native_advanced. Target-only entry excluded.
+        assert counts.get("non_native_advanced") == 2
+
+    def test_jsonl_list_valued_use(self, tmp_path):
+        manifest = tmp_path / "manifest.jsonl"
+        manifest.write_text(
+            json.dumps({"use": ["baseline"], "language_status": "non_native_advanced"}) + "\n"
+            + json.dumps({"use": ["target"], "language_status": "native"}) + "\n",
+            encoding="utf-8",
+        )
+        counts = fdg._read_manifest_language_backgrounds(manifest)
+        assert counts.get("non_native_advanced") == 1
+
+    def test_tsv_comma_separated_use(self, tmp_path):
+        # TSV manifests with comma-joined use values.
+        manifest = tmp_path / "manifest.tsv"
+        manifest.write_text(
+            "id\tuse\tlanguage_status\n"
+            "d1\tbaseline,target\tnon_native_advanced\n"
+            "d2\ttarget\tnative\n",
+            encoding="utf-8",
+        )
+        counts = fdg._read_manifest_language_backgrounds(manifest)
+        assert counts.get("non_native_advanced") == 1
+
+    def test_entry_uses_baseline_helper(self):
+        # Scalar.
+        assert fdg._entry_uses_baseline({"use": "baseline"}) is True
+        assert fdg._entry_uses_baseline({"use": "target"}) is False
+        # List.
+        assert fdg._entry_uses_baseline(
+            {"use": ["baseline", "target"]}
+        ) is True
+        assert fdg._entry_uses_baseline({"use": ["target"]}) is False
+        # Set / tuple.
+        assert fdg._entry_uses_baseline(
+            {"use": ("baseline",)}
+        ) is True
+        # Missing.
+        assert fdg._entry_uses_baseline({}) is False
+
     def test_missing_manifest_raises(self, tmp_path):
         with pytest.raises(FileNotFoundError):
             fdg._read_manifest_language_backgrounds(

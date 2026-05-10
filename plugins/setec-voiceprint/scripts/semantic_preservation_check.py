@@ -375,6 +375,53 @@ def _diff_lists(
     return dropped, added, shared
 
 
+def _classify_count_only_verdict(
+    *,
+    count_before: int,
+    count_after: int,
+    drift_threshold: float = 0.20,
+    min_count_for_threshold: int = 5,
+) -> str:
+    """Map (before, after) counts to a verdict using counts ONLY,
+    with no reliance on per-item diffs.
+
+    Used for `claim_inventory`, where sentence-level identity is too
+    brittle to diff but a meaningful count change still warrants a
+    `shifted_added` / `shifted_dropped` flag. The default
+    `_classify_verdict` falls through to `preserved` when the item
+    diffs are intentionally empty (which would hide a 5 → 10
+    declarative-count drift, exactly the case this helper exists to
+    catch).
+
+    Verdicts mirror `_classify_verdict`'s ladder:
+      - ``unknown`` — both counts effectively zero.
+      - ``shifted_added`` — count grew by ≥ drift_threshold ratio
+        (above the small-count floor) OR by ≥ 2 absolute (below the
+        floor).
+      - ``shifted_dropped`` — symmetric for shrink.
+      - ``preserved`` — change within the noise band.
+    """
+    if count_before == 0 and count_after == 0:
+        return "unknown"
+    delta = count_after - count_before
+    base = max(count_before, 1)
+    ratio = delta / base
+
+    # Below the small-count floor, demand absolute movement of ≥ 2.
+    if max(count_before, count_after) < min_count_for_threshold:
+        if delta >= 2:
+            return "shifted_added"
+        if delta <= -2:
+            return "shifted_dropped"
+        return "preserved"
+
+    if ratio > drift_threshold:
+        return "shifted_added"
+    if ratio < -drift_threshold:
+        return "shifted_dropped"
+    return "preserved"
+
+
 def _classify_verdict(
     *,
     count_before: int,
@@ -484,13 +531,14 @@ def check_preservation(
     before_count, before_decls = _count_declaratives(before_text)
     after_count, after_decls = _count_declaratives(after_text)
     # For claim inventory, the "items" comparison is too noisy
-    # (sentences rarely match exactly). Use counts only and the
-    # special "claim_inventory" verdict logic.
-    claim_verdict = _classify_verdict(
+    # (sentences rarely match exactly). Use counts only via the
+    # dedicated count-only classifier — the default
+    # `_classify_verdict` honors counts only when item diffs are
+    # non-empty, so passing intentionally-empty items here would
+    # collapse to `preserved` even on a 5 → 10 count change.
+    claim_verdict = _classify_count_only_verdict(
         count_before=before_count,
         count_after=after_count,
-        items_dropped=[],
-        items_added=[],
     )
     categories["claim_inventory"] = CategoryResult(
         name="claim_inventory",
@@ -607,10 +655,28 @@ def check_preservation(
     )
 
     if category_filter:
+        unknown_filters = [
+            k for k in category_filter if k not in categories
+        ]
+        if unknown_filters:
+            raise ValueError(
+                f"Unknown category name(s) in --category: "
+                f"{', '.join(repr(k) for k in unknown_filters)}. "
+                f"Valid categories: "
+                f"{', '.join(sorted(categories.keys()))}."
+            )
         categories = {
             k: v for k, v in categories.items()
             if k in category_filter
         }
+        if not categories:
+            # Defensive: shouldn't be reachable given the unknown
+            # check above, but a `--category` invocation should
+            # never produce an empty audit.
+            raise ValueError(
+                "--category filter resolved to an empty category "
+                "set; no semantic preservation work to do."
+            )
 
     overall = _overall_verdict(categories)
 
@@ -651,8 +717,18 @@ def _overall_verdict(
     """Aggregate per-category verdicts to an overall preservation
     verdict. Conservative: any single ``shifted_added`` flips
     the overall to ``shifted_added`` (load-bearing for
-    fabrication / over-confident-restoration detection)."""
+    fabrication / over-confident-restoration detection).
+
+    An empty categories dict returns ``unknown`` rather than
+    falling through to ``preserved`` via the empty-``all``
+    truthiness path. The CLI hard-fails on unknown filter names,
+    so ``unknown`` here is a defense-in-depth — any future code
+    path that reaches the aggregator with an empty dict gets the
+    conservative reading.
+    """
     verdicts = [c.verdict for c in categories.values()]
+    if not verdicts:
+        return "unknown"
     if "shifted_added" in verdicts:
         return "shifted_added"
     if "shifted_changed" in verdicts:
@@ -877,12 +953,16 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
 
-    report = check_preservation(
-        before_text=before,
-        after_text=after,
-        keep_quotes=args.keep_quotes,
-        category_filter=args.categories,
-    )
+    try:
+        report = check_preservation(
+            before_text=before,
+            after_text=after,
+            keep_quotes=args.keep_quotes,
+            category_filter=args.categories,
+        )
+    except ValueError as exc:
+        sys.stderr.write(f"--category: {exc}\n")
+        return 2
 
     out = (
         json.dumps(report, indent=2, default=str)

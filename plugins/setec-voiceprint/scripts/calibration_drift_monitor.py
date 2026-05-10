@@ -272,6 +272,7 @@ def take_snapshot(
         )
 
     benchmarks: dict[str, Any] = {}
+    skipped_empty: list[str] = []
     for idx, path in enumerate(paths):
         bench_id = (
             f"benchmark_{idx + 1:03d}" if not include_filenames
@@ -279,6 +280,7 @@ def take_snapshot(
         )
         text = path.read_text(encoding="utf-8", errors="ignore")
         if not text.strip():
+            skipped_empty.append(str(path))
             continue
         try:
             measurement = measure_benchmark(
@@ -288,6 +290,19 @@ def take_snapshot(
             measurement = {"error": str(exc)}
         benchmarks[bench_id] = measurement
 
+    # A snapshot with no measured benchmarks is not a usable
+    # CI artifact: a `check` against it would silently pass.
+    # Hard-fail rather than write an empty snapshot to disk.
+    if not benchmarks:
+        raise FileNotFoundError(
+            f"No non-empty benchmark files measured in "
+            f"{benchmark_dir}. Found {len(paths)} candidate "
+            f"file(s); skipped {len(skipped_empty)} as empty / "
+            "whitespace-only. A drift snapshot with zero "
+            "benchmarks would let CI checks pass without "
+            "measuring anything."
+        )
+
     return {
         "tool": TOOL_NAME,
         "version": SCRIPT_VERSION,
@@ -296,6 +311,11 @@ def take_snapshot(
         "framework_constants": collect_framework_constants(),
         "benchmarks": benchmarks,
         "n_benchmarks": len(benchmarks),
+        "skipped_empty": (
+            skipped_empty if include_filenames
+            else [f"<{len(skipped_empty)} empty/whitespace files>"]
+            if skipped_empty else []
+        ),
     }
 
 
@@ -480,29 +500,60 @@ def detect_drift(
             1 for d in signal_diffs.values()
             if d.get("verdict") == "stable"
         )
+        # `added` and `removed` are signal-schema changes —
+        # signals that appeared or disappeared between snapshot
+        # and current. They are infrastructure-drift evidence at
+        # least as serious as a value drift, so they count toward
+        # bench_drifted and the overall drift verdict.
+        n_signal_added = sum(
+            1 for d in signal_diffs.values()
+            if d.get("verdict") == "added"
+        )
+        n_signal_removed = sum(
+            1 for d in signal_diffs.values()
+            if d.get("verdict") == "removed"
+        )
+        n_signal_schema_changed = n_signal_added + n_signal_removed
         n_drifted += n_signal_drifted
         n_stable += n_signal_stable
         bench_drifted = (
-            n_signal_drifted > 0 or bool(comp_diffs)
+            n_signal_drifted > 0
+            or n_signal_schema_changed > 0
+            or bool(comp_diffs)
         )
         if bench_drifted:
             drifted_benchmarks.append(bench_id)
         per_benchmark[bench_id] = {
             "n_signals_drifted": n_signal_drifted,
             "n_signals_stable": n_signal_stable,
+            "n_signals_added": n_signal_added,
+            "n_signals_removed": n_signal_removed,
+            "n_signals_schema_changed": n_signal_schema_changed,
             "signal_diffs": signal_diffs,
             "compression_diffs": comp_diffs,
         }
 
+    # Aggregate schema-change counts across benchmarks. A signal
+    # appearing or disappearing in a benchmark is a schema change
+    # that must count toward overall drift — otherwise a removed
+    # signal could let drift detection miss exactly the case it
+    # exists to catch.
+    n_schema_changed_total = sum(
+        b.get("n_signals_schema_changed", 0)
+        for b in per_benchmark.values()
+    )
     overall_drift = (
-        n_drifted > 0 or bool(constant_changes)
+        n_drifted > 0
+        or n_schema_changed_total > 0
+        or bool(constant_changes)
         or bool(comp_diffs_in_aggregate(per_benchmark))
     )
-    # The recommendation surface: if either threshold constants
-    # changed, or stack changed AND signals drifted, we recommend
-    # recalibration.
+    # The recommendation surface: threshold constants changing,
+    # OR the stack changing while *any* drift signal fired
+    # (value drift or schema change), recommends recalibration.
     recalibration_recommended = bool(constant_changes) or (
-        bool(stack_changes) and n_drifted > 0
+        bool(stack_changes)
+        and (n_drifted > 0 or n_schema_changed_total > 0)
     )
 
     return {
@@ -515,6 +566,7 @@ def detect_drift(
         "per_benchmark": per_benchmark,
         "n_signals_drifted": n_drifted,
         "n_signals_stable": n_stable,
+        "n_signals_schema_changed": n_schema_changed_total,
         "n_benchmarks_drifted": len(drifted_benchmarks),
         "drifted_benchmarks": drifted_benchmarks,
         "infrastructure_drift_detected": overall_drift,
@@ -523,6 +575,7 @@ def detect_drift(
             stack_changes=stack_changes,
             constant_changes=constant_changes,
             n_signals_drifted=n_drifted,
+            n_signals_schema_changed=n_schema_changed_total,
             recalibration=recalibration_recommended,
         ),
     }
@@ -544,6 +597,7 @@ def _claim_license_dict(
     stack_changes: dict[str, Any],
     constant_changes: dict[str, Any],
     n_signals_drifted: int,
+    n_signals_schema_changed: int = 0,
     recalibration: bool,
 ) -> dict[str, Any]:
     lic = ClaimLicense(
@@ -572,6 +626,7 @@ def _claim_license_dict(
         ),
         comparison_set={
             "n_signals_drifted": n_signals_drifted,
+            "n_signals_schema_changed": n_signals_schema_changed,
             "stack_changes": list(stack_changes.keys()),
             "constant_changes": list(constant_changes.keys()),
             "recalibration_recommended": recalibration,

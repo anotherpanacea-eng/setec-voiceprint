@@ -248,18 +248,51 @@ def detect_code_switching(
 # ---------- Manifest reading (for baseline backgrounds) ----------
 
 
+def _entry_uses_baseline(entry: dict[str, Any]) -> bool:
+    """Return True iff the entry's ``use`` field marks it as a
+    baseline. Accepts scalar (``"baseline"``) or list / set values
+    (e.g., ``["baseline", "target"]``) — some manifest writers
+    emit a list when an entry serves multiple roles. Both forms
+    must be recognized."""
+    use = entry.get("use")
+    if use == "baseline":
+        return True
+    if isinstance(use, (list, tuple, set)):
+        return "baseline" in use
+    return False
+
+
 def _read_manifest_language_backgrounds(
     manifest_path: Path,
 ) -> dict[str, int]:
-    """Read a manifest TSV/JSON and return counts of
-    language_status values for entries whose `use` is `baseline`."""
+    """Read a manifest and return counts of language_status
+    values for entries whose ``use`` is (or contains) ``baseline``.
+
+    Accepts three on-disk shapes:
+      - ``.json`` — a JSON list of entry dicts, or an object with
+        an ``entries`` key.
+      - ``.jsonl`` — one JSON entry per line (the framework's
+        canonical streaming-friendly manifest format).
+      - any other extension — TSV with a header row.
+
+    The ``use`` field may be a scalar (``"baseline"``) or a list
+    / set value containing ``"baseline"``; both forms count.
+    """
     if not manifest_path.is_file():
         raise FileNotFoundError(
             f"Manifest not found: {manifest_path}"
         )
     text = manifest_path.read_text(encoding="utf-8", errors="ignore")
     counts: dict[str, int] = {}
-    if manifest_path.suffix.lower() == ".json":
+    suffix = manifest_path.suffix.lower()
+
+    def _record(entry: dict[str, Any]) -> None:
+        if not _entry_uses_baseline(entry):
+            return
+        status = entry.get("language_status") or "unknown"
+        counts[status] = counts.get(status, 0) + 1
+
+    if suffix == ".json":
         try:
             data = json.loads(text)
         except json.JSONDecodeError as exc:
@@ -271,13 +304,26 @@ def _read_manifest_language_backgrounds(
             else data.get("entries", [])
         )
         for entry in entries:
-            if not isinstance(entry, dict):
-                continue
-            if entry.get("use") != "baseline":
-                continue
-            status = entry.get("language_status") or "unknown"
-            counts[status] = counts.get(status, 0) + 1
+            if isinstance(entry, dict):
+                _record(entry)
         return counts
+
+    if suffix == ".jsonl":
+        # JSON Lines: one entry per non-empty line.
+        for lineno, line in enumerate(text.splitlines(), start=1):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            try:
+                entry = json.loads(stripped)
+            except json.JSONDecodeError as exc:
+                raise ValueError(
+                    f"Manifest JSONL line {lineno} malformed: {exc}"
+                ) from exc
+            if isinstance(entry, dict):
+                _record(entry)
+        return counts
+
     # TSV (default).
     lines = text.splitlines()
     if not lines:
@@ -294,7 +340,16 @@ def _read_manifest_language_backgrounds(
         cols = line.split("\t")
         if len(cols) <= use_idx:
             continue
-        if cols[use_idx] != "baseline":
+        # TSV doesn't naturally express list-valued cells; we
+        # accept either bare "baseline" or comma-separated values
+        # like "baseline,target" so the same `use`-list semantics
+        # work for TSV and JSON manifests.
+        use_cell = cols[use_idx]
+        use_values = (
+            {v.strip() for v in use_cell.split(",")}
+            if "," in use_cell else {use_cell}
+        )
+        if "baseline" not in use_values:
             continue
         status = (
             cols[lang_idx]
