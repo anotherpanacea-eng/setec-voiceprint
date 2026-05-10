@@ -155,8 +155,19 @@ class TestVerifyLicense:
         assert ok is True
         assert "mit" in observed
 
-    def test_wrong_license_rejected(self):
+    def test_apache_accepted(self):
+        # Reviewer-noticed at fetch time: the HF dataset card
+        # for MAGE declares Apache-2.0, not MIT as the paper
+        # cites. Both are permissive — the fetcher accepts
+        # either.
         _install_mock_huggingface_hub(license_str="apache-2.0")
+        fm = _import_fetch_mage()
+        ok, observed = fm._verify_license(token=None)
+        assert ok is True
+        assert "apache" in observed
+
+    def test_wrong_license_rejected(self):
+        _install_mock_huggingface_hub(license_str="cc-by-nc-sa-4.0")
         fm = _import_fetch_mage()
         ok, _ = fm._verify_license(token=None)
         assert ok is False
@@ -190,7 +201,10 @@ class TestCli:
         assert record.is_file()
         notice_text = notice.read_text(encoding="utf-8")
         assert "MAGE" in notice_text
-        assert "MIT" in notice_text
+        # NOTICE now records the observed license string from
+        # the HF card rather than asserting MIT outright, since
+        # MAGE's HF card actually declares Apache-2.0.
+        assert "License:** Permissive" in notice_text
         record_data = json.loads(record.read_text(encoding="utf-8"))
         assert record_data["repo_id"] == "yaful/MAGE"
         assert record_data["split"] == "all"
@@ -198,7 +212,11 @@ class TestCli:
     def test_cli_license_mismatch_returns_2(
         self, tmp_path, monkeypatch,
     ):
-        _install_mock_huggingface_hub(license_str="apache-2.0")
+        # cc-by-nc-sa-4.0 is not in the accepted-license set
+        # (MIT or Apache-2.0). The fetcher refuses the run.
+        _install_mock_huggingface_hub(
+            license_str="cc-by-nc-sa-4.0",
+        )
         fm = _import_fetch_mage()
         monkeypatch.setattr(fm, "TARGET_DIR", tmp_path)
         rc = fm.main(["--dry-run"])

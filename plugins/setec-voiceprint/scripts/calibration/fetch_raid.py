@@ -77,7 +77,16 @@ PRIVATE_DIR = REPO_ROOT / "ai-prose-baselines-private"
 TARGET_DIR = PRIVATE_DIR / "raid"
 
 HF_REPO_ID = "liamdugan/raid"
-EXPECTED_LICENSE_PATTERNS = ("apache-2.0", "apache 2.0", "apache2.0")
+# RAID's accompanying paper / GitHub README cite Apache-2.0, but
+# the HuggingFace dataset card declares MIT (verified 2026-05-10
+# against revision 865cac7...). Both are permissive and
+# functionally equivalent for the framework's GPL-3-with-
+# attribution posture, so accept either. The NOTICE.md records
+# the OBSERVED license string from the HF card so consumers can
+# audit what the framework actually saw at fetch time.
+EXPECTED_LICENSE_PATTERNS = (
+    "apache-2.0", "apache 2.0", "apache2.0", "mit",
+)
 
 # Known RAID subsets. Each maps to a substring or list of
 # substrings the script will match against filenames in the HF
@@ -252,8 +261,8 @@ def _write_notice(
 
 **Source:** https://huggingface.co/datasets/{HF_REPO_ID} (revision `{revision}`)
 **Paper:** Dugan, Hwang, Trhlík, et al., "RAID: A Shared Benchmark for Robust Evaluation of Machine-Generated Text Detectors," NAACL 2024. arXiv:2405.07940.
-**License:** Apache-2.0 (observed at fetch time: `{observed_license or "unknown"}`)
-  https://www.apache.org/licenses/LICENSE-2.0
+**License:** Permissive (paper cites Apache-2.0; HF dataset card observed at fetch time: `{observed_license or "unknown"}`)
+  https://www.apache.org/licenses/LICENSE-2.0  ·  https://opensource.org/licenses/MIT
 
 This directory contains a local copy fetched on {iso_date} by
 `scripts/calibration/fetch_raid.py` for the purpose of locally
