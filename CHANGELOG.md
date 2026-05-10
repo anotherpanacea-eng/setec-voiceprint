@@ -6,6 +6,26 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.42.1] - 2026-05-10
+
+**License-pattern fix on the v1.42.0 fetchers.** Pre-merge of v1.42.0 I read the RAID and MAGE license declarations from the paper / GitHub README rather than from the HF dataset cards. The actual HF cards (verified live against revisions `865cac7...` and `342663f...` on 2026-05-10):
+
+- **RAID** HF card declares `mit`, not `apache-2.0` (the paper / GitHub README cite Apache-2.0).
+- **MAGE** HF card declares `apache-2.0`, not `mit` (the paper / GitHub README cite MIT).
+
+Both licenses are permissive and functionally equivalent for the framework's GPL-3-with-attribution posture, but the fetchers' license verification was too narrow and refused the live cards.
+
+### Fixed
+
+- **`fetch_raid.py`** `EXPECTED_LICENSE_PATTERNS` now accepts MIT alongside Apache-2.0. NOTICE.md preamble updated to "Permissive (paper cites Apache-2.0; HF dataset card observed at fetch time: `<observed>`)" so the audit trail records what the framework actually saw rather than asserting a single license.
+- **`fetch_mage.py`** symmetric fix: accepts Apache-2.0 alongside MIT. Same NOTICE.md rewording.
+
+### Notes
+
+- **1355 tests pass + 1 skipped** (was 1353+1 in v1.42.0; +2 new regression tests covering the MIT-for-RAID and Apache-for-MAGE paths). Existing NOTICE-text assertions updated to match the new permissive-license wording.
+- **No behavior change for users on valid input.** This is a fix to make the fetchers actually work against the live HF cards. Users who would have hit the rejection are now greenlit. Users whose runs would have succeeded see no change.
+- **PROVENANCE.md not modified.** The "Available calibration corpora" section already says "RAID Apache-2.0" and "MAGE MIT" per the paper citations. Both are still accurate descriptions of the corpora's intended licensing; the discrepancy is between the paper and the HF card, not between SETEC and reality. The fetcher's NOTICE.md is the authoritative per-fetch record.
+
 ## [1.42.0] - 2026-05-10
 
 **Calibration corpus track: RAID + MAGE fetchers + manifest converters.** The framework's calibration toolchain has shipped since 1.10.0 with EditLens as the only labeled corpus. Every threshold in `COMPRESSION_HEURISTICS` still carries `provenance: "provisional"` because EditLens's CC BY-NC-SA 4.0 posture keeps derived thresholds in the local-only quadrant. This release ships fetchers for two permissively-licensed labeled corpora — RAID (Apache-2.0, 8M rows, 16.7 GB) and MAGE (MIT, 437K rows, 554 MB) — and the companion parquet-to-manifest converters. With these, the calibration toolchain can graduate threshold values out of `provisional` against substantially larger labeled corpora than EditLens alone, and RAID's adversarial-transform variants give R7's robustness card real fixtures to evaluate against.

@@ -58,7 +58,16 @@ PRIVATE_DIR = REPO_ROOT / "ai-prose-baselines-private"
 TARGET_DIR = PRIVATE_DIR / "mage"
 
 HF_REPO_ID = "yaful/MAGE"
-EXPECTED_LICENSE_PATTERNS = ("mit",)
+# MAGE's accompanying paper cites MIT, but the HuggingFace
+# dataset card declares Apache-2.0 (verified 2026-05-10 against
+# revision 342663f...). Both are permissive and functionally
+# equivalent for the framework's GPL-3-with-attribution posture,
+# so accept either. The NOTICE.md records the OBSERVED license
+# string from the HF card so consumers can audit what the
+# framework actually saw at fetch time.
+EXPECTED_LICENSE_PATTERNS = (
+    "mit", "apache-2.0", "apache 2.0", "apache2.0",
+)
 
 KNOWN_SPLITS = ("train", "validation", "test", "all")
 
@@ -183,8 +192,8 @@ def _write_notice(
 
 **Source:** https://huggingface.co/datasets/{HF_REPO_ID} (revision `{revision}`)
 **Paper:** Li, Li, Cui, Bi, Wang, Yang, Shi, Zhang, "MAGE: Machine-generated Text Detection in the Wild," ACL 2024. arXiv:2305.13242.
-**License:** MIT (observed at fetch time: `{observed_license or "unknown"}`)
-  https://opensource.org/licenses/MIT
+**License:** Permissive (paper cites MIT; HF dataset card observed at fetch time: `{observed_license or "unknown"}`)
+  https://opensource.org/licenses/MIT  ·  https://www.apache.org/licenses/LICENSE-2.0
 
 This directory contains a local copy fetched on {iso_date} by
 `scripts/calibration/fetch_mage.py` for the purpose of locally

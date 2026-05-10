@@ -255,6 +255,17 @@ class TestVerifyLicense:
         assert ok is True
         assert "apache" in observed
 
+    def test_mit_license_accepted(self):
+        # Reviewer-noticed at fetch time: the HF dataset card
+        # for RAID declares MIT, not Apache-2.0 as the paper
+        # cites. Both are permissive — the fetcher accepts
+        # either.
+        _install_mock_huggingface_hub(license_str="mit")
+        fr = _import_fetch_raid()
+        ok, observed = fr._verify_license(token=None)
+        assert ok is True
+        assert "mit" in observed
+
     def test_wrong_license_rejected(self):
         _install_mock_huggingface_hub(license_str="cc-by-nc-sa-4.0")
         fr = _import_fetch_raid()
@@ -336,7 +347,10 @@ class TestCli:
         # Notice carries the right paper + license claim.
         notice_text = notice.read_text(encoding="utf-8")
         assert "RAID" in notice_text
-        assert "Apache-2.0" in notice_text
+        # NOTICE now records the observed license string from
+        # the HF card rather than asserting Apache-2.0 outright,
+        # since RAID's HF card actually declares MIT.
+        assert "License:** Permissive" in notice_text
         # Record carries revision SHA + subset + adversarial flag.
         record_data = json.loads(record.read_text(encoding="utf-8"))
         assert record_data["repo_id"] == "liamdugan/raid"
