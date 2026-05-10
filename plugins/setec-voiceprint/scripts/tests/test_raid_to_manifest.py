@@ -106,6 +106,28 @@ def _write_fake_parquet(dirpath: Path, name: str) -> Path:
     return p
 
 
+def _write_real_csv(
+    dirpath: Path, name: str, rows: list[dict],
+) -> Path:
+    """Drop a real CSV file with the supplied rows. Tests the
+    converter's stdlib-csv path end-to-end without the pyarrow
+    mock — HuggingFace ships RAID/MAGE as CSV, so this is the
+    on-disk shape the converter actually sees in production."""
+    import csv as _csv
+    p = dirpath / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        p.write_text("", encoding="utf-8")
+        return p
+    fieldnames = sorted({k for r in rows for k in r.keys()})
+    with p.open("w", encoding="utf-8", newline="") as fh:
+        writer = _csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(r)
+    return p
+
+
 # ---------- Status mapping ----------
 
 
@@ -172,6 +194,15 @@ class TestLanguageStatusMapping:
             {"domain": "german"}
         ) == "non_native_advanced"
 
+    def test_code_returns_unknown(self):
+        # Code isn't a natural language; SETEC has no business
+        # adjudicating its variance against an English baseline.
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._language_status_for_row(
+            {"domain": "code"}
+        ) == "unknown"
+
 
 # ---------- Bucketed text path ----------
 
@@ -191,6 +222,95 @@ class TestBucketedTextPath:
 
 
 # ---------- End-to-end convert ----------
+
+
+class TestConvertEndToEndCSV:
+    """End-to-end coverage of the CSV input path. HuggingFace
+    ships RAID at the repo root as `train.csv` / `test.csv` /
+    `extra.csv`, so this is the actual on-disk shape the
+    converter sees in production."""
+
+    def test_csv_basic_conversion(self, tmp_path):
+        rows = [
+            {"id": "1", "source_id": "src_1", "model": "human",
+             "decoding": "n/a", "repetition_penalty": "",
+             "attack": "none", "domain": "news",
+             "title": "T1", "prompt": "p",
+             "generation": "Human prose here.",
+             "adv_source_id": ""},
+            {"id": "2", "source_id": "src_1", "model": "gpt-4",
+             "decoding": "greedy", "repetition_penalty": "1.0",
+             "attack": "none", "domain": "news",
+             "title": "T1", "prompt": "p",
+             "generation": "Machine prose here.",
+             "adv_source_id": ""},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "raid"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "train.csv", rows)
+        _install_mock_pyarrow({})  # no parquet files; pyarrow path unused
+        rt = _import_raid_to_manifest()
+        rt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, no_adversarial=False, no_nonprose=False,
+            allow_public_output=False,
+        )
+        rc = rt.convert(args)
+        assert rc == 0
+        entries = [
+            json.loads(line)
+            for line in manifest_path.read_text(
+                encoding="utf-8",
+            ).strip().splitlines()
+        ]
+        assert len(entries) == 2
+        statuses = sorted(e["ai_status"] for e in entries)
+        assert statuses == ["ai", "human"]
+        # The notes block points at the CSV file we wrote.
+        for e in entries:
+            assert e["notes"]["source_file"] == "train.csv"
+
+    def test_csv_with_adversarial_rows(self, tmp_path):
+        rows = [
+            {"id": "1", "model": "gpt-4", "attack": "none",
+             "domain": "news", "generation": "base text"},
+            {"id": "2", "model": "gpt-4", "attack": "paraphrase",
+             "domain": "news", "generation": "paraphrased"},
+            {"id": "3", "model": "gpt-4", "attack": "homoglyph",
+             "domain": "news", "generation": "homoglyph attack"},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "raid"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "train.csv", rows)
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        rt.PRIVATE_DIR = private_dir
+        import argparse
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(source_dir / "manifest.jsonl"),
+            text_dir=str(source_dir / "text"),
+            limit=0, no_adversarial=True, no_nonprose=False,
+            allow_public_output=False,
+        )
+        rc = rt.convert(args)
+        assert rc == 0
+        entries = [
+            json.loads(line)
+            for line in (
+                source_dir / "manifest.jsonl"
+            ).read_text(encoding="utf-8").strip().splitlines()
+        ]
+        # With --no-adversarial, only the attack=none row survives.
+        assert len(entries) == 1
+        assert entries[0]["editing_status"] == "unedited"
 
 
 class TestConvertEndToEnd:

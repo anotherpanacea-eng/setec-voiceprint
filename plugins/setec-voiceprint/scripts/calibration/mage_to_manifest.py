@@ -7,12 +7,18 @@ files (under `ai-prose-baselines-private/mage/`), iterates
 rows, spills per-row text to bucketed dirs, and emits a
 manifest JSONL the harnesses consume.
 
-MAGE schema (per HF dataset card):
+MAGE schema (per the HF on-disk CSVs, verified 2026-05-10):
 
   - `text`    the text body (what SETEC's tools see)
   - `label`   0 = human, 1 = machine
-  - `source`  source dataset / generator name (e.g.,
-              "cnn_dailymail", "xsum", "gpt-4-turbo")
+  - `src`     source dataset / generator name (e.g.,
+              "cmv_human", "xsum_machine_specified_GLM130B").
+              (The HF dataset card calls this column `source`;
+              the actual CSV header uses `src`. The converter
+              accepts either.)
+
+The CSVs ship with a UTF-8 BOM; the converter reads them with
+``utf-8-sig`` encoding to strip the BOM transparently.
 
 Manifest mapping:
 
@@ -32,7 +38,7 @@ Manifest mapping:
   - `source`          "mage"
   - `source_id`       the row's `source` field (the original
                       generator / dataset name)
-  - `notes`           {label, original_source, source_parquet,
+  - `notes`           {label, original_source, source_file,
                       hf_revision}
 
 Usage:
@@ -51,6 +57,7 @@ Defaults:
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import sys
@@ -69,19 +76,51 @@ DEFAULT_TEXT_DIR = DEFAULT_SOURCE_DIR / "text"
 
 
 def _read_rows(source: Path) -> Iterator[dict[str, Any]]:
-    """Yield dict rows from a parquet file."""
-    try:
-        import pyarrow.parquet as pq  # type: ignore
-    except ImportError:
-        sys.stderr.write(
-            "pyarrow is required for parquet input. Install with:\n"
-            "  pip install -r requirements-calibration.txt\n"
-        )
-        raise SystemExit(1)
-    pf = pq.ParquetFile(str(source))
-    for batch in pf.iter_batches():
-        for row in batch.to_pylist():
-            yield row
+    """Yield dict rows from a parquet or CSV file. CSV uses
+    stdlib `csv.DictReader`; parquet uses pyarrow batch iteration.
+
+    HuggingFace ships RAID/MAGE as CSV at the repo root; the
+    parquet view in the HF data viewer is a downstream auto-
+    conversion. Both extensions are supported.
+    """
+    suffix = source.suffix.lower()
+    if suffix == ".csv":
+        try:
+            csv.field_size_limit(sys.maxsize)
+        except (OverflowError, ValueError):
+            csv.field_size_limit(2**31 - 1)
+        # ``utf-8-sig`` strips MAGE's UTF-8 BOM. Without this,
+        # DictReader.fieldnames would have `﻿text` as its
+        # first entry and every `row.get("text")` would return
+        # None, dropping every row as "empty."
+        fh = source.open("r", encoding="utf-8-sig", newline="")
+        try:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                yield dict(row)
+        finally:
+            fh.close()
+        return
+
+    if suffix == ".parquet":
+        try:
+            import pyarrow.parquet as pq  # type: ignore
+        except ImportError:
+            sys.stderr.write(
+                "pyarrow is required for parquet input. Install with:\n"
+                "  pip install -r requirements-calibration.txt\n"
+            )
+            raise SystemExit(1)
+        pf = pq.ParquetFile(str(source))
+        for batch in pf.iter_batches():
+            for row in batch.to_pylist():
+                yield row
+        return
+
+    raise ValueError(
+        f"Unsupported file extension {suffix!r}: {source}. "
+        "Expected .csv or .parquet."
+    )
 
 
 def _bucketed_text_path(text_dir: Path, row_id: str) -> Path:
@@ -99,16 +138,38 @@ def _load_revision_record(source_dir: Path) -> dict[str, Any]:
     return {}
 
 
-def _split_for_parquet(parquet_name: str) -> str:
-    """Infer the split (train/val/test) from a parquet filename."""
-    name = parquet_name.lower()
+def _split_for_source_file(source_name: str) -> str:
+    """Infer the split (train/val/test/test_ood) from a source
+    filename.
+
+    MAGE ships these splits on HF:
+      - train.csv         → "train"
+      - valid.csv         → "val"
+      - test.csv          → "test"
+      - test_ood_set_gpt.csv      → "test_ood_gpt"
+      - test_ood_set_gpt_para.csv → "test_ood_gpt_para"
+
+    OOD slices are kept distinct from the standard test split so
+    downstream calibration runs can slice on them without
+    treating them as part of the in-distribution test.
+    """
+    name = source_name.lower()
     if "train" in name:
         return "train"
+    if "ood" in name and "para" in name:
+        return "test_ood_gpt_para"
+    if "ood" in name:
+        return "test_ood_gpt"
     if "val" in name:
         return "val"
     if "test" in name:
         return "test"
     return "unknown"
+
+
+# Backwards-compatible alias for the previous private name; some
+# external callers may have imported it.
+_split_for_parquet = _split_for_source_file
 
 
 def _ai_status_for_label(label: Any) -> str:
@@ -130,10 +191,13 @@ def convert(args: argparse.Namespace) -> int:
         sys.stderr.write(f"--source-dir not found: {source_dir}\n")
         return 1
 
-    parquet_files = sorted(source_dir.rglob("*.parquet"))
-    if not parquet_files:
+    source_files = sorted(
+        list(source_dir.rglob("*.csv"))
+        + list(source_dir.rglob("*.parquet"))
+    )
+    if not source_files:
         sys.stderr.write(
-            f"No parquet files under {source_dir}. Run "
+            f"No .csv or .parquet files under {source_dir}. Run "
             "scripts/calibration/fetch_mage.py first.\n"
         )
         return 1
@@ -164,11 +228,11 @@ def convert(args: argparse.Namespace) -> int:
     n_skipped_unknown_label = 0
 
     with manifest_path.open("w", encoding="utf-8") as fh_out:
-        for parquet in parquet_files:
+        for source_file in source_files:
             if args.limit and n_written >= args.limit:
                 break
-            split = _split_for_parquet(parquet.name)
-            for row_index, row in enumerate(_read_rows(parquet)):
+            split = _split_for_source_file(source_file.name)
+            for row_index, row in enumerate(_read_rows(source_file)):
                 if args.limit and n_written >= args.limit:
                     break
                 text = row.get("text")
@@ -198,12 +262,14 @@ def convert(args: argparse.Namespace) -> int:
                     "use": "validation",
                     "privacy": "public",
                     "source": "mage",
-                    "source_id": row.get("source"),
+                    "source_id": row.get("src") or row.get("source"),
                     "notes": {
                         "label": row.get("label"),
-                        "original_source": row.get("source"),
+                        "original_source": (
+                            row.get("src") or row.get("source")
+                        ),
                         "split": split,
-                        "source_parquet": parquet.name,
+                        "source_file": source_file.name,
                         "hf_revision": revision,
                     },
                 }

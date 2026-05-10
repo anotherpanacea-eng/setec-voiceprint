@@ -6,6 +6,24 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.42.2] - 2026-05-10
+
+**Make-the-converters-actually-work fixes.** Smoke-testing `raid_to_manifest.py` and `mage_to_manifest.py` against the real fetched corpora (16 GB RAID, 528 MB MAGE) surfaced four bugs the v1.42.0 mocked-pyarrow tests didn't catch. All four ride together because they're the same shape: the converters were written against the HF dataset-card schemas, but the on-disk reality differs.
+
+### Fixed
+
+- **CSV input was not supported.** Pre-1.42.2 both converters did `source_dir.rglob("*.parquet")` and `pyarrow.parquet.ParquetFile`. HuggingFace ships RAID and MAGE as CSV at the repo root (parquet only exists in the HF data viewer as an auto-conversion). Fix: `_read_rows` now dispatches on file extension — `.csv` uses stdlib `csv.DictReader` with `field_size_limit` raised for multi-KB generations; `.parquet` still uses pyarrow. The file-walk picks up both extensions. The renaming `parquet_files` → `source_files` propagates through both converters.
+- **MAGE CSVs ship with a UTF-8 BOM.** Pre-1.42.2 the CSV reader opened with `encoding="utf-8"`, so the first column name in `DictReader.fieldnames` came out as `﻿text` instead of `text` — and every `row.get("text")` returned None, dropping all 436,606 MAGE rows as "empty." Fix: open with `encoding="utf-8-sig"` (BOM-tolerant for files with BOM, identical to `utf-8` for files without — RAID's CSVs have no BOM and are unaffected).
+- **MAGE's source column is `src`, not `source`.** The HF dataset card calls the column `source`, but the actual CSV header is `src`. Pre-1.42.2 `row.get("source")` returned None on every row. Fix: `row.get("src") or row.get("source")` — accepts either, future-proofs against the HF schema declaration changing back.
+- **RAID's Code domain was tagged `language_status: native`.** Code isn't a natural language; SETEC's stylometric tools have no business adjudicating it against an English baseline. Pre-1.42.2 the Code rows fell through to the `native` default. Fix: map `code` to `language_status: unknown`. Users who want only English prose should also pass `--no-nonprose` at conversion time.
+
+### Notes
+
+- **1364 tests pass + 1 skipped** (was 1355+1 in v1.42.1; +9 new tests across `TestConvertEndToEndCSV` (2+2 = end-to-end CSV path + adversarial filter on CSV), `TestSplitForSourceFile` (4 = OOD-slice recognition + backwards-compat alias), and `_language_status_for_row` Code-mapping coverage). The new tests use real on-disk CSVs (no pyarrow mock) so the CSV path is covered by the actual stdlib `csv` module, not a synthetic stand-in. Existing tests that hit the pyarrow path still mock pyarrow with the autouse cleanup fixture from v1.42.0.
+- **Smoke-test verification** against real fetched corpora: `raid_to_manifest.py --limit 100` produces 100 valid manifest entries; `mage_to_manifest.py --limit 50` produces 50 valid manifest entries; both round-trip JSON without errors.
+- **Backwards-compat alias preserved**: `_split_for_parquet` still imports as an alias for `_split_for_source_file`, so any external caller that grabbed the previous private name continues to work.
+- **CHANGELOG / PROVENANCE / docs unchanged for upstream behavior**: the v1.42.0 PROVENANCE.md "Available calibration corpora" section already describes the format-agnostic conversion step. The docstrings in both converters were updated to reflect the actual CSV-on-disk reality of MAGE and RAID.
+
 ## [1.42.1] - 2026-05-10
 
 **License-pattern fix on the v1.42.0 fetchers.** Pre-merge of v1.42.0 I read the RAID and MAGE license declarations from the paper / GitHub README rather than from the HF dataset cards. The actual HF cards (verified live against revisions `865cac7...` and `342663f...` on 2026-05-10):
