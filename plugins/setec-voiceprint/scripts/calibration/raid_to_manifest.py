@@ -86,6 +86,7 @@ directory.
 from __future__ import annotations
 
 import argparse
+import csv
 import hashlib
 import json
 import sys
@@ -110,20 +111,57 @@ NONPROSE_DOMAINS = {"code"}
 
 
 def _read_rows(source: Path) -> Iterator[dict[str, Any]]:
-    """Yield dict rows from a parquet file. Uses pyarrow batch
-    iteration to keep memory bounded."""
-    try:
-        import pyarrow.parquet as pq  # type: ignore
-    except ImportError:
-        sys.stderr.write(
-            "pyarrow is required for parquet input. Install with:\n"
-            "  pip install -r requirements-calibration.txt\n"
-        )
-        raise SystemExit(1)
-    pf = pq.ParquetFile(str(source))
-    for batch in pf.iter_batches():
-        for row in batch.to_pylist():
-            yield row
+    """Yield dict rows from a parquet or CSV file. CSV uses
+    stdlib `csv.DictReader` (streaming; bounded memory). Parquet
+    uses pyarrow's batch iteration (also streaming).
+
+    HuggingFace's RAID/MAGE repos ship as CSV files at the repo
+    root; the parquet view in the HF data viewer is a downstream
+    auto-conversion. The fetcher pulls the source files as-is,
+    so this converter handles both extensions.
+    """
+    suffix = source.suffix.lower()
+    if suffix == ".csv":
+        # csv.field_size_limit defaults to ~128 KB which is too
+        # small for RAID generations (some Books / Wikipedia
+        # rows are multi-KB blocks). Raise to a generous ceiling.
+        try:
+            csv.field_size_limit(sys.maxsize)
+        except (OverflowError, ValueError):
+            csv.field_size_limit(2**31 - 1)
+        # ``utf-8-sig`` strips a BOM if present and otherwise
+        # behaves identically to ``utf-8``. MAGE's CSVs ship
+        # with a UTF-8 BOM that would otherwise corrupt the
+        # first column name in DictReader.fieldnames; RAID's
+        # CSVs have no BOM and are unaffected.
+        fh = source.open("r", encoding="utf-8-sig", newline="")
+        try:
+            reader = csv.DictReader(fh)
+            for row in reader:
+                yield dict(row)
+        finally:
+            fh.close()
+        return
+
+    if suffix == ".parquet":
+        try:
+            import pyarrow.parquet as pq  # type: ignore
+        except ImportError:
+            sys.stderr.write(
+                "pyarrow is required for parquet input. Install with:\n"
+                "  pip install -r requirements-calibration.txt\n"
+            )
+            raise SystemExit(1)
+        pf = pq.ParquetFile(str(source))
+        for batch in pf.iter_batches():
+            for row in batch.to_pylist():
+                yield row
+        return
+
+    raise ValueError(
+        f"Unsupported file extension {suffix!r}: {source}. "
+        "Expected .csv or .parquet."
+    )
 
 
 def _bucketed_text_path(
@@ -166,6 +204,14 @@ def _language_status_for_row(row: dict[str, Any]) -> str:
     domain = (row.get("domain") or "").strip().lower()
     if domain in NONENGLISH_DOMAINS:
         return "non_native_advanced"
+    if domain in NONPROSE_DOMAINS:
+        # Code is not a natural language; SETEC's stylometric
+        # tools have no business adjudicating its variance
+        # signals against an English baseline. Map to `unknown`
+        # so downstream consumers either skip it or treat it
+        # explicitly. Users who want only English prose should
+        # also pass `--no-nonprose` at conversion time.
+        return "unknown"
     return "native"
 
 
@@ -187,10 +233,16 @@ def convert(args: argparse.Namespace) -> int:
         sys.stderr.write(f"--source-dir not found: {source_dir}\n")
         return 1
 
-    parquet_files = sorted(source_dir.rglob("*.parquet"))
-    if not parquet_files:
+    # Walk for both CSV and parquet — HF ships RAID/MAGE as CSV,
+    # but parquet variants may exist in custom mirrors or after
+    # a manual conversion. Both are handled by `_read_rows`.
+    source_files = sorted(
+        list(source_dir.rglob("*.csv"))
+        + list(source_dir.rglob("*.parquet"))
+    )
+    if not source_files:
         sys.stderr.write(
-            f"No parquet files under {source_dir}. Run "
+            f"No .csv or .parquet files under {source_dir}. Run "
             "scripts/calibration/fetch_raid.py first.\n"
         )
         return 1
@@ -226,10 +278,10 @@ def convert(args: argparse.Namespace) -> int:
     n_skipped_nonprose = 0
 
     with manifest_path.open("w", encoding="utf-8") as fh_out:
-        for parquet in parquet_files:
+        for source_file in source_files:
             if args.limit and n_written >= args.limit:
                 break
-            for row in _read_rows(parquet):
+            for row in _read_rows(source_file):
                 if args.limit and n_written >= args.limit:
                     break
                 generation = row.get("generation")
@@ -247,7 +299,7 @@ def convert(args: argparse.Namespace) -> int:
                     n_skipped_nonprose += 1
                     continue
 
-                row_id = _row_id(parquet.name, row.get("id"))
+                row_id = _row_id(source_file.name, row.get("id"))
                 text_path = _bucketed_text_path(text_dir, row_id)
                 text_path.parent.mkdir(parents=True, exist_ok=True)
                 text_path.write_text(generation, encoding="utf-8")
@@ -275,7 +327,7 @@ def convert(args: argparse.Namespace) -> int:
                         "adv_source_id": row.get("adv_source_id"),
                         "title": row.get("title"),
                         "hf_revision": revision,
-                        "source_parquet": parquet.name,
+                        "source_file": source_file.name,
                     },
                 }
                 fh_out.write(

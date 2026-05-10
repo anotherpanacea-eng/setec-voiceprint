@@ -84,6 +84,27 @@ def _write_fake_parquet(dirpath: Path, name: str) -> Path:
     return p
 
 
+def _write_real_csv(
+    dirpath: Path, name: str, rows: list[dict],
+) -> Path:
+    """Drop a real CSV file with the supplied rows. HF ships
+    MAGE as CSV at the repo root, so this is the on-disk shape
+    the converter sees in production."""
+    import csv as _csv
+    p = dirpath / name
+    p.parent.mkdir(parents=True, exist_ok=True)
+    if not rows:
+        p.write_text("", encoding="utf-8")
+        return p
+    fieldnames = sorted({k for r in rows for k in r.keys()})
+    with p.open("w", encoding="utf-8", newline="") as fh:
+        writer = _csv.DictWriter(fh, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in rows:
+            writer.writerow(r)
+    return p
+
+
 # ---------- Label mapping ----------
 
 
@@ -141,6 +162,110 @@ class TestSplitForParquet:
 
 
 # ---------- End-to-end ----------
+
+
+class TestConvertEndToEndCSV:
+    """End-to-end on the CSV input path. HF ships MAGE as
+    `train.csv`, `valid.csv`, `test.csv`, plus two OOD slices
+    (`test_ood_set_gpt.csv`, `test_ood_set_gpt_para.csv`)."""
+
+    def test_csv_basic_conversion(self, tmp_path):
+        rows = [
+            {"text": "Human text here.", "label": "0",
+             "source": "cnn_dailymail"},
+            {"text": "Machine text here.", "label": "1",
+             "source": "gpt-4-turbo"},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "train.csv", rows)
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, allow_public_output=False,
+        )
+        rc = mt.convert(args)
+        assert rc == 0
+        entries = [
+            json.loads(line)
+            for line in manifest_path.read_text(
+                encoding="utf-8",
+            ).strip().splitlines()
+        ]
+        assert len(entries) == 2
+        statuses = sorted(e["ai_status"] for e in entries)
+        assert statuses == ["ai", "human"]
+        # Notes block points at the CSV.
+        for e in entries:
+            assert e["notes"]["source_file"] == "train.csv"
+            assert e["notes"]["split"] == "train"
+
+    def test_ood_split_inferred_from_csv_name(self, tmp_path):
+        # MAGE's OOD slices should be distinguishable in the
+        # manifest so calibration runs can slice on them.
+        rows = [{"text": "x", "label": "0", "source": "s"}]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(
+            source_dir, "test_ood_set_gpt_para.csv", rows,
+        )
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, allow_public_output=False,
+        )
+        rc = mt.convert(args)
+        assert rc == 0
+        entry = json.loads(
+            manifest_path.read_text(
+                encoding="utf-8",
+            ).strip().splitlines()[0]
+        )
+        assert entry["notes"]["split"] == "test_ood_gpt_para"
+
+
+class TestSplitForSourceFile:
+    """The renamed helper recognizes both parquet- and CSV-style
+    filename conventions, including MAGE's OOD slice names."""
+
+    def test_recognizes_ood_gpt(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        assert mt._split_for_source_file(
+            "test_ood_set_gpt.csv"
+        ) == "test_ood_gpt"
+
+    def test_recognizes_ood_para(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        assert mt._split_for_source_file(
+            "test_ood_set_gpt_para.csv"
+        ) == "test_ood_gpt_para"
+
+    def test_valid_csv_is_val(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        assert mt._split_for_source_file("valid.csv") == "val"
+
+    def test_backwards_compatible_alias(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        # External callers that imported the old name still work.
+        assert mt._split_for_parquet is mt._split_for_source_file
 
 
 class TestConvertEndToEnd:
