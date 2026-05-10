@@ -6,6 +6,45 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.41.0] - 2026-05-10
+
+**Paired-release schedule, Release 11: phrase-level signature mining + version-aware trajectory.** Both pieces extend the framework's voice-coherence story across larger units. The phraseological signature audit reaches above the token level to mine *frames* — the reusable language patterns the writer builds with — pairing naturally with `idiolect_detector`'s token-level keyness work. The draft-history analysis reaches across drafts to trace per-signal trajectories and name where (in the revision arc) signals moved. Both are Tier 3 builds; both compose with surfaces R10 just shipped.
+
+### Added — Phraseological Signature Audit (Surfaces Tier 3)
+
+- **`scripts/phraseological_signature_audit.py`** — phrase-frame mining over the writer's reusable language frames. The framework's `idiolect_detector` answers the keyness question: *which words and phrases are over-represented?* This module asks the complementary phraseology question: *what reusable language frames does this writer build with?* Same surface (phrase-level material), different unit (frames vs. tokens). Two writers can share zero surface phrases and still differ at the frame level; the difference is voice-bearing and the audit makes it visible.
+- **Five categories tracked** (v1):
+  - **`lexical_bundles`** — recurrent 3- and 4-grams in the baseline (default `min_count=2`). The writer's stable phrase-level building blocks. Survival rate of baseline bundles in the target reports voice preservation at the bundle level.
+  - **`slot_frames`** — phrase frames with one or more variable positions. 12 curated structural templates with fixed function-word anchors and variable content slots: `not X but Y`, `the X of the Y`, `as X as Y`, `X if X is Y`, `what X is Y`, `neither X nor Y`, `either X or Y`, `between X and Y`, `from X to Y`, `more X than Y`, `less X than Y`, `the more X the more Y`. Per-frame counts in target and baseline.
+  - **`idioms`** — curated 44-entry list of voice-bearing English idioms (`all things considered`, `at the end of the day`, `for what it's worth`, `on the one hand` / `on the other hand`, etc.). The writer's idiomatic register; baseline-only idioms surface what was lost in revision.
+  - **`hapax_phrase_survival`** — 3-grams that appear exactly once in the baseline AND at least once in the target. Hapax legomena at the phrase level — contingent by definition; their survival tracks idiosyncratic phrase memory more sharply than high-frequency bundles do.
+  - **`stance_intensifier_frames`** — 7 curated stance / hedging / intensifier frames (`really very`, `perhaps it is that`, `I can only X`, `the question is whether`, `it seems to me`, `what is X is Y`, `to X a Y`). Voice-bearing functional reuse beyond word-level keyness.
+- **Hardened conventions** (1.34.2 + 1.40.1 onwards): missing user-supplied paths fail loudly with rc=2; `--baseline-dir` filters the target out (self-overlap guard) and rc=2 if the post-filter baseline is empty; argparse `choices=list(CATEGORY_KEYS)` rejects unknown `--category` filter names at parse time; Markdown blockquotes stripped by default with `--keep-quotes` opt-out.
+- **Structured ClaimLicense block** explicitly refuses provenance verdicts. Frame reuse is voice-coherence evidence, not authorship certification. The slot-frame patterns are heuristic and curated; the idiom list is non-exhaustive (44 entries in v1); the stance-frame inventory is a small voice-bearing-functional-reuse cross-section. The license documents each.
+
+### Added — Draft-History Analysis (Trustworthiness Tier 3)
+
+- **`scripts/draft_history_analysis.py`** — version-aware stylometric trajectory across N drafts. Single-snapshot audits answer "what does this draft look like?"; `before_after_restoration` answers "what changed in this revision pass?"; draft-history asks the version-aware question: *given a sequence of drafts (v1, v2, … vN), where in the revision arc did the smoothing enter, when did idiolect disappear, was the change gradual or sudden, did later edits restore or further flatten the voice?*
+- **Output shape mirrors the canonical use case the ROADMAP names**: "Major distributional compression appears between v3 and v4, concentrated in sections 1, 4, and 6. Later edits restore lexical idiolect but not sentence-architecture variance."
+- **Eight tier-1 signals tracked** across versions, aligned with `known_editor_profile._PROFILE_SIGNALS` so the two surfaces compose: a draft history can supply pair-deltas to the editor-profile match step, and vice versa. Per-version values + per-pair deltas + inflection point (the version-pair index where the largest absolute delta occurred for each signal).
+- **Per-signal verdict ladder**:
+  - `stable_throughout` — every delta within the per-signal noise floor.
+  - `gradual_drift` — deltas of consistent direction with cumulative movement above the floor; no single delta dominates (< 2× the mean absolute delta).
+  - `sudden_shift` — one delta dominates (≥ 2× the mean absolute delta) and is outside the floor; the trajectory is shaped by a single revision pass.
+  - `restored_after_drift` — net cumulative change within the floor BUT individual deltas exceed the floor with sign reversal — the writer drifted forward and then back. Voice-restoration evidence.
+  - `unknown` — fewer than 2 usable deltas.
+- **Summary aggregates across signals**: per-verdict counts, plus the **dominant inflection pair** (the version-pair that shows up most often as the inflection point — the canonical "between v3 and v4" output).
+- **Hardened input handling**: missing `--versions-json` / malformed JSON / non-list shape / entries missing `label`/`path` keys / fewer than 2 entries / missing version files / empty version files all fail loudly with rc=2.
+- **Structured ClaimLicense block** explicitly refuses authorship verdicts at any version. The trajectory says WHEN signals moved, not WHAT caused the movement. A `sudden_shift` between v3 and v4 might reflect a global rewrite, an editor pass, an AI-smoothing pass, an authorial pivot, or a structural reorganization — the report names the inflection point and refuses to choose.
+
+### Notes
+
+- **1279 tests pass + 1 skipped** (was 1215+1 in 1.40.1; +64 new tests across `test_phraseological_signature_audit.py` (39) and `test_draft_history_analysis.py` (25)).
+- **No breaking changes.** Both pieces are new scripts; no existing surface modified. The phraseological audit composes with `idiolect_detector` (same input shape: target + baseline-dir; complementary output: tokens vs. frames). The draft-history analysis composes with `known_editor_profile` (same signal set).
+- **Schedule status: Release 11 shipped.** Per the paired-release schedule, the next release is Release 12 — Semantic Trajectory Audit (Surfaces T3). The framework's first surface that crosses the "measuring meaning" line; needs SBERT or equivalent (gigabytes of weights). Worth a deliberate decision before adopting that dependency posture.
+- **The phraseological audit and draft-history analysis are interpretive surfaces in opposite dimensions.** The phraseological audit operates on a single text and reports phrase-level voice patterns — depth across one snapshot. The draft-history analysis operates on N versions and reports per-signal trajectories — depth across time. Together with the surfaces R10 shipped (mimicry-cosplay across one text; known-editor across one before/after pair), the framework now ships interpretation depth in four dimensions: cross-surface (R7), within-surface syntactic (R8), across-revision semantic (R8), and across-version trajectory (R11).
+- **R11 closes the framework's "smoothing arc" surface set.** Pre-1.41.0 the framework could detect smoothing in a draft, identify the kind of smoothing (R8 semantic preservation, R10 known-editor profile), and resolve cross-surface disagreement (R7). What was missing was the version-aware piece — a writer with multiple drafts could not ask the framework "when did this enter?" Post-1.41.0 they can. Pair-wise, the draft-history's per-signal trajectory + the phraseological audit's per-frame survival give a writer a complete answer: which frames survived which version, and where in the arc each signal moved.
+
 ## [1.40.1] - 2026-05-10
 
 **Reviewer-flagged P2 fixes in the new R8 + R9 surfaces.** Seven issues across four scripts. Reviewer reviewed `v1.37.2..v1.38.0` (R8) and `v1.38.0..v1.39.0` (R9) separately; this patch applies to current `main` (post-R10 at v1.40.0) since none of the R8/R9 surfaces changed during R10. The fixes are all the same shape: silent failures masquerading as clean output (count drift hidden, baseline self-overlap, unknown filter names returning empty success, schema-change drift not counted, empty benchmark snapshots, alternate manifest formats parsed as empty).
