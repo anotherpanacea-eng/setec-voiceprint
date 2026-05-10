@@ -548,6 +548,54 @@ def render_report(
     return "\n".join(lines)
 
 
+def _baseline_registers(baseline_entries: list[dict[str, Any]]) -> list[str | None]:
+    """Extract per-entry register from baseline entries.
+
+    Manifest-loaded entries (`load_entries_from_manifest`) put their
+    register under ``entry["metadata"]["register"]``. Directory-
+    baseline entries have no register at all. Pre-1.34.1 the code
+    read ``entry.get("register")`` directly, which always returned
+    ``None`` for manifest-loaded entries — falsely producing
+    "mismatch" warnings on every normal manifest run.
+
+    This helper reads both shapes; falls back to top-level
+    ``register`` for forward-compat with any future caller that
+    supplies it directly.
+    """
+    out: list[str | None] = []
+    for e in baseline_entries:
+        metadata = e.get("metadata") or {}
+        reg = metadata.get("register") or e.get("register")
+        out.append(reg)
+    return out
+
+
+def _build_register_match(
+    baseline_entries: list[dict[str, Any]],
+    target_primary: str,
+) -> dict[str, Any]:
+    """Build the register-match block that the voice_distance result
+    surfaces. When no baseline entry exposes a register, returns
+    ``strength="unavailable"`` rather than calling ``register_match``
+    (which would otherwise see all-unknown baseline registers and
+    emit a false "mismatch" warning)."""
+    from register_classifier import register_match  # type: ignore
+    baseline_registers = _baseline_registers(baseline_entries)
+    if all(r is None or not r.strip() for r in baseline_registers):
+        return {
+            "strength": "unavailable",
+            "rationale": (
+                "Baseline entries don't carry register tags "
+                "(directory-baseline or untagged manifest). "
+                "Register-match check skipped; supply --manifest "
+                "with register-tagged entries to enable."
+            ),
+            "target": target_primary,
+            "baseline_distribution": {},
+        }
+    return register_match(target_primary, baseline_registers)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Compare a target text to a writer/register stylometric baseline."
@@ -712,15 +760,15 @@ def main() -> int:
     # rather than silently producing numbers as if the comparison
     # were clean.
     try:
-        from register_classifier import (  # type: ignore
-            classify_register, register_match,
+        from register_classifier import classify_register  # type: ignore
+        # Pass the user-supplied --register (when set) as a hint so
+        # the classifier nudges toward the declared register if the
+        # heuristics are ambiguous.
+        target_register_pred = classify_register(
+            target_text, hint=args.register,
         )
-        target_register_pred = classify_register(target_text)
-        baseline_registers = [
-            e.get("register") for e in baseline_entries
-        ]
-        match = register_match(
-            target_register_pred.get("primary"), baseline_registers,
+        match = _build_register_match(
+            baseline_entries, target_register_pred.get("primary"),
         )
         result["register_match"] = {
             "target_classification": {

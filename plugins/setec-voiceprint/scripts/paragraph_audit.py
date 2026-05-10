@@ -362,12 +362,19 @@ def audit_paragraphs(text: str) -> dict[str, Any]:
     if close_entropy_flag:
         flagged_signals.append("low_closing_entropy")
 
-    # Long-cluster flag fires if the document is heavily clustered
-    # into few long blocks (single big cluster covering > 30% of
-    # paragraphs).
+    # Long-cluster flag (1.34.1 fix): the previous threshold of
+    # `> 0.30` was structurally unreachable, since long_clusters
+    # only records runs of paragraphs above the document's p75
+    # — at most ~25% of paragraphs by definition. The reviewer
+    # reproduced "3/10 long run recorded but not flagged."
+    # Lowered to `>= 0.20` and changed to `>=` so a contiguous
+    # run of 3+ paragraphs that covers a fifth of the document
+    # actually fires the flag. With the p75 ceiling this still
+    # only fires on documents with a clearly clustered run, not
+    # on uniform distributions.
     long_cluster_flag = 0.0
     for c in long_clusters:
-        if c["length_paragraphs"] / n_paragraphs > 0.30:
+        if c["length_paragraphs"] / n_paragraphs >= 0.20:
             long_cluster_flag = 1.0
             flagged_signals.append("dominant_long_paragraph_cluster")
             break
@@ -438,24 +445,51 @@ def audit_baseline_paragraphs(
     strip_rules: str | Iterable[str] | None = None,
     strip_aggressive: bool = False,
     strip_masking: str | Iterable[str] | None = None,
+    target_path: Path | None = None,
+    include_filenames: bool = False,
 ) -> dict[str, Any]:
     """Run the paragraph audit across every text file in
     ``baseline_dir`` and return aggregate per-document statistics
     plus the pooled distribution of every signal.
 
-    Used by the target-vs-baseline comparison path. Returns a dict
-    with ``per_file_summaries`` (list of {file, length_summary,
-    rhythm_signals, opening_typology, closing_typology}) and
-    ``aggregate`` (means + sd of each scalar across files, plus
-    pooled opening/closing typology counts).
+    Hardening (1.34.1):
+      * ``baseline_dir`` must exist; raises ``FileNotFoundError``
+        otherwise (the previous behavior of returning an empty
+        baseline silently was a footgun every other tool already
+        fixed).
+      * Unreadable files surface in ``skipped_files`` with their
+        error reasons, not silently dropped.
+      * When ``target_path`` is supplied, baseline entries whose
+        resolved path matches the target are excluded with a stderr
+        notice — same self-overlap guard the GI harness uses.
+      * Privacy: ``per_file_summaries`` records anonymized
+        ``baseline_001`` IDs by default. Filenames often carry
+        manuscript titles, client names, dates, or publication
+        subjects — exactly the metadata the framework's other
+        tools take care not to leak. Opt in via
+        ``include_filenames=True`` when private output is intended.
     """
     base = Path(baseline_dir)
+    if not base.is_dir():
+        raise FileNotFoundError(
+            f"Baseline directory not found or not a directory: "
+            f"{baseline_dir}"
+        )
+
     paths = (
         sorted(base.glob("*.txt"))
         + sorted(base.glob("*.md"))
     )
     paths = [p for p in paths if not p.name.lower().startswith("readme")]
 
+    target_resolved: Path | None = None
+    if target_path is not None:
+        try:
+            target_resolved = Path(target_path).resolve()
+        except OSError:
+            target_resolved = None
+
+    skipped_files: list[dict[str, str]] = []
     per_file: list[dict[str, Any]] = []
     pooled_open: Counter[str] = Counter()
     pooled_close: Counter[str] = Counter()
@@ -467,10 +501,28 @@ def audit_baseline_paragraphs(
     pooled_first_to_body: list[float] = []
     pooled_para_count: list[int] = []
 
+    next_anon_id = 1
     for p in paths:
+        # Target-overlap guard: drop entries whose resolved path
+        # equals --target's resolved path. Same convention as
+        # general_imposters.py's _exclude_target_path.
+        if target_resolved is not None:
+            try:
+                if p.resolve() == target_resolved:
+                    sys.stderr.write(
+                        f"  excluding {p.name} from baseline "
+                        "(matches target path)\n"
+                    )
+                    continue
+            except OSError:
+                pass
         try:
             raw = p.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        except OSError as exc:
+            skipped_files.append({
+                "name": p.name if include_filenames else f"file_{len(skipped_files):03d}",
+                "reason": f"unreadable: {exc}",
+            })
             continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
@@ -480,17 +532,30 @@ def audit_baseline_paragraphs(
         )
         a = audit_paragraphs(cleaned)
         if not a.get("available"):
+            skipped_files.append({
+                "name": p.name if include_filenames else f"file_{next_anon_id:03d}",
+                "reason": f"audit unavailable: {a.get('reason', 'unknown')}",
+            })
+            next_anon_id += 1
             continue
         ls = a["length_summary"]
         rs = a["rhythm_signals"]
         per_file.append({
-            "file": p.name,
+            # Privacy default (1.34.1): anonymized id; opt in to raw
+            # filenames with `include_filenames=True`. Filenames
+            # often carry manuscript titles / client names /
+            # publication subjects.
+            "file": (
+                p.name if include_filenames
+                else f"baseline_{next_anon_id:03d}"
+            ),
             "n_paragraphs": a["n_paragraphs"],
             "length_summary": ls,
             "rhythm_signals": rs,
             "opening_typology": a["opening_typology"],
             "closing_typology": a["closing_typology"],
         })
+        next_anon_id += 1
         pooled_open.update(a["opening_typology"])
         pooled_close.update(a["closing_typology"])
         pooled_cv.append(ls["cv"])
@@ -510,6 +575,8 @@ def audit_baseline_paragraphs(
 
     return {
         "n_files": len(per_file),
+        "n_skipped": len(skipped_files),
+        "skipped_files": skipped_files,
         "per_file_summaries": per_file,
         "aggregate": {
             "cv_words": _mean_sd(pooled_cv),
@@ -524,6 +591,7 @@ def audit_baseline_paragraphs(
         },
         "pooled_opening_typology": dict(pooled_open),
         "pooled_closing_typology": dict(pooled_close),
+        "include_filenames": include_filenames,
     }
 
 
@@ -796,6 +864,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
              "citations).",
     )
     p.add_argument(
+        "--include-baseline-filenames", action="store_true",
+        help=(
+            "Include raw baseline filenames in `per_file_summaries` "
+            "(privacy default: anonymized as `baseline_001`). "
+            "Filenames often carry manuscript titles, client names, "
+            "dates, or publication subjects — opt in only when the "
+            "report stays in private channels."
+        ),
+    )
+    p.add_argument(
         "--strip-masking",
         help=(
             "Optional masking profile or rule list. Profiles: "
@@ -827,14 +905,27 @@ def main(argv: list[str] | None = None) -> int:
 
     baseline_comparison: dict[str, Any] | None = None
     if args.baseline_dir:
-        base_block = audit_baseline_paragraphs(
-            args.baseline_dir,
-            allow_non_prose=args.allow_non_prose,
-            strip_rules=args.strip_rules,
-            strip_aggressive=args.strip_aggressive,
-            strip_masking=args.strip_masking,
-        )
+        try:
+            base_block = audit_baseline_paragraphs(
+                args.baseline_dir,
+                allow_non_prose=args.allow_non_prose,
+                strip_rules=args.strip_rules,
+                strip_aggressive=args.strip_aggressive,
+                strip_masking=args.strip_masking,
+                target_path=target_path,
+                include_filenames=args.include_baseline_filenames,
+            )
+        except FileNotFoundError as exc:
+            sys.stderr.write(f"  baseline error: {exc}\n")
+            return 2
         audit["baseline_block"] = base_block
+        if base_block.get("n_files", 0) == 0:
+            sys.stderr.write(
+                f"  baseline at {args.baseline_dir} produced 0 "
+                "usable files (after target-overlap exclusion + "
+                "skipped unreadable files); baseline comparison "
+                "skipped.\n"
+            )
         baseline_comparison = compare_to_baseline(audit, base_block)
         audit["baseline_comparison"] = baseline_comparison
 

@@ -401,6 +401,145 @@ class TestCli:
         assert rc == 2
 
 
+# ---------- 1.34.1 reviewer-flagged P2 fixes -----------------------
+
+
+class TestLongClusterFlagFires:
+    """Pre-1.34.1 the dominant_long_paragraph_cluster flag was
+    structurally unreachable: long_clusters only records runs
+    above p75 (at most ~25% of paragraphs by definition), but the
+    flag required a single run covering >30% of paragraphs. The
+    reviewer reproduced "3/10 long run recorded but not flagged."
+    The fix lowers the dominance threshold to >=20% and uses
+    inclusive comparison."""
+
+    def test_three_long_in_ten_fires_flag(self):
+        short = "Short paragraph here."
+        long_p = (
+            "This is a much longer paragraph with many words that "
+            "runs on for a while to clearly exceed the p75 threshold "
+            "of the distribution. It continues with additional "
+            "sentences to ensure the word count is high enough."
+        )
+        text = "\n\n".join([short] * 7 + [long_p] * 3)
+        a = pa.audit_paragraphs(text)
+        flagged = set(a["compression"]["flagged_signals"])
+        assert "dominant_long_paragraph_cluster" in flagged, (
+            "long-cluster flag should fire when 3 long paragraphs "
+            "form a contiguous run covering 30% of the doc"
+        )
+
+    def test_short_run_does_not_flag(self):
+        # A single long paragraph with no contiguous run shouldn't fire.
+        short = "Short paragraph here."
+        long_p = (
+            "This is a much longer paragraph with many words that "
+            "runs on for a while to exceed the p75 threshold."
+        )
+        # Long paragraph at index 5 — no contiguous run.
+        text = "\n\n".join([short] * 5 + [long_p] + [short] * 4)
+        a = pa.audit_paragraphs(text)
+        # No 3-or-more consecutive long paragraphs → no recorded
+        # cluster → flag doesn't fire.
+        assert "dominant_long_paragraph_cluster" not in (
+            a["compression"]["flagged_signals"]
+        )
+
+
+class TestBaselineDirValidation:
+    """1.34.1 hardening: baseline directory must exist; unreadable
+    files surface in skipped_files; target file is excluded from
+    baseline if same resolved path."""
+
+    def test_nonexistent_baseline_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            pa.audit_baseline_paragraphs(
+                str(tmp_path / "no_such_dir"),
+            )
+
+    def test_target_overlap_excluded(self, tmp_path, capsys):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        # Two baseline files; one is also the target.
+        target = base / "draft.txt"
+        target.write_text(_VARIED_PROSE, encoding="utf-8")
+        (base / "other.txt").write_text(_VARIED_PROSE, encoding="utf-8")
+        block = pa.audit_baseline_paragraphs(
+            str(base), target_path=target,
+        )
+        # Only one file made it into the baseline (target excluded).
+        assert block["n_files"] == 1
+        # Stderr names what was excluded.
+        captured = capsys.readouterr()
+        assert "draft.txt" in captured.err
+
+    def test_unreadable_file_surfaces_in_skipped(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        (base / "ok.txt").write_text(_VARIED_PROSE, encoding="utf-8")
+        # File the audit can't process (too short → audit unavailable).
+        (base / "tiny.txt").write_text("Tiny.", encoding="utf-8")
+        block = pa.audit_baseline_paragraphs(str(base))
+        assert block["n_skipped"] >= 1
+        # skipped_files names each skip with a reason.
+        assert all(
+            "reason" in s for s in block["skipped_files"]
+        )
+
+    def test_skipped_file_anonymous_by_default(self, tmp_path):
+        """Privacy default: anonymized id even on skipped files."""
+        base = tmp_path / "baseline"
+        base.mkdir()
+        (base / "client_secret_2024_q3.txt").write_text(
+            "Tiny.", encoding="utf-8",
+        )
+        block = pa.audit_baseline_paragraphs(str(base))
+        # Skipped file should be anonymized.
+        for skip in block["skipped_files"]:
+            assert "client_secret" not in skip["name"]
+
+
+class TestBaselineFilenameAnonymization:
+    """1.34.1 privacy fix: paragraph audit advertises itself as
+    public-safe (no raw text in JSON), but pre-fix the baseline
+    block's per_file_summaries leaked filenames that often
+    contain manuscript titles, client names, dates, or publication
+    subjects. Default to anonymized; opt in with
+    include_filenames=True."""
+
+    def test_default_anonymizes_filenames(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        (base / "client_acme_2024_brief.txt").write_text(
+            _VARIED_PROSE, encoding="utf-8",
+        )
+        (base / "smith_v_jones_memo.txt").write_text(
+            _VARIED_PROSE, encoding="utf-8",
+        )
+        block = pa.audit_baseline_paragraphs(str(base))
+        # Per-file entries should be anonymized.
+        names = [s["file"] for s in block["per_file_summaries"]]
+        for n in names:
+            assert "client_acme" not in n
+            assert "smith_v_jones" not in n
+            # Anonymized format: baseline_NNN
+            assert n.startswith("baseline_")
+        assert block["include_filenames"] is False
+
+    def test_opt_in_preserves_filenames(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        (base / "client_acme.txt").write_text(
+            _VARIED_PROSE, encoding="utf-8",
+        )
+        block = pa.audit_baseline_paragraphs(
+            str(base), include_filenames=True,
+        )
+        names = [s["file"] for s in block["per_file_summaries"]]
+        assert "client_acme.txt" in names
+        assert block["include_filenames"] is True
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
