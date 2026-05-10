@@ -6,6 +6,38 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.33.0] - 2026-05-10
+
+**Paired-release schedule, Release 3: Discourse Move Signature + Confounder Audit / Layer D.** The single most leveraged release in the trustworthiness expansion. The confounder audit promotes the framework's "the math doesn't entitle the verdict" stance from claim-license boilerplate into a formal *differential-diagnosis output* — a ranked list of compatible alternative explanations (professional copyediting, register / genre shift, legal / policy memo style, translation or ESL cleanup, dictation cleanup, house-style enforcement, developmental revision, AI smoothing, intentional voice imitation), none presented as the answer. Per the (1.32.1-narrowed) dependency rule, Discourse Move Signature is the *hard prerequisite* — without typed-discourse evidence the confounder matrix can't separate institutional prose from AI-smoothed prose. Both ship in this release.
+
+### Added — Discourse Move Signature (Surfaces Tier 1)
+
+- **`scripts/discourse_move_signature.py`** — typed discourse-marker classifier + move-sequence n-gram audit. Twelve marker categories: contrast, concession, consequence, elaboration, exemplification, sequencing, reframing, epistemic_stance, boosting, hedging, self_correction, metadiscourse. Per-category density per 1,000 words plus the deeper layer the existing `connective_density` ratio doesn't capture: *which kinds of moves the writer falls into and what sequences they use*. The framework's existing connective-density signal answers "how much scaffolding is present"; this audit answers "what kind."
+- **Move-sequence bigrams** count consecutive (move_i, move_{i+1}) transitions across sentences, including an `_unmarked` label for sentences without a marker. Surfaces patterns like `concession→reversal→claim` (essayist) vs. `elaboration→exemplification→consequence` (memo) regardless of how dense the markers are.
+- **Move-sequence entropy in bits** (full and marked-only). Low marked-only entropy means scripted argumentative cadence — the writer falls into a narrow set of moves repeatedly. High entropy means rhetorical-need-driven cadence.
+- **Compression-fraction band call** (Lightly / Moderately / Heavily *scaffolded*) over five rhythm signals: high total marker density, low marked-move entropy, dense concession-contrast-consequence triad, high metadiscourse density, oscillating hedging-and-boosting. Heuristic thresholds documented as calibration-pending.
+- **Optional baseline comparison** computes per-category density z-scores against a baseline directory's aggregate.
+- **Structured ClaimLicense block** explicitly refuses an AI-provenance verdict, naming the reality that heavy scaffolding is characteristic of legal/policy memos, academic prose, AI-edited drafts, and well-scaffolded essayists alike — the differential diagnosis of cause is the confounder audit's job.
+- **CLI**: `python3 scripts/discourse_move_signature.py INPUT.txt [--baseline-dir DIR] [--json]`.
+
+### Added — Confounder Audit / Layer D (Trustworthiness Tier 1)
+
+- **`scripts/confounder_audit.py`** — Layer D differential diagnosis. Reads existing audit JSON outputs (variance audit, voice distance, paragraph audit, discourse move signature, optionally AIC pattern audit) and runs each observed signal pattern against a **confounder signature matrix** that maps each candidate alternative explanation to expected directions across the signal set.
+- **Nine confounders** in the initial matrix: professional_copyediting, register_genre_shift, legal_or_policy_memo_style, translation_or_esl_cleanup, dictation_or_transcription_cleanup, house_style_enforcement, developmental_revision, ai_smoothing, intentional_voice_imitation. Each maps a subset of fourteen tracked signals (sentence_variance, mdd_variance, lexical_diversity, pos_bigram_kl, char_ngram_delta, punctuation_regularity, idiolect_survival, connective_density, aic_pattern_density, paragraph_regularity, discourse_marker_density, marked_move_entropy, register_match, length_localization) to expected directions: `high` / `low` / `any` / `absent` / `uniform` / `localized`.
+- **Compatibility scoring**: per-confounder score = `(matches + 0.5 * any_signal_matches) / total`, where matches and contradictions are computed against the observed signal pattern. Not a probability — descriptive ("how many observed signals point in the direction this explanation predicts"). Multiple high-scoring candidates is the **expected output** — the framework refuses to commit to a single cause.
+- **Distinguishing-evidence detector** finds observations where the top-ranked candidates disagree on expected direction. Gives the reader the per-signal evidence that most rules in or out each top candidate.
+- **Missing-evidence list** names high-leverage signals that were *not* observed in the run, with hints for what the user could supply to sharpen the differential (e.g., "no idiolect_detector output provided", "no sliding-window heatmap data supplied").
+- **Graceful downgrade**: the audit accepts any subset of input audit JSONs. Fewer inputs means fewer distinguishing observations, but the output still names the underspecification.
+- **Structured ClaimLicense block** explicitly refuses to be a classifier: "the framework's load-bearing claim is that the math doesn't entitle the verdict; this audit is the formal expression of that stance — it surfaces the differential, it does not commit to a cause."
+- **CLI**: `python3 scripts/confounder_audit.py --variance-json a.json --discourse-json b.json [--paragraph-json c.json] [--voice-distance-json d.json] [--json]`.
+
+### Notes
+
+- **689 tests pass + 1 skipped** (was 638+1 in 1.32.0; +51 new tests across `test_discourse_move_signature.py` and `test_confounder_audit.py`). Honesty contract pinned by `test_canonical_confounder_pair_both_score_high` — when AI smoothing and legal/policy memo style both predict the same surface pattern, both score ≥ 0.6 and the audit refuses to commit.
+- **No breaking changes.** Both modules are new; existing surfaces unchanged.
+- **Schedule status: Release 3 shipped.** Per the paired-release schedule, the next release pairs the Agency and Abstraction Audit (Surfaces Tier 1) with the Revision-risk model (Trustworthiness Tier 3). At that point the agency family folds into the confounder matrix as a strengthening complement (per the 1.32.1 narrowed dependency rule).
+- The confounder audit's signal vocabulary is intentionally bounded. Signals not yet shipped as separate audits — punctuation cadence, idiolect survival, agency, AIC density at calibrated thresholds — appear in the matrix as design hypotheses that the audit notes as `unobserved` until the corresponding surface lands. This is the right shape for a roadmap-aligned confounder audit: it documents where the framework's evidence gaps are and downgrades gracefully when they're not filled.
+
 ## [1.32.1] - 2026-05-10
 
 **Reviewer-flagged P2 docs fixes: two sequencing contradictions in the paired-release schedule.** Two contradictions in the 1.30.4 ROADMAP `Interleaving` section (mirrored in the 1.30.4 CHANGELOG summary) that future implementers would have hit if they treated the roadmap as an implementation queue.
