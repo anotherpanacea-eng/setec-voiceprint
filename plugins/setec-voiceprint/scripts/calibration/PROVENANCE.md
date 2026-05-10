@@ -89,6 +89,48 @@ Pre-registered before any data was inspected. A signal earns its first committed
 4. **Interpretable threshold (not "predict almost nothing").** If the highest-TPR threshold within the FPR ceiling fires the signal on 1/130 positives, the threshold is technically valid but operationally meaningless. Look for thresholds with TPR substantially above zero at the chosen FPR target.
 5. **ESL slice behaves conservatively.** When calibrating against `nonnative_english.csv` (the ESL slice), the calibrated threshold is implicitly tuned to spare ESL writers from false-positive labeling. If the threshold ends up *more aggressive* than the heuristic on this corpus, that is surprising — investigate before committing. The framework's ethical commitment is that ESL prose is not the failure mode the band classifier should aggressively flag.
 
+## Available calibration corpora
+
+Three labeled corpora ship as fetcher pipelines under
+`scripts/calibration/`. Pick the one whose license posture and
+shape match the calibration run you want to commit.
+
+| Corpus | License | Rows | Size | Fetcher | Manifest converter |
+|---|---|---|---|---|---|
+| **EditLens** (Pangram) | CC BY-NC-SA 4.0 | ~14 K | ~62 MB | `fetch_pangram_editlens.py` / `fetch_pangram_editlens_github.py` | `editlens_to_manifest.py` |
+| **RAID** (Dugan et al., NAACL 2024) | Apache-2.0 | ~8 M | ~16.7 GB | `fetch_raid.py` | `raid_to_manifest.py` |
+| **MAGE** (Li et al., ACL 2024) | MIT | ~437 K | ~554 MB | `fetch_mage.py` | `mage_to_manifest.py` |
+
+**License posture matters for the ledger.** EditLens-derived
+thresholds carry the CC-NC awkwardness — the calibration
+toolchain treats EditLens as local-only; derived single-float
+thresholds ship under SETEC's GPL-3 as aggregate measurements
+of pipeline behavior, not adaptations of corpus content. RAID
+and MAGE are permissively licensed; derived thresholds carry an
+attribution trailer in NOTICE but no redistribution constraint
+on the corpora themselves.
+
+**Coverage tradeoffs.** EditLens is small but ships with
+reference-detector scores (Fast-DetectGPT, Binoculars,
+EditLens-Llama, EditLens-RoBERTa, Pangram v3.2) that let the
+ledger cross-reference. RAID is large and adversarial-rich (12
+attack transforms × 11 models × 8 domains); the right corpus
+for R7's robustness card AND for threshold calibration that
+should generalize across decoding strategies. MAGE is the
+cross-check: 10 source datasets, binary labels, no adversarial
+variants, useful for confirming RAID-derived thresholds aren't
+overfit to RAID's generation distribution.
+
+**Recommended sequence for the first cross-corpus calibration:**
+
+1. `python3 scripts/calibration/fetch_raid.py --subset train --no-adversarial` — pulls labeled English without adversarial (~802 MB; everything you need for first-pass calibration of the 11 `COMPRESSION_HEURISTICS` thresholds).
+2. `python3 scripts/calibration/raid_to_manifest.py --no-adversarial --no-nonprose` — converts to manifest.
+3. Run `calibration_survey.py` against the RAID manifest; commit any signals whose RAID-derived threshold passes the five selection-criteria gates.
+4. `python3 scripts/calibration/fetch_mage.py` — pulls all of MAGE (~554 MB).
+5. `python3 scripts/calibration/mage_to_manifest.py` — converts MAGE.
+6. Run `calibration_survey.py` against the MAGE manifest. Confirm RAID-derived thresholds replicate. Where they don't, the divergence goes into the calibration *findings* (not the ledger) and becomes part of the next ledger entry's `notes`.
+7. For R7's adversarial robustness card: pull the adversarial variants (`fetch_raid.py` without `--no-adversarial`, ~17 GB total) and feed `adversarial_robustness_card.py` from the RAID adversarial-class slices.
+
 ## In-sample calibration
 
 The empirical metrics in every committed provenance entry (AUC, AP, TPR / FPR / precision at the chosen threshold, bootstrap CIs) are computed on the same corpus the threshold was derived from. They are not heldout-test performance claims.

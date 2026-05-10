@@ -6,6 +6,39 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.42.0] - 2026-05-10
+
+**Calibration corpus track: RAID + MAGE fetchers + manifest converters.** The framework's calibration toolchain has shipped since 1.10.0 with EditLens as the only labeled corpus. Every threshold in `COMPRESSION_HEURISTICS` still carries `provenance: "provisional"` because EditLens's CC BY-NC-SA 4.0 posture keeps derived thresholds in the local-only quadrant. This release ships fetchers for two permissively-licensed labeled corpora — RAID (Apache-2.0, 8M rows, 16.7 GB) and MAGE (MIT, 437K rows, 554 MB) — and the companion parquet-to-manifest converters. With these, the calibration toolchain can graduate threshold values out of `provisional` against substantially larger labeled corpora than EditLens alone, and RAID's adversarial-transform variants give R7's robustness card real fixtures to evaluate against.
+
+### Added — RAID fetcher (`scripts/calibration/fetch_raid.py`)
+
+- Pulls the full RAID benchmark (Dugan et al., NAACL 2024) from HuggingFace into `ai-prose-baselines-private/raid/`. Mirrors the shape of `fetch_pangram_editlens.py` with the legal posture adjusted for Apache-2.0 (no CC-NC redistribution guard on derived thresholds; corpus stays under private dir by convention; calibrated values can ship in GPL-3 SETEC defaults with NOTICE attribution).
+- **CLI:** `--subset {train, test, extra, all}` (default `all` — labeled English + Czech/German/Code), `--no-adversarial` (cuts the fetch from ~17 GB to ~1.4 GB by skipping the 12 attack variants), `--dry-run` (lists the fetch set without committing to a multi-GB pull), `--skip-license-check`, `--refresh`, `--token` (HF token; RAID is public but supports authenticated-proxy edge cases).
+- License verification: refuses to proceed unless the HF card declares Apache-2.0. NOTICE.md cites the paper, the HF revision SHA, and the license; `.fetch_record.json` records the revision + fetch parameters for downstream consumers.
+
+### Added — MAGE fetcher (`scripts/calibration/fetch_mage.py`)
+
+- Pulls MAGE (Li et al., ACL 2024) from HuggingFace into `ai-prose-baselines-private/mage/`. Same shape as fetch_raid; legal posture adjusted for MIT.
+- **CLI:** `--split {train, validation, test, all}` (default `all`; `validation` matches both `val` and `validation` filename tokens), `--dry-run`, `--skip-license-check`, `--refresh`, `--token`.
+- License verification: refuses to proceed unless the HF card declares MIT. NOTICE + `.fetch_record.json` as for RAID.
+
+### Added — Manifest converters
+
+- **`scripts/calibration/raid_to_manifest.py`** — converts the local RAID parquet files into a SETEC manifest slice. Maps RAID's `model` field to `ai_status` (`"human"` for the human-baseline rows, `"ai"` for the 11 LLMs), `attack` to `editing_status` (`unedited` or `adversarial:<attack>`), `domain` to `register`, and Czech/German domains to `language_status: non_native_advanced`. Per-row text is spilled to a 4-level hash-bucketed dir (`text/ab/cd/<id>.txt`) so 8M files don't pile into one directory. CLI flags `--limit`, `--no-adversarial`, `--no-nonprose`, `--allow-public-output`. Default writes refuse to land outside `ai-prose-baselines-private/`; the override flag is documented and tested.
+- **`scripts/calibration/mage_to_manifest.py`** — converts MAGE parquet to manifest. Simpler shape: `label` 0 → `human`, 1 → `ai`; `source` field preserved as `source_id`; `register: mixed` (MAGE spans 10 source datasets and per-row register would require a mapping that's not worth the maintenance burden); `editing_status: unedited` (MAGE doesn't expose edit provenance). Same bucketed text-spill + privacy-guard convention as the RAID converter.
+
+### Added — PROVENANCE.md "Available calibration corpora" section
+
+- Documents the three labeled corpora the toolchain can consume: EditLens (CC-NC, local-only, ~14K rows), RAID (Apache-2.0, ~8M rows, 16.7 GB), MAGE (MIT, ~437K rows, 554 MB).
+- Names the license posture for each and the calibration workflow that would consume them (RAID first for highest leverage, MAGE as cross-check, EditLens for ESL-specific slices). The PROVENANCE entry for the first cross-corpus calibration run lands in a follow-up.
+
+### Notes
+
+- **1353 tests pass + 1 skipped** (was 1291+1 in 1.41.1; +62 new tests across `test_fetch_raid.py` (15), `test_fetch_mage.py` (9), `test_raid_to_manifest.py` (22), `test_mage_to_manifest.py` (16)). Tests mock `huggingface_hub` and `pyarrow.parquet` via sys.modules injection with autouse cleanup fixtures so the mocks don't leak into downstream tests (sklearn reads `pyarrow.__version__` and would break if a lingering mock lacked the attribute).
+- **No CLI breaking changes.** Four new scripts, no existing surface modified.
+- **What this release does NOT do:** it does not execute the full RAID+MAGE fetch (~17 GB), and it does not produce a new calibrated threshold provenance entry. Those are operational follow-ups: after this PR merges, the maintainer (or any user with disk space) runs `python3 scripts/calibration/fetch_raid.py` + `fetch_mage.py` + the manifest converters + `calibration_survey.py` against the resulting manifests, and lands the first cross-corpus calibration entry as a follow-up PR with the four-artifact diff documented in PROVENANCE.md ("Calibration commit shape").
+- **The split between this release and the calibration runs is deliberate.** Shipping the fetchers as their own release means (a) reviewers see the fetcher infrastructure separately from any threshold value change, (b) the fetchers can be reviewed without a 17 GB download, and (c) the calibration commit gets to focus on the actual `value` + `provenance` edit per threshold, not on the corpus-acquisition mechanics.
+
 ## [1.41.1] - 2026-05-10
 
 **Reviewer-flagged P2 fixes across R10 + R9 surfaces.** Four issues spanning three scripts. Reviewer reviewed the v1.40.1 patch range; all four are silent-failure or no-op shapes — the same family as the seven 1.40.1 fixed.
