@@ -6,6 +6,39 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.35.0] - 2026-05-10
+
+**Paired-release schedule, Release 5: three Tier-2 promotions + ablation reports.** Largest release in the schedule so far. Promotes three feature families that lived as columns inside `voice_profile.py` to top-level audits with their own band calls, baseline comparisons, structured ClaimLicense blocks, and hardened baseline ingestion. Pairs with the Tier-2 trustworthiness guardrail that tells readers which signal families are *load-bearing* for the existing variance audit's compression call.
+
+### Added — Three Tier-2 surface promotions
+
+- **`scripts/punctuation_cadence_audit.py`** — punctuation rhythm + interruption-grammar audit. Twelve per-mark densities (comma, semicolon, colon, em-dash, en-dash, parenthesis, bracket, ellipsis, double-quote, single-quote, exclamation, question), sentence-final distribution, **interruption grammar** (parenthetical asides, em-dash interruptions, comma appositives), punctuation bigram inventory, comma-period-share metric. Six rhythm signals fire the band call: comma-period dominance, semicolon suppression, em-dash suppression, low interruption grammar, uniform sentence finals, low punctuation-bigram diversity. Catches the pattern AI smoothing and copyediting often produce **before lexical-diversity signals fire** — punctuation regularization is one of the earliest trace marks of edited prose.
+- **`scripts/stance_modality_audit.py`** — typed stance / modality / epistemic-posture audit. Seven categories: deontic_modality (`must / shall / should / required`), epistemic_modality (`may / might / could / probably`), hedge (`somewhat / arguably / sort of`), booster (`clearly / obviously / certainly / indeed`), evidential (`seems / suggests / shows / demonstrates`), first_person_stance (`I think / we argue / it seems to me`), refusal (`does not show / cannot conclude / is not enough to establish`). Per-category density + stance entropy + hedge-booster ratio. Six rhythm signals: hedge-booster oscillation (LLM-characteristic), booster dominance, low refusal density, first-person stance collapse, high deontic modality, low stance entropy. Surfaces shifts in epistemic posture that AI editing often makes (booster dominance, refusal absence, first-person collapse) before vocabulary changes are visible.
+- **`scripts/function_word_grammar_audit.py`** — function-word **sequence grammar**. Goes beyond `voice_distance.py`'s function-word frequency view (Burrows Delta) into the sequence layer: function-word n-gram inventory + entropy, preposition profile + entropy, demonstrative usage (this/that/these/those rates and dominance), relative-pronoun choice (which/that/who proportions), complementizer choice (that/if/whether), subordinator profile (because/although/while/when/since/...), auxiliary chains (`have been`, `will have been`), pronoun-transition same-share. Six rhythm signals: low function-word bigram entropy, low preposition entropy, single-demonstrative dominance, relative-pronoun monotony, low subordinator density, uniform pronoun transitions.
+
+All three new audits ship with hardened baseline ingestion (1.34.x conventions): validates baseline directory exists, surfaces skipped files with reasons, accepts `target_path` and excludes baseline overlap with stderr notice, anonymizes per-file IDs by default with `--include-baseline-filenames` for opt-in. All three carry `task_surface = "voice_coherence"`.
+
+### Added — Ablation reports (Trustworthiness Tier 2)
+
+- **`variance_audit.ablation_band_calls(compression_result, audit)`** computes leave-one-feature-family-out band calls. The four signal families (matching the heatmap phenomenon classifier from 1.32.0):
+  - `syntactic_flattening` — burstiness_B, sentence_length_sd, fkgl_sd, mdd_sd
+  - `lexical_compression` — mtld, mattr, shannon_entropy, yules_k
+  - `over_cohesion` — adjacent_cosine_mean, adjacent_cosine_sd
+  - `connective_overuse` — connective_density
+- **Closed-form arithmetic on top of `classify_compression`'s output** — no extra audit run. Known per-signal weights + which signals fired ⇒ subtract family contributions from numerator (fired weights) and denominator (in-scope weights), re-bucket the resulting fraction.
+- **Per-family `robustness` label**: `stable` (band unchanged when family removed), `fragile_drop` (band dropped — the family was load-bearing), `fragile_rise` (band rose — rare; family was diluting available_weight without firing).
+- **Top-level summary**: `is_robust_call` (boolean) and `load_bearing_families` (list). A robust call holds across every ablation; a fragile call depends on one or two families. Tells readers which families to weight when interpreting the band.
+- **`format_ablation_block(ablation)`** renders a markdown table; the variance_audit `--ablation` CLI flag triggers the computation and surfaces it in the report.
+
+### Notes
+
+- **833 tests pass + 1 skipped** (was 784+1 in 1.34.2; +49 new tests across `test_punctuation_cadence_audit.py` (15), `test_stance_modality_audit.py` (12), `test_function_word_grammar_audit.py` (10), `test_ablation_band_calls.py` (12)).
+- **No breaking changes.** Three new tools; one new optional CLI flag (`--ablation`) on `variance_audit.py` with no behavior change when omitted.
+- **Schedule status: Release 5 shipped.** Per the paired-release schedule, the next release is Release 6 — output-discipline (Minimum Evidentiary Conditions Gate + Negative/Positive Controls), no paired tool.
+- The three Tier-2 promotions intentionally don't replace `voice_profile.py`'s feature columns (which feed Burrows Delta and the cluster-mode comparison). They sit alongside as **standalone diagnostic surfaces** with their own band calls — the same way `paragraph_audit.py` sits alongside the variance audit's word-windowed sliding heatmap.
+- Punctuation cadence is the most empirically clean of the three (regex over orthography). Stance / modality is moderately clean (English-specific markers). Function-word grammar uses the canonical `FUNCTION_WORDS` set from `stylometry_core.py` and adds sequence-layer features that don't currently feed any other audit. None of the three uses spaCy; all are stdlib + regex-only.
+- Ablation reports significantly improve the interpretability of the variance audit's compression call. Pre-1.35.0 a "Heavily smoothed" verdict from variance_audit didn't tell the reader which signal family carried the call; users had to read the per-signal flagged list and infer. Now a single `--ablation` flag surfaces "robust to removing X, fragile if Y removed" — exactly the diagnostic the user can act on.
+
 ## [1.34.2] - 2026-05-10
 
 **Reviewer-flagged P2 fixes across the Release-3 + Release-4 surfaces.** Five issues across `confounder_audit.py`, `discourse_move_signature.py`, and `agency_abstraction_audit.py`. None broke tests because the existing test fixtures masked each failure mode. Each one corrupts a downstream claim or repeats a hardening footgun the older tools already fixed.

@@ -1642,6 +1642,193 @@ def classify_compression(
     return result
 
 
+# ---------- Ablation reports (Release 5, Trustworthiness Tier 2) ----------
+#
+# Leave-one-feature-family-out band call. Tells the reader which
+# signal families are *load-bearing* for the compression call: a
+# band that drops from "Heavily smoothed" to "Lightly smoothed"
+# when one family is removed is a fragile, family-driven call;
+# a band that holds across all ablations is a robust, multi-
+# signal-driven call.
+#
+# The implementation reuses the existing classify_compression
+# output rather than re-running the audit — we know which signals
+# fired (flagged_signals), the weighted-score totals, and the
+# weights of each family, so the ablation arithmetic is closed-
+# form: subtract the family's weight contribution from the
+# numerator (if fired) and the denominator (always, when in scope),
+# then re-bucket the resulting fraction.
+#
+# Family taxonomy mirrors the `_SIGNAL_FAMILIES` mapping in
+# `sliding_window_heatmap.py`'s phenomenon classifier — same
+# four families, same signal membership.
+
+_ABLATION_SIGNAL_FAMILIES: dict[str, tuple[str, ...]] = {
+    "syntactic_flattening": (
+        "burstiness_B", "sentence_length_sd",
+        "fkgl_sd", "mdd_sd",
+    ),
+    "lexical_compression": (
+        "mtld", "mattr", "shannon_entropy", "yules_k",
+    ),
+    "over_cohesion": (
+        "adjacent_cosine_mean", "adjacent_cosine_sd",
+    ),
+    "connective_overuse": (
+        "connective_density",
+    ),
+}
+
+
+def ablation_band_calls(
+    compression_result: dict[str, Any],
+    audit: dict[str, Any],
+) -> dict[str, Any]:
+    """For each signal family, compute the band call that would
+    result if that family's signals were excluded.
+
+    Output: a dict mapping family name → ``{band,
+    compression_fraction, weight_excluded, fired_weight_excluded,
+    removed_signals, robustness}``. The ``robustness`` field
+    summarizes the change vs. the original band:
+      - ``stable`` — same band as the original.
+      - ``fragile_drop`` — band dropped one or more levels (the
+        original call relied on this family).
+      - ``fragile_rise`` — band rose one or more levels (rare;
+        means the family was suppressing a higher band call by
+        diluting the available_weight without firing).
+
+    Tells the reader which families are load-bearing for the
+    compression call.
+    """
+    flagged = set(compression_result.get("flagged_signals") or [])
+    weighted_score = float(
+        compression_result.get("weighted_score", 0.0)
+    )
+    available_weight = float(
+        compression_result.get("available_weight", 0.0)
+    )
+    original_band = compression_result.get("band", "unknown")
+    n_words = (audit.get("summary") or {}).get("n_words", 0)
+
+    band_rank = {
+        "Insufficient signal": -1,
+        "Lightly smoothed": 0,
+        "Moderately smoothed": 1,
+        "Heavily smoothed": 2,
+    }
+    original_rank = band_rank.get(original_band, -2)
+
+    out: dict[str, Any] = {}
+    for family, signals in _ABLATION_SIGNAL_FAMILIES.items():
+        family_weight_available = 0.0
+        family_weight_fired = 0.0
+        for sig in signals:
+            if sig not in COMPRESSION_HEURISTICS:
+                continue
+            spec = COMPRESSION_HEURISTICS[sig]
+            if n_words < spec.length_floor:
+                # Below length floor — wasn't in `available_weight`
+                # to begin with, so excluding it costs nothing.
+                continue
+            family_weight_available += float(spec.weight)
+            if sig in flagged:
+                family_weight_fired += float(spec.weight)
+
+        ablated_available = available_weight - family_weight_available
+        ablated_score = weighted_score - family_weight_fired
+
+        if ablated_available <= 0:
+            ablated_band = "Insufficient signal"
+            ablated_fraction = None
+        else:
+            ablated_fraction = ablated_score / ablated_available
+            if ablated_fraction < 0.15:
+                ablated_band = "Lightly smoothed"
+            elif ablated_fraction < 0.40:
+                ablated_band = "Moderately smoothed"
+            else:
+                ablated_band = "Heavily smoothed"
+
+        ablated_rank = band_rank.get(ablated_band, -2)
+        if ablated_rank == original_rank:
+            robustness = "stable"
+        elif ablated_rank < original_rank:
+            robustness = "fragile_drop"
+        else:
+            robustness = "fragile_rise"
+
+        out[family] = {
+            "band": ablated_band,
+            "compression_fraction": (
+                round(ablated_fraction, 3)
+                if ablated_fraction is not None else None
+            ),
+            "weight_excluded": round(family_weight_available, 2),
+            "fired_weight_excluded": round(family_weight_fired, 2),
+            "removed_signals": list(signals),
+            "robustness": robustness,
+        }
+
+    # Summary: which families are load-bearing? Any with
+    # robustness != "stable" carry the original band call;
+    # families with robustness=="stable" are non-load-bearing.
+    load_bearing = [
+        f for f, info in out.items()
+        if info["robustness"] != "stable"
+    ]
+    return {
+        "original_band": original_band,
+        "original_compression_fraction": (
+            compression_result.get("compression_fraction")
+        ),
+        "per_family": out,
+        "load_bearing_families": load_bearing,
+        "is_robust_call": len(load_bearing) == 0,
+    }
+
+
+def format_ablation_block(ablation: dict[str, Any]) -> list[str]:
+    """Markdown rendering of the ablation table."""
+    out: list[str] = ["", "## Ablation: leave-one-family-out band call", ""]
+    out.append(
+        "Removes each signal family in turn and recomputes the "
+        "band. Tells you which families are *load-bearing* for "
+        "the compression call: a band that drops when one family "
+        "is removed is a fragile, family-driven call; a band that "
+        "holds across all ablations is a robust, multi-family call."
+    )
+    out.append("")
+    out.append(
+        f"**Original band:** {ablation.get('original_band')}  "
+        f"({'robust' if ablation.get('is_robust_call') else 'fragile'} call)"
+    )
+    if ablation.get("load_bearing_families"):
+        out.append(
+            f"**Load-bearing families:** "
+            + ", ".join(
+                f"`{f}`" for f in ablation["load_bearing_families"]
+            )
+        )
+    out.append("")
+    out.append(
+        "| family removed | resulting band | fraction | "
+        "weight excluded | fired weight excluded | robustness |"
+    )
+    out.append("|---|---|---:|---:|---:|---|")
+    for family, info in ablation.get("per_family", {}).items():
+        frac = info.get("compression_fraction")
+        frac_str = f"{frac:.3f}" if isinstance(frac, (int, float)) else "n/a"
+        out.append(
+            f"| `{family}` | {info['band']} | {frac_str} | "
+            f"{info['weight_excluded']:.1f} | "
+            f"{info['fired_weight_excluded']:.1f} | "
+            f"`{info['robustness']}` |"
+        )
+    out.append("")
+    return out
+
+
 # ---------- Output formatting ----------
 
 def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
@@ -2113,6 +2300,17 @@ def main() -> int:
         help="Seed for the window sampler and the bootstrap resampler. "
              "Set for reproducible runs."
     )
+    parser.add_argument(
+        "--ablation", action="store_true",
+        help=(
+            "Compute leave-one-feature-family-out band calls "
+            "(Trustworthiness Tier 2). Tells you which signal "
+            "families (syntactic_flattening, lexical_compression, "
+            "over_cohesion, connective_overuse) are load-bearing "
+            "for the compression call. Closed-form on top of the "
+            "main classify_compression result; no extra audit run."
+        ),
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON only.")
     parser.add_argument(
         "--quiet", action="store_true",
@@ -2186,6 +2384,8 @@ def main() -> int:
         output["preprocessing"] = audit.get("preprocessing", {})
         output["audit"] = audit
         output["compression"] = compression
+        if args.ablation:
+            output["ablation"] = ablation_band_calls(compression, audit)
 
     if baseline_block is not None:
         output["baseline"] = {
@@ -2246,6 +2446,8 @@ def main() -> int:
                 print(format_baseline_divergences(output["baseline_divergences"]))
             if "baseline_bootstrap" in output:
                 print(format_baseline_bootstrap(output["baseline_bootstrap"]))
+            if "ablation" in output:
+                print("\n".join(format_ablation_block(output["ablation"])))
         if "windows" in output:
             print(format_windows_dashboard(output["windows"]["results"]))
     return 0
