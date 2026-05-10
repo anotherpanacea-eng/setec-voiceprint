@@ -253,10 +253,19 @@ python3 scripts/validation_harness.py scripts/test_data/validation_smoke_manifes
 python3 scripts/aic_pattern_audit.py path/to/draft.txt
 
 # Turn diagnostic JSON into bounded revision instructions
-python3 scripts/restoration_packet.py --variance-json variance.json --out packet.md
+python3 scripts/restoration_packet.py \
+    --variance-json variance.json \
+    --bigram-json bigram.json \
+    --out packet.md --json-out packet.json
 
 # Check whether a revision improved target signals without gaming aggregates
-python3 scripts/before_after_restoration.py --packet packet.json --before-json before.json --after-json after.json
+python3 scripts/before_after_restoration.py \
+    --packet-json packet.json \
+    --before-variance-json before/variance.json \
+    --after-variance-json after/variance.json \
+    --before-bigram-json before/bigram.json \
+    --after-bigram-json after/bigram.json \
+    --out report.md --json-out report.json
 ```
 
 ## Smoke test
@@ -271,7 +280,7 @@ python3 scripts/variance_audit.py scripts/test_data/ai_sample.txt
 
 ## Design principles
 
-**The framework targets discourse habits, not vocabulary.** Surface tells (specific AI words, em-dash frequency, the magic triple) decay as models change and writers learn to avoid them. The named patterns are structural habits: hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, inflated parallelism, over-neat transitions, and indefinite-pronoun gestures. They survive vocabulary changes because they are moves in prose, not magic words.
+**The framework targets discourse habits, not vocabulary.** Surface tells (specific AI words, em-dash frequency, the magic triple) decay as models change and writers learn to avoid them. The named patterns are structural habits: hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, inflated parallelism, over-neat transitions, manifesto cadence, and indefinite-pronoun gestures. They survive vocabulary changes because they are moves in prose, not magic words. `references/aic-flags.md` documents the same patterns under their original literary names (Negation hedge, Disguised correctio, Pseudo-aphorism, Manifesto cadence, Indefinite-Pronoun Gesture) for cross-reference with the audit script.
 
 **Three layers are kept distinct.** Layer A is mathematical (distributional diagnostics). Layer B is craft-pattern recognition (the AIC flag families). Layer C is voice attribution (the earned/unearned triage). The framework's value depends on not collapsing them.
 

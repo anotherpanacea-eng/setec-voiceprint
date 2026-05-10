@@ -65,7 +65,7 @@ A useful conceptual lens — though not a literal claim about what every AI-pros
 
 Different detectors compute different things on this same surface. Burrows' Delta measures function-word distance. GLTR measures token-rank density. DetectGPT and Fast-DetectGPT measure local curvature (with or without closed-form mean). Binoculars measures cross-perplexity ratio. EditLens measures embedding-shift magnitude. Pangram trains on labeled examples. They produce correlated outputs because the underlying distributional compressions are correlated, not because they are different formulations of one master metric.
 
-The seven AIC flag families catalog prose-level manifestations of these compressions. The named patterns are structural habits: hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, inflated parallelism, over-neat transitions, and indefinite-pronoun gestures. Source triage at Layer C answers the question that no distributional analysis can: whose voice is this, and is it doing real work?
+The seven AIC flag families catalog prose-level manifestations of these compressions. The named patterns are structural habits: hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, inflated parallelism, over-neat transitions, manifesto cadence, and indefinite-pronoun gestures. (See `references/aic-flags.md` for the original literary-taxonomy names: Negation hedge, Disguised correctio, Pseudo-aphorism, Manifesto cadence, Indefinite-Pronoun Gesture.) Source triage at Layer C answers the question that no distributional analysis can: whose voice is this, and is it doing real work?
 
 ## Three Layers
 
@@ -158,12 +158,12 @@ Read `references/aic-flags.md` for the full diagnostic framework. Run each passa
 | Flag | Name | What it catches |
 |---|---|---|
 | AIC-1 | Generic Hand | One voice for every character, scene, register |
-| AIC-2 | Velvet Fog | Scenes without physical grounding; lexical genericism (includes Indefinite-pronoun gesture as a named subtype) |
+| AIC-2 | Velvet Fog | Scenes without physical grounding; lexical genericism (includes indefinite-pronoun gestures as a named subtype) |
 | AIC-3 | Echo Stack | Mechanical repetition at sentence, paragraph, or scene level |
 | AIC-4 | Register Seams | Detectable shifts where drafting method changed |
 | AIC-5 | Puppet Dialogue | Characters who all speak identically |
 | AIC-6 | Continuity Smear | World-model failures (objects, space, time, information) |
-| AIC-7 | Discourse Leak | Assistant-register habits in narrative prose; includes hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, and manifesto cadence as named subtypes |
+| AIC-7 | Discourse Leak | Assistant-register habits in narrative prose; includes hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, inflated parallelism, over-neat transitions, and manifesto cadence as named subtypes |
 
 For each flag that fires, assign severity:
 - **Spot** — isolated to one passage; surrounding text is clean
@@ -258,7 +258,7 @@ Where Layer C identified unearned patterns:
 
 **False positives exist.** Essayistic narrators (Sebald, Bernhard, Knausgaard) hedge as a formal strategy. Philosophical characters qualify deliberately. Trauma-loop cognition circles. Before flagging AIC-7, check whether the pattern is characterization or contamination. Source triage is the resolution.
 
-**Surface tells decay; categories persist.** "Delve" and excessive em-dashes are yesterday's tells. The underlying habits (lexical convergence, commitment evasion, template loops) outlast any model generation. The five named patterns within AIC-7 are sharper than vocabulary lists because they catch syntactic structures that survive word-level swaps.
+**Surface tells decay; categories persist.** "Delve" and excessive em-dashes are yesterday's tells. The underlying habits (lexical convergence, commitment evasion, template loops) outlast any model generation. The named structural patterns are sharper than vocabulary lists because they catch syntactic moves that survive word-level swaps.
 
 **ESL handling.** This skill is a craft diagnostic for the writer revising their own work, not a third-party authorship classifier. ESL writing has lower lexical diversity and lower text perplexity by default, which puts it in the same low-burstiness region as LLM output. Do not run this skill on writing in a writer's second language as if its variance signals carried the same meaning. The bands are calibrated against fluent native or near-native distributions.
 
