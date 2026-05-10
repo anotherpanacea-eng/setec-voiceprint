@@ -133,18 +133,51 @@ def _read_target_length(
 
 
 def _read_baseline_size(
-    voice_distance: dict[str, Any] | None,
-    paragraph: dict[str, Any] | None,
+    *,
+    variance: dict[str, Any] | None = None,
+    voice_distance: dict[str, Any] | None = None,
+    paragraph: dict[str, Any] | None = None,
+    discourse: dict[str, Any] | None = None,
+    agency: dict[str, Any] | None = None,
+    punctuation: dict[str, Any] | None = None,
+    stance: dict[str, Any] | None = None,
+    function_grammar: dict[str, Any] | None = None,
 ) -> int:
-    """Number of baseline files used in the comparison, if known."""
+    """Number of baseline files used in the comparison, if known.
+
+    1.37.1 fix: pre-1.37.1 only voice_distance and paragraph were
+    consulted, so a variance-only run with `--baseline-dir` and 25
+    baseline files reported `baseline_size: 0` and got capped at
+    `exploratory_comparison`. Now reads from every audit shape
+    that surfaces a baseline-size count.
+
+    The framework's audit shapes vary:
+      - variance_audit: `baseline.n_files`
+      - voice_distance: `baseline_summary.n_files`
+      - paragraph / discourse / agency / punctuation / stance /
+        function_grammar: `baseline_block.n_files`
+
+    Returns the *maximum* count across audits — the best signal
+    of how rich the user's actual baseline is.
+    """
     candidates: list[int] = []
+    if variance:
+        baseline = variance.get("baseline") or {}
+        n = baseline.get("n_files")
+        if isinstance(n, int):
+            candidates.append(n)
     if voice_distance:
         bs = voice_distance.get("baseline_summary") or {}
         n = bs.get("n_files")
         if isinstance(n, int):
             candidates.append(n)
-    if paragraph:
-        block = paragraph.get("baseline_block") or {}
+    for audit in (
+        paragraph, discourse, agency, punctuation, stance,
+        function_grammar,
+    ):
+        if not audit:
+            continue
+        block = audit.get("baseline_block") or {}
         n = block.get("n_files")
         if isinstance(n, int):
             candidates.append(n)
@@ -191,8 +224,98 @@ def _has_confounder_diagnosis(
     return bool(confounder.get("ranked_confounders"))
 
 
-def _count_audit_inputs(*audits: dict[str, Any] | None) -> int:
-    return sum(1 for a in audits if a is not None)
+# --- Per-surface usability validators (1.37.1 hardening) ---------
+#
+# Pre-1.37.1 `_count_audit_inputs` counted every non-None dict,
+# including JSONs with `available: false` or unrelated content.
+# Reviewer reproduced forensic_adjacent posture with five failed
+# payloads. Fix: count only audits whose payload matches the
+# expected per-surface signature AND which don't explicitly report
+# `available: false`.
+
+def _is_usable_paragraph(audit: dict[str, Any] | None) -> bool:
+    """Paragraph / discourse / agency / punctuation / stance /
+    function_grammar all use the same `available` flag + `compression`
+    block convention."""
+    if not isinstance(audit, dict):
+        return False
+    if audit.get("available") is False:
+        return False
+    return isinstance(audit.get("compression"), dict)
+
+
+def _is_usable_variance(audit: dict[str, Any] | None) -> bool:
+    """variance_audit emits a `compression` block at top level."""
+    if not isinstance(audit, dict):
+        return False
+    return isinstance(audit.get("compression"), dict)
+
+
+def _is_usable_voice_distance(audit: dict[str, Any] | None) -> bool:
+    """voice_distance emits `overall` or `families` at top level."""
+    if not isinstance(audit, dict):
+        return False
+    return (
+        isinstance(audit.get("overall"), dict)
+        or isinstance(audit.get("families"), dict)
+    )
+
+
+def _is_usable_confounder(audit: dict[str, Any] | None) -> bool:
+    """confounder_audit emits `ranked_confounders`."""
+    if not isinstance(audit, dict):
+        return False
+    return isinstance(audit.get("ranked_confounders"), list)
+
+
+def _is_usable_gi(audit: dict[str, Any] | None) -> bool:
+    """general_imposters emits a `decision` field."""
+    if not isinstance(audit, dict):
+        return False
+    return audit.get("decision") in {
+        "consistent_with_candidate",
+        "inconsistent_with_candidate",
+        "gray_zone_refused",
+        "refused",
+    }
+
+
+def _count_audit_surfaces(
+    *,
+    variance: dict[str, Any] | None,
+    voice_distance: dict[str, Any] | None,
+    paragraph: dict[str, Any] | None,
+    discourse: dict[str, Any] | None,
+    agency: dict[str, Any] | None,
+    punctuation: dict[str, Any] | None,
+    stance: dict[str, Any] | None,
+    function_grammar: dict[str, Any] | None,
+) -> int:
+    """Count audit surfaces that are *usable* (recognized shape +
+    not flagged unavailable)."""
+    n = 0
+    if _is_usable_variance(variance):
+        n += 1
+    if _is_usable_voice_distance(voice_distance):
+        n += 1
+    for audit in (
+        paragraph, discourse, agency, punctuation, stance,
+        function_grammar,
+    ):
+        if _is_usable_paragraph(audit):
+            n += 1
+    return n
+
+
+def _has_usable_confounder_diagnosis(
+    confounder: dict[str, Any] | None,
+) -> bool:
+    """Tighter version of the pre-1.37.1 check — requires the
+    confounder dict to actually carry `ranked_confounders`, not
+    just be non-None."""
+    return _is_usable_confounder(confounder) and bool(
+        confounder.get("ranked_confounders")  # type: ignore[union-attr]
+    )
 
 
 # --- Posture decision ------------------------------------------
@@ -464,14 +587,35 @@ def gate(
 ) -> dict[str, Any]:
     """Read inputs, evaluate posture, return structured report."""
     target_length = _read_target_length(target_text, variance, paragraph)
-    baseline_size = _read_baseline_size(voice_distance, paragraph)
+    baseline_size = _read_baseline_size(
+        variance=variance,
+        voice_distance=voice_distance,
+        paragraph=paragraph,
+        discourse=discourse,
+        agency=agency,
+        punctuation=punctuation,
+        stance=stance,
+        function_grammar=function_grammar,
+    )
     register_match_strength = _read_register_match_strength(voice_distance)
     strip_ratio = _read_strip_ratio(variance)
     impostor_pool_size = _read_impostor_pool_size(gi)
-    has_conf = _has_confounder_diagnosis(confounder)
-    n_surfaces = _count_audit_inputs(
-        variance, voice_distance, paragraph, discourse, agency,
-        punctuation, stance, function_grammar,
+    # 1.37.1 — only count a confounder diagnosis as available
+    # when the JSON has the recognized shape (ranked_confounders).
+    has_conf = _has_usable_confounder_diagnosis(confounder)
+    # 1.37.1 — count only audit surfaces that are usable (recognized
+    # shape, not flagged unavailable). Pre-1.37.1 any non-None
+    # dict counted, so 5 failed payloads could promote to
+    # forensic_adjacent.
+    n_surfaces = _count_audit_surfaces(
+        variance=variance,
+        voice_distance=voice_distance,
+        paragraph=paragraph,
+        discourse=discourse,
+        agency=agency,
+        punctuation=punctuation,
+        stance=stance,
+        function_grammar=function_grammar,
     )
 
     posture_result = evaluate_evidentiary_posture(

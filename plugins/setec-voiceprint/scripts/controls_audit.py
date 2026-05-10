@@ -469,21 +469,34 @@ def main(argv: list[str] | None = None) -> int:
         encoding="utf-8", errors="ignore",
     )
 
-    def _read_optional_path(label: str, path: str | None) -> str | None:
+    def _read_optional_path(label: str, path: str | None) -> tuple[str | None, bool]:
+        """Return ``(text_or_None, error_occurred)``.
+
+        1.37.1 hardening: pre-1.37.1 a missing user-supplied
+        control path printed an error and returned None silently,
+        so the CLI exited 0 with a misleading single-pole report.
+        Now: a None path (flag not supplied) returns ``(None, False)``;
+        a non-empty path that doesn't resolve returns
+        ``(None, True)`` so the CLI can return rc=2 — same hardened-
+        input convention as confounder_audit.py and
+        evidentiary_conditions_gate.py.
+        """
         if not path:
-            return None
+            return None, False
         p = Path(path).expanduser()
         if not p.is_file():
             sys.stderr.write(f"{label} not found: {path}\n")
-            return None
-        return p.read_text(encoding="utf-8", errors="ignore")
+            return None, True
+        return p.read_text(encoding="utf-8", errors="ignore"), False
 
-    negative_text = _read_optional_path(
+    negative_text, neg_err = _read_optional_path(
         "--negative-control", args.negative_control,
     )
-    positive_text = _read_optional_path(
+    positive_text, pos_err = _read_optional_path(
         "--positive-control", args.positive_control,
     )
+    if neg_err or pos_err:
+        return 2
 
     # Load baseline texts.
     try:
@@ -543,6 +556,22 @@ def main(argv: list[str] | None = None) -> int:
             f"Dropped {len(dropped)} baseline entries overlapping "
             f"questioned/control paths: {', '.join(dropped)}\n"
         )
+
+    # 1.37.1 hardening: pre-1.37.1, if every baseline entry
+    # overlapped the questioned/control paths, the filter
+    # returned an empty list and the audit exited 0 with
+    # `available:false`. That misreports a self-overlap-guard
+    # failure as a normal output. Hard-fail instead — same
+    # convention paragraph_audit + general_imposters use.
+    if not filtered:
+        sys.stderr.write(
+            "Baseline empty after dropping overlap with "
+            "questioned/control paths. Point --baseline-dir at a "
+            "directory that doesn't contain the questioned text "
+            "or supplied controls, or pass --manifest with "
+            "non-overlapping entries.\n"
+        )
+        return 2
 
     baseline_texts = [
         read_text(Path(entry["path"])) for entry in filtered

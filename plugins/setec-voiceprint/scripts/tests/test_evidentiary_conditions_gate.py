@@ -205,11 +205,11 @@ class TestIndicatorReadHelpers:
 
     def test_baseline_size_from_voice_distance(self):
         vd = {"baseline_summary": {"n_files": 25}}
-        assert ecg._read_baseline_size(vd, None) == 25
+        assert ecg._read_baseline_size(voice_distance=vd) == 25
 
     def test_baseline_size_from_paragraph(self):
         para = {"baseline_block": {"n_files": 10}}
-        assert ecg._read_baseline_size(None, para) == 10
+        assert ecg._read_baseline_size(paragraph=para) == 10
 
     def test_register_match_strength_extraction(self):
         vd = {"register_match": {"match": {"strength": "strong"}}}
@@ -270,6 +270,145 @@ class TestCli:
         bad.write_text("{ malformed", encoding="utf-8")
         rc = ecg.main(["--variance-json", str(bad)])
         assert rc == 2
+
+
+# ---------- 1.37.1 reviewer-flagged P2 fixes ----------------------
+
+
+class TestUsableAuditValidators:
+    """Pre-1.37.1 `_count_audit_inputs` counted every non-None
+    dict, including outputs with `available: false` or unrelated
+    JSON. Reviewer reproduced forensic_adjacent posture using
+    five failed/empty payloads. Fix: per-surface usability
+    validator gates the count."""
+
+    def test_unavailable_paragraph_does_not_count(self):
+        assert ecg._is_usable_paragraph({"available": False}) is False
+
+    def test_available_paragraph_with_compression_counts(self):
+        assert ecg._is_usable_paragraph({
+            "available": True,
+            "compression": {"band": "Lightly smoothed"},
+        }) is True
+
+    def test_empty_dict_does_not_count_as_paragraph(self):
+        assert ecg._is_usable_paragraph({}) is False
+
+    def test_variance_with_compression_counts(self):
+        assert ecg._is_usable_variance({
+            "compression": {"band": "Lightly smoothed"},
+        }) is True
+
+    def test_voice_distance_with_overall_or_families(self):
+        assert ecg._is_usable_voice_distance({"overall": {}}) is True
+        assert ecg._is_usable_voice_distance({"families": {}}) is True
+        assert ecg._is_usable_voice_distance({"x": "y"}) is False
+
+    def test_confounder_requires_ranked_list(self):
+        assert ecg._is_usable_confounder({
+            "ranked_confounders": [],
+        }) is True
+        assert ecg._is_usable_confounder({"x": "y"}) is False
+
+    def test_gi_requires_decision(self):
+        assert ecg._is_usable_gi({
+            "decision": "consistent_with_candidate",
+        }) is True
+        assert ecg._is_usable_gi({"decision": "junk"}) is False
+
+    def test_failed_payloads_dont_promote_posture(self):
+        """The reviewer-reproduced bug: 5 failed payloads + a
+        confounder stub should NOT reach forensic_adjacent."""
+        report = ecg.gate(
+            target_text="word " * 2500,
+            variance={"available": False},
+            voice_distance={"available": False},
+            paragraph={"available": False},
+            discourse={"available": False},
+            agency={"available": False},
+            confounder={"x": "stub"},
+            has_pre_edit_version=True,
+        )
+        # All 5 surface inputs failed, and the confounder isn't
+        # in the ranked-list shape. n_surfaces should be 0,
+        # has_confounder_diagnosis should be False. Posture
+        # should NOT be forensic_adjacent.
+        assert report["posture"] != "forensic_adjacent_nondispositive"
+
+    def test_count_only_usable_surfaces(self):
+        n = ecg._count_audit_surfaces(
+            variance={"compression": {"band": "Lightly smoothed"}},
+            voice_distance={"overall": {}},
+            paragraph={"available": False, "compression": {}},
+            discourse={"available": True, "compression": {}},
+            agency=None,
+            punctuation={"compression": {}, "available": True},
+            stance=None,
+            function_grammar=None,
+        )
+        # variance + voice_distance + discourse + punctuation = 4.
+        # paragraph fails because available=False; agency / stance /
+        # function_grammar are None.
+        assert n == 4
+
+
+class TestVarianceBaselineRead:
+    """Pre-1.37.1 the gate read baseline size only from
+    voice_distance and paragraph. A variance-only run with 25
+    baseline files reported `baseline_size: 0`. Fix: read from
+    every audit shape that surfaces a baseline-size count."""
+
+    def test_variance_baseline_size_extraction(self):
+        variance = {"baseline": {"n_files": 25}}
+        assert ecg._read_baseline_size(variance=variance) == 25
+
+    def test_tier2_audit_baseline_extraction(self):
+        # Tier-2 audits use baseline_block.n_files (matches
+        # paragraph audit's shape).
+        for kwarg in (
+            "discourse", "agency", "punctuation", "stance",
+            "function_grammar",
+        ):
+            block = {"baseline_block": {"n_files": 12}}
+            n = ecg._read_baseline_size(**{kwarg: block})
+            assert n == 12, f"failed for {kwarg}"
+
+    def test_max_across_audits(self):
+        n = ecg._read_baseline_size(
+            variance={"baseline": {"n_files": 5}},
+            voice_distance={"baseline_summary": {"n_files": 25}},
+            paragraph={"baseline_block": {"n_files": 12}},
+        )
+        # Max across the three.
+        assert n == 25
+
+    def test_variance_only_run_no_longer_caps_at_exploratory(self):
+        """End-to-end: a variance-only run with a real baseline
+        size of 25 should now reach research-grade (not capped
+        at exploratory_comparison by `baseline_size: 0`)."""
+        variance = {
+            "compression": {"band": "Lightly smoothed"},
+            "baseline": {"n_files": 25},
+        }
+        confounder = {"ranked_confounders": [
+            {"confounder": "professional_copyediting", "compatibility_score": 0.7},
+        ]}
+        report = ecg.gate(
+            target_text="word " * 1500,
+            variance=variance,
+            confounder=confounder,
+        )
+        # Pre-1.37.1: would have been capped at
+        # exploratory_comparison because baseline_size=0. Post-fix:
+        # baseline_size=25 + 1500 words + confounder = research-grade
+        # eligible (the length cap at 2000 keeps it at
+        # research_grade rather than forensic).
+        assert report["posture"] in {
+            "research_grade_validation",
+            "internal_triage",  # if other caps apply
+        }
+        # And the indicator value should reflect the actual size.
+        assert report["indicators"]["baseline_size"] == 25
 
 
 if __name__ == "__main__":

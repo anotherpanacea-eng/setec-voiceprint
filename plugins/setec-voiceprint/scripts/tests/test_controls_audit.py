@@ -206,6 +206,115 @@ class TestCli:
         assert rc == 2
 
 
+# ---------- 1.37.1 reviewer-flagged P2 fixes ----------------------
+
+
+class TestMissingControlPathsHardFail:
+    """Pre-1.37.1, missing user-supplied control paths printed an
+    error and silently downgraded to baseline-only / single-pole.
+    Reviewer reproduced rc=0 with a missing negative-control path.
+    Fix: bad paths return rc=2 (matches the hardened-input
+    convention from confounder_audit / evidentiary_conditions_gate)."""
+
+    def test_missing_negative_control_returns_2(self, tmp_path):
+        questioned = tmp_path / "q.txt"
+        questioned.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        for i, text in enumerate(_BASELINE_TEXTS):
+            (baseline_dir / f"f{i}.txt").write_text(text, encoding="utf-8")
+        rc = ca.main([
+            "--questioned", str(questioned),
+            "--negative-control", str(tmp_path / "missing_neg.txt"),
+            "--baseline-dir", str(baseline_dir),
+        ])
+        assert rc == 2
+
+    def test_missing_positive_control_returns_2(self, tmp_path):
+        questioned = tmp_path / "q.txt"
+        questioned.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        for i, text in enumerate(_BASELINE_TEXTS):
+            (baseline_dir / f"f{i}.txt").write_text(text, encoding="utf-8")
+        rc = ca.main([
+            "--questioned", str(questioned),
+            "--positive-control", str(tmp_path / "missing_pos.txt"),
+            "--baseline-dir", str(baseline_dir),
+        ])
+        assert rc == 2
+
+    def test_supplied_controls_still_work(self, tmp_path):
+        """Sanity: when paths are valid the CLI still succeeds."""
+        questioned = tmp_path / "q.txt"
+        questioned.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        neg = tmp_path / "neg.txt"
+        neg.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        pos = tmp_path / "pos.txt"
+        pos.write_text(_POSITIVE_CONTROL, encoding="utf-8")
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        for i, text in enumerate(_BASELINE_TEXTS):
+            (baseline_dir / f"f{i}.txt").write_text(text, encoding="utf-8")
+        rc = ca.main([
+            "--questioned", str(questioned),
+            "--negative-control", str(neg),
+            "--positive-control", str(pos),
+            "--baseline-dir", str(baseline_dir),
+            "--json", "--out", str(tmp_path / "out.json"),
+        ])
+        assert rc == 0
+
+
+class TestEmptyPostFilterBaseline:
+    """Pre-1.37.1, a baseline that contained only the questioned
+    file (or only files matching the questioned + control paths)
+    would be silently filtered to empty and the audit would exit
+    0 with available=false. Fix: hard-fail with rc=2 — same
+    convention paragraph_audit + general_imposters use."""
+
+    def test_baseline_only_questioned_returns_2(self, tmp_path, capsys):
+        questioned = tmp_path / "q.txt"
+        questioned.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        # Baseline directory contains ONLY the questioned file.
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        # Symlink-equivalent: write the same content under
+        # baseline-dir/q.txt then point --questioned at it.
+        baseline_q = baseline_dir / "q.txt"
+        baseline_q.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        rc = ca.main([
+            "--questioned", str(baseline_q),
+            "--baseline-dir", str(baseline_dir),
+        ])
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert "baseline empty" in captured.err.lower() or "after dropping" in captured.err.lower()
+
+    def test_baseline_with_other_files_still_works(self, tmp_path):
+        """Sanity: a baseline with non-overlapping files still
+        succeeds even when one entry overlaps the questioned."""
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        # Three baseline files; one is the questioned text.
+        questioned = baseline_dir / "q.txt"
+        questioned.write_text(_NEGATIVE_CONTROL, encoding="utf-8")
+        (baseline_dir / "other1.txt").write_text(
+            _BASELINE_TEXTS[0], encoding="utf-8",
+        )
+        (baseline_dir / "other2.txt").write_text(
+            _BASELINE_TEXTS[1], encoding="utf-8",
+        )
+        rc = ca.main([
+            "--questioned", str(questioned),
+            "--baseline-dir", str(baseline_dir),
+            "--json", "--out", str(tmp_path / "out.json"),
+        ])
+        # questioned overlapped one baseline entry, but two others
+        # remain. Should succeed with rc=0.
+        assert rc == 0
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
