@@ -159,6 +159,9 @@ def bootstrap_compare(
     n_resamples: int = 9999,
     confidence_level: float = 0.95,
     seed: int | None = None,
+    allow_non_prose: bool = False,
+    strip_rules: str | list[str] | None = None,
+    strip_aggressive: bool = False,
 ) -> dict[str, Any]:
     """Length-matched bootstrap on the function-word distance.
 
@@ -225,29 +228,50 @@ def bootstrap_compare(
             "reason": "scipy not installed; bootstrap CIs unavailable",
         }
 
-    target_tokens = word_tokens(target_text)
+    # Apply the same corpus-hygiene stripping the main voice-distance
+    # comparison applies. Without this, a CSS / HTML / footer
+    # artifact that gets stripped from `compare_to_baseline`'s feature
+    # extraction would still contribute to the bootstrap distribution
+    # — the percentile and the headline Delta would be measured on
+    # different texts, and any contamination would land in the
+    # bootstrap reading without being visible in the rest of the
+    # report. Strip target and every baseline file before the
+    # function-word vectorization runs.
+    target_clean, _ = strip_non_prose(
+        target_text, strip_rules,
+        allow_non_prose=allow_non_prose,
+        strip_aggressive=strip_aggressive,
+    )
+    target_tokens = word_tokens(target_clean)
     target_n_words = len(target_tokens)
     if target_n_words <= 0:
         return {
             "available": False,
-            "reason": "target has zero words",
+            "reason": "target has zero words after preprocessing",
         }
 
     baseline_texts: list[str] = []
     for entry in baseline_entries:
         try:
-            baseline_texts.append(read_text(Path(entry["path"])))
+            raw = read_text(Path(entry["path"]))
         except (OSError, KeyError):
             continue
+        cleaned, _ = strip_non_prose(
+            raw, strip_rules,
+            allow_non_prose=allow_non_prose,
+            strip_aggressive=strip_aggressive,
+        )
+        if cleaned.strip():
+            baseline_texts.append(cleaned)
     if not baseline_texts:
         return {
             "available": False,
-            "reason": "no readable baseline files",
+            "reason": "no readable baseline files (or all empty after preprocessing)",
         }
 
     baseline_mean = _baseline_mean_function_word_vector(baseline_texts)
     target_distance = _manhattan_distance(
-        _function_word_vector(target_text), baseline_mean,
+        _function_word_vector(target_clean), baseline_mean,
     )
 
     def _stat(window_text: str) -> float | None:
@@ -280,6 +304,13 @@ def bootstrap_compare(
         "statistic": "function_word_vector_l1_distance",
         "target_n_words": target_n_words,
         "target_function_word_distance": target_distance,
+        # `length_matched_bootstrap` returns
+        # `{"n", "quantiles": {p5, p25, p50, p75, p95}, "mean", "sd"}`
+        # — preserved as-is for shape parity with variance_audit's
+        # `bootstrap_compare`. Do NOT flatten here; the formatter
+        # below reads the nested shape (it used to read a
+        # never-populated flat shape, producing all-`n/a` cells —
+        # the bug the reviewer reproduced).
         "baseline_distribution": result.get("baseline_distribution"),
         "bootstrap": result.get("bootstrap"),
         "config": {
@@ -288,6 +319,9 @@ def bootstrap_compare(
             "n_resamples": n_resamples,
             "confidence_level": confidence_level,
             "seed": seed,
+            "allow_non_prose": allow_non_prose,
+            "strip_rules": strip_rules,
+            "strip_aggressive": strip_aggressive,
         },
     }
 
@@ -335,15 +369,19 @@ def format_bootstrap_block(boot: dict[str, Any]) -> list[str]:
         "",
         "### Baseline window distribution at this length",
         "",
-        "| min | p05 | p25 | p50 | p75 | p95 | max | mean | sd |",
-        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        # The shape is `{n, quantiles: {p5, p25, p50, p75, p95}, mean, sd}`.
+        # `min` / `max` aren't in the summary; the quantile keys are
+        # `p5` (not `p05`). Reading the wrong keys here was the bug
+        # that produced all-n/a cells in 1.30.0 markdown reports.
+        "| p5 | p25 | p50 | p75 | p95 | mean | sd | n |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|",
         (
             "| "
             + " | ".join(
-                _fmt_dist(bd.get(k))
+                _fmt_dist(_dist_value(bd, k))
                 for k in (
-                    "min", "p05", "p25", "p50",
-                    "p75", "p95", "max", "mean", "sd",
+                    "p5", "p25", "p50", "p75", "p95",
+                    "mean", "sd", "n",
                 )
             )
             + " |"
@@ -364,6 +402,23 @@ def _fmt_dist(v: Any) -> str:
     if isinstance(v, (int, float)):
         return f"{v:.4f}"
     return "n/a"
+
+
+def _dist_value(bd: dict[str, Any], key: str) -> Any:
+    """Look up a baseline-distribution cell by name.
+
+    `length_matched_bootstrap`'s output nests the percentile cells
+    under ``quantiles`` (``p5``, ``p25``, ``p50``, ``p75``, ``p95``)
+    and keeps ``mean``, ``sd``, ``n`` at the top level. This helper
+    handles both shapes so the table renderer doesn't have to know
+    where each cell lives.
+    """
+    if not isinstance(bd, dict):
+        return None
+    quantiles = bd.get("quantiles") or {}
+    if isinstance(quantiles, dict) and key in quantiles:
+        return quantiles[key]
+    return bd.get(key)
 
 
 def render_report(
@@ -633,6 +688,9 @@ def main() -> int:
             n_resamples=args.bootstrap_resamples,
             confidence_level=args.bootstrap_confidence,
             seed=args.bootstrap_seed,
+            allow_non_prose=args.allow_non_prose,
+            strip_rules=args.strip_rules,
+            strip_aggressive=args.strip_aggressive,
         )
 
     if args.json:

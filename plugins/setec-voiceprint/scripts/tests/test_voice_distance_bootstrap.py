@@ -244,15 +244,22 @@ class TestFormatBootstrapBlock:
         assert "Unavailable" in text
 
     def test_available_renders_target_and_distribution(self):
+        # The shape mirrors what `length_matched_bootstrap()` actually
+        # returns: nested `quantiles` keyed `p5`/`p25`/`p50`/`p75`/`p95`,
+        # plus top-level `n`, `mean`, `sd`. Fixed in 1.30.1 — pre-fix
+        # the formatter read flat keys (`p05`, etc.) and rendered
+        # every cell as `n/a` against real helper output.
         lines = vd.format_bootstrap_block({
             "available": True,
             "target_n_words": 500,
             "target_function_word_distance": 0.0420,
             "baseline_distribution": {
-                "p05": 0.01, "p25": 0.02, "p50": 0.03,
-                "p75": 0.04, "p95": 0.05, "min": 0.005,
-                "max": 0.06, "mean": 0.03, "sd": 0.011,
-                "n_samples": 50,
+                "n": 50,
+                "quantiles": {
+                    "p5": 0.01, "p25": 0.02, "p50": 0.03,
+                    "p75": 0.04, "p95": 0.05,
+                },
+                "mean": 0.03, "sd": 0.011,
             },
             "bootstrap": {
                 "percentile": 0.83,
@@ -265,8 +272,201 @@ class TestFormatBootstrapBlock:
         text = "\n".join(lines)
         assert "## Length-matched bootstrap" in text
         assert "Empirical percentile" in text
-        # Distribution table is present
-        assert "min" in text and "p50" in text and "p95" in text
+        # Distribution table renders actual numbers (not `n/a` for
+        # every cell — the bug the reviewer reproduced).
+        assert "0.0300" in text  # p50 / mean
+        assert "0.0500" in text  # p95
+        assert "0.0100" in text  # p5
+        # And the column headers are the real shape.
+        assert "p5 |" in text and "p95 |" in text and "n |" in text
+
+
+# ---------- 1.30.1 reviewer-flagged P2 fixes -----------------------
+
+
+class TestPreprocessingThreaded:
+    """The bootstrap path now applies the same corpus-hygiene
+    stripping the rest of voice_distance applies. Without this, a
+    CSS / HTML / footer artifact stripped from compare_to_baseline's
+    feature extraction would still contribute to the bootstrap
+    distribution — the percentile and the headline Delta would be
+    measured on different texts. Reproduces and pins the reviewer-
+    flagged P2.
+    """
+
+    def test_strip_rules_changes_target_distance(self, tmp_path):
+        base = _make_baseline_dir(tmp_path)
+        entries = _baseline_entries_from_dir(base)
+        # Target with a CSS block prepended. Without stripping, the
+        # CSS tokens contaminate the function-word vector; with
+        # stripping, only the prose contributes.
+        css = (
+            ".reading-mode { color: #333; padding: 12px; "
+            "background: #f5f5f5; } "
+            "h1.title { font-size: 18px; font-weight: bold; } "
+        ) * 5
+        prose = "the and of the cat sat on the mat " * 100
+        contaminated = css + prose
+
+        clean_run = vd.bootstrap_compare(
+            contaminated, entries,
+            n_windows_per_file=4, max_total_windows=20,
+            n_resamples=99, seed=42,
+            # Default strips conservative rules including HTML/CSS.
+        )
+        raw_run = vd.bootstrap_compare(
+            contaminated, entries,
+            n_windows_per_file=4, max_total_windows=20,
+            n_resamples=99, seed=42,
+            allow_non_prose=True,  # opt OUT of stripping
+        )
+        # Both runs are valid; the cleaned-target distance should be
+        # smaller (closer to baseline) than the raw-target distance,
+        # since the contamination pushes the function-word vector
+        # away from baseline mean.
+        if clean_run.get("available") and raw_run.get("available"):
+            assert (
+                clean_run["target_function_word_distance"]
+                < raw_run["target_function_word_distance"]
+            ), (
+                "stripping should bring contaminated target closer "
+                "to baseline mean"
+            )
+
+    def test_config_records_preprocessing_choices(self, tmp_path):
+        base = _make_baseline_dir(tmp_path)
+        entries = _baseline_entries_from_dir(base)
+        target = (base / "essay_0.txt").read_text(encoding="utf-8")
+        out = vd.bootstrap_compare(
+            target, entries,
+            n_windows_per_file=2, max_total_windows=10,
+            n_resamples=99, seed=42,
+            allow_non_prose=False,
+            strip_aggressive=True,
+        )
+        if not out.get("available"):
+            pytest.skip(f"bootstrap unavailable: {out.get('reason')}")
+        cfg = out.get("config") or {}
+        assert cfg.get("allow_non_prose") is False
+        assert cfg.get("strip_aggressive") is True
+        assert "strip_rules" in cfg
+
+
+class TestNestedDistributionShape:
+    """The formatter reads the nested ``quantiles`` shape that
+    ``length_matched_bootstrap`` actually returns (``{n, quantiles:
+    {p5, p25, p50, p75, p95}, mean, sd}``). Pre-1.30.1 it read flat
+    keys (``p05``, ``min``, ``max``) and rendered every cell as
+    ``n/a`` against real helper output. End-to-end formatter test
+    using actual `bootstrap_compare` output."""
+
+    def test_real_helper_output_renders_real_numbers(self, tmp_path):
+        base = _make_baseline_dir(tmp_path)
+        entries = _baseline_entries_from_dir(base)
+        target = (base / "essay_0.txt").read_text(encoding="utf-8")
+        out = vd.bootstrap_compare(
+            target, entries,
+            n_windows_per_file=4, max_total_windows=20,
+            n_resamples=99, seed=42,
+        )
+        if not out.get("available"):
+            pytest.skip(f"bootstrap unavailable: {out.get('reason')}")
+        text = "\n".join(vd.format_bootstrap_block(out))
+        # The distribution row should have at least one numeric cell,
+        # not all `n/a`. (Pre-fix every cell was `n/a`.)
+        assert text.count("n/a") < 5, (
+            "distribution row rendered too many n/a cells; the "
+            "formatter is reading the wrong shape"
+        )
+        # Actual quantile keys appear in the header.
+        assert "| p5 |" in text and "| p95 |" in text
+
+    def test_dist_value_reads_nested_quantiles(self):
+        bd = {
+            "n": 50,
+            "quantiles": {"p5": 0.01, "p50": 0.03, "p95": 0.05},
+            "mean": 0.03, "sd": 0.011,
+        }
+        assert vd._dist_value(bd, "p5") == 0.01
+        assert vd._dist_value(bd, "p50") == 0.03
+        assert vd._dist_value(bd, "mean") == 0.03  # top-level
+        assert vd._dist_value(bd, "n") == 50
+        assert vd._dist_value(bd, "nonexistent") is None
+
+    def test_dist_value_handles_legacy_flat_shape(self):
+        """Defensive: if a legacy caller hands in a flat dict (no
+        nested ``quantiles``), the helper still finds the value."""
+        bd = {"p5": 0.01, "p50": 0.03}
+        assert vd._dist_value(bd, "p5") == 0.01
+
+
+class TestDegenerateBootstrapCI:
+    """SciPy BCa can return non-finite bounds without raising on
+    degenerate samples. Pre-1.30.1 those bounds went through
+    `min(1.0, NaN)` / `max(0.0, NaN)` which collapsed NaN into 1.0
+    or 0.0, producing CI [1.0, 1.0] regardless of the point estimate.
+    Reproducing and pinning: any unacceptable bounds (non-finite,
+    out-of-range, or excluding the point) get rejected and replaced
+    with a degenerate-no-CI marker.
+    """
+
+    def test_constant_sample_returns_degenerate_marker(self):
+        """All-equal sample → BCa cannot estimate bias-correction
+        and percentile method also returns 0/0 bounds. The honest
+        output is `[point, point]` with method='degenerate_no_ci'."""
+        from length_bootstrap import bootstrap_percentile  # type: ignore
+        out = bootstrap_percentile(
+            [0.5] * 30, target=0.5,
+            n_resamples=999, seed=42,
+        )
+        # Either degenerate path produced [point, point] (target
+        # equal to constant) or a finite/contained CI. Never the
+        # NaN-clamped [1.0, 1.0] failure mode.
+        if out["ci_low"] is not None and out["ci_high"] is not None:
+            assert out["ci_low"] <= out["percentile"] <= out["ci_high"], (
+                "CI must contain the point estimate"
+            )
+            # And bounds must be finite.
+            import math
+            assert math.isfinite(out["ci_low"])
+            assert math.isfinite(out["ci_high"])
+
+    def test_target_outside_sample_returns_point_ci(self):
+        """Target far past the sample max → percentile is 1.0 with
+        no resampling uncertainty. Returns [point, point], not a
+        garbage clamp."""
+        from length_bootstrap import bootstrap_percentile  # type: ignore
+        out = bootstrap_percentile(
+            [0.1, 0.2, 0.3, 0.4], target=10.0,
+            n_resamples=999, seed=42,
+        )
+        assert out["percentile"] == 1.0
+        assert out["ci_low"] == 1.0
+        assert out["ci_high"] == 1.0
+
+    def test_ci_always_contains_point_when_finite(self):
+        """Across many random samples, when the CI is reported (not
+        the degenerate marker), it always contains the point."""
+        import math
+        import random
+        from length_bootstrap import bootstrap_percentile  # type: ignore
+        rng = random.Random(0xC0FFEE)
+        for trial in range(15):
+            n = rng.randint(2, 30)
+            sample = [rng.random() for _ in range(n)]
+            target = rng.choice(sample) if rng.random() < 0.5 else rng.random()
+            out = bootstrap_percentile(
+                sample, target=target,
+                n_resamples=199, seed=trial,
+            )
+            lo, hi = out["ci_low"], out["ci_high"]
+            if lo is not None and hi is not None:
+                assert math.isfinite(lo) and math.isfinite(hi), (
+                    f"non-finite CI bound: {(lo, hi)}"
+                )
+                assert lo <= out["percentile"] <= hi, (
+                    f"CI {(lo, hi)} excludes point {out['percentile']}"
+                )
 
 
 if __name__ == "__main__":

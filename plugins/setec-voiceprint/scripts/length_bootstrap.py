@@ -275,45 +275,69 @@ def bootstrap_percentile(
             pass
         return point
 
-    chosen_method = method
-    try:
-        rng = None if seed is None else seed
-        result = scipy_stats.bootstrap(
-            (arr,),
-            statistic=_stat,
-            n_resamples=n_resamples,
-            confidence_level=confidence_level,
-            method=method,
-            random_state=rng,
+    def _bounds_acceptable(lo: float, hi: float) -> bool:
+        """A CI on a percentile is acceptable iff both bounds are
+        finite, ordered, in [0, 1], and contain the point estimate.
+
+        BCa's bias correction can return non-finite bounds on
+        degenerate samples (zero variance after jackknife) without
+        raising — SciPy issues a RuntimeWarning and returns NaN. The
+        downstream clamp then folds NaN into 0.0 or 1.0, producing
+        nonsense CIs (the canonical case: BCa returns NaN/NaN, which
+        clamps to [1.0, 1.0] regardless of where the point estimate
+        sits). Reject those before they get clamped.
+        """
+        return (
+            math.isfinite(lo) and math.isfinite(hi)
+            and 0.0 <= lo <= hi <= 1.0
+            and lo <= point <= hi
         )
-        ci_low = float(result.confidence_interval.low)
-        ci_high = float(result.confidence_interval.high)
-    except Exception:
-        # BCa can raise on degenerate samples (zero variance after
-        # jackknife). Fall back to the simple percentile method.
+
+    def _try_bootstrap(method_name: str) -> tuple[float, float] | None:
         try:
-            chosen_method = "percentile"
             result = scipy_stats.bootstrap(
                 (arr,),
                 statistic=_stat,
                 n_resamples=n_resamples,
                 confidence_level=confidence_level,
-                method="percentile",
+                method=method_name,
                 random_state=(None if seed is None else seed),
             )
-            ci_low = float(result.confidence_interval.low)
-            ci_high = float(result.confidence_interval.high)
-        except Exception:
-            return {
-                "percentile": point,
-                "ci_low": None,
-                "ci_high": None,
-                "method": "failed",
-                "n_resamples": 0,
-                "n_baseline_windows": len(sample),
-            }
-    # Clamp degenerate edge cases: percentile is a probability and CI
-    # bounds should respect the [0, 1] interval.
+            lo = float(result.confidence_interval.low)
+            hi = float(result.confidence_interval.high)
+        except Exception:  # noqa: BLE001 — BCa raises ValueError on degeneracy
+            return None
+        return lo, hi
+
+    chosen_method = method
+    bounds = _try_bootstrap(method)
+    if bounds is not None and not _bounds_acceptable(*bounds):
+        # BCa returned without raising but produced NaN / out-of-range
+        # / point-excluded bounds — discard and fall through to
+        # percentile. This is the path the reviewer reproduced where
+        # CI [1.0, 1.0] excluded a point at 0.5.
+        bounds = None
+    if bounds is None and method != "percentile":
+        chosen_method = "percentile"
+        bounds = _try_bootstrap("percentile")
+        if bounds is not None and not _bounds_acceptable(*bounds):
+            bounds = None
+    if bounds is None:
+        # Both methods failed or returned unacceptable bounds. The
+        # honest reading is "no CI from resampling; the point
+        # estimate stands without uncertainty quantification."
+        return {
+            "percentile": point,
+            "ci_low": point,
+            "ci_high": point,
+            "method": "degenerate_no_ci",
+            "n_resamples": n_resamples,
+            "n_baseline_windows": len(sample),
+        }
+    ci_low, ci_high = bounds
+    # Clamp finite-but-near-edge bounds back to [0, 1]. The
+    # acceptability check above already bounded them, so this is
+    # belt-and-suspenders against floating-point edge cases.
     ci_low = max(0.0, min(1.0, ci_low))
     ci_high = max(0.0, min(1.0, ci_high))
     return {
