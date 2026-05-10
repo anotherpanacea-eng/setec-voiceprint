@@ -1438,6 +1438,7 @@ def classify_compression(
 ) -> dict[str, Any]:
     flagged: list[str] = []
     skipped: list[str] = []
+    available_signals: list[str] = []  # 1.35.1 — see ablation contract
     notes: dict[str, str] = {}
     weighted_score = 0.0
     available_weight = 0.0
@@ -1452,6 +1453,11 @@ def classify_compression(
     ) -> None:
         nonlocal weighted_score, available_weight
         if value is None:
+            # Signal was not computed at all (Tier 2/3 disabled, or
+            # the audit didn't produce a value). Distinct from
+            # length-floor skip — the signal isn't in `available`
+            # AND isn't reported as `skipped` because it never
+            # entered the band-call calculus.
             return
         if signal not in COMPRESSION_HEURISTICS:
             return
@@ -1464,8 +1470,12 @@ def classify_compression(
             return
         # Signal is in scope: it cleared its length floor and has a
         # value. Count its weight as available evidence regardless of
-        # whether it ends up flagged.
+        # whether it ends up flagged. Track its name in
+        # ``available_signals`` so the ablation contract can
+        # distinguish "signal evaluated and weight contributed" from
+        # "signal never computed because tier disabled."
         available_weight += weight
+        available_signals.append(signal)
         compressed = (
             (direction == "lt" and value < thresh)
             or (direction == "gt" and value > thresh)
@@ -1527,6 +1537,7 @@ def classify_compression(
                 )
             elif isinstance(kl_value, (int, float)):
                 available_weight += kl_weight
+                available_signals.append("pos_bigram_kl")
                 pos_bigram_kl_info["in_band"] = True
                 kl_compressed = (
                     (kl_direction == "lt" and kl_value < kl_threshold)
@@ -1631,6 +1642,15 @@ def classify_compression(
             else None
         ),
         "flagged_signals": flagged,
+        # 1.35.1 — `available_signals` is the explicit list of
+        # signal names whose value was retrieved AND cleared the
+        # length floor (i.e., contributed to `available_weight`).
+        # Distinct from `flagged_signals` (signals that fired) and
+        # from `skipped_signals` (signals length-floor-skipped).
+        # Read by `ablation_band_calls` to avoid double-counting
+        # weights for signals that were never in scope (e.g.
+        # tier-3 signals when --no-tier3 is set).
+        "available_signals": available_signals,
         "skipped_signals": skipped,
         "n_flagged": len(flagged),
         "notes": notes,
@@ -1677,6 +1697,19 @@ _ABLATION_SIGNAL_FAMILIES: dict[str, tuple[str, ...]] = {
     "connective_overuse": (
         "connective_density",
     ),
+    # 1.35.1 — baseline_divergence family. `pos_bigram_kl`
+    # participates in compression when a baseline is supplied
+    # (weight 2.0). Pre-1.35.1 it was absent from the ablation
+    # mapping, so a band call carried mostly or entirely by KL
+    # could still report `is_robust_call=True` with no
+    # load-bearing families. Now ablation has a family for it.
+    # The family name `baseline_divergence` reflects that this
+    # is the only baseline-relative signal in the registry — if
+    # future signals join (e.g., syntactic-template divergence
+    # against a register-matched baseline), they belong here.
+    "baseline_divergence": (
+        "pos_bigram_kl",
+    ),
 }
 
 
@@ -1708,6 +1741,19 @@ def ablation_band_calls(
     available_weight = float(
         compression_result.get("available_weight", 0.0)
     )
+    # 1.35.1 — read the explicit available-signals list rather
+    # than re-deriving from length floors. Pre-1.35.1 the
+    # ablation checked `n_words < spec.length_floor` to gate
+    # signal inclusion, but `classify_compression` only adds a
+    # signal's weight to `available_weight` when its VALUE was
+    # retrieved (which fails for tier-2/3 signals when the
+    # corresponding tier was disabled). Reviewer reproduced
+    # `--no-tier3` runs reporting tier-3 weight in `weight_excluded`
+    # for the over_cohesion family even though those signals were
+    # never in `available_weight` to begin with.
+    available_signals_set = set(
+        compression_result.get("available_signals") or []
+    )
     original_band = compression_result.get("band", "unknown")
     n_words = (audit.get("summary") or {}).get("n_words", 0)
 
@@ -1719,21 +1765,36 @@ def ablation_band_calls(
     }
     original_rank = band_rank.get(original_band, -2)
 
+    def _signal_weight(signal: str) -> float | None:
+        """Return the registry weight for `signal`, looking in
+        both `COMPRESSION_HEURISTICS` and `POS_BIGRAM_KL_HEURISTIC`.
+        Returns None if the signal isn't in any registry."""
+        if signal in COMPRESSION_HEURISTICS:
+            return float(COMPRESSION_HEURISTICS[signal].weight)
+        if signal == "pos_bigram_kl":
+            return float(POS_BIGRAM_KL_HEURISTIC.weight)
+        return None
+
     out: dict[str, Any] = {}
     for family, signals in _ABLATION_SIGNAL_FAMILIES.items():
         family_weight_available = 0.0
         family_weight_fired = 0.0
         for sig in signals:
-            if sig not in COMPRESSION_HEURISTICS:
+            # 1.35.1 — only count weight for signals that actually
+            # contributed to the compression call. A signal not in
+            # `available_signals_set` was either below its length
+            # floor (already excluded from `available_weight`) or
+            # never computed (tier disabled, baseline absent for
+            # KL, etc.) — both cases mean its weight is NOT in
+            # the denominator and "removing" it costs nothing.
+            if sig not in available_signals_set:
                 continue
-            spec = COMPRESSION_HEURISTICS[sig]
-            if n_words < spec.length_floor:
-                # Below length floor — wasn't in `available_weight`
-                # to begin with, so excluding it costs nothing.
+            weight = _signal_weight(sig)
+            if weight is None:
                 continue
-            family_weight_available += float(spec.weight)
+            family_weight_available += weight
             if sig in flagged:
-                family_weight_fired += float(spec.weight)
+                family_weight_fired += weight
 
         ablated_available = available_weight - family_weight_available
         ablated_score = weighted_score - family_weight_fired

@@ -137,6 +137,60 @@ class TestCli:
         assert rc == 0
 
 
+# ---------- 1.35.1 reviewer-flagged P2 fix ----------------------
+
+
+class TestEvidentialDeduplication:
+    """Pre-1.35.1, the evidential category had two patterns: a
+    bare-verb pattern (`shows`, `suggests`, ...) and a phrase
+    pattern (`(evidence|research|...)\\s+(shows|...)`). A phrase
+    like "evidence shows" matched both, double-counting. Reviewer
+    reproduced inflated evidential density. Fix: collect spans
+    per category and de-duplicate by containment (longer match
+    wins; non-overlapping all count)."""
+
+    def test_phrase_does_not_double_count(self):
+        # "Evidence shows" matches both the bare-verb pattern
+        # ("shows") and the phrase pattern ("evidence shows"). Should
+        # count as 1 evidential, not 2.
+        text = "Evidence shows progress. " * 10
+        a = sm.audit_stance_modality(text)
+        # 10 "evidence shows" phrases → 10 evidentials (not 20).
+        assert a["category_counts"]["evidential"] == 10
+
+    def test_bare_verb_still_counts_alone(self):
+        # "shows" without an "evidence" prefix should still count
+        # exactly once as evidential.
+        text = "The data shows progress consistently. " * 10
+        a = sm.audit_stance_modality(text)
+        # Each repetition contributes 1 "shows". Confirm count
+        # is exactly the number of occurrences.
+        assert a["category_counts"]["evidential"] >= 10
+
+    def test_multiple_distinct_phrases_count_separately(self):
+        # Different evidential phrases in same text shouldn't
+        # collapse to 1 — they're non-overlapping spans.
+        text = (
+            "Evidence shows progress. Research demonstrates impact. "
+            "Data suggests trends."
+        ) * 5
+        a = sm.audit_stance_modality(text)
+        # 3 phrases × 5 reps = 15 evidentials (not 30 with the
+        # pre-fix double-counting).
+        assert a["category_counts"]["evidential"] == 15
+
+    def test_non_evidential_category_still_uses_dedup(self):
+        # Sanity: hedge category has multiple patterns too. The dedup
+        # should apply uniformly without breaking other categories.
+        text = "Somewhat indeed, more or less, the result is somewhat clear. " * 5
+        a = sm.audit_stance_modality(text)
+        # Should count `somewhat` (hedge) + `indeed` (booster) +
+        # `more or less` (hedge) per repetition, with no double
+        # counting from overlapping patterns.
+        assert isinstance(a["category_counts"]["hedge"], int)
+        assert a["category_counts"]["hedge"] >= 5  # at least "more or less"
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

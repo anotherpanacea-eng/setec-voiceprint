@@ -187,6 +187,138 @@ class TestRender:
             assert family in text
 
 
+# ---------- 1.35.1 reviewer-flagged P2 fixes ----------------------
+
+
+class TestAvailableSignalsContract:
+    """Pre-1.35.1, the ablation math gated signals on length floor
+    only — but `classify_compression` only adds a signal's weight
+    to `available_weight` when its VALUE exists. With --no-tier3,
+    tier-3 signals had no values yet the ablation still counted
+    their weights as "excluded." Reviewer reproduced
+    `over_cohesion weight_excluded=1.5` despite adjacent_cosine
+    never being in the call. Fix: classify_compression records
+    `available_signals`; ablation reads from it directly.
+    """
+
+    def test_no_tier3_does_not_count_cohesion_weights(self):
+        # Simulate --no-tier3: adjacent_cosine signals are not in
+        # available_signals.
+        compression = {
+            "band": "Moderately smoothed",
+            "compression_fraction": 0.30,
+            "flagged_signals": ["burstiness_B", "mtld"],
+            "available_signals": [
+                "burstiness_B", "sentence_length_sd", "fkgl_sd",
+                "mtld", "mattr", "shannon_entropy", "yules_k",
+                "connective_density",
+            ],  # NO adjacent_cosine — tier-3 disabled
+            "weighted_score": 3.0,
+            "available_weight": 5.5,
+        }
+        ablation = va.ablation_band_calls(
+            compression, _audit_with_words(1500),
+        )
+        cohesion = ablation["per_family"]["over_cohesion"]
+        assert cohesion["weight_excluded"] == 0.0, (
+            "tier-3-disabled run should not count cohesion weight "
+            "as excluded — those signals were never in scope"
+        )
+        assert cohesion["fired_weight_excluded"] == 0.0
+
+    def test_legacy_compression_without_available_signals_field(self):
+        """Pre-1.35.1 callers may have stored compression results
+        without the available_signals field. Ablation degrades
+        gracefully — every family is treated as having no
+        available signals."""
+        compression = {
+            "band": "Lightly smoothed",
+            "compression_fraction": 0.10,
+            "flagged_signals": [],
+            # No available_signals key
+            "weighted_score": 1.0,
+            "available_weight": 13.5,
+        }
+        ablation = va.ablation_band_calls(
+            compression, _audit_with_words(1500),
+        )
+        # Without available_signals, every family reports 0
+        # weight_excluded — graceful degradation rather than crash.
+        for fam, info in ablation["per_family"].items():
+            assert info["weight_excluded"] == 0.0
+
+
+class TestBaselineDivergenceFamily:
+    """Pre-1.35.1, pos_bigram_kl participated in the band call when
+    a baseline was supplied (weight 2.0) but had no ablation
+    family. A KL-driven call could report `is_robust_call=true`
+    with no load-bearing families — exactly the wrong signal.
+    Fix: new `baseline_divergence` family contains pos_bigram_kl.
+    """
+
+    def test_baseline_divergence_family_present(self):
+        compression = {
+            "band": "Lightly smoothed",
+            "compression_fraction": 0.10,
+            "flagged_signals": [],
+            "available_signals": [],
+            "weighted_score": 0.0,
+            "available_weight": 13.5,
+        }
+        ablation = va.ablation_band_calls(
+            compression, _audit_with_words(1500),
+        )
+        assert "baseline_divergence" in ablation["per_family"]
+        assert "pos_bigram_kl" in (
+            ablation["per_family"]["baseline_divergence"]["removed_signals"]
+        )
+
+    def test_kl_load_bearing_call_flags_baseline_family(self):
+        """KL is the only fired signal → removing baseline_divergence
+        family should drop the band, marking it load-bearing."""
+        compression = {
+            "band": "Moderately smoothed",
+            "compression_fraction": 0.50,
+            "flagged_signals": ["pos_bigram_kl"],
+            "available_signals": [
+                "burstiness_B", "mtld", "pos_bigram_kl",
+            ],
+            "weighted_score": 2.0,  # only KL fired
+            "available_weight": 4.0,
+        }
+        ablation = va.ablation_band_calls(
+            compression, _audit_with_words(1500),
+        )
+        baseline_fam = ablation["per_family"]["baseline_divergence"]
+        # KL contributed 2.0 to available + 2.0 to fired.
+        assert baseline_fam["weight_excluded"] == 2.0
+        assert baseline_fam["fired_weight_excluded"] == 2.0
+        # And it should be load-bearing.
+        assert "baseline_divergence" in ablation["load_bearing_families"]
+
+    def test_kl_not_in_call_when_no_baseline(self):
+        """Without a baseline, pos_bigram_kl is absent from
+        available_signals → ablation correctly reports 0 weight
+        excluded for the baseline_divergence family."""
+        compression = {
+            "band": "Moderately smoothed",
+            "compression_fraction": 0.30,
+            "flagged_signals": ["burstiness_B"],
+            "available_signals": [
+                "burstiness_B", "sentence_length_sd", "mtld",
+            ],
+            "weighted_score": 1.0,
+            "available_weight": 3.0,
+        }
+        ablation = va.ablation_band_calls(
+            compression, _audit_with_words(1500),
+        )
+        assert (
+            ablation["per_family"]["baseline_divergence"]["weight_excluded"]
+            == 0.0
+        )
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

@@ -184,12 +184,36 @@ def audit_stance_modality(text: str) -> dict[str, Any]:
             "reason": "empty text",
         }
 
+    # 1.35.1 — pre-fix the count summed `len(pattern.findall(text))`
+    # across patterns within a category, which double-counted
+    # phrases like "evidence shows" (matched by both the bare-verb
+    # pattern `shows` and the phrase pattern
+    # `(evidence|research|...)\s+(shows|...)`). Reviewer reproduced
+    # inflated evidential density and downstream stance entropy. Fix:
+    # collect (start, end) match spans across all patterns in the
+    # category, then de-duplicate by span containment — a longer
+    # match that covers a shorter one wins; non-overlapping matches
+    # all count.
     category_counts: Counter[str] = Counter()
     for category, patterns in _PATTERNS.items():
-        n_matches = 0
+        spans: list[tuple[int, int]] = []
         for pattern in patterns:
-            n_matches += len(pattern.findall(text))
-        category_counts[category] = n_matches
+            for m in pattern.finditer(text):
+                spans.append((m.start(), m.end()))
+        # Deduplicate spans by containment: drop any span that lies
+        # entirely inside another span in the list. Sort by length
+        # descending so the longest matches survive.
+        spans.sort(key=lambda s: -(s[1] - s[0]))
+        kept: list[tuple[int, int]] = []
+        for s in spans:
+            covered = False
+            for k in kept:
+                if k[0] <= s[0] and s[1] <= k[1]:
+                    covered = True
+                    break
+            if not covered:
+                kept.append(s)
+        category_counts[category] = len(kept)
 
     densities = {
         cat: _per_thousand(category_counts.get(cat, 0), n_words)
