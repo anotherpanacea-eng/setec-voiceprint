@@ -59,6 +59,149 @@ PREPROCESSING_RULES: tuple[tuple[str, re.Pattern[str] | None, str], ...] = (
 )
 
 
+# --- Masking rules (Release 1, paired-release schedule) ----------
+#
+# Distinct purpose from PREPROCESSING_RULES (corpus-hygiene / non-prose
+# contamination) and AGGRESSIVE_RULES (URL noise, footnotes, citations
+# at the markup level). Masking rules remove *prose* that isn't the
+# writer's voice: quoted statutes, block quotations, headings,
+# common LLM wrapper phrases. Opt-in only — these rules are aggressive
+# enough that running them on a normal essay would over-strip.
+#
+# Used by the analytical-pass masking modes (e.g. `prose_body_only`)
+# rather than as defaults. The selectable `--strip-masking` flag and
+# preset profiles route here.
+MASKING_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
+    (
+        # Markdown / setext headings — `# Title` through `###### h6`
+        # plus `Title\n=====` and `Title\n-----` setext form. Headings
+        # are not the writer's voice in policy / testimony / academic
+        # prose where they're often standardized.
+        "markdown_heading",
+        re.compile(
+            r"(?m)^[ \t]{0,3}#{1,6}[ \t]+[^\n]+|"
+            r"^[^\n]+\n[=-]{3,}[ \t]*$"
+        ),
+        "regex",
+    ),
+    (
+        # Markdown block quote — lines starting with `> `. Conservative:
+        # only consumes contiguous blockquote runs (`> ` continued
+        # across multiple lines).
+        "block_quote",
+        re.compile(
+            r"(?m)(?:^[ \t]{0,3}>[^\n]*\n?)+"
+        ),
+        "regex",
+    ),
+    (
+        # Inline double-quoted passages of ~8+ words (50+ characters
+        # between quotes, the empirical equivalent on average prose),
+        # treating long quotations as not-the-writer's-voice. Short
+        # quotations stay in — they're usually phrase-borrowing
+        # rather than quoted speech. Conservative on smart quotes;
+        # doesn't cross line boundaries to avoid runaway matches on
+        # mismatched quotes.
+        "long_inline_quotation",
+        re.compile(r'["“][^"”\n]{50,}["”]'),
+        "regex",
+    ),
+    (
+        # Statutory / case-law citations: U.S.C. references, Pub. L.,
+        # case names with v. or vs., section markers (§), and Fed. R.
+        # forms. These are quoted authority, not prose voice.
+        "statutory_citation",
+        re.compile(
+            r"\b(?:\d+\s+U\.?\s*S\.?\s*C\.?\s*§+\s*\d+(?:[A-Za-z]+)?"
+            r"(?:\([a-zA-Z0-9]+\))*"
+            r"|Pub\.\s*L\.\s*No\.\s*\d+[-–]\d+"
+            r"|Fed\.\s*R\.\s*(?:Civ|Crim|App|Evid|Bankr)\.\s*P\.\s*\d+"
+            r"|§+\s*\d+(?:\.\d+)*(?:\([a-zA-Z0-9]+\))*"
+            r"|[A-Z][A-Za-z\-']+\s+v\.\s+[A-Z][A-Za-z\-']+"
+            r"(?:,\s*\d+\s+[A-Z][A-Za-z\.]+\s+\d+)?"
+            r")"
+        ),
+        "regex",
+    ),
+    (
+        # LLM wrapper phrases: opening / closing apologetic-or-meta
+        # boilerplate that LLM outputs frequently begin or end with.
+        # Pattern matches at sentence-or-paragraph boundary so we
+        # don't accidentally consume mid-prose mentions of "as an
+        # AI" in a discussion ABOUT AI.
+        "llm_wrapper_phrase",
+        re.compile(
+            r"(?im)(?:^|\n)[ \t]*"
+            r"(?:As an AI(?:\s+language\s+model)?[^.\n]*\.?"
+            r"|I(?:'m|\s+am)?\s+(?:an?\s+)?(?:AI|language\s+model)[^.\n]*\.?"
+            r"|I\s+cannot[^.\n]*(?:provide|create|assist|help|generate)[^.\n]*\.?"
+            r"|I(?:'m|\s+am)\s+(?:not\s+able\s+to|unable\s+to)[^.\n]*\.?"
+            r"|I\s+hope\s+this\s+helps[!.]?"
+            r"|Let\s+me\s+know\s+if[^.\n]*\.?"
+            r"|Please\s+(?:let\s+me\s+know|feel\s+free)[^.\n]*\.?"
+            r")"
+        ),
+        "regex",
+    ),
+    (
+        # Prompt remnants — if someone pastes a draft alongside the
+        # prompt that produced it, we drop the prompt. Conservative
+        # leading-prompt patterns at document start.
+        "prompt_remnant",
+        re.compile(
+            r"(?im)\A[ \t]*"
+            r"(?:Please\s+(?:write|create|generate|draft|compose)[^.\n]*\.?\s*"
+            r"|Write\s+(?:a|an|the)\s+\w+[^.\n]*\.?\s*"
+            r"|You\s+are\s+(?:a|an)\s+\w+[^.\n]*\.?\s*"
+            r"|Act\s+as\s+(?:a|an)\s+\w+[^.\n]*\.?\s*"
+            r"|System:\s*[^\n]*\n?"
+            r")"
+        ),
+        "regex",
+    ),
+)
+
+
+# --- Masking profiles -------------------------------------------
+#
+# Selectable analytical-pass modes that bundle masking rules with
+# parts of the existing strip set. Each profile is a list of
+# (rule_name, source_set) where source_set is "default" / "aggressive"
+# / "masking". Routed by `apply_masking_profile()` via the
+# `strip_masking` parameter on `strip_non_prose()`.
+#
+# Profile choices:
+#   - `none` — no masking applied (default; identical to pre-1.31.0)
+#   - `prose_body_only` — strip headings + block quotes + long
+#     quoted passages + statutory citations. For policy / legal /
+#     testimony / academic prose where the body is what matters.
+#   - `exclude_quotations` — block quotes + long inline quotations.
+#     For essay / fiction / blog prose where some quotation is
+#     present but isn't the writer's voice.
+#   - `exclude_headings` — markdown headings only. For policy /
+#     newsletter prose where headings are imposed by template.
+#   - `prose_strict` — every masking rule. Conservative for
+#     analytical comparison; never as a default since over-strips.
+MASKING_PROFILES: dict[str, tuple[str, ...]] = {
+    "none": (),
+    "prose_body_only": (
+        "markdown_heading", "block_quote",
+        "long_inline_quotation", "statutory_citation",
+    ),
+    "exclude_quotations": (
+        "block_quote", "long_inline_quotation",
+    ),
+    "exclude_headings": (
+        "markdown_heading",
+    ),
+    "prose_strict": (
+        "markdown_heading", "block_quote",
+        "long_inline_quotation", "statutory_citation",
+        "llm_wrapper_phrase", "prompt_remnant",
+    ),
+}
+
+
 AGGRESSIVE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
     (
         "markdown_image",
@@ -99,6 +242,7 @@ AGGRESSIVE_RULES: tuple[tuple[str, re.Pattern[str], str], ...] = (
 
 DEFAULT_RULE_NAMES = tuple(rule[0] for rule in PREPROCESSING_RULES)
 AGGRESSIVE_RULE_NAMES = tuple(rule[0] for rule in AGGRESSIVE_RULES)
+MASKING_RULE_NAMES = tuple(rule[0] for rule in MASKING_RULES)
 
 
 def count_tokens(text: str) -> int:
@@ -121,6 +265,64 @@ def available_rule_names(*, aggressive: bool = False) -> list[str]:
     if aggressive:
         names.extend(AGGRESSIVE_RULE_NAMES)
     return names
+
+
+def available_masking_rules() -> list[str]:
+    """Return the names of opt-in masking rules (Release 1).
+
+    Distinct from `available_rule_names()` because masking rules
+    operate on prose that isn't the writer's voice (quotations,
+    headings, statutory citations, LLM boilerplate) rather than on
+    contamination (HTML/CSS/code/tables). They are never on by
+    default.
+    """
+    return list(MASKING_RULE_NAMES)
+
+
+def available_masking_profiles() -> list[str]:
+    """Return the masking-profile preset names (Release 1)."""
+    return list(MASKING_PROFILES.keys())
+
+
+def resolve_masking_rules(
+    profile_or_rules: str | Iterable[str] | None,
+) -> tuple[str, ...]:
+    """Resolve a `--strip-masking` value into a tuple of rule names.
+
+    Accepts:
+      - ``None`` or ``""`` → no masking (empty tuple).
+      - A profile preset name (e.g. ``"prose_body_only"``) → the
+        rule list from `MASKING_PROFILES`.
+      - A comma-separated string of rule names (e.g.
+        ``"markdown_heading,block_quote"``) → those exact rules.
+      - An iterable of rule names → those rules.
+
+    Raises ``ValueError`` for unknown profile or rule names.
+    """
+    if profile_or_rules is None:
+        return ()
+    if isinstance(profile_or_rules, str):
+        value = profile_or_rules.strip()
+        if not value:
+            return ()
+        if value in MASKING_PROFILES:
+            return MASKING_PROFILES[value]
+        # Comma-separated rule list.
+        names = [v.strip() for v in value.split(",") if v.strip()]
+    else:
+        names = [str(v).strip() for v in profile_or_rules if str(v).strip()]
+    valid = set(MASKING_RULE_NAMES)
+    unknown = [n for n in names if n not in valid]
+    if unknown:
+        raise ValueError(
+            "Unknown masking rule(s): "
+            + ", ".join(unknown)
+            + ". Available rules: "
+            + ", ".join(MASKING_RULE_NAMES)
+            + ". Profiles: "
+            + ", ".join(MASKING_PROFILES.keys())
+        )
+    return tuple(names)
 
 
 def _blank_like(text: str) -> str:
@@ -392,24 +594,42 @@ def strip_non_prose(
     *,
     allow_non_prose: bool = False,
     strip_aggressive: bool = False,
+    strip_masking: str | Iterable[str] | None = None,
     collect_stripped: bool = False,
 ) -> tuple[str, dict[str, Any]]:
-    """Strip suspected non-prose and return cleaned text plus metadata."""
+    """Strip suspected non-prose and return cleaned text plus metadata.
+
+    ``strip_masking`` (Release 1) is a separate, opt-in tier from
+    the standard / aggressive rule sets. Accepts a profile preset
+    name (``prose_body_only``, ``exclude_quotations``,
+    ``exclude_headings``, ``prose_strict``, ``none``), a
+    comma-separated list of masking rule names
+    (``"markdown_heading,block_quote"``), or an iterable of rule
+    names. Resolved by ``resolve_masking_rules()``. Pass ``None``
+    or ``"none"`` to skip masking. Masking runs after standard /
+    aggressive rules so contamination is removed first; the
+    metadata records masked-tokens-by-rule alongside the standard
+    counts.
+    """
     before = count_tokens(text)
     parsed_rules = parse_rule_names(rules)
     default_names = available_rule_names(aggressive=strip_aggressive)
     active_names = parsed_rules if parsed_rules is not None else default_names
     active = set(active_names)
 
+    masking_active = resolve_masking_rules(strip_masking)
+
     if allow_non_prose:
         return text, {
             "applied": False,
             "opt_out": True,
             "rules_active": [],
+            "masking_rules_active": list(masking_active),
             "input_tokens_before": before,
             "input_tokens_after": before,
             "tokens_stripped": 0,
             "tokens_stripped_by_rule": {},
+            "tokens_masked": 0,
             "strip_ratio": 0.0,
             "dominant_rule": None,
             "warning": (
@@ -460,18 +680,33 @@ def strip_non_prose(
                     collect_stripped=collect_stripped,
                 )
 
+    # Masking pass (Release 1). Runs after corpus-hygiene and
+    # aggressive rules so contamination is removed first; masking
+    # rules then operate on the cleaned text.
+    masking_set = set(masking_active)
+    for name, pattern, kind in MASKING_RULES:
+        if name not in masking_set:
+            continue
+        cleaned = _apply_regex_rule(
+            cleaned, name, pattern, counts, snippets,
+            collect_stripped=collect_stripped,
+        )
+
     cleaned = _collapse_whitespace(cleaned)
     after = count_tokens(cleaned)
     stripped = max(0, before - after)
     dominant_rule = counts.most_common(1)[0][0] if counts else None
+    masking_tokens = sum(counts[r] for r in masking_active if r in counts)
     meta: dict[str, Any] = {
         "applied": True,
         "opt_out": False,
         "rules_active": active_names,
+        "masking_rules_active": list(masking_active),
         "input_tokens_before": before,
         "input_tokens_after": after,
         "tokens_stripped": stripped,
         "tokens_stripped_by_rule": dict(counts),
+        "tokens_masked": masking_tokens,
         "strip_ratio": (stripped / before) if before else 0.0,
         "dominant_rule": dominant_rule,
         "warning": None,

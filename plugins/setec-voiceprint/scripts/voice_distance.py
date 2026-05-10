@@ -464,6 +464,31 @@ def render_report(
         lines.append("**Warnings:**")
         for warning in result["warnings"]:
             lines.append(f"- {warning}")
+
+    rmatch = result.get("register_match")
+    if rmatch:
+        target_cls = rmatch.get("target_classification", {})
+        match_block = rmatch.get("match", {})
+        primary = target_cls.get("primary")
+        conf = target_cls.get("confidence")
+        if primary and primary != "unknown":
+            conf_str = f" (confidence {conf:.2f})" if conf else ""
+            lines.append("")
+            lines.append(
+                f"**Target register (heuristic):** `{primary}`"
+                f"{conf_str}"
+            )
+        strength = match_block.get("strength")
+        rationale = match_block.get("rationale")
+        if strength and strength in {"weak", "mismatch"}:
+            lines.append(
+                f"**Register match:** ⚠️ `{strength}` — {rationale}"
+            )
+        elif strength:
+            lines.append(
+                f"**Register match:** `{strength}` — {rationale}"
+            )
+
     lines.append("")
     lines.append(
         f"**Overall:** {overall['band']} "
@@ -678,6 +703,35 @@ def main() -> int:
         strip_aggressive=args.strip_aggressive,
     )
     result["task_surface"] = TASK_SURFACE
+
+    # Register-match guardrail (Release 1, paired-release schedule).
+    # Surfaces a register-mismatch indicator when the target's
+    # heuristic register doesn't match the baseline's distribution.
+    # Lightweight and honest — the classifier is heuristic, not
+    # validated; the value is making register-mismatch *visible*
+    # rather than silently producing numbers as if the comparison
+    # were clean.
+    try:
+        from register_classifier import (  # type: ignore
+            classify_register, register_match,
+        )
+        target_register_pred = classify_register(target_text)
+        baseline_registers = [
+            e.get("register") for e in baseline_entries
+        ]
+        match = register_match(
+            target_register_pred.get("primary"), baseline_registers,
+        )
+        result["register_match"] = {
+            "target_classification": {
+                "primary": target_register_pred.get("primary"),
+                "confidence": target_register_pred.get("confidence"),
+                "secondary": target_register_pred.get("secondary"),
+            },
+            "match": match,
+        }
+    except ImportError:  # pragma: no cover - register_classifier always present
+        pass
 
     if args.bootstrap:
         result["length_matched_bootstrap"] = bootstrap_compare(

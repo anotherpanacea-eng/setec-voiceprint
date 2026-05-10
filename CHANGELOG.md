@@ -6,6 +6,44 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.31.0] - 2026-05-10
+
+**Paired-release schedule, Release 1: input-layer infrastructure (stylometric masking profiles + register / genre conditioning).** First release implementing the paired-release schedule announced in 1.30.4. Per the schedule, Release 1 is **precondition work**: it ships without a paired tool because masking and register-conditioning are infrastructure that makes every existing and future call more trustworthy. Two pieces, both opt-in by default to preserve byte-identical pre-1.31.0 behavior.
+
+### Added — masking profiles (Trustworthiness Tier 1)
+
+- **Six new masking rules** in `preprocessing.py` as a third tier alongside `PREPROCESSING_RULES` (corpus-hygiene contamination) and `AGGRESSIVE_RULES` (URL noise / footnotes / citations). Distinct purpose: masking rules remove *prose* that isn't the writer's voice (quoted statutes, block quotations, headings, common LLM wrapper phrases, prompt remnants) rather than non-prose contamination. Opt-in only — these rules are aggressive enough that running them on a normal essay would over-strip.
+  - `markdown_heading` — ATX (`#` through `######`) plus setext (`Title\n=====` / `Title\n-----`).
+  - `block_quote` — markdown blockquote runs (`> `), conservatively contiguous-only.
+  - `long_inline_quotation` — double-quoted passages of 50+ characters between quotes (≈ 8+ words, the empirical floor where short phrase-borrowing ends and quoted speech begins). Conservative on smart quotes; doesn't cross line boundaries.
+  - `statutory_citation` — U.S.C. references, Pub. L., Fed. R., section markers (`§`), and case names with `v.` / `vs.`.
+  - `llm_wrapper_phrase` — opening / closing apologetic-or-meta boilerplate (`As an AI language model...`, `I cannot provide...`, `I hope this helps`, `Let me know if...`, `Please feel free...`). Pattern requires sentence-or-paragraph boundary so mid-prose mentions of "AI" in discussions ABOUT AI aren't clobbered.
+  - `prompt_remnant` — leading-prompt patterns at document start (`Please write...`, `You are a...`, `Act as a...`, `System: ...`).
+- **Five masking profile presets** for routing through `--strip-masking`:
+  - `none` — no masking applied (default; identical to pre-1.31.0).
+  - `prose_body_only` — headings + block quotes + long inline quotes + statutory citations. For policy / legal / testimony / academic prose.
+  - `exclude_quotations` — block quotes + long inline quotations.
+  - `exclude_headings` — markdown headings only.
+  - `prose_strict` — every masking rule. Conservative for analytical comparison; over-strips when used as default.
+- **`strip_non_prose(strip_masking=...)` parameter** accepts profile preset name, comma-separated rule list (`"markdown_heading,block_quote"`), or iterable of names. Resolved by new `resolve_masking_rules()`. Metadata records active masking rules and `tokens_masked` count separately from the existing `tokens_stripped_by_rule`.
+- **`available_masking_rules()` and `available_masking_profiles()`** public introspection helpers.
+
+### Added — register / genre conditioning (Trustworthiness Tier 1)
+
+- **`scripts/register_classifier.py`** — heuristic register detection over the manifest's canonical taxonomy (`blog_essay`, `personal_essay`, `literary_fiction`, `commercial_fiction`, `literary_horror`, `academic_philosophy`, `academic_general`, `legal_memo`, `policy_memo`, `policy_advocacy`, `testimony_policy`, `journalism`, `marketing`, `newsletter`, `report_prose`, `social_thread`, `email`, `unknown`). Lightweight signal-driven classifier (no machine learning, no labeled corpus dependency) — primary value is honest claim-licensing rather than classification accuracy.
+- **Per-register scorers** built from sub-scores over interpretable signals: heading density, first-person density, second-person density, dialogue ratio, question / exclamation density, inline-citation density, statutory citation density, formal-address patterns (`Mr. Chairman`, `the Committee`, `Honorable`), legal voice (`shall`, `pursuant to`, `notwithstanding`), attributed-quote density (`according to X`, `said X`), imperative-open patterns, past-tense narrative verbs, academic voice (`we argue`, `this paper`).
+- **`classify_register(text, hint=None, min_words=100)`** returns `{primary, confidence, secondary, scores, evidence, warning}`. Primary is the highest-scoring register; confidence is the score in `[0, 1]`; secondary lists registers within 0.10 of primary; below `min_words` or with confidence under 0.30 the classifier returns `"unknown"` rather than committing to a noisy call. Optional `hint` provides a small score nudge when the user knows the register but wants confirmation.
+- **`register_match(target_register, baseline_registers)`** returns `{strength, rationale, target, baseline_distribution}` where strength is one of `strong` (≥80% of baseline matches target), `moderate` (≥50%), `weak` (≥20%), or `mismatch`. Each strength carries a human-readable rationale naming the actual mismatch (`baseline is dominantly legal_memo (3/4); reading any cross-register voice distance as voice drift is unsafe`).
+- **`render_register_match_block(match)`** for embedding the result in claim-license blocks.
+- **`voice_distance.py` integration**: when comparing target vs. baseline, the result dict gains a `register_match` block with target classification + match strength + rationale. The markdown report surfaces it before the headline Delta band, with a ⚠️ marker on `weak` / `mismatch` strengths so the reader sees the register caveat before the number. JSON output unchanged in shape — the new block is additive.
+
+### Notes
+
+- **586 tests pass + 1 skipped** (was 534+1 in 1.30.4; +52 new tests across `test_masking_profiles.py` and `test_register_classifier.py`).
+- **No breaking changes.** `strip_non_prose()` accepts `strip_masking` as a new keyword-only parameter that defaults to `None` (no masking) — every existing call site works byte-identically. `voice_distance.py` adds a `register_match` block to its result and a register-match line to its markdown report; both are additive. The `claim_license` JSON dict shape is unchanged.
+- **Schedule status: Release 1 shipped.** Per the paired-release schedule (ROADMAP `Interleaving` section), the next release pairs the Paragraph Architecture Audit (Surfaces Tier 1) with Source-of-smoothing localization in the sliding-window heatmap (Trustworthiness Tier 3). The masking capability shipped here is library-only — surface integrations follow as they naturally pair with new tools.
+- The register classifier is intentionally heuristic. It is not a labeled-corpus-validated machine-learning model and it shouldn't become one — the framework's value is in honest claim-licensing, not in pretending to classify register at academic-paper accuracy. Below 100 words the classifier refuses; below 0.30 confidence it returns `unknown`. These floors are deliberate.
+
 ## [1.30.4] - 2026-05-10
 
 **Roadmap interleaving: paired-release schedule across the two expansion tracks (new tools + new guardrails).** Releases 1.30.2 and 1.30.3 added two roadmap expansion sections — surface expansion (twenty stylometric surfaces) and trustworthiness expansion (twenty failure-mode-control extensions). Each section had its own internal tier ordering. What both sections left open: the *interleaving* question — should the surface track ship in full before any guardrail work, vice versa, or alternate? Building either track in isolation produces predictable failure modes. This docs-only release adds an `Interleaving: paired-release schedule` section to ROADMAP.md that resolves the question with a concrete cross-track sequence.
