@@ -6,6 +6,21 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.32.1] - 2026-05-10
+
+**Reviewer-flagged P2 docs fixes: two sequencing contradictions in the paired-release schedule.** Two contradictions in the 1.30.4 ROADMAP `Interleaving` section (mirrored in the 1.30.4 CHANGELOG summary) that future implementers would have hit if they treated the roadmap as an implementation queue.
+
+### Fixed
+
+- **Confounder-audit dependency rule contradicted the schedule.** The 1.30.4 dependency rule said "Discourse Move Signature *and* Agency and Abstraction Audit ship before the confounder audit gets its first useful version," but the schedule placed the Confounder Audit in Release 3 (paired with Discourse) and Agency in Release 4 — so the confounder audit shipped before its supposed prerequisite. Rule narrowed: **Discourse Move Signature is the hard prerequisite** (the confounder matrix needs typed-discourse evidence to distinguish institutional prose from AI smoothing). **Agency and Abstraction Audit is a strengthening complement** that lands in Release 4, at which point the confounder matrix gains the agency-loss family and sharpens its differential diagnosis. Without agency, the confounder audit's first useful version is still useful — just less sharp on the agency dimension. Fix lands in both ROADMAP.md `Interleaving` section and the 1.30.4 CHANGELOG summary so future readers don't see the contradiction in either place.
+- **Adversarial track was both prerequisite and later release item.** The Interleaving section said the paired schedule starts after the adversarial-class track has shipped, but Release 7 still listed an "Adversarial / paraphrase stress harness" as a later guardrail. Distinction now made explicit: pre-schedule work is **fixture acquisition** (DIPPER paraphrases, humanizer-tool outputs) plus the existing `validation_harness.py`'s ROC-AUC / AP slicing across those classes — i.e., the harness can already evaluate per-fixture-class performance using the existing report shape. Release 7's contribution is the **per-signal robustness-card output shape** — the "this signal collapses under paraphrase but survives copyediting" reporting layer over the already-acquired fixtures. Both ROADMAP and the 1.30.4 CHANGELOG summary now name the fixtures-vs-output-shape distinction.
+
+### Notes
+
+- Docs-only release. **638 tests pass + 1 skipped** (no test changes from 1.32.0).
+- Both fixes preserve the existing release order. The narrower confounder-audit rule keeps Release 3 as the confounder audit's first useful version (with discourse evidence alone) and Release 4 as the strengthening complement that lands the agency family.
+- The adversarial-track distinction explains a fact that was already implicit in the framework: the existing `validation_harness.py` from 1.x is *already* the reporting layer for ROC AUC / AP per slice; what's missing is the per-signal robustness card, which is a different output-shape extension. The pre-schedule fixture-acquisition work and the Release-7 output-shape work are independently shippable.
+
 ## [1.32.0] - 2026-05-10
 
 **Paired-release schedule, Release 2: Paragraph Architecture Audit + Source-of-smoothing localization.** Second release implementing the paired-release schedule (1.30.4). Per the schedule, Release 2 pairs a Surfaces Tier-1 tool (Paragraph Architecture Audit) with a Trustworthiness Tier-3 guardrail (Source-of-smoothing localization in the sliding-window heatmap). The pairing is dependency-driven: paragraph-level signals land alongside the extension that makes the heatmap's hot zones interpretable beyond "where does the band fire" into "what kind of smoothing is happening here."
@@ -96,7 +111,7 @@ _(Empty. Future work lands here, gets versioned on commit.)_
 
 - **`ROADMAP.md`** gains an `Interleaving` section between the two expansion-track sections and the existing "Open architectural questions" section. Two dependency rules drive the sequence:
   1. **Input-layer guardrails ship before any new tool depends on them.** Stylometric masking profiles + register/genre conditioning are precondition work — they make every existing and future call more reliable, and they ship as their own release without a paired tool.
-  2. **Some Tier-1 tools are prerequisites for the Tier-1 confounder audit, not complements.** The confounder audit's differential diagnosis needs typed-discourse and agency signals to be more than a re-statement of existing per-signal evidence. Discourse Move Signature and Agency and Abstraction Audit ship before the confounder audit gets its first useful version.
+  2. **Discourse Move Signature is a hard prerequisite for the Tier-1 confounder audit.** The confounder audit's differential diagnosis needs typed-discourse evidence to distinguish institutional prose (legal / policy / testimony) from AI smoothing — without typed markers the matrix can't separate "concession-and-elaboration patterns from policy memo style" from "concession-and-elaboration patterns from AI smoothing." Discourse ships in Release 3 paired with the confounder audit's first useful version. Agency and Abstraction Audit (Release 4) is a *strengthening complement*: it adds the agency-loss family to the confounder matrix and sharpens the differential diagnosis, but is not a hard prerequisite.
 - **Proposed paired-release sequence** (twelve releases plus a Tier-4 research bundle, each with one new tool and one new guardrail or precondition guardrail work alone, releasable independently):
   - Release 1: input-layer guardrails (masking + register conditioning); no paired tool — preconditions ship alone.
   - Release 2: Paragraph Architecture Audit + Source-of-smoothing localization (paragraph-level signal feeds the heatmap's "what kind of smoothing" classifier).
@@ -104,7 +119,7 @@ _(Empty. Future work lands here, gets versioned on commit.)_
   - Release 4: Agency and Abstraction Audit + Revision-risk model (agency-loss signals pair with per-suggestion risk labels in `restoration_packet.py`).
   - Release 5: Punctuation Cadence + Stance/Modality + Function-Word Grammar (three Tier-2 promotions) + Ablation reports (more feature families need an interpretability mechanism).
   - Release 6: output-discipline release — Minimum evidentiary conditions gate + Negative/positive controls; no paired tool.
-  - Release 7: interpretation meta-layer — Surface-disagreement resolver + Adversarial / paraphrase stress harness with robustness cards; no paired tool.
+  - Release 7: interpretation meta-layer — Surface-disagreement resolver + adversarial **robustness-card output shape** (the per-signal "this signal collapses under paraphrase but survives copyediting" reporting layer over the fixtures, which were acquired in the pre-schedule adversarial-class track); no paired tool.
   - Release 8: Construction Signature Audit + Semantic preservation check (interpretable syntactic evidence pairs with claim/entity/stance preservation guardrails).
   - Release 9: validation infrastructure — Calibration drift monitor + Fairness / dialect / multilingual guardrails; no paired tool.
   - Release 10: Mimicry / Style-Cosplay Audit + Known-editor profile (both address "smoothed-but-by-whom" from different angles).
