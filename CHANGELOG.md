@@ -6,6 +6,50 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.32.0] - 2026-05-10
+
+**Paired-release schedule, Release 2: Paragraph Architecture Audit + Source-of-smoothing localization.** Second release implementing the paired-release schedule (1.30.4). Per the schedule, Release 2 pairs a Surfaces Tier-1 tool (Paragraph Architecture Audit) with a Trustworthiness Tier-3 guardrail (Source-of-smoothing localization in the sliding-window heatmap). The pairing is dependency-driven: paragraph-level signals land alongside the extension that makes the heatmap's hot zones interpretable beyond "where does the band fire" into "what kind of smoothing is happening here."
+
+### Added — Paragraph Architecture Audit (Surfaces Tier 1)
+
+- **`scripts/paragraph_audit.py`** — paragraph-level rhythm diagnostic. The shipped Layer A suite measures distributional compression at the *sentence* and *token* layers and the sliding-window heatmap localizes those signals across word positions; what's structurally missing is paragraph-level rhythm. AI editing, professional copyediting, and institutional house style frequently produce **competent rectangle paragraphs** — similar paragraph lengths, similar opening shapes, similar terminal sentences, low macro-rhythm. Sentence-level signals don't see this; word-windowed heatmaps don't see it either.
+- **Six paragraph-rhythm signals**:
+  - Paragraph length distribution (mean / sd / coefficient-of-variation / p5 / p25 / p50 / p75 / p95).
+  - Paragraph length variance (the "regularized rectangles" signal — fires when CV < 0.40).
+  - One-sentence paragraph rate (low rate = absence of one-sentence rhetorical breaks).
+  - Punchy-ending rate (per-paragraph fraction of paragraphs ending in a short final sentence after a longer body).
+  - Median first-to-body sentence length ratio.
+  - Long-paragraph clustering (3+ consecutive paragraphs above the document's 75th-percentile length).
+- **Opening typology classifier** assigns each paragraph one of seven categories: declarative / question / quoted / fragment / conjunction-led / proper-noun-led / imperative. Closing typology assigns one of six: declarative / question / quoted / fragment / list-or-colon-trailed / aphoristic. **Opening / closing entropy** in bits — low entropy means uniform openings ("competent rectangle" prose); high entropy means rhetorical-need-driven cadence.
+- **Compression-fraction band call** (Lightly / Moderately / Heavily smoothed) over six rhythm signals: low-CV, low-one-sentence-rate, low-punchy-rate, low-opening-entropy, low-closing-entropy, dominant-long-cluster. Heuristic thresholds documented as calibration-pending.
+- **Baseline comparison**: when `--baseline-dir` is supplied, runs the same signals across baseline files, reports per-signal z-scores and Manhattan-distance between target and baseline opening/closing typology distributions.
+- **Structured `claim_license` block** via `claim_license.py` — explicitly refuses an AI-provenance verdict, names the differential-diagnosis problem (the same regularized-paragraph signature can come from professional copyediting, institutional house style, policy-memo templates, translation cleanup, or AI editing).
+- **Privacy posture**: paragraph audits emit no raw text, only structural metrics + typology counts. Per-paragraph entries carry only `index`, `n_words`, `n_sentences`, `opening`, `closing`. Safe for public reports.
+- **CLI**: `python3 scripts/paragraph_audit.py INPUT.txt [--baseline-dir DIR] [--json] [--strip-masking PROFILE]`. Honors `--strip-masking` from 1.31.0.
+
+### Added — Source-of-smoothing localization (Trustworthiness Tier 3)
+
+- **Hot-zone phenomenon classifier** in `sliding_window_heatmap.py`. Each hot zone in the heatmap now carries a `phenomenon` label classifying which family of signals dominates the firing pattern:
+  - `syntactic_flattening` — sentence-rhythm signals (`burstiness_B`, `sentence_length_sd`, `fkgl_sd`, `mdd_sd`).
+  - `lexical_compression` — diversity / entropy signals (`mtld`, `mattr`, `shannon_entropy`, `yules_k`).
+  - `over_cohesion` — adjacent-cosine signals (`adjacent_cosine_mean`, `adjacent_cosine_sd`).
+  - `connective_overuse` — `connective_density`.
+  - `mixed_smoothing` — multiple families fire roughly equally (no family ≥ 60% share).
+  - `unclassified` — too few or too sparse signals to classify.
+- **Dominance threshold**: a single family at ≥ 60% share of the zone's flagged-signal pool wins the phenomenon label; otherwise the zone is `mixed_smoothing` rather than committing to a single cause.
+- **`phenomenon_evidence`** field on each `HotZone`: human-readable family-by-family breakdown of which signals contributed (e.g., `"syntactic_flattening: burstiness_B (3/5), sentence_length_sd (2/5)"`).
+- **Markdown rendering** in the heatmap report's hot-zones section now annotates each zone with its phenomenon label: "Heavily smoothed at words 1500–2500 (windows 5–6, fraction 0.50–0.55); phenomenon: **syntactic flattening**; dominant signals: ..."
+- **JSON output** carries `phenomenon` and `phenomenon_evidence` per hot zone alongside the existing fields. Backward compat: existing JSON consumers reading `band` / `start_word` / `end_word` / `n_windows` / `dominant_signals` continue to work.
+- **Polarity-inversion caveat** documented in the classifier's docstring: per the 1.27.0 finding, five lexical-diversity signals invert against ESL student writing — the `lexical_compression` label may be misleading on ESL comparators. The confounder audit (roadmap, paired-release Release 3) is the right surface to disambiguate.
+
+### Notes
+
+- **638 tests pass + 1 skipped** (was 586+1 in 1.31.0; +52 new tests across `test_paragraph_audit.py` and the phenomenon-classification suite in `test_sliding_window_heatmap.py`).
+- **No breaking changes.** Paragraph audit is a new tool; the heatmap's existing JSON fields are unchanged (the new `phenomenon` / `phenomenon_evidence` fields are additive).
+- **Schedule status: Release 2 shipped.** Per the paired-release schedule (ROADMAP `Interleaving` section), the next release pairs the Discourse Move Signature (Surfaces Tier 1) with the Confounder Audit / Layer D (Trustworthiness Tier 1). Discourse-typed markers are a *prerequisite* for the confounder audit's differential-diagnosis output, not a complement — the confounder audit can't distinguish "legal/policy memo" from "AI smoothing" without typed-discourse evidence.
+- The paragraph audit catches the failure mode the rest of the Layer A suite is structurally blind to. AI editing, professional copyediting, and institutional house-style enforcement frequently produce regularized-rectangle paragraphs while leaving the writer's lexical diversity, sentence variance, and POS-bigram footprint inside human bounds. Sentence-level signals miss this; the heatmap's word-windowing misses this. The audit's primary value isn't replacing existing surfaces but adding the macro-rhythm dimension they don't measure.
+- The phenomenon classifier's six-label taxonomy is intentionally coarse. A finer taxonomy (e.g. distinguishing "agent suppression" from "lexical generalization" within `lexical_compression`) requires the Surfaces Tier-1 Agency and Abstraction Audit (paired-release Release 4) to provide the input signals. Coarse-now-finer-later is the right interleaving.
+
 ## [1.31.0] - 2026-05-10
 
 **Paired-release schedule, Release 1: input-layer infrastructure (stylometric masking profiles + register / genre conditioning).** First release implementing the paired-release schedule announced in 1.30.4. Per the schedule, Release 1 is **precondition work**: it ships without a paired tool because masking and register-conditioning are infrastructure that makes every existing and future call more trustworthy. Two pieces, both opt-in by default to preserve byte-identical pre-1.31.0 behavior.

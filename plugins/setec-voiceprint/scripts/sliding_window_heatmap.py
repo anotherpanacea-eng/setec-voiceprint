@@ -178,7 +178,18 @@ class HotZone:
     bands_in_run: list[str] = field(default_factory=list)
     fractions: list[float] = field(default_factory=list)
     dominant_signals: list[str] = field(default_factory=list)
+    raw_signal_counts: dict[str, int] = field(default_factory=dict)
     n_windows: int = 0
+    # Source-of-smoothing classification (Release 2). Filled by
+    # `_classify_zone_phenomenon`. Possible values:
+    #   "syntactic_flattening" — sentence-rhythm signals dominate
+    #   "lexical_compression" — diversity / entropy signals dominate
+    #   "over_cohesion" — adjacent-cosine signals dominate
+    #   "connective_overuse" — connective_density dominates
+    #   "mixed_smoothing" — multiple families fire roughly equally
+    #   "unclassified" — too few or too sparse signals to classify
+    phenomenon: str = "unclassified"
+    phenomenon_evidence: list[str] = field(default_factory=list)
 
 
 def find_hot_zones(windows: list[dict[str, Any]]) -> list[HotZone]:
@@ -236,18 +247,136 @@ def find_hot_zones(windows: list[dict[str, Any]]) -> list[HotZone]:
 
 
 def _finalize_zone(zone: HotZone) -> None:
-    """Reduce dominant_signals to the top-3 most-frequent flagged signals."""
-    if not zone.dominant_signals:
-        zone.dominant_signals = []
-        return
+    """Reduce dominant_signals to the top-3 most-frequent flagged
+    signals AND classify the zone's dominant phenomenon (Release 2).
+
+    The phenomenon classifier groups per-window flagged signals into
+    families (syntactic-rhythm, lexical-compression, over-cohesion,
+    connective-overuse) and labels the zone by which family
+    dominates the firing pattern. When two or more families fire
+    roughly equally, the zone is labeled `mixed_smoothing` rather
+    than committing to a single cause.
+
+    The output is what `source-of-smoothing localization` from the
+    trustworthiness expansion calls for: not just "where the band
+    fired" (which the heatmap already shows) but "what kind of
+    smoothing is happening here." Gives a writer something
+    revisable: "hot zone 4 is over-cohesion-driven; rhythm
+    rebalancing won't help, restoring local surprise will."
+    """
     counts: dict[str, int] = {}
     for s in zone.dominant_signals:
         counts[s] = counts.get(s, 0) + 1
+    zone.raw_signal_counts = dict(counts)
     ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
     zone.dominant_signals = [
         f"{name} ({count}/{zone.n_windows})"
         for name, count in ranked[:3]
     ]
+    phenomenon, evidence = _classify_zone_phenomenon(counts, zone.n_windows)
+    zone.phenomenon = phenomenon
+    zone.phenomenon_evidence = evidence
+
+
+# Signal-family taxonomy (Release 2). Maps the signal names from
+# `COMPRESSION_HEURISTICS` (in `variance_audit.py`) to the
+# phenomenon family they evidence. Signals not in this map are
+# folded into an "other" bucket.
+#
+# Caveat: the taxonomy below assumes the registry's declared
+# polarity. Per the 1.27.0 polarity-inversion finding, five
+# lexical-diversity signals (mtld, mattr, shannon_entropy, yules_k,
+# adjacent_cosine_mean) invert against ESL student writing — when
+# the band fires on those signals against an ESL comparator, the
+# `lexical_compression` label may be misleading. The confounder
+# audit (roadmap, paired-release Release 3) is the right surface
+# to disambiguate. For now the classifier reports what the signals
+# say at face value and the claim-license block carries the caveat.
+_SIGNAL_FAMILIES: dict[str, str] = {
+    # Sentence rhythm
+    "burstiness_B": "syntactic_flattening",
+    "sentence_length_sd": "syntactic_flattening",
+    "fkgl_sd": "syntactic_flattening",
+    "mdd_sd": "syntactic_flattening",
+    # Lexical diversity / entropy
+    "mtld": "lexical_compression",
+    "mattr": "lexical_compression",
+    "shannon_entropy": "lexical_compression",
+    "yules_k": "lexical_compression",
+    # Cohesion
+    "adjacent_cosine_mean": "over_cohesion",
+    "adjacent_cosine_sd": "over_cohesion",
+    # Connective scaffolding
+    "connective_density": "connective_overuse",
+}
+
+
+def _classify_zone_phenomenon(
+    counts: dict[str, int], n_windows: int,
+) -> tuple[str, list[str]]:
+    """Return (phenomenon_label, evidence_list) for a zone.
+
+    `evidence_list` is human-readable strings naming each family
+    contribution: e.g. ``["syntactic_flattening: burstiness_B (3/5),
+    sentence_length_sd (2/5)", ...]``.
+    """
+    if not counts:
+        return "unclassified", []
+
+    family_signal_counts: dict[str, dict[str, int]] = {}
+    other: dict[str, int] = {}
+    for sig, c in counts.items():
+        family = _SIGNAL_FAMILIES.get(sig)
+        if family is None:
+            other[sig] = c
+            continue
+        family_signal_counts.setdefault(family, {})[sig] = c
+
+    family_totals = {
+        f: sum(d.values()) for f, d in family_signal_counts.items()
+    }
+    total = sum(family_totals.values()) + sum(other.values())
+    if total == 0 or n_windows == 0:
+        return "unclassified", []
+
+    if not family_totals:
+        # Only 'other' signals fired — rare; report unclassified
+        # rather than mislabel.
+        evidence = [
+            f"other: {', '.join(f'{s} ({c}/{n_windows})' for s, c in other.items())}"
+        ]
+        return "unclassified", evidence
+
+    ranked = sorted(family_totals.items(), key=lambda kv: -kv[1])
+    leader, leader_count = ranked[0]
+    leader_share = leader_count / total
+
+    # Phenomenon label rule:
+    #   - Single family dominates (≥ 0.6 share) → that family.
+    #   - Otherwise → mixed_smoothing.
+    if leader_share >= 0.6:
+        phenomenon = leader
+    else:
+        phenomenon = "mixed_smoothing"
+
+    evidence: list[str] = []
+    for family, sigs in sorted(
+        family_signal_counts.items(),
+        key=lambda kv: -family_totals[kv[0]],
+    ):
+        sig_strs = ", ".join(
+            f"{s} ({c}/{n_windows})"
+            for s, c in sorted(sigs.items(), key=lambda kv: -kv[1])
+        )
+        evidence.append(f"{family}: {sig_strs}")
+    if other:
+        sig_strs = ", ".join(
+            f"{s} ({c}/{n_windows})"
+            for s, c in sorted(other.items(), key=lambda kv: -kv[1])
+        )
+        evidence.append(f"other: {sig_strs}")
+
+    return phenomenon, evidence
 
 
 def collect_signal_grid(
@@ -306,8 +435,19 @@ def render_signal_grid_table(
     return lines
 
 
+_PHENOMENON_LABELS = {
+    "syntactic_flattening": "syntactic flattening",
+    "lexical_compression": "lexical compression",
+    "over_cohesion": "over-cohesion",
+    "connective_overuse": "connective overuse",
+    "mixed_smoothing": "mixed smoothing",
+    "unclassified": "unclassified",
+}
+
+
 def render_hot_zones(zones: list[HotZone]) -> list[str]:
-    """Bullet list of contiguous hot runs in word coordinates."""
+    """Bullet list of contiguous hot runs in word coordinates,
+    annotated with the dominant phenomenon (Release 2)."""
     if not zones:
         return ["_(No hot zones — no contiguous Moderately or "
                 "Heavily smoothed runs.)_"]
@@ -332,10 +472,18 @@ def render_hot_zones(zones: list[HotZone]) -> list[str]:
             window_span = (
                 f"windows {z.start_window + 1}–{z.end_window + 1}"
             )
+        phenomenon_label = _PHENOMENON_LABELS.get(
+            z.phenomenon, z.phenomenon,
+        )
+        phenomenon_str = (
+            f"; phenomenon: **{phenomenon_label}**"
+            if z.phenomenon != "unclassified" else ""
+        )
         out.append(
             f"- **{z.band}** at words {z.start_word:,}–{z.end_word:,} "
             f"({window_span}, {z.n_windows} window"
-            f"{'s' if z.n_windows != 1 else ''}, {frac_str}){sig_str}"
+            f"{'s' if z.n_windows != 1 else ''}, {frac_str})"
+            f"{phenomenon_str}{sig_str}"
         )
     return out
 
@@ -577,6 +725,8 @@ def render_json(windows_block: dict[str, Any]) -> dict[str, Any]:
                 "fraction_min": min(z.fractions) if z.fractions else None,
                 "fraction_max": max(z.fractions) if z.fractions else None,
                 "dominant_signals": z.dominant_signals,
+                "phenomenon": z.phenomenon,
+                "phenomenon_evidence": z.phenomenon_evidence,
             }
             for z in hot_zones
         ],

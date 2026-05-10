@@ -512,3 +512,165 @@ class TestCli:
         assert excinfo.value.code == 0
         captured = capsys.readouterr()
         assert "sliding_window_heatmap" in captured.out
+
+
+# ---------- Source-of-smoothing localization (Release 2) ---------
+
+
+class TestPhenomenonClassification:
+    """Each hot zone gets a `phenomenon` label classifying which
+    family of signals dominates the firing pattern. This is the
+    Release-2 trustworthiness extension that turns 'where the band
+    fires' into 'what kind of smoothing is happening here.'"""
+
+    def test_syntactic_flattening_when_rhythm_signals_dominate(self):
+        windows = [
+            _make_window(
+                start_word=0, end_word=500,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=["burstiness_B", "sentence_length_sd", "mdd_sd"],
+            ),
+            _make_window(
+                start_word=500, end_word=1000,
+                band="Heavily smoothed", fraction=0.50,
+                flagged=["burstiness_B", "sentence_length_sd", "fkgl_sd"],
+            ),
+        ]
+        zones = swh.find_hot_zones(windows)
+        assert len(zones) == 1
+        assert zones[0].phenomenon == "syntactic_flattening"
+        assert zones[0].phenomenon_evidence
+
+    def test_lexical_compression_when_diversity_signals_dominate(self):
+        windows = [
+            _make_window(
+                start_word=0, end_word=500,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=["mtld", "mattr", "shannon_entropy"],
+            ),
+        ]
+        zones = swh.find_hot_zones(windows)
+        assert zones[0].phenomenon == "lexical_compression"
+
+    def test_over_cohesion_when_cohesion_signals_dominate(self):
+        windows = [
+            _make_window(
+                start_word=0, end_word=500,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=["adjacent_cosine_mean", "adjacent_cosine_sd"],
+            ),
+        ]
+        zones = swh.find_hot_zones(windows)
+        assert zones[0].phenomenon == "over_cohesion"
+
+    def test_connective_overuse_when_connective_dominates(self):
+        windows = [
+            _make_window(
+                start_word=0, end_word=500,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=["connective_density"],
+            ),
+            _make_window(
+                start_word=500, end_word=1000,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=["connective_density"],
+            ),
+        ]
+        zones = swh.find_hot_zones(windows)
+        assert zones[0].phenomenon == "connective_overuse"
+
+    def test_mixed_smoothing_when_no_dominant_family(self):
+        # Roughly equal contributions from three families → mixed.
+        windows = [
+            _make_window(
+                start_word=0, end_word=500,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=[
+                    "burstiness_B", "mtld",
+                    "adjacent_cosine_mean", "connective_density",
+                ],
+            ),
+        ]
+        zones = swh.find_hot_zones(windows)
+        # No family has ≥ 60% share: 1/4 each → mixed.
+        assert zones[0].phenomenon == "mixed_smoothing"
+
+    def test_unclassified_when_no_signals_fire(self):
+        # A hot band with no flagged signals (band came from
+        # threshold weighting alone, e.g. POS-bigram KL) → no
+        # signals to classify → unclassified.
+        windows = [
+            _make_window(
+                start_word=0, end_word=500,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=[],
+            ),
+        ]
+        zones = swh.find_hot_zones(windows)
+        assert zones[0].phenomenon == "unclassified"
+
+    def test_phenomenon_in_markdown(self):
+        windows = [
+            _make_window(
+                start_word=0, end_word=500,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=["burstiness_B", "sentence_length_sd"],
+            ),
+        ]
+        block = swh._make_windows_block(windows) if hasattr(swh, "_make_windows_block") else {
+            "window_size": 500, "stride": 250,
+            "n_windows": 1, "results": windows,
+        }
+        report = swh.render_report(block)
+        assert "syntactic flattening" in report or "phenomenon" in report
+
+    def test_phenomenon_in_json(self):
+        windows = [
+            _make_window(
+                start_word=0, end_word=500,
+                band="Heavily smoothed", fraction=0.55,
+                flagged=["adjacent_cosine_mean", "adjacent_cosine_sd"],
+            ),
+        ]
+        block = {
+            "window_size": 500, "stride": 250,
+            "n_windows": 1, "results": windows,
+        }
+        out = swh.render_json(block)
+        assert "hot_zones" in out
+        zone = out["hot_zones"][0]
+        assert zone["phenomenon"] == "over_cohesion"
+        assert zone["phenomenon_evidence"]
+
+
+class TestClassifyZonePhenomenonInternal:
+    """Direct tests of `_classify_zone_phenomenon` to pin the
+    family-mapping and dominance-threshold contracts."""
+
+    def test_dominant_family_at_threshold(self):
+        # 3 of 5 signals in syntactic family = 60%, hits threshold.
+        counts = {
+            "burstiness_B": 1, "sentence_length_sd": 1, "mdd_sd": 1,
+            "mtld": 1, "adjacent_cosine_mean": 1,
+        }
+        phenomenon, evidence = swh._classify_zone_phenomenon(counts, 5)
+        assert phenomenon == "syntactic_flattening"
+
+    def test_below_threshold_yields_mixed(self):
+        # 2 of 5 in each of two families → 40% each → mixed.
+        counts = {
+            "burstiness_B": 1, "sentence_length_sd": 1,
+            "mtld": 1, "mattr": 1, "adjacent_cosine_mean": 1,
+        }
+        phenomenon, _ = swh._classify_zone_phenomenon(counts, 5)
+        assert phenomenon == "mixed_smoothing"
+
+    def test_unknown_signals_only_yield_unclassified(self):
+        counts = {"some_unknown_signal": 5}
+        phenomenon, evidence = swh._classify_zone_phenomenon(counts, 5)
+        assert phenomenon == "unclassified"
+
+    def test_empty_counts(self):
+        phenomenon, evidence = swh._classify_zone_phenomenon({}, 0)
+        assert phenomenon == "unclassified"
+        assert evidence == []
