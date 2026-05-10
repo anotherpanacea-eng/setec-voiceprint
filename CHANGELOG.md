@@ -6,6 +6,43 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.36.0] - 2026-05-10
+
+**Paired-release schedule, Release 6: output-discipline release.** No paired tool — both pieces are guardrails. The framework's surfaces already carry per-output `claim_license` blocks naming what the result entitles, and 1.30.x added the differential-diagnosis layer (`confounder_audit.py`) for "compatible-with-what" interpretation. What was still missing — and is the load-bearing addition this release ships — is the *single front-door label* answering **what use is this output entitled for?**, plus the comparison frame that makes voice-distance numbers interpretable to non-technical readers.
+
+### Added — Minimum Evidentiary Conditions Gate (Trustworthiness Tier 1)
+
+- **`scripts/evidentiary_conditions_gate.py`** — front-door evidentiary-posture gate. Reads any combination of audit JSONs and emits an **Evidentiary Posture** label drawn from a fixed five-tier ladder:
+  - `revision_only` — input too short, baseline too small, register mismatched, contamination too high. Safe for the writer's own revision; not safe for any other use.
+  - `exploratory_comparison` — meaningful inputs but missing context. Useful for triangulating against other evidence; not on its own a claim.
+  - `internal_triage` — sufficient evidence to flag work for closer review; not safe to publish or accuse.
+  - `research_grade_validation` — labeled corpus, well-matched baseline, multiple corroborating audits, register match. Can support a publication-grade observation.
+  - `forensic_adjacent_nondispositive` — strongest available posture; the framework still REFUSES dispositive authorship claims at any level. Forensic-grade use requires human review, due process, and out-of-framework corroborating evidence.
+- **The output is not a numerical confidence score.** The framework refuses to compress evidentiary status into a number that could be misused in disciplinary, accusatory, or legal contexts. The label is qualitative; the rationale enumerates which evidence supports the level and which would raise it.
+- **Indicator logic:** target length, baseline size, register-match strength, strip ratio (contamination), impostor pool size, audit-surface count, presence of a confounder diagnosis, presence of pre-edit version or known author, declared use case. Each indicator either *caps* the posture at a level or *promotes* it. The final posture is the minimum across all caps and the highest-met promotion gate.
+- **Promotion gates encoded explicitly:** research-grade requires either a confounder audit or ≥ 3 corroborating audit surfaces; forensic-adjacent requires (a) pre-edit version OR known author, AND (b) a confounder diagnosis, AND (c) ≥ 5 corroborating surfaces.
+- **User-declared use case caps but doesn't promote.** A user declaring `revision_only` won't get a higher label even if evidence supports it; a user declaring `forensic_adjacent` still receives `revision_only` if evidence is weak.
+- **Hardened JSON input handling** (1.34.2 conventions): missing user-supplied paths fail loudly, only omitted flags become `None`.
+- **Structured ClaimLicense block** explicitly refuses dispositive authorship claims at every posture level.
+
+### Added — Controls Audit (Trustworthiness Tier 2)
+
+- **`scripts/controls_audit.py`** — negative + positive controls for voice-distance comparison. Reports whether the questioned text is closer to a known-authentic control by the same writer (negative pole) or a known-smoothed / AI-edited / heavily-copyedited control (positive pole), against the same baseline. Output: side-by-side function-word L1 distances + classification of which pole the questioned text is closer to + within-band indicator.
+- **Five classifications:** `closer_to_negative_control`, `closer_to_positive_control`, `negative_only` (only one pole supplied), `positive_only` (only one pole supplied), `baseline_only` (no controls), `questioned_unavailable` (questioned text empty).
+- **Self-overlap guard** (1.29.1 / 1.34.1 convention): drops baseline entries whose resolved path matches the questioned text or either control with a stderr notice.
+- **Structured ClaimLicense block** explicitly refuses to verdict on whether the questioned text is "really" authentic or smoothed — the audit measures distance, not provenance. The interpretation depends on the user vouching for the controls' labels.
+- **CLI** mirrors `voice_distance.py`'s shape: `--questioned`, `--negative-control` (optional), `--positive-control` (optional), `--baseline-dir` or `--manifest`, full preprocessing flags.
+- The metric is **function-word L1 distance, not full Burrows Delta** — robust enough for the comparison frame, doesn't require SpaCy or stylometry_core's full feature-extraction pipeline. Future expansion could add Delta as an opt-in for richer per-family comparison.
+
+### Notes
+
+- **888 tests pass + 1 skipped** (was 842+1 in 1.35.1; +46 new tests across `test_evidentiary_conditions_gate.py` (29) and `test_controls_audit.py` (17)).
+- **No breaking changes.** Both pieces are new scripts; no existing surface is modified.
+- **Schedule status: Release 6 shipped.** Per the paired-release schedule, the next release is Release 7 — interpretation meta-layer (Surface-disagreement resolver + adversarial robustness-card output shape), no paired tool.
+- The Evidentiary Conditions Gate is the framework's **load-bearing epistemic discipline**. Pre-1.36.0 every surface carried its own `claim_license` block with surface-specific guarantees, but the framework had no single answer to "what use is THIS run entitled for?" — readers had to triangulate across surfaces. Now the gate provides a front-door label readers can act on before reading any specific surface's findings.
+- The Controls Audit is the simpler interpretive frame writers actually want. The length-matched bootstrap from 1.30.0 gives a percentile against within-baseline scatter, which is statistically correct but reads quietly. The controls comparison reads loudly: "your questioned text is closer to your known-authentic essay than to the known-smoothed example" — exactly the comparison frame a non-technical reader can act on.
+- The framework's privacy posture holds: neither tool emits raw text. The evidentiary gate works entirely off audit JSON; the controls audit emits per-text distance numbers but never quotes prose.
+
 ## [1.35.1] - 2026-05-10
 
 **Reviewer-flagged P2 fixes in the new R5 surfaces.** Three issues — two in `variance_audit`'s ablation contract, one in the stance audit's evidential category. None broke tests because the existing fixtures masked the failure modes; each one would misstate downstream results in real use.
