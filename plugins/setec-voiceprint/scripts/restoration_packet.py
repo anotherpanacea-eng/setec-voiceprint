@@ -315,6 +315,15 @@ class Packet:
     revision_moves: list[str]
     guardrails: list[str]
     post_check: list[str]
+    # Revision-risk model (Release 4, paired-release schedule).
+    # Per-packet risk label estimating the chance that the
+    # intervention will damage a different dimension of the prose:
+    # erase idiolect, create metric gaming, restore quirks
+    # intentionally edited out, damage genre expectations, etc.
+    # Filled by `classify_revision_risk`. Default "unspecified"
+    # for backward-compat with packets built before 1.34.0.
+    revision_risk: str = "unspecified"  # low / medium / high / unspecified
+    revision_risk_rationale: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -328,7 +337,188 @@ class Packet:
             "revision_moves": self.revision_moves,
             "guardrails": self.guardrails,
             "post_check": self.post_check,
+            "revision_risk": self.revision_risk,
+            "revision_risk_rationale": self.revision_risk_rationale,
         }
+
+
+# --------------- Revision-risk model (Release 4) -------------
+#
+# Per-packet risk classification — estimates the chance that the
+# intervention will damage a different dimension of the prose
+# beyond the targeted signal. Output: ("low"|"medium"|"high",
+# rationale). Heuristic; calibration-pending.
+#
+# Risk axes (named in the Trustworthiness Tier-3 Revision-risk
+# model spec):
+#   - erase idiolect
+#   - create metric gaming
+#   - increase generic humanizer artifacts
+#   - damage clarity
+#   - damage genre expectations
+#   - overcorrect into artificial variance
+#   - preserve voice but weaken argument
+#   - restore quirks intentionally edited out
+
+_RISK_TABLE: dict[tuple[str, str], tuple[str, str]] = {
+    # (targetability, signal-substring) → (risk, rationale)
+    # Direct targets: variance restoration. The risk is
+    # overcorrection into artificial variance.
+    ("direct", "sentence_length"): (
+        "medium",
+        "Restoring sentence-length variance can overcorrect into "
+        "artificial variance if the writer randomizes lengths "
+        "rather than rebuilding rhetorical-emphasis turns. Aim for "
+        "varied lengths driven by changes in argumentative weight, "
+        "not by length-target alone.",
+    ),
+    ("direct", "burstiness"): (
+        "medium",
+        "Burstiness restoration is a sentence-rhythm move; the "
+        "risk is overcorrecting into mannered variation if the "
+        "writer chases the metric. Restore emphasis-driven "
+        "variance, not metric-driven variance.",
+    ),
+    ("direct", "connective_density"): (
+        "medium",
+        "Reducing connective density damages genre expectations in "
+        "expository / academic / policy prose where transitions "
+        "are conventional. Verify the move fits the genre before "
+        "deleting connectives wholesale.",
+    ),
+    ("direct", "idiolect"): (
+        "low",
+        "Restoring documented idiolect phrases is low risk when "
+        "the idiolect detector's confidence is high. Risk rises "
+        "to medium if the detector flags low-confidence phrases — "
+        "those may be quirks intentionally edited out, not voice.",
+    ),
+    ("direct", "aic pattern"): (
+        "medium",
+        "AIC pattern reduction risks damaging genre expectations "
+        "in legal / policy / forensic prose where parallel-template "
+        "rhetoric is conventional. Reduce only the named patterns "
+        "the AIC audit flagged at high density, not all patterns.",
+    ),
+    ("direct", "fkgl"): (
+        "medium",
+        "FKGL spread restoration risks damaging clarity if the "
+        "writer increases spread by introducing gratuitously long "
+        "or short sentences. Restore via varied syntactic depth, "
+        "not via syllable-count manipulation.",
+    ),
+    ("direct", "mattr"): (
+        "medium",
+        "MATTR restoration risks creating generic humanizer "
+        "artifacts if the writer reaches for synonyms rather than "
+        "concrete details. Lexical diversity should rise from "
+        "specificity, not from thesaurus substitution.",
+    ),
+
+    # Translated targets: POS bigrams / dep n-grams / function-word
+    # clusters. Easy to overcorrect into mannered variation.
+    ("translated", "pos_bigram"): (
+        "medium",
+        "POS-bigram triggers translate to syntactic prose moves "
+        "(replace generic descriptor packages with concrete "
+        "actors). Risk: restoring variation by tag-shape rather "
+        "than by craft produces mannered prose.",
+    ),
+    ("translated", "function_word"): (
+        "medium",
+        "Function-word cluster shifts translate into "
+        "stance / hedging / boosting changes. Risk: restoring a "
+        "cluster mechanically can change the writer's epistemic "
+        "posture (e.g., turning hedged claims into unhedged ones).",
+    ),
+
+    # Investigate-first: cause-first revision is mandatory.
+    ("investigate_first", ""): (
+        "high",
+        "Investigate-first signals (MATTR / MTLD / Yule's K / "
+        "Shannon entropy) ask 'what local cause produced the "
+        "signal?' before any revision. Treating the diagnostic as "
+        "a target is the canonical metric-gaming failure mode the "
+        "framework is designed to resist.",
+    ),
+
+    # Avoid-direct: aggregate divergence / KL / Delta / cosine.
+    ("avoid_direct", ""): (
+        "high",
+        "Avoid-direct signals (overall KL / Burrows Delta / cosine "
+        "distance / char n-gram aggregates) are evidence summaries, "
+        "not writing goals. Optimizing them directly is the "
+        "framework's structural anti-goal.",
+    ),
+}
+
+
+def classify_revision_risk(
+    targetability: str, signal: str, severity: str = "moderate",
+) -> tuple[str, str]:
+    """Map (targetability, signal) → (risk, rationale).
+
+    Lookup by (targetability, signal-substring) — the table's
+    second key is matched as a substring of the signal name so
+    `tier1.sentence_length.burstiness_B` matches both
+    `("direct", "sentence_length")` and `("direct", "burstiness")`
+    (whichever is checked first). When multiple keys match, the
+    first matching table entry wins; severity 'heavy' bumps low →
+    medium and medium → high to reflect the larger-stakes
+    intervention.
+    """
+    sig_lower = (signal or "").lower()
+    risk = "unspecified"
+    rationale = ""
+    # Targetability-only fallbacks (investigate_first / avoid_direct
+    # entries with empty signal key) are general for those classes.
+    fallback = _RISK_TABLE.get((targetability, ""))
+    if fallback:
+        risk, rationale = fallback
+    # Signal-specific entries (direct / translated) override.
+    for (t, sig_sub), (r, msg) in _RISK_TABLE.items():
+        if t != targetability:
+            continue
+        if not sig_sub:
+            continue
+        if sig_sub in sig_lower:
+            risk, rationale = r, msg
+            break
+    if risk == "unspecified":
+        # Default: low for direct/translated, high for the
+        # avoid-direct family fallback.
+        if targetability in {"direct", "translated"}:
+            risk = "low"
+            rationale = (
+                "No specific risk pattern matched this signal. "
+                "Default-low: revise toward the named prose move; "
+                "verify the change with the post-check before "
+                "committing."
+            )
+        elif targetability in {"investigate_first", "avoid_direct"}:
+            risk = "high"
+            rationale = (
+                "No specific rationale matched; default-high for "
+                "this targetability class because direct revision "
+                "against the signal is structurally discouraged."
+            )
+    if severity == "heavy":
+        if risk == "low":
+            risk = "medium"
+        elif risk == "medium":
+            risk = "high"
+    return risk, rationale
+
+
+def apply_revision_risk(packet: Packet) -> Packet:
+    """Fill the revision_risk + revision_risk_rationale fields on a
+    packet. Returns the same packet for chaining."""
+    risk, rationale = classify_revision_risk(
+        packet.targetability, packet.signal, packet.severity,
+    )
+    packet.revision_risk = risk
+    packet.revision_risk_rationale = rationale
+    return packet
 
 
 # --------------- Severity classification --------------------
@@ -764,6 +954,10 @@ def build_packets(
             if actionable_kept >= max_targets:
                 continue
             actionable_kept += 1
+        # Revision-risk classification (Release 4): each packet
+        # gets a risk + rationale label that surfaces what could
+        # go wrong if this revision is followed naively.
+        apply_revision_risk(p)
         out.append(p)
     return out
 
@@ -986,6 +1180,22 @@ def _render_packet_md(
     lines.append(f"- **Targetability:** `{p.targetability}`")
     lines.append(f"- **Direction:** `{p.direction}`")
     lines.append(f"- **Severity:** `{p.severity}`")
+    # Revision risk (Release 4): per-packet risk label estimating
+    # what can go wrong if this revision is followed naively. ⚠
+    # marker on medium / high so the reader sees the caveat
+    # alongside the targetability and severity.
+    risk_marker = (
+        "⚠ "
+        if p.revision_risk in {"medium", "high"} else ""
+    )
+    if p.revision_risk and p.revision_risk != "unspecified":
+        lines.append(
+            f"- {risk_marker}**Revision risk:** `{p.revision_risk}`"
+        )
+        if p.revision_risk_rationale:
+            lines.append(
+                f"  - Rationale: {p.revision_risk_rationale}"
+            )
     if p.evidence:
         ev_lines = []
         for k, v in p.evidence.items():

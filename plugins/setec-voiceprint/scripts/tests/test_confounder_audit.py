@@ -270,8 +270,11 @@ class TestDistinguishingEvidence:
 class TestMissingEvidence:
     def test_empty_inputs_lists_all_missing(self):
         missing = ca.find_missing_evidence({})
-        # 9 high-leverage signals — all should be listed missing.
-        assert len(missing) == 9
+        # 13 high-leverage signals after Release 4 added the agency
+        # family (nominalization_density, agentless_passive_rate,
+        # generic_institutional_density, concrete_detail_density)
+        # to the original 9.
+        assert len(missing) == 13
 
     def test_one_observed_drops_from_missing_list(self):
         missing_empty = ca.find_missing_evidence({})
@@ -380,6 +383,119 @@ class TestMatrixIntegrity:
                 assert direction in canonical, (
                     f"{name}.{signal}={direction} not in canonical set"
                 )
+
+
+# ---------- Agency family folded into matrix (Release 4) ----------
+
+
+def _agency(
+    nominalization: float = 0.0,
+    agentless_passive: float = 0.0,
+    generic_inst: float = 0.0,
+    concrete: float = 5.0,
+) -> dict:
+    return {
+        "densities_per_1k": {
+            "nominalization_per_1k": nominalization,
+            "agentless_passive_per_1k": agentless_passive,
+            "generic_institutional_per_1k": generic_inst,
+            "concrete_detail_per_1k": concrete,
+        },
+    }
+
+
+class TestAgencyFolding:
+    """The Release 4 strengthening complement folds the agency
+    family into the confounder matrix and the observation extractor.
+    Tests pin both the new observation extraction and the matrix
+    expectations for the canonical confounders."""
+
+    def test_extract_observations_reads_agency(self):
+        obs = ca.extract_observations(
+            agency=_agency(
+                nominalization=40.0, agentless_passive=8.0,
+                generic_inst=10.0, concrete=0.5,
+            ),
+        )
+        assert obs["nominalization_density"] == "high"
+        assert obs["agentless_passive_rate"] == "high"
+        assert obs["generic_institutional_density"] == "high"
+        assert obs["concrete_detail_density"] == "low"
+
+    def test_low_agency_signals(self):
+        obs = ca.extract_observations(
+            agency=_agency(
+                nominalization=4.0, agentless_passive=0.0,
+                generic_inst=0.0, concrete=10.0,
+            ),
+        )
+        assert obs["nominalization_density"] == "low"
+        assert obs["agentless_passive_rate"] == "low"
+        assert obs["concrete_detail_density"] == "high"
+
+    def test_ai_smoothing_predicts_high_agency_loss(self):
+        """The matrix's ai_smoothing entry should expect high
+        nominalization, high agentless passive, high generic
+        institutional, low concrete detail (Release 4)."""
+        ai_expectations = ca.CONFOUNDER_MATRIX["ai_smoothing"]
+        assert ai_expectations.get("nominalization_density") == "high"
+        assert ai_expectations.get("agentless_passive_rate") == "high"
+        assert ai_expectations.get("generic_institutional_density") == "high"
+        assert ai_expectations.get("concrete_detail_density") == "low"
+
+    def test_legal_or_policy_memo_predicts_high_agency_loss(self):
+        legal = ca.CONFOUNDER_MATRIX["legal_or_policy_memo_style"]
+        assert legal.get("nominalization_density") == "high"
+        assert legal.get("agentless_passive_rate") == "high"
+        assert legal.get("generic_institutional_density") == "high"
+
+    def test_translation_esl_predicts_low_agency_loss(self):
+        """Per the Release 4 matrix update: ESL cleanup tends
+        toward simpler, agent-explicit constructions; lower
+        nominalization than native institutional prose."""
+        esl = ca.CONFOUNDER_MATRIX["translation_or_esl_cleanup"]
+        assert esl.get("nominalization_density") == "low"
+        assert esl.get("agentless_passive_rate") == "low"
+
+    def test_agency_sharpens_ai_vs_legal_differential(self):
+        """The honesty contract from Release 3 was that AI smoothing
+        and legal/policy memo style both score high on the same
+        original 14 signals. The Release 4 addition is that BOTH
+        still predict high agency loss — so agency alone doesn't
+        distinguish them — but the AI matrix entry ALSO expects
+        low concrete-detail-density and (when char_ngram_delta is
+        observed) high char_ngram_delta + low idiolect_survival."""
+        # The agency fold doesn't add a unique distinguishing
+        # signal between AI and legal — both predict high agency
+        # loss. The framework's design point: the differential
+        # diagnosis stays honest about which signals distinguish
+        # which candidates. The matrix integrity check just
+        # confirms both entries use the agency family.
+        ai = ca.CONFOUNDER_MATRIX["ai_smoothing"]
+        legal = ca.CONFOUNDER_MATRIX["legal_or_policy_memo_style"]
+        assert ai.get("nominalization_density") == legal.get("nominalization_density")
+        # But AI uniquely predicts low concrete-detail; legal
+        # leaves it unspecified (or "any").
+        ai_concrete = ai.get("concrete_detail_density")
+        legal_concrete = legal.get("concrete_detail_density")
+        # AI matrix says "low concrete" — load-bearing.
+        assert ai_concrete == "low"
+        # Legal matrix doesn't predict concrete detail (not in entry).
+        assert legal_concrete is None or legal_concrete == "any"
+
+    def test_analyze_confounders_accepts_agency_kwarg(self):
+        report = ca.analyze_confounders(
+            agency=_agency(nominalization=40.0, generic_inst=10.0),
+        )
+        assert "ranked_confounders" in report
+        assert report["inputs_used"]["agency"] is True
+
+    def test_missing_evidence_lists_agency_signals_when_absent(self):
+        missing = ca.find_missing_evidence({})
+        # Agency family signals appear in the missing-evidence list.
+        missing_text = " ".join(missing)
+        assert "nominalization" in missing_text
+        assert "concrete_detail" in missing_text
 
 
 if __name__ == "__main__":

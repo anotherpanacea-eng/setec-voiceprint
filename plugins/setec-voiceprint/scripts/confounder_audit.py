@@ -107,6 +107,11 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "discourse_marker_density": "any",
         "marked_move_entropy": "any",
         "length_localization": "uniform",  # editor smooths uniformly
+        # Agency family (Release 4): copyediting nudges toward
+        # nominalization in some house styles; "any" until the
+        # specific house style is known.
+        "nominalization_density": "any",
+        "agentless_passive_rate": "any",
     },
     "register_genre_shift": {
         "sentence_variance": "any",
@@ -116,6 +121,10 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "discourse_marker_density": "any",
         "idiolect_survival": "high",  # voice survives across genres
         "paragraph_regularity": "any",
+        # Agency family: shifts with register (legal/policy genres
+        # carry high abstraction; literary genres carry low).
+        "nominalization_density": "any",
+        "agentless_passive_rate": "any",
     },
     "legal_or_policy_memo_style": {
         "sentence_variance": "any",
@@ -127,6 +136,10 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "discourse_marker_density": "high",
         "marked_move_entropy": "low",  # narrow set of moves
         "register_match": "any",
+        # Agency family: characteristic of legal/policy prose.
+        "nominalization_density": "high",
+        "agentless_passive_rate": "high",
+        "generic_institutional_density": "high",
     },
     "translation_or_esl_cleanup": {
         "sentence_variance": "low",
@@ -135,6 +148,11 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "punctuation_regularity": "any",
         "idiolect_survival": "low",
         "discourse_marker_density": "low",
+        # Agency family: ESL cleanup tends toward simpler, agent-
+        # explicit constructions; nominalization may be lower than
+        # native institutional prose.
+        "nominalization_density": "low",
+        "agentless_passive_rate": "low",
     },
     "dictation_or_transcription_cleanup": {
         "sentence_variance": "low",
@@ -142,6 +160,8 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "discourse_marker_density": "low",  # fillers removed
         "idiolect_survival": "any",
         "lexical_diversity": "any",
+        "nominalization_density": "any",
+        "agentless_passive_rate": "any",
     },
     "house_style_enforcement": {
         "sentence_variance": "any",
@@ -151,6 +171,10 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "paragraph_regularity": "high",
         "discourse_marker_density": "any",
         "register_match": "high",  # by definition, in-register
+        # Agency family: institutional house style normalizes
+        # toward generic-institutional vocabulary.
+        "generic_institutional_density": "high",
+        "nominalization_density": "any",
     },
     "developmental_revision": {
         "sentence_variance": "any",
@@ -158,6 +182,10 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "idiolect_survival": "high",
         "paragraph_regularity": "any",
         "discourse_marker_density": "any",
+        # Developmental revision is targeted, not blanket. Agency
+        # family is "any" — depends on the revision intent.
+        "nominalization_density": "any",
+        "agentless_passive_rate": "any",
     },
     "ai_smoothing": {
         "sentence_variance": "low",
@@ -173,6 +201,18 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "discourse_marker_density": "high",
         "marked_move_entropy": "low",
         "length_localization": "uniform",
+        # Agency family (Release 4 strengthening complement):
+        # AI smoothing characteristically replaces concrete actors
+        # with nominalized processes and reaches for generic
+        # institutional vocabulary. This is where the agency family
+        # sharpens differential diagnosis vs. legal/policy memo
+        # style — both show high agency-loss, but ai_smoothing
+        # also shows low idiolect_survival and high char_ngram_delta
+        # while legal/policy shows neither distinctively.
+        "nominalization_density": "high",
+        "agentless_passive_rate": "high",
+        "generic_institutional_density": "high",
+        "concrete_detail_density": "low",
     },
     "intentional_voice_imitation": {
         "sentence_variance": "any",
@@ -181,6 +221,8 @@ CONFOUNDER_MATRIX: dict[str, dict[str, str]] = {
         "discourse_marker_density": "any",
         "marked_move_entropy": "any",
         "register_match": "high",
+        "nominalization_density": "any",
+        "agentless_passive_rate": "any",
     },
 }
 
@@ -215,6 +257,7 @@ def extract_observations(
     paragraph: dict[str, Any] | None = None,
     discourse: dict[str, Any] | None = None,
     aic: dict[str, Any] | None = None,
+    agency: dict[str, Any] | None = None,
 ) -> dict[str, str]:
     """Reduce the input audit JSONs to a flat {signal: direction}
     dict. Direction values: "high" / "low" / "uniform" / "localized" /
@@ -335,6 +378,30 @@ def extract_observations(
             )
             if max_d >= 1.5:
                 obs["aic_pattern_density"] = "high"
+
+    # Agency / abstraction audit (Release 4 strengthening complement)
+    if agency:
+        agency_dens = agency.get("densities_per_1k") or {}
+        nominalization = agency_dens.get("nominalization_per_1k", 0.0)
+        if nominalization >= 30.0:
+            obs["nominalization_density"] = "high"
+        elif nominalization < 8.0:
+            obs["nominalization_density"] = "low"
+        passive = agency_dens.get("agentless_passive_per_1k", 0.0)
+        if passive >= 5.0:
+            obs["agentless_passive_rate"] = "high"
+        elif passive < 1.0:
+            obs["agentless_passive_rate"] = "low"
+        generic = agency_dens.get("generic_institutional_per_1k", 0.0)
+        if generic >= 4.0:
+            obs["generic_institutional_density"] = "high"
+        elif generic < 0.5:
+            obs["generic_institutional_density"] = "low"
+        concrete = agency_dens.get("concrete_detail_per_1k", 0.0)
+        if concrete >= 3.0:
+            obs["concrete_detail_density"] = "high"
+        elif concrete < 1.5:
+            obs["concrete_detail_density"] = "low"
 
     return obs
 
@@ -468,6 +535,11 @@ def find_missing_evidence(
         "length_localization": "no sliding-window heatmap data supplied",
         "discourse_marker_density": "no discourse_move_signature output provided",
         "paragraph_regularity": "no paragraph_audit output provided",
+        # Agency family (Release 4 strengthening complement).
+        "nominalization_density": "no agency_abstraction_audit output provided",
+        "agentless_passive_rate": "no agency_abstraction_audit output provided",
+        "generic_institutional_density": "no agency_abstraction_audit output provided",
+        "concrete_detail_density": "no agency_abstraction_audit output provided",
     }
     missing: list[str] = []
     for sig, hint in important_signals.items():
@@ -483,16 +555,26 @@ def analyze_confounders(
     paragraph: dict[str, Any] | None = None,
     discourse: dict[str, Any] | None = None,
     aic: dict[str, Any] | None = None,
+    agency: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Top-level entry point. Reads input audit JSONs, extracts
     observations, scores confounders, finds distinguishing
-    evidence, surfaces missing-evidence list."""
+    evidence, surfaces missing-evidence list.
+
+    The ``agency`` input (Release 4) is the strengthening complement
+    that sharpens the differential diagnosis between AI smoothing
+    and legal/policy memo style — both predict the same surface
+    pattern on the original 14 signals, but they diverge on the
+    agency family when paired with idiolect_survival /
+    char_ngram_delta evidence.
+    """
     observations = extract_observations(
         variance=variance,
         voice_distance=voice_distance,
         paragraph=paragraph,
         discourse=discourse,
         aic=aic,
+        agency=agency,
     )
     ranked = score_confounders(observations)
     distinguishing = find_distinguishing_evidence(observations, ranked)
@@ -512,6 +594,7 @@ def analyze_confounders(
             "paragraph": paragraph is not None,
             "discourse": discourse is not None,
             "aic": aic is not None,
+            "agency": agency is not None,
         },
     }
 
@@ -718,6 +801,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--aic-json",
         help="Path to aic_pattern_audit.py --json output (future).",
     )
+    p.add_argument(
+        "--agency-json",
+        help="Path to agency_abstraction_audit.py --json output.",
+    )
     p.add_argument("--json", action="store_true", help="Emit JSON.")
     p.add_argument("--out", help="Write output to this path.")
     return p
@@ -731,12 +818,13 @@ def main(argv: list[str] | None = None) -> int:
         "paragraph": _read_json_or_none(args.paragraph_json),
         "discourse": _read_json_or_none(args.discourse_json),
         "aic": _read_json_or_none(args.aic_json),
+        "agency": _read_json_or_none(args.agency_json),
     }
     if all(v is None for v in inputs.values()):
         sys.stderr.write(
             "No input JSONs supplied. Pass at least one of "
             "--variance-json / --voice-distance-json / "
-            "--paragraph-json / --discourse-json.\n"
+            "--paragraph-json / --discourse-json / --agency-json.\n"
         )
         return 2
     report = analyze_confounders(**inputs)

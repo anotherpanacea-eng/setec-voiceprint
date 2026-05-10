@@ -6,6 +6,44 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.34.0] - 2026-05-10
+
+**Paired-release schedule, Release 4: Agency and Abstraction Audit + Revision-risk model + agency family folded into the confounder matrix.** Per the (1.32.1-narrowed) dependency rule, Agency and Abstraction Audit is the *strengthening complement* to the confounder audit shipped in 1.33.0 — it lands in this release and immediately folds into the confounder matrix to sharpen the differential diagnosis. The revision-risk model extends `restoration_packet.py`'s targetability taxonomy with per-packet risk classification (low / medium / high) along orthogonal axes that the targetability classes don't cover.
+
+### Added — Agency and Abstraction Audit (Surfaces Tier 1)
+
+- **`scripts/agency_abstraction_audit.py`** — agency-loss / abstraction-drift detector. The shipped Layer A suite measures distributional compression at sentence + token layers; the paragraph audit (Release 2) added macro-rhythm; the discourse audit (Release 3) added typed scaffolding. What's structurally missing — and where AI smoothing and institutional editing often do their most legible damage — is **agency loss**: nominalized actions replacing concrete verbs, agentless passives replacing named actors, light-verb constructions ("make a decision," "provide support") replacing direct verbs, generic-institutional vocabulary replacing situated detail.
+- **Seven per-signal densities (per 1,000 words)**: nominalization (suffixed derivationals — `-tion / -sion / -ment / -ity / -ance / -ence / -ness / -ization`), agentless passive rate (passives without a named `by X` agent), light-verb constructions (verb + nominalized noun), generic institutional vocabulary (`framework / landscape / dynamic / challenge / opportunity / approach / strategy / actionable / leverage / holistic / robust` etc.), concrete-detail vocabulary (curated heuristic anchor — temporal markers, household objects, kinship terms, sensory nouns), action verbs (curated heuristic anchor — `walked / ran / held / built / cooked / sang` etc.), proper nouns.
+- **Entity-to-action ratio**: `(proper nouns + concrete detail) / action verbs` per 1k words. High = situated; low = abstracted. Saturates to entity count when action verbs are zero.
+- **Compression-fraction band call** (Lightly / Moderately / Heavily *abstracted*) over six signals. Flags fire on high nominalization, high agentless passive rate, high light-verb density, high generic-institutional density, low concrete-detail density (≥ 500-word doc), low action-verb density (≥ 500-word doc).
+- **Optional baseline comparison** computes per-signal z-scores against the baseline aggregate.
+- **Structured ClaimLicense block** explicitly refuses to commit to "good vs. bad" abstraction — institutional prose has legitimate reasons to use abstract noun forms.
+- **CLI** mirrors the rest of the Surfaces Tier-1 audits: `--baseline-dir`, `--strip-masking`, `--json`, etc.
+
+### Added — Revision-risk model (Trustworthiness Tier 3)
+
+- **`Packet.revision_risk` and `Packet.revision_risk_rationale`** fields on the `restoration_packet.Packet` dataclass. Default `unspecified` for backward compat with packets built before 1.34.0.
+- **`classify_revision_risk(targetability, signal, severity)`** maps each targetability + signal combination to `("low" | "medium" | "high", rationale)` along eight risk axes (erase idiolect, create metric gaming, increase generic humanizer artifacts, damage clarity, damage genre expectations, overcorrect into artificial variance, preserve voice but weaken argument, restore quirks intentionally edited out). The risk table covers the canonical signals (sentence-length variance, burstiness, connective density, idiolect, AIC patterns, FKGL, MATTR, POS bigrams, function-word clusters) plus targetability-class fallbacks for `investigate_first` (high — "treating the diagnostic as a target is the canonical metric-gaming failure mode") and `avoid_direct` (high — "structural anti-goal").
+- **Severity-driven escalation**: severity `heavy` bumps low → medium and medium → high to reflect the larger-stakes intervention.
+- **`apply_revision_risk(packet)`** fills the fields on a packet; called automatically by `build_packets` so every emitted packet carries a risk label.
+- **Markdown rendering** in `_render_packet_md` surfaces the risk + rationale; **⚠** marker on medium / high so the reader sees the caveat alongside targetability and severity.
+
+### Changed — Agency family folded into confounder matrix
+
+- **`confounder_audit.CONFOUNDER_MATRIX`** gains four agency-family signals (`nominalization_density`, `agentless_passive_rate`, `generic_institutional_density`, `concrete_detail_density`) across all nine confounders. AI smoothing predicts `high / high / high / low`; legal_or_policy_memo_style predicts `high / high / high` (concrete-detail not specified — distinguishes from AI on this dimension). Translation/ESL cleanup predicts `low / low` (ESL writers tend toward agent-explicit constructions). House-style enforcement predicts high generic-institutional density. Other confounders mark agency-family signals as `any` until evidence sharpens the matrix.
+- **`extract_observations(agency=...)`** new keyword reads `agency_abstraction_audit.py` JSON output and emits the four agency observations using thresholds aligned with the matrix expectations (nominalization ≥ 30 / 1k = high; concrete-detail ≥ 3 / 1k = high; etc.).
+- **`analyze_confounders(agency=...)`** keyword passes through to `extract_observations`.
+- **Missing-evidence list** grows from 9 to 13 signals (the four agency-family signals join the high-leverage list when they're not observed).
+- **CLI** gains `--agency-json` flag.
+
+### Notes
+
+- **739 tests pass + 1 skipped** (was 689+1 in 1.33.0; +50 new tests across `test_agency_abstraction_audit.py` (29 — agency signals + band call + baseline + render + CLI), `test_revision_risk.py` (16 — risk classifier + apply_revision_risk + build_packets integration + markdown rendering), and the `TestAgencyFolding` suite added to `test_confounder_audit.py` (8 — extraction + matrix integrity + sharpening contract)).
+- **No breaking changes.** `Packet.revision_risk` defaults `unspecified`; `extract_observations` and `analyze_confounders` accept the new `agency` kwarg with default `None`. Pre-1.34.0 callers continue to work; downstream JSON consumers gain new fields they can ignore.
+- **Schedule status: Release 4 shipped.** Per the paired-release schedule (ROADMAP `Interleaving` section), the next release is the Tier-2 promotions bundle: Punctuation Cadence + Stance/Modality + Function-Word Grammar paired with Ablation reports.
+- The honesty contract from Release 3 holds: agency-family folding doesn't *resolve* the AI-smoothing-vs-legal-memo differential (both predict the same high-agency-loss pattern). Where agency sharpens the differential is in combination — when char_ngram_delta is observed alongside agency-loss, AI smoothing's predicted high-char_ngram_delta + low-idiolect_survival pattern distinguishes from legal memo style's `any` on those signals. The framework continues to refuse a single-cause verdict when the evidence doesn't entitle one.
+- The agency-loss vocabulary (`framework / landscape / dynamic / challenge / opportunity` etc.) is curated, not labeled-corpus-validated. Treat it as a texture signal; the audit's primary value is per-signal density relative to baseline rather than absolute counts.
+
 ## [1.33.0] - 2026-05-10
 
 **Paired-release schedule, Release 3: Discourse Move Signature + Confounder Audit / Layer D.** The single most leveraged release in the trustworthiness expansion. The confounder audit promotes the framework's "the math doesn't entitle the verdict" stance from claim-license boilerplate into a formal *differential-diagnosis output* — a ranked list of compatible alternative explanations (professional copyediting, register / genre shift, legal / policy memo style, translation or ESL cleanup, dictation cleanup, house-style enforcement, developmental revision, AI smoothing, intentional voice imitation), none presented as the answer. Per the (1.32.1-narrowed) dependency rule, Discourse Move Signature is the *hard prerequisite* — without typed-discourse evidence the confounder matrix can't separate institutional prose from AI-smoothed prose. Both ship in this release.
