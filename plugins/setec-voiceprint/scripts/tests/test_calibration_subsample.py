@@ -91,9 +91,27 @@ def _make_inner_args(**overrides) -> argparse.Namespace:
         notes=None,
         max_entries=None,
         max_entries_seed=None,
+        records_cache=None,
+        refresh_cache=False,
     )
     base.update(overrides)
     return argparse.Namespace(**base)
+
+
+def _patch_manifest_io():
+    """Common context-manager bundle: stub the manifest-side I/O so
+    sub-sample tests can run without a real manifest file on disk.
+
+    Returns a list of `mock.patch` objects the caller `with`s as a
+    bundle. Centralized here because the 1.26 cache refactor added
+    `_manifest_content_hash` (which opens the manifest file) to the
+    derive_threshold path; tests that previously only patched
+    `validate_manifest` + `load_manifest_entries` now also need to
+    stub the hash."""
+    return [
+        mock.patch.object(ct, "_manifest_content_hash",
+                          return_value="sha256:test"),
+    ]
 
 
 # ------------------- Inner: calibrate_thresholds -----------------
@@ -140,7 +158,9 @@ def test_subsample_caps_total_entries():
                 "scores": {"layer_a": {"burstiness_B": 0.5}}}
 
     # Stub manifest validation + loading + scoring.
-    with mock.patch.object(ct, "validate_manifest",
+    with mock.patch.object(ct, "_manifest_content_hash",
+                           return_value="sha256:test"), \
+         mock.patch.object(ct, "validate_manifest",
                            return_value={"n_errors": 0}), \
          mock.patch.object(ct, "load_manifest_entries", return_value=fake), \
          mock.patch.object(ct, "_entry_uses",
@@ -185,7 +205,9 @@ def test_subsample_label_stratified_keeps_both_classes():
         return {"entry": e, "label": 1 if e["ai_status"] == "ai_generated" else 0,
                 "scores": {"layer_a": {"burstiness_B": 0.5}}}
 
-    with mock.patch.object(ct, "validate_manifest",
+    with mock.patch.object(ct, "_manifest_content_hash",
+                           return_value="sha256:test"), \
+         mock.patch.object(ct, "validate_manifest",
                            return_value={"n_errors": 0}), \
          mock.patch.object(ct, "load_manifest_entries", return_value=fake), \
          mock.patch.object(ct, "_entry_uses",
@@ -228,7 +250,9 @@ def test_subsample_deterministic_under_same_seed():
             return {"entry": e, "label": 0,
                     "scores": {"layer_a": {"burstiness_B": 0.5}}}
 
-        with mock.patch.object(ct, "validate_manifest",
+        with mock.patch.object(ct, "_manifest_content_hash",
+                               return_value="sha256:test"), \
+             mock.patch.object(ct, "validate_manifest",
                                return_value={"n_errors": 0}), \
              mock.patch.object(ct, "load_manifest_entries", return_value=fake), \
              mock.patch.object(ct, "_entry_uses",
@@ -270,7 +294,9 @@ def test_subsample_different_seeds_produce_different_samples():
                     "scores": {"layer_a": {"burstiness_B": 0.5}}}
 
         args = _make_inner_args(max_entries=50, bootstrap_seed=seed)
-        with mock.patch.object(ct, "validate_manifest",
+        with mock.patch.object(ct, "_manifest_content_hash",
+                               return_value="sha256:test"), \
+             mock.patch.object(ct, "validate_manifest",
                                return_value={"n_errors": 0}), \
              mock.patch.object(ct, "load_manifest_entries", return_value=fake), \
              mock.patch.object(ct, "_entry_uses",
@@ -314,7 +340,9 @@ def test_subsample_seed_override_uses_max_entries_seed():
             bootstrap_seed=boot_seed,
             max_entries_seed=sample_seed,
         )
-        with mock.patch.object(ct, "validate_manifest",
+        with mock.patch.object(ct, "_manifest_content_hash",
+                               return_value="sha256:test"), \
+             mock.patch.object(ct, "validate_manifest",
                                return_value={"n_errors": 0}), \
              mock.patch.object(ct, "load_manifest_entries", return_value=fake), \
              mock.patch.object(ct, "_entry_uses",
@@ -355,7 +383,9 @@ def test_subsample_no_op_when_max_entries_above_full_count():
         return {"entry": e, "label": 0,
                 "scores": {"layer_a": {"burstiness_B": 0.5}}}
 
-    with mock.patch.object(ct, "validate_manifest",
+    with mock.patch.object(ct, "_manifest_content_hash",
+                           return_value="sha256:test"), \
+         mock.patch.object(ct, "validate_manifest",
                            return_value={"n_errors": 0}), \
          mock.patch.object(ct, "load_manifest_entries", return_value=fake), \
          mock.patch.object(ct, "_entry_uses",
@@ -435,7 +465,20 @@ def test_survey_marks_pipeline_check_when_max_entries_set():
                       "available": True},
         }
 
-    with mock.patch.object(cs.ct, "derive_threshold", side_effect=fake_derive):
+    # 1.26.0: run_survey scores once via load_or_score_corpus, then
+    # passes records to derive_threshold_from_records per signal.
+    # Stub both layers so the tests don't need a real manifest file.
+    with mock.patch.object(
+        cs.ct, "load_or_score_corpus",
+        return_value=([], {"sub_sample": (
+            {"applied": True, "n_used": 20, "n_full": 130,
+             "fraction": 0.15, "seed": 42}
+            if getattr(parent, "max_entries", None) else None
+        )}, False),
+    ), mock.patch.object(
+        cs.ct, "derive_threshold_from_records",
+        side_effect=lambda records, *, args, scoring_meta: fake_derive(args),
+    ):
         survey = cs.run_survey(parent, signals=["burstiness_B"])
     assert survey["is_pipeline_check"] is True
     assert survey["max_entries"] == 20
@@ -460,7 +503,20 @@ def test_survey_does_not_mark_pipeline_check_when_max_entries_unset():
                       "available": True},
         }
 
-    with mock.patch.object(cs.ct, "derive_threshold", side_effect=fake_derive):
+    # 1.26.0: run_survey scores once via load_or_score_corpus, then
+    # passes records to derive_threshold_from_records per signal.
+    # Stub both layers so the tests don't need a real manifest file.
+    with mock.patch.object(
+        cs.ct, "load_or_score_corpus",
+        return_value=([], {"sub_sample": (
+            {"applied": True, "n_used": 20, "n_full": 130,
+             "fraction": 0.15, "seed": 42}
+            if getattr(parent, "max_entries", None) else None
+        )}, False),
+    ), mock.patch.object(
+        cs.ct, "derive_threshold_from_records",
+        side_effect=lambda records, *, args, scoring_meta: fake_derive(args),
+    ):
         survey = cs.run_survey(parent, signals=["burstiness_B"])
     assert survey["is_pipeline_check"] is False
     assert survey["max_entries"] is None

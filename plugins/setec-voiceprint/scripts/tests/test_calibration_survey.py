@@ -270,7 +270,10 @@ def test_survey_one_signal_returns_row_with_metrics():
     fake_entry = _entry(
         "burstiness_B", auc=0.85, threshold=0.42, tpr=0.60, n_neg=200,
     )
-    with mock.patch.object(cs.ct, "derive_threshold", return_value=fake_entry):
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           return_value=fake_entry):
         row = cs.survey_one_signal(
             "burstiness_B", parent,
             tpr_floor=0.05, aggressiveness_tolerance=0.05,
@@ -327,7 +330,10 @@ def test_run_survey_iterates_all_signals_by_default():
     invariant the PROVENANCE.md doc fix is about."""
     parent = _stub_args()
     fake_entry = _entry("dummy")
-    with mock.patch.object(cs.ct, "derive_threshold", return_value=fake_entry):
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           return_value=fake_entry):
         survey = cs.run_survey(parent)
     surveyed = {r["signal"] for r in survey["rows"]}
     assert surveyed == set(COMPRESSION_HEURISTICS.keys())
@@ -337,7 +343,10 @@ def test_run_survey_iterates_all_signals_by_default():
 def test_run_survey_honors_explicit_signal_list():
     parent = _stub_args()
     fake_entry = _entry("dummy")
-    with mock.patch.object(cs.ct, "derive_threshold", return_value=fake_entry):
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           return_value=fake_entry):
         survey = cs.run_survey(
             parent, signals=["burstiness_B", "mattr"],
         )
@@ -368,7 +377,12 @@ def test_run_survey_ranks_passing_signals_above_failing():
             return _entry(a, auc=0.85, tpr=0.60, fpr_resolution=0.005)
         return _entry(b, auc=0.30)
 
-    with mock.patch.object(cs.ct, "derive_threshold", side_effect=fake_dispatch):
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(
+             cs.ct, "derive_threshold_from_records",
+             side_effect=lambda records, *, args, scoring_meta: fake_dispatch(args),
+         ):
         survey = cs.run_survey(parent, signals=[a, b])
     # Signal `a` (passing more gates) should rank ahead of `b`.
     assert survey["rows"][0]["signal"] == a
@@ -394,7 +408,12 @@ def test_run_survey_counts_all_gates_pass_correctly():
             # TPR too low.
             return _entry(keys[2], tpr=0.001)
 
-    with mock.patch.object(cs.ct, "derive_threshold", side_effect=fake_dispatch):
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(
+             cs.ct, "derive_threshold_from_records",
+             side_effect=lambda records, *, args, scoring_meta: fake_dispatch(args),
+         ):
         survey = cs.run_survey(parent, signals=keys)
     # n_signals_all_gates_pass excludes None (gate 2 always None) so
     # the count is "passes every evaluable gate" — for our synthetic
@@ -573,7 +592,10 @@ def test_run_writes_json_ledger_to_out(tmp_path):
         aggressiveness_tolerance=0.05, json_only=True,
     )
     fake_entry = _entry("burstiness_B")
-    with mock.patch.object(cs.ct, "derive_threshold", return_value=fake_entry):
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           return_value=fake_entry):
         rc = cs.run(args)
     out_path = tmp_path / "survey.json"
     assert out_path.is_file()
@@ -594,7 +616,10 @@ def test_run_json_only_suppresses_markdown_on_stdout(tmp_path, capsys):
         aggressiveness_tolerance=0.05, json_only=True,
     )
     fake_entry = _entry("burstiness_B")
-    with mock.patch.object(cs.ct, "derive_threshold", return_value=fake_entry):
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           return_value=fake_entry):
         cs.run(args)
     captured = capsys.readouterr()
     assert "# Calibration survey" not in captured.out

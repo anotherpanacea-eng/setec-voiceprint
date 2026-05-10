@@ -74,6 +74,16 @@ from validation_harness import (  # type: ignore
 )
 from variance_audit import COMPRESSION_HEURISTICS  # type: ignore
 
+# Cache key bumped when the scoring code's record shape changes in a
+# way that invalidates older caches. Read by `cache_is_compatible`.
+# Bump this when:
+#   * `score_smoothing_entry` adds / removes / renames a signal
+#     column.
+#   * The Tier 2/3 feature set changes shape.
+#   * A bugfix changes computed values for the same input (callers
+#     must re-score to pick up the fix).
+SCORER_CACHE_VERSION = "1.26.0"
+
 
 def _stable_seed(base_seed: int | None, *parts: str) -> int | None:
     """SHA-256-derived seed for cross-process bootstrap reproducibility.
@@ -314,19 +324,81 @@ def _load_fetch_record(manifest_path: Path) -> dict[str, Any]:
     return {}
 
 
-def derive_threshold(
-    args: argparse.Namespace,
-) -> dict[str, Any]:
-    """Run the full pipeline and return a provenance entry."""
-    if args.signal not in COMPRESSION_HEURISTICS:
-        raise SystemExit(
-            f"Unknown signal {args.signal!r}. Known: "
-            f"{', '.join(sorted(COMPRESSION_HEURISTICS))}"
-        )
-    spec = COMPRESSION_HEURISTICS[args.signal]
-    direction = spec.direction
-    signal_path = spec.signal_path
+def _stratified_subsample(
+    entries: list[dict[str, Any]],
+    *,
+    cap: int,
+    seed: int,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Label-stratified sub-sample; returns ``(sampled, n_pos, n_neg)``.
 
+    Pulled out so both `score_corpus` and the cache-load path can apply
+    sub-sampling consistently. Proportional to class size with a floor
+    of 1 per non-empty class so the threshold sweep always has both
+    labels present.
+    """
+    positive_statuses = set(DEFAULT_POSITIVE_STATUSES)
+    negative_statuses = set(DEFAULT_NEGATIVE_STATUSES)
+    positives = [e for e in entries if e.get("ai_status") in positive_statuses]
+    negatives = [e for e in entries if e.get("ai_status") in negative_statuses]
+    total = len(positives) + len(negatives)
+    if total > 0:
+        n_pos_target = max(
+            1 if positives else 0,
+            int(round(cap * len(positives) / total)),
+        )
+        n_neg_target = max(0, cap - n_pos_target)
+        if n_neg_target == 0 and negatives:
+            n_neg_target = 1
+            n_pos_target = max(1, cap - 1)
+    else:
+        n_pos_target = n_neg_target = 0
+
+    import random
+    rng = random.Random(int(seed))
+    if positives:
+        rng.shuffle(positives)
+    if negatives:
+        rng.shuffle(negatives)
+    sampled = positives[:n_pos_target] + negatives[:n_neg_target]
+    rng.shuffle(sampled)
+    return sampled, n_pos_target, n_neg_target
+
+
+def _manifest_content_hash(manifest_path: Path) -> str:
+    """SHA-256 of the manifest file content. Used as the cache
+    invalidation key — if the user edits the manifest, the cache
+    invalidates."""
+    h = hashlib.sha256()
+    with manifest_path.open("rb") as f:
+        for chunk in iter(lambda: f.read(64 * 1024), b""):
+            h.update(chunk)
+    return f"sha256:{h.hexdigest()}"
+
+
+def score_corpus(
+    args: argparse.Namespace,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Score every (filtered, optionally sub-sampled) manifest entry.
+
+    Pure scoring — no per-signal logic. Called once per calibration
+    run; the resulting record list carries every signal's score as a
+    field, so per-signal threshold sweeps later just read out the
+    relevant column.
+
+    Returns ``(records, scoring_meta)``. ``scoring_meta`` carries the
+    inputs that determine cache validity:
+
+      - ``manifest_path``, ``manifest_sha256`` — corpus identity.
+      - ``use`` — the manifest filter.
+      - ``do_tier2``, ``do_tier3`` — which signal columns are
+        populated.
+      - ``sub_sample`` — None for full-corpus runs; a dict
+        ``{applied, n_used, n_full, fraction, seed}`` for sub-sampled
+        runs (the user-visible PIPELINE CHECK marker propagates from
+        here through the cache to the provenance entry).
+      - ``scored_at`` — ISO timestamp.
+    """
     manifest_path = Path(args.manifest)
     validation = validate_manifest(str(manifest_path))
     if validation["n_errors"] > 0:
@@ -345,57 +417,30 @@ def derive_threshold(
         )
 
     full_entry_count = len(entries)
+    sub_sample_meta: dict[str, Any] | None = None
     max_entries = getattr(args, "max_entries", None)
     if max_entries is not None and max_entries > 0 and max_entries < full_entry_count:
-        # Label-stratified sub-sampling so the cap doesn't accidentally
-        # collapse one class to zero (which would make the threshold
-        # sweep trivially undefined). Deterministic via the bootstrap
-        # seed so partial runs are reproducible: same seed, same cap,
-        # same essays.
-        positive_statuses = set(DEFAULT_POSITIVE_STATUSES)
-        negative_statuses = set(DEFAULT_NEGATIVE_STATUSES)
-        positives = [
-            e for e in entries
-            if e.get("ai_status") in positive_statuses
-        ]
-        negatives = [
-            e for e in entries
-            if e.get("ai_status") in negative_statuses
-        ]
-        # Proportional sampling per class. Floor each side at 1 if the
-        # class has any entries at all so the threshold sweep has both
-        # labels present even on aggressive caps.
-        total = len(positives) + len(negatives)
-        if total > 0:
-            n_pos_target = max(
-                1 if positives else 0,
-                int(round(max_entries * len(positives) / total)),
-            )
-            n_neg_target = max(0, max_entries - n_pos_target)
-            if n_neg_target == 0 and negatives:
-                n_neg_target = 1
-                n_pos_target = max(1, max_entries - 1)
-        else:
-            n_pos_target = n_neg_target = 0
-
         rng_seed = getattr(args, "max_entries_seed", None)
         if rng_seed is None:
             rng_seed = getattr(args, "bootstrap_seed", 42) or 42
-        import random
-        rng = random.Random(int(rng_seed))
-        if positives:
-            rng.shuffle(positives)
-        if negatives:
-            rng.shuffle(negatives)
-        sampled = positives[:n_pos_target] + negatives[:n_neg_target]
-        rng.shuffle(sampled)
+        rng_seed = int(rng_seed)
+        sampled, n_pos, n_neg = _stratified_subsample(
+            entries, cap=int(max_entries), seed=rng_seed,
+        )
         sys.stdout.write(
             f"Sub-sampling: {len(sampled)} of {full_entry_count} entries "
-            f"({n_pos_target} pos + {n_neg_target} neg, seed={rng_seed}). "
+            f"({n_pos} pos + {n_neg} neg, seed={rng_seed}). "
             "This is a PIPELINE CHECK, not a calibration — "
             "small-N gates won't pass meaningfully.\n"
         )
         entries = sampled
+        sub_sample_meta = {
+            "applied": True,
+            "n_used": len(sampled),
+            "n_full": full_entry_count,
+            "fraction": round(len(sampled) / max(full_entry_count, 1), 4),
+            "seed": rng_seed,
+        }
 
     sys.stdout.write(
         f"Scoring {len(entries)} entries via variance audit "
@@ -403,7 +448,7 @@ def derive_threshold(
     )
     positive_statuses = set(DEFAULT_POSITIVE_STATUSES)
     negative_statuses = set(DEFAULT_NEGATIVE_STATUSES)
-    records = []
+    records: list[dict[str, Any]] = []
     for i, e in enumerate(entries):
         if i % 50 == 0 and i > 0:
             sys.stdout.write(f"  scored {i}/{len(entries)}...\n")
@@ -417,6 +462,161 @@ def derive_threshold(
             )
         )
 
+    scoring_meta = {
+        "manifest_path": str(manifest_path),
+        "manifest_sha256": _manifest_content_hash(manifest_path),
+        "use": args.use,
+        "do_tier2": bool(args.tier2),
+        "do_tier3": bool(args.tier3),
+        "n_entries_full": full_entry_count,
+        "n_entries_scored": len(records),
+        "sub_sample": sub_sample_meta,
+        "scored_at": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+        "scorer_version": SCORER_CACHE_VERSION,
+    }
+    return records, scoring_meta
+
+
+def cache_is_compatible(
+    cache_meta: dict[str, Any],
+    args: argparse.Namespace,
+    *,
+    manifest_sha256: str,
+) -> tuple[bool, str]:
+    """Decide whether a loaded cache can be reused for the current
+    args. Returns ``(ok, reason_if_not)``.
+
+    Cache invalidates on:
+
+      - manifest content change (`manifest_sha256` mismatch)
+      - `use` filter change (different entry set)
+      - `tier2` or `tier3` change (different signal columns
+        available — a cache scored with `do_tier2=False` doesn't
+        carry POS-bigram KL values)
+      - sub-sample change (a partial cache can't satisfy a full run
+        and a full cache can satisfy a partial run, but to keep the
+        rule simple we invalidate on any sub-sample mismatch)
+      - `scorer_version` change (the cache key bumps when the
+        scoring code changes shape)
+    """
+    if cache_meta.get("manifest_sha256") != manifest_sha256:
+        return False, "manifest content changed"
+    if cache_meta.get("use") != args.use:
+        return False, f"use filter changed ({cache_meta.get('use')} → {args.use})"
+    if bool(cache_meta.get("do_tier2")) != bool(args.tier2):
+        return False, "tier2 toggle changed"
+    if bool(cache_meta.get("do_tier3")) != bool(args.tier3):
+        return False, "tier3 toggle changed"
+    cached_sub = cache_meta.get("sub_sample")
+    cur_max = getattr(args, "max_entries", None)
+    cur_seed = getattr(args, "max_entries_seed", None)
+    if cur_seed is None:
+        cur_seed = getattr(args, "bootstrap_seed", 42) or 42
+    if cur_max is None and cached_sub is not None:
+        return False, "cache is sub-sampled but full run requested"
+    if cur_max is not None and cached_sub is None:
+        return False, "cache is full-corpus but sub-sample requested"
+    if cached_sub is not None and cur_max is not None:
+        if cached_sub.get("n_used") != cur_max or int(cached_sub.get("seed") or 0) != int(cur_seed):
+            return False, "sub-sample cap or seed changed"
+    if cache_meta.get("scorer_version") != SCORER_CACHE_VERSION:
+        return False, "scorer version bumped"
+    return True, ""
+
+
+def load_or_score_corpus(
+    args: argparse.Namespace,
+    *,
+    cache_path: Path | None,
+    refresh: bool = False,
+) -> tuple[list[dict[str, Any]], dict[str, Any], bool]:
+    """Returns ``(records, scoring_meta, cache_was_hit)``.
+
+    If ``cache_path`` is None or the cache file doesn't exist or the
+    cache is incompatible with the current args, this scores fresh
+    and (when ``cache_path`` is set) writes the cache. Otherwise it
+    loads from cache and returns the cached records.
+
+    Cache layout (JSON):
+
+    ```
+    {
+      "scoring_meta": { ... },
+      "records": [ {...}, {...}, ... ]
+    }
+    ```
+
+    ``records`` are the raw `score_smoothing_entry` outputs (pure
+    dicts; JSON-friendly).
+    """
+    manifest_path = Path(args.manifest)
+    fresh_hash = _manifest_content_hash(manifest_path)
+
+    if cache_path and cache_path.exists() and not refresh:
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError) as exc:
+            sys.stdout.write(
+                f"Cache at {cache_path} is unreadable ({exc}); re-scoring.\n"
+            )
+            cached = None
+        if cached is not None:
+            cache_meta = cached.get("scoring_meta") or {}
+            ok, reason = cache_is_compatible(
+                cache_meta, args, manifest_sha256=fresh_hash,
+            )
+            if ok:
+                records = cached.get("records") or []
+                sys.stdout.write(
+                    f"Cache hit: {len(records)} records loaded from "
+                    f"{cache_path} (scored at {cache_meta.get('scored_at')}).\n"
+                )
+                return records, cache_meta, True
+            sys.stdout.write(
+                f"Cache at {cache_path} is incompatible ({reason}); "
+                "re-scoring.\n"
+            )
+
+    records, scoring_meta = score_corpus(args)
+    if cache_path:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps(
+                {"scoring_meta": scoring_meta, "records": records},
+                indent=2, default=str,
+            ) + "\n",
+            encoding="utf-8",
+        )
+        sys.stdout.write(
+            f"Wrote scored-records cache to {cache_path} "
+            f"({len(records)} records).\n"
+        )
+    return records, scoring_meta, False
+
+
+def derive_threshold_from_records(
+    records: list[dict[str, Any]],
+    *,
+    args: argparse.Namespace,
+    scoring_meta: dict[str, Any],
+) -> dict[str, Any]:
+    """Per-signal threshold sweep + provenance entry composition.
+
+    Pure: no scoring, no I/O. Reads the cached signal column out of
+    `records`, sweeps the threshold direction-aware, builds the CI,
+    and assembles the provenance entry. Tagged with sub-sample
+    metadata copied from `scoring_meta` so the PIPELINE CHECK
+    notes-prefix propagates correctly.
+    """
+    if args.signal not in COMPRESSION_HEURISTICS:
+        raise SystemExit(
+            f"Unknown signal {args.signal!r}. Known: "
+            f"{', '.join(sorted(COMPRESSION_HEURISTICS))}"
+        )
+    spec = COMPRESSION_HEURISTICS[args.signal]
+    direction = spec.direction
+    signal_path = spec.signal_path
+    manifest_path = Path(args.manifest)
     pairs = collect_signal_records(records, signal_path)
     if not pairs:
         raise SystemExit(
@@ -503,31 +703,44 @@ def derive_threshold(
         ),
     }
 
-    # Sub-sample provenance: when --max-entries was applied, record
-    # the cap and the seed in the entry. The downstream `notes` text
-    # gets a leading "PIPELINE CHECK" tag so this row is visibly
-    # distinct from full-corpus calibrations in the ledger. Future
-    # ledger consumers can branch on `sub_sample` to refuse rows
-    # whose `n_used < n_full`.
-    if max_entries is not None and len(entries) < full_entry_count:
-        entry["sub_sample"] = {
-            "applied": True,
-            "n_used": len(entries),
-            "n_full": full_entry_count,
-            "fraction": round(len(entries) / full_entry_count, 4),
-            "seed": int(
-                getattr(args, "max_entries_seed", None)
-                or getattr(args, "bootstrap_seed", 42) or 42
-            ),
-        }
+    # Sub-sample provenance: read from scoring_meta. When the cache
+    # was scored with --max-entries, the sub_sample block flows
+    # through scoring_meta into every per-signal provenance entry
+    # built from this cache. The notes prefix is loud enough that a
+    # row in this state can never be silently treated as a calibration.
+    sub_sample = scoring_meta.get("sub_sample") if scoring_meta else None
+    if sub_sample:
+        entry["sub_sample"] = sub_sample
         entry["notes"] = (
             "PIPELINE CHECK (sub-sampled run, NOT a calibration). "
-            f"{entry['sub_sample']['n_used']}/{full_entry_count} entries used. "
+            f"{sub_sample['n_used']}/{sub_sample['n_full']} entries used. "
             "Do not commit this entry to the ledger as a calibrated "
             "threshold; small-N gates won't pass meaningfully. "
             + entry["notes"]
         )
     return entry
+
+
+def derive_threshold(args: argparse.Namespace) -> dict[str, Any]:
+    """Backward-compat composer.
+
+    Pre-1.26.0 callers (the standalone CLI; older test fixtures)
+    expect a one-call function that scores + sweeps + builds a
+    provenance entry in one shot. The new architecture splits
+    these into ``score_corpus`` + ``derive_threshold_from_records``;
+    this composer keeps the old surface working AND now honors the
+    optional ``--records-cache`` flag so even single-signal CLI
+    invocations benefit from cache reuse on re-runs.
+    """
+    cache_path_str = getattr(args, "records_cache", None)
+    cache_path = Path(cache_path_str).expanduser() if cache_path_str else None
+    refresh = bool(getattr(args, "refresh_cache", False))
+    records, scoring_meta, _hit = load_or_score_corpus(
+        args, cache_path=cache_path, refresh=refresh,
+    )
+    return derive_threshold_from_records(
+        records, args=args, scoring_meta=scoring_meta,
+    )
 
 
 def append_to_ledger(out_path: Path, entry: dict[str, Any], replace: bool) -> None:
@@ -626,6 +839,29 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Override the seed used for stratified sub-sampling. "
             "Defaults to --bootstrap-seed."
+        ),
+    )
+    parser.add_argument(
+        "--records-cache", default=None,
+        help=(
+            "Path to a JSON cache of scored records. If the file "
+            "exists and is compatible with the current --manifest / "
+            "--use / --tier2 / --tier3 / --max-entries args, the "
+            "cache is read instead of re-scoring (single-signal "
+            "calls become threshold-sweep-only — seconds, not "
+            "minutes). If the file doesn't exist or the cache is "
+            "incompatible (manifest changed, tier toggle changed, "
+            "scorer version bumped), the script scores fresh and "
+            "writes the cache. Per-signal calls sharing one cache "
+            "path is the recommended workflow for surveys."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-cache", action="store_true",
+        help=(
+            "Force re-scoring even if a compatible cache exists. "
+            "Use after a code change that should invalidate cached "
+            "records but didn't bump SCORER_CACHE_VERSION."
         ),
     )
 

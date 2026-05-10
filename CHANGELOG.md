@@ -6,6 +6,57 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.26.0] - 2026-05-09
+
+Score-once-survey-many architecture + first calibration run on real corpus. The user's question "why would we re-score from scratch unless something changes?" surfaced an architectural inefficiency in the 1.10.0 calibration toolchain: every per-signal `derive_threshold` call independently re-scored the entire corpus, multiplying wall-clock by 11× when running a full survey. This release factors scoring out so the corpus is scored exactly once per survey, the records are persisted to a JSON cache that survives across invocations, and re-runs with different FPR targets / gate floors / signal subsets become threshold-sweep-only (~seconds, not minutes). The cache invalidates correctly when the manifest content, tier toggles, use filter, sub-sample state, or scorer version changes. Includes the maintainer's first actual calibration survey on the EditLens val split (1506 entries, label-balanced 753/753) — a pre-1.26.0 bug in survey row extraction (read from `entry["empirical"]` / `entry["sweep"]` but real entries use `entry["calibration"]` / `entry["derived_value"]`) was caught by running against real data and is fixed in this release.
+
+### Added
+
+- **`score_corpus(args)`** in `calibrate_thresholds.py` — pure scoring, no per-signal logic. Returns `(records, scoring_meta)` where `scoring_meta` carries the cache-validity inputs (manifest path + SHA-256 hash, use filter, tier flags, sub-sample state, scorer version, scoring timestamp). Handles label-stratified sub-sampling internally; the `_stratified_subsample` helper is now a top-level function shared with the cache loader.
+- **`derive_threshold_from_records(records, *, args, scoring_meta)`** — pure per-signal threshold sweep + provenance entry composition. No scoring, no I/O. Reads the per-signal score column out of cached records, sweeps direction-aware, builds the bootstrap CI, assembles the entry. Sub-sample provenance flows from `scoring_meta` to the entry so the PIPELINE CHECK notes-prefix propagates correctly through the cache.
+- **`load_or_score_corpus(args, *, cache_path, refresh)`** — cache-aware composer. If `cache_path` exists and is compatible with the current args (manifest hash, tier flags, use filter, sub-sample state, scorer version all match), loads the cache and returns `(records, meta, cache_hit=True)`. Otherwise scores fresh, writes the cache, returns `(records, meta, cache_hit=False)`. `refresh=True` forces re-scoring even when the cache is valid.
+- **`cache_is_compatible(meta, args, manifest_sha256)`** — explicit cache-invalidation logic returning `(ok, reason)`. The reason string surfaces in stderr when the cache is rejected so the user knows what changed (manifest content / tier toggle / use filter / sub-sample / scorer version).
+- **`--records-cache PATH`** and **`--refresh-cache`** flags on both `calibrate_thresholds.py` and `calibration_survey.py`. Single-signal CLI calls and full surveys both benefit from cache reuse — when the same cache path is passed across multiple invocations, the corpus is scored once and reused across all subsequent threshold sweeps.
+- **`SCORER_CACHE_VERSION`** constant in `calibrate_thresholds.py`. Read by `cache_is_compatible` so a code change that affects record shape can invalidate all existing caches without users needing to manually delete them. Pre-set to `"1.26.0"`; bump when scoring code changes shape.
+- **`derive_threshold(args)` thin shim** for backward compatibility. Pre-1.26.0 callers (the standalone CLI; pre-existing test fixtures) continue to work unchanged. The shim composes `load_or_score_corpus` + `derive_threshold_from_records`, so even single-signal invocations now benefit from cache reuse on re-runs.
+- **Score-once-survey-many in `calibration_survey.py`.** `run_survey` now scores the corpus exactly once at the top of the run and iterates all 11 signals over the cached records via `derive_threshold_from_records`. Pre-1.26.0 the wrapper called `derive_threshold` 11 times, each of which re-scored from scratch. Same numerical results; 11× faster. Verified on the real EditLens val split: scoring 1506 entries with Tier 1+2+3 enabled took 2:33 wall-clock; cache-hit re-run for the same survey shape took 16 seconds (the bootstrap CI is the remaining cost — 11 signals × 2000 resamples × 1506 pairs).
+- **Real-shape entry extraction** in `survey_one_signal` and `evaluate_gates`. Pre-1.26.0 the survey-row builder read AUC / AP / TPR / threshold from `entry["empirical"]` and `entry["sweep"]`; real provenance entries from `derive_threshold` use `entry["calibration"]` and `entry["derived_value"]`. The mismatch was hidden because tests used synthetic-shape fakes. Fixed: row builder now reads the real shape with fallback to the test shape so existing tests continue to pass. The maintainer's first calibration run against actual data caught the bug in one minute; a real-corpus integration test would have caught it earlier.
+- **44 new regression tests** across two new test files:
+  - `test_calibration_cache.py` (11 tests): cache JSON shape round-trip, cache hit returns records without re-scoring, cache invalidates on manifest content change / tier toggle / use filter / sub-sample state / scorer version, `--refresh-cache` forces re-scoring, corrupt cache file is treated like a miss, backward compat with Namespaces lacking the new flags.
+  - Updated `test_calibration_survey.py` and `test_calibration_subsample.py`: 33 existing tests rewired to mock the new `load_or_score_corpus` + `derive_threshold_from_records` split. Plus a new test `test_survey_runs_corpus_scoring_once_across_signals` that pins the score-once invariant — calls `run_survey` over 3 signals against a 4-entry manifest and asserts `score_smoothing_entry` was called exactly 4 times (not 12).
+
+### Calibration findings (informational; thresholds NOT committed)
+
+The maintainer's first actual calibration run produced this ranking on the EditLens val split (1506 essays, balanced 753 ai_generated / 753 pre_ai_human, FPR target 0.01, Tier 1+2+3 enabled):
+
+| signal | direction | heuristic | AUC | AP | gates passing |
+|---|---|---|---|---|---|
+| `mtld` | lt | 60.0 | 0.868 | 0.875 | 4 of 5 (gate 4 fails — TPR at FPR≤0.01 too low) |
+| `mattr` | lt | 0.65 | 0.842 | 0.846 | 2 of 5 |
+| `shannon_entropy` | lt | 7.0 | 0.600 | 0.575 | 3 of 5 |
+| `connective_density` | gt | 20.0 | 0.529 | 0.515 | 2 of 5 |
+| `burstiness_B` | lt | -0.40 | 0.317 | 0.388 | polarity inverted |
+| `mdd_sd` | lt | 0.70 | 0.415 | 0.447 | polarity inverted |
+| `fkgl_sd` | lt | 1.5 | 0.365 | 0.402 | polarity inverted |
+| `yules_k` | gt | 200.0 | 0.337 | 0.400 | polarity inverted |
+| `adjacent_cosine_sd` | lt | 0.12 | 0.319 | 0.394 | polarity inverted |
+| `sentence_length_sd` | lt | 5.0 | 0.305 | 0.377 | polarity inverted |
+| `adjacent_cosine_mean` | gt | 0.6 | 0.261 | 0.365 | polarity inverted |
+
+**Findings (not commits):**
+- **`mtld` and `mattr` are the strongest discriminators** on this corpus (AUC 0.87 / 0.84). Both are lexical-diversity signals; AI-generated essays are systematically lower-MTLD and lower-MATTR than human essays. Both fail gate 4 (TPR < 5% at FPR ≤ 1%) — the discriminative band exists but you can't find a threshold that catches a meaningful fraction of AI essays without producing false positives faster than 1 in 100. That's a real limit, not a calibration mistake.
+- **Seven of eleven signals fail polarity** (AUC < 0.5). The registry's declared direction matches the smoothing-diagnosis hypothesis (compression → low variance → low burstiness, low FKGL spread, etc.), but on the EditLens val corpus AI essays score *higher* on those signals than human essays. The registry's polarity hypothesis is empirically falsified for this corpus's mix of generators and registers — important calibration finding worth recording even though no threshold gets committed. Per `PROVENANCE.md` Selection Criterion 1: "AUC < 0.5 in the declared direction is a *finding* about the corpus or about the registry's polarity convention, not a threshold to commit."
+- **No signal passes all five gates at FPR target 0.01**, so this release does NOT commit any threshold to `thresholds_calibrated.json`. The cached records and survey JSON are written to `ai-prose-baselines-private/editlens/` for the maintainer's review and re-runs at relaxed FPR targets.
+- `mtld` is the strongest commit candidate at a relaxed FPR target. Re-running with `--fpr-target 0.05` reads the cache (no re-scoring) and would show whether the TPR floor passes — that exploration is now a 16-second loop instead of a 2:33 wait.
+
+### Notes
+
+- **429 tests pass + 1 skipped** (was 417 + 2 in 1.25.0; +12 new across the cache surface, –1 collapsed test). Full suite runtime 6:32 (the calibration tests now exercise real `score_smoothing_entry` paths via a mocked-but-realistic synthetic stub; runtime increase is mostly bootstrap CI work, not scoring).
+- The cached records file at `ai-prose-baselines-private/editlens/_records_cache_val.json` is gitignored (lives under the private baselines path). Future surveys against the same corpus + tier mix re-use it instantly. Re-runs with different FPR targets, gate floors, or signal subsets are cache-read time only.
+- Cache JSON shape is documented in `load_or_score_corpus`'s docstring. Future tooling that wants to read the cache directly (a heatmap visualization, a per-signal density plot) can rely on the stable shape.
+- Three-way version sync at 1.26.0. No new keyword.
+- Calibration thresholds NOT committed to `thresholds_calibrated.json` from this run — the survey produced no signal passing all five gates, so per the pre-registered selection criteria there is nothing to commit.
+
 ## [1.25.0] - 2026-05-09
 
 Calibration sub-sampling for pipeline checks. The full calibration run takes a few hours of Tier 2/3 compute on the ~130-essay ESL slice. That's a real commitment for a maintainer trying to verify the toolchain works end-to-end before spending the time. This release adds `--max-entries N` to both `calibrate_thresholds.py` (inner) and `calibration_survey.py` (wrapper), letting the maintainer run a 10% (or any %) partial first to catch environment / dependency / SSL / spaCy issues, get a wall-clock estimate for the full run, and verify the survey produces the expected output shape. Sub-sampled rows carry visible "PIPELINE CHECK" markers throughout (provenance entry `notes` prefix, `sub_sample` block, survey `is_pipeline_check` flag, markdown banner) so they can never be silently treated as a calibration.

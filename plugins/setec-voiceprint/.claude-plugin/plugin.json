@@ -1,6 +1,6 @@
 {
   "name": "setec-voiceprint",
-  "version": "1.25.0",
+  "version": "1.26.0",
   "description": "Stylometric tools for AI-prose detection and voice-coherence diagnosis. Four task surfaces: smoothing diagnosis, voice coherence, validation, and craft restoration. Python tooling spans variance audits, length-matched bootstrap percentiles, sliding-window localization, voice profiling, idiolect preservation lists, voice drift tracking, per-POV voiceprints, manifest validation, corpus-hygiene checks, per-bigram KL decomposition, named-pattern density audit, R stylo oracle, voice-validation harness, calibration toolchain, metric-targeted restoration packets, before/after restoration verdicts with metric-gaming detection, MVP empirical validation harness, impostor-corpus acquisition from live blogs / Blogger Takeout / online magazines / PDF libraries with optional OCR, and author-facing voice insights report generation that fills numerical sections programmatically and emits {TODO: interpret} markers for the LLM/human pass.",
   "author": {
     "name": "anotherpanacea-eng",

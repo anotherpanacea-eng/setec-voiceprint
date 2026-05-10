@@ -183,14 +183,19 @@ def evaluate_gates(
     maintainer judgment.
     """
     g = GateResults()
-    empirical = entry.get("empirical") or {}
+    # Real provenance entries from `derive_threshold_from_records`
+    # nest the metrics under `calibration` and put the threshold at
+    # `derived_value`. Test fixtures using `empirical` + `sweep` keys
+    # are also accepted as a fallback for back-compat with synthetic
+    # test data. Real-data path is preferred.
+    cal = entry.get("calibration") or entry.get("empirical") or {}
     sweep = entry.get("sweep") or {}
 
     # Gate 1: polarity. AUC ≥ 0.5 in the declared direction means the
     # signal does discriminate as the registry expects. derive_threshold
     # already computes AUC in the registry's direction; we just check
     # the value.
-    auc = empirical.get("auc")
+    auc = cal.get("auc")
     if isinstance(auc, (int, float)):
         g.polarity_matches = float(auc) >= 0.5
     else:
@@ -199,14 +204,23 @@ def evaluate_gates(
     # Gate 3: enough negatives for the requested FPR. The toolchain's
     # `fpr_resolution = 1 / n_neg` check is structural; pass-fail is
     # whether fpr_resolution ≤ fpr_target.
-    fpr_target = entry.get("fpr_target")
-    fpr_resolution = sweep.get("fpr_resolution")
+    fpr_target = (
+        entry.get("fpr_target")
+        or cal.get("fpr_target")
+    )
+    fpr_resolution = (
+        cal.get("fpr_resolution")
+        or sweep.get("fpr_resolution")
+    )
     if isinstance(fpr_resolution, (int, float)) and isinstance(fpr_target, (int, float)):
         g.enough_negatives = float(fpr_resolution) <= float(fpr_target)
 
     # Gate 4: interpretable threshold (TPR substantially above zero
-    # at the chosen FPR target).
-    tpr = empirical.get("tpr_at_threshold")
+    # at the chosen FPR target). Real entries name it
+    # ``empirical_tpr``; synthetic fixtures used ``tpr_at_threshold``.
+    tpr = cal.get("empirical_tpr")
+    if tpr is None:
+        tpr = cal.get("tpr_at_threshold")
     if isinstance(tpr, (int, float)):
         g.interpretable_threshold = float(tpr) >= tpr_floor
 
@@ -215,7 +229,7 @@ def evaluate_gates(
     # (compressed when value high), more aggressive = lower threshold.
     # For a `lt` signal (compressed when value low), more aggressive =
     # higher threshold.
-    threshold = sweep.get("threshold")
+    threshold = entry.get("derived_value") or sweep.get("threshold")
     if (
         isinstance(threshold, (int, float))
         and isinstance(heuristic_value, (int, float))
@@ -327,13 +341,20 @@ def survey_one_signal(
     *,
     tpr_floor: float,
     aggressiveness_tolerance: float,
+    cached_records: list[dict[str, Any]] | None = None,
+    cached_scoring_meta: dict[str, Any] | None = None,
 ) -> SurveyRow:
     """Run derive_threshold against one signal; return a SurveyRow.
 
+    When ``cached_records`` is supplied, this skips the scoring step
+    and uses the cached records directly — the score-once-survey-many
+    optimization that lets a full 11-signal survey reuse one corpus
+    scoring pass instead of re-scoring 11 times.
+
     Catches the common failure modes — derive_threshold raises
-    `SystemExit` on registry mismatch / unscored corpus / missing
+    ``SystemExit`` on registry mismatch / unscored corpus / missing
     manifest entries / unreachable FPR target — and stores them as
-    the row's `error` field so a single bad signal doesn't abort
+    the row's ``error`` field so a single bad signal doesn't abort
     the whole survey.
     """
     spec = COMPRESSION_HEURISTICS[signal]
@@ -349,7 +370,14 @@ def survey_one_signal(
         heuristic_value=heuristic_value,
     )
     try:
-        entry = ct.derive_threshold(inner)
+        if cached_records is not None and cached_scoring_meta is not None:
+            entry = ct.derive_threshold_from_records(
+                cached_records,
+                args=inner,
+                scoring_meta=cached_scoring_meta,
+            )
+        else:
+            entry = ct.derive_threshold(inner)
     except SystemExit as exc:
         row.error = str(exc) or "derive_threshold raised SystemExit"
         return row
@@ -357,16 +385,25 @@ def survey_one_signal(
         row.error = f"{type(exc).__name__}: {exc}"
         return row
 
-    empirical = entry.get("empirical") or {}
+    # Real provenance entries from `derive_threshold_from_records`
+    # use the nested `calibration` block + top-level `derived_value`;
+    # synthetic test fixtures used flat `empirical` + `sweep`. Read
+    # the real shape first, fall back to the test shape so existing
+    # tests continue to pass.
+    cal = entry.get("calibration") or entry.get("empirical") or {}
     sweep = entry.get("sweep") or {}
-    row.auc = empirical.get("auc")
-    row.ap = empirical.get("ap")
-    row.threshold = sweep.get("threshold")
-    row.tpr_at_threshold = empirical.get("tpr_at_threshold")
-    row.fpr_at_threshold = empirical.get("fpr_at_threshold")
-    row.n_pos = empirical.get("n_pos")
-    row.n_neg = empirical.get("n_neg")
-    row.fpr_resolution = sweep.get("fpr_resolution")
+    row.auc = cal.get("auc")
+    row.ap = cal.get("ap")
+    row.threshold = entry.get("derived_value") or sweep.get("threshold")
+    row.tpr_at_threshold = (
+        cal.get("empirical_tpr") or cal.get("tpr_at_threshold")
+    )
+    row.fpr_at_threshold = (
+        cal.get("empirical_fpr") or cal.get("fpr_at_threshold")
+    )
+    row.n_pos = cal.get("n_pos")
+    row.n_neg = cal.get("n_neg")
+    row.fpr_resolution = cal.get("fpr_resolution") or sweep.get("fpr_resolution")
     row.gates = evaluate_gates(
         entry,
         heuristic_value=heuristic_value,
@@ -386,13 +423,48 @@ def run_survey(
     aggressiveness_tolerance: float = DEFAULT_AGGRESSIVENESS_TOLERANCE,
 ) -> dict[str, Any]:
     """Run `derive_threshold` against every signal in `signals`
-    (default: all 11) and aggregate the results."""
+    (default: all 11) and aggregate the results.
+
+    Score-once-survey-many: the corpus is scored exactly once
+    up-front; per-signal calls then re-use the cached records via
+    ``derive_threshold_from_records``. This is an 11× speedup
+    versus the pre-1.26 path where each signal re-scored the corpus.
+
+    When ``--records-cache`` is set, the cache is loaded if
+    compatible and survives across invocations — a re-run with a
+    different ``--fpr-target`` or different gate floors is then
+    threshold-sweep-only (seconds, not minutes). The cache is
+    automatically invalidated when the manifest content, the tier
+    flags, the use filter, or the scorer version changes.
+    """
     if signals is None:
         signals = list(COMPRESSION_HEURISTICS.keys())
 
+    cache_path_str = getattr(parent_args, "records_cache", None)
+    cache_path = Path(cache_path_str).expanduser() if cache_path_str else None
+    refresh = bool(getattr(parent_args, "refresh_cache", False))
+
+    inner_for_scoring = _build_inner_args(parent_args, signals[0])
     sys.stderr.write(
         f"Surveying {len(signals)} signal(s) at FPR target "
         f"{parent_args.fpr_target}...\n"
+        "Step 1: scoring corpus once "
+        "(cached records are reused across signals).\n"
+    )
+    try:
+        cached_records, cached_scoring_meta, cache_hit = (
+            ct.load_or_score_corpus(
+                inner_for_scoring,
+                cache_path=cache_path,
+                refresh=refresh,
+            )
+        )
+    except SystemExit as exc:
+        sys.stderr.write(f"corpus scoring failed: {exc}\n")
+        raise
+
+    sys.stderr.write(
+        f"Step 2: sweeping per-signal thresholds (cache_hit={cache_hit}).\n"
     )
     rows: list[SurveyRow] = []
     for signal in signals:
@@ -401,6 +473,8 @@ def run_survey(
             signal, parent_args,
             tpr_floor=tpr_floor,
             aggressiveness_tolerance=aggressiveness_tolerance,
+            cached_records=cached_records,
+            cached_scoring_meta=cached_scoring_meta,
         )
         rows.append(row)
 
@@ -599,6 +673,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "Gate 5 tolerance: calibrated threshold differing "
                        "from the heuristic by at most this fraction "
                        "passes regardless of direction. Default 0.05."
+                   ))
+    p.add_argument("--records-cache", default=None,
+                   help=(
+                       "Path to a JSON cache of scored records. The "
+                       "survey scores the corpus once up-front and "
+                       "iterates signals over the cache; setting this "
+                       "flag persists the cache across invocations. "
+                       "Re-runs with different --fpr-target / --tpr-"
+                       "floor / --aggressiveness-tolerance values "
+                       "become threshold-sweep-only (seconds, not "
+                       "minutes). Cache invalidates on manifest "
+                       "change, tier toggle change, or scorer "
+                       "version bump."
+                   ))
+    p.add_argument("--refresh-cache", action="store_true",
+                   help=(
+                       "Force re-scoring even if a compatible cache "
+                       "exists. Use after a code change that should "
+                       "invalidate cached records but didn't bump "
+                       "SCORER_CACHE_VERSION."
                    ))
     p.add_argument("--max-entries", type=int, default=None,
                    help=(
