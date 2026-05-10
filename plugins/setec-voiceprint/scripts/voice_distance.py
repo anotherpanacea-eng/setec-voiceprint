@@ -16,7 +16,14 @@ from pathlib import Path
 from typing import Any
 
 from preprocessing import available_rule_names, strip_non_prose
-from stylometry_core import compare_to_baseline, load_entries, read_text
+from stylometry_core import (
+    FUNCTION_WORDS,
+    compare_to_baseline,
+    function_word_features,
+    load_entries,
+    read_text,
+    word_tokens,
+)
 
 
 # Task-surface tag. See variance_audit.TASK_SURFACE for the framework
@@ -107,6 +114,256 @@ def render_clusters(
             )
             lines.append(f"- **{c['cluster']}** ({c['direction']}): {tops}")
         lines.append("")
+
+
+# ---------- Length-matched bootstrap (Phase 1 step 3) ----------
+
+
+def _function_word_vector(text: str) -> dict[str, float]:
+    """Per-function-word relative frequency over the canonical 135-word
+    ``FUNCTION_WORDS`` set. Cheap (no SpaCy); used by the bootstrap as
+    a proxy for "voice distance at this length" without paying the
+    full ``compare_to_baseline`` cost per window.
+    """
+    return function_word_features(word_tokens(text))
+
+
+def _baseline_mean_function_word_vector(
+    baseline_texts: list[str],
+) -> dict[str, float]:
+    """Element-wise mean across baseline files' function-word vectors."""
+    if not baseline_texts:
+        return {w: 0.0 for w in sorted(FUNCTION_WORDS)}
+    vectors = [_function_word_vector(t) for t in baseline_texts]
+    keys = sorted(FUNCTION_WORDS)
+    n = len(vectors)
+    return {k: sum(v.get(k, 0.0) for v in vectors) / n for k in keys}
+
+
+def _manhattan_distance(
+    a: dict[str, float], b: dict[str, float],
+) -> float:
+    """L1 distance between two same-keyed function-word vectors. The
+    metric matches the spirit of Burrows-style Delta on the
+    function-word family: scale-free aggregate of per-feature gaps."""
+    keys = set(a) | set(b)
+    return sum(abs(a.get(k, 0.0) - b.get(k, 0.0)) for k in keys)
+
+
+def bootstrap_compare(
+    target_text: str,
+    baseline_entries: list[dict[str, Any]],
+    *,
+    n_windows_per_file: int = 10,
+    max_total_windows: int = 200,
+    n_resamples: int = 9999,
+    confidence_level: float = 0.95,
+    seed: int | None = None,
+) -> dict[str, Any]:
+    """Length-matched bootstrap on the function-word distance.
+
+    Phase 1 step 3 of the validation spine for voice_distance. The
+    family-level Burrows Delta and cosine distances reported by
+    ``compare_to_baseline`` are full-text comparisons; at small target
+    N the question "is this Delta large?" has no calibrated answer
+    — Delta scales with text length and feature-vocabulary depth.
+
+    The bootstrap takes the cheap-to-compute function-word vector
+    distance (L1 distance from a window's per-function-word relative
+    frequencies to the baseline corpus's mean function-word vector)
+    and samples that distance across many length-N windows of the
+    baseline. The empirical distribution becomes the calibrated
+    "what's normal voice distance at this length?" reference. The
+    target's distance to baseline mean is reported as a percentile
+    in that distribution, with a bootstrap CI on the percentile.
+
+    Why function-word vector L1 rather than full Burrows Delta on the
+    expanded feature set: the heavier statistic re-extracts every
+    feature family (POS bigrams, character n-grams, dependency
+    n-grams) per window, which costs minutes per window with SpaCy
+    on. The function-word vector is the load-bearing piece of the
+    Burrows Delta machinery (it's the only family that contributes
+    independent of POS-tagging), is computed in milliseconds per
+    window, and produces a calibrated "at this length, baseline
+    windows fall in [lo, hi]" range that's directly interpretable.
+    A future expansion could add per-family bootstrap once the
+    feature-extraction caching path is built.
+
+    Output dict shape:
+
+        {
+            "available": True,
+            "target_n_words": ...,
+            "target_function_word_distance": ...,
+            "baseline_distribution": {
+                "p05", "p25", "p50", "p75", "p95",
+                "min", "max", "mean", "sd",
+                "n_samples"
+            },
+            "bootstrap": {
+                "percentile", "ci_low", "ci_high",
+                "method", "n_resamples", "n_baseline_windows"
+            },
+            "config": { ... }
+        }
+
+    Returns ``{"available": False, "reason": ...}`` if scipy is not
+    installed, the baseline is empty, or no windows were produced.
+    """
+    try:
+        from length_bootstrap import (  # type: ignore
+            length_matched_bootstrap, HAS_SCIPY,
+        )
+    except ImportError:
+        return {
+            "available": False,
+            "reason": "length_bootstrap module not importable",
+        }
+    if not HAS_SCIPY:
+        return {
+            "available": False,
+            "reason": "scipy not installed; bootstrap CIs unavailable",
+        }
+
+    target_tokens = word_tokens(target_text)
+    target_n_words = len(target_tokens)
+    if target_n_words <= 0:
+        return {
+            "available": False,
+            "reason": "target has zero words",
+        }
+
+    baseline_texts: list[str] = []
+    for entry in baseline_entries:
+        try:
+            baseline_texts.append(read_text(Path(entry["path"])))
+        except (OSError, KeyError):
+            continue
+    if not baseline_texts:
+        return {
+            "available": False,
+            "reason": "no readable baseline files",
+        }
+
+    baseline_mean = _baseline_mean_function_word_vector(baseline_texts)
+    target_distance = _manhattan_distance(
+        _function_word_vector(target_text), baseline_mean,
+    )
+
+    def _stat(window_text: str) -> float | None:
+        if not window_text.strip():
+            return None
+        try:
+            return _manhattan_distance(
+                _function_word_vector(window_text), baseline_mean,
+            )
+        except Exception:  # noqa: BLE001
+            return None
+
+    result = length_matched_bootstrap(
+        baseline_texts,
+        statistic_fn=_stat,
+        target_value=target_distance,
+        target_n_words=target_n_words,
+        n_windows_per_file=n_windows_per_file,
+        max_total_windows=max_total_windows,
+        n_resamples=n_resamples,
+        confidence_level=confidence_level,
+        seed=seed,
+    )
+    if not result.get("available"):
+        return result
+
+    return {
+        "available": True,
+        "task_surface": TASK_SURFACE,
+        "statistic": "function_word_vector_l1_distance",
+        "target_n_words": target_n_words,
+        "target_function_word_distance": target_distance,
+        "baseline_distribution": result.get("baseline_distribution"),
+        "bootstrap": result.get("bootstrap"),
+        "config": {
+            "n_windows_per_file": n_windows_per_file,
+            "max_total_windows": max_total_windows,
+            "n_resamples": n_resamples,
+            "confidence_level": confidence_level,
+            "seed": seed,
+        },
+    }
+
+
+def format_bootstrap_block(boot: dict[str, Any]) -> list[str]:
+    """Markdown-rendered bootstrap section for the report."""
+    if not boot.get("available"):
+        return [
+            "## Length-matched bootstrap",
+            "",
+            f"_Unavailable: {boot.get('reason', 'unknown')}_",
+            "",
+        ]
+    bd = boot.get("baseline_distribution") or {}
+    bs = boot.get("bootstrap") or {}
+    pct = bs.get("percentile")
+    ci_lo = bs.get("ci_low")
+    ci_hi = bs.get("ci_high")
+    pct_str = f"{pct:.1%}" if isinstance(pct, (int, float)) else "n/a"
+    ci_str = (
+        f"[{ci_lo:.1%}, {ci_hi:.1%}]"
+        if isinstance(ci_lo, (int, float))
+        and isinstance(ci_hi, (int, float))
+        else "[n/a, n/a]"
+    )
+    target_d = boot.get("target_function_word_distance")
+    target_d_str = (
+        f"{target_d:.4f}" if isinstance(target_d, (int, float)) else "n/a"
+    )
+    return [
+        "## Length-matched bootstrap",
+        "",
+        "Empirical reference for the function-word distance at the "
+        "target's length. Replaces the unanchored "
+        "\"is this Delta large?\" question with a calibrated "
+        "percentile against baseline-window-to-baseline-mean "
+        "distances at the same word count.",
+        "",
+        f"- **Target function-word L1 distance:** {target_d_str}",
+        f"- **Target length (words):** {boot.get('target_n_words')}",
+        f"- **Baseline-window samples:** {bs.get('n_baseline_windows', 0)}",
+        f"- **Empirical percentile:** {pct_str}  (95% CI {ci_str})",
+        f"- **CI method:** `{bs.get('method', 'n/a')}`  "
+        f"(`{bs.get('n_resamples', 0)}` resamples)",
+        "",
+        "### Baseline window distribution at this length",
+        "",
+        "| min | p05 | p25 | p50 | p75 | p95 | max | mean | sd |",
+        "|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        (
+            "| "
+            + " | ".join(
+                _fmt_dist(bd.get(k))
+                for k in (
+                    "min", "p05", "p25", "p50",
+                    "p75", "p95", "max", "mean", "sd",
+                )
+            )
+            + " |"
+        ),
+        "",
+        "Reading: a percentile near 1.0 means the target's voice "
+        "distance is at the high end of within-baseline scatter at "
+        "this length (drift candidate); near 0.5 means it sits near "
+        "the typical baseline-window distance from baseline mean "
+        "(consistent); near 0.0 is closer to the baseline mean than "
+        "most baseline windows are (suspect overfitting / "
+        "self-quotation if extreme).",
+        "",
+    ]
+
+
+def _fmt_dist(v: Any) -> str:
+    if isinstance(v, (int, float)):
+        return f"{v:.4f}"
+    return "n/a"
 
 
 def render_report(
@@ -203,6 +460,11 @@ def render_report(
     lines.append("")
 
     render_clusters(result, lines, cluster_top)
+
+    boot = result.get("length_matched_bootstrap")
+    if boot:
+        lines.extend(format_bootstrap_block(boot))
+
     return "\n".join(lines)
 
 
@@ -253,6 +515,37 @@ def main() -> int:
     parser.add_argument("--strip-aggressive", action="store_true",
                         help="Also strip URL-only lines, image URLs, link "
                              "wrappers, footnotes, and citations.")
+    parser.add_argument(
+        "--bootstrap", action="store_true",
+        help="Run a length-matched bootstrap on the function-word "
+             "distance (Phase 1 step 3). Replaces the unanchored "
+             "\"is this Delta large?\" question with a calibrated "
+             "percentile against baseline-window distances at the "
+             "target's word count. Requires scipy.",
+    )
+    parser.add_argument(
+        "--bootstrap-windows-per-file", type=int, default=10,
+        help="Length-matched windows sampled per baseline file "
+             "(default 10). Capped by --bootstrap-max-windows.",
+    )
+    parser.add_argument(
+        "--bootstrap-max-windows", type=int, default=200,
+        help="Cap on total length-matched windows pooled across "
+             "baseline files (default 200).",
+    )
+    parser.add_argument(
+        "--bootstrap-resamples", type=int, default=9999,
+        help="Bootstrap resamples for the percentile CI (default 9999).",
+    )
+    parser.add_argument(
+        "--bootstrap-confidence", type=float, default=0.95,
+        help="Confidence level for the percentile CI (default 0.95).",
+    )
+    parser.add_argument(
+        "--bootstrap-seed", type=int, default=None,
+        help="Random seed for reproducible bootstrap sampling "
+             "(default: unseeded).",
+    )
     parser.add_argument("--json", action="store_true", help="Output JSON.")
     parser.add_argument("--out", help="Write report to file instead of stdout.")
     args = parser.parse_args()
@@ -317,8 +610,9 @@ def main() -> int:
         )
         return 1
 
+    target_text = read_text(target_path)
     result = compare_to_baseline(
-        read_text(target_path),
+        target_text,
         baseline_entries,
         include_spacy=not args.no_spacy,
         limits=build_limits(args),
@@ -329,6 +623,17 @@ def main() -> int:
         strip_aggressive=args.strip_aggressive,
     )
     result["task_surface"] = TASK_SURFACE
+
+    if args.bootstrap:
+        result["length_matched_bootstrap"] = bootstrap_compare(
+            target_text,
+            baseline_entries,
+            n_windows_per_file=args.bootstrap_windows_per_file,
+            max_total_windows=args.bootstrap_max_windows,
+            n_resamples=args.bootstrap_resamples,
+            confidence_level=args.bootstrap_confidence,
+            seed=args.bootstrap_seed,
+        )
 
     if args.json:
         output = json.dumps(result, indent=2, default=str)

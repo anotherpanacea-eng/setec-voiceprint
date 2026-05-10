@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 
 from check_corpus import check_corpus_paths
+from claim_license import ClaimLicense, from_legacy
 from manifest_validator import resolve_path, validate_manifest
 from preprocessing import available_rule_names, strip_non_prose
 from variance_audit import (
@@ -1047,11 +1048,18 @@ def render_report(result: dict[str, Any]) -> str:
     lines.append("")
 
     claim = result["claim_license"]
-    lines.append("## Claim License")
-    lines.append("")
-    lines.append(f"- **Licenses:** {claim['licenses']}")
-    lines.append(f"- **Does not license:** {claim['does_not_license']}")
-    lines.append(f"- **Operating point:** {claim['operating_point']}")
+    structured = from_legacy(claim, task_surface=TASK_SURFACE)
+    structured.comparison_set = {
+        "manifest": result.get("manifest_path"),
+        "evaluated_surface": result.get("evaluated_surface"),
+        "n_validation_entries": result.get("n_validation_entries"),
+        "n_scored_records": result.get("n_scored_records"),
+    }
+    op = result.get("operating_point") or {}
+    if isinstance(op, dict) and op.get("fpr_target") is not None:
+        structured.fpr_target = op.get("fpr_target")
+    structured.additional_caveats = [claim.get("operating_point", "")]
+    lines.append(structured.render_block().rstrip())
     lines.append("")
 
     corpus_hygiene = result.get("corpus_hygiene") or {}

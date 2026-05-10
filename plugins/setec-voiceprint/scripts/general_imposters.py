@@ -86,6 +86,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import acquisition_core as ac  # noqa: E402
+from claim_license import ClaimLicense, from_legacy  # noqa: E402
 
 TASK_SURFACE = "voice_coherence"
 TOOL_NAME = "general_imposters"
@@ -584,8 +585,48 @@ def _select_impostor_docs(
 # ---- Rendering ---------------------------------------------------
 
 
+def _structured_claim_license(result: GIResult) -> ClaimLicense:
+    """Compose the structured ClaimLicense block.
+
+    Carries the legacy dict's licenses / does_not_license text plus
+    the harness's empirical context: candidate / impostor counts,
+    iteration count, decision regions, the Wilson CI on the
+    proportion. Renders to the same paste-into-report markdown the
+    sliding-window heatmap uses, via ``ClaimLicense.render_block()``.
+    """
+    legacy = _claim_license()
+    lic = from_legacy(legacy, task_surface=TASK_SURFACE)
+    lic.comparison_set = {
+        "candidate_persona": result.candidate_persona,
+        "candidate_n_docs": result.candidate_n_docs,
+        "n_impostors": result.n_impostors,
+        "n_impostor_personas": len(result.impostor_personas),
+        "iterations": result.iterations,
+        "feature_fraction": result.feature_fraction,
+        "top_n_features": result.top_n_features,
+    }
+    if result.proportion_ci_95 is not None:
+        lic.confidence_interval_95 = (
+            float(result.proportion_ci_95[0]),
+            float(result.proportion_ci_95[1]),
+        )
+    lic.references = [
+        "Koppel et al. 2014 — Determining if two documents are written by the same author",
+        "Kestemont et al. 2016 — Authenticating the Writings of Julius Caesar",
+        "R `stylo::imposters()` — canonical reference implementation",
+    ]
+    lic.additional_caveats = [
+        f"Decision regions: ≤ {GRAY_ZONE_LOW} → inconsistent; "
+        f"≥ {GRAY_ZONE_HIGH} → consistent; "
+        f"in [{GRAY_ZONE_LOW}, {GRAY_ZONE_HIGH}] → gray-zone refusal.",
+        f"Floor: ≥ {MIN_IMPOSTORS} distinct impostor personas in matched register.",
+    ]
+    return lic
+
+
 def render_markdown(result: GIResult) -> str:
     lic = _claim_license()
+    structured = _structured_claim_license(result)
     lines: list[str] = [
         "# General Imposters attribution report",
         "",
@@ -618,11 +659,7 @@ def render_markdown(result: GIResult) -> str:
             "",
             f"> {result.refusal_reason}",
             "",
-            "## Claim license (still applies)",
-            "",
-            f"**Reports:** {lic['licenses']}",
-            "",
-            f"**Does NOT report:** {lic['does_not_license']}",
+            structured.render_block().rstrip(),
             "",
         ])
         return "\n".join(lines) + "\n"
@@ -651,13 +688,7 @@ def render_markdown(result: GIResult) -> str:
         "",
         f"**Decision:** {decision_label}",
         "",
-        "## Claim license",
-        "",
-        f"**Reports:** {lic['licenses']}",
-        "",
-        f"**Does NOT report:** {lic['does_not_license']}",
-        "",
-        f"**Gray zone:** {lic['gray_zone']}",
+        structured.render_block().rstrip(),
         "",
         "## Methodology",
         "",

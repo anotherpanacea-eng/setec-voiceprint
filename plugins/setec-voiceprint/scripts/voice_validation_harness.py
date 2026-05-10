@@ -72,6 +72,7 @@ from validation_harness import (  # type: ignore
     fallback_average_precision,
     fallback_roc_auc,
 )
+from claim_license import ClaimLicense, from_legacy  # type: ignore  # noqa: E402
 
 try:
     from sklearn.metrics import (  # type: ignore
@@ -915,12 +916,19 @@ def render_report(result: dict[str, Any]) -> str:
             "",
         ])
 
+    structured = from_legacy(license_block, task_surface=TASK_SURFACE)
+    structured.comparison_set = {
+        "manifest": result.get("manifest_path"),
+        "n_pairs": result.get("n_pairs"),
+        "n_same_author": result.get("n_same_author"),
+        "n_different_author": result.get("n_different_author"),
+        "label_by": result.get("label_by"),
+        "bootstrap_method": result.get("bootstrap_method"),
+    }
+    if operating_point and operating_point.get("available"):
+        structured.fpr_target = operating_point.get("fpr_target")
     lines.extend([
-        "## Claim License",
-        "",
-        f"**Reports:** {license_block['licenses']}",
-        "",
-        f"**Does NOT report:** {license_block['does_not_license']}",
+        structured.render_block().rstrip(),
         "",
         "## Notes",
         "",
