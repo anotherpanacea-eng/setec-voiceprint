@@ -103,7 +103,7 @@ SCRIPT_VERSION = "1.0"
 # Signals tracked in the profile. Path-tuples into the
 # variance_audit JSON output. A signal is included if its
 # extraction succeeds on both members of every pair.
-_PROFILE_SIGNALS: dict[str, tuple[str, ...]] = {
+_PROFILE_SIGNALS_TIER1: dict[str, tuple[str, ...]] = {
     "burstiness_B": (
         "tier1", "sentence_length", "burstiness_B",
     ),
@@ -119,6 +119,50 @@ _PROFILE_SIGNALS: dict[str, tuple[str, ...]] = {
         "tier1", "connective_density", "per_1000_tokens",
     ),
 }
+
+# Tier-2 spaCy-bearing signals. Only populated into the active
+# registry when the caller passes ``do_tier2=True`` AND the audit
+# actually emits the path. variance_audit's tier-2 surface
+# emits mean dependency distance (MDD) and POS-bigram
+# distribution under ``tier2.mdd`` and ``tier2.pos_bigrams``
+# respectively (see variance_audit.audit_text). Editorial
+# transformations that move syntactic-complexity signals (e.g.,
+# breaking up nested clauses) show up here even when tier-1
+# variance is preserved. Adding a tier-2 path here is enough to
+# wire it into both ``learn`` and ``match``; no other code change
+# is required.
+_PROFILE_SIGNALS_TIER2: dict[str, tuple[str, ...]] = {
+    "mdd_mean": ("tier2", "mdd", "mean"),
+    "mdd_sd": ("tier2", "mdd", "sd"),
+    "pos_bigram_entropy_bits": (
+        "tier2", "pos_bigrams", "entropy_bits",
+    ),
+}
+
+
+def _profile_signals(
+    *, do_tier2: bool,
+) -> dict[str, tuple[str, ...]]:
+    """Active signal registry for the requested tier set.
+
+    Used by every path that walks profile signals (extraction,
+    learning, matching). Centralizing the registry keeps the
+    ``--tier2`` flag from becoming a silent no-op: passing
+    ``do_tier2=True`` extends the registry AND propagates to
+    ``audit_text(do_tier2=...)`` so the tier-2 surface is
+    populated in the underlying audit JSON.
+    """
+    out = dict(_PROFILE_SIGNALS_TIER1)
+    if do_tier2:
+        out.update(_PROFILE_SIGNALS_TIER2)
+    return out
+
+
+# Backwards-compatible export. External callers that imported
+# ``_PROFILE_SIGNALS`` get the tier-1-only view (the previous
+# default behavior); tier-2 callers should use
+# ``_profile_signals(do_tier2=True)`` instead.
+_PROFILE_SIGNALS = _PROFILE_SIGNALS_TIER1
 
 
 def _extract_signal(
@@ -137,9 +181,16 @@ def _extract_signal(
     return None
 
 
-def _extract_all_signals(audit: dict[str, Any]) -> dict[str, float]:
+def _extract_all_signals(
+    audit: dict[str, Any],
+    *,
+    do_tier2: bool = False,
+) -> dict[str, float]:
+    """Extract every active profile signal from a variance_audit
+    JSON. ``do_tier2`` extends the active registry to include
+    tier-2 paths; pass the same flag the audit was run with."""
     out: dict[str, float] = {}
-    for name, path in _PROFILE_SIGNALS.items():
+    for name, path in _profile_signals(do_tier2=do_tier2).items():
         val = _extract_signal(audit, path)
         if val is not None:
             out[name] = val
@@ -160,7 +211,15 @@ def measure_pair(
     *, do_tier2: bool = False,
 ) -> dict[str, Any]:
     """Run variance_audit on both texts and return the per-signal
-    deltas (after − before)."""
+    deltas (after − before).
+
+    ``do_tier2`` is propagated both to ``audit_text`` (so tier-2
+    spaCy signals are populated in the underlying JSON) AND to
+    ``_extract_all_signals`` (so the active registry includes
+    tier-2 paths). Pre-1.41.1 the flag passed only the first leg
+    — tier-2 was computed but invisible to the profile because the
+    extraction registry was tier-1 only.
+    """
     if not HAS_VARIANCE_AUDIT:
         raise RuntimeError(
             "variance_audit unavailable; cannot process pairs."
@@ -171,10 +230,14 @@ def measure_pair(
     after_audit = audit_text(
         _read_text(after_path), do_tier2=do_tier2, do_tier3=False,
     )
-    before_signals = _extract_all_signals(before_audit)
-    after_signals = _extract_all_signals(after_audit)
+    before_signals = _extract_all_signals(
+        before_audit, do_tier2=do_tier2,
+    )
+    after_signals = _extract_all_signals(
+        after_audit, do_tier2=do_tier2,
+    )
     deltas: dict[str, float] = {}
-    for name in _PROFILE_SIGNALS:
+    for name in _profile_signals(do_tier2=do_tier2):
         if name in before_signals and name in after_signals:
             deltas[name] = after_signals[name] - before_signals[name]
     return {
@@ -203,7 +266,7 @@ def learn_profile(
 
     pair_results: list[dict[str, Any]] = []
     delta_lists: dict[str, list[float]] = {
-        name: [] for name in _PROFILE_SIGNALS
+        name: [] for name in _profile_signals(do_tier2=do_tier2)
     }
     for idx, pair in enumerate(pairs):
         before = Path(pair["before"]).expanduser()

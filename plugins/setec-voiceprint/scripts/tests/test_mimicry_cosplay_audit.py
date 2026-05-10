@@ -51,29 +51,94 @@ class TestExtractPhrases:
 
 class TestPhraseHits:
     def test_all_match(self):
-        n, matched, missing = mca._phrase_hits(
+        n_unique, n_occurrences, matched, missing = mca._phrase_hits(
             "She walked through the snowdrift past the stone wall.",
             ["snowdrift", "stone wall"],
         )
-        assert n == 2
+        assert n_unique == 2
+        assert n_occurrences == 2
         assert sorted(matched) == ["snowdrift", "stone wall"]
         assert missing == []
 
     def test_partial_match(self):
-        n, matched, missing = mca._phrase_hits(
+        n_unique, n_occurrences, matched, missing = mca._phrase_hits(
             "She walked through the snowdrift.",
             ["snowdrift", "stone wall"],
         )
-        assert n == 1
+        assert n_unique == 1
+        assert n_occurrences == 1
         assert "snowdrift" in matched
         assert "stone wall" in missing
 
     def test_case_insensitive(self):
-        n, matched, _ = mca._phrase_hits(
+        n_unique, n_occurrences, _, _ = mca._phrase_hits(
             "She walked through the SNOWDRIFT.",
             ["snowdrift"],
         )
-        assert n == 1
+        assert n_unique == 1
+        assert n_occurrences == 1
+
+    def test_repeated_phrase_counts_occurrences_not_unique(self):
+        # Reviewer-reproduced regression: a phrase repeated 20×
+        # in the target should contribute 20 to the occurrence
+        # count and 1 to the unique count.
+        n_unique, n_occurrences, _, _ = mca._phrase_hits(
+            ("snowdrift " * 20).strip(),
+            ["snowdrift"],
+        )
+        assert n_unique == 1
+        assert n_occurrences == 20
+
+
+class TestPhraseDensityAnomalyRegression:
+    """Reviewer-reproduced regression: pre-1.41.1
+    `target_density_per_1k` was based on `n_match` (unique
+    phrases counted once), so one signature phrase repeated 20
+    times in a 2k-word target reported density 0.5/1k and the
+    density-anomaly cosplay shape never fired."""
+
+    def test_repeated_phrase_inflates_occurrence_density(self):
+        idiolect = {
+            "preservation_list": [{"phrase": "snowdrift"}],
+        }
+        # Target: signature phrase repeated 20× in a 2k-word doc.
+        filler = " filler " * 990  # ~1980 filler words.
+        target = "snowdrift " * 20 + filler
+        result = mca.compute_idiolect_survival(
+            idiolect=idiolect, target_text=target,
+        )
+        # Survival rate (unique-coverage diagnostic) is 1/1 = 1.0.
+        assert result["survival_rate"] == 1.0
+        # Occurrence density now reflects the 20 repeats.
+        # 20 / ~2000 words * 1000 ≈ 10.0/1k.
+        assert result["target_density_per_1k"] >= 9.0
+        # Unique-phrase coverage density is much lower, kept for
+        # legacy compatibility / coverage reporting.
+        assert result["unique_phrase_density_per_1k"] < 1.0
+        assert result["n_total_occurrences"] == 20
+
+    def test_audit_cosplay_density_anomaly_fires_on_repetition(self):
+        # End-to-end: 20× repetition of a single phrase + high
+        # voice_distance Delta should fire the density_anomaly
+        # cosplay shape.
+        idiolect = {
+            "preservation_list": [{"phrase": "snowdrift"}],
+        }
+        filler = " filler " * 990
+        target = "snowdrift " * 20 + filler
+        audit = mca.audit_cosplay(
+            target_text=target,
+            idiolect=idiolect,
+            voice_distance={"overall": {"weighted_delta": 2.0}},
+            variance=None,
+            baseline_density_per_1k=1.0,  # baseline 1/1k
+        )
+        # Density anomaly fires: target ~10/1k vs. baseline 1/1k
+        # at default 2.0× factor.
+        assert audit["shapes"]["density_anomaly"]["fired"] is True
+        # Verdict is at least mixed (one shape fired); often
+        # cosplay_suspected if both shapes also fire.
+        assert audit["verdict"] in {"cosplay_suspected", "mixed"}
 
 
 class TestComputeIdiolectSurvival:

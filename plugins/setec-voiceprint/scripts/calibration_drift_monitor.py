@@ -273,11 +273,29 @@ def take_snapshot(
 
     benchmarks: dict[str, Any] = {}
     skipped_empty: list[str] = []
+    seen_ids: set[str] = set()
     for idx, path in enumerate(paths):
-        bench_id = (
-            f"benchmark_{idx + 1:03d}" if not include_filenames
-            else path.name
-        )
+        # Anonymized: padded benchmark_NNN counter (always unique).
+        # With filenames: relative-path-from-benchmark-dir, with
+        # path separators normalized to ``/`` so nested benchmarks
+        # like ``a/same.txt`` and ``b/same.txt`` produce distinct
+        # keys. Pre-1.41.1 used ``path.name`` which collided on
+        # duplicate basenames in nested directories and silently
+        # shrank the benchmark set. If a relative-path-derived id
+        # somehow still collides (symlinks, case-insensitive FS),
+        # we fall back to suffixing the anonymized index so no
+        # benchmark is dropped.
+        if include_filenames:
+            try:
+                rel = path.relative_to(benchmark_dir)
+            except ValueError:
+                rel = path
+            bench_id = str(rel).replace("\\", "/")
+            if bench_id in seen_ids:
+                bench_id = f"{bench_id}#{idx + 1:03d}"
+        else:
+            bench_id = f"benchmark_{idx + 1:03d}"
+        seen_ids.add(bench_id)
         text = path.read_text(encoding="utf-8", errors="ignore")
         if not text.strip():
             skipped_empty.append(str(path))
@@ -657,6 +675,7 @@ def render_report(report: dict[str, Any]) -> str:
     drifted = report.get("drifted_benchmarks", [])
     n_drifted = report.get("n_signals_drifted", 0)
     n_stable = report.get("n_signals_stable", 0)
+    n_schema = report.get("n_signals_schema_changed", 0)
     overall = report.get("infrastructure_drift_detected", False)
     recalibrate = report.get("recalibration_recommended", False)
 
@@ -671,7 +690,14 @@ def render_report(report: dict[str, Any]) -> str:
         f"{'**yes**' if overall else 'no'}",
         f"**Recalibration recommended:** "
         f"{'**yes**' if recalibrate else 'no'}",
-        f"**Signals drifted / stable:** {n_drifted} / {n_stable}",
+        # Pre-1.41.1 only `drifted` and `stable` were surfaced; a
+        # signal that disappeared (`removed`) or newly appeared
+        # (`added`) showed up in the JSON's
+        # `n_signals_schema_changed` but was invisible in the
+        # Markdown header. Fixed by reporting schema_changed
+        # alongside drifted/stable in the summary line.
+        f"**Signals drifted / schema-changed / stable:** "
+        f"{n_drifted} / {n_schema} / {n_stable}",
         f"**Benchmarks drifted:** {len(drifted)}",
         "",
     ]
@@ -705,10 +731,19 @@ def render_report(report: dict[str, Any]) -> str:
         lines.append("")
         for bench_id in drifted:
             info = report.get("per_benchmark", {}).get(bench_id, {})
+            n_drift_b = info.get("n_signals_drifted", 0)
+            n_stable_b = info.get("n_signals_stable", 0)
+            n_added_b = info.get("n_signals_added", 0)
+            n_removed_b = info.get("n_signals_removed", 0)
+            schema_summary = ""
+            if n_added_b or n_removed_b:
+                schema_summary = (
+                    f", {n_added_b} added, {n_removed_b} removed"
+                )
             lines.append(
                 f"### `{bench_id}` "
-                f"({info.get('n_signals_drifted', 0)} signals "
-                f"drifted, {info.get('n_signals_stable', 0)} stable)"
+                f"({n_drift_b} signals drifted, "
+                f"{n_stable_b} stable{schema_summary})"
             )
             lines.append("")
             comp_diffs = info.get("compression_diffs", {})
@@ -735,6 +770,38 @@ def render_report(report: dict[str, Any]) -> str:
                     lines.append(
                         f"- `{k}`: {snap_v} → {curr_v} "
                         f"(Δ {delta:+.4f}, floor {floor:.4f})"
+                    )
+                lines.append("")
+            # Schema-change signals (added / removed) are
+            # drift-bearing per 1.40.1 but were missing from the
+            # Markdown render before 1.41.1. Surface them under
+            # the same per-benchmark section so the report names
+            # the changing signal rather than just an aggregate
+            # counter.
+            added_sig = [
+                (k, d) for k, d in sig_diffs.items()
+                if d.get("verdict") == "added"
+            ]
+            removed_sig = [
+                (k, d) for k, d in sig_diffs.items()
+                if d.get("verdict") == "removed"
+            ]
+            if added_sig:
+                lines.append("**Added signals (in current, "
+                             "not in snapshot):**")
+                for k, d in added_sig:
+                    lines.append(
+                        f"- `{k}`: now `{d.get('current')}` "
+                        f"(absent at snapshot time)"
+                    )
+                lines.append("")
+            if removed_sig:
+                lines.append("**Removed signals (in snapshot, "
+                             "not in current):**")
+                for k, d in removed_sig:
+                    lines.append(
+                        f"- `{k}`: was `{d.get('snapshot')}` "
+                        f"(missing in current run)"
                     )
                 lines.append("")
 

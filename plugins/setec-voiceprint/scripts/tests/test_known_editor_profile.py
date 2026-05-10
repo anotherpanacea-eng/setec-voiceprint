@@ -118,6 +118,70 @@ class TestExtractAllSignals:
         assert signals["mtld"] == 80.0
         assert signals["mattr"] == 0.65
 
+    def test_tier1_only_excludes_tier2_paths(self):
+        # Reviewer-reproduced regression: pre-1.41.1 the
+        # extraction registry was tier-1 only, so even when
+        # tier-2 paths were present in the audit they could
+        # never enter the profile (the --tier2 flag was a no-op).
+        audit = {
+            "tier1": {
+                "sentence_length": {"burstiness_B": 0.4, "sd": 12.0},
+                "mtld": 80.0,
+            },
+            "tier2": {
+                "available": True,
+                "mdd": {"mean": 2.5, "sd": 0.8},
+                "pos_bigrams": {"entropy_bits": 5.5},
+            },
+        }
+        # Default (do_tier2=False) → no tier-2 signals extracted.
+        signals_t1 = kep._extract_all_signals(audit, do_tier2=False)
+        assert "mdd_mean" not in signals_t1
+        assert "mdd_sd" not in signals_t1
+        assert "pos_bigram_entropy_bits" not in signals_t1
+
+    def test_tier2_opt_in_extracts_tier2_signals(self):
+        # Post-1.41.1 fix: do_tier2=True extends the active
+        # registry so tier-2 paths actually enter the profile.
+        audit = {
+            "tier1": {
+                "sentence_length": {"burstiness_B": 0.4, "sd": 12.0},
+                "mtld": 80.0,
+            },
+            "tier2": {
+                "available": True,
+                "mdd": {"mean": 2.5, "sd": 0.8},
+                "pos_bigrams": {"entropy_bits": 5.5},
+            },
+        }
+        signals_t2 = kep._extract_all_signals(audit, do_tier2=True)
+        # Tier-1 still present.
+        assert signals_t2["burstiness_B"] == 0.4
+        # Tier-2 paths now extracted.
+        assert signals_t2.get("mdd_mean") == 2.5
+        assert signals_t2.get("mdd_sd") == 0.8
+        assert signals_t2.get("pos_bigram_entropy_bits") == 5.5
+
+
+class TestProfileSignalsHelper:
+    def test_helper_returns_tier1_only_by_default(self):
+        active = kep._profile_signals(do_tier2=False)
+        assert "burstiness_B" in active
+        assert "mdd_mean" not in active
+
+    def test_helper_extends_registry_when_tier2(self):
+        tier1_only = kep._profile_signals(do_tier2=False)
+        with_tier2 = kep._profile_signals(do_tier2=True)
+        # tier-1 set is a subset of tier-1+tier-2 set.
+        assert set(tier1_only).issubset(set(with_tier2))
+        # tier-2 adds new keys.
+        assert len(with_tier2) > len(tier1_only)
+        for tier2_key in (
+            "mdd_mean", "mdd_sd", "pos_bigram_entropy_bits",
+        ):
+            assert tier2_key in with_tier2
+            assert tier2_key not in tier1_only
+
 
 # ---------- Pair measurement ----------
 

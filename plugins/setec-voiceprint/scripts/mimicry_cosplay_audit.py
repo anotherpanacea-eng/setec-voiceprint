@@ -129,22 +129,44 @@ def _extract_phrases_from_idiolect(
 
 def _phrase_hits(
     target_text: str, phrases: list[str],
-) -> tuple[int, list[str], list[str]]:
-    """Return (n_matches, matched_phrases, missing_phrases) over
-    case-insensitive substring search."""
+) -> tuple[int, int, list[str], list[str]]:
+    """Return ``(n_unique_matched, n_total_occurrences,
+    matched_phrases, missing_phrases)`` over case-insensitive
+    substring search.
+
+    ``n_unique_matched`` counts each preservation-list phrase at
+    most once and is the right value for the survival-rate
+    diagnostic (\"how many of the writer's signature phrases
+    survive in the revision?\").
+
+    ``n_total_occurrences`` counts each phrase by its number of
+    appearances in the target and is the right value for the
+    density-anomaly diagnostic (\"is the writer's signature
+    phrase appearing at unnaturally high density in the
+    revision?\"). The two diagnostics are intentionally
+    separate — over-preservation by repetition would be invisible
+    if both used the unique count.
+    """
     if not phrases:
-        return 0, [], []
+        return 0, 0, [], []
     text_lower = target_text.lower()
     matched: list[str] = []
     missing: list[str] = []
+    n_total_occurrences = 0
     for p in phrases:
         if not p:
             continue
-        if p.lower() in text_lower:
+        # Count case-insensitive non-overlapping occurrences in
+        # the target. Falls back to substring `count()` which
+        # is sufficient for word-boundary phrase matches in
+        # natural prose (overlapping idiolect phrases are rare).
+        count = text_lower.count(p.lower())
+        if count > 0:
             matched.append(p)
+            n_total_occurrences += count
         else:
             missing.append(p)
-    return len(matched), matched, missing
+    return len(matched), n_total_occurrences, matched, missing
 
 
 def compute_idiolect_survival(
@@ -153,19 +175,38 @@ def compute_idiolect_survival(
     target_text: str,
 ) -> dict[str, Any]:
     phrases = _extract_phrases_from_idiolect(idiolect)
-    n_match, matched, missing = _phrase_hits(target_text, phrases)
-    rate = n_match / len(phrases) if phrases else None
+    n_unique, n_occurrences, matched, missing = _phrase_hits(
+        target_text, phrases,
+    )
+    rate = n_unique / len(phrases) if phrases else None
     n_words = len(re.findall(r"\b\w+\b", target_text))
+    # Two densities tracked separately:
+    # - ``target_density_per_1k`` (occurrence-based): the right
+    #   value for the density-anomaly cosplay shape.
+    # - ``unique_phrase_density_per_1k`` (coverage-based): kept
+    #   for legacy compatibility with downstream callers and as
+    #   a coverage diagnostic.
     density = (
-        n_match / n_words * 1000 if n_words else 0.0
+        n_occurrences / n_words * 1000 if n_words else 0.0
+    )
+    unique_density = (
+        n_unique / n_words * 1000 if n_words else 0.0
     )
     return {
         "n_phrases": len(phrases),
-        "n_matched": n_match,
+        "n_matched": n_unique,
+        "n_total_occurrences": n_occurrences,
         "matched_phrases": matched[:50],
         "missing_phrases": missing[:50],
         "survival_rate": rate,
+        # Occurrence-based density — the value the density-anomaly
+        # cosplay shape reads. A signature phrase repeated 20 times
+        # in 2k words contributes 20 to the count.
         "target_density_per_1k": density,
+        # Coverage-based density — what proportion of the
+        # preservation list is represented at all. Stays informative
+        # alongside the survival_rate diagnostic.
+        "unique_phrase_density_per_1k": unique_density,
         "target_words": n_words,
     }
 
@@ -306,8 +347,10 @@ def audit_cosplay(
         survival: dict[str, Any] = {
             "n_phrases": 0,
             "n_matched": 0,
+            "n_total_occurrences": 0,
             "survival_rate": None,
             "target_density_per_1k": 0.0,
+            "unique_phrase_density_per_1k": 0.0,
             "target_words": len(
                 re.findall(r"\b\w+\b", target_text)
             ),

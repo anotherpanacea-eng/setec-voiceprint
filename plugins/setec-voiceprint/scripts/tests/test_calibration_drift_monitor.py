@@ -359,6 +359,111 @@ class TestSchemaChangeDrift:
         assert "n_signals_schema_changed" in bench_info
 
 
+class TestIncludeFilenamesNoCollision:
+    """Reviewer-reproduced regression: pre-1.41.1
+    `--include-filenames` set bench_id to `path.name`, so two
+    benchmarks with the same basename in different subdirs
+    overwrote each other. `n_benchmarks` shrank silently."""
+
+    def test_duplicate_basenames_in_nested_dirs(self, tmp_path):
+        bdir = tmp_path / "benchmarks"
+        (bdir / "a").mkdir(parents=True)
+        (bdir / "b").mkdir(parents=True)
+        (bdir / "a" / "same.txt").write_text(
+            _SAMPLE_TEXT, encoding="utf-8",
+        )
+        (bdir / "b" / "same.txt").write_text(
+            _SAMPLE_TEXT + " More prose to vary the file.",
+            encoding="utf-8",
+        )
+        snapshot = cdm.take_snapshot(
+            bdir, do_tier2=False, include_filenames=True,
+        )
+        # Both benchmarks must be present; no overwrite.
+        assert snapshot["n_benchmarks"] == 2
+        ids = list(snapshot["benchmarks"].keys())
+        # IDs are relative paths, not just basenames.
+        assert "a/same.txt" in ids
+        assert "b/same.txt" in ids
+
+    def test_anonymized_ids_unaffected_by_basename_collision(
+        self, tmp_path,
+    ):
+        bdir = tmp_path / "benchmarks"
+        (bdir / "a").mkdir(parents=True)
+        (bdir / "b").mkdir(parents=True)
+        (bdir / "a" / "same.txt").write_text(
+            _SAMPLE_TEXT, encoding="utf-8",
+        )
+        (bdir / "b" / "same.txt").write_text(
+            _SAMPLE_TEXT + " More prose.", encoding="utf-8",
+        )
+        snapshot = cdm.take_snapshot(
+            bdir, do_tier2=False, include_filenames=False,
+        )
+        # benchmark_001, benchmark_002 — always unique.
+        assert snapshot["n_benchmarks"] == 2
+        ids = list(snapshot["benchmarks"].keys())
+        assert all(k.startswith("benchmark_") for k in ids)
+
+
+class TestRenderSchemaChangeDrift:
+    """Reviewer-reproduced regression: pre-1.41.1 the JSON
+    correctly counted added/removed signals as schema drift
+    (per the 1.40.1 fix), but the Markdown report only surfaced
+    `n_signals_drifted`. A removed signal showed
+    `infrastructure_drift_detected: true` in JSON but
+    `Signals drifted / stable: 0 / 0` in Markdown with no
+    signal name listed."""
+
+    def test_summary_line_includes_schema_changed(
+        self, tmp_path,
+    ):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        curr = copy.deepcopy(snap)
+        first_bench = next(iter(curr["benchmarks"].keys()))
+        curr["benchmarks"][first_bench]["signals"]["new_signal"] = (
+            42.0
+        )
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        md = cdm.render_report(report)
+        assert "schema-changed" in md
+        assert "1" in md  # n_signals_schema_changed = 1
+
+    def test_added_signals_named_in_drifted_section(
+        self, tmp_path,
+    ):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        curr = copy.deepcopy(snap)
+        first_bench = next(iter(curr["benchmarks"].keys()))
+        curr["benchmarks"][first_bench]["signals"][
+            "infrastructure_only_new_signal"
+        ] = 42.0
+        report = cdm.detect_drift(snapshot=snap, current=curr)
+        md = cdm.render_report(report)
+        # The added signal is named, not just aggregated.
+        assert "Added signals" in md
+        assert "infrastructure_only_new_signal" in md
+
+    def test_removed_signals_named_in_drifted_section(
+        self, tmp_path,
+    ):
+        bdir = _write_benchmarks(tmp_path)
+        snap = cdm.take_snapshot(bdir, do_tier2=False)
+        curr = copy.deepcopy(snap)
+        first_bench = next(iter(curr["benchmarks"].keys()))
+        signals = curr["benchmarks"][first_bench]["signals"]
+        if signals:
+            removed_key = next(iter(signals.keys()))
+            del signals[removed_key]
+            report = cdm.detect_drift(snapshot=snap, current=curr)
+            md = cdm.render_report(report)
+            assert "Removed signals" in md
+            assert removed_key in md
+
+
 class TestEmptyBenchmarkDirRejected:
     """Reviewer-reproduced regression: a directory containing
     only empty / whitespace files produced n_benchmarks=0 with
