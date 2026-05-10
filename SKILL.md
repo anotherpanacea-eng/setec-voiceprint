@@ -1,17 +1,19 @@
 ---
-name: ai-prose-detection
-description: "Diagnose AI-generated prose patterns and recommend specific revision moves to restore the variance, voice, and friction that make a reader trust the narrator. Use when a writer asks to check their draft for AI tells, detect AI prose, calibrate AI-assisted writing, audit for unearned fluency, find AI patterns, reduce AI sound, make AI prose sound human, check for slop, or improve AI-drafted text. Also trigger on 'does this sound like AI,' 'AI contamination,' 'slop to silver,' 'prose calibration,' 'voice singularity,' 'echo stack,' 'velvet fog,' 'puppet dialogue,' 'discourse leak,' 'variance audit,' or any request to identify and fix AI-characteristic prose patterns. Works on fiction and argument-shaped nonfiction. Do NOT use for academic plagiarism detection or AI provenance verification; this skill diagnoses prose quality, not authorship."
+name: setec-voiceprint
+description: "Measure prose transformation and voice coherence under explicit claim limits. Use when a writer asks whether a draft has been smoothed, whether it still sounds like a writer/persona/POV/register, what changed after editing, how to preserve idiolect during revision, how to validate stylometric claims against a corpus, or how to turn diagnostics into revision-safe restoration packets. Also trigger on 'voiceprint,' 'voice coherence,' 'variance audit,' 'prose smoothing,' 'AI contamination,' 'does this sound like me,' 'style cosplay,' 'voice drift,' 'idiolect preservation,' 'source triage,' 'restoration packet,' or any request to identify and repair measurable prose drift. Works on fiction and argument-shaped nonfiction. Do NOT use for academic plagiarism detection, authorship verdicts, or AI provenance verification; this framework measures signals and comparison sets, not ultimate causes."
 ---
 
-# AI Prose: Detection & Restoration
+# SETEC Voiceprint
 
-Diagnose patterns characteristic of AI-generated or AI-assisted prose, then recommend specific moves to restore the variance, voice, and friction that make a reader trust the narrator. Works on fiction and argument-shaped nonfiction.
+Measure how prose changes, compare it against human baselines, and recommend bounded restoration moves when the evidence supports them. AI-assisted writing is one important use case because LLM collaboration often leaves smoothing, compression, syntactic drift, and phrase-preservation artifacts. But the same signals can also come from genre, education, dialect, translation, institutional templates, human editing, time drift, POV collapse, or a writer consciously imitating themselves.
+
+This skill is not an AI detector. Its core discipline is to measure the signal, name the comparison set, and refuse claims the evidence does not license.
 
 ## Four Task Surfaces
 
 This skill ships tools that share statistical signals but answer four different questions. Most failure modes come from confusing them. Each surface has its own claim, its own inputs, and its own limits.
 
-### 1. AI-prose smoothing diagnosis  *(`variance_audit.py`, Layer A)*
+### 1. Prose smoothing / compression diagnosis  *(`variance_audit.py`, Layer A)*
 
 **Question.** Has this prose been smoothed into a narrower-than-typical region of stylometric space, regardless of who wrote it or why?
 
@@ -31,9 +33,9 @@ This skill ships tools that share statistical signals but answer four different 
 
 **Cannot answer.** Whether the divergence is caused by AI involvement, register shift, time drift, genuine voice change, or the writer working in an unusual mode. The verdict is "drifted from this baseline," not "AI-written."
 
-### 3. Empirical performance validation  *(`validation_harness.py`, future)*
+### 3. Empirical performance validation  *(`validation_harness.py`, `voice_validation_harness.py`, calibration tools)*
 
-**Question.** How well do these signals discriminate against this labeled corpus, in this register, at this text length?
+**Question.** How well do these signals behave on this labeled corpus, in this register, at this text length, under this dependency stack and fairness slice?
 
 **Inputs.** A labeled corpus (known-human / known-AI / AI-edited / mixed / paraphrased / human-revised-after-AI samples) plus the scripts under test.
 
@@ -55,7 +57,7 @@ This skill ships tools that share statistical signals but answer four different 
 
 The four surfaces share signals because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same statistical features (function-word distributions, lexical diversity, sentence-length variance, syntactic patterns). But they answer different questions, license different claims, and fail in different ways. A single "is this AI" verdict would have to collapse all four into one number; the math does not entitle that.
 
-The skill therefore ships four narrow surfaces and refuses the unifying verdict. Each output knows what comparison it is making, what it cannot know, and what practical revision decision follows.
+The skill therefore ships narrow surfaces and refuses the unifying verdict. Each output knows what comparison it is making, what it cannot know, and what practical revision decision follows.
 
 ## The Mode-Collapse Lens
 
@@ -63,7 +65,7 @@ A useful conceptual lens — though not a literal claim about what every AI-pros
 
 Different detectors compute different things on this same surface. Burrows' Delta measures function-word distance. GLTR measures token-rank density. DetectGPT and Fast-DetectGPT measure local curvature (with or without closed-form mean). Binoculars measures cross-perplexity ratio. EditLens measures embedding-shift magnitude. Pangram trains on labeled examples. They produce correlated outputs because the underlying distributional compressions are correlated, not because they are different formulations of one master metric.
 
-The seven AIC flag families catalog the prose-level manifestations of these compressions. The five named patterns within AIC-7 (and the Indefinite-Pronoun Gesture within AIC-2) name highest-resolution syntactic instances. Source triage at Layer C answers the question that no distributional analysis can: whose voice is this, and is it doing real work?
+The seven AIC flag families catalog prose-level manifestations of these compressions. The named patterns are structural habits: hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, inflated parallelism, over-neat transitions, and indefinite-pronoun gestures. Source triage at Layer C answers the question that no distributional analysis can: whose voice is this, and is it doing real work?
 
 ## Three Layers
 
@@ -72,7 +74,7 @@ The skill operates at three resolutions. Each layer's blind spot is the next lay
 | Layer | What it measures | What it can't see |
 |---|---|---|
 | **A. Distributional** | Variance signals: sentence-length SD, MATTR, FKGL std, adjacent-sentence cosine std, function-word distribution, POS-bigram KL, MDD variance | Whose voice; what the prose is doing |
-| **B. Pattern (AIC flags)** | Recurring AI-prose habits across passages, including the five named AIC-7 subtypes and the parallel set for nonfiction | Whether this instance is earned in context |
+| **B. Pattern (AIC flags)** | Recurring prose habits across passages, including named structural patterns and the parallel set for nonfiction | Whether this instance is earned in context |
 | **C. Source triage** | Voice attribution; the payoff test; earned vs. unearned per passage | Doesn't scale; requires character/narrator/persona knowledge |
 
 The skill never collapses these into a single AI-or-not score. The math doesn't entitle that conclusion. Layer A produces a magnitude (Lightly / Moderately / Heavily smoothed). Layer B produces a flag inventory with severity. Layer C produces an earned/unearned verdict per passage.
@@ -81,11 +83,11 @@ The skill never collapses these into a single AI-or-not score. The math doesn't 
 
 The same vocabulary runs in two directions.
 
-**Diagnostic mode** identifies where mode collapse has happened and names what kind. Default mode when a writer shares a draft.
+**Diagnostic mode** identifies where smoothing, voice drift, compression, or pattern repetition has happened and names what kind. Default mode when a writer shares a draft.
 
 **Restoration mode** recommends concrete revision moves to reintroduce variance and voice. Mirrors the diagnostic: each layer's findings drive the corresponding restoration moves.
 
-Restoration is symmetric to detection in the feature space and asymmetric in the objective. Detection wants to find the residual signal that distinguishes AI text from human text after AI has tried to look human. Restoration wants to add that signal back. The same statistics serve opposite purposes.
+Restoration is symmetric to diagnosis in the feature space and asymmetric in the objective. Diagnosis finds a measurable drift; restoration adds back human variation, voice, and friction without chasing aggregate metrics directly. The same statistics serve opposite purposes.
 
 ## What You Need
 
@@ -161,7 +163,7 @@ Read `references/aic-flags.md` for the full diagnostic framework. Run each passa
 | AIC-4 | Register Seams | Detectable shifts where drafting method changed |
 | AIC-5 | Puppet Dialogue | Characters who all speak identically |
 | AIC-6 | Continuity Smear | World-model failures (objects, space, time, information) |
-| AIC-7 | Discourse Leak | Assistant-register habits in narrative prose; includes Negation hedge, Disguised correctio, Pseudo-aphorism, and Manifesto cadence as named subtypes |
+| AIC-7 | Discourse Leak | Assistant-register habits in narrative prose; includes hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, and manifesto cadence as named subtypes |
 
 For each flag that fires, assign severity:
 - **Spot** — isolated to one passage; surrounding text is clean

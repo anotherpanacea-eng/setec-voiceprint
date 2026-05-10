@@ -1,23 +1,43 @@
 # setec-voiceprint
 
-A framework and toolkit for diagnosing AI-prose patterns in fiction and argument-shaped nonfiction. Targets the discourse habits underneath specific AI words: the patterns that survive across model generations because they are structural, not lexical.
+SETEC Voiceprint is a stylometric framework for measuring how prose changes.
+
+It can diagnose smoothing, compare a draft against a writer's own baseline, build private voice profiles, surface idiolect features worth preserving, validate signals against labeled corpora, and generate revision-safe restoration packets. It is built for writers, editors, researchers, and toolmakers who need evidence about prose transformation without collapsing that evidence into an overconfident verdict.
+
+SETEC is not an AI detector.
+
+AI-assisted writing is one important use case because LLM collaboration often leaves smoothing, compression, syntactic drift, and phrase-preservation artifacts. But the same signals can also come from genre, education, dialect, translation, institutional templates, human editing, time drift, POV collapse, or a writer consciously imitating themselves. SETEC's core discipline is to measure the signal, name the comparison set, and refuse claims the evidence does not license.
 
 The name tips its hat to *Sneakers* (1992): SETEC ASTRONOMY, "too many secrets." Voice profiles are voice-cloning inputs. The framework's outputs are useful to the writer who runs them; they are also leverage to anyone else who gets hold of them. The "setec" in the name is a reminder, not a flourish.
 
-The framework distinguishes four task surfaces, three diagnostic layers, and a vocabulary of named patterns. The Python tooling supports distributional diagnostics, voice-coherence comparison, vocabulary-repetition audits, manifest validation, and an MVP validation harness for empirical calibration.
+The framework distinguishes four task surfaces, three diagnostic layers, and a vocabulary of named patterns. The Python tooling supports distributional diagnostics, voice-coherence comparison, vocabulary-repetition audits, corpus acquisition, manifest validation, empirical calibration, and craft restoration.
 
-## Four task surfaces
+## Choose the question
 
 | Surface | Tools | Question it answers | Question it does NOT answer |
 |---|---|---|---|
-| **1. AI-prose smoothing diagnosis** | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py`; Layer A in audit | Has this prose been smoothed into a narrower-than-typical stylometric region? | Who wrote it; whether smoothing is artifact of register / scene / writer's natural style |
-| **2. Voice-coherence comparison** | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py` | How far is this draft from a writer's or register's own baseline, and which phrases should revision preserve? | Whether divergence is caused by AI involvement, register shift, time drift, or genuine voice change |
-| **3. Empirical performance validation** | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py` | How well do these signals discriminate against this labeled corpus, at these registers, at these lengths, after corpus hygiene checks? | Whether the framework will work on unseen corpora outside the harness's coverage |
-| **4. Craft restoration advice** | `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`; Layers B and C in audit | Which patterns are present, are they earned in context, and what revision moves apply? | Anything quantitative about provenance or distributional smoothing |
+| **1. Prose smoothing / compression** | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py`, `bigram_diff.py`, `manuscript_bigram_diff.py` | Has this prose narrowed into a low-variance or template-heavy region? | Who caused it; whether AI was involved |
+| **2. Voice coherence** | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `pov_voice_profile.py`, `mimicry_cosplay_audit.py` | How far is this draft from a writer, register, POV, or time-period baseline? | Why it drifted |
+| **3. Validation and calibration** | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py`, `voice_validation_harness.py`, `calibration_drift_monitor.py`, `fairness_dialect_guardrails.py`, calibration scripts | How well do these signals behave on this labeled corpus, dependency stack, and fairness slice? | Whether they generalize outside that evidence |
+| **4. Craft restoration** | `aic_pattern_audit.py`, `restoration_packet.py`, `before_after_restoration.py`, `semantic_preservation_check.py`, `known_editor_profile.py`; reference docs | Which measured drifts can become safe revision instructions, and did revision preserve meaning? | Whether the revision is artistically better |
 
 The four surfaces share statistical signals because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same features. They answer different questions and license different claims. The framework refuses the unifying "is this AI" verdict because the underlying math does not entitle it.
 
 Every script's JSON output and markdown report carry an explicit `task_surface` field so downstream consumers can route by surface and refuse to mix scores across them.
+
+## Plugin skills
+
+The plugin exposes skills as workflows, not just surfaces.
+
+| Skill | Use when |
+|---|---|
+| `setup` | Installing dependencies, checking optional tiers, fixing environment gaps |
+| `smoothing-diagnosis` | Auditing compression, variance loss, repetition, and syntactic drift |
+| `voice-coherence` | Comparing a draft to a writer, register, POV, or time-period baseline |
+| `validation` | Validating manifests, checking corpus hygiene, running harnesses and calibration checks |
+| `craft-restoration` | Reading named patterns and deciding what is earned in context |
+| `metric-targeted-restoration` | Turning diagnostic JSON into bounded revision packets with post-checks |
+| `corpus-acquisition` | Building private baseline and impostor corpora from blogs, takeouts, PDFs, and magazines |
 
 ## Files
 
@@ -34,9 +54,16 @@ setec-voiceprint/
 ├── .claude-plugin/
 │   └── marketplace.json            Claude Code / Cowork plugin marketplace catalog
 ├── plugins/
-│   └── setec-voiceprint/           plugin tree: manifest + 4 SKILL.md (one per task surface)
+│   └── setec-voiceprint/           plugin tree: manifest + seven workflow skills
 │       ├── .claude-plugin/plugin.json
-│       └── skills/{smoothing-diagnosis,voice-coherence,validation,craft-restoration}/SKILL.md
+│       └── skills/
+│           ├── setup/                         install/dependency guidance
+│           ├── smoothing-diagnosis/           Surface 1: prose smoothing/compression
+│           ├── voice-coherence/               Surface 2: writer/register/POV voice comparison
+│           ├── validation/                    Surface 3: manifest checks, harnesses, calibration
+│           ├── craft-restoration/             Surface 4: pattern triage and craft repair
+│           ├── metric-targeted-restoration/   Surface 4: diagnostic JSON → revision-safe packets
+│           └── corpus-acquisition/            private baseline/impostor corpus collection
 ├── references/
 │   ├── distributional-diagnostics.md   Layer A: 11 variance signals with math
 │   ├── aic-flags.md                Layer B: 7 flag families + nonfiction parallel set + genre tolerance table
@@ -59,6 +86,9 @@ setec-voiceprint/
 │   ├── manifest_validator.py           schema and integrity checks for corpus_manifest.jsonl
 │   ├── check_corpus.py                 content-level non-prose contamination gate
 │   ├── validation_harness.py           empirical validation over labeled manifest entries
+│   ├── voice_validation_harness.py     voice-coherence validation harness
+│   ├── mimicry_cosplay_audit.py        lexical mimicry without syntactic conformity
+│   ├── known_editor_profile.py         learned before/after editorial transformation profile
 │   ├── length_bootstrap.py             length-matched window sampler + scipy.stats.bootstrap helpers
 │   └── test_data/                      smoke-test corpus
 └── baselines/
@@ -106,7 +136,7 @@ claude plugin marketplace add anotherpanacea-eng/setec-voiceprint
 claude plugin install setec-voiceprint@setec-voiceprint
 ```
 
-Then invoke skills naturally from inside a Claude Code session ("audit this draft for AI smoothing", "build a voice profile from this corpus", etc.) or via explicit slash commands if you have them configured.
+Then invoke skills naturally from inside a Claude Code session ("compare this draft to my baseline", "audit this chapter for smoothing", "build a voice profile from this corpus", etc.) or via explicit slash commands if you have them configured.
 
 **Updating from CLI / Desktop:**
 
@@ -146,6 +176,10 @@ If you don't want the plugin, install the Python deps as above and run the scrip
 
 ## Quick start
 
+These examples are grouped by workflow. Many scripts compose: a smoothing audit can feed a restoration packet, a voice-distance report can feed a surface-disagreement resolver, and validation outputs should be read through their claim-license blocks.
+
+### Prose smoothing / compression
+
 ```
 # Whole-document Layer A audit
 python3 scripts/variance_audit.py path/to/draft.txt
@@ -173,7 +207,11 @@ python3 scripts/manuscript_repetition_audit.py path/to/manuscript.md --baseline-
 
 # Chapter-distinctiveness audit (leave-one-out internal baseline)
 python3 scripts/chapter_distinctiveness_audit.py path/to/manuscript.md
+```
 
+### Voice coherence
+
+```
 # Voice-distance against a private baseline
 python3 scripts/voice_distance.py path/to/draft.txt --baseline-dir ../ai-prose-baselines-private/fiction/
 
@@ -186,7 +224,11 @@ python3 scripts/idiolect_detector.py \
     --target-dir ../ai-prose-baselines-private/fiction/target/ \
     --reference-dir baselines/literary-fiction/ \
     --out ../ai-prose-baselines-private/fiction_idiolect.md
+```
 
+### Validation and calibration
+
+```
 # Validate a corpus manifest before any of the manifest-driven flows
 python3 scripts/manifest_validator.py corpus_manifest.jsonl
 
@@ -204,6 +246,19 @@ python3 scripts/validation_harness.py scripts/test_data/validation_smoke_manifes
     --no-tier2 --no-tier3 --fpr-target 0.01 --seed 7
 ```
 
+### Craft restoration
+
+```
+# Count named rhetorical patterns for source triage
+python3 scripts/aic_pattern_audit.py path/to/draft.txt
+
+# Turn diagnostic JSON into bounded revision instructions
+python3 scripts/restoration_packet.py --variance-json variance.json --out packet.md
+
+# Check whether a revision improved target signals without gaming aggregates
+python3 scripts/before_after_restoration.py --packet packet.json --before-json before.json --after-json after.json
+```
+
 ## Smoke test
 
 ```
@@ -216,7 +271,7 @@ python3 scripts/variance_audit.py scripts/test_data/ai_sample.txt
 
 ## Design principles
 
-**The framework targets discourse habits, not vocabulary.** Surface tells (specific AI words, em-dash frequency, the magic triple) decay as models change and writers learn to avoid them. The named patterns within AIC-7 (Negation hedge, Disguised correctio, Pseudo-aphorism, Manifesto cadence) and within AIC-2 (Indefinite-pronoun gesture) are syntactic, not lexical. They survive vocabulary changes across model generations because they are structural moves.
+**The framework targets discourse habits, not vocabulary.** Surface tells (specific AI words, em-dash frequency, the magic triple) decay as models change and writers learn to avoid them. The named patterns are structural habits: hedge-and-reversal moves, pseudo-aphoristic cadence, template rhythm, inflated parallelism, over-neat transitions, and indefinite-pronoun gestures. They survive vocabulary changes because they are moves in prose, not magic words.
 
 **Three layers are kept distinct.** Layer A is mathematical (distributional diagnostics). Layer B is craft-pattern recognition (the AIC flag families). Layer C is voice attribution (the earned/unearned triage). The framework's value depends on not collapsing them.
 
@@ -245,4 +300,4 @@ Personal baseline corpora and generated voice profiles are not part of this repo
 
 ## Status
 
-This is a v2 rebuild of an earlier skill, with substantive expansion: a manifest validator, validation-spine infrastructure, sliding-window scope, separated character n-gram families, feature-cluster mode for voice-distance, manuscript-aggregate vocabulary audits, and a genre tolerance reference. The validation harness and length-matched bootstrap are the next architectural milestones.
+This is an active research-grade toolkit. It began as an AI-prose detection skill, but its center of gravity is now broader: voice coherence, prose transformation, validation discipline, and revision-safe restoration under explicit claim limits.
