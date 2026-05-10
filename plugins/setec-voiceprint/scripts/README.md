@@ -11,6 +11,7 @@ These scripts ask whether the prose has been smoothed into a narrower-than-typic
 | Script | Scope | Use when |
 |---|---|---|
 | `variance_audit.py` | Single document | Diagnostic on one chapter or passage |
+| `sliding_window_heatmap.py` | Single document, post-`variance_audit` | Localizing where in the document compression bands fire — sparkline + band tape + hot-zones in word coordinates + per-signal × per-window grid (cathedral upgrade #5 finisher) |
 | `manuscript_audit.py` | Whole manuscript (multi-chapter) | Surfacing manuscript-wide patterns and outlier chapters |
 | `repetition_audit.py` | Single document, vocabulary level | Layer A flagged lexical compression and you want specific candidates for restoration |
 | `manuscript_repetition_audit.py` | Whole manuscript, vocabulary level | Surfacing dispersed habit-vocabulary that recurs across chapters |
@@ -64,7 +65,7 @@ Every script's JSON output carries a top-level `task_surface` field, and every m
 
 | Field value | Scripts |
 |---|---|
-| `smoothing_diagnosis` | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
+| `smoothing_diagnosis` | `variance_audit.py`, `sliding_window_heatmap.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
 | `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `pov_voice_profile.py`, `voice_validation_harness.py` |
 | `validation` | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py` |
 | `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass), `restoration_packet.py` (metric-targeted revision packets), `before_after_restoration.py` (post-check loop); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`, and `references/metric-targeted-restoration.md` |

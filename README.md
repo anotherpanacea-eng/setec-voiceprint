@@ -46,6 +46,7 @@ setec-voiceprint/
 ├── scripts/
 │   ├── README.md                       script catalog and usage
 │   ├── variance_audit.py               Layer A computation; sliding-window mode
+│   ├── sliding_window_heatmap.py       sliding-window output → markdown localization heatmap
 │   ├── manuscript_audit.py             cross-chapter Layer A dashboard
 │   ├── repetition_audit.py             vocabulary over-representation against external baseline
 │   ├── manuscript_repetition_audit.py  manuscript-aggregate vocabulary audit
