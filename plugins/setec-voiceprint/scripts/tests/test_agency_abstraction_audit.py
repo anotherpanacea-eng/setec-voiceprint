@@ -209,6 +209,63 @@ class TestCli:
         assert rc == 2
 
 
+# ---------- 1.34.2 baseline ingestion hardening ----------------
+
+
+class TestBaselineHardening:
+    """1.34.2 fixes the agency baseline ingestion to match the
+    paragraph / discourse conventions: validate dir, surface
+    skipped files, exclude target overlap, anonymize filenames."""
+
+    def test_nonexistent_baseline_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            aa.audit_baseline_agency(str(tmp_path / "no_such_dir"))
+
+    def test_target_overlap_excluded(self, tmp_path, capsys):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        target = base / "draft.txt"
+        target.write_text(_CONCRETE_PROSE, encoding="utf-8")
+        (base / "other.txt").write_text(_CONCRETE_PROSE, encoding="utf-8")
+        block = aa.audit_baseline_agency(
+            str(base), target_path=target,
+        )
+        assert block["n_files"] == 1
+        captured = capsys.readouterr()
+        assert "draft.txt" in captured.err
+
+    def test_filenames_anonymized_by_default(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        (base / "client_brief_2024.txt").write_text(
+            _CONCRETE_PROSE, encoding="utf-8",
+        )
+        block = aa.audit_baseline_agency(str(base))
+        for s in block["per_file_summaries"]:
+            assert "client_brief" not in s["file"]
+            assert s["file"].startswith("baseline_")
+        assert block["include_filenames"] is False
+
+    def test_filenames_opt_in(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        (base / "client_brief.txt").write_text(
+            _CONCRETE_PROSE, encoding="utf-8",
+        )
+        block = aa.audit_baseline_agency(
+            str(base), include_filenames=True,
+        )
+        names = [s["file"] for s in block["per_file_summaries"]]
+        assert "client_brief.txt" in names
+
+    def test_skipped_files_recorded(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        (base / "empty.txt").write_text("", encoding="utf-8")
+        block = aa.audit_baseline_agency(str(base))
+        assert block["n_skipped"] >= 1
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

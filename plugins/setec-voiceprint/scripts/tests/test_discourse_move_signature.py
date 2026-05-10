@@ -250,6 +250,72 @@ class TestCli:
         assert rc == 2
 
 
+# ---------- 1.34.2 baseline ingestion hardening ----------------
+
+
+class TestBaselineHardening:
+    """1.34.2 fixes the same baseline-ingestion footguns paragraph_audit
+    fixed in 1.34.1: validate dir, surface skipped files, exclude
+    target overlap, anonymize filenames by default."""
+
+    def test_nonexistent_baseline_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            dms.audit_baseline_discourse(
+                str(tmp_path / "no_such_dir"),
+            )
+
+    def test_target_overlap_excluded(self, tmp_path, capsys):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        text = (
+            "However, this is mixed. Therefore, be cautious. "
+            "For example, the 2023 study found a drop. " * 5
+        )
+        target = base / "draft.txt"
+        target.write_text(text, encoding="utf-8")
+        (base / "other.txt").write_text(text, encoding="utf-8")
+        block = dms.audit_baseline_discourse(
+            str(base), target_path=target,
+        )
+        assert block["n_files"] == 1
+        captured = capsys.readouterr()
+        assert "draft.txt" in captured.err
+
+    def test_filenames_anonymized_by_default(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        text = "However, this is mixed. " * 30
+        (base / "client_secret_brief.txt").write_text(
+            text, encoding="utf-8",
+        )
+        block = dms.audit_baseline_discourse(str(base))
+        for s in block["per_file_summaries"]:
+            assert "client_secret" not in s["file"]
+            assert s["file"].startswith("baseline_")
+        assert block["include_filenames"] is False
+
+    def test_filenames_opt_in(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        text = "However, this is mixed. " * 30
+        (base / "client_brief.txt").write_text(
+            text, encoding="utf-8",
+        )
+        block = dms.audit_baseline_discourse(
+            str(base), include_filenames=True,
+        )
+        names = [s["file"] for s in block["per_file_summaries"]]
+        assert "client_brief.txt" in names
+
+    def test_skipped_files_recorded(self, tmp_path):
+        base = tmp_path / "baseline"
+        base.mkdir()
+        # Empty file → audit unavailable.
+        (base / "empty.txt").write_text("", encoding="utf-8")
+        block = dms.audit_baseline_discourse(str(base))
+        assert block["n_skipped"] >= 1
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

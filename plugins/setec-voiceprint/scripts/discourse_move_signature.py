@@ -309,24 +309,64 @@ def audit_baseline_discourse(
     strip_rules: str | Iterable[str] | None = None,
     strip_aggressive: bool = False,
     strip_masking: str | Iterable[str] | None = None,
+    target_path: Path | None = None,
+    include_filenames: bool = False,
 ) -> dict[str, Any]:
     """Run the discourse audit across every text file in
     ``baseline_dir``; return aggregate per-category mean+sd plus
     pooled bigram counts.
+
+    1.34.2 hardening (mirrors paragraph_audit / general_imposters
+    conventions):
+      * ``baseline_dir`` must exist; raises ``FileNotFoundError``.
+      * Unreadable / unaudited files surface in ``skipped_files``.
+      * When ``target_path`` is supplied, baseline entries whose
+        resolved path matches are excluded with a stderr notice.
+      * Per-file summaries use anonymized ``baseline_001`` IDs by
+        default (filenames often carry private metadata); opt in
+        via ``include_filenames=True``.
     """
     base = Path(baseline_dir)
+    if not base.is_dir():
+        raise FileNotFoundError(
+            f"Baseline directory not found or not a directory: "
+            f"{baseline_dir}"
+        )
     paths = (
         sorted(base.glob("*.txt")) + sorted(base.glob("*.md"))
     )
     paths = [p for p in paths if not p.name.lower().startswith("readme")]
 
+    target_resolved: Path | None = None
+    if target_path is not None:
+        try:
+            target_resolved = Path(target_path).resolve()
+        except OSError:
+            target_resolved = None
+
+    skipped_files: list[dict[str, str]] = []
     per_file: list[dict[str, Any]] = []
     pooled_density_by_cat: dict[str, list[float]] = {c: [] for c in CATEGORIES}
     pooled_bigrams: Counter[str] = Counter()
+    next_anon_id = 1
     for p in paths:
+        if target_resolved is not None:
+            try:
+                if p.resolve() == target_resolved:
+                    sys.stderr.write(
+                        f"  excluding {p.name} from discourse "
+                        "baseline (matches target path)\n"
+                    )
+                    continue
+            except OSError:
+                pass
         try:
             raw = p.read_text(encoding="utf-8", errors="ignore")
-        except OSError:
+        except OSError as exc:
+            skipped_files.append({
+                "name": p.name if include_filenames else f"file_{len(skipped_files):03d}",
+                "reason": f"unreadable: {exc}",
+            })
             continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
@@ -336,13 +376,22 @@ def audit_baseline_discourse(
         )
         a = audit_discourse_moves(cleaned)
         if not a.get("available"):
+            skipped_files.append({
+                "name": p.name if include_filenames else f"file_{next_anon_id:03d}",
+                "reason": f"audit unavailable: {a.get('reason', 'unknown')}",
+            })
+            next_anon_id += 1
             continue
         per_file.append({
-            "file": p.name,
+            "file": (
+                p.name if include_filenames
+                else f"baseline_{next_anon_id:03d}"
+            ),
             "category_densities_per_1k": a["category_densities_per_1k"],
             "marked_only_entropy_bits": a["marked_only_entropy_bits"],
             "total_marker_density_per_1k": a["total_marker_density_per_1k"],
         })
+        next_anon_id += 1
         for cat, density in a["category_densities_per_1k"].items():
             pooled_density_by_cat[cat].append(density)
         for bigram_str, count in a["move_sequence_bigrams"].items():
@@ -366,9 +415,12 @@ def audit_baseline_discourse(
 
     return {
         "n_files": len(per_file),
+        "n_skipped": len(skipped_files),
+        "skipped_files": skipped_files,
         "per_file_summaries": per_file,
         "aggregate_density_by_category": aggregate,
         "pooled_bigrams": dict(pooled_bigrams),
+        "include_filenames": include_filenames,
     }
 
 
@@ -544,6 +596,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--strip-masking",
         help="Optional masking profile (prose_body_only, etc.).",
     )
+    p.add_argument(
+        "--include-baseline-filenames", action="store_true",
+        help=(
+            "Include raw baseline filenames in `per_file_summaries` "
+            "(privacy default: anonymized as `baseline_001`)."
+        ),
+    )
     return p
 
 
@@ -565,14 +624,25 @@ def main(argv: list[str] | None = None) -> int:
 
     baseline_comparison: dict[str, Any] | None = None
     if args.baseline_dir:
-        block = audit_baseline_discourse(
-            args.baseline_dir,
-            allow_non_prose=args.allow_non_prose,
-            strip_rules=args.strip_rules,
-            strip_aggressive=args.strip_aggressive,
-            strip_masking=args.strip_masking,
-        )
+        try:
+            block = audit_baseline_discourse(
+                args.baseline_dir,
+                allow_non_prose=args.allow_non_prose,
+                strip_rules=args.strip_rules,
+                strip_aggressive=args.strip_aggressive,
+                strip_masking=args.strip_masking,
+                target_path=target_path,
+                include_filenames=args.include_baseline_filenames,
+            )
+        except FileNotFoundError as exc:
+            sys.stderr.write(f"  baseline error: {exc}\n")
+            return 2
         audit["baseline_block"] = block
+        if block.get("n_files", 0) == 0:
+            sys.stderr.write(
+                f"  baseline at {args.baseline_dir} produced 0 "
+                "usable files; baseline comparison skipped.\n"
+            )
         baseline_comparison = compare_to_baseline(audit, block)
         audit["baseline_comparison"] = baseline_comparison
 

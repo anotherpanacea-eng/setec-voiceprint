@@ -498,6 +498,188 @@ class TestAgencyFolding:
         assert "concrete_detail" in missing_text
 
 
+# ---------- 1.34.2 reviewer-flagged P2 fixes -----------------------
+
+
+class TestMddDriftInference:
+    """Pre-1.34.2: ANY rhythm flag (burstiness_B, sentence_length_sd,
+    fkgl_sd, mdd_sd) set BOTH `sentence_variance=low` AND
+    `mdd_variance=low`. Reviewer reproduced burstiness_B alone
+    producing an MDD observation. Fix: sentence-rhythm flags fire
+    only `sentence_variance`; mdd_variance fires only when
+    `mdd_sd` itself fires."""
+
+    def test_burstiness_alone_does_not_fire_mdd(self):
+        obs = ca.extract_observations(
+            variance=_variance(flagged=["burstiness_B"]),
+        )
+        assert obs.get("sentence_variance") == "low"
+        assert "mdd_variance" not in obs, (
+            "burstiness_B should not produce an MDD observation"
+        )
+
+    def test_mdd_sd_alone_fires_mdd_not_sentence(self):
+        obs = ca.extract_observations(
+            variance=_variance(flagged=["mdd_sd"]),
+        )
+        assert obs.get("mdd_variance") == "low"
+        # Sentence-variance shouldn't fire from mdd_sd alone either.
+        assert "sentence_variance" not in obs
+
+    def test_both_fire_when_both_signals_fire(self):
+        obs = ca.extract_observations(
+            variance=_variance(flagged=["burstiness_B", "mdd_sd"]),
+        )
+        assert obs.get("sentence_variance") == "low"
+        assert obs.get("mdd_variance") == "low"
+
+    def test_fkgl_sd_fires_sentence_not_mdd(self):
+        obs = ca.extract_observations(
+            variance=_variance(flagged=["fkgl_sd"]),
+        )
+        assert obs.get("sentence_variance") == "low"
+        assert "mdd_variance" not in obs
+
+
+class TestJsonInputHardening:
+    """Pre-1.34.2: _read_json_or_none returned None on missing or
+    invalid paths, making typos look like deliberately absent
+    evidence. Fix: user-supplied paths raise; only omitted flags
+    return None."""
+
+    def test_none_path_returns_none(self):
+        assert ca._read_json_or_none(None) is None
+
+    def test_missing_file_raises(self, tmp_path):
+        with pytest.raises(FileNotFoundError):
+            ca._read_json_or_none(str(tmp_path / "no_such.json"))
+
+    def test_empty_string_raises(self):
+        with pytest.raises(ValueError):
+            ca._read_json_or_none("")
+
+    def test_invalid_json_raises(self, tmp_path):
+        bad = tmp_path / "bad.json"
+        bad.write_text("{ this is not json", encoding="utf-8")
+        with pytest.raises(ValueError):
+            ca._read_json_or_none(str(bad))
+
+    def test_valid_json_loads(self, tmp_path):
+        good = tmp_path / "ok.json"
+        good.write_text('{"a": 1}', encoding="utf-8")
+        assert ca._read_json_or_none(str(good)) == {"a": 1}
+
+    def test_cli_returns_2_on_missing_input(self, tmp_path, capsys):
+        # User supplies --variance-json with a path that doesn't
+        # exist. The CLI should fail loudly (rc=2) rather than
+        # treating it as deliberately absent.
+        rc = ca.main([
+            "--variance-json", str(tmp_path / "nope.json"),
+        ])
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert "not found" in captured.err.lower() or "input error" in captured.err.lower()
+
+    def test_cli_returns_2_on_invalid_json(self, tmp_path, capsys):
+        bad = tmp_path / "bad.json"
+        bad.write_text("{ malformed", encoding="utf-8")
+        rc = ca.main([
+            "--variance-json", str(bad),
+        ])
+        assert rc == 2
+
+
+class TestIdiolectSurvival:
+    """1.34.2: previously the matrix referenced `idiolect_survival`
+    and the missing-evidence list told users to provide
+    idiolect_detector output, but extract_observations had no path
+    for it. Fix: --idiolect-json + --target-text inputs feed the
+    new _idiolect_survival_rate computation."""
+
+    def test_high_survival_when_phrases_appear_in_target(self):
+        idiolect = {
+            "preservation_list": [
+                {"phrase": "snowdrift"},
+                {"phrase": "gathering dusk"},
+                {"phrase": "kerosene lamp"},
+                {"phrase": "stone wall"},
+                {"phrase": "narrow path"},
+            ],
+        }
+        target = (
+            "She walked through the snowdrift toward the gathering "
+            "dusk. The kerosene lamp burned in the kitchen. Beyond "
+            "the stone wall the narrow path turned sharply."
+        )
+        rate = ca._idiolect_survival_rate(idiolect, target)
+        assert rate == 1.0
+        obs = ca.extract_observations(
+            idiolect=idiolect, target_text=target,
+        )
+        assert obs["idiolect_survival"] == "high"
+
+    def test_low_survival_when_phrases_absent(self):
+        idiolect = {
+            "preservation_list": [
+                {"phrase": "snowdrift"},
+                {"phrase": "gathering dusk"},
+                {"phrase": "kerosene lamp"},
+                {"phrase": "stone wall"},
+                {"phrase": "narrow path"},
+            ],
+        }
+        target = (
+            "The implementation requires consideration of multiple "
+            "framework dimensions and stakeholder challenges."
+        )
+        rate = ca._idiolect_survival_rate(idiolect, target)
+        assert rate == 0.0
+        obs = ca.extract_observations(
+            idiolect=idiolect, target_text=target,
+        )
+        assert obs["idiolect_survival"] == "low"
+
+    def test_unobserved_when_no_target_text(self):
+        idiolect = {"preservation_list": [{"phrase": "snowdrift"}]}
+        obs = ca.extract_observations(idiolect=idiolect)
+        # Without target_text the survival can't be computed.
+        assert "idiolect_survival" not in obs
+
+    def test_unobserved_when_no_preservation_list(self):
+        idiolect = {"preservation_list": []}
+        obs = ca.extract_observations(
+            idiolect=idiolect, target_text="some text",
+        )
+        assert "idiolect_survival" not in obs
+
+    def test_string_phrase_format_supported(self):
+        # Some idiolect outputs may use plain strings instead of dicts.
+        idiolect = {
+            "preservation_list": ["snowdrift", "kerosene lamp"],
+        }
+        target = "She walked through the snowdrift."
+        rate = ca._idiolect_survival_rate(idiolect, target)
+        assert rate == 0.5
+
+    def test_ambiguous_range_unobserved(self):
+        # 0.3-0.6 = ambiguous → leave unobserved rather than commit.
+        idiolect = {
+            "preservation_list": [
+                {"phrase": "snowdrift"},
+                {"phrase": "kerosene lamp"},
+            ],
+        }
+        target = "She walked through the snowdrift."
+        # 1 of 2 phrases survive → 0.5, ambiguous range.
+        rate = ca._idiolect_survival_rate(idiolect, target)
+        assert rate == 0.5
+        obs = ca.extract_observations(
+            idiolect=idiolect, target_text=target,
+        )
+        # 0.5 is in [0.3, 0.6) — neither high nor low.
+        assert "idiolect_survival" not in obs
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

@@ -250,6 +250,39 @@ def _extract_band_signal(
     return "unknown"
 
 
+def _idiolect_survival_rate(
+    idiolect: dict[str, Any], target_text: str,
+) -> float | None:
+    """Compute the fraction of idiolect preservation-list phrases
+    that appear in the target text. Case-insensitive substring
+    match — same convention `before_after_restoration.py` uses
+    for the preservation-list survival check.
+
+    Returns ``None`` when the preservation list is empty (no
+    signal) or the target text is empty. Returns a float in
+    [0, 1] otherwise.
+    """
+    preservation = idiolect.get("preservation_list") or []
+    if not preservation or not target_text:
+        return None
+    target_lower = target_text.lower()
+    matches = 0
+    for item in preservation:
+        if isinstance(item, dict):
+            phrase = (
+                item.get("phrase")
+                or item.get("display")
+                or ""
+            )
+        elif isinstance(item, str):
+            phrase = item
+        else:
+            phrase = ""
+        if phrase and phrase.lower() in target_lower:
+            matches += 1
+    return matches / len(preservation)
+
+
 def extract_observations(
     *,
     variance: dict[str, Any] | None = None,
@@ -258,6 +291,8 @@ def extract_observations(
     discourse: dict[str, Any] | None = None,
     aic: dict[str, Any] | None = None,
     agency: dict[str, Any] | None = None,
+    idiolect: dict[str, Any] | None = None,
+    target_text: str | None = None,
 ) -> dict[str, str]:
     """Reduce the input audit JSONs to a flat {signal: direction}
     dict. Direction values: "high" / "low" / "uniform" / "localized" /
@@ -269,12 +304,21 @@ def extract_observations(
     if variance:
         compression = variance.get("compression") or {}
         flagged = set(compression.get("flagged_signals") or [])
-        # Sentence rhythm — signal "low" if any rhythm flag fired,
-        # because the registry is "lt"-direction (compressed when
-        # value low) for these.
-        rhythm = {"burstiness_B", "sentence_length_sd", "fkgl_sd", "mdd_sd"}
-        if flagged & rhythm:
+        # Sentence-rhythm signals (1.34.2 fix): pre-1.34.2 ANY rhythm
+        # flag — including plain `burstiness_B` or `sentence_length_sd`
+        # — set BOTH `sentence_variance=low` and `mdd_variance=low`,
+        # giving ai_smoothing extra evidence it didn't earn from a
+        # signal that didn't fire. Now: sentence-rhythm flags fire
+        # `sentence_variance`; only `mdd_sd` itself fires
+        # `mdd_variance`. The two are separate observations in the
+        # confounder matrix and shouldn't co-trigger off the same
+        # surface flag.
+        sentence_rhythm = {
+            "burstiness_B", "sentence_length_sd", "fkgl_sd",
+        }
+        if flagged & sentence_rhythm:
             obs["sentence_variance"] = "low"
+        if "mdd_sd" in flagged:
             obs["mdd_variance"] = "low"
         if flagged & {"mtld", "mattr", "shannon_entropy", "yules_k"}:
             obs["lexical_diversity"] = "low"
@@ -378,6 +422,22 @@ def extract_observations(
             )
             if max_d >= 1.5:
                 obs["aic_pattern_density"] = "high"
+
+    # Idiolect detector (1.34.2): when the user supplies an idiolect
+    # JSON output AND the target text, compute idiolect-survival
+    # rate as the fraction of preservation-list phrases that appear
+    # in the target. High = voice survived; low = voice eroded.
+    # Without target_text we have no survival metric and leave the
+    # signal unobserved (consistent with the missing-evidence
+    # discipline).
+    if idiolect and target_text:
+        survival_rate = _idiolect_survival_rate(idiolect, target_text)
+        if survival_rate is not None:
+            if survival_rate >= 0.6:
+                obs["idiolect_survival"] = "high"
+            elif survival_rate < 0.3:
+                obs["idiolect_survival"] = "low"
+            # 0.3-0.6 leaves the signal unobserved — ambiguous range.
 
     # Agency / abstraction audit (Release 4 strengthening complement)
     if agency:
@@ -528,7 +588,11 @@ def find_missing_evidence(
     important_signals = {
         "pos_bigram_kl": "no baseline supplied or POS-bigram KL not computed",
         "char_ngram_delta": "no voice-distance comparison provided",
-        "idiolect_survival": "no idiolect_detector output provided",
+        "idiolect_survival": (
+            "supply both --idiolect-json (idiolect_detector output) "
+            "and --target-text (target file path) so the audit can "
+            "compute the preservation-list survival rate"
+        ),
         "punctuation_regularity": "no punctuation-cadence audit available (ROADMAP Tier-2 promotion)",
         "register_match": "no register classification or baseline match supplied",
         "aic_pattern_density": "no AIC pattern audit provided",
@@ -556,6 +620,8 @@ def analyze_confounders(
     discourse: dict[str, Any] | None = None,
     aic: dict[str, Any] | None = None,
     agency: dict[str, Any] | None = None,
+    idiolect: dict[str, Any] | None = None,
+    target_text: str | None = None,
 ) -> dict[str, Any]:
     """Top-level entry point. Reads input audit JSONs, extracts
     observations, scores confounders, finds distinguishing
@@ -575,6 +641,8 @@ def analyze_confounders(
         discourse=discourse,
         aic=aic,
         agency=agency,
+        idiolect=idiolect,
+        target_text=target_text,
     )
     ranked = score_confounders(observations)
     distinguishing = find_distinguishing_evidence(observations, ranked)
@@ -595,6 +663,8 @@ def analyze_confounders(
             "discourse": discourse is not None,
             "aic": aic is not None,
             "agency": agency is not None,
+            "idiolect": idiolect is not None,
+            "target_text": target_text is not None,
         },
     }
 
@@ -762,13 +832,38 @@ def render_report(report: dict[str, Any]) -> str:
 
 
 def _read_json_or_none(path: str | None) -> dict[str, Any] | None:
-    if not path:
+    """Load a user-supplied input JSON.
+
+    Distinguishes "user didn't pass this flag" (returns None — OK to
+    proceed without this evidence) from "user passed a path that's
+    missing or invalid" (raises — a typo shouldn't quietly become
+    deliberately-absent evidence). Pre-1.34.2 the function returned
+    None on any failure, which made `--agency-json /typo/path.json`
+    look like the user intentionally omitted agency evidence.
+    """
+    if path is None:
         return None
+    if not path:
+        # Empty string is also user-supplied; treat as a typo.
+        raise ValueError(
+            "Empty path supplied to a JSON input flag; pass a real "
+            "path or omit the flag entirely."
+        )
     p = Path(path).expanduser()
     if not p.is_file():
-        sys.stderr.write(f"Input not found: {path}\n")
-        return None
-    return json.loads(p.read_text(encoding="utf-8"))
+        raise FileNotFoundError(
+            f"User-supplied JSON input not found: {path}"
+        )
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"User-supplied JSON input {path} is not valid JSON: {exc}"
+        ) from exc
+    except OSError as exc:
+        raise OSError(
+            f"User-supplied JSON input {path} could not be read: {exc}"
+        ) from exc
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -805,6 +900,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--agency-json",
         help="Path to agency_abstraction_audit.py --json output.",
     )
+    p.add_argument(
+        "--idiolect-json",
+        help=(
+            "Path to idiolect_detector.py --json output. Combined "
+            "with --target-text, the audit computes the "
+            "preservation-list survival rate (fraction of idiolect "
+            "phrases that appear in the target). Required to "
+            "populate the `idiolect_survival` observation."
+        ),
+    )
+    p.add_argument(
+        "--target-text",
+        help=(
+            "Path to the target text file. Required alongside "
+            "--idiolect-json for the preservation-list survival "
+            "computation. Without it the idiolect input is read "
+            "but no survival metric is computed."
+        ),
+    )
     p.add_argument("--json", action="store_true", help="Emit JSON.")
     p.add_argument("--out", help="Write output to this path.")
     return p
@@ -812,22 +926,39 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    inputs = {
-        "variance": _read_json_or_none(args.variance_json),
-        "voice_distance": _read_json_or_none(args.voice_distance_json),
-        "paragraph": _read_json_or_none(args.paragraph_json),
-        "discourse": _read_json_or_none(args.discourse_json),
-        "aic": _read_json_or_none(args.aic_json),
-        "agency": _read_json_or_none(args.agency_json),
-    }
+    try:
+        inputs = {
+            "variance": _read_json_or_none(args.variance_json),
+            "voice_distance": _read_json_or_none(args.voice_distance_json),
+            "paragraph": _read_json_or_none(args.paragraph_json),
+            "discourse": _read_json_or_none(args.discourse_json),
+            "aic": _read_json_or_none(args.aic_json),
+            "agency": _read_json_or_none(args.agency_json),
+            "idiolect": _read_json_or_none(args.idiolect_json),
+        }
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        sys.stderr.write(f"Input error: {exc}\n")
+        return 2
+    target_text: str | None = None
+    if args.target_text:
+        target_path = Path(args.target_text).expanduser()
+        if not target_path.is_file():
+            sys.stderr.write(
+                f"--target-text not found: {args.target_text}\n"
+            )
+            return 2
+        target_text = target_path.read_text(
+            encoding="utf-8", errors="ignore",
+        )
     if all(v is None for v in inputs.values()):
         sys.stderr.write(
             "No input JSONs supplied. Pass at least one of "
             "--variance-json / --voice-distance-json / "
-            "--paragraph-json / --discourse-json / --agency-json.\n"
+            "--paragraph-json / --discourse-json / --agency-json / "
+            "--idiolect-json.\n"
         )
         return 2
-    report = analyze_confounders(**inputs)
+    report = analyze_confounders(target_text=target_text, **inputs)
     out = (
         json.dumps(report, indent=2, default=str)
         if args.json else render_report(report)
