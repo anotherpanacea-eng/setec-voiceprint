@@ -879,7 +879,12 @@ def main(argv: list[str] | None = None) -> int:
         f"  TPR @ FPR target {args.fpr_target}: "
         f"{entry['calibration']['empirical_tpr']:.4f} "
         f"(empirical FPR {entry['calibration']['empirical_fpr']:.4f})\n"
-        f"  ledger: {out_path.relative_to(REPO_ROOT)}\n"
+        # Use as_relative_path defensively — when the user runs from
+        # a worktree, the absolute out_path may not be a subpath of
+        # REPO_ROOT and `relative_to` raises. The display string is
+        # informational; falling back to the absolute path is fine.
+        f"  ledger: "
+        f"{out_path.relative_to(REPO_ROOT) if out_path.is_relative_to(REPO_ROOT) else out_path}\n"
         f"\n"
         f"Next: edit scripts/variance_audit.py and set\n"
         f"  COMPRESSION_HEURISTICS[{args.signal!r}].provenance = "

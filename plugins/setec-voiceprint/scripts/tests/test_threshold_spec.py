@@ -154,10 +154,36 @@ def test_signal_helpers_partition_the_registry() -> None:
     )
 
 
-def test_v1_registry_is_all_provisional() -> None:
-    """Until calibration toolchain runs land, every threshold should
-    carry provisional=True. This test is an early-warning when the
-    first calibrated threshold lands; flip the assertion at that
-    point."""
-    assert len(provisional_signals()) == len(COMPRESSION_HEURISTICS)
-    assert len(calibrated_signals()) == 0
+def test_calibrated_signals_carry_provenance_slugs() -> None:
+    """The first calibrated threshold landed in 1.27.0 (`burstiness_B`,
+    derived from EditLens val split). Pre-1.27.0 this test asserted
+    every signal was provisional; the v1.27.0 commit flipped it to
+    require that **calibrated** signals carry a non-None provenance
+    slug pointing at `scripts/calibration/thresholds_calibrated.json`.
+
+    Provisional signals (still-uncalibrated) must continue to carry
+    provenance=None — the ThresholdSpec dataclass enforces the
+    mutex via __post_init__.
+    """
+    provisional = provisional_signals()
+    calibrated = calibrated_signals()
+    # Together they account for every signal in the registry.
+    assert len(provisional) + len(calibrated) == len(COMPRESSION_HEURISTICS)
+    # Every calibrated signal carries a non-None provenance slug.
+    for name in calibrated:
+        spec = COMPRESSION_HEURISTICS[name]
+        assert spec.provenance is not None and spec.provenance != "", (
+            f"Calibrated signal {name!r} must carry a provenance slug"
+        )
+        assert spec.provisional is False, (
+            f"Calibrated signal {name!r} must have provisional=False"
+        )
+    # Every provisional signal carries provenance=None.
+    for name in provisional:
+        spec = COMPRESSION_HEURISTICS[name]
+        assert spec.provenance is None, (
+            f"Provisional signal {name!r} must have provenance=None"
+        )
+        assert spec.provisional is True, (
+            f"Provisional signal {name!r} must have provisional=True"
+        )

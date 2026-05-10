@@ -265,10 +265,18 @@ def _stub_args(**overrides) -> argparse.Namespace:
 
 def test_survey_one_signal_returns_row_with_metrics():
     """Survey one signal with a stub derive_threshold that returns a
-    canned entry; verify the row is populated correctly."""
+    canned entry; verify the row is populated correctly.
+
+    Uses raw AUC=0.15 against the `lt`-direction `burstiness_B`
+    signal so direction-aware AUC = 1 − 0.15 = 0.85 ≥ 0.5 and
+    gate 1 (polarity) passes. Pre-1.26.1 the test used raw AUC=0.85
+    which silently passed the polarity gate when the gate logic was
+    direction-blind; the maintainer's first real calibration run
+    surfaced the bug.
+    """
     parent = _stub_args()
     fake_entry = _entry(
-        "burstiness_B", auc=0.85, threshold=0.42, tpr=0.60, n_neg=200,
+        "burstiness_B", auc=0.15, threshold=0.42, tpr=0.60, n_neg=200,
     )
     with mock.patch.object(cs.ct, "load_or_score_corpus",
                            return_value=([], {}, False)), \
@@ -280,11 +288,12 @@ def test_survey_one_signal_returns_row_with_metrics():
         )
     assert row.signal == "burstiness_B"
     assert row.error is None
-    assert row.auc == 0.85
+    assert row.auc == 0.15  # raw
+    assert abs(row.direction_aware_auc - 0.85) < 1e-9  # 1 - 0.15 for lt
     assert row.threshold == 0.42
     assert row.tpr_at_threshold == 0.60
     assert row.n_neg == 200
-    # Gates evaluated.
+    # Gates evaluated. Polarity matches because da_AUC ≥ 0.5.
     assert row.gates.polarity_matches is True
     assert row.gates.enough_negatives is True
     assert row.gates.interpretable_threshold is True
@@ -357,25 +366,26 @@ def test_run_survey_honors_explicit_signal_list():
 def test_run_survey_ranks_passing_signals_above_failing():
     """Rows with more pass-glyphs come first. A signal with all
     automatable gates passing should sort above one with a polarity
-    failure."""
+    failure.
+
+    Direction matters in 1.26.1+: pick signals deliberately so one
+    has matching polarity and the other doesn't, regardless of
+    registry insertion order.
+    """
     parent = _stub_args()
 
-    def fake_derive(args):
-        if args.signal == "good":
-            return _entry("good", auc=0.85, tpr=0.60, fpr_resolution=0.005)
-        else:
-            return _entry("bad", auc=0.30)  # polarity fails
-
-    # Survey a custom pair with mocked registry. Just stub the
-    # registry membership check by calling run_survey with explicit
-    # signals that exist in COMPRESSION_HEURISTICS.
-    keys = list(COMPRESSION_HEURISTICS.keys())[:2]
-    a, b = keys
+    # `good` is a `gt` signal with raw AUC 0.85 → da_AUC 0.85 →
+    # polarity matches. `bad` is the same `gt` signal with raw AUC
+    # 0.30 → da_AUC 0.30 → polarity fails. Survey runs both signals
+    # but the second call returns a different entry shape via the
+    # dispatch lambda.
+    a = "connective_density"  # direction = "gt"
+    b = "yules_k"             # direction = "gt"
 
     def fake_dispatch(args):
         if args.signal == a:
             return _entry(a, auc=0.85, tpr=0.60, fpr_resolution=0.005)
-        return _entry(b, auc=0.30)
+        return _entry(b, auc=0.30)  # da_AUC 0.30 < 0.5 → polarity fails
 
     with mock.patch.object(cs.ct, "load_or_score_corpus",
                            return_value=([], {}, False)), \

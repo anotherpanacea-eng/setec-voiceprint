@@ -1303,9 +1303,21 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     # (verified on pre-AI testimony at B = -0.40). Threshold tightened to -0.4
     # so the heuristic catches the genuine AI mode-collapse case (B < -0.4
     # in the smoke-test AI passage) while sparing essayistic human registers.
+    # Calibrated 2026-05-10 against EditLens val split (1506 student
+    # essays, 753 AI / 753 ESL human). Polarity matches the registry
+    # hypothesis (da_AUC 0.683); calibrated threshold is more
+    # conservative than the prior heuristic (-0.40) — catches 7.0%
+    # of AI essays at FPR 0.93%. In-sample only; not yet validated
+    # against the canonical SETEC registers. See provenance entry
+    # `editlens_val_burstiness_B_fpr0.01_2026-05-10` in
+    # `scripts/calibration/thresholds_calibrated.json` and the
+    # accompanying section in `scripts/calibration/PROVENANCE.md`.
     "burstiness_B": ThresholdSpec(
         signal_path="tier1.sentence_length.burstiness_B",
-        value=-0.4, direction="lt", weight=2.0, length_floor=200,
+        value=-0.622724270454707, direction="lt",
+        weight=2.0, length_floor=200,
+        provisional=False,
+        provenance="editlens_val_burstiness_B_fpr0.01_2026-05-10",
     ),
     # Connective density: AI-prose runs 25-50 per 1000 tokens; humans 5-15.
     "connective_density": ThresholdSpec(

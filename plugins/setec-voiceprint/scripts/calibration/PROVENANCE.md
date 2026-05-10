@@ -122,7 +122,20 @@ The 9 corpus-independent regression tests in `scripts/tests/test_calibration_pro
 
 ## Calibrated thresholds
 
-_(empty)_
+## editlens_val_burstiness_B_fpr0.01_2026-05-10
+
+- **Signal:** `burstiness_B` (direction `lt`)
+- **Derived value:** `-0.622724270454707`
+- **Corpus:** EditLens val split (`pangramlabs/EditLens` GitHub mirror, commit `05a588f15d792330ccaf91be8ee4fdb54ce26835`)
+- **License:** CC BY-NC-SA 4.0 (local-only use; not redistributed)
+- **Calibration:** direction-aware FPR-target sweep at FPR ≤ `0.01`
+- **Split role:** calibration_only (in-sample; heldout test split is roadmap)
+- **FPR resolution:** `1/n_neg = 0.001328` (`753` negatives)
+- **Empirical:** AUC `0.317` (raw) / `0.683` (direction-aware), AP `0.388`, TPR `0.0704` `[0.0524, 0.0889]` at FPR `0.0093` `[0.0028, 0.0167]`, precision `0.883` `[0.794, 0.958]`
+- **CI method:** fixed-threshold paired bootstrap (`2000` resamples, seed `42`)
+- **SETEC commit:** `dee8f6f858ffe0786d84767bd3f96cf83d3aa2e5`
+- **Date:** 2026-05-10
+- **Notes:** First committed calibration against the SETEC framework. Polarity matches the registry's smoothing-diagnosis hypothesis (AI prose has lower sentence-length variance than human prose) on this corpus — direction-aware AUC 0.683 confirms a moderate-strength real signal. The calibrated threshold is more *conservative* than the prior heuristic (-0.622 < -0.40 means a stricter "below threshold" condition), catching 7.0% of AI essays at the cost of 0.93% false positives on human writers, with a precision of 88% at the operating point. The corpus is the EditLens val split — predominantly student-essay register, with the human comparator being ESL student writing. Generalization to the canonical SETEC registers (literary fiction, blog essay, academic philosophy) is **unverified**; out-of-corpus performance is the heldout-split roadmap deliverable. Five other registry signals showed direction-aware AUC ≥ 0.5 on this corpus (`sentence_length_sd`, `adjacent_cosine_sd`, `fkgl_sd`, `mdd_sd`, `connective_density`) but failed gate 4 (TPR floor at FPR ≤ 0.01); five signals (`mtld`, `mattr`, `shannon_entropy`, `yules_k`, `adjacent_cosine_mean`) had inverted polarity on this corpus — see `references/calibration-findings-2026-05-10.md` for the polarity-inversion analysis. The bootstrap CI here is fixed-threshold paired (it bounds rate uncertainty at the chosen threshold, not selection uncertainty in the threshold itself); selection uncertainty via nested bootstrap is roadmap.
 
 ## Template for new entries
 

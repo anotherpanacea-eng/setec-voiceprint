@@ -191,13 +191,35 @@ def evaluate_gates(
     cal = entry.get("calibration") or entry.get("empirical") or {}
     sweep = entry.get("sweep") or {}
 
-    # Gate 1: polarity. AUC ≥ 0.5 in the declared direction means the
-    # signal does discriminate as the registry expects. derive_threshold
-    # already computes AUC in the registry's direction; we just check
-    # the value.
+    # Gate 1: polarity (DIRECTION-AWARE).
+    #
+    # The calibrator computes AUC via raw `roc_auc_score(labels,
+    # scores)` — direction-blind. AUC > 0.5 means positives have
+    # higher scores than negatives; AUC < 0.5 means the opposite.
+    #
+    # The registry's `direction` declares the smoothing-diagnosis
+    # hypothesis: `gt` = compressed when value HIGH (so AI > human);
+    # `lt` = compressed when value LOW (so AI < human). For polarity
+    # to *match* the hypothesis:
+    #   - direction='gt': raw AUC > 0.5 (AI has higher scores)
+    #   - direction='lt': raw AUC < 0.5 (AI has lower scores)
+    #
+    # Pre-1.26.1 this gate read AUC ≥ 0.5 for both directions, which
+    # silently passed `lt` signals whose corpus actually inverted the
+    # registry's hypothesis. The maintainer's first real calibration
+    # run on EditLens val caught this — `mtld` showed raw AUC 0.87 in
+    # `lt` direction, suggesting strong discrimination, but threshold
+    # sweeps at the registry's direction returned TPR ≈ 0 because AI
+    # essays were in fact HIGHER on mtld than human ESL essays. Real
+    # finding, surfaced once the gate read direction-aware.
     auc = cal.get("auc")
     if isinstance(auc, (int, float)):
-        g.polarity_matches = float(auc) >= 0.5
+        if direction == "gt":
+            g.polarity_matches = float(auc) >= 0.5
+        elif direction == "lt":
+            g.polarity_matches = float(auc) <= 0.5
+        else:
+            g.polarity_matches = None
     else:
         g.polarity_matches = None
 
@@ -266,11 +288,21 @@ class SurveyRow:
     signal name + direction + AUC / AP for ranking sense + threshold
     + TPR-at-threshold + FPR-at-threshold + n_neg + fpr_resolution
     + the gate booleans.
+
+    ``direction_aware_auc`` is the direction-flipped AUC: for `gt`
+    direction it's the raw AUC; for `lt` direction it's ``1 - raw
+    AUC``. ``da_auc ≥ 0.5`` ↔ polarity matches the registry's
+    hypothesis. The maintainer reads this column to compare
+    discrimination strength across signals on a consistent scale —
+    raw AUC alone is misleading for `lt` signals because high values
+    can indicate either matching polarity (good) or inverted polarity
+    (bad), and you can't tell from the number alone.
     """
     signal: str
     direction: str
     heuristic_value: float | None
     auc: float | None = None
+    direction_aware_auc: float | None = None
     ap: float | None = None
     threshold: float | None = None
     tpr_at_threshold: float | None = None
@@ -288,6 +320,7 @@ class SurveyRow:
             "direction": self.direction,
             "heuristic_value": self.heuristic_value,
             "auc": self.auc,
+            "direction_aware_auc": self.direction_aware_auc,
             "ap": self.ap,
             "threshold": self.threshold,
             "tpr_at_threshold": self.tpr_at_threshold,
@@ -393,6 +426,14 @@ def survey_one_signal(
     cal = entry.get("calibration") or entry.get("empirical") or {}
     sweep = entry.get("sweep") or {}
     row.auc = cal.get("auc")
+    # Direction-aware AUC for polarity reading — same value the gate
+    # uses, surfaced so the maintainer compares signals on a
+    # consistent "matches/inverts" scale.
+    if isinstance(row.auc, (int, float)):
+        if direction == "gt":
+            row.direction_aware_auc = float(row.auc)
+        elif direction == "lt":
+            row.direction_aware_auc = 1.0 - float(row.auc)
     row.ap = cal.get("ap")
     row.threshold = entry.get("derived_value") or sweep.get("threshold")
     row.tpr_at_threshold = (
@@ -479,12 +520,16 @@ def run_survey(
         rows.append(row)
 
     # Rank rows: signals that pass all evaluable gates float to the
-    # top, then by descending AUC (with None pushed to the bottom),
-    # then by descending TPR.
+    # top, then by descending direction-aware AUC (NOT raw AUC —
+    # raw is direction-blind and would put inverted-polarity
+    # signals like mtld with raw AUC 0.87 ahead of polarity-
+    # matching signals like burstiness_B with raw AUC 0.32 / da_AUC
+    # 0.68), then by descending TPR.
     def _rank_key(r: SurveyRow) -> tuple:
+        da = r.direction_aware_auc
         return (
             -r.gates.n_passes,
-            -(r.auc if r.auc is not None else -1),
+            -(da if da is not None else -1),
             -(r.tpr_at_threshold if r.tpr_at_threshold is not None else -1),
         )
     rows.sort(key=_rank_key)
@@ -573,21 +618,28 @@ def render_markdown_table(survey: dict[str, Any]) -> str:
         "Gates: 1 polarity, 2 AUC/AP not embarrassing (judgment, "
         "always shown ?), 3 enough negatives, 4 TPR ≥ floor, "
         "5 not more aggressive than heuristic.",
+        "AUC is raw `roc_auc_score` (direction-blind). da_AUC is "
+        "direction-aware: ≥0.5 means the signal's polarity matches "
+        "the registry's hypothesis (registry direction `lt` → "
+        "da_AUC = 1 − raw AUC; `gt` → da_AUC = raw AUC). Sort by "
+        "da_AUC, not raw.",
         "",
-        "| signal | dir | heur | AUC | AP | thresh | TPR | FPR | n_neg | "
+        "| signal | dir | heur | AUC | da_AUC | AP | thresh | TPR | FPR | n_neg | "
         "1 | 2 | 3 | 4 | 5 |",
-        "|---|:-:|---:|---:|---:|---:|---:|---:|---:|"
+        "|---|:-:|---:|---:|---:|---:|---:|---:|---:|---:|"
         ":-:|:-:|:-:|:-:|:-:|",
     ])
     for r in ok_rows:
         gates = r["gates"]
         lines.append(
-            "| `{signal}` | {dir} | {heur} | {auc} | {ap} | {thr} | "
-            "{tpr} | {fpr} | {nneg} | {g1} | {g2} | {g3} | {g4} | {g5} |".format(
+            "| `{signal}` | {dir} | {heur} | {auc} | {da_auc} | {ap} | "
+            "{thr} | {tpr} | {fpr} | {nneg} | "
+            "{g1} | {g2} | {g3} | {g4} | {g5} |".format(
                 signal=r["signal"],
                 dir=r["direction"],
                 heur=_fmt(r["heuristic_value"]),
                 auc=_fmt(r["auc"]),
+                da_auc=_fmt(r.get("direction_aware_auc")),
                 ap=_fmt(r["ap"]),
                 thr=_fmt(r["threshold"]),
                 tpr=_fmt(r["tpr_at_threshold"]),

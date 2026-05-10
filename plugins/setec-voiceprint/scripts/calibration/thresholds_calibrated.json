@@ -1,1 +1,50 @@
-[]
+[
+  {
+    "slug": "editlens_val_burstiness_B_fpr0.01_2026-05-10",
+    "signal": "burstiness_B",
+    "signal_path": "tier1.sentence_length.burstiness_B",
+    "direction": "lt",
+    "derived_value": -0.622724270454707,
+    "corpus": {
+      "name": "manifest_val.jsonl",
+      "source": "ai-prose-baselines-private/editlens/manifest_val.jsonl",
+      "revision": "05a588f15d792330ccaf91be8ee4fdb54ce26835",
+      "license": "CC BY-NC-SA 4.0",
+      "manifest_path": "ai-prose-baselines-private/editlens/manifest_val.jsonl",
+      "use": "validation"
+    },
+    "calibration": {
+      "method": "direction-aware FPR-target sweep",
+      "split_role": "calibration_only",
+      "fpr_target": 0.01,
+      "fpr_resolution": 0.0013280212483399733,
+      "n_pos": 753,
+      "n_neg": 753,
+      "empirical_fpr": 0.009296148738379814,
+      "empirical_tpr": 0.0703851261620186,
+      "empirical_precision": 0.8833333333333333,
+      "tpr_ci_95": [
+        0.0523526034475688,
+        0.08894616367229093
+      ],
+      "fpr_ci_95": [
+        0.002769324175615681,
+        0.016732096151450986
+      ],
+      "precision_ci_95": [
+        0.7941176470588235,
+        0.9583333333333334
+      ],
+      "auc": 0.31665987665098794,
+      "ap": 0.3881093769417986,
+      "ci_method": "fixed_threshold_paired_bootstrap",
+      "bootstrap_resamples": 2000,
+      "bootstrap_seed": 42,
+      "ci_note": "Pair records are dependent; CI is smoke-test diagnostic, not calibration-grade. Selection uncertainty (nested bootstrap on the threshold itself) is roadmap."
+    },
+    "setec_commit": "dee8f6f858ffe0786d84767bd3f96cf83d3aa2e5",
+    "harness_command": "python3 scripts/calibration/calibrate_thresholds.py --manifest ai-prose-baselines-private/editlens/manifest_val.jsonl --use validation --signal burstiness_B --fpr-target 0.01",
+    "derivation_date": "2026-05-10",
+    "notes": "First committed calibration. Corpus: EditLens val split (1506 essays balanced 753 ai_generated / 753 pre_ai_human, predominantly student-essay register). Polarity matches the registry hypothesis (direction-aware AUC 0.683); modest but real discrimination. Calibrated threshold (-0.6227) is more conservative than the heuristic (-0.40) — catches 7.0% of AI essays at FPR 0.93%. In-sample only; heldout split is roadmap. Not yet validated against the canonical SETEC registers (literary fiction, blog essay, academic philosophy)."
+  }
+]
