@@ -1,7 +1,7 @@
 {
   "name": "setec-voiceprint",
   "metadata": {
-    "version": "1.30.2",
+    "version": "1.30.3",
     "description": "SETEC stylometric framework: AI-prose smoothing diagnosis, voice-coherence comparison (drift, per-POV, impostor pool), manifest validation, calibration toolchain, craft restoration, impostor-pool acquisition from blogs / Blogger Takeout / online magazines / PDF libraries, and author-facing voice insights report generation."
   },
   "owner": {
@@ -12,7 +12,7 @@
     {
       "name": "setec-voiceprint",
       "source": "./plugins/setec-voiceprint",
-      "version": "1.30.2",
+      "version": "1.30.3",
       "description": "Stylometric tools for AI-prose detection and voice-coherence diagnosis. Four task surfaces: smoothing diagnosis (Layer A variance signals), voice-coherence comparison (Burrows-style Delta + cluster mode + idiolect preservation lists + voice drift tracking across time periods + per-POV voiceprints with voice-collapse detection + impostor-pool acquisition for the General Imposters method), validation (manifest integrity + corpus-hygiene gate + ROC/PR harness on smoothing and voice-coherence + voice-validation harness + calibration toolchain with provenance ledger), and craft-restoration (AIC flag families, source triage, rhetorical countermoves, metric-targeted restoration packets that translate diagnostic outputs into bounded revision-safe prompts, before/after restoration verdicts with metric-gaming detection). Python tooling spans manuscript-level audits, sliding-window localization, length-matched bootstrap percentiles, R `stylo` oracle verification, MVP empirical validation against labeled corpora, live blog acquisition (Substack / WordPress / generic-HTML / Wayback), offline Blogger Takeout import, online literary-horror magazine scraping (Nightmare, The Dark, with per-magazine modules behind a uniform CLI), and PDF library inventory + extraction (pypdf text-layer + optional ocrmypdf OCR) for the impostor pool.",
       "author": {
         "name": "anotherpanacea-eng",

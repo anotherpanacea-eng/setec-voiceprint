@@ -225,6 +225,122 @@ When the toolchain returns to surface expansion, the order is:
 
 The Tier 4 specialized surfaces (Dialogue, Narratorial Distance, Productive Roughness) ship when their domains pull on them, not on the cathedral schedule. The Tier 5 adjacent surfaces (Document Layout, Reference Ecology, Allusion Habit, Stockness) ship as separate non-voice surfaces with explicit claim-language guards, on the same demand-driven cadence. The Tier 6 deferred items are not commitments. The 2.0 refactor target (Compression-of-Choice) is the architectural horizon, not a v1 deliverable.
 
+## Trustworthiness expansion
+
+The `Stylometric surface expansion` section above catalogues *new things to measure*. This section catalogues *failure-mode control, interpretability, adversarial realism, and user workflow discipline* — the parts that stop a sophisticated stylometric tool from becoming a numerically impressive overclaimer. The shipped suite answers "what does this text look like stylometrically?" Trustworthiness work answers a different question:
+
+> Compared to which legitimate alternatives, under what evidentiary conditions, with what confounders, and what revision moves would improve the prose without gaming the instrument?
+
+That is the difference between a detector-shaped tool and a serious writing-forensics / voice-preservation system.
+
+The current suite already encodes much of this discipline at the surface level: every output carries a `task_surface` tag, the `claim_license` block names what the result does and does not entitle, `manifest_validator.py` enforces ESL ratchets, the General Imposters harness has gray-zone refusals, and the metric-targetability taxonomy in `restoration_packet.py` resists naive metric-gaming. The work below is the *systematization* of that discipline — promoting it from per-surface convention into a shared interpretive layer.
+
+### Architectural shape
+
+These additions form a layered discipline:
+
+- **Input layer.** Stylometric masking profiles (quotes, citations, boilerplate); register/genre gate; multilingual / dialect caution layer.
+- **Core layer.** Existing surfaces (smoothing diagnosis, voice coherence, GI, idiolect, AIC, chapter distinctiveness).
+- **Interpretation layer.** Confounder audit (Layer D), source-of-smoothing localization, surface-disagreement resolver, ablation reports.
+- **Output discipline.** Evidentiary conditions gate, claim license (already shipped), negative/positive controls.
+- **Validation layer.** Adversarial / paraphrase stress harness, calibration drift monitor, fairness guardrails.
+- **Author-facing layer.** Revision-risk model, semantic preservation check, draft-history analysis, known-editor profile.
+- **Research layer.** Counterfactual editing sandbox, multi-author segmentation, transformation-profile learning, house-style vs. author-voice decomposition.
+
+The lower layers run before any claim is composed; the upper layers extend what writers can do with the claim once it lands. Build order generally proceeds bottom-up, but several items are independently shippable.
+
+### Tier 1 — Trustworthiness upgrades
+
+Highest leverage. Each one immediately reduces the framework's surface area for false confidence. These are the next picks once the calibration-breadth track has more committed thresholds.
+
+- **Confounder audit (Layer D).** The most important addition on this list. The framework currently detects compression and drift but doesn't synthesize "compressed *relative to what alternative explanation*." Build a confounder signature matrix: each candidate confounder (professional copyediting, register/genre shift, legal/policy memo style, translation or ESL cleanup, dictation/transcription cleanup, house-style enforcement, developmental revision, "writing up from notes," intentional voice imitation) gets expected directions across the existing signal set (sentence-length variance, MDD variance, lexical diversity, POS-bigram KL, char n-gram Delta, punctuation cadence, idiolect survival, connective density, AIC pattern density, chapter-localization, baseline distance). Output: a *differential diagnosis*, not a verdict. "The observed signal is compatible with AI smoothing, but also compatible with professional copyediting and register shift; evidence distinguishing these is weak because no pre-edit draft, editor style baseline, or revision history was supplied." The framework's epistemic posture is that the math doesn't entitle the verdict; this audit is the formal expression of that.
+
+- **Register / genre conditioning.** The manifest carries `register` but the comparison isn't operationalized — the claim-license block already says "matched register" but nothing checks it. Build: a register classifier for target and baseline (personal essay / literary fiction / commercial fiction / academic prose / legal memo / policy memo / blog essay / newsletter / testimony / grant or report prose / journalism / marketing / social media thread / email / dialogue-heavy fiction / exposition-heavy nonfiction); a register-match indicator (weak / moderate / strong); a register-mismatch penalty on claim strength; eventually a register-conditioned threshold set once enough labeled data exists. Critical because legal / policy / testimony writing has high legitimate rates of templates, connective scaffolding, abstraction, repeated nouns, and transitional explicitness — exactly the signals AI smoothing also produces. Without register conditioning, the framework over-flags the very institutional genres professional writers actually work in.
+
+- **Stylometric masking profiles.** The existing `check_corpus.py` strips HTML / CSS / code / tables before tokenization. Expand into selectable masking profiles for the analytical pass: block quotes, inline quotations, citations, footnotes, bibliographies, legal citations, case names, statute names, headings, markdown artifacts, email headers, front matter, captions, boilerplate disclaimers, repeated institutional language, prompt remnants, LLM wrapper phrases. Modes: analyze-full, exclude-quotations, exclude-citations, exclude-headings, prose-body-only, dialogue-only, narration-only, argument-body-only, institutional-boilerplate-removed. The report should state explicitly when a finding *survives* masking ("the smoothing call drops from Moderate to Light after headings, citations, and quoted statutory language are removed") — this prevents embarrassing overclaiming on policy / legal / testimony inputs where statutory or quoted language is not the writer's voice.
+
+- **Minimum evidentiary conditions gate.** Promote the per-surface gray-zone / claim-license guards into a single front-door gate. The gate evaluates target length, baseline size, register match, baseline staleness, impostor pool breadth, contamination, quotation density, multilingual mismatch, collaborative editing, rhetorical-task mismatch, presence of pre-edit versions, and asks: *what use is this output entitled for?* Output is an **Evidentiary Posture** label, not a numerical confidence score. Possible categories: revision-only, exploratory comparison, internal triage, research-grade validation, forensic-adjacent (still non-dispositive). Protects the tool from being used the way such tools always get abused.
+
+- **Surface-disagreement resolver.** The framework runs multiple surfaces (smoothing diagnosis, voice coherence, GI, idiolect, AIC, chapter distinctiveness) and currently leaves cross-surface interpretation to the reader. Build a meta-layer that surfaces interpretable disagreement patterns: high smoothing + low voice drift → "author likely wrote it but it was heavily edited"; low smoothing + high voice drift → "genre shift, impostor, collaboration, or intentional style change"; high voice drift + high idiolect survival → "imitation, self-conscious revision, or phrase-level preservation with deeper structural change"; high POS-bigram KL + normal sentence variance → "syntactic-template shift without obvious rhythm compression"; high AIC density + normal Layer A → "rhetorical habit issue, not smoothing"; GI gray zone + high Delta → "candidate comparison inconclusive despite baseline distance." The current architecture has the components; this is the synthesis layer.
+
+### Tier 2 — Validation upgrades
+
+Make the tool publishable and defensible. Several of these are already partially scoped on the roadmap (the adversarial track has been open since 1.x); the contribution here is *output shape*, especially the robustness card.
+
+- **Adversarial / paraphrase stress harness.** Already on the roadmap as the validation harness's adversarial-class track. The transformation classes worth covering: light copyedit, heavy copyedit, LLM "make this sound more natural," LLM "make this sound like author X," humanizer-tool output (StealthGPT / UndetectableAI / Quillbot), backtranslation, summary-to-prose expansion, voice-restoration pass (does the framework's own restoration tools create false reassurance?), deliberate idiolect injection, register transfer (essay → testimony, fiction → query letter). Output shape: a **robustness card** per signal — "this signal remains stable under light copyediting but collapses under paraphrase"; "this signal survives paraphrase but is highly register-sensitive"; "this signal is useful only with matched baselines over 2,000 words." The robustness card is the deliverable; without it, the harness is metrics without epistemic guidance.
+
+- **Negative and positive controls in reports.** Every serious comparison should include known-authentic and known-smoothed reference points from the same writer where available. "The questioned text is farther from baseline than the known-authentic control, but closer than the known-smoothed control." Makes reports interpretable to non-technical users and prevents the "big number means scary" failure mode. Concrete buildable extension to all three validation harnesses.
+
+- **Ablation reports.** Leave-one-feature-family-out for the band call and the voice-distance call. Surfaces fragile-vs-robust calls and distinguishes "rhythm-driven smoothing" from "global smoothing": "the Moderate call is robust to removing FKGL spread and lexical entropy but disappears if sentence-variance signals are removed — treat as rhythm-driven, not global." For voice coherence: "candidate distance is driven mostly by char 4-grams and punctuation cadence; function-word Delta is ordinary." Cheap to build (just re-run with one signal removed at a time); high interpretability payoff.
+
+- **Calibration drift monitor.** The score-once cache already carries a `scorer_version` field. Add a regression-test suite using fixed benchmark texts that detects when threshold values shift after spaCy / dependency-parser / corpus updates. Output per release: "burstiness_B threshold stable; POS-bigram KL threshold shifted materially after parser update — recalibration required before publication claims." Protects against invisible infrastructure drift, especially as model versions change underneath.
+
+- **Fairness / dialect / multilingual guardrails.** The ESL ratchet exists in `manifest_validator.py` but the broader linguistic-background caution layer is not visible at the report level. Promote into an explicit caution surface for nonnative English writers, code-switching, dialect features, translation-influenced prose, speech-to-text cleanup, neurodivergent punctuation/structure patterns, genre-specific educational prose, institutional templates. The report should explicitly state whether the validation set includes comparable language backgrounds; if not, it should refuse evaluative or disciplinary use. Critical because the AI-detection field has a documented history of producing unfair false positives against nonnative English writers, and even when the framework is not an AI detector users may try to use it that way.
+
+### Tier 3 — Writer-facing upgrades
+
+Extensions of existing surfaces that make the tool genuinely useful to writers (rather than just stylometrically interesting). Each pairs naturally with a surface that already ships.
+
+- **Revision-risk model.** Extension of the metric-targetability taxonomy in `restoration_packet.py`. The current taxonomy classifies signals as direct / translated / investigate-first / avoid-direct. Add a per-suggestion **Revision Risk** label (low / medium / high) estimating the risk that the intervention will erase idiolect, create metric gaming, increase generic "humanizer" artifacts, damage clarity, damage genre expectations, make prose less publishable, overcorrect into artificial variance, preserve voice but weaken argument, or restore quirks that were intentionally edited out. Pairs each diagnostic trigger with the bad revision temptation and the better revision frame.
+
+- **Source-of-smoothing localization.** Extension of `sliding_window_heatmap.py`. The heatmap currently says where the signal fires; this asks what *kind* of smoothing is happening there. Per hot zone, classify the dominant local phenomenon: syntactic flattening / lexical generalization / over-cohesion / connective overuse / idiom loss / paragraph uniformity / abstract-noun stacking / template rhetoric / generic authority cadence / reduced stance markers / reduced sensory or concrete detail / reduced argumentative friction. Output: "Hot zone 4 is not globally AI-like — it's specifically over-cohesive: adjacent-sentence cosine is high, connective density is high, and sentence variance is low, while idiolect survival remains normal." Gives writers something actually revisable.
+
+- **Semantic preservation check.** Extension of `before_after_restoration.py`. The current post-check flags metric-gaming and signal direction; the next layer is semantic guardrails: claim inventory before/after, named-entity preservation, citation/authority preservation, stance preservation, modality preservation, causal-claim preservation, uncertainty-level preservation. Catches the failure mode where voice restoration accidentally makes an argument more forceful, less accurate, or less careful. Critical for policy / legal / nonfiction prose: "Voice restoration improved sentence variance and idiolect survival, but increased assertiveness — 7 hedged claims became unqualified claims." That's exactly the kind of thing a serious author-facing tool should catch.
+
+- **Draft-history analysis.** Version-aware stylometric suite. Given multiple draft versions, answer: when did the smoothing enter? Was it gradual or sudden? Which revision introduced the voice drift? Did idiolect disappear in one pass? Did POS-bigram collapse occur after a global rewrite? Did later human editing restore or further flatten the voice? "Major distributional compression appears between v3 and v4, concentrated in sections 1, 4, and 6. Later edits restore lexical idiolect but not sentence-architecture variance." Stronger evidence than single-snapshot comparison.
+
+- **Known-editor profile.** Underdeveloped and important. Given before/after edited-by-X pairs, learn an editorial transformation profile: what this editor typically changes, which signals shift after their edits, whether current drift resembles past human editing. Distinguishes "this was smoothed" from "this was smoothed in the ordinary way this editor smooths this writer" — for literary and institutional writing, that distinction is large. Bigger build because it requires labeled before/after pairs.
+
+### Tier 4 — Advanced research / product layer
+
+Higher-effort builds. Some are explicit 2.0+ horizon items; some are demand-driven.
+
+- **House-style vs. author-voice decomposition.** Nested baselines (same-author-same-org / same-author-different-context / different-authors-same-org / same-genre-outside-org / broad reference) and decomposition. Classifies drift into author-specific signal vs. organizational/house-style signal vs. genre/task signal vs. topic vocabulary signal. Important for institutional writers — a piece can be authentically by someone and still sound unlike their essays because they're writing in an organizational voice. Bigger build because it requires curated nested-baseline structure.
+
+- **Multi-author / multi-source segmentation.** Window-level feature vectors → unsupervised segment clustering → likely style-boundary detection → "voice discontinuity" flags → section-to-section voice-similarity matrix. Catches rewritten chapters in manuscripts, sections drafted by different staff in policy documents, AI-assisted inserts in essays. Output framing: "sections 2 and 5 are stylistically discontinuous from the rest of the document," not "these are different authors." `chapter_distinctiveness_audit.py` is adjacent prior work.
+
+- **Counterfactual editing sandbox.** The user's "biggest missing feature" — and they're right that it would be conceptually powerful. Generate same-meaning variants under controlled perturbations (more sentence variance / lower connective density / restored idiolect / more concrete actors / less institutional abstraction / more or less baseline similarity). Use them *diagnostically*, not as final rewrites: "if only sentence variance is restored, the band call drops from Heavy to Moderate; if idiolect phrases are restored, voice Delta improves only slightly; if syntactic architecture changes, voice Delta improves substantially." Tells the user what the tool actually thinks is causing the signal. Research-grade: requires a meaning-preserving rewrite component (likely LLM-generated controlled variants), which adds a meaningful dependency footprint and a methodology question (how do we verify meaning preservation?). Architectural target, not a v1 ship.
+
+- **Transformation-profile learning.** General version of the known-editor profile — learn typical transformation profiles from any before/after pair set, not just one editor. Useful for "what does light human copyediting look like in this register?" or "what does this institution's house-style enforcement look like?" Bigger build; pairs with known-editor as a generalization layer.
+
+- **Interactive report UI.** Furthest from the current scope (CLI / Python / Claude-Code-plugin shape). Indefinitely deferred unless the framework adopts a UI layer.
+
+### Explicit anti-goals
+
+These are *not* on the roadmap, and the framework should resist building them even when users ask:
+
+- **No single "authenticity score."** Will be abused immediately, regardless of how many caveats accompany it.
+- **No "% AI-edited" dosage estimate.** The math doesn't entitle dosage grading; the 2026-05 corpus run found heavy-AI and light-AI clusters statistically indistinguishable on POS-bigram KL.
+- **No model-attribution module.** "ChatGPT-ish / Claude-ish / Gemini-ish" attribution is fragile (model behavior drifts on a release cycle the framework can't track) and would tempt overclaiming. Fine in a research harness, not in author-facing reports.
+- **No metric-optimizing rewrite engine.** A direct "make this pass" tool would create the very artifact the framework is designed to critique. Restoration packets are bounded prompts with required post-checks; that boundary stays.
+- **No disciplinary report template.** Anything that looks like "evidence of misconduct" is out. The claim-license block is the load-bearing epistemic surface; sharpen it, don't write around it.
+
+### Trustworthiness build order
+
+When the toolchain returns to trustworthiness work, the order is:
+
+1. Stylometric masking profiles (input layer; cheapest; preconditions for other Tier-1 calls)
+2. Register / genre conditioning (input gate; precondition for confounder audit and evidentiary gate)
+3. Confounder audit / Layer D (interpretation layer; the most leveraged single addition)
+4. Surface-disagreement resolver (interpretation meta-layer)
+5. Minimum evidentiary conditions gate (output discipline)
+6. Ablation reports (validation; cheap, high-interpretability)
+7. Adversarial stress harness with robustness cards (validation; already on roadmap)
+8. Negative / positive controls in reports (output discipline)
+9. Calibration drift monitor (validation infrastructure)
+10. Fairness / dialect / multilingual guardrails (output discipline)
+11. Source-of-smoothing localization (writer-facing; extends heatmap)
+12. Revision-risk model (writer-facing; extends restoration_packet)
+13. Semantic preservation check (writer-facing; extends before_after_restoration)
+14. Draft-history analysis (writer-facing)
+15. Known-editor profile (writer-facing; bigger build)
+
+Tier 4 items (house-style decomposition, multi-author segmentation, counterfactual sandbox, transformation-profile learning) ship as research extensions on a longer horizon. The interactive UI is indefinitely deferred.
+
+### The shortest formulation
+
+The shipped suite measures *what a text looks like stylometrically*. The trustworthiness layer answers a different and more important question: *compared to which legitimate alternatives, under what evidentiary conditions, with what confounders, and what revision moves would improve the prose without gaming the instrument?* The Tier 1 picks above are how the framework gets there.
+
 ## Open architectural questions
 
 ### Layer A
