@@ -6,6 +6,39 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.30.4] - 2026-05-10
+
+**Roadmap interleaving: paired-release schedule across the two expansion tracks (new tools + new guardrails).** Releases 1.30.2 and 1.30.3 added two roadmap expansion sections — surface expansion (twenty stylometric surfaces) and trustworthiness expansion (twenty failure-mode-control extensions). Each section had its own internal tier ordering. What both sections left open: the *interleaving* question — should the surface track ship in full before any guardrail work, vice versa, or alternate? Building either track in isolation produces predictable failure modes. This docs-only release adds an `Interleaving: paired-release schedule` section to ROADMAP.md that resolves the question with a concrete cross-track sequence.
+
+### Changed
+
+- **`ROADMAP.md`** gains an `Interleaving` section between the two expansion-track sections and the existing "Open architectural questions" section. Two dependency rules drive the sequence:
+  1. **Input-layer guardrails ship before any new tool depends on them.** Stylometric masking profiles + register/genre conditioning are precondition work — they make every existing and future call more reliable, and they ship as their own release without a paired tool.
+  2. **Some Tier-1 tools are prerequisites for the Tier-1 confounder audit, not complements.** The confounder audit's differential diagnosis needs typed-discourse and agency signals to be more than a re-statement of existing per-signal evidence. Discourse Move Signature and Agency and Abstraction Audit ship before the confounder audit gets its first useful version.
+- **Proposed paired-release sequence** (twelve releases plus a Tier-4 research bundle, each with one new tool and one new guardrail or precondition guardrail work alone, releasable independently):
+  - Release 1: input-layer guardrails (masking + register conditioning); no paired tool — preconditions ship alone.
+  - Release 2: Paragraph Architecture Audit + Source-of-smoothing localization (paragraph-level signal feeds the heatmap's "what kind of smoothing" classifier).
+  - Release 3: Discourse Move Signature + Confounder audit / Layer D (typed discourse markers feed the confounder matrix; tool is prerequisite for guardrail).
+  - Release 4: Agency and Abstraction Audit + Revision-risk model (agency-loss signals pair with per-suggestion risk labels in `restoration_packet.py`).
+  - Release 5: Punctuation Cadence + Stance/Modality + Function-Word Grammar (three Tier-2 promotions) + Ablation reports (more feature families need an interpretability mechanism).
+  - Release 6: output-discipline release — Minimum evidentiary conditions gate + Negative/positive controls; no paired tool.
+  - Release 7: interpretation meta-layer — Surface-disagreement resolver + Adversarial / paraphrase stress harness with robustness cards; no paired tool.
+  - Release 8: Construction Signature Audit + Semantic preservation check (interpretable syntactic evidence pairs with claim/entity/stance preservation guardrails).
+  - Release 9: validation infrastructure — Calibration drift monitor + Fairness / dialect / multilingual guardrails; no paired tool.
+  - Release 10: Mimicry / Style-Cosplay Audit + Known-editor profile (both address "smoothed-but-by-whom" from different angles).
+  - Release 11: Phraseological Signature Audit + Draft-history analysis (phrase-frame mining + version-aware analysis).
+  - Release 12: Semantic Trajectory Audit (heaviest dependency footprint — SBERT-class — ships when the framework adopts that posture); from here forward releases get less paired and more research-driven.
+  - Release 13+: Tier-4 research items on both tracks — Counterfactual editing sandbox, House-style decomposition, Multi-author segmentation, Transformation-profile learning — each independently shippable, none on a near-term schedule.
+- **Anti-pattern check.** The single most-damaging anti-pattern this schedule resists is shipping new tools without their interpretive guardrails, which would systematically grow the framework's surface area for false confidence. Every tool release in the sequence lands with either (a) an existing guardrail it strengthens, (b) a new guardrail that makes it interpretable, or (c) precondition guardrail work having already shipped in an earlier release.
+
+### Notes
+
+- Docs-only release. **534 tests pass + 1 skipped** (no test changes from 1.30.3).
+- The schedule deliberately doesn't commit to calendar; the order is the commitment, not the timing. Each release is independently shippable. The framework's release cadence depends on the calibration-breadth track's progress and on user demand for specific surfaces.
+- The schedule doesn't replace the per-track tier orderings in the Surfaces and Trustworthiness sections; it sequences *across* the two tracks. If the framework ever needs to deviate (e.g., a specific surface gets pulled forward by user demand), the per-track priority tells you what's safe to skip; the paired-release rationale tells you what dependency is broken if you do.
+- The 2.0 refactor target (Compression-of-Choice / Stylistic Choice Entropy) sits beyond this entire schedule. When 2.0 lands, every existing surface gets rewritten as a special case of compression in some choice set, and the trustworthiness layer gets reframed as compression-aware (the confounder audit becomes "differential diagnosis across choice-set perturbations" rather than across signal directions). That's an architectural rewrite, not a release.
+- This is the third docs-only release in a row (1.30.2 surfaces, 1.30.3 trustworthiness, 1.30.4 interleaving). Together they triangulate the framework's mid-term direction without committing implementation work — the calibration-breadth track and the existing adversarial-class fixtures remain the immediate roadmap foreground; the paired-release schedule kicks in after.
+
 ## [1.30.3] - 2026-05-10
 
 **Roadmap expansion: trustworthiness layer (twenty failure-mode-control extensions tiered with honest priority).** A second reviewer-track contribution surfaced a list of additions that are not new metrics but failure-mode control, interpretability, adversarial realism, and user workflow discipline — the parts that stop a sophisticated stylometric tool from becoming a numerically impressive overclaimer. Where the previous expansion (`Stylometric surface expansion`, 1.30.2) catalogues *new things to measure*, this docs-only release adds a `Trustworthiness expansion` section to ROADMAP.md that catalogues *how to use what is already measured responsibly*. Twenty items tiered into four build groups plus an explicit anti-goals section.

@@ -341,6 +341,50 @@ Tier 4 items (house-style decomposition, multi-author segmentation, counterfactu
 
 The shipped suite measures *what a text looks like stylometrically*. The trustworthiness layer answers a different and more important question: *compared to which legitimate alternatives, under what evidentiary conditions, with what confounders, and what revision moves would improve the prose without gaming the instrument?* The Tier 1 picks above are how the framework gets there.
 
+## Interleaving: paired-release schedule
+
+The previous two sections treat *new tools* and *new guardrails* as separate tracks, each with its own internal tier ordering. That presentation is honest about each track's internal priorities, but it leaves the *interleaving* question unanswered. Building either track in isolation produces predictable failure modes: tools-only ships new metrics with stale interpretive infrastructure (the framework's surface area for false confidence grows); guardrails-only ships interpretive richness over an underpowered signal vocabulary (the confounder audit can't make differential diagnoses without typed-discourse and agency signals to work with).
+
+The right shape is **paired releases**: each release ships one new tool with the guardrail that makes it interpretable, with two dependency rules:
+
+1. **Input-layer guardrails ship before any new tool depends on them.** Stylometric masking profiles and register / genre conditioning are precondition work — they make every existing and future call more reliable, and they ship as their own release without a paired tool.
+2. **Some Tier-1 tools are prerequisites for the Tier-1 confounder audit, not complements.** The confounder audit's differential diagnosis ("compatible with AI smoothing, but also with professional copyediting and register shift") needs typed-discourse and agency signals to be more than a re-statement of the existing per-signal evidence. Discourse Move Signature and Agency and Abstraction Audit ship before the confounder audit gets its first useful version.
+
+Beyond those two rules, pairings are coherence-driven: the tool and the guardrail make sense shipping together because the guardrail extends a surface the tool feeds, or because the two address the same problem from different angles.
+
+### Proposed paired-release sequence
+
+This is the schedule once the calibration-breadth track (RAID + MAGE corpus fetchers, more calibrated thresholds, polarity-inversion correction against a fluent-native corpus) and the existing adversarial-class track (paraphrase + humanizer fixtures) have shipped. Each release is a small, coherent feature pair, releasable independently from the rest.
+
+| # | New tool | New guardrail | Coherence rationale |
+|---|---|---|---|
+| **1** | _(none — input-layer infrastructure)_ | Stylometric masking profiles + Register / genre conditioning | Precondition work. Every existing and future call gets more trustworthy. |
+| **2** | Paragraph Architecture Audit (Surfaces T1) | Source-of-smoothing localization (Trust T3) | Paragraph-level signal pairs with the heatmap's "what *kind* of smoothing is firing here" classifier. The heatmap needs paragraph-shape data to localize over. |
+| **3** | Discourse Move Signature (Surfaces T1) | Confounder audit / Layer D (Trust T1) | Typed discourse markers (contrast / concession / consequence / sequencing / metadiscourse) give the confounder matrix the evidence to distinguish "legal/policy memo" from "AI smoothing." Tool is the prerequisite for guardrail. |
+| **4** | Agency and Abstraction Audit (Surfaces T1) | Revision-risk model (Trust T3) | Agency-loss signals pair with per-suggestion risk labels in `restoration_packet.py`. The new diagnostic vocabulary ("the local smoothing is agency loss") gets paired immediately with risk classification. |
+| **5** | Punctuation Cadence + Stance/Modality + Function-Word Grammar (Surfaces T2 promotions × 3) | Ablation reports (Trust T2) | More feature families need an interpretability mechanism for which ones drive the call. Ablation reports become more interesting as the feature space grows. |
+| **6** | _(none — output-discipline release)_ | Minimum evidentiary conditions gate + Negative/positive controls | Output-discipline release. After the major Tier-1 tool/guardrail pairings land, the framework's reports gain the front-door evidentiary-posture label and the interpretability of known-authentic / known-smoothed reference points. |
+| **7** | _(none — interpretation meta-layer)_ | Surface-disagreement resolver + Adversarial / paraphrase stress harness with robustness cards | Cross-surface meta-interpretation + per-signal robustness card. Adversarial track was already on the roadmap; surface-disagreement is the natural meta-layer over a now-richer surface set. |
+| **8** | Construction Signature Audit (Surfaces T3) | Semantic preservation check (Trust T3) | Interpretable syntactic evidence (clefts, fronted adverbials, agented vs. agentless passives) pairs with claim/entity/stance preservation guardrails — both are about making structural-level revision answer to meaning. |
+| **9** | _(none — validation infrastructure)_ | Calibration drift monitor + Fairness / dialect / multilingual guardrails | Validation infrastructure release. By this point the framework has enough surface area that infrastructure drift between releases needs explicit monitoring, and the linguistic-background caution surface needs to be visible at report level. |
+| **10** | Mimicry / Style-Cosplay Audit (Surfaces T3) | Known-editor profile (Trust T3) | Both address "smoothed-but-by-whom" from different angles: mimicry detects over-conspicuous imitation; known-editor learns what genuine human editing of this writer looks like. They make sense as a pair. |
+| **11** | Phraseological Signature Audit (Surfaces T3) | Draft-history analysis (Trust T3) | Phrase-frame mining is more interpretable across multiple drafts (which frames survived, which collapsed, which were introduced). Pairs naturally with version-aware analysis. |
+| **12** | Semantic Trajectory Audit (Surfaces T3) | _(none — research extensions land separately)_ | The trajectory surface is the heaviest dependency footprint (SBERT-class); ships when the framework adopts that posture. From here forward, releases get less paired and more research-driven. |
+| **13+** | _(longer horizon)_ | Counterfactual editing sandbox + House-style decomposition + Multi-author segmentation + Transformation-profile learning | Tier-4 research items on both tracks. Each is independently shippable; none is on a near-term schedule. |
+
+### What this schedule deliberately doesn't do
+
+- **It doesn't try to ship every Tier-1 surface before any Tier-2 or Tier-3.** Releases 5 and 8 specifically interleave Tier-2 and Tier-3 work into the sequence because the corresponding guardrails (ablation, semantic preservation) are most useful at those points.
+- **It doesn't pair every release.** Releases 1, 6, 7, 9, and 12 are guardrail-heavy or research-heavy; releases 2, 3, 4 are tool-driven with their natural guardrail pair. Forcing a 1:1 tool-guardrail ratio per release would produce artificial pairings.
+- **It doesn't commit to a calendar.** The number of releases ahead is large; each is independently shippable; the framework's release cadence depends on the calibration-breadth track's progress and on user demand for specific surfaces. The order is the commitment, not the timing.
+- **It doesn't replace the per-track tier orderings.** The Surfaces and Trustworthiness sections above keep their internal priorities; this section sequences releases *across* the two tracks. If the framework ever needs to deviate (e.g., a specific surface gets pulled forward by user demand), the per-track priority tells you what's safe to skip; the paired-release rationale tells you what dependency is broken if you do.
+
+### Anti-pattern check
+
+The single most-damaging anti-pattern this schedule resists is **shipping new tools without their interpretive guardrails**, which would systematically grow the framework's surface area for false confidence. Every tool release in the sequence above lands with either (a) an existing guardrail it strengthens, (b) a new guardrail that makes it interpretable, or (c) precondition guardrail work having already shipped in an earlier release. No release adds analytic firepower without also adding interpretive discipline.
+
+The 2.0 refactor target (Compression-of-Choice / Stylistic Choice Entropy) sits beyond this entire schedule. When 2.0 lands, every existing surface gets rewritten as a special case of compression in some choice set, and the trustworthiness layer gets reframed as compression-aware (e.g., the confounder audit becomes "differential diagnosis across choice-set perturbations" rather than across signal directions). That's an architectural rewrite, not a release.
+
 ## Open architectural questions
 
 ### Layer A
