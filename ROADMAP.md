@@ -130,6 +130,101 @@ Cathedral upgrade #3 (validation harness) and the threshold-calibration prerequi
 
 The three are independently shippable. RAID first (highest leverage), MAGE second (companion), template third (docs). Each unblocks a calibration run that the current toolchain can already consume.
 
+## Stylometric surface expansion
+
+The shipped suite covers the core modern stylometry stack: lexical diversity, sentence/rhythm variance, POS/dependency n-grams, character n-grams, function words, Burrows Delta, General Imposters, keyness/collocation, and per-window localization. Recent reviewer-track work surfaced a longer list of candidate surfaces drawn from classical writeprint research and recent stylometry surveys (lexical / syntactic / structural / content-specific / idiosyncratic feature families; the persistent challenges around genre, topic leakage, short texts, and forensic reliability). This section catalogs each candidate with an honest priority — including the ones I'd indefinitely defer or explicitly *not* ship as voice surfaces.
+
+The general framing: the existing suite is strong at measuring **distributional compression and distance from baseline**. The candidate surfaces below mostly measure **where the writer's choices live** — at the paragraph, discourse, agency, construction, and trajectory layers. That's where AI smoothing often does its most interesting damage and where the existing suite is structurally blind.
+
+Candidate surfaces are tiered by build readiness, not by intellectual interest. Several that I find theoretically interesting are deferred or out-of-scope for reasons spelled out below.
+
+### Tier 1 — Near-term builds
+
+These three are the next concrete picks. Each is testable, doesn't require new dependencies beyond what's already imported, and lands at a layer the existing suite doesn't reach.
+
+- **Paragraph Architecture Audit.** Paragraph-length distribution and variance, first-sentence vs. body length, terminal-sentence punchiness, one-sentence paragraph rate, paragraph opening / closing types, transition paragraph frequency, paragraph-to-paragraph semantic distance. Catches the "competent rectangle paragraphs" failure mode that AI editing produces — sliding-window mode is word-windowed, so paragraph-shape gaps are invisible to it. Cheap to build, immediately useful for restoration packets, and structurally orthogonal to every existing audit.
+
+- **Discourse Move Signature.** Typed discourse markers (contrast / concession / consequence / elaboration / sequencing / reframing / epistemic stance / metadiscourse) plus *move sequence n-grams* (concession→reversal→claim, premise→caveat→narrower-claim, critique→alternative→standard). The natural growth of `connective_density` (currently a single ratio) and `aic_pattern_audit` (currently named-pattern density). The move-sequence layer is what makes it a voice surface rather than a marker counter — for serious nonfiction, "concede the objection, narrow the claim, sharpen the institutional implication" is identifiable voice. Highest interpretability for the kind of writing the framework's primary user does.
+
+- **Agency and Abstraction Audit.** Nominalization density, agentless passive rate, light-verb constructions ("make a decision" / "provide support" / "conduct an analysis"), entity/action ratio, human-actor density, generic-institutional vocabulary. Lands at a meaningful semantic layer the variance signals don't reach — institutional smoothing lives here. Restoration packets gain a useful diagnostic vocabulary: "the local smoothing is agency loss, not lexical-diversity loss." Builds on top of the spaCy POS+dep extraction that's already there.
+
+### Tier 2 — Promotions to first-class surfaces
+
+These are partly shipped as feature columns inside `voice_profile.py` or implicit in existing audits. Promoting them to top-level surfaces with their own audits, baseline comparisons, and bootstrap percentiles is concrete deliverable work.
+
+- **Punctuation Cadence Audit.** `voice_profile.py` already captures comma / semicolon / colon / dash / parenthesis / ellipsis rates as feature columns. What's missing is the top-level surface: punctuation feature Delta against baseline, punctuation n-gram divergence, "interruption grammar" profile (parentheses / em-dashes / appositives / asides), smoothing flags for dash-collapse / semicolon-suppression / comma-regularization. AI smoothing and copyediting often regularize punctuation before they erase vocabulary, so this surface catches a class of voice loss earlier than lexical signals do.
+
+- **Stance / Modality / Epistemic Posture Audit.** Partly in the function-word feature family + the pronoun-modal-negation cluster, but only at frequency level. The missing pieces: deontic vs. epistemic modality distinction, hedge / booster / certainty / evidential markers as typed buckets, source-of-knowledge markers ("seems" / "suggests" / "shows" / "proves"), refusal phrases, obligation language, first-person stance density. Important for nonfiction / legal / academic / policy prose, where AI smoothing often changes not just style but epistemic ethics ("may suggest" → "shows"; "this is not enough to establish" → "this highlights").
+
+- **Function-Word Grammar Surface.** The function-word family is currently used at frequency level via Burrows Delta. The sequence layer — function-word n-grams, function-word skip-grams, preposition profile, determiner profile, demonstrative usage (`this/that/these/those`), relative-pronoun choice (`which/that/who`), complementizer choice (`that/if/whether`), subordinator profile, auxiliary chains, pronoun transition patterns — would bridge interpretable syntax and the robust content-independent signal that classical authorship attribution leans on.
+
+### Tier 3 — Substantive new surfaces (post-Tier-1)
+
+Bigger builds. Each requires curated taxonomy work and meaningful methodology pinning before code lands. Best to design on paper before writing tests.
+
+- **Construction Signature Audit.** The right answer to "POS-bigram KL is opaque." Translates raw tag-sequence machinery into interpretable construction counts: clefts ("what matters is..."), pseudo-clefts, fronted adverbials, sentence-initial participial phrases, appositives, agented vs. agentless passives, existential "there is/are," extraposition ("it is important to..."), correlative constructions ("not only / but also"), concessive openers, parenthetical insertions, stacked prepositional phrases. Pairs with the AIC density audit — same shape, different unit. Build cost dominated by the construction inventory's curation, not the spaCy pattern-matching code.
+
+- **Mimicry / Style-Cosplay Audit.** Required once restoration tools are mature; not before. The framework already ships `before_after_restoration.py` with a metric-gaming heuristic, but it doesn't catch the failure mode where idiolect phrases survive *too conspicuously* (over-preserved) while function-word grammar fails to match the lexical mimicry, or baseline-signature features appear at unnatural density. The methodology is non-obvious: phrase-level survival and syntactic Delta need to be cross-checked, not aggregated. Useful both for adversarial testing and for restoration quality control — a bad voice-restoration pass can produce cosplay that scores well on per-feature metrics but reads as imitation.
+
+- **Phraseological Signature Audit.** Extension of `idiolect_detector.py`'s keyness + collocation work into phrase-frame mining: skip-grams, lexical bundles, phrase frames with slots ("not because X but because Y"), preferred intensifier / stance / epistemic frames, idiom survival, hapax phrase survival, multi-word expression distinctiveness. The shape difference from keyness: keyness asks "which words/phrases are over-represented?"; phraseology asks "what reusable language frames does this writer build with?"
+
+- **Semantic Trajectory Audit.** Sentence-to-sentence and paragraph-to-paragraph semantic-jump distributions, return-to-topic loops, semantic radius around thesis, abstraction trajectory over document position, claim/example density curves. Catches the "improved local cohesion at the cost of productive leaps" failure mode that the adjacent-cosine pair alone can't see. **Heavier dependency footprint** (SBERT or equivalent — gigabytes of weights); should ship as opt-in like the SBERT cohesion path is now. The surface most likely to drift toward "measuring meaning" rather than "measuring style"; needs careful claim-licensing language to stay on the right side of the framework's "topic ≠ style" boundary.
+
+### Tier 4 — Specialized / fiction-specific extensions
+
+Useful in narrower domains. Fit naturally as round-2 of existing surfaces rather than new top-level work.
+
+- **Dialogue-Specific Voice Audit.** Dialogue tag style, contraction rate by character, interruption punctuation, vocatives, turn length, character-specific function-words and discourse-markers, profanity/intensifier profile, adjacency-pair patterns. Round 2 of `pov_voice_profile.py` — character voice collapse often appears in dialogue first, narration second. Worth building when the per-POV surface gets serious use.
+
+- **Narratorial Distance / Free Indirect Audit.** Pronoun anchoring, perception/cognition verb density, deictic anchoring (`here/now/this/that`), evaluative-adjective density, focalization markers, free-indirect-discourse signals. Outside the standard stylometry literature but valuable for developmental editing of literary fiction. Adjacent to per-POV voice profile; shippable when the demand surfaces.
+
+- **Productive Roughness Audit.** Fragments, sentence-initial conjunctions, colloquial contractions, repeated words, asymmetrical lists, mixed register, "thinking on page" markers. Conceptually right but methodologically fragile: "roughness" is in the eye of the beholder. The surface has to be **strictly baseline-relative** (this writer's stable roughness pattern, before any draft) — never absolute (these features are good). Otherwise it encodes editorial preferences as voice. Build only with that constraint frontloaded.
+
+### Tier 5 — Adjacent surfaces (ship under different framing)
+
+Real signals, but topic-bound or format-bound enough that calling them "voice" surfaces would muddy the framework's claim language. Each is worth shipping in its own right, as a non-voice surface.
+
+- **Document Structure / Layout Audit.** Heading frequency / syntax, list rate, bullet style, section length variance, citation placement, block-quote use, link density, footnote density, opening-hook / closing-move types. Useful for blog / Substack / policy / memo / newsletter workflows where formatting is part of voice. But it's a *publishing-format* fingerprint, not stylometry in the standard sense. Ship as its own small audit, not as a voice tool.
+
+- **Reference Ecology Audit.** Frequency and pattern of named references, parenthetical-reference style, quote integration, epigraph use, "as X says" constructions, analogy source domains, proper-noun ecology, canonical vs. idiosyncratic references. Identifiable across an essayist's career. **Heavily topic-bound.** A writer changes topic between drafts and the reference ecology changes; the tool would call it voice drift. The framework's foundational claim is that topic ≠ style; this surface has to ship with claim-licensing that explicitly refuses voice attribution. Better as a thematic / register profile than a voice tool.
+
+- **Allusion / Quotation Habit Surface.** Same topic-leakage concern as reference ecology. Some writers have distinguishable allusion ecologies that survive across topics, but the signal is brittle and topic-correlated enough that ship-as-voice would require very strong claim-language guards.
+
+- **Stockness / Formulaicity Audit.** Cliché density, generic transition phrases, corporate / policy boilerplate, register-specific stock phrases, phrase originality against a large reference corpus. Two structural risks: (1) the "LLM-associated phrase" list drifts as models change, so the tool needs current-empirics sourcing rather than a frozen list — that's a maintenance commitment the framework doesn't have a model for; (2) many humans use these phrases legitimately. The framing has to be *phraseological texture*, not *AI signal*; the latter would make this a Pangram-style classifier wearing stylometric clothes, which is the framework's structural anti-goal. Build with skepticism, ship with very explicit claim-licensing.
+
+### Tier 6 — Indefinitely deferred
+
+These I'd not build as separate surfaces. The reasons are structural, not preference.
+
+- **Dependency-Tree Shape and Subtree Motifs.** The literature is mixed on whether dependency-tree features outperform lexical features for authorship; gain over what the existing POS-trigram + dependency-n-gram surfaces already capture is modest, and the *interpretability* problem the construction-signature audit solves applies equally here (tree-shape numbers are no more legible to a writer than POS-trigram KL). Better treated as inputs to the construction signature audit than as a standalone surface.
+
+- **Morphological Texture Audit.** Latinate-vs-Germanic tilt, derivational morphology density, suffix preferences. The signal is real but it's *heavily correlated with register, education, and topic*, not just voice. A scientist writing for general audiences vs. peers will produce a Latinate-tilt swing that has nothing to do with voice. Could surface as columns inside other audits (the function-word grammar surface, for instance) but I wouldn't promote it to a top-level voice surface.
+
+- **Figure-of-Speech Expansion (Beyond Current AIC Set).** Antithesis, anaphora, epistrophe, isocolon, polysyndeton, asyndeton, litotes — the broader rhetorical-figure inventory. The current `aic_pattern_audit.py` already covers the AI-prose-relevant figures (correctio, pseudo-aphorism, manifesto cadence, triplet, professional-parallel stack, plus four nonfiction parallel patterns). Expanding the inventory adds breadth but not new claim-shape; better to deepen the AIC density work (calibrated thresholds, baseline-relative density) than to broaden the figure list.
+
+### 2.0 refactor target
+
+- **Compression-of-Choice / Stylistic Choice Entropy.** This is the deepest theoretical extension on the list — and where the framework's central claim actually lives. The framework currently measures variance compression in **outputs** (sentence length, lexical diversity, POS-bigram distribution); the more honest object of measurement is variance in the writer's **choice architecture** — which connective among alternatives, which clause-combining strategy, which actor-reference strategy, which sentence-opener class. Built well, this surface would *generalize* every existing audit: each becomes a special case of "compression in some choice set." Sentence-length variance is compression in length-choice; MTLD is compression in lexical-choice; AIC density is compression in figure-choice. The unifier would give the framework a single load-bearing claim ("AI smoothing collapses choice-set entropy") and a clean restoration target ("expand this writer's choice set in dimension X"). It would also reframe what gets measured everywhere: every existing audit could be rewritten on top of this primitive.
+
+  **Why 2.0**: defining defensible choice sets is a curatorial problem, not a coding problem. Sentence-opener classes, connective classes, reporting-verb classes, clause-combining strategies — each needs a curated taxonomy and a per-class baseline to be meaningful. This is research-grade work, not a one-week ship. It also implies a refactor of the existing surfaces to be expressed as choice-entropy specializations, which is a public-API breaking change consistent with a major version bump. Treat as the *target* for 2.0; not a v1 commitment, but the right shape for the next architectural generation.
+
+### Build order (concrete commitments only)
+
+When the toolchain returns to surface expansion, the order is:
+
+1. Paragraph Architecture Audit (Tier 1)
+2. Discourse Move Signature (Tier 1)
+3. Agency and Abstraction Audit (Tier 1)
+4. Punctuation Cadence Audit (Tier 2 — promotion)
+5. Stance / Modality Audit (Tier 2 — promotion)
+6. Function-Word Grammar Surface (Tier 2 — promotion)
+7. Construction Signature Audit (Tier 3)
+8. Phraseological Signature Audit (Tier 3 — extension of `idiolect_detector`)
+9. Mimicry / Style-Cosplay Audit (Tier 3 — gated on restoration maturity)
+10. Semantic Trajectory Audit (Tier 3 — gated on dependency posture)
+
+The Tier 4 specialized surfaces (Dialogue, Narratorial Distance, Productive Roughness) ship when their domains pull on them, not on the cathedral schedule. The Tier 5 adjacent surfaces (Document Layout, Reference Ecology, Allusion Habit, Stockness) ship as separate non-voice surfaces with explicit claim-language guards, on the same demand-driven cadence. The Tier 6 deferred items are not commitments. The 2.0 refactor target (Compression-of-Choice) is the architectural horizon, not a v1 deliverable.
+
 ## Open architectural questions
 
 ### Layer A
