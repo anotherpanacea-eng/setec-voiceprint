@@ -6,6 +6,37 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.37.0] - 2026-05-10
+
+**Paired-release schedule, Release 7: interpretation meta-layer.** No paired tool. Two cross-surface interpretive guardrails: a resolver that names compatible interpretations from cross-surface disagreement patterns, and a per-signal robustness card output shape that catches transformation-fragility (paraphrase / copyedit / humanizer / backtranslation) across audit fixtures.
+
+### Added — Surface-disagreement resolver (Trustworthiness Tier 1)
+
+- **`scripts/surface_disagreement_resolver.py`** — meta-layer that interprets cross-surface disagreement patterns. The framework runs multiple surfaces over the same draft (variance / voice-distance / GI / paragraph / discourse / agency / AIC / idiolect); cross-surface interpretation has been left to readers to do by hand. This module does that interpretation explicitly. Reads any subset of audit JSONs, extracts directional readings (`high` / `moderate` / `low` / `unknown`) per surface, matches against a curated catalog of disagreement patterns, and surfaces compatible interpretations.
+- **Ten curated patterns** in `DISAGREEMENT_PATTERNS`: `edited_authorial_voice` (high smoothing + low voice drift), `register_shift_or_collaboration` (low smoothing + high drift), `self_conscious_imitation` (high drift + high idiolect survival), `syntactic_template_shift` (high POS-bigram KL + normal sentence variance), `rhetorical_habit_not_smoothing` (high AIC + normal Layer A), `gi_inconclusive_despite_drift` (gray zone + high drift), `register_drift_to_institutional` (high agency loss + normal voice distance), `discourse_scaffolding_overload` (high discourse + low smoothing), `paragraph_regularization_only` (paragraph regularized but everything else fine), `agreement_high_compression` (multiple surfaces fire high together).
+- **Pattern matcher** supports wildcard (`*`), exact match, and alternation `(low|moderate)`. `unknown` readings only match `*`, so missing-input surfaces don't false-trigger interpretations.
+- **Multiple matches are expected.** The framework returns the differential, not a verdict. Consistent with the confounder audit's stance.
+- **Hardened JSON input handling** (1.34.2 conventions); structured ClaimLicense block.
+
+### Added — Adversarial robustness-card output shape (Trustworthiness Tier 2)
+
+- **`scripts/adversarial_robustness_card.py`** — per-signal robustness card across fixture transformations. Pre-1.37.0 the validation harness's adversarial-class track was scoped as fixture acquisition + per-class slicing in the existing harness; what was missing was the **per-signal output shape**: "burstiness_B is stable under light copyediting but collapses under paraphrase." This module ships that output shape.
+- **Reads variance_audit JSON** for a *base* text plus one or more *fixture variants* (the same text after transformation: paraphrase, light/heavy copyedit, humanizer, backtranslation, voice restoration). For each (signal, fixture) cell, computes the relative change vs. the base and assigns a robustness label.
+- **Six robustness labels per cell**: `stable` (|Δ| ≤ 10%), `moderate` (10-30%), `fragile` (> 30%), `inverted_polarity` (sign flip on a clearly non-zero base), `small_base` (|base| too small for stable relative comparison), `unknown` (missing data).
+- **Overall per-signal label** aggregates across fixtures: `stable` (all fixtures stable), `fragile` (any fixture fragile or inverted), `moderate` (mixed without fragile), `unknown` (no data).
+- **Fixture supplied as `LABEL:PATH`** on the CLI (e.g., `--fixture paraphrase:para.json --fixture copyedit:edited.json`). Multiple fixtures supported via repeated flag.
+- **Configurable thresholds** via `--stability-threshold` / `--fragile-threshold` so users can tighten or loosen the robustness call as needed.
+- **Infrastructure-only**, not a fixture catalog. Users with their own paraphrased / edited / humanizer-output fixtures can use this immediately. The fixture-generation tooling lives in the validation harness's separate adversarial-class roadmap track.
+
+### Notes
+
+- **940 tests pass + 1 skipped** (was 888+1 in 1.36.0; +52 new tests across `test_surface_disagreement_resolver.py` (24) and `test_adversarial_robustness_card.py` (28)).
+- **No breaking changes.** Both pieces are new scripts; no existing surface modified.
+- **Schedule status: Release 7 shipped.** Per the paired-release schedule, the next release is Release 8 — Construction Signature Audit (Surfaces T3) + Semantic preservation check (Trust T3).
+- The surface-disagreement resolver is the natural meta-layer over the now-richer surface set the framework ships. Pre-1.37.0 a reader had to read multiple audit reports and synthesize across them by hand; the resolver does that synthesis explicitly using a curated pattern catalog. The catalog is heuristic and additive — new patterns can land without changing the resolver's contract.
+- The robustness card is **the missing reporting layer for the framework's adversarial track**. Every claim about signal robustness in prior CHANGELOG entries (e.g., "stable under copyediting; fragile under paraphrase") was anecdotal. With this card, robustness becomes a per-signal × per-fixture grid the user can read directly. The first concrete use case: when the validation harness eventually ships DIPPER paraphrase + humanizer-tool fixtures, the harness can emit robustness cards as standard output.
+- Both tools are interpretation-only — they consume audit JSONs, they don't run audits themselves. That keeps them composable: any surface that emits JSON can feed either tool.
+
 ## [1.36.0] - 2026-05-10
 
 **Paired-release schedule, Release 6: output-discipline release.** No paired tool — both pieces are guardrails. The framework's surfaces already carry per-output `claim_license` blocks naming what the result entitles, and 1.30.x added the differential-diagnosis layer (`confounder_audit.py`) for "compatible-with-what" interpretation. What was still missing — and is the load-bearing addition this release ships — is the *single front-door label* answering **what use is this output entitled for?**, plus the comparison frame that makes voice-distance numbers interpretable to non-technical readers.
