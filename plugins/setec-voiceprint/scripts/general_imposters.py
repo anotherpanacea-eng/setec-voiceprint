@@ -117,9 +117,14 @@ DEFAULT_TOP_N_FEATURES = 200
 GRAY_ZONE_LOW = 0.20
 GRAY_ZONE_HIGH = 0.80
 
-# Minimum impostor count for the harness to run. Fewer than 5
-# impostors in matched register makes the bootstrap proportion
-# noisy; the harness refuses to emit a number.
+# Minimum number of distinct impostor *writers* (personas) the
+# harness needs to run. The methodology and claim language describe
+# "M impostor writers"; gating on the count of distinct personas
+# rather than docs prevents 5 docs from a single persona — which
+# would not satisfy the literature's "M impostors" framing — from
+# clearing the floor. Document count is reported separately as an
+# adequacy diagnostic (the practical target is 10–20 docs across
+# 3–5 personas per the corpus-assembly walkthrough).
 MIN_IMPOSTORS = 5
 
 
@@ -128,7 +133,15 @@ MIN_IMPOSTORS = 5
 
 @dataclass
 class CorpusEntry:
-    """One manifest entry consumed by the harness, post-load."""
+    """One manifest entry consumed by the harness, post-load.
+
+    ``resolved_path`` is the resolved absolute filesystem location
+    of this entry's text content. Stored so the runner can filter
+    out an entry whose path collides with ``--target`` — the GI
+    proportion is meaningless if the target is also in the
+    candidate / impostor pool (same self-normalization failure mode
+    voice_distance.py already guards against).
+    """
     id: str
     text: str
     persona: str
@@ -138,6 +151,7 @@ class CorpusEntry:
     impostor_for: list[str]
     word_count: int
     consent_status: str = "undocumented"
+    resolved_path: Path | None = None
 
 
 def _load_manifest(path: Path) -> list[CorpusEntry]:
@@ -178,8 +192,51 @@ def _load_manifest(path: Path) -> list[CorpusEntry]:
             impostor_for=list(row.get("impostor_for") or []),
             word_count=int(row.get("word_count") or 0),
             consent_status=str(row.get("consent_status") or "undocumented"),
+            resolved_path=text_path,
         ))
     return entries
+
+
+def _exclude_target_path(
+    entries: list[CorpusEntry], target_path: Path,
+) -> list[CorpusEntry]:
+    """Drop manifest entries whose resolved path is the same file as
+    ``--target``. The target text is supplied separately to the
+    harness; if the same file is also in the candidate or impostor
+    pool, the GI proportion self-normalizes (the target gets to
+    "win" against itself, biasing the proportion toward 1.0).
+
+    Resolution is by ``Path.resolve()`` so symlinks and ``./`` /
+    ``../`` paths collapse to the same canonical form. Entries
+    without a ``resolved_path`` (e.g., constructed in-memory by a
+    caller that bypasses ``_load_manifest``) pass through
+    unchanged.
+    """
+    try:
+        target_resolved = target_path.resolve()
+    except OSError:
+        return entries
+    out: list[CorpusEntry] = []
+    dropped: list[str] = []
+    for e in entries:
+        if e.resolved_path is None:
+            out.append(e)
+            continue
+        try:
+            if e.resolved_path.resolve() == target_resolved:
+                dropped.append(e.id)
+                continue
+        except OSError:
+            pass
+        out.append(e)
+    if dropped:
+        sys.stderr.write(
+            "  excluding "
+            f"{len(dropped)} manifest entr"
+            f"{'ies' if len(dropped) != 1 else 'y'} "
+            f"whose path matches --target: {', '.join(dropped)}\n"
+        )
+    return out
 
 
 # ---- Feature extraction (lightweight; not stylometry_core) -----
@@ -370,7 +427,7 @@ def run_gi(
     )
     impostor_personas = sorted({d.persona for d in impostor_docs})
 
-    if len(impostor_docs) < MIN_IMPOSTORS:
+    if len(impostor_personas) < MIN_IMPOSTORS:
         return GIResult(
             target_id=target_id,
             candidate_persona=candidate_persona,
@@ -385,9 +442,15 @@ def run_gi(
             proportion_ci_95=None,
             refused=True,
             refusal_reason=(
-                f"Need at least {MIN_IMPOSTORS} impostor docs in matched "
-                f"register; got {len(impostor_docs)}. Bootstrap "
-                "proportion is too noisy below this floor."
+                f"Need at least {MIN_IMPOSTORS} distinct impostor "
+                f"personas (writers) in matched register; got "
+                f"{len(impostor_personas)} persona"
+                f"{'s' if len(impostor_personas) != 1 else ''} "
+                f"across {len(impostor_docs)} doc"
+                f"{'s' if len(impostor_docs) != 1 else ''}. "
+                "The General Imposters method's claim language is "
+                "'M impostor writers'; satisfying the floor with "
+                "many docs from one writer doesn't satisfy that."
             ),
             decision="refused",
         )
@@ -688,6 +751,7 @@ def run(args: argparse.Namespace) -> int:
     target_id = args.target_id or target_path.stem
 
     entries = _load_manifest(manifest_path)
+    entries = _exclude_target_path(entries, target_path)
     register = args.register or _infer_candidate_register(
         entries, args.candidate_persona,
     )

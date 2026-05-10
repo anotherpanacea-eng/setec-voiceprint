@@ -461,6 +461,213 @@ def test_survey_runs_corpus_scoring_once_across_signals(tmp_path):
     assert len(survey["rows"]) == 3
 
 
+# ---------- Corpus text fingerprint (1.29.1) -----------------------
+
+
+class TestCorpusTextFingerprint:
+    """The cache must invalidate when the underlying text files
+    change, even if the manifest JSONL stays byte-identical. Otherwise
+    a re-OCR'd / re-extracted / preprocessing-toggled corpus will
+    return stale scored records. Reproduces the reviewer-flagged P2.
+    """
+
+    def test_fingerprint_includes_file_content(self, tmp_path):
+        """Two manifests with the same metadata but different text
+        bodies produce different fingerprints."""
+        text_dir = tmp_path / "texts"
+        text_dir.mkdir()
+
+        # Original text
+        f1 = text_dir / "essay.txt"
+        f1.write_text("Original body text. " * 50, encoding="utf-8")
+        entries_v1 = [{
+            "id": "e1", "_resolved_path": str(f1),
+            "ai_status": "ai_generated", "use": ["validation"],
+        }]
+        fp1 = ct._corpus_text_fingerprint(entries_v1)
+        assert fp1.startswith("sha256:")
+
+        # Now overwrite the text file with different content. Manifest
+        # has not changed, but the file the manifest points at HAS.
+        f1.write_text("Cleaned body text. " * 50, encoding="utf-8")
+        fp2 = ct._corpus_text_fingerprint(entries_v1)
+        assert fp1 != fp2, (
+            "fingerprint must change when underlying text bytes change"
+        )
+
+    def test_fingerprint_stable_when_text_unchanged(self, tmp_path):
+        """Fingerprint is deterministic across calls when the corpus
+        is unchanged."""
+        text_dir = tmp_path / "texts"
+        text_dir.mkdir()
+        f1 = text_dir / "essay.txt"
+        f1.write_text("text body content " * 50, encoding="utf-8")
+        entries = [{
+            "id": "e1", "_resolved_path": str(f1),
+            "ai_status": "ai_generated", "use": ["validation"],
+        }]
+        fp_a = ct._corpus_text_fingerprint(entries)
+        fp_b = ct._corpus_text_fingerprint(entries)
+        assert fp_a == fp_b
+
+    def test_fingerprint_handles_missing_file(self, tmp_path):
+        """A manifest pointing at a missing file produces a stable
+        sentinel rather than crashing."""
+        entries = [{
+            "id": "e1", "_resolved_path": str(tmp_path / "missing.txt"),
+            "ai_status": "ai_generated", "use": ["validation"],
+        }]
+        fp = ct._corpus_text_fingerprint(entries)
+        assert fp.startswith("sha256:")  # well-formed
+        # And changes if the file later appears with different content.
+        (tmp_path / "missing.txt").write_text("now exists",
+                                              encoding="utf-8")
+        fp_after = ct._corpus_text_fingerprint(entries)
+        assert fp != fp_after
+
+    def test_cache_invalidates_when_text_file_changes(self, tmp_path):
+        """End-to-end: rewrite a text file in place between two
+        calibration runs, leaving the manifest byte-identical, and
+        confirm the second run re-scores rather than reusing stale
+        cached records."""
+        manifest = _write_real_manifest(tmp_path, n_entries=4)
+        cache_path = tmp_path / "cache.json"
+        args = _make_args(manifest, records_cache=str(cache_path))
+        counts = {"calls": 0}
+
+        with _patch_scoring(counts):
+            ct.load_or_score_corpus(args, cache_path=cache_path)
+            assert counts["calls"] == 4
+
+        # Mutate one of the referenced text files. Manifest JSONL
+        # bytes are unchanged.
+        text_dir = tmp_path / "texts"
+        target = text_dir / "essay_2.txt"
+        original_size = target.stat().st_size
+        target.write_text("CLEANED & RE-EXTRACTED " * 30,
+                          encoding="utf-8")
+        assert target.stat().st_size != original_size  # changed
+
+        with _patch_scoring(counts):
+            _records, _meta, hit = ct.load_or_score_corpus(
+                args, cache_path=cache_path,
+            )
+        assert hit is False, (
+            "cache should invalidate when text bytes change; "
+            "got cache hit on stale records"
+        )
+        assert counts["calls"] == 8  # 4 fresh + 4 re-scored
+
+    def test_cache_compatibility_check_with_fingerprint(self, tmp_path):
+        """`cache_is_compatible` returns False with reason when the
+        corpus_text_fingerprint mismatches."""
+        manifest = _write_real_manifest(tmp_path)
+        cache_meta = {
+            "manifest_sha256": "sha256:fakeold",
+            "corpus_text_fingerprint": "sha256:abc",
+            "use": "validation",
+            "do_tier2": False,
+            "do_tier3": False,
+            "scorer_version": ct.SCORER_CACHE_VERSION,
+            "sub_sample": None,
+        }
+        args = _make_args(manifest)
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args,
+            manifest_sha256="sha256:fakeold",
+            corpus_text_fingerprint="sha256:def",
+        )
+        assert ok is False
+        assert "corpus text" in reason.lower()
+
+    def test_cache_compatibility_legacy_cache_invalidates(self, tmp_path):
+        """Pre-1.29.1 caches don't carry a fingerprint; treat that as
+        unknown corpus and force a re-score."""
+        manifest = _write_real_manifest(tmp_path)
+        cache_meta = {
+            "manifest_sha256": "sha256:abc",
+            # No corpus_text_fingerprint key.
+            "use": "validation",
+            "do_tier2": False,
+            "do_tier3": False,
+            "scorer_version": ct.SCORER_CACHE_VERSION,
+            "sub_sample": None,
+        }
+        args = _make_args(manifest)
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args,
+            manifest_sha256="sha256:abc",
+            corpus_text_fingerprint="sha256:def",
+        )
+        assert ok is False
+        assert "fingerprint" in reason.lower() or "1.29.1" in reason
+
+
+# ---------- Direction-aware AP (1.29.1) ----------------------------
+
+
+class TestDirectionAwareAP:
+    """`_ranking_metrics` returns both raw AP (polarity-blind) and
+    direction-aware AP (negates scores for `lt` signals so the
+    precision curve reads on the registry's polarity). Reproduces
+    the reviewer-flagged P2: a strong `lt` discriminator should
+    score high da_AP even though raw AP is low."""
+
+    def test_lt_direction_ap_negation_inverts_curve(self):
+        """For an `lt` signal where AI scores LOW and human scores
+        HIGH (the registry's hypothesis), raw AP ranks humans first
+        and reads weak. Direction-aware AP negates and reads strong.
+        """
+        # Labels: 1 = AI (positive class), 0 = human.
+        # Scores: AI clusters low (0.1-0.3), human clusters high
+        # (0.6-0.9). Direction = "lt" — registry's hypothesis
+        # matches: AI compressed when score < threshold.
+        pairs = [
+            (1, 0.10), (1, 0.15), (1, 0.20), (1, 0.25), (1, 0.30),
+            (0, 0.60), (0, 0.65), (0, 0.70), (0, 0.80), (0, 0.90),
+        ]
+        m_lt = ct._ranking_metrics(pairs, direction="lt")
+        # Raw AP sees humans on top → polarity-mismatched → low AP.
+        assert m_lt["ap"] is not None and m_lt["ap"] < 0.5
+        # Direction-aware AP negates → AI on top → high AP.
+        assert m_lt["direction_aware_ap"] is not None
+        assert m_lt["direction_aware_ap"] > 0.95
+
+    def test_gt_direction_ap_unchanged(self):
+        """For `gt` signals, raw AP and direction-aware AP are
+        identical — the polarity is already aligned."""
+        pairs = [
+            (1, 0.80), (1, 0.85), (1, 0.90),
+            (0, 0.10), (0, 0.20), (0, 0.30),
+        ]
+        m = ct._ranking_metrics(pairs, direction="gt")
+        assert m["ap"] is not None
+        assert m["direction_aware_ap"] is not None
+        assert abs(m["ap"] - m["direction_aware_ap"]) < 1e-9
+
+    def test_direction_aware_auc_consistent_with_old_formula(self):
+        """For backward-compat, direction_aware_auc = 1 − raw AUC for
+        `lt` and = raw AUC for `gt`."""
+        pairs = [
+            (1, 0.80), (1, 0.85), (1, 0.90),
+            (0, 0.10), (0, 0.20), (0, 0.30),
+        ]
+        m_gt = ct._ranking_metrics(pairs, direction="gt")
+        m_lt = ct._ranking_metrics(pairs, direction="lt")
+        # AUC is identical (raw); direction-aware reflects the flip.
+        assert m_gt["auc"] == m_lt["auc"]
+        assert m_gt["direction_aware_auc"] == m_gt["auc"]
+        assert abs(m_lt["direction_aware_auc"] - (1.0 - m_lt["auc"])) < 1e-9
+
+    def test_default_direction_is_gt(self):
+        """Calling _ranking_metrics without `direction` defaults to
+        `gt` — back-compat for any pre-1.29.1 caller."""
+        pairs = [(1, 0.7), (0, 0.3), (1, 0.6), (0, 0.4)]
+        m = ct._ranking_metrics(pairs)  # no direction kwarg
+        assert m["direction_aware_ap"] == m["ap"]
+        assert m["direction_aware_auc"] == m["auc"]
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

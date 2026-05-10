@@ -968,11 +968,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "Comparison-to-control section."
                    ))
     p.add_argument("--author-name", required=True,
-                   help="Display name of the author (e.g. \"Critical Animal\").")
+                   help="Display name of the author (e.g. \"Jane Author\").")
     p.add_argument("--corpus-label", required=True,
                    help=(
                        "Human-readable corpus label used in the header "
-                       "(e.g. \"Critical Animal blog\")."
+                       "(e.g. \"Jane Author blog\")."
                    ))
     p.add_argument("--register", default="blog_essay",
                    help="Manifest register; used in 'what's distinctive' framing.")

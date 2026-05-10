@@ -1119,9 +1119,9 @@ other people's prose.
 
 ```
 python3 scripts/acquire_blogger_takeout.py /path/to/Takeout \
-    --persona critical_animal_blog \
-    --author "Critical Animal" \
-    --impostor-for anotherpanacea_blog \
+    --persona example_impostor_blog \
+    --author "Example Author" \
+    --impostor-for your_persona_slug \
     --register blog_essay \
     --consent-status author_consent \
     --era pre_chatgpt \

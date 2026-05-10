@@ -304,6 +304,7 @@ class SurveyRow:
     auc: float | None = None
     direction_aware_auc: float | None = None
     ap: float | None = None
+    direction_aware_ap: float | None = None
     threshold: float | None = None
     tpr_at_threshold: float | None = None
     fpr_at_threshold: float | None = None
@@ -322,6 +323,7 @@ class SurveyRow:
             "auc": self.auc,
             "direction_aware_auc": self.direction_aware_auc,
             "ap": self.ap,
+            "direction_aware_ap": self.direction_aware_ap,
             "threshold": self.threshold,
             "tpr_at_threshold": self.tpr_at_threshold,
             "fpr_at_threshold": self.fpr_at_threshold,
@@ -435,6 +437,15 @@ def survey_one_signal(
         elif direction == "lt":
             row.direction_aware_auc = 1.0 - float(row.auc)
     row.ap = cal.get("ap")
+    # Direction-aware AP: prefer the value derive_threshold writes
+    # (calibrate_thresholds 1.29.1+); fall back to AP for `gt` and
+    # ``None`` for `lt` legacy entries (re-deriving AP would require
+    # the score column we no longer have at this layer).
+    da_ap = cal.get("direction_aware_ap")
+    if da_ap is None and isinstance(row.ap, (int, float)):
+        if direction == "gt":
+            da_ap = float(row.ap)
+    row.direction_aware_ap = da_ap
     row.threshold = entry.get("derived_value") or sweep.get("threshold")
     row.tpr_at_threshold = (
         cal.get("empirical_tpr") or cal.get("tpr_at_threshold")
@@ -621,18 +632,21 @@ def render_markdown_table(survey: dict[str, Any]) -> str:
         "AUC is raw `roc_auc_score` (direction-blind). da_AUC is "
         "direction-aware: ≥0.5 means the signal's polarity matches "
         "the registry's hypothesis (registry direction `lt` → "
-        "da_AUC = 1 − raw AUC; `gt` → da_AUC = raw AUC). Sort by "
-        "da_AUC, not raw.",
+        "da_AUC = 1 − raw AUC; `gt` → da_AUC = raw AUC). AP is also "
+        "raw (computed on raw scores); da_AP negates scores for `lt` "
+        "signals so the precision curve reads on the registry's "
+        "polarity. Sort by da_AUC and read da_AP for ranking quality "
+        "— raw AP can make a strong `lt` discriminator look weak.",
         "",
-        "| signal | dir | heur | AUC | da_AUC | AP | thresh | TPR | FPR | n_neg | "
+        "| signal | dir | heur | AUC | da_AUC | AP | da_AP | thresh | TPR | FPR | n_neg | "
         "1 | 2 | 3 | 4 | 5 |",
-        "|---|:-:|---:|---:|---:|---:|---:|---:|---:|---:|"
+        "|---|:-:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"
         ":-:|:-:|:-:|:-:|:-:|",
     ])
     for r in ok_rows:
         gates = r["gates"]
         lines.append(
-            "| `{signal}` | {dir} | {heur} | {auc} | {da_auc} | {ap} | "
+            "| `{signal}` | {dir} | {heur} | {auc} | {da_auc} | {ap} | {da_ap} | "
             "{thr} | {tpr} | {fpr} | {nneg} | "
             "{g1} | {g2} | {g3} | {g4} | {g5} |".format(
                 signal=r["signal"],
@@ -641,6 +655,7 @@ def render_markdown_table(survey: dict[str, Any]) -> str:
                 auc=_fmt(r["auc"]),
                 da_auc=_fmt(r.get("direction_aware_auc")),
                 ap=_fmt(r["ap"]),
+                da_ap=_fmt(r.get("direction_aware_ap")),
                 thr=_fmt(r["threshold"]),
                 tpr=_fmt(r["tpr_at_threshold"]),
                 fpr=_fmt(r["fpr_at_threshold"]),

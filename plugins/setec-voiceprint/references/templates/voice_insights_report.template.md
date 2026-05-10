@@ -1,6 +1,6 @@
 # Voice insights report template
 
-This is the canonical template for author-facing voice insights reports generated from SETEC stylometric output. Distilled from the two reference reports produced in the 2026-05-08 Cowork session: Critical Animal (single-corpus profile) and Joshua / Scu cross-boundary drift comparison.
+This is the canonical template for author-facing voice insights reports generated from SETEC stylometric output. Distilled from two internal reference reports produced during framework development: a single-corpus profile and a cross-corpus drift comparison.
 
 ## Two report shapes
 
@@ -183,11 +183,11 @@ generate_voice_report.py \
     --idiolect-n2 path/to/idiolect_n2.json \
     --idiolect-n3 path/to/idiolect_n3.json \
     --comparison-drift path/to/control_drift.json \
-    --author-name "Critical Animal" \
-    --corpus-label "Critical Animal blog" \
+    --author-name "Author Name" \
+    --corpus-label "author corpus label" \
     --register blog_essay \
     --ai-disclosure "no AI use on the blog at any point per author confirmation" \
-    --out path/to/critical_animal_voice_insights.md
+    --out path/to/voice_insights.md
 ```
 
 The script emits a draft markdown report with the numerical sections populated and the interpretive sections marked `{TODO: interpret}`. The user (or an LLM pass with the report as context) fills the TODOs and saves the final.

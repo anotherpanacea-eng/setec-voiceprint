@@ -496,6 +496,152 @@ def test_deterministic_under_same_seed():
     assert a.wins == b.wins
 
 
+# ---------- Persona floor (1.29.1) ---------------------------------
+
+
+class TestPersonaFloor:
+    """The MIN_IMPOSTORS gate counts distinct impostor *personas*
+    (writers), not docs. 5 docs from one persona must NOT clear the
+    floor — that's 1 writer, and the GI methodology requires M
+    writers. Reproduces the reviewer-flagged P2."""
+
+    def test_five_docs_one_persona_refuses(self):
+        candidate = _candidate_docs()
+        # Five impostor docs, all from the same persona.
+        single_persona_impostors = [
+            gi.CorpusEntry(
+                id=f"single_{i}",
+                text=(
+                    "Most contemporary fiction declines structural "
+                    "ambition in exchange for surface velocity. " * 5
+                ) + f" Doc {i}.",
+                persona="impostor_solo",
+                register="blog_essay",
+                author="Anon",
+                corpus_role="impostor",
+                impostor_for=["alice"],
+                word_count=100,
+            )
+            for i in range(5)
+        ]
+        result = gi.run_gi(
+            target_text=candidate[0].text, target_id="t",
+            candidate_docs=candidate,
+            impostor_docs=single_persona_impostors,
+            iterations=20, seed=42,
+        )
+        assert result.refused is True
+        assert result.decision == "refused"
+        assert "persona" in result.refusal_reason.lower()
+        assert "writer" in result.refusal_reason.lower()
+
+    def test_five_personas_passes_floor(self):
+        candidate = _candidate_docs()
+        impostors = _impostor_docs()[:5]  # exactly 5, all distinct
+        # Sanity check the fixture: 5 distinct personas.
+        assert len({i.persona for i in impostors}) == 5
+        result = gi.run_gi(
+            target_text=candidate[0].text, target_id="t",
+            candidate_docs=candidate, impostor_docs=impostors,
+            iterations=10, seed=42,
+        )
+        assert result.refused is False, result.refusal_reason
+
+    def test_refusal_message_mentions_doc_count_too(self):
+        """Doc count is reported as an adequacy diagnostic alongside
+        the persona-count gate; both numbers help the user diagnose."""
+        candidate = _candidate_docs()
+        single_persona_impostors = [
+            gi.CorpusEntry(
+                id=f"s_{i}", text=f"text {i} " * 50,
+                persona="solo", register="blog_essay", author="A",
+                corpus_role="impostor", impostor_for=["alice"],
+                word_count=50,
+            )
+            for i in range(7)
+        ]
+        result = gi.run_gi(
+            target_text="target", target_id="t",
+            candidate_docs=candidate,
+            impostor_docs=single_persona_impostors,
+            iterations=10, seed=42,
+        )
+        assert result.refused is True
+        assert "1 persona" in result.refusal_reason
+        assert "7 docs" in result.refusal_reason
+
+
+# ---------- Target self-entry filter (1.29.1) ---------------------
+
+
+class TestTargetSelfEntry:
+    """If the target file is also referenced by a manifest entry —
+    same resolved path — the harness must filter that entry before
+    running. Otherwise the target self-normalizes (proportion → 1.0)
+    against itself, biasing the report. Reproduces the reviewer-
+    flagged P2.
+    """
+
+    def test_resolved_path_filter_drops_overlap(self, tmp_path):
+        target_file = tmp_path / "alice_draft.txt"
+        target_file.write_text("identical text", encoding="utf-8")
+        # Build entries by hand with resolved_path set
+        entry_overlap = gi.CorpusEntry(
+            id="alice_1",
+            text="some text",
+            persona="alice", register="blog_essay", author="A",
+            corpus_role="identity_baseline", impostor_for=[],
+            word_count=100,
+            resolved_path=target_file.resolve(),
+        )
+        entry_distinct = gi.CorpusEntry(
+            id="alice_2",
+            text="other text",
+            persona="alice", register="blog_essay", author="A",
+            corpus_role="identity_baseline", impostor_for=[],
+            word_count=100,
+            resolved_path=tmp_path / "different_file.txt",
+        )
+        result = gi._exclude_target_path(
+            [entry_overlap, entry_distinct], target_file,
+        )
+        assert len(result) == 1
+        assert result[0].id == "alice_2"
+
+    def test_no_resolved_path_passes_through(self, tmp_path):
+        """In-memory entries (no resolved_path) are not filtered."""
+        target_file = tmp_path / "draft.txt"
+        target_file.write_text("hello", encoding="utf-8")
+        entry = gi.CorpusEntry(
+            id="x", text="x", persona="alice", register="blog_essay",
+            author="A", corpus_role="identity_baseline",
+            impostor_for=[], word_count=10,
+            resolved_path=None,
+        )
+        result = gi._exclude_target_path([entry], target_file)
+        assert len(result) == 1
+
+    def test_load_manifest_populates_resolved_path(self, tmp_path):
+        text_path = tmp_path / "essay.txt"
+        text_path.write_text("body of the essay" * 20, encoding="utf-8")
+        manifest = tmp_path / "manifest.jsonl"
+        manifest.write_text(
+            json.dumps({
+                "id": "essay_1",
+                "path": "essay.txt",
+                "persona": "alice",
+                "register": "blog_essay",
+                "corpus_role": "identity_baseline",
+                "use": ["baseline"],
+            }) + "\n",
+            encoding="utf-8",
+        )
+        entries = gi._load_manifest(manifest)
+        assert len(entries) == 1
+        assert entries[0].resolved_path is not None
+        assert entries[0].resolved_path == text_path.resolve()
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

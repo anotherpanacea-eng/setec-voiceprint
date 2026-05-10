@@ -270,32 +270,74 @@ def fixed_threshold_bootstrap_ci(
     }
 
 
-def _ranking_metrics(pairs: Sequence[tuple[int, float]]) -> dict[str, float | None]:
-    """Compute AUC + AP. Try sklearn first, then a Mann-Whitney
-    fallback. Mirrors validation_harness.fallback_roc_auc /
-    fallback_average_precision behavior."""
+def _ranking_metrics(
+    pairs: Sequence[tuple[int, float]],
+    *,
+    direction: str = "gt",
+) -> dict[str, float | None]:
+    """Compute AUC + AP, raw and direction-aware.
+
+    Both AUC and AP convention assume "higher score = more positive."
+    For ``lt``-direction signals (registry says compressed when score
+    < threshold), the *negated* score should be the positive-class
+    indicator. Computing AP on raw scores for an ``lt`` signal makes
+    a good discriminator look weak: if AI essays cluster at low
+    burstiness and human essays at high, ranking by score pushes
+    humans to the top of the list, which inverts the precision
+    curve.
+
+    Returns four fields:
+
+      - ``auc`` (raw): polarity-blind, on a 0..1 scale where 0.5 =
+        chance. Intentionally direction-blind for parity with the
+        gate-1 polarity check.
+      - ``ap`` (raw): the same polarity-blind shape.
+      - ``direction_aware_auc``: ``auc`` for ``gt`` signals,
+        ``1 - auc`` for ``lt``. Reads on a consistent "≥ 0.5 =
+        polarity matches" scale.
+      - ``direction_aware_ap``: AP computed with negated scores for
+        ``lt`` signals. Reads on a consistent "higher = stronger
+        discrimination given the registry's hypothesis" scale.
+
+    Mirrors ``validation_harness.fallback_roc_auc`` /
+    ``fallback_average_precision`` behavior when sklearn isn't
+    available.
+    """
+    labels = [p[0] for p in pairs]
+    raw_scores = [p[1] for p in pairs]
+    da_scores = (
+        [-s for s in raw_scores] if direction == "lt" else list(raw_scores)
+    )
     try:
         from sklearn.metrics import (  # type: ignore
             average_precision_score,
             roc_auc_score,
         )
-        labels = [p[0] for p in pairs]
-        scores = [p[1] for p in pairs]
-        return {
-            "auc": float(roc_auc_score(labels, scores)),
-            "ap": float(average_precision_score(labels, scores)),
-        }
+        raw_auc = float(roc_auc_score(labels, raw_scores))
+        raw_ap = float(average_precision_score(labels, raw_scores))
+        da_ap = float(average_precision_score(labels, da_scores))
     except Exception:
         from validation_harness import (  # type: ignore
             fallback_average_precision,
             fallback_roc_auc,
         )
-        labels = [p[0] for p in pairs]
-        scores = [p[1] for p in pairs]
-        return {
-            "auc": fallback_roc_auc(labels, scores),
-            "ap": fallback_average_precision(labels, scores),
-        }
+        raw_auc = fallback_roc_auc(labels, raw_scores)
+        raw_ap = fallback_average_precision(labels, raw_scores)
+        da_ap = fallback_average_precision(labels, da_scores)
+
+    if raw_auc is None:
+        da_auc: float | None = None
+    elif direction == "lt":
+        da_auc = 1.0 - raw_auc
+    else:
+        da_auc = raw_auc
+
+    return {
+        "auc": raw_auc,
+        "ap": raw_ap,
+        "direction_aware_auc": da_auc,
+        "direction_aware_ap": da_ap,
+    }
 
 
 def _git_commit() -> str:
@@ -374,6 +416,50 @@ def _manifest_content_hash(manifest_path: Path) -> str:
         for chunk in iter(lambda: f.read(64 * 1024), b""):
             h.update(chunk)
     return f"sha256:{h.hexdigest()}"
+
+
+def _corpus_text_fingerprint(
+    entries: Sequence[dict[str, Any]],
+) -> str:
+    """SHA-256 over a canonical (resolved_path, text_sha256) listing.
+
+    The manifest hash alone is not sufficient as a cache key: the
+    manifest JSONL can stay byte-identical while the underlying text
+    files it points to are regenerated (re-OCR, re-extraction,
+    cleanup pass, preprocessing toggle change) — at which point the
+    cached scored records are stale but ``cache_is_compatible``
+    would still report compatible.
+
+    This fingerprint hashes the actual bytes of every entry's
+    resolved-path text plus the resolved path itself, in a
+    deterministic order, so any change to any file the manifest
+    references invalidates the cache. Entries whose
+    ``_resolved_path`` is missing or unreadable contribute a sentinel
+    so the fingerprint still differs between "file-present" and
+    "file-missing" runs.
+    """
+    rows: list[tuple[str, str]] = []
+    for entry in entries:
+        resolved = entry.get("_resolved_path") or ""
+        if not resolved:
+            rows.append((str(entry.get("id") or ""), "no-resolved-path"))
+            continue
+        try:
+            with open(resolved, "rb") as f:
+                inner = hashlib.sha256()
+                for chunk in iter(lambda: f.read(64 * 1024), b""):
+                    inner.update(chunk)
+                rows.append((str(resolved), inner.hexdigest()))
+        except OSError:
+            rows.append((str(resolved), "unreadable"))
+    rows.sort()
+    outer = hashlib.sha256()
+    for path_str, text_hash in rows:
+        outer.update(path_str.encode("utf-8", errors="ignore"))
+        outer.update(b"\x00")
+        outer.update(text_hash.encode("ascii"))
+        outer.update(b"\n")
+    return f"sha256:{outer.hexdigest()}"
 
 
 def score_corpus(
@@ -465,6 +551,7 @@ def score_corpus(
     scoring_meta = {
         "manifest_path": str(manifest_path),
         "manifest_sha256": _manifest_content_hash(manifest_path),
+        "corpus_text_fingerprint": _corpus_text_fingerprint(entries),
         "use": args.use,
         "do_tier2": bool(args.tier2),
         "do_tier3": bool(args.tier3),
@@ -482,25 +569,46 @@ def cache_is_compatible(
     args: argparse.Namespace,
     *,
     manifest_sha256: str,
+    corpus_text_fingerprint: str | None = None,
 ) -> tuple[bool, str]:
     """Decide whether a loaded cache can be reused for the current
     args. Returns ``(ok, reason_if_not)``.
 
     Cache invalidates on:
 
-      - manifest content change (`manifest_sha256` mismatch)
-      - `use` filter change (different entry set)
-      - `tier2` or `tier3` change (different signal columns
-        available — a cache scored with `do_tier2=False` doesn't
+      - manifest content change (``manifest_sha256`` mismatch)
+      - **corpus text content change** (``corpus_text_fingerprint``
+        mismatch) — catches the case where the manifest stays
+        byte-identical but a referenced text file was regenerated,
+        re-OCR'd, cleaned, or had its preprocessing rerun. Without
+        this check, ``load_or_score_corpus`` would return stale
+        cached scored records from old text. When the caller
+        passes ``None`` (the legacy contract) the check is skipped
+        for backward compat with pre-1.29.1 caches and tests.
+      - ``use`` filter change (different entry set)
+      - ``tier2`` or ``tier3`` change (different signal columns
+        available — a cache scored with ``do_tier2=False`` doesn't
         carry POS-bigram KL values)
       - sub-sample change (a partial cache can't satisfy a full run
         and a full cache can satisfy a partial run, but to keep the
         rule simple we invalidate on any sub-sample mismatch)
-      - `scorer_version` change (the cache key bumps when the
+      - ``scorer_version`` change (the cache key bumps when the
         scoring code changes shape)
     """
     if cache_meta.get("manifest_sha256") != manifest_sha256:
         return False, "manifest content changed"
+    if corpus_text_fingerprint is not None:
+        cached_fp = cache_meta.get("corpus_text_fingerprint")
+        # Legacy caches (pre-1.29.1) don't carry the fingerprint;
+        # treat that as "unknown corpus" and force re-scoring rather
+        # than risk returning stale records.
+        if cached_fp is None:
+            return False, (
+                "cache predates corpus-text fingerprinting "
+                "(pre-1.29.1); re-score to populate"
+            )
+        if cached_fp != corpus_text_fingerprint:
+            return False, "corpus text content changed"
     if cache_meta.get("use") != args.use:
         return False, f"use filter changed ({cache_meta.get('use')} → {args.use})"
     if bool(cache_meta.get("do_tier2")) != bool(args.tier2):
@@ -562,8 +670,25 @@ def load_or_score_corpus(
             cached = None
         if cached is not None:
             cache_meta = cached.get("scoring_meta") or {}
+            # Compute the corpus text fingerprint up-front — costs
+            # only the file-hash pass, not the variance audit pass.
+            # If this matches the cached fingerprint, the cache is
+            # safe to reuse without re-scoring.
+            try:
+                fresh_entries = [
+                    e for e in load_manifest_entries(manifest_path)
+                    if _entry_uses(e, args.use)
+                    and not _entry_uses(e, "exclude")
+                ]
+                fresh_text_fp: str | None = _corpus_text_fingerprint(
+                    fresh_entries
+                )
+            except Exception:  # noqa: BLE001
+                fresh_text_fp = None
             ok, reason = cache_is_compatible(
-                cache_meta, args, manifest_sha256=fresh_hash,
+                cache_meta, args,
+                manifest_sha256=fresh_hash,
+                corpus_text_fingerprint=fresh_text_fp,
             )
             if ok:
                 records = cached.get("records") or []
@@ -632,7 +757,7 @@ def derive_threshold_from_records(
         )
         raise SystemExit(2)
 
-    metrics = _ranking_metrics(pairs)
+    metrics = _ranking_metrics(pairs, direction=direction)
 
     seed = _stable_seed(
         args.bootstrap_seed, args.signal, signal_path, str(args.fpr_target),
@@ -685,6 +810,12 @@ def derive_threshold_from_records(
             "precision_ci_95": ci["precision_ci"] if ci else None,
             "auc": metrics["auc"],
             "ap": metrics["ap"],
+            # Direction-aware fields default to None when older test
+            # fixtures mock `_ranking_metrics` with the legacy
+            # `{auc, ap}` shape; the survey row builder also tolerates
+            # missing values for back-compat.
+            "direction_aware_auc": metrics.get("direction_aware_auc"),
+            "direction_aware_ap": metrics.get("direction_aware_ap"),
             "ci_method": ci["method"] if ci else None,
             "bootstrap_resamples": args.bootstrap_resamples,
             "bootstrap_seed": args.bootstrap_seed,
