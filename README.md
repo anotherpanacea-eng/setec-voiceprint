@@ -192,22 +192,24 @@ The figures below are honest measurements from the 2026-05 RAID + MAGE runs on a
 | MAGE `manifest.jsonl` | ~187 MB | Same shape, smaller corpus. |
 | Per-shard survey output | <50 MB | `_survey_full_*.json` carries per-signal histograms. |
 | Optional SBERT cohesion model | ~2 GB | `sentence-transformers` install pulls in torch; the MiniLM-L6-v2 model itself is ~90 MB. |
-| Optional research-grade embeddings (R12) | ~2.4 GB | `mxbai-embed-large-v1` per `internal/SPEC_embedding_model_choice.md`. |
+| Optional research-grade embeddings (R12) | ~2.4 GB | `mxbai-embed-large-v1` (Apache 2.0; selected for the Semantic Trajectory Audit work, not yet wired into the public release). |
 
 **Total disk for a full RAID + MAGE setup with calibration deps: budget 25–28 GB.** Corpora live under `$SETEC_BASELINES_DIR/raid/` and `$SETEC_BASELINES_DIR/mage/`; both are gitignored. Manifests can be deleted and regenerated from the CSVs as needed.
 
-### Time (single-threaded, Tier 1 only)
+### Time (single-threaded, all Tier 1 signals)
 
 Wall-clock figures from a 2026-05 run on an M-series Mac. CPU pegged at 99% on one core for the duration; memory peak ~250 MB resident.
 
 | Run | Wall-clock | Throughput |
 |---|---|---|
-| MAGE survey (436k rows, Tier 1 only) | 11–18 hours | ~7–11 rows/sec |
-| RAID survey (8.0M rows, Tier 1 only) | **6–13 days single-threaded** | Same throughput; row count is 18× MAGE. |
+| MAGE survey (436k rows, all Tier 1 signals) | 11–18 hours | ~7–11 rows/sec |
+| RAID survey (8.0M rows, all Tier 1 signals) | **6–13 days single-threaded** | Same throughput; row count is 18× MAGE. |
 
-The variance comes from row-length distribution; the runtime predictor inside the survey is noisy on long-tailed batches. **Single-threaded RAID is not recommended.** The sharded-calibration spec (`internal/SPEC_sharded_calibration.md`, v1.43.0 implementation pending) parallelizes the worker side across a worker pool and cuts RAID wall-clock to under a week with 8 shards. Sharding does not change the per-signal FPR-resolution gate; it just makes the gate reachable on RAID-scale corpora in human-tractable time.
+The variance comes from row-length distribution; the runtime predictor inside the survey is noisy on long-tailed batches. **Single-threaded RAID is not recommended.** The sharded-calibration design (v1.43.0 implementation pending) parallelizes the worker side across a worker pool and cuts RAID wall-clock to under a week with 8 shards.
 
-Adding higher tiers multiplies wall-clock roughly as follows:
+**How signal count affects cost.** `calibration_survey.py` uses a score-once-survey-many cache: every Tier 1 signal is scored over the corpus in a single pass (this is what the wall-clock above measures), then the per-signal threshold sweeps reuse the cached records via `derive_threshold_from_records`. Adding a ninth Tier 1 signal to an eight-signal sweep does NOT multiply runtime by 9/8 — the threshold sweep itself is seconds per signal. The expensive step is record collection, which is paid once. Plan resource budgets accordingly: a one-signal Tier 1 run and an all-Tier-1 run cost roughly the same wall-clock against the same records cache. (The per-signal `1/n_neg` FPR-resolution gate decides which signals' thresholds are *reportable*, not whether they get scored.)
+
+Adding higher tiers multiplies wall-clock roughly as follows. Each multiplier applies to the per-row scoring step, since the cache architecture amortises the cost across all signals in that tier:
 
 | Add | Multiplier vs. Tier 1 |
 |---|---|
@@ -215,8 +217,6 @@ Adding higher tiers multiplies wall-clock roughly as follows:
 | Tier 3 cohesion via TF-IDF (CPU only) | ×1.2–1.5 |
 | Tier 3 cohesion via SBERT (CPU only) | ×3–5 |
 | Tier 3 cohesion via SBERT (CUDA / ROCm GPU) | ×1.1–1.3 |
-
-The framework currently runs the survey one signal at a time because the FPR-resolution gate (`1/n_neg`) is per-signal. Multiple signals are surveyed in series, not in parallel — until the sharded toolchain ships. Plan accordingly.
 
 ### Memory
 
@@ -226,7 +226,7 @@ A single-shard Tier 1 survey peaks around 250 MB resident for MAGE-scale corpora
 
 Tier 1 and Tier 2 are CPU-bound. Tier 3 with SBERT and the planned R12 embedding work benefit from GPU but are not blocked by its absence; TF-IDF fallback and CPU torch handle the no-GPU case. For multi-day runs on RAID-scale corpora, a discrete GPU (NVIDIA CUDA on Linux/Windows or AMD ROCm on Linux/WSL2) cuts Tier 3 wall-clock by 3–5×.
 
-The sharded-calibration design assumes a mixed-hardware setup: macOS laptops for one shard cohort, a Windows + AMD + WSL2 (ROCm 7.2.1) Linux desktop for another, coordinated via cloud-synced state files. See `internal/SPEC_sharded_calibration.md` for the architecture.
+The sharded-calibration design assumes a mixed-hardware setup: macOS laptops for one shard cohort, a Windows + AMD + WSL2 (ROCm 7.2.1) Linux desktop for another, coordinated via cloud-synced state files. Shards are claimed atomically by file-rename, workers checkpoint on SIGTERM, and a small state file records which shards are done so any worker can resume work no machine has yet touched. (Architecture and migration details land in the calibration toolchain's `PROVENANCE.md` once v1.43.0 ships.)
 
 ### What this means for the user
 
