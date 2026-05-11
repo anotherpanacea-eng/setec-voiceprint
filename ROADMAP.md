@@ -385,6 +385,77 @@ The single most-damaging anti-pattern this schedule resists is **shipping new to
 
 The 2.0 refactor target (Compression-of-Choice / Stylistic Choice Entropy) sits beyond this entire schedule. When 2.0 lands, every existing surface gets rewritten as a special case of compression in some choice set, and the trustworthiness layer gets reframed as compression-aware (e.g., the confounder audit becomes "differential diagnosis across choice-set perturbations" rather than across signal directions). That's an architectural rewrite, not a release.
 
+### Post-R12 priorities (informed by 2026-05-11 prior-art survey)
+
+A merged-and-verified prior-art survey on 2026-05-11 (three LLM passes — Claude / GPT / Gemini — reconciled against fetched URLs rather than pattern-match-on-citation-style) confirmed SETEC's novelty as a synthesis (no project hits 4+ SETEC features; `idiolect` by Andrea Nini is the single 3-feature ancestor) and surfaced three concrete additions worth capturing in the roadmap. Each is independently shippable; none is on a paired-release rhythm because the framework has moved past the R1–R12 schedule into research-driven territory.
+
+#### A. README "Why no verdict" docs section (smallest, ship anytime)
+
+**Finding.** The OpenClaw humanizer ecosystem (`openclaw/skills` archive, ~4,500 stars; `brandonwise/humanizer` as the substantive example with 136 tests including `calibration.test.js`, 29 pattern detectors, 500+ vocabulary terms in 3 tiers, platform-specific thresholds for LinkedIn/Reddit/etc.) is a mature adversarial complement to forensic detection tooling. Humanizer tools help users *avoid* detection — the inverse of SETEC's surfacing-evidence posture. The two ecosystems share vocabulary (delve / tapestry / em-dash overuse) but inverted purpose.
+
+**Roadmap implication.** Crystallize the framework's evidence-not-verdict argument in user-facing docs. The argument has three legs: (a) the humanizer ecosystem exists and is mature, (b) verdicts shipped as load-bearing become humanizer optimization targets, (c) the Stylometry-to-the-people policy (no anchored thresholds shipped from labeled corpora; see `scripts/calibration/PROVENANCE.md`) is the principled response — calibration moves into user hands, not vendor hands, and the framework's load-bearing artifact becomes the methodology rather than the numbers.
+
+**Scope.** Single docs PR. New README section (between "Design principles" and "License", or front-mounted between "Choose the question" and "Plugin skills"). ~300–500 words. References OpenClaw as the load-bearing example; ties into claim-license discipline.
+
+**Phasing.** v1.X.X PATCH bump. One file modified. No code, no tests.
+
+**Risks.** Minimal. Worth running past the maintainer for tone so the framing stays technical rather than slipping into evangelism.
+
+#### B. Costa 5-state authorship distinction (medium; spec + schema change)
+
+**Finding.** Daniel Bruno Corvelo Costa's "Global Proof-of-Reality Infrastructure" submission (2026-03-17, non-normative public comment to the SEC Crypto Task Force; one-person proposal hosted on sec.gov, no regulatory standing, but conceptually substantive) proposes a 5-state authorship taxonomy more granular than SETEC's current binary-ish `ai_status` field. The states: human-authored unmodified / human-authored AI-modified / AI-generated from human inputs / fully AI-generated / multi-source composite — each with a different evidentiary weight under Costa's RCES (Reality Claim Evidence Sets) framing.
+
+**Why this matters operationally.** Smoothing-diagnosis routinely encounters `human_authored_ai_modified` prose — that's the dominant real-world case, and the current `ai_status: pre_ai_human / ai_generated` binary forces it into either-wrong category. Claim-license blocks could route off `authorship_state` to produce sharper licensure ("this audit licenses inference about human-authored AI-modified prose; it does not license inference about fully-AI-generated prose"), and the validation harness's per-class slicing would gain a richer label axis.
+
+**Roadmap placement.** Cross-references "Trustworthiness expansion → Tier 3 — Writer-facing upgrades" (the per-state claim-license routing is a Tier 3 extension of `claim_license.py`); independent of, but compatible with, every existing manifest convention.
+
+**Scope, phased across three PRs:**
+
+1. **Spec only.** `internal/SPEC_authorship_states.md` (gitignored). 15–25 KB. Covers the 5-state taxonomy, mapping rules from existing corpora (RAID, MAGE, EditLens — most rows default `null` because source corpora don't carry this distinction natively), operational definition of `multi_source_composite` (the vaguest of the five; needs anchoring against concrete examples like "AI-edited draft quoted in a multi-author anthology"), and the orthogonality argument against existing `ai_status` and `editing_status` fields.
+2. **Validator + manifest field.** `manifest_validator.py` accepts a new `authorship_state` field with `null` default for backwards compat. `ALLOWED_AUTHORSHIP_STATE` vocabulary added. Tests pin the new vocabulary and the null-allowed rule. CHANGELOG entry tagged MINOR (additive schema change).
+3. **Audit-script routing.** Per-task-surface claim-license blocks gain per-state language. Optional behavior; default unchanged. The longest sub-phase because every task surface producing a `ClaimLicense` block needs review.
+
+**Phasing.** v1.X.0 spec PR, v1.X+1.0 validator PR, v1.X+2.0 audit-routing PR. Three weeks calendar at sustainable cadence; one week if compressed.
+
+**Risks.** `multi_source_composite` is fuzzy; needs operational pinning in the spec. The new field overlaps semantically with `editing_status` and `ai_status`; orthogonality argument is load-bearing. Mapping existing corpora is lossy; the framework doesn't pretend to know.
+
+#### C. DivEye surprisal-distribution signal (largest; needs its own model-choice decision)
+
+**Finding.** DivEye (IBM, Basani & Chen, TMLR 2026; also ICML DIG-BUG 2025; CC BY-NC-SA 4.0, GPL-3 incompatible) demonstrates state-of-the-art AI-prose discrimination using surprisal-distribution features at the input layer of a classifier — specifically, mean / variance / autocorrelation of per-token surprisal under a causal language model. LLM-generated prose tends to produce more uniformly-surprising tokens than human prose; humans cluster their surprise; LLMs flatten it. The signal is structurally orthogonal to every existing Tier 1 SETEC signal (which are lexical / syntactic / aggregate-distributional).
+
+**License posture.** Code is CC BY-NC-SA 4.0 (cannot import). Math is unrestricted. Clean-room reimplementation is the path: implement the per-token surprisal mean / variance / autocorrelation primitives against SETEC's own corpus discipline, license the implementation under GPL-3-or-later like the rest of the framework.
+
+**Why this is bigger than items A and B.** Surprisal requires a *causal* language model (predicts next-token probability), not an embedding model. The 2026-05-11 embedding-model-choice spec we just finished revising (mxbai / Gemma / Harrier / Qwen / bge candidates, no-priority posture, §6.4 fixture suite as the load-bearing decision) does not apply — embedding models give vectors, not surprisal. Surprisal needs its own model-choice spec with its own §6.4-equivalent fixture-test gate. Candidate causal LMs at the right scale (1–3B params for laptop-runnable cheap surprisal): Phi-3 Mini (Microsoft, MIT), TinyLlama (Apache 2.0), Llama 3.2 1B (Meta custom license), Qwen 2.5 1.5B (Apache 2.0), GPT-2 small (OpenAI, MIT; old but well-understood).
+
+**Roadmap placement.** Cross-references "Stylometric surface expansion → Tier 1 — Near-term builds" as a fourth Tier-1 surface alongside Paragraph Architecture, Discourse Move Signature, and Agency/Abstraction Audit. But unlike those three, it carries a model dependency that ripples into a sibling research project (the surprisal-model-choice spec), so it sits *above* them in cost rather than alongside.
+
+**Scope, phased across four-plus PRs:**
+
+1. **Specs.** `internal/SPEC_surprisal_signal.md` + `internal/SPEC_surprisal_model_choice.md`. Two gitignored documents. The signal spec defines the mathematical content (surprisal mean / variance / autocorrelation, fixed-window vs whole-document, normalization choices). The model-choice spec is the structural analog of the embedding spec — candidates listed, no priority designated, fixture test as load-bearing decision point.
+2. **`surprisal_backend.py`** — pluggable causal-LM wrapper mirroring the shape of `embedding_backend.py`. Alias table, lazy load, honest failure (no silent fallback), deterministic mode. Tests with stub LM. Module exists but no audit-script integration yet.
+3. **`surprisal_audit.py`** — standalone audit script. Computes the three statistics over a draft. JSON + markdown output. `ClaimLicense` block. `task_surface: smoothing_diagnosis`. PROVISIONAL banding only (Stylometry-to-the-people compliance). 30–50 tests.
+4. **Integration into `variance_audit.py`** as opt-in Tier (Tier 4? or extension to Tier 3 cohesion?). Framework already has tier infrastructure; adding a tier follows the established shape.
+5. **§6.4 fixture suite for surprisal-model choice** runs operationally on the calibration host. Same discipline as the embedding-model fixture work. Not a PR; an operational rollout step.
+
+**Phasing.** v1.X.0 spec PRs (the two specs ship in one PR or two; either works). v1.X+1.0 backend. v1.X+2.0 audit. v1.X+3.0 variance_audit integration. v1.X+4.0+ calibration runs.
+
+**Risks.** Whiplashing the surprisal-model decision the way the embedding-model decision whiplashed four times in one day. Mitigation: start with the no-priority posture from PR 1 of the spec. Memory footprint: a 1–2B-param causal LM is ~2–4 GB on disk; optional tier, users opt in; README costs section gains a row. Determinism: causal LM inference is non-deterministic across batch sizes by default; deterministic-algorithms mode at the framework level. Compute: per-token forward pass at every position is expensive; sharded toolchain (v1.44.x) becomes essential at corpus scale.
+
+#### Cross-cutting sequencing
+
+| Order | Item | Effort | Blocks downstream? |
+|---|---|---|---|
+| 1 | README "Why no verdict" (A) | 1–2 hours | No |
+| 2 | Authorship-states spec (B.1) | 2–3 hours | B.2 |
+| 3 | Authorship-states validator (B.2) | 3–4 hours | B.3 |
+| 4 | Surprisal specs (C.1) | 4–6 hours | All C work |
+| 5 | Authorship-states audit routing (B.3) | 6–8 hours, many touchpoints | No |
+| 6 | Surprisal backend → audit → variance_audit integration (C.2–C.4) | 1–2 weeks calendar | Calibration runs |
+
+Items 1–4 are spec-and-small-PR shape: appropriate for sessions where review capacity is constrained. Item 5 is a docs-pass-session shape. Item 6 is a multi-week research-grade project that probably waits for the AMD desktop calibration host to be live and for the embedding-model §6.4 fixture suite to complete (so two model-choice decisions don't run in parallel).
+
+The 2.0 refactor target (Compression-of-Choice) sits beyond this roadmap. None of items A–C anticipate it; all three integrate cleanly into the 1.X surface.
+
 ## Open architectural questions
 
 ### Layer A
