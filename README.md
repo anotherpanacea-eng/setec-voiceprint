@@ -25,6 +25,20 @@ The four surfaces share statistical signals because RLHF-induced mode collapse, 
 
 Every script's JSON output and markdown report carry an explicit `task_surface` field so downstream consumers can route by surface and refuse to mix scores across them.
 
+## Why no verdict
+
+SETEC's "is not an AI detector" posture is not modesty or hedging. It is the conclusion of three distinct lines of evidence about what stylometric measurement can and cannot do honestly.
+
+**Optimization targets.** A maintained ecosystem of "humanizer" tools (OpenClaw skills archive, brandonwise/humanizer with 136 calibration tests, similar projects across HuggingFace and GitHub) exists specifically to help users edit prose to evade AI detectors. These tools detect "AI tells" — banned vocabulary tiers, em-dash overuse, sentence-rhythm patterns, sycophantic phrasing — and rewrite text to suppress them. They share substantial vocabulary and pattern catalogs with SETEC's signals. The inverse purpose is the point: a framework that ships a single verdict or threshold gives the humanizer ecosystem a fixed optimization target. The framework's value reduces to the half-life of that target.
+
+**Cross-corpus polarity volatility.** The framework ran full Tier 1 calibration surveys against two separate labeled corpora on consecutive days. EditLens val split (1,506 essays, ESL-student human comparator, 2026-05-10) and MAGE (338k rows across 10 source datasets, 2026-05-11). Every Tier 1 signal that produced a comparable measurement on both corpora **flipped direction between them**. Structural-variance signals (`burstiness_B`, `sentence_length_sd`, `fkgl_sd`, `connective_density`) matched the framework's smoothing-diagnosis hypothesis on EditLens and inverted it on MAGE. Lexical-diversity signals (`mattr`, `mtld`, `yules_k`, `shannon_entropy`) inverted on EditLens and matched on MAGE. The pattern is consistent, not random: signal polarity depends on what the human comparator looks like, and no single labeled corpus produces a threshold that generalizes. Cross-corpus polarity inversion is documented in `plugins/setec-voiceprint/references/calibration-findings-2026-05-11-mage.md` and the predecessor 2026-05-10 doc.
+
+**Measurement is not adjudication.** The four task surfaces measure properties of prose — variance compression, distance from baseline, named-pattern density, semantic trajectory. The same properties have many causes (LLM smoothing, but also genre conventions, professional copyediting, register shift, ESL writing, translation, dictation cleanup, intentional voice imitation, time drift, POV collapse). A measurement that distinguishes prose with mode-collapse properties from prose without them is not the same thing as a measurement that identifies AI authorship. The framework treats those as different claims with different licensure rules; the evidence does not entitle conflation.
+
+The operational consequence is the "Stylometry to the people" calibration posture (see `plugins/setec-voiceprint/scripts/calibration/PROVENANCE.md`): SETEC ships methods, tooling, and provenance discipline. It does not ship per-signal decision thresholds derived from labeled corpora as load-bearing defaults. Users who want anchored thresholds for their own context run `calibrate_thresholds.py` against their own baseline. The framework provides the methodology; the user provides the comparator.
+
+Each output's `claim_license` block names what the result entitles, what comparison set produced it, and what it does not entitle. The discipline is enforceable at the block, not vigilable by readers. Tools and scripts that mix surfaces or collapse the licensure rules are explicit anti-goals (see `ROADMAP.md`, "Explicit anti-goals").
+
 ## Plugin skills
 
 The plugin exposes skills as workflows, not just surfaces.
