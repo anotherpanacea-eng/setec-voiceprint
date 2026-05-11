@@ -106,6 +106,8 @@ Voice profiles, idiolect reports, and personal baseline corpora are voice-clonin
 
 The `manifest_validator.py` script enforces a privacy ratchet on `voice_profile`- and `idiolect`-tagged manifest entries: any entry whose privacy is not literally `'private'` (including missing or non-string values) raises a warning. Treat voiceprints as cloning-grade inputs by default.
 
+**Locating an existing baselines folder.** Many users sync `ai-prose-baselines-private/` via Obsidian, iCloud, Dropbox, or similar so the same corpus is visible from every machine and every worktree. SETEC honors the `SETEC_BASELINES_DIR` environment variable as the explicit baselines root. When that variable is unset, acquisition scripts fall back to a sibling of the repo, which can break inside a git worktree or after `git clone` into a fresh directory — a fresh SETEC instance will then create a duplicate empty folder rather than reuse the synced one. Before the first acquisition or voice-profile run, run `python3 plugins/setec-voiceprint/scripts/baseline_discovery.py` (the `setup` skill calls this automatically). It reads state only, searches the common sync locations, and prints the `export SETEC_BASELINES_DIR="..."` line to add to your shell rc. The script is non-destructive and never creates folders on the user's behalf.
+
 ## Installation
 
 setec-voiceprint can be installed two ways: **as a Claude Code / Cowork plugin** (skills become invocable from inside a session) or **as a standalone CLI** (run the Python scripts directly). Both paths share the same Python dependencies.

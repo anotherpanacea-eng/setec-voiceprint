@@ -6,6 +6,27 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.42.4] - 2026-05-11
+
+**Baselines-folder discovery for fresh SETEC instances.** Observed failure mode: a SETEC instance running inside a git worktree, or after `git clone` into a new directory, doesn't see the user's existing `ai-prose-baselines-private/` folder (which is typically synced via Obsidian / iCloud / Dropbox). Acquisition scripts then fall back to the sibling-of-repo path and silently create a duplicate empty folder, diverging from the user's real corpus. The framework already honored a `SETEC_BASELINES_DIR` env var, but the variable was never surfaced anywhere a user would find it.
+
+### Added
+
+- **`scripts/baseline_discovery.py`** — read-only CLI that searches the common sync roots (repo sibling, `~/Documents/**`, `~/Obsidian*`, `~/Dropbox*`, `~/Google Drive*`, `~/OneDrive*`, macOS iCloud Drive, `~/`) for any folder named `ai-prose-baselines-private`, summarises each (manifest entries, impostor personas, total size, last-modified), ranks them by manifest content, and prints the exact `export SETEC_BASELINES_DIR="..."` line the user should add to their shell rc. Supports `--json` for skill consumption and `--validate PATH` for checking a specific directory. Never creates folders or writes outside its own stdout.
+- **`scripts/tests/test_baseline_discovery.py`** — 18 tests covering env-var precedence, filesystem scan, ranking by manifest entries then impostor count then size, JSON shape, validation rejection of mis-named directories, and CLI exit codes (0 = found, 1 = nothing found, 2 = validate failed).
+
+### Changed
+
+- **`setup` skill SKILL.md** — adds Step 0 ("Locate the user's existing baselines folder") that runs `baseline_discovery.py` before any tier check and tells the assistant to surface the recommendation (and any duplicate-folder warning) to the user before proceeding.
+- **README.md Privacy notice** — documents `SETEC_BASELINES_DIR`, explains why the sibling-of-repo fallback breaks inside worktrees, and points at `baseline_discovery.py`.
+
+### Notes
+
+- **Discovery rule.** When `SETEC_BASELINES_DIR` is set and points to an existing directory, that directory is recommended regardless of which other folders are larger or busier. The env var is an explicit user choice; the script will not override it.
+- **Recommendation when env var is unset.** Among existing folders, rank by `(manifest_entries, impostor_personas, size_bytes, last_modified_iso)` highest first. The manifest is the canonical signal of "this is the corpus the user actually uses."
+- **Bounded walk.** Filesystem scans cap at `--max-depth 4` from each root (default) and `--max-depth-scan 3` per-candidate. A 21 GiB folder will not hang the report.
+- **Discovery is non-destructive.** Duplicate folders are listed but never removed; the user decides. The script does not create folders either — if nothing is found, it tells the user what will happen on first acquisition run and recommends setting the env var preemptively.
+
 ## [1.42.3] - 2026-05-10
 
 **Schema-conformance fix on the manifest converters.** Running `manifest_validator.py` on the v1.42.2 converter output surfaced five field-value mismatches against the validator's `ALLOWED_*` vocabularies. v1.42.3 maps every field to the validator vocabulary, omits fields where no honest mapping exists, and adds a round-trip integration test.

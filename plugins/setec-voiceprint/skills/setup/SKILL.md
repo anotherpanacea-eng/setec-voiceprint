@@ -39,6 +39,35 @@ The user owns the environment. The skill proposes; the user disposes.
 
 When invoked, follow this exact sequence:
 
+### Step 0: Locate the user's existing baselines folder
+
+Before any tier check, find out where the user's `ai-prose-baselines-private` folder lives. A fresh SETEC instance running inside a git worktree, or on a machine where the baselines are synced via Obsidian / iCloud / Dropbox, will not see a sibling private folder next to the repo — and acquisition scripts that fall back to creating one will silently diverge from the user's real corpus.
+
+Run:
+
+```bash
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/baseline_discovery.py"
+```
+
+The script reads state only; it does not create folders. Its output names every `ai-prose-baselines-private/` directory it found under common locations (repo sibling, `~/Documents`, Obsidian / Dropbox / Google Drive / OneDrive / iCloud roots, and `~/`), summarises each (manifest entries, impostor personas, size, last-modified), and either:
+
+- Recommends one folder and prints the `export SETEC_BASELINES_DIR="..."` line the user should add to their shell rc, or
+- Reports that no folder was found and explains what will happen on first use.
+
+Surface this to the user before tier installs:
+
+> SETEC found an existing baselines folder at `/path/to/.../ai-prose-baselines-private` (33.6 MiB, 592 manifest entries). To make sure every future SETEC session writes into the same place — even from a worktree or a different machine — add this to your shell rc:
+>
+> ```
+> export SETEC_BASELINES_DIR="/path/to/.../ai-prose-baselines-private"
+> ```
+>
+> Want me to confirm the line and add it to `~/.zshrc`?
+
+If the script lists a duplicate folder (e.g., one inside the repo and one synced elsewhere), call that out explicitly so the user can decide whether to delete the extra. **Never delete a folder on the user's behalf** — the discovery script is non-destructive; that posture extends to follow-up actions.
+
+If the script reports nothing found, ask the user whether they have a baselines folder anywhere SETEC didn't look (e.g., an external drive). If not, default creation under `~/Documents/ai-prose-baselines-private/` on first acquisition run is fine — but tell them that's what will happen.
+
 ### Step 1: Detect what the user is trying to do
 
 Read the user's request to identify which tier(s) they likely need:
