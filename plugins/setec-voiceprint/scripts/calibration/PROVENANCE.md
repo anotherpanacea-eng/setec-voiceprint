@@ -1,9 +1,24 @@
 # SETEC threshold calibration provenance
 
+## Policy: this ledger is an audit trail, not a registry of authoritative thresholds
+
+As of 2026-05-11, SETEC follows a **"Stylometry to the people"** posture: the framework ships methods, tooling, and PROVENANCE discipline. It does not ship per-signal decision thresholds derived from labeled corpora (EditLens, RAID, MAGE, or any other) as load-bearing defaults. Anchored thresholds derived from one corpus do not generalize to the user's register mix without local recalibration, and shipping them as defaults would constitute the implicit-generalization claim SETEC otherwise refuses to make.
+
+What this means in practice:
+
+- **Calibration runs documented in this ledger are audit records of work performed**, not assertions that the derived numbers should be used at runtime by anyone other than the original calibrator.
+- **`COMPRESSION_HEURISTICS` ships with `provisional=True` and `provenance=None` for every signal.** The "Status" section below stays at "0 of 11" as a load-bearing invariant under this policy.
+- **Users wanting a corpus-anchored threshold for their own context** should run `calibrate_thresholds.py` against their own labeled baseline. The PROVENANCE pattern is the methodology to follow; the entries below are illustrative examples of what a calibration run produces, not a registry of authoritative numbers.
+- **Entries pre-dating this policy** are tagged below with a `[POLICY: AUDIT-ONLY]` banner. The numbers stay in `thresholds_calibrated.json` for reproducibility, but `COMPRESSION_HEURISTICS` was reverted to its pre-calibration heuristic for the affected signals.
+
+The policy reflects the framework's claim-license discipline. Earlier turns of SETEC development treated EditLens-derived thresholds as the validation outcome that lets a signal "graduate" from heuristic to calibrated; the implicit assumption was that EditLens-anchored numbers would generalize to other registers and corpora. Surveying RAID and MAGE made that assumption visible and untenable. The cleaner posture: ship methods + tooling + provenance discipline, let users anchor against their own corpora.
+
+---
+
 This ledger records every empirically-calibrated per-signal
-threshold currently encoded in SETEC, with full provenance. Derived
-values are abstract aggregate measurements (CC-NC corpora used for
-derivation are not redistributed).
+threshold derived from SETEC's calibration toolchain, with full
+provenance. Derived values are abstract aggregate measurements
+(CC-NC corpora used for derivation are not redistributed).
 
 v1 covers per-signal thresholds only; band thresholds, directional-
 cluster consistency, and POS-bigram smoothing α stay heuristic. See
@@ -16,11 +31,13 @@ entries land via PR. Slugs match the keys in
 
 ## Status
 
-**No thresholds calibrated yet** as of the toolchain release. All
-11 signal thresholds in `COMPRESSION_HEURISTICS` carry
+Under the "Stylometry to the people" policy stated above, **no
+thresholds are encoded as load-bearing in the runtime registry**.
+All 11 signal thresholds in `COMPRESSION_HEURISTICS` carry
 `provisional=True` and `provenance=None`. Variance audits report
 "0 of 11 signal thresholds carry calibration provenance" in the
-Calibration status footer.
+Calibration status footer. This is the load-bearing invariant
+under the current policy, not a transitional state.
 
 To populate this ledger:
 
@@ -165,6 +182,8 @@ The 9 corpus-independent regression tests in `scripts/tests/test_calibration_pro
 ## Calibrated thresholds
 
 ## editlens_val_burstiness_B_fpr0.01_2026-05-10
+
+> **[POLICY: AUDIT-ONLY]** This entry pre-dates the "Stylometry to the people" policy stated at the top of this file. The derived value (`-0.6227...`) is preserved here and in `thresholds_calibrated.json` for reproducibility, but `COMPRESSION_HEURISTICS["burstiness_B"]` was reverted on 2026-05-11 to its pre-calibration heuristic (`-0.40`, `provisional=True`, `provenance=None`). The framework does not assert that this EditLens-anchored value generalizes to other registers or corpora; users wanting an anchored threshold against their own baseline should run `calibrate_thresholds.py` locally.
 
 - **Signal:** `burstiness_B` (direction `lt`)
 - **Derived value:** `-0.622724270454707`

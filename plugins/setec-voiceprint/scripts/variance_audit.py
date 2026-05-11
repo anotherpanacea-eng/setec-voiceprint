@@ -1298,26 +1298,30 @@ class ThresholdSpec:
 
 COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     # Burstiness magnitude is the most reliable single signal.
-    # Calibration note: literature suggests B < -0.2 is compressed, but real
+    # Heuristic note: literature suggests B < -0.2 is compressed, but real
     # human essayistic prose with long sentences can reach B = -0.4 naturally
     # (verified on pre-AI testimony at B = -0.40). Threshold tightened to -0.4
     # so the heuristic catches the genuine AI mode-collapse case (B < -0.4
     # in the smoke-test AI passage) while sparing essayistic human registers.
-    # Calibrated 2026-05-10 against EditLens val split (1506 student
-    # essays, 753 AI / 753 ESL human). Polarity matches the registry
-    # hypothesis (da_AUC 0.683); calibrated threshold is more
-    # conservative than the prior heuristic (-0.40) — catches 7.0%
-    # of AI essays at FPR 0.93%. In-sample only; not yet validated
-    # against the canonical SETEC registers. See provenance entry
-    # `editlens_val_burstiness_B_fpr0.01_2026-05-10` in
-    # `scripts/calibration/thresholds_calibrated.json` and the
-    # accompanying section in `scripts/calibration/PROVENANCE.md`.
+    #
+    # Provisional under the "Stylometry to the people" policy (2026-05-11).
+    # An EditLens-anchored calibration was run on 2026-05-10 (val split,
+    # 1506 student essays, 753 AI / 753 ESL human; derived threshold
+    # -0.6227 at FPR 0.93% / TPR 7.0%, da_AUC 0.683). That calibration
+    # is preserved as an audit record in
+    # `scripts/calibration/thresholds_calibrated.json` and as a
+    # PROVENANCE entry, but is NOT loaded as the framework's threshold.
+    # The framework's posture is that anchored thresholds derived from
+    # one labeled corpus (EditLens, RAID, MAGE) do not generalize to the
+    # user's register mix without local recalibration. Users wanting a
+    # corpus-anchored threshold should run `calibrate_thresholds.py`
+    # against their own labeled baseline; the PROVENANCE pattern is the
+    # methodology, not a registry of authoritative numbers. See
+    # `scripts/calibration/PROVENANCE.md` for the policy statement.
     "burstiness_B": ThresholdSpec(
         signal_path="tier1.sentence_length.burstiness_B",
-        value=-0.622724270454707, direction="lt",
+        value=-0.40, direction="lt",
         weight=2.0, length_floor=200,
-        provisional=False,
-        provenance="editlens_val_burstiness_B_fpr0.01_2026-05-10",
     ),
     # Connective density: AI-prose runs 25-50 per 1000 tokens; humans 5-15.
     "connective_density": ThresholdSpec(
