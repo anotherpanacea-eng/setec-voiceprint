@@ -6,6 +6,31 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.42.3] - 2026-05-10
+
+**Schema-conformance fix on the manifest converters.** Running `manifest_validator.py` on the v1.42.2 converter output surfaced five field-value mismatches against the validator's `ALLOWED_*` vocabularies. v1.42.3 maps every field to the validator vocabulary, omits fields where no honest mapping exists, and adds a round-trip integration test.
+
+### Fixed
+
+- **`ai_status`** maps to `pre_ai_human` / `ai_generated` (was `human` / `ai`).
+- **`privacy`** maps to `shareable` (was `public`). MIT and Apache-2.0 are permissive-with-attribution, not public-domain.
+- **`editing_status`** maps to `raw_draft` (was `unedited`). The validator has no "adversarial" tier; adversarial-transform info lives in `notes.attack` for R7's robustness card.
+- **`use`** is list-typed: `["validation"]` (was `"validation"`).
+- **`register`** for RAID: domain → validator vocabulary via curated mapping (news→blog_essay, books→literary_fiction, abstracts→academic_philosophy, reddit/reviews/recipes→personal, wikipedia→blog_essay, poetry→literary_fiction). Code/Czech/German return None and the converter OMITS the field rather than asserting a bogus value. Raw domain preserved in `notes.domain`.
+- **`register`** for MAGE: OMITTED entirely. MAGE spans 10 source datasets with per-row variation; no single validator-allowed value is honest. Source preserved in `notes.original_source`.
+
+### Added
+
+- **Manifest-validator round-trip test** in both converter test files. Catches any future schema drift at PR time.
+- Helpers: `_register_for_row` (RAID), `_attack_token_for_row` (RAID), `_raw_domain_for_row` (RAID).
+
+### Notes
+
+- **1377 tests pass + 1 skipped** (was 1364+1; +13 new tests covering register mapping, attack-token preservation, validator round-trip, and updated mappings in existing tests).
+- **Smoke-tested on real fetched corpora**: MAGE 200-row sample → "Manifest is clean"; RAID 300-row sample → "Manifest is clean".
+- **The v1.42.0 → v1.42.1 → v1.42.2 → v1.42.3 audit trail** records different reality-checks catching different bugs: HF API (v1.42.1), on-disk shape (v1.42.2), validator round-trip (v1.42.3). The new round-trip test encodes the third check as a gate.
+- **In-progress full-conversion runs killed** before this patch because they'd have produced 8M validator-noncompliant entries. Re-running the full conversion is a follow-up operational step after this PR merges.
+
 ## [1.42.2] - 2026-05-10
 
 **Make-the-converters-actually-work fixes.** Smoke-testing `raid_to_manifest.py` and `mage_to_manifest.py` against the real fetched corpora (16 GB RAID, 528 MB MAGE) surfaced four bugs the v1.42.0 mocked-pyarrow tests didn't catch. All four ride together because they're the same shape: the converters were written against the HF dataset-card schemas, but the on-disk reality differs.

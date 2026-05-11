@@ -112,12 +112,12 @@ class TestAiStatusForLabel:
     def test_label_0_is_human(self):
         _install_mock_pyarrow({})
         mt = _import_mage_to_manifest()
-        assert mt._ai_status_for_label(0) == "human"
+        assert mt._ai_status_for_label(0) == "pre_ai_human"
 
     def test_label_1_is_ai(self):
         _install_mock_pyarrow({})
         mt = _import_mage_to_manifest()
-        assert mt._ai_status_for_label(1) == "ai"
+        assert mt._ai_status_for_label(1) == "ai_generated"
 
     def test_unknown_label_returns_unknown(self):
         _install_mock_pyarrow({})
@@ -164,6 +164,77 @@ class TestSplitForParquet:
 # ---------- End-to-end ----------
 
 
+class TestManifestValidatorRoundTrip:
+    """End-to-end: the converter's output must pass
+    `manifest_validator.validate_manifest` cleanly. v1.42.3
+    maps converter output to the validator's allowed
+    vocabularies and omits the `register` field rather than
+    asserting a bogus value."""
+
+    def test_converted_manifest_passes_validator(self, tmp_path):
+        rows = [
+            {"text": "Human prose.", "label": "0",
+             "src": "cmv_human"},
+            {"text": "Machine prose.", "label": "1",
+             "src": "gpt-4-turbo"},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "train.csv", rows)
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, allow_public_output=False,
+        )
+        assert mt.convert(args) == 0
+        sys.path.insert(0, str(ROOT))
+        import manifest_validator as mv  # type: ignore
+        result = mv.validate_manifest(str(manifest_path))
+        errors = [
+            i for i in result.get("issues", [])
+            if getattr(i, "level", None) == "error"
+        ]
+        assert not errors, (
+            f"Validator returned errors on converted MAGE "
+            f"manifest:\n"
+            + "\n".join(str(e) for e in errors[:20])
+        )
+
+    def test_register_field_omitted(self, tmp_path):
+        # MAGE entries should NOT carry a `register` field —
+        # the source dataset varies per row and no single
+        # validator-allowed value fits honestly.
+        rows = [{"text": "x", "label": "0", "src": "s"}]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "train.csv", rows)
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(source_dir / "manifest.jsonl"),
+            text_dir=str(source_dir / "text"),
+            limit=0, allow_public_output=False,
+        )
+        assert mt.convert(args) == 0
+        entry = json.loads(
+            (source_dir / "manifest.jsonl").read_text(
+                encoding="utf-8",
+            ).strip().splitlines()[0]
+        )
+        assert "register" not in entry
+
+
 class TestConvertEndToEndCSV:
     """End-to-end on the CSV input path. HF ships MAGE as
     `train.csv`, `valid.csv`, `test.csv`, plus two OOD slices
@@ -201,7 +272,7 @@ class TestConvertEndToEndCSV:
         ]
         assert len(entries) == 2
         statuses = sorted(e["ai_status"] for e in entries)
-        assert statuses == ["ai", "human"]
+        assert statuses == ["ai_generated", "pre_ai_human"]
         # Notes block points at the CSV.
         for e in entries:
             assert e["notes"]["source_file"] == "train.csv"
@@ -303,13 +374,13 @@ class TestConvertEndToEnd:
         ]
         assert len(entries) == 2
         statuses = sorted(e["ai_status"] for e in entries)
-        assert statuses == ["ai", "human"]
+        assert statuses == ["ai_generated", "pre_ai_human"]
         for e in entries:
             assert e["source"] == "mage"
-            assert e["privacy"] == "public"
+            assert e["privacy"] == "shareable"
             assert e["language_status"] == "native"
-            assert e["editing_status"] == "unedited"
-            assert e["register"] == "mixed"
+            assert e["editing_status"] == "raw_draft"
+            assert "register" not in e
             text_file = manifest_path.parent / e["path"]
             assert text_file.is_file()
 

@@ -135,41 +135,123 @@ class TestAiStatusMapping:
     def test_human_model_returns_human(self):
         _install_mock_pyarrow({})
         rt = _import_raid_to_manifest()
-        assert rt._ai_status_for_row({"model": "human"}) == "human"
+        assert rt._ai_status_for_row({"model": "human"}) == "pre_ai_human"
 
     def test_empty_model_returns_human(self):
         _install_mock_pyarrow({})
         rt = _import_raid_to_manifest()
-        assert rt._ai_status_for_row({"model": ""}) == "human"
+        assert rt._ai_status_for_row({"model": ""}) == "pre_ai_human"
 
     def test_llm_model_returns_ai(self):
         _install_mock_pyarrow({})
         rt = _import_raid_to_manifest()
-        assert rt._ai_status_for_row({"model": "gpt-4"}) == "ai"
+        assert rt._ai_status_for_row({"model": "gpt-4"}) == "ai_generated"
 
     def test_missing_model_returns_human(self):
         _install_mock_pyarrow({})
         rt = _import_raid_to_manifest()
-        assert rt._ai_status_for_row({}) == "human"
+        assert rt._ai_status_for_row({}) == "pre_ai_human"
 
 
 class TestEditingStatusMapping:
     def test_no_attack_returns_unedited(self):
         _install_mock_pyarrow({})
         rt = _import_raid_to_manifest()
-        assert rt._editing_status_for_row({"attack": "none"}) == "unedited"
+        assert rt._editing_status_for_row({"attack": "none"}) == "raw_draft"
 
     def test_empty_attack_returns_unedited(self):
         _install_mock_pyarrow({})
         rt = _import_raid_to_manifest()
-        assert rt._editing_status_for_row({"attack": ""}) == "unedited"
+        assert rt._editing_status_for_row({"attack": ""}) == "raw_draft"
 
-    def test_paraphrase_attack_returns_prefixed(self):
+    def test_paraphrase_attack_still_raw_draft_for_validator_compat(self):
+        # The validator's allowed editing_status set doesn't
+        # have an "adversarial" tier. Adversarial info lives in
+        # notes.attack; editing_status stays at raw_draft for
+        # all rows. R7's robustness card reads notes.attack to
+        # slice per-attack.
         _install_mock_pyarrow({})
         rt = _import_raid_to_manifest()
         assert rt._editing_status_for_row(
             {"attack": "paraphrase"}
-        ) == "adversarial:paraphrase"
+        ) == "raw_draft"
+
+
+class TestAttackTokenForRow:
+    """The attack token gets preserved in notes.attack
+    independently of editing_status."""
+
+    def test_paraphrase_token(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._attack_token_for_row(
+            {"attack": "paraphrase"}
+        ) == "paraphrase"
+
+    def test_none_or_missing(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._attack_token_for_row(
+            {"attack": "none"}
+        ) == "none"
+        assert rt._attack_token_for_row({}) == "none"
+
+
+class TestRegisterMapping:
+    """RAID domain → manifest_validator.ALLOWED_REGISTER. Domains
+    without a clean fit return None (the converter then omits
+    the register field entirely; the raw domain stays in
+    notes.domain)."""
+
+    def test_news_maps_to_blog_essay(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._register_for_row(
+            {"domain": "news"}
+        ) == "blog_essay"
+
+    def test_books_maps_to_literary_fiction(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._register_for_row(
+            {"domain": "books"}
+        ) == "literary_fiction"
+
+    def test_abstracts_maps_to_academic_philosophy(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._register_for_row(
+            {"domain": "abstracts"}
+        ) == "academic_philosophy"
+
+    def test_reddit_maps_to_personal(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._register_for_row(
+            {"domain": "reddit"}
+        ) == "personal"
+
+    def test_code_returns_none(self):
+        # Code has no register match in the validator's vocabulary.
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._register_for_row(
+            {"domain": "code"}
+        ) is None
+
+    def test_czech_returns_none(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._register_for_row(
+            {"domain": "czech"}
+        ) is None
+
+    def test_unknown_domain_returns_none(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        assert rt._register_for_row(
+            {"domain": "nonexistent"}
+        ) is None
 
 
 class TestLanguageStatusMapping:
@@ -224,6 +306,112 @@ class TestBucketedTextPath:
 # ---------- End-to-end convert ----------
 
 
+class TestManifestValidatorRoundTrip:
+    """End-to-end: the converter's output must pass
+    `manifest_validator.validate_manifest` cleanly. v1.42.0
+    shipped a converter that hit the validator's
+    `ALLOWED_AI_STATUS` / `ALLOWED_PRIVACY` /
+    `ALLOWED_EDITING_STATUS` / `ALLOWED_REGISTER` vocabularies
+    with the wrong values (`ai`, `public`, `unedited`, raw
+    domain names); v1.42.3 maps to validator vocabulary. This
+    test catches any future schema drift between the converter
+    and the validator."""
+
+    def test_converted_manifest_passes_validator(self, tmp_path):
+        rows = [
+            # English domains: news → blog_essay,
+            # books → literary_fiction.
+            {"id": "1", "source_id": "src_1", "model": "human",
+             "decoding": "n/a", "repetition_penalty": "",
+             "attack": "none", "domain": "news",
+             "title": "T", "prompt": "p",
+             "generation": "Real prose here.",
+             "adv_source_id": ""},
+            {"id": "2", "source_id": "src_2", "model": "gpt-4",
+             "decoding": "greedy", "repetition_penalty": "1.0",
+             "attack": "paraphrase", "domain": "books",
+             "title": "T2", "prompt": "p",
+             "generation": "More prose.",
+             "adv_source_id": "1"},
+            # Czech: non_native_advanced; register omitted.
+            {"id": "3", "source_id": "src_3", "model": "human",
+             "decoding": "", "repetition_penalty": "",
+             "attack": "none", "domain": "czech",
+             "title": "T3", "prompt": "p",
+             "generation": "Cesky text.",
+             "adv_source_id": ""},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "raid"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "train.csv", rows)
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        rt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, no_adversarial=False, no_nonprose=False,
+            allow_public_output=False,
+        )
+        assert rt.convert(args) == 0
+        # Now run the validator. It returns (errors, warnings)
+        # — we accept warnings (the impostor-track ratchets emit
+        # warnings on shareable-no-consent-status entries) but
+        # refuse any errors.
+        sys.path.insert(0, str(ROOT))
+        import manifest_validator as mv  # type: ignore
+        result = mv.validate_manifest(str(manifest_path))
+        errors = [
+            i for i in result.get("issues", [])
+            if getattr(i, "level", None) == "error"
+        ]
+        assert not errors, (
+            f"Validator returned errors on the converted "
+            f"manifest:\n"
+            + "\n".join(str(e) for e in errors[:20])
+        )
+
+    def test_omitted_register_for_unmappable_domains(
+        self, tmp_path,
+    ):
+        # Code domain → no register; the manifest entry should
+        # OMIT the register field rather than write a bad value.
+        rows = [
+            {"id": "1", "model": "human", "attack": "none",
+             "domain": "code", "generation": "def foo(): pass"},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "raid"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "extra.csv", rows)
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        rt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, no_adversarial=False, no_nonprose=False,
+            allow_public_output=False,
+        )
+        assert rt.convert(args) == 0
+        entry = json.loads(
+            manifest_path.read_text(
+                encoding="utf-8",
+            ).strip().splitlines()[0]
+        )
+        # register field is intentionally absent.
+        assert "register" not in entry
+        # raw domain preserved in notes.
+        assert entry["notes"]["domain"] == "code"
+
+
 class TestConvertEndToEndCSV:
     """End-to-end coverage of the CSV input path. HuggingFace
     ships RAID at the repo root as `train.csv` / `test.csv` /
@@ -271,7 +459,7 @@ class TestConvertEndToEndCSV:
         ]
         assert len(entries) == 2
         statuses = sorted(e["ai_status"] for e in entries)
-        assert statuses == ["ai", "human"]
+        assert statuses == ["ai_generated", "pre_ai_human"]
         # The notes block points at the CSV file we wrote.
         for e in entries:
             assert e["notes"]["source_file"] == "train.csv"
@@ -310,7 +498,7 @@ class TestConvertEndToEndCSV:
         ]
         # With --no-adversarial, only the attack=none row survives.
         assert len(entries) == 1
-        assert entries[0]["editing_status"] == "unedited"
+        assert entries[0]["editing_status"] == "raw_draft"
 
 
 class TestConvertEndToEnd:
@@ -375,12 +563,12 @@ class TestConvertEndToEnd:
         ]
         assert len(entries) == 2
         ai_statuses = sorted(e["ai_status"] for e in entries)
-        assert ai_statuses == ["ai", "human"]
+        assert ai_statuses == ["ai_generated", "pre_ai_human"]
         for e in entries:
             assert e["source"] == "raid"
-            assert e["privacy"] == "public"
-            assert e["use"] == "validation"
-            assert e["editing_status"] == "unedited"
+            assert e["privacy"] == "shareable"
+            assert e["use"] == ["validation"]
+            assert e["editing_status"] == "raw_draft"
             assert e["language_status"] == "native"
             # Text file should exist at the path the manifest cites.
             text_file = manifest_path.parent / e["path"]
@@ -418,7 +606,7 @@ class TestConvertEndToEnd:
             ).strip().splitlines()
         ]
         assert len(entries) == 1
-        assert entries[0]["editing_status"] == "unedited"
+        assert entries[0]["editing_status"] == "raw_draft"
 
     def test_no_nonprose_filters_code_domain(self, tmp_path):
         rows = [
@@ -451,7 +639,10 @@ class TestConvertEndToEnd:
             ).read_text(encoding="utf-8").strip().splitlines()
         ]
         assert len(entries) == 1
-        assert entries[0]["register"] == "news"
+        # news domain → blog_essay per validator vocabulary;
+        # raw domain preserved in notes.
+        assert entries[0]["register"] == "blog_essay"
+        assert entries[0]["notes"]["domain"] == "news"
 
     def test_empty_generations_skipped(self, tmp_path):
         rows = [
