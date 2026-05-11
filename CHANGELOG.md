@@ -13,7 +13,7 @@ _(Empty. Future work lands here, gets versioned on commit.)_
 ### Added
 
 - **`scripts/baseline_discovery.py`** — read-only CLI that searches the common sync roots (repo sibling, `~/Documents/**`, `~/Obsidian*`, `~/Dropbox*`, `~/Google Drive*`, `~/OneDrive*`, macOS iCloud Drive, `~/`) for any folder named `ai-prose-baselines-private`, summarises each (manifest entries, impostor personas, total size, last-modified), ranks them by manifest content, and prints the exact `export SETEC_BASELINES_DIR="..."` line the user should add to their shell rc. Supports `--json` for skill consumption and `--validate PATH` for checking a specific directory. Never creates folders or writes outside its own stdout.
-- **`scripts/tests/test_baseline_discovery.py`** — 18 tests covering env-var precedence, filesystem scan, ranking by manifest entries then impostor count then size, JSON shape, validation rejection of mis-named directories, and CLI exit codes (0 = found, 1 = nothing found, 2 = validate failed).
+- **`scripts/tests/test_baseline_discovery.py`** — 21 tests covering env-var precedence, env-var validation against the marker-name rule (P2 follow-up), filesystem scan, ranking by manifest entries then impostor count then size, JSON shape, validation rejection of mis-named directories, render-time warning surfacing, and CLI exit codes (0 = found, 1 = nothing found, 2 = validate failed).
 
 ### Changed
 
@@ -22,7 +22,8 @@ _(Empty. Future work lands here, gets versioned on commit.)_
 
 ### Notes
 
-- **Discovery rule.** When `SETEC_BASELINES_DIR` is set and points to an existing directory, that directory is recommended regardless of which other folders are larger or busier. The env var is an explicit user choice; the script will not override it.
+- **Discovery rule.** When `SETEC_BASELINES_DIR` is set and points to an existing directory **whose final component is named `ai-prose-baselines-private`**, that directory is recommended regardless of which other folders are larger or busier. The env var is an explicit user choice; the script will not override it.
+- **Env-var validation (reviewer P2).** If the env var points at a real folder whose final component is NOT `ai-prose-baselines-private`, the discovery script refuses to recommend it (because the acquisition tools' `acquisition_core.is_private_safe_path` rule would refuse to write there) and surfaces a `WARNING:` block at the top of the text report. If a correctly named folder exists elsewhere, recommendation falls through to that one; otherwise no recommendation is emitted. This prevents `setup` from telling the user to persist a path acquisition tools will reject downstream.
 - **Recommendation when env var is unset.** Among existing folders, rank by `(manifest_entries, impostor_personas, size_bytes, last_modified_iso)` highest first. The manifest is the canonical signal of "this is the corpus the user actually uses."
 - **Bounded walk.** Filesystem scans cap at `--max-depth 4` from each root (default) and `--max-depth-scan 3` per-candidate. A 21 GiB folder will not hang the report.
 - **Discovery is non-destructive.** Duplicate folders are listed but never removed; the user decides. The script does not create folders either — if nothing is found, it tells the user what will happen on first acquisition run and recommends setting the env var preemptively.

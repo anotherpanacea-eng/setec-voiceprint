@@ -115,6 +115,89 @@ def test_env_var_pointing_to_missing_path_is_recorded_but_not_recommended(
     assert candidates[0].is_recommended is False
 
 
+def test_env_var_pointing_to_wrong_named_folder_is_not_recommended(
+    tmp_path: Path,
+):
+    """Reviewer P2 reproducer: the env var points at a real, populated
+    folder whose final directory is named something other than
+    ``ai-prose-baselines-private``. Downstream acquisition tools
+    enforce a marker-name rule via ``acquisition_core.is_private_safe_path``
+    and would refuse to write here. The discovery script must surface
+    that mismatch and refuse to recommend the path, otherwise setup
+    would tell the user to persist a broken configuration."""
+    wrong = tmp_path / "my-baselines"  # not 'ai-prose-baselines-private'
+    wrong.mkdir()
+    (wrong / "manifest.jsonl").write_text(
+        '{"text_id":"x"}\n', encoding="utf-8",
+    )
+    fake_script = tmp_path / "no-such" / "script.py"
+    candidates = bd.discover(
+        script_path=fake_script,
+        max_depth=0,
+        env_value=str(wrong),
+    )
+    assert len(candidates) == 1
+    env_cand = candidates[0]
+    assert env_cand.exists is True  # folder is real
+    assert env_cand.is_recommended is False  # but not usable
+    assert any(
+        "ai-prose-baselines-private" in note for note in env_cand.notes
+    ), f"expected marker-name note in {env_cand.notes!r}"
+
+
+def test_env_var_invalid_but_other_valid_folder_present_recommends_other(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """When the env var points at a mis-named folder AND a correctly
+    named folder exists elsewhere, the recommendation should fall
+    through to the correctly named folder rather than leaving the
+    user with no recommendation at all."""
+    wrong = tmp_path / "my-baselines"
+    wrong.mkdir()
+    (wrong / "manifest.jsonl").write_text(
+        '{"text_id":"x"}\n', encoding="utf-8",
+    )
+    right = _make_baseline(tmp_path / "Documents", manifest_entries=5)
+    monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
+    candidates = bd.discover(
+        script_path=tmp_path / "no-such" / "script.py",
+        max_depth=4,
+        env_value=str(wrong),
+    )
+    existing = [c for c in candidates if c.exists]
+    assert len(existing) == 2
+    recommended = [c for c in existing if c.is_recommended]
+    assert len(recommended) == 1
+    assert recommended[0].path == str(right)
+    # And the env-var candidate carries the validation note:
+    env_cand = next(c for c in existing if c.source == "env_var")
+    assert env_cand.is_recommended is False
+    assert any(
+        "ai-prose-baselines-private" in note for note in env_cand.notes
+    )
+
+
+def test_render_text_warns_when_env_var_points_at_wrong_named_folder(
+    tmp_path: Path,
+):
+    """The text report must surface the env-var-invalid warning at
+    the top of the output (not just inside a per-candidate notes
+    block) so the user sees it without having to read the entire
+    candidate listing."""
+    wrong = tmp_path / "my-baselines"
+    wrong.mkdir()
+    candidates = bd.discover(
+        script_path=tmp_path / "no-such" / "script.py",
+        max_depth=0,
+        env_value=str(wrong),
+    )
+    out = bd.render_text(candidates, env_value=str(wrong))
+    assert "WARNING" in out
+    assert "NOT a usable baselines folder" in out
+    # And no export-line printed for an invalid env var.
+    assert "No existing folder qualified as recommended." in out
+
+
 # --------------- Ranking logic -----------------------------------
 
 

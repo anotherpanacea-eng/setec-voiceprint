@@ -380,11 +380,19 @@ def discover(
             _add(match, source)
 
     # Recommendation rule:
-    #   1. If the env var is set AND points to an existing folder,
-    #      recommend that folder. The user has made the choice
-    #      explicit; the script must not override it just because
-    #      another folder on disk happens to be larger.
-    #   2. Otherwise, rank existing folders by
+    #   1. If the env var is set AND points to an existing folder
+    #      AND that folder passes the same marker-name validation
+    #      that ``--validate`` enforces, recommend it. The user has
+    #      made the choice explicit; the script must not override it
+    #      just because another folder on disk happens to be larger.
+    #   2. If the env var points to an existing folder that FAILS the
+    #      marker-name check, surface that failure in the candidate's
+    #      notes and do NOT recommend it. Downstream acquisition
+    #      tools enforce the same marker rule via
+    #      ``acquisition_core.is_private_safe_path`` and will refuse
+    #      to write into a mis-named path; recommending one would
+    #      tell the user to persist a broken configuration.
+    #   3. Otherwise, rank existing folders by
     #      (manifest_entries, personas, size, mtime), highest first.
     existing = [c for c in candidates if c.exists]
     missing = [c for c in candidates if not c.exists]
@@ -393,12 +401,30 @@ def discover(
         (c for c in existing if c.source == "env_var"), None,
     )
     if env_existing is not None:
-        env_existing.is_recommended = True
-        # Move the env-var candidate to the head of the existing list
-        # so the report and JSON payload order matches the
-        # recommendation.
-        existing.remove(env_existing)
-        existing.insert(0, env_existing)
+        env_ok, env_issues = validate_path(Path(env_existing.path))
+        if env_ok:
+            env_existing.is_recommended = True
+            # Move the env-var candidate to the head of the existing
+            # list so the report and JSON payload order matches the
+            # recommendation.
+            existing.remove(env_existing)
+            existing.insert(0, env_existing)
+        else:
+            # Annotate the candidate so the report explains why we
+            # did not recommend the explicit user choice.
+            env_existing.notes = (env_existing.notes or []) + [
+                "env var does not point to a usable baselines folder: "
+                + "; ".join(env_issues),
+                "set SETEC_BASELINES_DIR to a directory whose name is "
+                "exactly 'ai-prose-baselines-private'; the acquisition "
+                "tools' privacy-marker check requires that name.",
+            ]
+            # Fall through to ranking-by-content for the recommendation.
+            ranked_non_env = [
+                c for c in existing if c.source != "env_var"
+            ]
+            if ranked_non_env:
+                ranked_non_env[0].is_recommended = True
     elif existing:
         existing[0].is_recommended = True
     # Preserve env-var-missing at the head of the missing group so the
@@ -441,6 +467,25 @@ def render_text(candidates: list[Candidate], *, env_value: str | None) -> str:
     if env_value:
         lines.append(f"${ENV_VAR} is set to:")
         lines.append(f"  {env_value}")
+        # Validate the env-var path eagerly so the user sees the
+        # failure at the top of the report, not buried inside a
+        # per-candidate notes block. Downstream acquisition tools
+        # enforce the same marker-name rule.
+        env_path = Path(env_value).expanduser()
+        env_ok, env_issues = validate_path(env_path)
+        if not env_ok:
+            lines.append("")
+            lines.append("WARNING: the configured path is NOT a usable baselines folder.")
+            for issue in env_issues:
+                lines.append(f"  - {issue}")
+            lines.append("")
+            lines.append(
+                "Acquisition and voice-profile scripts will refuse to "
+                "write into a path whose final directory is not named "
+                "'ai-prose-baselines-private'. Either rename / move the "
+                "folder to satisfy that rule, or set the env var to a "
+                "different path."
+            )
     else:
         lines.append(f"${ENV_VAR} is NOT set.")
     lines.append("")
