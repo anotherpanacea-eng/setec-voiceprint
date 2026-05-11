@@ -6,6 +6,29 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.42.5] - 2026-05-11
+
+**README: honest costs and resources at the calibration tier.** Adds a new top-level section between Installation and Quick start that registers the real disk / time / memory / GPU footprint for a calibration run. Figures are measured from the 2026-05 RAID + MAGE runs, not theoretical estimates. Smoothing-diagnosis, voice-coherence, and validation tiers are explicitly noted as unaffected.
+
+### Added (docs)
+
+- **Disk table**: RAID corpus ~16 GB, MAGE corpus ~528 MB, RAID manifest ~5.0 GB, MAGE manifest ~187 MB, optional SBERT ~2 GB, optional R12 embeddings ~2.4 GB. Total budget for full setup: 25–28 GB.
+- **Time table**: MAGE single-threaded 11–18 hours for all Tier 1 signals (measured), RAID single-threaded 6–13 days (extrapolated, explicitly flagged as not recommended). Per-tier multipliers for Tier 2 and Tier 3.
+- **Score-once-survey-many explanation**: clarifies that `calibration_survey.py` scores the corpus once and reuses cached records per signal, so an N-signal sweep does NOT cost N× the listed runtime — record collection is the expensive step, paid once, and the per-signal threshold sweep is seconds per signal.
+- **Memory notes**: Tier 1 peaks ~250 MB resident per shard; Tier 2 adds ~1 GB (spaCy); SBERT adds ~1.5 GB. 8-shard concurrent design fits a 16 GB machine.
+- **Optional GPU notes**: Tier 1 + Tier 2 CPU-bound; SBERT and R12 embedding work benefit but are not blocked. Mixed-hardware coordination (macOS + Windows + AMD + WSL2 ROCm) described inline.
+- **"What this means for the user" footer**: plug in, MAGE first, sharded for RAID, calibration tier is opt-in.
+
+### Changed (reviewer P2 follow-ups)
+
+- **No `internal/` references in user-facing docs.** The new section originally cited `internal/SPEC_embedding_model_choice.md` and `internal/SPEC_sharded_calibration.md`, both of which are gitignored and unreachable from the published README. Replaced with descriptive prose: the mxbai-embed-large-v1 reference now names the model and license inline; the sharded-calibration references describe the design (atomic shard claim, SIGTERM checkpoint, cloud-synced state) in the text rather than pointing at an inaccessible spec path. The pre-existing line-130 reference to `internal/SPEC_calibration_toolchain.md (gitignored)` is unchanged — it was explicit about the spec's status and was not part of this PR's new content.
+- **Per-signal cost language corrected.** Original wording said the framework "currently runs the survey one signal at a time" and "multiple signals are surveyed in series, not in parallel," which contradicted the actual code: `derive_thresholds_for_all_signals` scores rows once and iterates signals over the cache for an 11× speedup (per the function's own docstring). Rewrote the paragraph to distinguish record collection (expensive, paid once) from per-signal threshold sweeps (cheap, seconds each).
+
+### Notes
+
+- The user's previous request was to "honestly register the real costs and processes in the Readme." This section discharges that.
+- No code changes; no tests added. Purely documentation.
+
 ## [1.42.4] - 2026-05-11
 
 **Baselines-folder discovery for fresh SETEC instances.** Observed failure mode: a SETEC instance running inside a git worktree, or after `git clone` into a new directory, doesn't see the user's existing `ai-prose-baselines-private/` folder (which is typically synced via Obsidian / iCloud / Dropbox). Acquisition scripts then fall back to the sibling-of-repo path and silently create a duplicate empty folder, diverging from the user's real corpus. The framework already honored a `SETEC_BASELINES_DIR` env var, but the variable was never surfaced anywhere a user would find it.

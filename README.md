@@ -176,6 +176,66 @@ ls "$HOME/Library/Application Support/Claude/local-agent-mode-sessions/"
 
 If you don't want the plugin, install the Python deps as above and run the scripts directly. See the Quick start section below.
 
+## Costs and resources at the calibration tier
+
+Three of the four task surfaces have small footprints. Smoothing diagnosis and voice coherence run in seconds-to-minutes on a laptop. Validation runs on labeled fixtures in seconds. **Calibration — re-deriving thresholds from RAID, MAGE, or another large labeled corpus — is the one tier where the framework asks for nontrivial disk, time, and (optionally) GPU.** Nothing in this section applies to ordinary diagnostic use; it exists so a user planning a calibration run can decide whether to start one.
+
+The figures below are honest measurements from the 2026-05 RAID + MAGE runs on an M-series MacBook, not theoretical estimates.
+
+### Disk
+
+| Resource | Size on disk | Notes |
+|---|---|---|
+| RAID corpus (full, including adversarial) | ~16 GB | `train.csv` 11 GB + `extra.csv` 3.5 GB + `test.csv` 1.1 GB. 8.0M rows after validator-clean conversion. Downloaded once via `scripts/calibration/fetch_raid.py`. |
+| MAGE corpus (full, all 10 source datasets + adversarial) | ~528 MB | `train.csv` 385 MB + `test.csv` 68 MB + `valid.csv` 69 MB + OOD subsets ~5 MB. 436k rows after conversion. |
+| RAID `manifest.jsonl` | ~5.0 GB | One JSON-line per row, validator-conformant. |
+| MAGE `manifest.jsonl` | ~187 MB | Same shape, smaller corpus. |
+| Per-shard survey output | <50 MB | `_survey_full_*.json` carries per-signal histograms. |
+| Optional SBERT cohesion model | ~2 GB | `sentence-transformers` install pulls in torch; the MiniLM-L6-v2 model itself is ~90 MB. |
+| Optional research-grade embeddings (R12) | ~2.4 GB | `mxbai-embed-large-v1` per `internal/SPEC_embedding_model_choice.md`. |
+
+**Total disk for a full RAID + MAGE setup with calibration deps: budget 25–28 GB.** Corpora live under `$SETEC_BASELINES_DIR/raid/` and `$SETEC_BASELINES_DIR/mage/`; both are gitignored. Manifests can be deleted and regenerated from the CSVs as needed.
+
+### Time (single-threaded, Tier 1 only)
+
+Wall-clock figures from a 2026-05 run on an M-series Mac. CPU pegged at 99% on one core for the duration; memory peak ~250 MB resident.
+
+| Run | Wall-clock | Throughput |
+|---|---|---|
+| MAGE survey (436k rows, Tier 1 only) | 11–18 hours | ~7–11 rows/sec |
+| RAID survey (8.0M rows, Tier 1 only) | **6–13 days single-threaded** | Same throughput; row count is 18× MAGE. |
+
+The variance comes from row-length distribution; the runtime predictor inside the survey is noisy on long-tailed batches. **Single-threaded RAID is not recommended.** The sharded-calibration spec (`internal/SPEC_sharded_calibration.md`, v1.43.0 implementation pending) parallelizes the worker side across a worker pool and cuts RAID wall-clock to under a week with 8 shards. Sharding does not change the per-signal FPR-resolution gate; it just makes the gate reachable on RAID-scale corpora in human-tractable time.
+
+Adding higher tiers multiplies wall-clock roughly as follows:
+
+| Add | Multiplier vs. Tier 1 |
+|---|---|
+| Tier 2 (POS-bigrams + MDD via spaCy) | ×2–3 |
+| Tier 3 cohesion via TF-IDF (CPU only) | ×1.2–1.5 |
+| Tier 3 cohesion via SBERT (CPU only) | ×3–5 |
+| Tier 3 cohesion via SBERT (CUDA / ROCm GPU) | ×1.1–1.3 |
+
+The framework currently runs the survey one signal at a time because the FPR-resolution gate (`1/n_neg`) is per-signal. Multiple signals are surveyed in series, not in parallel — until the sharded toolchain ships. Plan accordingly.
+
+### Memory
+
+A single-shard Tier 1 survey peaks around 250 MB resident for MAGE-scale corpora. Adding Tier 2 brings spaCy's pipeline online (~1 GB resident per worker). Tier 3 with SBERT and a loaded model adds another ~1.5 GB. RAID-scale runs are still memory-light per shard — the corpus is paged in row-by-row, not loaded all at once. The sharded design assumes 8 concurrent workers each consuming under 1 GB resident on Tier 1, comfortable on a 16 GB machine.
+
+### Optional GPU
+
+Tier 1 and Tier 2 are CPU-bound. Tier 3 with SBERT and the planned R12 embedding work benefit from GPU but are not blocked by its absence; TF-IDF fallback and CPU torch handle the no-GPU case. For multi-day runs on RAID-scale corpora, a discrete GPU (NVIDIA CUDA on Linux/Windows or AMD ROCm on Linux/WSL2) cuts Tier 3 wall-clock by 3–5×.
+
+The sharded-calibration design assumes a mixed-hardware setup: macOS laptops for one shard cohort, a Windows + AMD + WSL2 (ROCm 7.2.1) Linux desktop for another, coordinated via cloud-synced state files. See `internal/SPEC_sharded_calibration.md` for the architecture.
+
+### What this means for the user
+
+- **Don't run calibration on battery.** Plug in. Sleep is supported when the survey honors SIGTERM checkpoint (the sharded design does; pre-sharded runs do not — they restart from zero).
+- **One full RAID survey is a multi-day project on a single machine.** Plan accordingly, or wait for the sharded toolchain, or use a multi-machine setup.
+- **MAGE first.** Smaller (528 MB, 436k rows) and tractable on a single laptop in an overnight run. Useful as a feasibility check before committing to RAID.
+- **Smoothing-diagnosis and voice-coherence are unaffected.** Those tiers do not need any of this. Calibration only re-runs when the underlying signals or labeled corpora change — typically once per major release that touches a signal definition or a corpus version.
+- **Manifests are reproducible from CSVs.** Delete the multi-GB manifest after a successful run if disk pressure matters; rebuild from the CSVs with the `*_to_manifest.py` converters when needed.
+
 ## Quick start
 
 These examples are grouped by workflow. Many scripts compose: a smoothing audit can feed a restoration packet, a voice-distance report can feed a surface-disagreement resolver, and validation outputs should be read through their claim-license blocks.
