@@ -20,26 +20,34 @@ MAGE schema (per the HF on-disk CSVs, verified 2026-05-10):
 The CSVs ship with a UTF-8 BOM; the converter reads them with
 ``utf-8-sig`` encoding to strip the BOM transparently.
 
-Manifest mapping:
+Manifest mapping (aligned with
+`manifest_validator.ALLOWED_*` vocabularies):
 
   - `id`              mage_<split>_<row_index>
   - `path`            relative path under --text-dir to the
                       spilled text file
-  - `ai_status`       "human" if label == 0; else "ai"
-  - `editing_status`  "unedited" (MAGE doesn't expose edit
-                      provenance)
-  - `register`        "mixed" (MAGE spans 10 source datasets;
-                      per-row register would require source-
-                      column mapping that isn't worth the
-                      maintenance burden)
+  - `ai_status`       "pre_ai_human" if label == 0;
+                      "ai_generated" if label == 1
+  - `editing_status`  "raw_draft" (MAGE doesn't expose edit
+                      provenance; raw_draft is the validator's
+                      most honest default)
+  - `register`        OMITTED. MAGE spans 10 source datasets
+                      with per-row variation; no single register
+                      value is honest, and the validator doesn't
+                      include a "mixed" value. The original
+                      source dataset is preserved in
+                      `notes.original_source` for slicing.
   - `language_status` "native" (MAGE is English-only)
   - `use`             "validation" by default
-  - `privacy`         "public" (MIT)
+  - `privacy`         "shareable" (MIT/Apache-2.0 permissive
+                      with attribution; not public_domain)
   - `source`          "mage"
-  - `source_id`       the row's `source` field (the original
-                      generator / dataset name)
-  - `notes`           {label, original_source, source_file,
-                      hf_revision}
+  - `source_id`       the row's `src` field (the original
+                      generator / dataset name; the HF dataset
+                      card calls this `source` but the on-disk
+                      CSV uses `src`)
+  - `notes`           {label, original_source, split,
+                      source_file, hf_revision}
 
 Usage:
 
@@ -173,15 +181,21 @@ _split_for_parquet = _split_for_source_file
 
 
 def _ai_status_for_label(label: Any) -> str:
-    """MAGE's label is binary: 0 = human, 1 = machine."""
+    """MAGE's label is binary: 0 = human, 1 = machine.
+
+    Maps to manifest_validator.ALLOWED_AI_STATUS:
+      0 → "pre_ai_human"
+      1 → "ai_generated"
+      anything else → "unknown"
+    """
     try:
         label_int = int(label)
     except (TypeError, ValueError):
         return "unknown"
     if label_int == 0:
-        return "human"
+        return "pre_ai_human"
     if label_int == 1:
-        return "ai"
+        return "ai_generated"
     return "unknown"
 
 
@@ -250,17 +264,34 @@ def convert(args: argparse.Namespace) -> int:
                 text_path.parent.mkdir(parents=True, exist_ok=True)
                 text_path.write_text(text, encoding="utf-8")
 
+                # MAGE spans 10 source datasets with per-row
+                # source variation; no single `register` value
+                # is honest. We omit the field entirely (it's
+                # optional in the manifest schema) and preserve
+                # the source dataset in `notes.original_source`
+                # for any calibration run that wants to slice
+                # per-source.
                 entry = {
                     "id": row_id,
                     "path": str(text_path.relative_to(
                         manifest_path.parent
                     )),
                     "ai_status": ai_status,
-                    "editing_status": "unedited",
-                    "register": "mixed",
+                    # The validator's allowed editing_status set
+                    # is {raw_draft, revised_human,
+                    # published_cleaned, coauthored}. MAGE
+                    # doesn't expose edit provenance; `raw_draft`
+                    # is the most honest default.
+                    "editing_status": "raw_draft",
                     "language_status": "native",
-                    "use": "validation",
-                    "privacy": "public",
+                    # ``use`` is list-typed per manifest spec.
+                    "use": ["validation"],
+                    # MAGE's HF card declares Apache-2.0
+                    # (verified 2026-05-10) — permissive but
+                    # attribution-required. `shareable` is the
+                    # right manifest tier; `public_domain` would
+                    # be wrong (MIT/Apache retain copyright).
+                    "privacy": "shareable",
                     "source": "mage",
                     "source_id": row.get("src") or row.get("source"),
                     "notes": {

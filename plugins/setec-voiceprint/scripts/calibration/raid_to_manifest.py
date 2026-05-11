@@ -30,29 +30,39 @@ RAID schema (per HF dataset card):
   - `generation`      the text body — this is what SETEC's
                       stylometric tools see
 
-Manifest mapping:
+Manifest mapping (aligned with
+`manifest_validator.ALLOWED_*` vocabularies):
 
   - `id`              raid_<source_basename>_<row_id>
   - `path`            relative path under --text-dir to the
                       spilled text file
-  - `ai_status`       "human" if model == "human"; else "ai"
-                      (or "ai_edited" if attack != "none" and
-                      the underlying model is human — RAID
-                      doesn't actually expose this case but
-                      the logic handles it)
-  - `editing_status`  "adversarial:<attack>" if attack !=
-                      "none", else "unedited"
-  - `register`        domain (lowercased)
-  - `language_status` "native" by default; "non_native_advanced"
-                      for the extra subset's Czech/German
-                      domains (these are MT outputs, not L2
-                      English; flagged for caution)
+  - `ai_status`       "pre_ai_human" if model == "human"; else
+                      "ai_generated"
+  - `editing_status`  "raw_draft" (the validator's allowed set
+                      doesn't have an "adversarial" tier;
+                      adversarial-transform info lives in
+                      `notes.attack` for R7's robustness card)
+  - `register`        validator-vocabulary mapping per RAID
+                      domain (news → blog_essay, books →
+                      literary_fiction, abstracts →
+                      academic_philosophy, reviews/reddit/recipes
+                      → personal, wikipedia → blog_essay, poetry
+                      → literary_fiction). Domains without a
+                      clean fit (code, czech, german) OMIT the
+                      register field; the raw domain is always
+                      preserved in `notes.domain`.
+  - `language_status` "native" for English domains;
+                      "non_native_advanced" for the extra
+                      subset's Czech/German (MT outputs);
+                      "unknown" for Code.
   - `use`             "validation" by default
-  - `privacy`         "public" (Apache-2.0)
+  - `privacy`         "shareable" (MIT — permissive with
+                      attribution; not public_domain)
   - `source`          "raid"
   - `source_id`       the row's RAID `source_id`
   - `notes`           {model, decoding, repetition_penalty,
-                      attack, original_id}
+                      attack, domain, adv_source_id, title,
+                      hf_revision, source_file}
 
 Usage:
 
@@ -186,18 +196,41 @@ def _load_revision_record(source_dir: Path) -> dict[str, Any]:
 
 
 def _ai_status_for_row(row: dict[str, Any]) -> str:
-    """Map RAID's `model` field → ai_status."""
+    """Map RAID's `model` field → manifest_validator's
+    ALLOWED_AI_STATUS vocabulary. Human rows → `pre_ai_human`;
+    everything else (the 11 LLMs) → `ai_generated`."""
     model = (row.get("model") or "").strip().lower()
     if model in {"human", ""}:
-        return "human"
-    return "ai"
+        return "pre_ai_human"
+    return "ai_generated"
 
 
 def _editing_status_for_row(row: dict[str, Any]) -> str:
+    """Map RAID's `attack` field → manifest_validator's
+    ALLOWED_EDITING_STATUS vocabulary.
+
+    The validator's allowed set is
+    {raw_draft, revised_human, published_cleaned, coauthored}.
+    None of these naturally describes an adversarial transform.
+    We map base rows to `raw_draft` and stash the attack
+    information in `notes.attack` for downstream filtering by
+    R7's robustness card. The manifest's `editing_status` field
+    is a property of the writing pipeline; adversarial post-
+    processing is closer to a data-transformation flag than an
+    editorial pass, so keeping it out of editing_status and in
+    the notes block is the more honest mapping.
+    """
+    return "raw_draft"
+
+
+# Adversarial-attack token recorded in notes (and used by
+# `--no-adversarial` to filter rows). The framework's R7
+# robustness card reads `notes.attack` to slice per-attack.
+def _attack_token_for_row(row: dict[str, Any]) -> str:
     attack = (row.get("attack") or "").strip().lower()
     if attack in {"none", "", "no_attack"}:
-        return "unedited"
-    return f"adversarial:{attack}"
+        return "none"
+    return attack
 
 
 def _language_status_for_row(row: dict[str, Any]) -> str:
@@ -215,7 +248,41 @@ def _language_status_for_row(row: dict[str, Any]) -> str:
     return "native"
 
 
-def _register_for_row(row: dict[str, Any]) -> str:
+# RAID's 8 English domains → manifest_validator.ALLOWED_REGISTER.
+# The validator's vocabulary is fiction/blog/academic/testimony/
+# personal/policy + literary_horror. RAID's domains don't match
+# one-to-one; we pick the closest fit per domain. The original
+# domain is preserved in `notes.domain` for finer-grained
+# slicing at calibration time.
+_DOMAIN_TO_REGISTER = {
+    "news": "blog_essay",
+    "books": "literary_fiction",
+    "abstracts": "academic_philosophy",
+    "reviews": "personal",
+    "reddit": "personal",
+    "recipes": "personal",
+    "wikipedia": "blog_essay",
+    "poetry": "literary_fiction",
+    # `extra` subset:
+    "code": None,  # No clean register; omit field.
+    "czech": None,  # Non-English; omit field.
+    "german": None,  # Non-English; omit field.
+}
+
+
+def _register_for_row(row: dict[str, Any]) -> str | None:
+    """Map RAID's `domain` to manifest_validator's
+    ALLOWED_REGISTER vocabulary. Returns None when no clean fit
+    exists; the converter then omits the `register` field on
+    that entry (the field is optional per
+    `manifest_validator.REQUIRED_FIELDS`)."""
+    domain = (row.get("domain") or "").strip().lower()
+    return _DOMAIN_TO_REGISTER.get(domain)
+
+
+def _raw_domain_for_row(row: dict[str, Any]) -> str:
+    """The original RAID `domain` value, preserved in notes for
+    fine-grained slicing."""
     return (row.get("domain") or "unknown").strip().lower()
 
 
@@ -289,13 +356,13 @@ def convert(args: argparse.Namespace) -> int:
                     n_skipped_empty += 1
                     continue
 
-                editing_status = _editing_status_for_row(row)
-                if args.no_adversarial and editing_status != "unedited":
+                attack = _attack_token_for_row(row)
+                if args.no_adversarial and attack != "none":
                     n_skipped_adversarial += 1
                     continue
 
-                domain = _register_for_row(row)
-                if args.no_nonprose and domain in NONPROSE_DOMAINS:
+                raw_domain = _raw_domain_for_row(row)
+                if args.no_nonprose and raw_domain in NONPROSE_DOMAINS:
                     n_skipped_nonprose += 1
                     continue
 
@@ -304,17 +371,22 @@ def convert(args: argparse.Namespace) -> int:
                 text_path.parent.mkdir(parents=True, exist_ok=True)
                 text_path.write_text(generation, encoding="utf-8")
 
-                entry = {
+                entry: dict[str, Any] = {
                     "id": row_id,
                     "path": str(text_path.relative_to(
                         manifest_path.parent
                     )),
                     "ai_status": _ai_status_for_row(row),
-                    "editing_status": editing_status,
-                    "register": domain,
+                    "editing_status": _editing_status_for_row(row),
                     "language_status": _language_status_for_row(row),
-                    "use": "validation",
-                    "privacy": "public",
+                    # ``use`` is list-typed per manifest spec.
+                    "use": ["validation"],
+                    # RAID's HF card declares MIT (verified 2026-
+                    # 05-10) — permissive but attribution-required.
+                    # `shareable` is the right manifest tier;
+                    # `public_domain` would be wrong because MIT
+                    # is not public-domain (it retains copyright).
+                    "privacy": "shareable",
                     "source": "raid",
                     "source_id": row.get("source_id"),
                     "notes": {
@@ -323,13 +395,22 @@ def convert(args: argparse.Namespace) -> int:
                         "repetition_penalty": (
                             row.get("repetition_penalty")
                         ),
-                        "attack": row.get("attack"),
+                        "attack": attack,
+                        "domain": raw_domain,
                         "adv_source_id": row.get("adv_source_id"),
                         "title": row.get("title"),
                         "hf_revision": revision,
                         "source_file": source_file.name,
                     },
                 }
+                # Register is optional in the manifest schema; we
+                # only emit it when there's a clean fit between
+                # RAID's domain and the validator's vocabulary.
+                # The original domain is always preserved in
+                # notes.domain for slicing.
+                mapped_register = _register_for_row(row)
+                if mapped_register is not None:
+                    entry["register"] = mapped_register
                 fh_out.write(
                     json.dumps(entry, default=str) + "\n",
                 )
