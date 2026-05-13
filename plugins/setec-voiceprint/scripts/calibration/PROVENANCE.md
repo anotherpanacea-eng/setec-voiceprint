@@ -207,7 +207,12 @@ The 9 corpus-independent regression tests in `scripts/tests/test_calibration_pro
 
 - **Run type:** Full Tier-1 survey across all 11 SETEC signals (8 Tier 1 scored; Tier 2 / Tier 3 skipped via `--no-tier2 --no-tier3`)
 - **Corpus:** MAGE (Yichen Li et al., ACL 2024; HF `yaful/MAGE`)
-- **License:** Apache 2.0 (manifest); various per-source dataset (local-only corpus; not redistributed)
+- **License (precise):**
+  - **Paper**: MIT (per Li et al. 2024)
+  - **HuggingFace dataset card**: Apache-2.0 (observed 2026-05-10; `fetch_mage.py` accepts MIT or Apache-2.0 at fetch time and records the observed value in the corpus NOTICE.md)
+  - **Source-dataset texts**: 10 underlying datasets with per-source licenses; aggregate wrapper does not override per-source restrictions
+  - **SETEC framework code** (fetcher, manifest converter, calibration toolchain): GPL-3-or-later
+  - **Posture**: local-only per Stylometry-to-the-people; MAGE-derived corpus content is not redistributed in framework artifacts
 - **Manifest path:** `ai-prose-baselines-private/mage/manifest.jsonl` (436,606 rows total)
 - **Calibration:** direction-aware FPR-target sweep at FPR ≤ `0.01`
 - **Split role:** calibration_only (validation slice; `--use validation` filter)

@@ -37,7 +37,27 @@ heterogeneous source-dataset mix.
 
 ## The corpus
 
-MAGE (Yichen Li et al., ACL 2024; MIT license; HF `yaful/MAGE`).
+MAGE (Yichen Li et al., ACL 2024; HF `yaful/MAGE`). The license
+posture has three layers worth distinguishing:
+
+- **Paper license**: MIT (per Li et al. 2024).
+- **HuggingFace dataset card**: declares Apache-2.0 (observed
+  2026-05-10 in the `yaful/MAGE` dataset metadata).
+  `scripts/calibration/fetch_mage.py` accepts either at fetch time
+  and records the OBSERVED license in the corpus's NOTICE.md.
+- **Source-dataset texts**: MAGE aggregates 10 underlying source
+  datasets, each with its own per-source license. Aggregating
+  them under a single MIT- or Apache-2.0-licensed wrapper does not
+  override the per-source restrictions on redistributing source
+  text.
+- **The SETEC code** that processes MAGE (the fetcher, the manifest
+  converter, the calibration toolchain) is under GPL-3-or-later per
+  the framework's license.
+
+Per the Stylometry-to-the-people policy, the framework treats MAGE
+as local-only — no MAGE-derived corpus content gets redistributed
+in framework artifacts.
+
 Manifest fetched via `scripts/calibration/fetch_mage.py` and
 converted via `scripts/calibration/mage_to_manifest.py` to a
 validator-clean 436k-row JSONL. Properties that matter for
