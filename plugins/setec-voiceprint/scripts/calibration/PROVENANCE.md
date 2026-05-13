@@ -91,10 +91,13 @@ To populate this ledger:
          --fpr-target 0.01 \
          --out ai-prose-baselines-private/editlens/_survey_2026-XX-XX.json
      ```
-5. Pick the first signal whose calibration entry passes the **Selection criteria**.
-6. Edit `scripts/variance_audit.py`'s `COMPRESSION_HEURISTICS[<signal>]` to set `provenance=<slug>`, `provisional=False`, and `value=<derived>`.
-7. Add a section to this file documenting the calibration run.
-8. Commit the first calibrated threshold (small diff: registry + this file + ledger + CHANGELOG/version) + push.
+5. Pick the signals whose calibration entries pass the **Selection criteria**.
+6. **Document the run as an audit entry in this file.** Use the **Template for new entries** below, tag with `[POLICY: AUDIT-ONLY]`, and reference the synthesis doc (a sibling of `references/calibration-findings-2026-05-10.md`) where the cross-signal narrative and any polarity-inversion findings get the longer treatment. The corresponding entry in `scripts/calibration/thresholds_calibrated.json` is the calibrator's audit ledger; under the Stylometry-to-the-people policy this is the load-bearing artifact for the run.
+7. **Do NOT edit `scripts/variance_audit.py`'s `COMPRESSION_HEURISTICS`** to set `provenance=<slug>`, `provisional=False`, and `value=<derived>` as a framework commit. The pre-policy workflow (in place through v1.42.3) did exactly that and produced a single committed EditLens-anchored threshold that was rolled back in v1.42.6 when the MAGE calibration surfaced the cross-corpus polarity-inversion finding. The framework's shipped `COMPRESSION_HEURISTICS` values stay at the pre-calibration heuristic level (`provisional=True`, `provenance=None`) regardless of how many corpora the calibration toolchain has run against.
+8. **Two legitimate next moves**, depending on what you want from the calibration:
+   - **Audit-only PR**: ship the PROVENANCE entry + the synthesis doc + an updated CHANGELOG that names the policy-compliant audit record. `COMPRESSION_HEURISTICS` stays unchanged. This is the framework-side workflow for nearly all calibration runs.
+   - **User-local fork (NOT a framework commit)**: in your own deployment, you may legitimately want to apply the calibrated thresholds locally for *your* register mix and corpus context. Maintain the change on a private branch or a local config override; do NOT submit it as a framework PR. The framework's posture is that anchored thresholds are user-side decisions, not framework defaults.
+9. **CHANGELOG entry** describes the audit-only nature of the run, names the polarity-inversion findings where applicable, and explicitly does NOT claim the framework's shipped thresholds changed.
 
 ## Selection criteria for a calibration entry
 
