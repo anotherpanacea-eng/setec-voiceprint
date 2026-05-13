@@ -660,6 +660,65 @@ def assemble_output(
 # --------------- Markdown rendering ------------------------------
 
 
+def _render_claim_license_section(cl: dict[str, Any]) -> list[str]:
+    """Format the ``claim_license`` dict as a markdown section.
+
+    Mirrors the structure ``claim_license.ClaimLicense.render_block()``
+    produces for the other surfacing harnesses (validation_harness,
+    voice_validation_harness, general_imposters, sliding_window_
+    heatmap). Keeping the same shape across surfaces lets readers
+    parse the licensure block uniformly regardless of which audit
+    produced the report.
+
+    Empty / null fields are skipped rather than rendered as
+    "not applicable" — the goal is a section the reader can scan
+    quickly, not a complete schema dump.
+    """
+    if not cl:
+        return []
+    lines: list[str] = []
+    lines.append("## Claim license")
+    lines.append("")
+    lines.append(
+        "> The framework refuses claims the evidence does not "
+        "license. The block below names what this audit's result "
+        "entitles and what it does not."
+    )
+    lines.append("")
+    if cl.get("licenses"):
+        lines.append("**Licenses:**")
+        lines.append("")
+        lines.append(cl["licenses"])
+        lines.append("")
+    if cl.get("does_not_license"):
+        lines.append("**Does NOT license:**")
+        lines.append("")
+        lines.append(cl["does_not_license"])
+        lines.append("")
+    cs = cl.get("comparison_set") or {}
+    if cs:
+        lines.append("**Comparison set:**")
+        lines.append("")
+        for k, v in cs.items():
+            lines.append(f"- **{k}:** {v}")
+        lines.append("")
+    caveats = cl.get("additional_caveats") or []
+    if caveats:
+        lines.append("**Additional caveats:**")
+        lines.append("")
+        for c in caveats:
+            lines.append(f"- {c}")
+        lines.append("")
+    refs = cl.get("references") or []
+    if refs:
+        lines.append("**References:**")
+        lines.append("")
+        for r in refs:
+            lines.append(f"- {r}")
+        lines.append("")
+    return lines
+
+
 def render_markdown(payload: dict[str, Any]) -> str:
     """Render the JSON payload as a human-readable markdown report.
 
@@ -667,6 +726,13 @@ def render_markdown(payload: dict[str, Any]) -> str:
     filled in programmatically, interpretation marked with
     ``{TODO: interpret}`` for the LLM/human pass that follows the
     audit. The author-facing voice-insights report convention.
+
+    The ``claim_license`` block is rendered at the end of the report
+    on both the normal path and the warning-short-circuit path. Since
+    R12 ships under the Stylometry-to-the-people policy with
+    explicit no-anchored-thresholds, the claim-license is the
+    load-bearing licensure surface and must appear in every report,
+    not just the JSON sidecar.
     """
     lines: list[str] = []
     lines.append("# Semantic trajectory audit")
@@ -681,6 +747,13 @@ def render_markdown(payload: dict[str, Any]) -> str:
     if payload.get("warning"):
         lines.append(f"> **Warning:** {payload['warning']}")
         lines.append("")
+        # Even on the warning path the claim_license block is
+        # load-bearing — the reader needs to know what the (absent)
+        # result does NOT license, especially when the audit produced
+        # too few windows to compute trajectory stats.
+        lines.extend(_render_claim_license_section(
+            payload.get("claim_license") or {}
+        ))
         return "\n".join(lines)
     # Model
     m = payload.get("model") or {}
@@ -817,6 +890,12 @@ def render_markdown(payload: dict[str, Any]) -> str:
         "interpretation is the writer's or editor's pass."
     )
     lines.append("")
+    # Claim license block at the end of the report. Same content as
+    # the JSON sidecar's `claim_license` field, formatted for human
+    # reading. Load-bearing under the Stylometry-to-the-people policy.
+    lines.extend(_render_claim_license_section(
+        payload.get("claim_license") or {}
+    ))
     return "\n".join(lines)
 
 

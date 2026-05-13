@@ -450,19 +450,45 @@ def test_render_markdown_basic(tmp_path: Path):
     assert "## Trajectory statistics" in md
     assert "PROVISIONAL banding" in md
     assert "{TODO: interpret}" in md
+    # Claim-license block must appear in the markdown (PR #16 P2
+    # regression, 2026-05-12). The JSON output carries it; the
+    # earlier renderer dropped it. Both surfaces should now carry
+    # the licensure section since R12 ships PROVISIONAL under the
+    # Stylometry-to-the-people policy and the claim-license is the
+    # load-bearing licensure surface.
+    assert "## Claim license" in md
+    assert "Authorship verdicts" in md  # from the does_not_license text
+    assert "user-baseline-required" in md  # from comparison_set
 
 
 def test_render_markdown_handles_warning_short_text():
+    """The warning-short-circuit path still needs to render the
+    claim_license block. A reader hitting the warning path
+    ("too few windows produced") otherwise has no licensure
+    information at all — and that's exactly the moment a
+    licensure refusal matters most."""
     payload = {
         "task_surface": "voice_coherence",
         "tool": "semantic_trajectory_audit",
         "tool_version": "1.0",
         "warning": "only 1 window produced",
         "source": "tiny.txt",
+        "claim_license": {
+            "task_surface": "voice_coherence",
+            "licenses": "Nothing — too few windows to compute.",
+            "does_not_license": "Authorship verdicts.",
+            "comparison_set": {"anchor": "PROVISIONAL"},
+            "additional_caveats": ["Test caveat present."],
+            "references": [],
+        },
     }
     md = sta.render_markdown(payload)
     assert "Warning" in md
     assert "only 1 window" in md
+    # Even the warning path must carry the claim-license block.
+    assert "## Claim license" in md
+    assert "Authorship verdicts" in md
+    assert "Test caveat present." in md
 
 
 # --------------- CLI --------------------------------------------
