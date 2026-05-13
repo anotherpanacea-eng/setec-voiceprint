@@ -201,6 +201,60 @@ The 9 corpus-independent regression tests in `scripts/tests/test_calibration_pro
 - **Date:** 2026-05-10
 - **Notes:** First committed calibration against the SETEC framework. Polarity matches the registry's smoothing-diagnosis hypothesis (AI prose has lower sentence-length variance than human prose) on this corpus — direction-aware AUC 0.683 confirms a moderate-strength real signal. The calibrated threshold is more *conservative* than the prior heuristic (-0.622 < -0.40 means a stricter "below threshold" condition), catching 7.0% of AI essays at the cost of 0.93% false positives on human writers, with a precision of 88% at the operating point. The corpus is the EditLens val split — predominantly student-essay register, with the human comparator being ESL student writing. Generalization to the canonical SETEC registers (literary fiction, blog essay, academic philosophy) is **unverified**; out-of-corpus performance is the heldout-split roadmap deliverable. Five other registry signals showed direction-aware AUC ≥ 0.5 on this corpus (`sentence_length_sd`, `adjacent_cosine_sd`, `fkgl_sd`, `mdd_sd`, `connective_density`) but failed gate 4 (TPR floor at FPR ≤ 0.01); five signals (`mtld`, `mattr`, `shannon_entropy`, `yules_k`, `adjacent_cosine_mean`) had inverted polarity on this corpus — see `references/calibration-findings-2026-05-10.md` for the polarity-inversion analysis. The bootstrap CI here is fixed-threshold paired (it bounds rate uncertainty at the chosen threshold, not selection uncertainty in the threshold itself); selection uncertainty via nested bootstrap is roadmap.
 
+## mage_full_tier1_fpr0.01_2026-05-11
+
+> **[POLICY: AUDIT-ONLY]** Audit record under the "Stylometry to the people" policy stated at the top of this file. No threshold from this run is encoded in `COMPRESSION_HEURISTICS`. The empirical findings are recorded here for reproducibility and for the cross-corpus comparison documented in `references/calibration-findings-2026-05-11-mage.md`.
+
+- **Run type:** Full Tier-1 survey across all 11 SETEC signals (8 Tier 1 scored; Tier 2 / Tier 3 skipped via `--no-tier2 --no-tier3`)
+- **Corpus:** MAGE (Yichen Li et al., ACL 2024; HF `yaful/MAGE`)
+- **License (precise):**
+  - **Paper**: MIT (per Li et al. 2024)
+  - **HuggingFace dataset card**: Apache-2.0 (observed 2026-05-10; `fetch_mage.py` accepts MIT or Apache-2.0 at fetch time and records the observed value in the corpus NOTICE.md)
+  - **Source-dataset texts**: 10 underlying datasets with per-source licenses; aggregate wrapper does not override per-source restrictions
+  - **SETEC framework code** (fetcher, manifest converter, calibration toolchain): GPL-3-or-later
+  - **Posture**: local-only per Stylometry-to-the-people; MAGE-derived corpus content is not redistributed in framework artifacts
+- **Manifest path:** `ai-prose-baselines-private/mage/manifest.jsonl` (436,606 rows total)
+- **Calibration:** direction-aware FPR-target sweep at FPR ≤ `0.01`
+- **Split role:** calibration_only (validation slice; `--use validation` filter)
+- **n_pos / n_neg:** 120,476 AI / 217,750 human (338,226 rows after `use: validation` filter)
+- **FPR resolution:** `1/n_neg = 4.59e-06` (217,750 negatives — far more than needed for the 0.01 FPR target)
+- **Wall-clock:** ~15h 8m single-threaded on M-series Mac (inside the predicted 11-18h window from the README costs table)
+- **CI method:** fixed-threshold paired bootstrap (2000 resamples, seed 42)
+- **SETEC commit:** main at 1.42.5 + open PRs #15/16/17 (the survey was launched from 1.42.5 state before subsequent work landed)
+- **Date:** 2026-05-11
+
+### Per-signal results
+
+| signal | registry direction | raw AUC | da_AUC | TPR at threshold | polarity | gates passed |
+|---|---|---:|---:|---:|---|---:|
+| `mattr` | lt | 0.425 | **0.575** | 0.0025% | matches | 3 of 4 |
+| `mtld` | lt | 0.436 | **0.564** | 0.020% | matches | 3 of 4 |
+| `yules_k` | gt | 0.560 | **0.560** | 0.014% | matches | 3 of 4 |
+| `shannon_entropy` | lt | 0.483 | **0.517** | 0.016% | matches (weak) | 3 of 4 |
+| `connective_density` | gt | 0.493 | 0.493 | 0.60% | **inverted** | 2 of 4 |
+| `sentence_length_sd` | lt | 0.521 | 0.479 | — | **inverted** | 2 of 4 |
+| `fkgl_sd` | lt | 0.521 | 0.479 | — | **inverted** | 2 of 4 |
+| `burstiness_B` | lt | 0.546 | 0.454 | 0.58% | **inverted** | 2 of 4 |
+| `adjacent_cosine_mean` | (tier 3) | — | — | — | not scored | 0 of 0 |
+| `adjacent_cosine_sd` | (tier 3) | — | — | — | not scored | 0 of 0 |
+| `mdd_sd` | (tier 2) | — | — | — | not scored | 0 of 0 |
+
+The four-of-four passable gates are `polarity_matches`, `enough_negatives`, `interpretable_threshold` (TPR floor), and `esl_conservative`. The fifth gate (`auc_ap_not_embarrassing`) is left to maintainer judgment per the calibration toolchain's selection criteria; `null` for every row above. The `interpretable_threshold` gate failed for every signal because the TPR at the 1% FPR operating point sits well below the 5% floor — the framework's stated minimum for a "non-trivial fraction of AI essays caught."
+
+### Headline finding
+
+**0 of 11 signals passed all gates.** No signal earns a committed threshold under the framework's pre-registered selection criteria. Even if the framework's policy permitted shipping anchored thresholds (which it does not, per the "Stylometry to the people" posture), the MAGE results would not produce one.
+
+### Cross-corpus polarity inversion
+
+Every Tier 1 signal that produced a comparable measurement on both EditLens (2026-05-10) and MAGE (2026-05-11) **flipped polarity between the two corpora**. The signals that matched the registry hypothesis on EditLens (`burstiness_B`, `sentence_length_sd`, `fkgl_sd`, `connective_density`) inverted on MAGE. The signals that inverted on EditLens (`mattr`, `mtld`, `yules_k`, `shannon_entropy`) matched polarity on MAGE. This is the load-bearing finding: stylometric signals do not have stable polarity across corpora because the polarity depends on what the human comparator looks like. EditLens's ESL-student-writing comparator and MAGE's adversarial-mixed comparator produce opposite-direction signals for the same underlying corpus property.
+
+### Implication for the framework
+
+The MAGE result confirms the "Stylometry to the people" policy as load-bearing. No single corpus produces a threshold that generalizes to another; the framework's value is the methodology and the per-user calibration discipline, not the shipped numbers. Future RAID calibration runs will produce a third polarity profile; the prediction matches the cross-corpus evidence we have.
+
+Full analysis in `references/calibration-findings-2026-05-11-mage.md`.
+
 ## Template for new entries
 
 When you populate a calibration run, format the entry like this:
