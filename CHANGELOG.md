@@ -6,6 +6,24 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.42.6] - 2026-05-11
+
+**Policy shift: "Stylometry to the people."** SETEC no longer ships per-signal decision thresholds derived from labeled corpora (EditLens, RAID, MAGE, or any other) as load-bearing defaults. Anchored thresholds derived from one corpus do not generalize to the user's register mix without local recalibration, and shipping them as defaults would constitute the implicit-generalization claim SETEC otherwise refuses to make. The framework ships methods + tooling + PROVENANCE discipline; users wanting corpus-anchored thresholds run `calibrate_thresholds.py` against their own baseline.
+
+### Changed
+
+- **`burstiness_B` in `COMPRESSION_HEURISTICS` reverted to provisional.** The 2026-05-10 EditLens-anchored value (`-0.6227...`, `provisional=False`, `provenance=editlens_val_burstiness_B_fpr0.01_2026-05-10`) is rolled back to the pre-calibration heuristic (`-0.40`, `provisional=True`, `provenance=None`). The original calibration is preserved in `scripts/calibration/thresholds_calibrated.json` and as a `[POLICY: AUDIT-ONLY]`-tagged PROVENANCE entry for reproducibility, but the framework no longer loads it as the runtime threshold.
+- **PROVENANCE.md gains a policy banner** at the top explaining the shift, plus a tagged warning on the EditLens burstiness_B entry.
+- **PROVENANCE.md "Status" section** reframes "0 of 11 thresholds calibrated" from a transitional state to a load-bearing invariant under the current policy.
+
+### Notes
+
+- The variance-audit footer continues to report "0 of 11 signal thresholds carry calibration provenance" — same wording as before, but now backed by an explicit policy rather than an unstarted toolchain.
+- The calibration toolchain (`calibrate_thresholds.py`, `calibration_survey.py`, fetchers, manifest converters) is unaffected. Users running it locally produce their own anchored thresholds, exactly as the new policy intends.
+- The MAGE survey running at the time of this release will produce results that flow into PROVENANCE-as-audit-record, not into `COMPRESSION_HEURISTICS` as load-bearing defaults.
+- Inline comment in `variance_audit.py` for `burstiness_B` rewritten to explain the policy and reference the EditLens audit record.
+- All 1398 tests pass + 1 skipped (was 1395+1 in 1.42.5). The threshold-spec contract tests are generic over the registry (don't pin signal names) so the burstiness_B revert needed no test changes.
+
 ## [1.42.5] - 2026-05-11
 
 **README: honest costs and resources at the calibration tier.** Adds a new top-level section between Installation and Quick start that registers the real disk / time / memory / GPU footprint for a calibration run. Figures are measured from the 2026-05 RAID + MAGE runs, not theoretical estimates. Smoothing-diagnosis, voice-coherence, and validation tiers are explicitly noted as unaffected.
