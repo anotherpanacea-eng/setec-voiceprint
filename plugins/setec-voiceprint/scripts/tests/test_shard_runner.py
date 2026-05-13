@@ -717,3 +717,619 @@ def test_write_manifest_roundtrip(tmp_path: Path):
     p = tmp_path / "m.jsonl"
     sr.write_manifest(p, [{"a": 1}, {"b": 2}])
     assert sr.read_manifest(p) == [{"a": 1}, {"b": 2}]
+
+
+# --------------- v1.44.1.B: pause-marker -----------------------
+
+
+def test_pause_marker_write_and_clear(sharded_run):
+    """Round-trip: write a pause marker via pause-all, observe
+    `is_paused` returns True, clear it, observe False."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    assert sr.is_paused(base, run_id) is False
+    rc = sr.main([
+        "--base-dir", str(base), "pause-all",
+        "--run-id", run_id,
+        "--reason", "operator test pause",
+    ])
+    assert rc == 0
+    assert sr.is_paused(base, run_id) is True
+    # The marker file should be valid JSON with the recorded reason.
+    marker = sr.pause_marker_path(base, run_id)
+    payload = json.loads(marker.read_text())
+    assert payload["reason"] == "operator test pause"
+    assert "paused_at" in payload
+    # Clear it.
+    rc = sr.main([
+        "--base-dir", str(base), "pause-all",
+        "--run-id", run_id, "--clear",
+    ])
+    assert rc == 0
+    assert sr.is_paused(base, run_id) is False
+
+
+def test_pause_all_clear_when_no_marker_returns_1(
+    sharded_run, capsys: pytest.CaptureFixture,
+):
+    """Clearing a non-existent marker returns rc=1 (informational —
+    nothing to do — not an error)."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main([
+        "--base-dir", str(base), "pause-all",
+        "--run-id", run_id, "--clear",
+    ])
+    assert rc == 1
+
+
+def test_work_exits_cleanly_when_pause_marker_present(
+    sharded_run, capsys: pytest.CaptureFixture,
+):
+    """A worker invoked while a pause marker is present exits
+    cleanly with rc=0 and does NOT process any shards."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    sr.write_pause_marker(base, run_id, reason="test")
+    rc = sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    assert rc == 0
+    # No shards should have moved out of pending.
+    state = ss.read_state(sr.state_path(base, run_id))
+    for sid in ("000", "001", "002"):
+        assert state["shards"][sid]["state"] == "pending"
+
+
+# --------------- v1.44.1.B: --time-window ---------------------
+
+
+def test_parse_time_window_roundtrip():
+    """Direct unit test of the parser, including the cross-midnight
+    case and invalid inputs."""
+    import datetime as dt
+    assert sr.parse_time_window("23:00-06:00") == (
+        dt.time(23, 0), dt.time(6, 0),
+    )
+    assert sr.parse_time_window("09:00-17:00") == (
+        dt.time(9, 0), dt.time(17, 0),
+    )
+    # Tolerant of whitespace.
+    assert sr.parse_time_window("  09:00 - 17:00  ") == (
+        dt.time(9, 0), dt.time(17, 0),
+    )
+    with pytest.raises(ValueError):
+        sr.parse_time_window("not a window")
+    with pytest.raises(ValueError):
+        sr.parse_time_window("23:00")  # missing end
+
+
+def test_is_within_time_window_handles_cross_midnight():
+    """A 23:00-06:00 window crosses midnight; 03:00 must register
+    as in-window, 12:00 must register as out."""
+    import datetime as dt
+    w = (dt.time(23, 0), dt.time(6, 0))
+    # 23:30 — in-window
+    assert sr.is_within_time_window(
+        w, now=dt.datetime(2026, 1, 1, 23, 30),
+    )
+    # 03:00 — in-window
+    assert sr.is_within_time_window(
+        w, now=dt.datetime(2026, 1, 1, 3, 0),
+    )
+    # 06:00 — out (endpoint exclusive)
+    assert not sr.is_within_time_window(
+        w, now=dt.datetime(2026, 1, 1, 6, 0),
+    )
+    # 12:00 — out
+    assert not sr.is_within_time_window(
+        w, now=dt.datetime(2026, 1, 1, 12, 0),
+    )
+    # No window — always in
+    assert sr.is_within_time_window(None)
+
+
+def test_work_exits_when_outside_time_window(
+    sharded_run, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+):
+    """If the time window is configured and the current local time
+    is outside it, the worker exits cleanly with rc=0 without
+    processing any shards.
+
+    We patch ``datetime.datetime.now`` (via _dt) inside shard_runner
+    so the test can pin "current time" to a specific moment. A
+    23:00-06:00 window combined with a fake "now" of 12:00 puts
+    the worker outside the window.
+    """
+    import datetime as dt
+
+    class _FakeDatetime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = dt.datetime(2026, 1, 1, 12, 0)
+            return base if tz is None else base.replace(tzinfo=tz)
+
+    monkeypatch.setattr(sr._dt, "datetime", _FakeDatetime)
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main([
+        "--base-dir", str(base), "work",
+        "--run-id", run_id,
+        "--time-window", "23:00-06:00",
+    ])
+    assert rc == 0
+    # No shards should have moved out of pending.
+    state = ss.read_state(sr.state_path(base, run_id))
+    for sid in ("000", "001", "002"):
+        assert state["shards"][sid]["state"] == "pending"
+
+
+def test_work_runs_when_inside_time_window(
+    sharded_run, monkeypatch: pytest.MonkeyPatch,
+):
+    """Same setup, but fake 'now' falls inside the window, so the
+    worker processes shards as normal."""
+    import datetime as dt
+
+    class _FakeDatetime(dt.datetime):
+        @classmethod
+        def now(cls, tz=None):
+            base = dt.datetime(2026, 1, 1, 2, 30)  # in [23:00, 06:00)
+            return base if tz is None else base.replace(tzinfo=tz)
+
+    monkeypatch.setattr(sr._dt, "datetime", _FakeDatetime)
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main([
+        "--base-dir", str(base), "work",
+        "--run-id", run_id,
+        "--time-window", "23:00-06:00",
+    ])
+    assert rc == 0
+    state = ss.read_state(sr.state_path(base, run_id))
+    for sid in ("000", "001", "002"):
+        assert state["shards"][sid]["state"] == "done"
+
+
+def test_work_rejects_malformed_time_window(
+    sharded_run, capsys: pytest.CaptureFixture,
+):
+    """A bad --time-window should fail fast with rc=2 and an error
+    message, not silently fall back to 'no window'."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main([
+        "--base-dir", str(base), "work",
+        "--run-id", run_id,
+        "--time-window", "garbage",
+    ])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "Invalid --time-window" in err
+
+
+# --------------- v1.44.1.B: SigtermInterrupt contract --------
+
+
+def test_sigterm_interrupt_marks_pending_resume(
+    sharded_run, monkeypatch: pytest.MonkeyPatch,
+):
+    """A scorer that raises ``SigtermInterrupt`` mid-shard should
+    cause the orchestrator to:
+      * mark the shard claimed_pending_resume with the flushed/total
+        entry counts
+      * KEEP the .claim file in place (resume eligibility per §2.4)
+      * return rc=0 (clean checkpoint exit, not a failure)
+    """
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+
+    def _interrupting_scorer(
+        shard_manifest_path, *, cache_path, **kwargs,
+    ):
+        # Pretend we got partway through.
+        raise sr.SigtermInterrupt(
+            n_entries_flushed=7,
+            n_entries_total=20,
+            partial_cache_path=Path(cache_path),
+        )
+
+    monkeypatch.setattr(sr, "DEFAULT_SCORER", _interrupting_scorer)
+    rc = sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    # Clean checkpoint exit.
+    assert rc == 0
+    # Exactly one shard should be in claimed_pending_resume; the
+    # remaining shards are still pending (worker exited on first
+    # checkpoint).
+    state = ss.read_state(sr.state_path(base, run_id))
+    pending_resume = [
+        sid for sid, sh in state["shards"].items()
+        if sh.get("state") == "claimed_pending_resume"
+    ]
+    assert len(pending_resume) == 1
+    cpr = state["shards"][pending_resume[0]]
+    assert cpr["n_entries_flushed"] == 7
+    assert cpr["n_entries_total"] == 20
+    # Claim file MUST still be in place — only the original host
+    # may resume.
+    claim_path = sr.shard_claim_path(base, run_id, pending_resume[0])
+    assert claim_path.exists()
+
+
+def test_sigterm_interrupt_resume_path(
+    sharded_run, monkeypatch: pytest.MonkeyPatch,
+):
+    """After a SigtermInterrupt, a second `work` invocation on the
+    same host should pick up the claimed_pending_resume shard via
+    the resume path (expected_state='claimed_pending_resume') and
+    re-score it. Here the second run's scorer succeeds normally.
+    """
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+
+    def _interrupting_scorer(shard_manifest_path, *, cache_path, **kwargs):
+        raise sr.SigtermInterrupt(
+            n_entries_flushed=5, n_entries_total=20,
+        )
+
+    monkeypatch.setattr(sr, "DEFAULT_SCORER", _interrupting_scorer)
+    sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    state = ss.read_state(sr.state_path(base, run_id))
+    assert any(
+        sh.get("state") == "claimed_pending_resume"
+        for sh in state["shards"].values()
+    )
+    # Second run: scorer succeeds.
+    monkeypatch.setattr(sr, "DEFAULT_SCORER", _stub_scorer)
+    rc = sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    assert rc == 0
+    state = ss.read_state(sr.state_path(base, run_id))
+    for sid in ("000", "001", "002"):
+        assert state["shards"][sid]["state"] == "done"
+
+
+# --------------- v1.44.1.B: sweep-stale ----------------------
+
+
+def test_sweep_stale_releases_dead_claim_past_threshold(sharded_run):
+    """sweep-stale should release a claim whose pid is dead AND
+    whose claimed_at timestamp is older than the threshold.
+    """
+    import datetime as dt
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # Hand-create a stale claim file for shard 001: dead pid, old
+    # timestamp. We use pid=1 only as a sentinel (live on the
+    # test runner) — better to use a guaranteed-dead pid.
+    # Strategy: write the claim file with the current host but a
+    # very high pid that's almost certainly not in use.
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_pid = 999_999_999  # Linux PID max default is ~4M; this is dead.
+    old_ts = (
+        dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=12)
+    ).isoformat(timespec="seconds")
+    claim_path.write_text(json.dumps({
+        "host": ss._host(),  # local host so sweep-stale picks it up
+        "pid": stale_pid,
+        "claimed_at": old_ts,
+    }))
+    # Also mark the shard as 'claimed' in state.json (consistent
+    # with the claim file).
+    state = ss.read_state(sr.state_path(base, run_id))
+    state["shards"]["001"]["state"] = "claimed"
+    state["shards"]["001"]["claimed_by_host"] = ss._host()
+    state["shards"]["001"]["claimed_by_pid"] = stale_pid
+    state["shards"]["001"]["claimed_at"] = old_ts
+    ss.write_state(sr.state_path(base, run_id), state)
+    # Run sweep-stale with a 6-hour threshold (default).
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    # Claim file should be gone.
+    assert not claim_path.exists()
+    # Shard state.json entry should be back to pending, with
+    # claim metadata cleared.
+    state = ss.read_state(sr.state_path(base, run_id))
+    assert state["shards"]["001"]["state"] == "pending"
+    assert "claimed_by_host" not in state["shards"]["001"]
+    assert "claimed_by_pid" not in state["shards"]["001"]
+
+
+def test_sweep_stale_skips_live_pid(sharded_run):
+    """Even with a very-old claim, sweep-stale must NOT release a
+    claim whose pid is still alive — that's a long-running shard,
+    not a stale one."""
+    import datetime as dt
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    live_pid = os.getpid()  # this test process is by definition alive
+    old_ts = (
+        dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
+    ).isoformat(timespec="seconds")
+    claim_path.write_text(json.dumps({
+        "host": ss._host(),
+        "pid": live_pid,
+        "claimed_at": old_ts,
+    }))
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    # Live pid → claim survives even with a 24-hour-old timestamp.
+    assert claim_path.exists()
+
+
+def test_sweep_stale_skips_young_dead_claim(sharded_run):
+    """A dead pid + a young claim must be skipped. The two-condition
+    rule (dead AND old) defeats the same-pid race where a worker
+    crashed and immediately restarted with a new pid."""
+    import datetime as dt
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_pid = 999_999_999
+    young_ts = (
+        # 5 minutes ago — well under the 6-hour default.
+        dt.datetime.now(dt.timezone.utc) - dt.timedelta(minutes=5)
+    ).isoformat(timespec="seconds")
+    claim_path.write_text(json.dumps({
+        "host": ss._host(),
+        "pid": stale_pid,
+        "claimed_at": young_ts,
+    }))
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    # Young claim survives even though pid is dead.
+    assert claim_path.exists()
+
+
+def test_sweep_stale_dry_run_does_not_release(sharded_run):
+    """--dry-run should report what would be released but leave
+    everything in place."""
+    import datetime as dt
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_pid = 999_999_999
+    old_ts = (
+        dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=12)
+    ).isoformat(timespec="seconds")
+    claim_path.write_text(json.dumps({
+        "host": ss._host(),
+        "pid": stale_pid,
+        "claimed_at": old_ts,
+    }))
+    state = ss.read_state(sr.state_path(base, run_id))
+    state["shards"]["001"]["state"] = "claimed"
+    ss.write_state(sr.state_path(base, run_id), state)
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id, "--dry-run",
+    ])
+    assert rc == 0
+    # Dry-run: claim is still in place.
+    assert claim_path.exists()
+    state = ss.read_state(sr.state_path(base, run_id))
+    assert state["shards"]["001"]["state"] == "claimed"
+
+
+def test_sweep_stale_preserves_pending_resume_by_default(sharded_run):
+    """A claimed_pending_resume shard with a dead pid must NOT be
+    released by default — per spec §2.4 only the original host may
+    resume. Pass --include-resume to release it."""
+    import datetime as dt
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    stale_pid = 999_999_999
+    old_ts = (
+        dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=12)
+    ).isoformat(timespec="seconds")
+    claim_path.write_text(json.dumps({
+        "host": ss._host(),
+        "pid": stale_pid,
+        "claimed_at": old_ts,
+    }))
+    # Mark state.json as claimed_pending_resume.
+    state = ss.read_state(sr.state_path(base, run_id))
+    state["shards"]["001"]["state"] = "claimed_pending_resume"
+    state["shards"]["001"]["claimed_by_host"] = ss._host()
+    state["shards"]["001"]["claimed_by_pid"] = stale_pid
+    state["shards"]["001"]["claimed_at"] = old_ts
+    state["shards"]["001"]["n_entries_flushed"] = 10
+    state["shards"]["001"]["n_entries_total"] = 20
+    ss.write_state(sr.state_path(base, run_id), state)
+    # Without --include-resume: claim survives.
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    assert claim_path.exists()
+    state = ss.read_state(sr.state_path(base, run_id))
+    assert state["shards"]["001"]["state"] == "claimed_pending_resume"
+    # With --include-resume: claim released; partial-progress fields
+    # cleared.
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id, "--include-resume",
+    ])
+    assert rc == 0
+    assert not claim_path.exists()
+    state = ss.read_state(sr.state_path(base, run_id))
+    assert state["shards"]["001"]["state"] == "pending"
+    assert "n_entries_flushed" not in state["shards"]["001"]
+
+
+def test_sweep_stale_skips_remote_host_claims(sharded_run):
+    """Cross-host claims must never be swept — we can't liveness-
+    check pids on a different machine from POSIX user-space."""
+    import datetime as dt
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    old_ts = (
+        dt.datetime.now(dt.timezone.utc) - dt.timedelta(hours=24)
+    ).isoformat(timespec="seconds")
+    claim_path.write_text(json.dumps({
+        "host": "some-other-machine.local",  # NOT ss._host()
+        "pid": 12345,
+        "claimed_at": old_ts,
+    }))
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    # Remote claim is untouched even though it's stale.
+    assert claim_path.exists()
+
+
+# --------------- v1.44.1.B: terminate-all / kill-all ---------
+
+
+def test_terminate_all_no_workers_returns_1(sharded_run):
+    """terminate-all on a run with no active workers returns rc=1
+    (informational; empty queue is not an error)."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main([
+        "--base-dir", str(base), "terminate-all",
+        "--run-id", run_id,
+    ])
+    assert rc == 1
+
+
+def test_terminate_all_signals_active_pid(
+    sharded_run, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+):
+    """terminate-all should send SIGTERM to every distinct local
+    pid recorded in a .claim file on this run. We stub os.kill so
+    the test can observe the signal without actually killing
+    anything."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # Plant two claim files: shard 001 with a live pid, shard 002
+    # with the same live pid (de-dup check).
+    live_pid = os.getpid()
+    for sid in ("001", "002"):
+        cp = sr.shard_claim_path(base, run_id, sid)
+        cp.parent.mkdir(parents=True, exist_ok=True)
+        cp.write_text(json.dumps({
+            "host": ss._host(),
+            "pid": live_pid,
+            "claimed_at": "2026-01-01T00:00:00+00:00",
+        }))
+    # Capture os.kill calls.
+    kill_calls: list[tuple[int, int]] = []
+    real_kill = os.kill
+
+    def _fake_kill(pid, sig):
+        kill_calls.append((pid, sig))
+        if sig == 0:
+            return real_kill(pid, sig)  # liveness check
+        # SIGTERM / SIGKILL: do nothing.
+
+    monkeypatch.setattr(sr.os, "kill", _fake_kill)
+    monkeypatch.setattr(ss.os, "kill", _fake_kill)
+    rc = sr.main([
+        "--base-dir", str(base), "terminate-all",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    # SIGTERM is 15 on POSIX. Each distinct pid signaled exactly once.
+    import signal as _sig
+    sigterm_calls = [
+        (pid, s) for pid, s in kill_calls if s == _sig.SIGTERM
+    ]
+    assert len(sigterm_calls) == 1
+    assert sigterm_calls[0][0] == live_pid
+
+
+def test_kill_all_uses_sigkill(
+    sharded_run, monkeypatch: pytest.MonkeyPatch,
+):
+    """kill-all should send SIGKILL (not SIGTERM)."""
+    import signal as _sig
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    live_pid = os.getpid()
+    cp = sr.shard_claim_path(base, run_id, "001")
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(json.dumps({
+        "host": ss._host(),
+        "pid": live_pid,
+        "claimed_at": "2026-01-01T00:00:00+00:00",
+    }))
+    kill_calls: list[tuple[int, int]] = []
+    real_kill = os.kill
+
+    def _fake_kill(pid, sig):
+        kill_calls.append((pid, sig))
+        if sig == 0:
+            return real_kill(pid, sig)
+
+    monkeypatch.setattr(sr.os, "kill", _fake_kill)
+    monkeypatch.setattr(ss.os, "kill", _fake_kill)
+    rc = sr.main([
+        "--base-dir", str(base), "kill-all",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    sigkill_calls = [
+        (pid, s) for pid, s in kill_calls if s == _sig.SIGKILL
+    ]
+    assert len(sigkill_calls) == 1
+    assert sigkill_calls[0][0] == live_pid
+
+
+def test_terminate_all_skips_remote_host(
+    sharded_run, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+):
+    """A remote-host claim must not be signaled — we can't reach
+    pids on another machine from user-space. terminate-all reports
+    it and moves on; the operator runs terminate-all on the
+    remote host to handle it there."""
+    import signal as _sig
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    cp = sr.shard_claim_path(base, run_id, "001")
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    cp.write_text(json.dumps({
+        "host": "remote-machine.local",
+        "pid": 12345,
+        "claimed_at": "2026-01-01T00:00:00+00:00",
+    }))
+    kill_calls: list[tuple[int, int]] = []
+
+    def _fake_kill(pid, sig):
+        kill_calls.append((pid, sig))
+
+    monkeypatch.setattr(sr.os, "kill", _fake_kill)
+    monkeypatch.setattr(ss.os, "kill", _fake_kill)
+    rc = sr.main([
+        "--base-dir", str(base), "terminate-all",
+        "--run-id", run_id,
+    ])
+    assert rc == 1  # nothing signaled
+    # No SIGTERM was sent to the remote pid.
+    sigterm_calls = [
+        (pid, s) for pid, s in kill_calls if s == _sig.SIGTERM
+    ]
+    assert sigterm_calls == []
+    err = capsys.readouterr().err
+    assert "remote-machine.local" in err

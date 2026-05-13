@@ -458,3 +458,51 @@ def test_write_state_does_not_corrupt_existing_on_partial_failure(
     # Temp file cleaned up.
     leftover = list(tmp_path.glob(".state-*.tmp"))
     assert leftover == []
+
+
+# --------------- pid_alive (v1.44.1.B) --------------------------
+
+
+def test_pid_alive_recognizes_running_process():
+    """The test runner's own pid must register as alive."""
+    assert ss.pid_alive(os.getpid()) is True
+
+
+def test_pid_alive_recognizes_dead_pid():
+    """A pid that's almost certainly not allocated should register
+    as dead. Linux's default pid_max is ~4M; we pick 999_999_999
+    to avoid colliding with any reasonable host's running pids.
+    The same number is used in shard_runner's sweep-stale tests
+    so behavior is consistent across the suite."""
+    assert ss.pid_alive(999_999_999) is False
+
+
+def test_pid_alive_handles_permission_error_conservatively(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """If we hit ``PermissionError`` sending signal 0 (the process
+    exists but is owned by another user), treat as alive — refusing
+    to release a claim we can't conclusively prove is dead is the
+    safer default. Otherwise an unprivileged ``sweep-stale`` run
+    could release a perfectly-healthy worker's claim mid-shard."""
+
+    def _raise_permission(pid, sig):
+        raise PermissionError("simulated")
+
+    monkeypatch.setattr(ss.os, "kill", _raise_permission)
+    assert ss.pid_alive(1) is True
+
+
+def test_pid_alive_treats_unknown_oserror_conservatively(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """An unexpected OSError from os.kill (e.g., EINVAL because the
+    kernel rejected our signal-0 call) should NOT cause sweep-stale
+    to think the process is dead. Conservative path = treat as alive,
+    same reasoning as PermissionError."""
+
+    def _raise_oserror(pid, sig):
+        raise OSError("simulated unexpected error")
+
+    monkeypatch.setattr(ss.os, "kill", _raise_oserror)
+    assert ss.pid_alive(1) is True

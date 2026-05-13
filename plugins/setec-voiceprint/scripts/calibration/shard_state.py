@@ -431,6 +431,44 @@ def read_claim_file(claim_path: Path) -> dict[str, Any] | None:
         return None
 
 
+def pid_alive(pid: int) -> bool:
+    """Best-effort check whether a process is alive on the local
+    host.
+
+    Uses ``os.kill(pid, 0)`` which sends signal 0 — a no-op signal
+    used precisely for liveness checks. Returns ``True`` if the
+    process exists, ``False`` if it doesn't (``ProcessLookupError``)
+    or if we lack permission to signal it (``PermissionError`` —
+    treated as alive because we can't conclusively say it's gone).
+
+    Important caveats:
+
+      * Only meaningful for processes on this host. Cross-host
+        liveness requires a different signal (heartbeat file, etc.)
+        and is not in scope for v1.44.1. ``sweep-stale`` callers
+        compare the claim file's recorded host against the local
+        host and only attempt liveness checks for local-host pids.
+      * PID reuse: a long-stale claim file could record a pid that
+        the OS has since recycled into an unrelated process. This is
+        why ``sweep-stale`` requires both a dead pid AND a claim
+        age beyond the configured threshold before releasing — the
+        age gate guards against the rare same-pid race.
+    """
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # We can't signal it, but it exists — treat as alive.
+        return True
+    except OSError:
+        # Unknown error talking to the kernel; conservative path
+        # is "treat as alive" so sweep-stale never releases on
+        # incomplete information.
+        return True
+    return True
+
+
 # --------------- State-update lock (v1.44.1) ------------------
 
 
