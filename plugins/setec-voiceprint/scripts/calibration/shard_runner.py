@@ -497,6 +497,7 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
     meta_list: list[dict[str, Any]] = []
     contributing: list[str] = []
     missing_done_shards: list[tuple[str, Path]] = []
+    tampered_done_shards: list[tuple[str, str, str]] = []
     for sid in sorted(shards.keys()):
         sh = shards[sid]
         if sh.get("state") != "done":
@@ -517,30 +518,61 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
             # state.json claims.
             missing_done_shards.append((sid, cp))
             continue
+        # Integrity check: compare the on-disk cache's SHA-256 to the
+        # value recorded in state.json when the shard was marked
+        # done. The `verify` subcommand exists to do this on demand,
+        # but `aggregate` is the artifact-producing command — the
+        # one that creates the survey JSON consumers act on. It
+        # must not depend on a separate manual `verify` step to
+        # avoid producing a survey from tampered or stale caches.
+        # If recorded_sha is missing (older state files), skip the
+        # check rather than fail; the missing-cache check above
+        # already catches the most common integrity failure.
+        recorded_sha = sh.get("cache_sha256", "")
+        if recorded_sha:
+            actual_sha = sha256_file(cp)
+            if actual_sha != recorded_sha:
+                tampered_done_shards.append((sid, recorded_sha, actual_sha))
+                continue
         with cp.open("r", encoding="utf-8") as fh:
             cache = json.load(fh)
         all_records.extend(cache.get("records") or [])
         if cache.get("meta"):
             meta_list.append(cache["meta"])
         contributing.append(sid)
-    if missing_done_shards and not args.allow_partial:
+    integrity_failures = (
+        len(missing_done_shards) + len(tampered_done_shards)
+    )
+    if integrity_failures and not args.allow_partial:
         sys.stderr.write(
-            f"Cannot aggregate: {len(missing_done_shards)} done shard(s) "
-            f"have missing cache files:\n"
+            f"Cannot aggregate: {integrity_failures} done shard(s) "
+            f"have integrity failures.\n"
         )
-        for sid, cp in missing_done_shards:
-            sys.stderr.write(f"  shard {sid}: cache missing at {cp}\n")
+        if missing_done_shards:
+            sys.stderr.write("\n  Missing cache files:\n")
+            for sid, cp in missing_done_shards:
+                sys.stderr.write(f"    shard {sid}: cache missing at {cp}\n")
+        if tampered_done_shards:
+            sys.stderr.write("\n  Cache hash mismatches (tampered or stale):\n")
+            for sid, recorded, actual in tampered_done_shards:
+                sys.stderr.write(
+                    f"    shard {sid}: recorded {recorded[:16]}..., "
+                    f"actual {actual[:16]}...\n"
+                )
         sys.stderr.write(
-            "Pass --allow-partial to aggregate the surviving shards "
+            "\nPass --allow-partial to aggregate the surviving shards "
             "anyway, or rerun `shard_runner work` to regenerate the "
-            "missing caches.\n"
+            "affected caches. Without --allow-partial, aggregate refuses "
+            "to produce a survey artifact when state.json's integrity "
+            "claims cannot be verified.\n"
         )
         return 2
-    if missing_done_shards:
+    if missing_done_shards or tampered_done_shards:
         sys.stderr.write(
             f"  (continuing with --allow-partial: "
-            f"{len(missing_done_shards)} done shard(s) skipped due to "
-            f"missing cache files)\n"
+            f"{len(missing_done_shards)} missing-cache shard(s) and "
+            f"{len(tampered_done_shards)} tampered-cache shard(s) "
+            f"skipped)\n"
         )
     sys.stderr.write(
         f"Aggregated {len(all_records)} records across "

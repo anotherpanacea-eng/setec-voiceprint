@@ -304,6 +304,68 @@ def test_aggregate_refuses_when_shards_not_done(sharded_run, tmp_path: Path):
     assert rc == 2
 
 
+def test_aggregate_refuses_when_done_shard_cache_is_tampered(
+    sharded_run, tmp_path: Path, capsys: pytest.CaptureFixture,
+):
+    """Reviewer P2 regression (PR #17 follow-up, 2026-05-12).
+
+    `aggregate` is the artifact-producing command; it must not
+    depend on a separate manual `verify` step to detect tampered
+    or stale shard caches. State-integrity contract: every done
+    shard's on-disk cache must match the SHA-256 recorded in
+    `state.json` when the shard was marked done. A mismatched
+    cache is a tampering / staleness failure that would produce
+    a wrong aggregate.
+
+    Without ``--allow-partial``, the aggregator refuses and exits
+    non-zero with a hash-mismatch report. With ``--allow-partial``,
+    it warns and continues with the surviving shards (same
+    semantics as the missing-cache integrity failure).
+    """
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # Complete all shards normally; state.json records sha256 per
+    # done shard.
+    sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    # Tamper one shard's cache by appending a record (changes the
+    # SHA-256 without disturbing JSON parseability — exactly the
+    # quiet failure mode aggregate must catch).
+    cp_to_tamper = sr.shard_cache_path(base, run_id, "001")
+    cache = json.loads(cp_to_tamper.read_text())
+    cache["records"].append({"injected": True, "label": "pre_ai_human"})
+    cp_to_tamper.write_text(json.dumps(cache))
+    # Aggregate without --allow-partial must refuse with a hash
+    # mismatch report.
+    rc = sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id,
+        "--out", str(tmp_path / "agg-tampered.json"),
+        "--no-derive",
+    ])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "integrity failures" in err
+    assert ("Cache hash mismatches" in err or "tampered" in err.lower())
+    assert "--allow-partial" in err
+    # Aggregate WITH --allow-partial should succeed but skip the
+    # tampered shard.
+    rc = sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id,
+        "--out", str(tmp_path / "agg-tampered-partial.json"),
+        "--allow-partial",
+        "--no-derive",
+    ])
+    assert rc == 0
+    payload = json.loads(
+        (tmp_path / "agg-tampered-partial.json").read_text(),
+    )
+    # Two surviving shards (000 + 002); shard 001 was tampered and
+    # skipped. The injected record never reaches the aggregate.
+    assert payload["n_shards_contributed"] == 2
+    assert "001" not in payload["contributing_shards"]
+
+
 def test_aggregate_refuses_when_done_shard_cache_is_missing(
     sharded_run, tmp_path: Path, capsys: pytest.CaptureFixture,
 ):
@@ -338,7 +400,11 @@ def test_aggregate_refuses_when_done_shard_cache_is_missing(
     ])
     assert rc == 2
     err = capsys.readouterr().err
-    assert "missing cache files" in err
+    # The error message format unified after the integrity-check
+    # follow-up: missing caches AND tampered caches share the
+    # "integrity failures" gate.
+    assert "integrity failures" in err
+    assert "Missing cache files" in err
     assert "--allow-partial" in err
     # Aggregate WITH --allow-partial should succeed but only count
     # the surviving shards.
