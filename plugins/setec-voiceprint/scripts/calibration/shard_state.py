@@ -339,6 +339,157 @@ def resumable_shard_ids(state: dict[str, Any]) -> list[str]:
     )
 
 
+# --------------- Atomic claim files (v1.44.1) -----------------
+#
+# Multi-worker coordination uses per-shard claim files at
+# ``shards/<id>/.claim``. Workers create these atomically via
+# ``O_CREAT | O_EXCL | O_WRONLY``; the kernel guarantees that only
+# one process wins the race when multiple workers target the same
+# shard simultaneously. The claim file's content is JSON with the
+# winning worker's host, pid, and timestamp — readable by
+# ``sweep-stale`` (v1.44.1.B) to identify dead-worker claims.
+#
+# The claim file is the load-bearing coordination point. state.json
+# updates still happen, but they reflect what the claim file
+# established, not the other way around. This decouples "who owns
+# the work" from "what the run looks like in aggregate," letting
+# state.json updates be eventually-consistent across workers
+# (serialized via the state-update lock below) without sacrificing
+# claim correctness.
+
+
+def try_claim_shard_atomically(
+    claim_path: Path,
+    *,
+    host: str | None = None,
+    pid: int | None = None,
+) -> bool:
+    """Attempt to create ``claim_path`` atomically.
+
+    Returns True if this worker won the claim, False if the claim
+    file already exists (some other worker beat us to it). Uses
+    ``O_CREAT | O_EXCL | O_WRONLY`` — the kernel guarantees exactly
+    one process succeeds when multiple race.
+
+    The file's content is a JSON object with ``host``, ``pid``, and
+    ``claimed_at`` so ``sweep-stale`` can later identify and reclaim
+    dead-worker claims. Cross-platform: works on POSIX (the
+    calibration host) and on Windows-native (fallback environments).
+
+    Parent directory must exist; the caller is responsible for
+    creating ``shards/<id>/`` before calling this. We don't create
+    it here because the caller already does it via the manifest-
+    write path.
+    """
+    host = host or _host()
+    pid = pid if pid is not None else os.getpid()
+    payload = json.dumps({
+        "host": host,
+        "pid": pid,
+        "claimed_at": _now_iso(),
+    }, sort_keys=True).encode("utf-8")
+    try:
+        fd = os.open(
+            str(claim_path),
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            0o644,
+        )
+    except FileExistsError:
+        return False
+    try:
+        os.write(fd, payload)
+    finally:
+        os.close(fd)
+    return True
+
+
+def release_claim(claim_path: Path) -> None:
+    """Delete the per-shard claim file. Idempotent — silently
+    succeeds if the file is already gone.
+
+    Workers call this on shard completion (after marking done) and
+    on graceful shutdown. ``sweep-stale`` (v1.44.1.B) calls this
+    for dead-worker claims that have been verified as stale.
+    """
+    try:
+        Path(claim_path).unlink()
+    except FileNotFoundError:
+        pass
+
+
+def read_claim_file(claim_path: Path) -> dict[str, Any] | None:
+    """Read the claim metadata. Returns ``None`` if the file is
+    missing or malformed (the caller decides what to do — typically
+    treat it as "no active claim"). Used by ``sweep-stale`` and by
+    ``status`` to surface which worker holds each claim.
+    """
+    if not Path(claim_path).exists():
+        return None
+    try:
+        return json.loads(Path(claim_path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+# --------------- State-update lock (v1.44.1) ------------------
+
+
+import contextlib
+
+
+@contextlib.contextmanager
+def state_update_lock(state_path: Path):
+    """Acquire an exclusive lock for read-modify-write on state.json.
+
+    Multiple workers may call ``write_state`` concurrently. Without
+    coordination, two workers can read the same state, modify
+    different shards, and overwrite each other's writes — the
+    last writer wins, the other shard's update is lost.
+
+    This context manager wraps the read-modify-write window in
+    ``fcntl.flock(LOCK_EX)`` on POSIX (which the calibration host
+    runs as WSL2 Linux). Workers serialize on the lock; the actual
+    state-file writes still go through ``write_state``'s atomic
+    rename. On Windows-native (a fallback environment SETEC does
+    not target as the calibration host), this is a no-op — accept
+    the race; per-shard claim files still coordinate correctly.
+
+    The lock file lives at ``state.json.lock`` next to state.json
+    so the lock survives across processes.
+
+    Usage::
+
+        with state_update_lock(state_path):
+            state = read_state(state_path)
+            state = claim_shard(state, shard_id, ...)
+            write_state(state_path, state)
+    """
+    state_path = Path(state_path)
+    lock_path = state_path.parent / f"{state_path.name}.lock"
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        import fcntl  # type: ignore  # POSIX only
+    except ImportError:
+        # Windows-native fallback: no locking, accept the race.
+        # The calibration host is WSL2 Linux per SPEC_embedding_
+        # model_choice.md §6.3, so this path is not exercised in
+        # the supported deployment.
+        yield
+        return
+    # Open the lock file (creating if needed). LOCK_EX serializes
+    # readers and writers; multiple workers block until they get
+    # the lock in turn.
+    fd = os.open(str(lock_path), os.O_CREAT | os.O_WRONLY, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
 def status_summary(state: dict[str, Any]) -> dict[str, Any]:
     """Compute a counts-by-state summary for the ``status`` CLI
     subcommand."""

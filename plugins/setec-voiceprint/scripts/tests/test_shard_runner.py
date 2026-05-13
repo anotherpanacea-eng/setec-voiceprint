@@ -265,6 +265,122 @@ def test_work_subcommand_handles_scorer_failure(
     assert "simulated scoring failure" in sh000["failure_reason"]
 
 
+# --------------- Multi-worker mode (v1.44.1) ------------------
+
+
+def test_work_subcommand_creates_and_releases_claim_file(sharded_run):
+    """v1.44.1 invariant: single-worker mode now goes through the
+    atomic-claim path. After a successful run, no .claim files
+    should remain — each shard's claim is released on completion.
+    """
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    assert rc == 0
+    # After all shards complete, claim files should be cleaned up.
+    for sid in ("000", "001", "002"):
+        claim_path = sr.shard_claim_path(base, run_id, sid)
+        assert not claim_path.exists(), (
+            f"Stale claim file at {claim_path}; expected release on "
+            f"shard completion."
+        )
+
+
+def test_work_subcommand_skips_pre_claimed_shards(sharded_run):
+    """If a .claim file already exists for a shard, the worker
+    should treat it as already-owned and not attempt to claim it
+    again. Without this behavior, a second worker would race past
+    the atomic-claim primitive and corrupt state.json updates.
+    """
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # Pre-create a claim file for shard 000 — simulating another
+    # worker already owns it.
+    claim_path = sr.shard_claim_path(base, run_id, "000")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    won = ss.try_claim_shard_atomically(
+        claim_path, host="other-host", pid=99999,
+    )
+    assert won is True
+    # Now run a worker. It should claim shards 001 and 002 but
+    # skip 000 because the claim file is already in place.
+    rc = sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    assert rc == 0
+    state = ss.read_state(sr.state_path(base, run_id))
+    # 000 stays pending (we hold its claim from a "different
+    # worker" but didn't actually score it).
+    assert state["shards"]["000"]["state"] == "pending"
+    # 001 and 002 should be done.
+    assert state["shards"]["001"]["state"] == "done"
+    assert state["shards"]["002"]["state"] == "done"
+    # The pre-existing claim file is still in place.
+    claim_content = ss.read_claim_file(claim_path)
+    assert claim_content is not None
+    assert claim_content["host"] == "other-host"
+
+
+def test_work_subcommand_two_workers_complete_all_shards(
+    sharded_run, monkeypatch: pytest.MonkeyPatch,
+):
+    """v1.44.1 multi-worker integration test: two concurrent
+    workers process three shards. Each shard goes to exactly one
+    worker; no shard gets scored twice; no shard is left pending.
+
+    Uses ``fork`` so the stub-scorer monkeypatch from the
+    ``sharded_run`` fixture propagates into the spawned worker
+    subprocesses. On non-POSIX (Windows-native), this test would
+    need to either use a picklable top-level stub or
+    skip; SETEC's calibration host is WSL2 Linux so fork is the
+    target deployment.
+    """
+    import multiprocessing as mp
+    # Confirm fork is available (skip on platforms without it).
+    try:
+        mp.get_context("fork")
+    except ValueError:
+        pytest.skip("fork start method unavailable on this platform")
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main([
+        "--base-dir", str(base), "work",
+        "--run-id", run_id,
+        "--workers", "2",
+    ])
+    assert rc == 0, "All workers should exit cleanly"
+    state = ss.read_state(sr.state_path(base, run_id))
+    # Every shard should be done.
+    for sid in ("000", "001", "002"):
+        assert state["shards"][sid]["state"] == "done", (
+            f"Shard {sid} state is {state['shards'][sid]['state']!r}; "
+            f"expected 'done' after multi-worker completion."
+        )
+    # No leftover claim files.
+    for sid in ("000", "001", "002"):
+        claim_path = sr.shard_claim_path(base, run_id, sid)
+        assert not claim_path.exists()
+    # Per-shard record count is consistent (no duplicate scoring).
+    for sid in ("000", "001", "002"):
+        cp = sr.shard_cache_path(base, run_id, sid)
+        assert cp.exists()
+        cache = json.loads(cp.read_text())
+        # The stub scorer produces one record per shard-manifest
+        # row; with 60 rows / 3 shards = 20 records per shard.
+        assert len(cache["records"]) == 20
+
+
+def test_workers_arg_defaults_to_one(sharded_run):
+    """Backwards compat: omitting --workers runs single-worker
+    mode, exactly the v1.44.0 behavior."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # No --workers flag — should run single-worker.
+    rc = sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    assert rc == 0
+    state = ss.read_state(sr.state_path(base, run_id))
+    for sid in ("000", "001", "002"):
+        assert state["shards"][sid]["state"] == "done"
+
+
 # --------------- aggregate -----------------------------------
 
 
