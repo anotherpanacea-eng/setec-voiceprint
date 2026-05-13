@@ -39,7 +39,28 @@ import embedding_backend as eb  # type: ignore
 def test_aliases_resolve_to_full_huggingface_ids():
     assert eb.MODEL_ALIASES["mxbai"] == "mixedbread-ai/mxbai-embed-large-v1"
     assert eb.MODEL_ALIASES["gemma"] == "google/embeddinggemma-300m"
+    assert eb.MODEL_ALIASES["harrier"] == "microsoft/harrier-oss-v1-270m"
     assert "MiniLM" in eb.MODEL_ALIASES["minilm"]
+
+
+def test_harrier_alias_resolves_to_full_id():
+    """Harrier-OSS-v1-270m (Microsoft, MIT, released 2026-03-30) is
+    one of the five §6.4 fixture-test candidates per the
+    embedding-model-choice spec revision 4. Added in v1.45.0 as a
+    follow-up to that spec revision."""
+    b = eb.EmbeddingBackend(model_id="harrier")
+    assert b.model_id == "microsoft/harrier-oss-v1-270m"
+    assert b._alias == "harrier"
+
+
+def test_construction_with_harrier_full_id_finds_alias():
+    """Reverse lookup: a full Harrier HF id should report the
+    `harrier` alias in the identifier block. Lets PROVENANCE
+    consumers group runs by alias even when the user passed the
+    full id."""
+    b = eb.EmbeddingBackend(model_id="microsoft/harrier-oss-v1-270m")
+    assert b.model_id == "microsoft/harrier-oss-v1-270m"
+    assert b._alias == "harrier"
 
 
 def test_construction_with_alias_resolves_to_full_id():
