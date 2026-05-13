@@ -6,6 +6,25 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.43.0] - 2026-05-11
+
+**R12: Semantic Trajectory Audit (Release 12 of the paired-release schedule).** Measures how the *meaning* of a prose draft moves across its length: paragraph-by-paragraph (or sentence-by-sentence, or fixed-token windows), embed each window with a sentence-transformers model and compute the trajectory of pairwise cosine similarities. The framework's prior cohesion signal (`tier3.adjacent_cosine` in `variance_audit.py`) measured the same shape at sentence-level for smoothing diagnosis; R12 extends the observation to the voice-coherence task surface with paragraph-level windowing as the default, richer trajectory statistics, and an optional baseline-comparison mode.
+
+### Added
+
+- **`scripts/semantic_trajectory_audit.py`** — the R12 main script. Computes adjacent-cosine series, drift (first-to-last cosine + linear-regression slope/R²), autocorrelation at lags 1/2/3/5, and flatness summary (counts above 0.85/0.9/0.95 plus longest consecutive run above 0.9). Three window strategies: `paragraph` (default; coalesces shorts, splits longs), `sentence` (matches the existing tier3 signal), `fixed-token` (uniform N-token windows). Optional `--baseline` mode reads a prior run's JSON and reports descriptive deltas side-by-side. Outputs JSON or markdown; markdown report follows the framework's "fill numerics, leave `{TODO: interpret}` for the LLM/human pass" pattern. Carries an explicit `task_surface=voice_coherence` field and a full `ClaimLicense` block (rendered in both JSON and markdown). Exit codes: 0 = success, 2 = source file not found, 3 = embedding backend error.
+- **`scripts/embedding_backend.py`** — pluggable embedding-model wrapper. Resolves three aliases (`mxbai`, `gemma`, `minilm`) per the co-primary decision in the framework's embedding-model-choice spec. Lazy load (no model download on `--help`), honest failure (`EmbeddingBackendError` with install hint when sentence-transformers is missing — no silent TF-IDF fallback), deterministic-mode by default. Provides `identifier_block()` for PROVENANCE output and `resolve_model_arg()` for CLI flag normalisation.
+- **`scripts/tests/test_semantic_trajectory_audit.py`** — 28 tests covering windowing strategies, cosine math, drift/autocorrelation/flatness stats, PROVISIONAL banding, baseline comparison, JSON shape, markdown rendering (including the claim-license section on both normal and warning paths), CLI exit codes, and embedding-backend error propagation.
+- **`scripts/tests/test_embedding_backend.py`** — 20 tests covering alias resolution, lazy load, missing-package handling, model-load failure handling, kwarg pass-through to sentence-transformers, identifier block shape.
+
+### Notes
+
+- **PROVISIONAL banding only.** R12 ships with illustrative bands (`very_tight` / `tight` / `typical` / `drifting`) derived from author-baseline heuristics, NOT from labeled-corpus calibration. The claim-license block names this explicitly: `calibration_anchor: user-baseline-required`. Per the "Stylometry to the people" policy in `scripts/calibration/PROVENANCE.md`, R12 does not ship anchored thresholds; users wanting load-bearing decision points run the §6.4 fixture suite against their own baseline.
+- **Co-primary embedding models.** The `--model` flag defaults to `mxbai` (the spec's CLI default for users who haven't run the §6.4 fixture suite). `mxbai`, `gemma`, and `minilm` resolve via the alias table; full HuggingFace identifiers pass through verbatim. Revision SHA pinning via `--revision` is supported for reproducibility; unpinned runs surface the missing pin in their identifier block.
+- **task_surface = `voice_coherence`.** R12 is the eighth voice-coherence surface tool. The audit refuses authorship verdicts and cross-register generalization claims by design.
+- **No fallback path.** Unlike `variance_audit.py`'s tier3 signal (which falls back to TF-IDF when sentence-transformers is missing), R12 fails honestly with `EmbeddingBackendError`. Trajectory math against TF-IDF cosines would not produce meaningful semantic-trajectory shape. Callers that want fallback behavior would have to opt in explicitly.
+- **Sentence-transformers is optional**, already commented in `requirements.txt`. R12 inherits that opt-in install path.
+
 ## [1.42.6] - 2026-05-11
 
 **Policy shift: "Stylometry to the people."** SETEC no longer ships per-signal decision thresholds derived from labeled corpora (EditLens, RAID, MAGE, or any other) as load-bearing defaults. Anchored thresholds derived from one corpus do not generalize to the user's register mix without local recalibration, and shipping them as defaults would constitute the implicit-generalization claim SETEC otherwise refuses to make. The framework ships methods + tooling + PROVENANCE discipline; users wanting corpus-anchored thresholds run `calibrate_thresholds.py` against their own baseline.
@@ -13,16 +32,15 @@ _(Empty. Future work lands here, gets versioned on commit.)_
 ### Changed
 
 - **`burstiness_B` in `COMPRESSION_HEURISTICS` reverted to provisional.** The 2026-05-10 EditLens-anchored value (`-0.6227...`, `provisional=False`, `provenance=editlens_val_burstiness_B_fpr0.01_2026-05-10`) is rolled back to the pre-calibration heuristic (`-0.40`, `provisional=True`, `provenance=None`). The original calibration is preserved in `scripts/calibration/thresholds_calibrated.json` and as a `[POLICY: AUDIT-ONLY]`-tagged PROVENANCE entry for reproducibility, but the framework no longer loads it as the runtime threshold.
-- **PROVENANCE.md gains a policy banner** at the top explaining the shift, plus a tagged warning on the EditLens burstiness_B entry.
+- **PROVENANCE.md gains a policy banner** at the top explaining the shift, plus a tagged warning on the EditLens burstiness_B entry. The "To populate this ledger" workflow was rewritten to reflect the audit-only posture (PR #15 P2 follow-up): step 5-8 now distinguish "audit-only PR" (the framework path) from "user-local fork" (not a framework commit) rather than instructing maintainers to edit `COMPRESSION_HEURISTICS` directly.
 - **PROVENANCE.md "Status" section** reframes "0 of 11 thresholds calibrated" from a transitional state to a load-bearing invariant under the current policy.
 
 ### Notes
 
 - The variance-audit footer continues to report "0 of 11 signal thresholds carry calibration provenance" — same wording as before, but now backed by an explicit policy rather than an unstarted toolchain.
 - The calibration toolchain (`calibrate_thresholds.py`, `calibration_survey.py`, fetchers, manifest converters) is unaffected. Users running it locally produce their own anchored thresholds, exactly as the new policy intends.
-- The MAGE survey running at the time of this release will produce results that flow into PROVENANCE-as-audit-record, not into `COMPRESSION_HEURISTICS` as load-bearing defaults.
 - Inline comment in `variance_audit.py` for `burstiness_B` rewritten to explain the policy and reference the EditLens audit record.
-- All 1398 tests pass + 1 skipped (was 1395+1 in 1.42.5). The threshold-spec contract tests are generic over the registry (don't pin signal names) so the burstiness_B revert needed no test changes.
+- The threshold-spec contract tests are generic over the registry (don't pin signal names) so the burstiness_B revert needed no test changes.
 
 ## [1.42.5] - 2026-05-11
 
