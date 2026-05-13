@@ -30,6 +30,7 @@ just takes lists of dicts and returns lists of lists of dicts.
 
 from __future__ import annotations
 
+import hashlib
 import random
 from typing import Any, Iterable
 
@@ -94,10 +95,30 @@ def _shuffle_within_strata(
         # but different row order would produce different shards
         # under the same seed.
         group.sort(key=_row_sort_key)
-        stratum_seed = hash((seed, tuple(str(k) for k in key))) & 0xFFFFFFFF
+        stratum_seed = _stable_stratum_seed(seed, key)
         rng = random.Random(stratum_seed)
         rng.shuffle(group)
     return by_stratum
+
+
+def _stable_stratum_seed(seed: int, key: tuple[Any, ...]) -> int:
+    """Derive a deterministic per-stratum RNG seed from (seed, key).
+
+    Uses SHA-256 over a UTF-8-encoded canonical string rather than
+    Python's built-in ``hash()`` because the latter is process-
+    randomized when ``PYTHONHASHSEED`` is unset (the default since
+    Python 3.3). Sharding is the framework's reproducibility layer:
+    running the shard step twice against the same source manifest
+    must produce identical shard membership across processes,
+    machines, and Python interpreter versions. ``hash()`` does not
+    provide that guarantee; SHA-256 over the canonical string does.
+
+    Returns a 32-bit unsigned integer suitable for seeding
+    ``random.Random``.
+    """
+    canonical = "|".join([str(seed)] + [str(k) for k in key])
+    digest = hashlib.sha256(canonical.encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big")
 
 
 def split_into_shards(

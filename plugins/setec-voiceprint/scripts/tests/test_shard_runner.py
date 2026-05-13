@@ -304,6 +304,120 @@ def test_aggregate_refuses_when_shards_not_done(sharded_run, tmp_path: Path):
     assert rc == 2
 
 
+def test_aggregate_refuses_when_done_shard_cache_is_missing(
+    sharded_run, tmp_path: Path, capsys: pytest.CaptureFixture,
+):
+    """Reviewer P2 regression (PR #17, 2026-05-12).
+
+    State-integrity contract: if state.json marks a shard as done,
+    its cache file must exist. A done shard whose cache file is
+    gone is a state-integrity failure — the alternative (silently
+    skipping the missing shard) produces a "complete" aggregate
+    artifact whose n_records and per-signal sweeps don't match
+    what state.json claims.
+
+    Without ``--allow-partial``, the aggregator should refuse and
+    exit non-zero rather than producing the silently-incomplete
+    artifact.
+    """
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # Complete all shards normally.
+    sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    # Now delete one shard's cache file while leaving state.json saying
+    # the shard is done.
+    cp_to_delete = sr.shard_cache_path(base, run_id, "001")
+    assert cp_to_delete.exists()
+    cp_to_delete.unlink()
+    # Aggregate without --allow-partial must refuse.
+    rc = sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id,
+        "--out", str(tmp_path / "agg-incomplete.json"),
+        "--no-derive",
+    ])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "missing cache files" in err
+    assert "--allow-partial" in err
+    # Aggregate WITH --allow-partial should succeed but only count
+    # the surviving shards.
+    rc = sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id,
+        "--out", str(tmp_path / "agg-partial.json"),
+        "--allow-partial",
+        "--no-derive",
+    ])
+    assert rc == 0
+    payload = json.loads((tmp_path / "agg-partial.json").read_text())
+    # Two surviving shards, ~40 records.
+    assert payload["n_shards_contributed"] == 2
+    assert payload["n_records"] < 60
+
+
+def test_aggregate_namespace_includes_required_fields_for_derive(
+    sharded_run, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Reviewer P2 regression (PR #17, 2026-05-12).
+
+    `derive_threshold_from_records` reads `args.slug`, `args.use`,
+    and `args.notes` in addition to the signal/manifest/fpr fields.
+    The earlier aggregate path built a minimal Namespace missing
+    these three fields, causing `AttributeError` mid-derivation and
+    storing the failure as a per-signal error rather than producing
+    real entries.
+
+    This test stubs `derive_threshold_from_records` to inspect the
+    Namespace it receives and confirms all required fields are
+    present.
+    """
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # Complete all shards.
+    sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    # Stub calibrate_thresholds.derive_threshold_from_records so the
+    # test doesn't need a real signal column in the synthetic
+    # records.
+    captured_namespaces: list = []
+
+    class _FakeCT:
+        COMPRESSION_HEURISTICS = {"stub_signal": object()}
+
+        @staticmethod
+        def derive_threshold_from_records(records, *, args, scoring_meta):
+            captured_namespaces.append(args)
+            return {"slug": args.slug, "signal": args.signal,
+                    "derived_value": 0.0}
+
+    monkeypatch.setitem(sys.modules, "calibrate_thresholds", _FakeCT)
+    rc = sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id,
+        "--out", str(tmp_path / "agg.json"),
+    ])
+    assert rc == 0
+    assert len(captured_namespaces) == 1
+    ns = captured_namespaces[0]
+    # The contract that broke under the pre-fix aggregate path:
+    assert hasattr(ns, "slug"), "Namespace must carry .slug"
+    assert hasattr(ns, "use"), "Namespace must carry .use"
+    assert hasattr(ns, "notes"), "Namespace must carry .notes"
+    # And the previously-present fields, for full contract coverage:
+    assert hasattr(ns, "signal")
+    assert hasattr(ns, "manifest")
+    assert hasattr(ns, "fpr_target")
+    assert hasattr(ns, "bootstrap_seed")
+    assert hasattr(ns, "bootstrap_resamples")
+    assert hasattr(ns, "bootstrap_confidence")
+    # Slug should be sharded-run-aware (not hard-coded "editlens"
+    # like the calibrate_thresholds default).
+    assert "sharded" in ns.slug.lower() or run_id in ns.slug
+    # Notes should reference the sharded run so a maintainer reading
+    # the resulting entry knows it came from sharded aggregation.
+    assert "shard" in ns.notes.lower()
+
+
 def test_aggregate_allow_partial_processes_done_shards_only(
     sharded_run, tmp_path: Path,
 ):

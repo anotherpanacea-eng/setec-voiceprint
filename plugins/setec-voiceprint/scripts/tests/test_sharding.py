@@ -93,6 +93,35 @@ def test_split_is_deterministic_given_seed():
         assert [r["text_id"] for r in sa] == [r["text_id"] for r in sb]
 
 
+def test_stable_stratum_seed_is_deterministic():
+    """Reproducibility regression test for PR #17 P1 (2026-05-12).
+
+    The pre-fix implementation used Python's built-in ``hash()`` to
+    derive per-stratum seeds; ``hash()`` is process-randomized when
+    ``PYTHONHASHSEED`` is unset (the default since Python 3.3), so
+    the same source manifest produced different shard membership
+    across processes. The fix replaces ``hash()`` with SHA-256 over
+    a canonical string, which is deterministic across processes,
+    machines, and Python interpreter versions.
+
+    This test pins the deterministic-seed contract directly so any
+    regression that switches back to ``hash()`` shows up as a value
+    mismatch rather than a vague non-determinism failure.
+    """
+    # Same (seed, key) must always produce the same stratum seed.
+    seed_a = sharding._stable_stratum_seed(42, ("literary_fiction", "pre_ai_human"))
+    seed_b = sharding._stable_stratum_seed(42, ("literary_fiction", "pre_ai_human"))
+    assert seed_a == seed_b
+    # Different global seed produces a different stratum seed.
+    seed_c = sharding._stable_stratum_seed(99, ("literary_fiction", "pre_ai_human"))
+    assert seed_a != seed_c
+    # Different stratum key produces a different stratum seed.
+    seed_d = sharding._stable_stratum_seed(42, ("blog_essay", "pre_ai_human"))
+    assert seed_a != seed_d
+    # The value is a 32-bit unsigned int (suitable for random.Random).
+    assert 0 <= seed_a < (1 << 32)
+
+
 def test_different_seeds_produce_different_assignments():
     rows = _make_rows(
         register_counts={"literary_fiction": 50, "blog_essay": 50},

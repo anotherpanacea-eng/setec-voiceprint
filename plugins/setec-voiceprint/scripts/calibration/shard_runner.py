@@ -496,6 +496,7 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
     all_records: list[dict[str, Any]] = []
     meta_list: list[dict[str, Any]] = []
     contributing: list[str] = []
+    missing_done_shards: list[tuple[str, Path]] = []
     for sid in sorted(shards.keys()):
         sh = shards[sid]
         if sh.get("state") != "done":
@@ -505,9 +506,16 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
             # Some shards may have absolute cache_path.
             cp = Path(sh.get("cache_path", ""))
         if not cp.exists():
-            sys.stderr.write(
-                f"  shard {sid}: cache file missing ({cp}); skipping.\n"
-            )
+            # Done shards whose cache file is missing are a state-
+            # integrity failure: state.json says the shard completed,
+            # but the artifact it produced is gone. Under --allow-
+            # partial, we tolerate this and report it. Without
+            # --allow-partial, refusing to produce a silently-
+            # incomplete aggregate is the safer default — the
+            # alternative is a "complete" survey artifact whose
+            # n_records and per-signal sweeps don't match what
+            # state.json claims.
+            missing_done_shards.append((sid, cp))
             continue
         with cp.open("r", encoding="utf-8") as fh:
             cache = json.load(fh)
@@ -515,6 +523,25 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
         if cache.get("meta"):
             meta_list.append(cache["meta"])
         contributing.append(sid)
+    if missing_done_shards and not args.allow_partial:
+        sys.stderr.write(
+            f"Cannot aggregate: {len(missing_done_shards)} done shard(s) "
+            f"have missing cache files:\n"
+        )
+        for sid, cp in missing_done_shards:
+            sys.stderr.write(f"  shard {sid}: cache missing at {cp}\n")
+        sys.stderr.write(
+            "Pass --allow-partial to aggregate the surviving shards "
+            "anyway, or rerun `shard_runner work` to regenerate the "
+            "missing caches.\n"
+        )
+        return 2
+    if missing_done_shards:
+        sys.stderr.write(
+            f"  (continuing with --allow-partial: "
+            f"{len(missing_done_shards)} done shard(s) skipped due to "
+            f"missing cache files)\n"
+        )
     sys.stderr.write(
         f"Aggregated {len(all_records)} records across "
         f"{len(contributing)} shard(s).\n"
@@ -538,15 +565,33 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
     if ct is not None and all_records:
         merged_meta = meta_list[0] if meta_list else {}
         from argparse import Namespace
+        run_id = state.get("run_id", "sharded_run")
+        fpr_target = state.get("fpr_target", 0.01)
+        iso_date = _dt.date.today().isoformat()
         for sig_name in sorted(ct.COMPRESSION_HEURISTICS.keys()):
             try:
+                # `derive_threshold_from_records` reads `args.slug`,
+                # `args.use`, and `args.notes` in addition to the
+                # signal / manifest / fpr / bootstrap fields. A
+                # minimal Namespace that omits any of those raises
+                # AttributeError mid-derivation and gets caught
+                # below as a per-signal error rather than producing
+                # a real entry. Populate the full contract here.
                 ns = Namespace(
                     signal=sig_name,
                     manifest=str(state.get("source_manifest_path") or ""),
-                    fpr_target=state.get("fpr_target", 0.01),
+                    fpr_target=fpr_target,
                     bootstrap_seed=42,
                     bootstrap_resamples=2000,
                     bootstrap_confidence=0.95,
+                    slug=f"sharded_{run_id}_{sig_name}_fpr{fpr_target}_{iso_date}",
+                    use=getattr(args, "use", "validation"),
+                    notes=(
+                        f"Sharded calibration run {run_id!r}. "
+                        f"Aggregated from {len(contributing)} shard "
+                        f"cache(s). See sharded-run state.json for "
+                        f"shard-level metadata."
+                    ),
                 )
                 entry = ct.derive_threshold_from_records(
                     all_records, args=ns, scoring_meta=merged_meta,
