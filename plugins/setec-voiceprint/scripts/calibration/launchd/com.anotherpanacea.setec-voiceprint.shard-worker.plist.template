@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  SETEC Voiceprint — sharded-calibration launchd template (v1.44.1.C).
+
+  This template is filled in by setup_launchd.py with operator-supplied
+  paths. The rendered plist installs into ~/Library/LaunchAgents/ and
+  schedules a nightly sharded-calibration run inside the operator's
+  time window (e.g., 23:00 local → 06:00 local).
+
+  Template variables (replaced by setup_launchd.py):
+    {{LABEL}}             — the launchd label, also the plist filename stem.
+    {{WRAPPER_PATH}}      — absolute path to the rendered wrapper shell script.
+    {{LAUNCHD_LOG_PATH}}  — absolute path for launchd-level stdout/stderr.
+    {{START_HOUR}}        — integer hour (0-23) for StartCalendarInterval.
+    {{START_MINUTE}}      — integer minute (0-59) for StartCalendarInterval.
+
+  See RUNBOOK_macos_nightly.md for an end-to-end installation walkthrough.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>{{LABEL}}</string>
+
+    <!--
+      ProgramArguments points at the wrapper shell script. The wrapper
+      handles caffeinate, date-stamped log routing, and the actual
+      shard_runner invocation. We deliberately do NOT inline caffeinate
+      here: launchd's StandardOutPath does not support date substitution,
+      so per-day logging has to live in the wrapper.
+    -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>{{WRAPPER_PATH}}</string>
+    </array>
+
+    <!--
+      StartCalendarInterval kicks off the agent at HH:MM local time
+      every day. This wakes the machine if needed (per launchd's
+      pmset rules) so a sleeping Mac still starts the nightly run.
+    -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>{{START_HOUR}}</integer>
+        <key>Minute</key>
+        <integer>{{START_MINUTE}}</integer>
+    </dict>
+
+    <!--
+      KeepAlive semantics (per SPEC_sharded_calibration.md §2.8):
+        Crashed=true       respawn if the worker dies unexpectedly
+                           (segfault, OOM kill, etc.)
+        SuccessfulExit=false   do NOT respawn on a clean exit.
+                               The worker exits cleanly when the
+                               time-window gate trips at sunrise.
+                               Respawning then would defeat the
+                               whole point of the schedule.
+    -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>Crashed</key>
+        <true/>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <!--
+      ProcessType=Background tells the scheduler this is a long-running
+      background job (not interactive, not adaptive). macOS treats it
+      gently: lower CPU priority, deferred I/O bandwidth — exactly the
+      profile we want for an overnight calibration that should not
+      compete with foreground apps if the user happens to wake the
+      machine mid-run.
+    -->
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!--
+      ThrottleInterval guards against a tight respawn loop: if the
+      worker crashes immediately and KeepAlive.Crashed is true, launchd
+      waits at least N seconds before relaunching. 60 seconds is enough
+      to keep us out of pathological loops without delaying recovery
+      from a genuine transient failure.
+    -->
+    <key>ThrottleInterval</key>
+    <integer>60</integer>
+
+    <!--
+      StandardOutPath / StandardErrorPath capture launchd-level output:
+      "process started," "process exited with code N," and anything the
+      wrapper writes before redirecting to its own per-day log. The
+      wrapper itself routes the shard_runner stdout/stderr to a date-
+      stamped log under ~/Library/Logs/setec-voiceprint/.
+    -->
+    <key>StandardOutPath</key>
+    <string>{{LAUNCHD_LOG_PATH}}</string>
+    <key>StandardErrorPath</key>
+    <string>{{LAUNCHD_LOG_PATH}}</string>
+
+    <!--
+      RunAtLoad=false: don't fire on `launchctl load`. The agent should
+      only run during its scheduled window. An operator who wants to
+      run immediately can either invoke the wrapper directly or use
+      `launchctl start <label>` to trigger an out-of-band run.
+    -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

@@ -1,0 +1,83 @@
+#!/bin/bash
+# SETEC Voiceprint — nightly sharded-calibration wrapper (v1.44.1.C).
+#
+# Rendered by setup_launchd.py from this template with operator-supplied
+# paths. Invoked by the launchd agent every night at the scheduled hour.
+#
+# Responsibilities:
+#   1. Compute today's date-stamped log path.
+#   2. Wrap shard_runner.py in caffeinate -i (prevent idle sleep for the
+#      duration of this process; the SPEC chose -i over -dimu because we
+#      only need to block idle-sleep — the display can dim, the disk can
+#      spin down).
+#   3. Forward the worker's stdout/stderr to the date-stamped log so
+#      operators get a fresh file per day (launchd's StandardOutPath
+#      can't do date substitution).
+#
+# This wrapper deliberately doesn't tee back to launchd's stdout: that
+# would double-log. Launchd's log captures startup / shutdown / crash
+# messages; the date-stamped log captures shard-by-shard progress.
+#
+# Template variables (replaced by setup_launchd.py):
+#   {{LOG_DIR}}          ~/Library/Logs/setec-voiceprint by default.
+#   {{PYTHON_BIN}}       absolute path to python3 (e.g., /opt/homebrew/bin/python3).
+#   {{SHARD_RUNNER}}     absolute path to shard_runner.py.
+#   {{BASE_DIR}}         baselines directory (state.json lives here under
+#                        calibration_runs/<run_id>/).
+#   {{RUN_ID}}           the sharded-run identifier.
+#   {{TIME_WINDOW}}      HH:MM-HH:MM schedule gate; the worker exits
+#                        cleanly when local time leaves the window.
+#   {{WORKERS}}          --workers N value (default 1).
+#   {{USE}}              --use value (default validation).
+
+set -euo pipefail
+
+LOG_DIR="{{LOG_DIR}}"
+PYTHON_BIN="{{PYTHON_BIN}}"
+SHARD_RUNNER="{{SHARD_RUNNER}}"
+BASE_DIR="{{BASE_DIR}}"
+RUN_ID="{{RUN_ID}}"
+TIME_WINDOW="{{TIME_WINDOW}}"
+WORKERS="{{WORKERS}}"
+USE="{{USE}}"
+
+mkdir -p "$LOG_DIR"
+
+# Date-stamped log file (local time). Per spec §2.8: the operator
+# wants one log per day, with the date the wrapper started.
+TODAY="$(date +%Y-%m-%d)"
+LOG_FILE="$LOG_DIR/shard-worker-${TODAY}.log"
+
+# Header so the log makes sense when an operator opens it.
+{
+    echo "===== $(date '+%Y-%m-%d %H:%M:%S %z') ====="
+    echo "Starting nightly shard-worker run."
+    echo "  run_id:      $RUN_ID"
+    echo "  base_dir:    $BASE_DIR"
+    echo "  time_window: $TIME_WINDOW"
+    echo "  workers:     $WORKERS"
+    echo "  use:         $USE"
+    echo "  python:      $PYTHON_BIN"
+    echo "  shard_runner: $SHARD_RUNNER"
+} >> "$LOG_FILE"
+
+# Exec into caffeinate + python so the wrapper script itself doesn't
+# hang around as a separate process: the worker IS this shell's
+# main pid from launchd's perspective.
+#
+# caffeinate -i: prevent idle sleep. Lock screen / display sleep is
+# allowed (the SPEC-justified choice — full -dimu would keep the
+# display lit which the user would rightly find obnoxious).
+#
+# 2>&1 redirects stderr to stdout; >> appends to the log so a worker
+# that the operator triggered out-of-band via `launchctl start` mid-
+# day appends to the same date-stamped file.
+exec /usr/bin/caffeinate -i \
+    "$PYTHON_BIN" "$SHARD_RUNNER" \
+    --base-dir "$BASE_DIR" \
+    work \
+    --run-id "$RUN_ID" \
+    --time-window "$TIME_WINDOW" \
+    --workers "$WORKERS" \
+    --use "$USE" \
+    >> "$LOG_FILE" 2>&1

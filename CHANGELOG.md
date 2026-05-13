@@ -6,6 +6,30 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.53.0] - 2026-05-14
+
+**Sharded calibration v1.44.1.C — launchd nightly setup for macOS.** The third of three v1.44.1 phases per `internal/SPEC_sharded_calibration.md` §7.2 (originally v1.43.1 in the spec). Ships the launchd plist template, the caffeinate wrapper script, the operator-facing `setup_launchd.py` renderer/installer, and a step-by-step RUNBOOK for macOS nightly setup. Stacked on v1.44.1.B (PR #25).
+
+The goal: an operator with a freshly-sharded run can install the nightly agent in ~10 minutes and walk away. The agent fires at the configured start hour, runs under `caffeinate -i` (blocks idle sleep but lets the display dim), invokes `shard_runner work --time-window …`, exits cleanly at sunrise, and is NOT respawned by launchd until the next scheduled fire.
+
+### Added
+
+- **`plugins/setec-voiceprint/scripts/calibration/launchd/com.anotherpanacea.setec-voiceprint.shard-worker.plist.template`** — launchd plist template with `{{LABEL}}`, `{{WRAPPER_PATH}}`, `{{LAUNCHD_LOG_PATH}}`, `{{START_HOUR}}`, `{{START_MINUTE}}` placeholders. Encodes the spec §2.8 contract: `KeepAlive.Crashed=true`, `KeepAlive.SuccessfulExit=false`, `RunAtLoad=false`, `ProcessType=Background`, `ThrottleInterval=60`.
+- **`plugins/setec-voiceprint/scripts/calibration/launchd/run_shard_worker.sh.template`** — wrapper shell-script template. Composes a date-stamped log path (launchd's `StandardOutPath` can't do date substitution), then `exec`s `/usr/bin/caffeinate -i python3 shard_runner.py work …`. Closes over the operator's `--time-window`, `--workers`, `--use`, `--run-id`, and `--base-dir`.
+- **`plugins/setec-voiceprint/scripts/calibration/launchd/setup_launchd.py`** — Python helper that renders both templates, validates the config (absolute-path checks, label well-formedness, hour/minute bounds), writes them to a staging directory (`~/.setec-voiceprint/launchd/` by default), and on `--install` copies the plist to `~/Library/LaunchAgents/` plus runs `launchctl bootstrap gui/<uid>`. Default is dry-run: prints the commands an operator would run themselves. `--uninstall` runs `launchctl bootout` and removes the plist.
+- **`plugins/setec-voiceprint/scripts/calibration/launchd/RUNBOOK_macos_nightly.md`** — 7-step operator runbook: prerequisites, dry-run inspection, install, manual wrapper test, observe first fire, pause/resume mid-run, uninstall, troubleshooting (`plutil -lint`, log paths, common failure modes).
+- **`plugins/setec-voiceprint/scripts/tests/test_setup_launchd.py`** — 29 tests covering: RenderConfig validation (relative paths rejected, label well-formedness, hour/minute bounds, zero workers rejected), plist rendering (every placeholder substituted, `plistlib` round-trip, `KeepAlive` semantics, `StartCalendarInterval`, `ThrottleInterval=60`, `RunAtLoad=false`), wrapper rendering (`caffeinate -i` present, `--time-window` passed through, run_id + base_dir interpolated, bash shebang), filesystem writes (plist + wrapper written, wrapper chmod +x), launchctl helpers (dry-run does NOT copy, `bootstrap`/`bootout` command shapes, modern `gui/<uid>` syntax), `_parse_start_time` (HH:MM extraction, whitespace tolerance, malformed input rejected), CLI end-to-end (dry-run produces both files in staging, `--install` + `--uninstall` mutual exclusion, bad time-window rejected with rc=2, relative `--base-dir` rejected via validator).
+
+### Notes
+
+- The CLI's default is `--dry-run` semantics: nothing under `~/Library/LaunchAgents/` is mutated unless the operator passes `--install`. This is the safe-by-default behavior — getting launchd wrong means a daemon misbehaving on a personal laptop, so we make the install step explicit.
+- `caffeinate -i` blocks **idle** sleep only. The display can dim and sleep, and disk/USB devices can spin down. The wrapper deliberately does not use `-dimu` (which keeps the display lit) because nightly runs should not light up a screen the user has left dark on purpose.
+- `KeepAlive.SuccessfulExit=false` is load-bearing for the time-window semantics: when the worker detects local time has left the window and exits with rc=0, launchd treats it as "job's done for now" and does NOT respawn. The next `StartCalendarInterval` tick is what triggers the following night's run.
+- v1.44.2 (next) ships multi-machine git-synced state-file conventions so a Mac + AMD-desktop pair can share a sharded run.
+- **Round-2 reviewer P1 carried**: `--install` is now idempotent. The installer runs a best-effort `launchctl bootout` before `bootstrap` so re-running setup after config changes succeeds even when a previous agent is loaded. Tests cover the bootout-then-bootstrap sequence and the no-prior-agent path.
+- **Earlier reviewer P2 carried**: XML + shell escaping fixes in `setup_launchd.py` (plistlib for plist generation; `shlex.quote` for shell-arg interpolation in the wrapper template).
+- **Version-bump note**: rebased from declared 1.47.0 → 1.53.0 because Waves 1 + 2 + Wave 3 (PRs #21 / #22 / #24 / #32 / #36 / #29 / #33 / #34 / #35 / #25 / #23 / #30) merged ahead at 1.45.0 – 1.52.0. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.52.0] - 2026-05-14
 
 **Standalone surprisal audit (phase C.3).** Adds `plugins/setec-voiceprint/scripts/surprisal_audit.py`, the standalone CLI that wraps the C.2 surprisal backend and reports the per-token surprisal series statistics pinned in `internal/SPEC_surprisal_signal.md` §2.2 / §2.3. Task surface: `smoothing_diagnosis`. Stacked on C.2 (PR #23). The Tier 4 integration into `variance_audit.py` (C.4) ships separately so each phase reviews independently.
