@@ -44,8 +44,16 @@ TASK_SURFACE = "validation"
 # Fields whose values are checked against an allowed set. Unknown values
 # generate warnings, not errors, so users can extend the taxonomy.
 ALLOWED_AI_STATUS = {
+    # Pre-existing values:
     "pre_ai_human", "ai_generated", "ai_assisted",
     "ai_edited", "mixed", "unknown",
+    # Added 2026-05-13 per internal/SPEC_authorship_states.md:
+    # an opt-in refinement of `ai_generated` for the case where
+    # the LLM was given a substantive human seed (outline, brief,
+    # transcript, point-by-point structure). The default
+    # `ai_generated` remains the backwards-compat catch-all when
+    # the seed degree is unknown or unspecified.
+    "ai_generated_from_outline",
 }
 ALLOWED_REGISTER = {
     "literary_fiction", "blog_essay", "academic_philosophy",
@@ -373,6 +381,32 @@ def validate_entry(
             "ai_status='pre_ai_human' with editing_status='coauthored' "
             "may indicate inconsistent provenance.",
         ))
+
+    # ai_status: mixed consistency check. Per
+    # internal/SPEC_authorship_states.md §6.4, `mixed` entries should
+    # carry a `notes.composite_states` array listing the authorship
+    # states present across sections of the document. Without it, the
+    # `mixed` value is semantically empty — downstream consumers
+    # cannot route the entry by state. Soft warning, not error: legacy
+    # `mixed` entries from before this consistency check remain valid
+    # so existing manifests don't break on validation.
+    if ai_status == "mixed":
+        notes = entry.get("notes")
+        composite_states = None
+        if isinstance(notes, dict):
+            composite_states = notes.get("composite_states")
+        if not (
+            isinstance(composite_states, list) and composite_states
+        ):
+            issues.append(Issue(
+                "warning", lineno, entry_id, "ai_status",
+                "ai_status='mixed' should carry a "
+                "`notes.composite_states` array listing the authorship "
+                "states present across sections (e.g., "
+                "['ai_assisted', 'ai_generated_from_outline']). Without "
+                "it, the 'mixed' value is semantically empty and "
+                "downstream consumers cannot route by state.",
+            ))
 
     # ESL ratchet for voice-coherence baselines and voice profiles.
     # Non-native English prose sits in the low-variance region of

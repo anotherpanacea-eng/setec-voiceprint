@@ -55,7 +55,7 @@ For impostor-pool support per `internal/2026-05-08-impostor-corpus-spec.md`. Req
 
 | Field | Values |
 |---|---|
-| `ai_status` | `pre_ai_human`, `ai_generated`, `ai_assisted`, `ai_edited`, `mixed`, `unknown` |
+| `ai_status` | `pre_ai_human`, `ai_generated`, `ai_generated_from_outline`, `ai_assisted`, `ai_edited`, `mixed`, `unknown` |
 | `register` | `literary_fiction`, `blog_essay`, `academic_philosophy`, `testimony_policy`, `personal`, `policy_advocacy`, `literary_horror` |
 | `split` | `baseline`, `train`, `test`, `holdout` |
 | `privacy` | `private`, `shareable`, `public_domain` |
@@ -66,6 +66,22 @@ For impostor-pool support per `internal/2026-05-08-impostor-corpus-spec.md`. Req
 | `register_match` / `topic_match` | `high`, `medium`, `low` |
 | `consent_status` | `public_record`, `cc_licensed`, `fair_use_research`, `author_consent`, `undocumented` |
 | `era` | `pre_chatgpt`, `pre_ai_widespread`, `post_ai_widespread`, `undated` |
+
+## Operational definitions: `ai_status`
+
+The framework's `ai_status` vocabulary is more granular than the binary "AI / not AI" pattern most manifests carry. Use the value that best describes how the prose came into existence.
+
+| Value | When to use |
+|---|---|
+| `pre_ai_human` | Authored before ChatGPT release (Nov 2022) or attested by the human author as no-AI involvement. The cleanest negative class for AI-vs-human surveys. |
+| `ai_assisted` | Human-authored prose where the writer engaged an LLM collaboratively during drafting — per-suggestion human adjudication. The LLM proposed phrasing, alternatives, restructuring; the human accepted, rejected, or rewrote each suggestion. Writer's agency over the final form is strong. |
+| `ai_edited` | Human-authored prose passed through an LLM for low-touch editing — "polish this," "fix grammar," "improve flow." The LLM made changes the human did not individually adjudicate; suggestions accepted in bulk. Writer's agency weaker than `ai_assisted`. |
+| `ai_generated` | LLM-generated, human-input degree unspecified or unknown. The backwards-compat catch-all. |
+| `ai_generated_from_outline` | LLM-generated with a documented substantive human seed (outline, draft, brief, transcript, point-by-point structure). Use when the manifest authority knows the LLM received more than a thin prompt. Added 2026-05-13. |
+| `mixed` | Multiple authorship states across sections of one document. Requires `notes.composite_states` array listing which states appear (warning if absent). |
+| `unknown` | Genuine label ambiguity (e.g., scraped corpus with labels not preserved). Discouraged when other fields are knowable. |
+
+The `ai_assisted` / `ai_edited` distinction is a writer's judgment call; the validator does not enforce semantic correctness, only vocabulary membership.
 
 ## Ratchet rules
 
@@ -86,6 +102,7 @@ The validator enforces these beyond the per-field schema. All emit warnings unle
 13. **Consent-status redistribution ratchet** (warning). `corpus_role: impostor` + `consent_status: undocumented` warns. Future public-report harnesses should escalate to refusal.
 14. **Era recommendation for impostor entries from post-AI era** (warning). `corpus_role: impostor` + `era: post_ai_widespread` warns; post-2024 prose may include AI-collaborated writing that contaminates the human-impostor signal.
 15. **Era recommendation for impostor-relevant identity baselines** (warning). Entries with effective `corpus_role: identity_baseline` and `use` overlapping `{baseline, voice_profile, voice_validation, idiolect, voice_impostor}` warn when `era` is missing.
+16. **`ai_status: mixed` composite-states consistency** (warning). Entries with `ai_status: mixed` should carry a `notes.composite_states` array listing the authorship states present across sections. Without it, the `mixed` value is semantically empty and downstream consumers cannot route by state. Soft warning so legacy `mixed` entries don't break, but new ones get nudged toward the structured form.
 
 ## Summary block
 
