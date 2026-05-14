@@ -406,3 +406,216 @@ def test_setup_launchd_cli_rejects_relative_base_dir(
     # Note: argparse passes the string through; Path(...).expanduser()
     # in main() does NOT make it absolute. The validator catches it.
     assert rc == 2
+
+
+# ---------- Reviewer P2: escaping (2026-05-14) ----------
+
+
+class TestPlistXmlEscaping:
+    """Reviewer P2: prior to 2026-05-14 the renderer substituted
+    user-controlled paths and ids directly into the XML template,
+    so a path containing ``&``, ``<``, or ``>`` produced an
+    invalid plist that ``plutil -lint`` would reject. The fix
+    builds the plist dict programmatically and runs it through
+    ``plistlib.dumps``, which encodes special characters
+    automatically (``&`` → ``&amp;``, ``<`` → ``&lt;``, etc.)."""
+
+    def _cfg_with(
+        self, tmp_path: Path, **overrides,
+    ) -> sl.RenderConfig:
+        cfg = _good_config(tmp_path)
+        return sl.RenderConfig(**{**cfg.__dict__, **overrides})
+
+    def test_label_with_ampersand_produces_valid_plist(
+        self, tmp_path: Path,
+    ):
+        """Pre-fix: ``label = "a&b"`` rendered as
+        ``<string>a&b</string>`` → invalid XML. Post-fix: plistlib
+        encodes the ``&`` as ``&amp;`` automatically."""
+        cfg = self._cfg_with(
+            tmp_path, label="com.example.a&b",
+        )
+        rendered = sl.render_plist(cfg)
+        # `&` properly XML-escaped:
+        assert "&amp;" in rendered
+        # Raw bare-ampersand never appears in a <string> body.
+        assert "<string>com.example.a&b</string>" not in rendered
+        # Round-trip parses cleanly + value decodes back to the
+        # original literal.
+        parsed = sl.parse_plist(rendered)
+        assert parsed["Label"] == "com.example.a&b"
+
+    def test_path_with_lt_gt_produces_valid_plist(
+        self, tmp_path: Path,
+    ):
+        """Paths containing ``<`` or ``>`` (rare but legal on
+        macOS) used to break the template; now XML-escaped."""
+        weird_path = tmp_path / "a<b>c" / "wrapper.sh"
+        cfg = self._cfg_with(tmp_path, wrapper_path=weird_path)
+        rendered = sl.render_plist(cfg)
+        # Round-trip parses; the path value comes back intact.
+        parsed = sl.parse_plist(rendered)
+        assert parsed["ProgramArguments"] == [str(weird_path)]
+
+    def test_path_with_quote_produces_valid_plist(
+        self, tmp_path: Path,
+    ):
+        """A path containing a double-quote previously could
+        produce invalid XML; plistlib handles it cleanly."""
+        weird_path = tmp_path / 'has"quote' / "wrapper.sh"
+        cfg = self._cfg_with(tmp_path, wrapper_path=weird_path)
+        rendered = sl.render_plist(cfg)
+        parsed = sl.parse_plist(rendered)
+        assert parsed["ProgramArguments"] == [str(weird_path)]
+
+    def test_path_with_ampersand_produces_valid_plist(
+        self, tmp_path: Path,
+    ):
+        """The reviewer's stated reproducer: a path containing &
+        (which is legal on macOS). Pre-fix this produced invalid
+        XML and `plutil -lint` rejected the plist."""
+        weird_path = tmp_path / "a&b" / "wrapper.sh"
+        cfg = self._cfg_with(tmp_path, wrapper_path=weird_path)
+        rendered = sl.render_plist(cfg)
+        # `&` in the path is escaped as `&amp;`.
+        assert "&amp;" in rendered
+        parsed = sl.parse_plist(rendered)
+        assert parsed["ProgramArguments"] == [str(weird_path)]
+
+
+class TestWrapperShellEscaping:
+    """Reviewer P2: prior to 2026-05-14 the wrapper template did
+    raw string substitution, so an operator-supplied value with
+    embedded ``"`` broke the assignment line and a value with
+    ``$()`` triggered command substitution. The fix runs every
+    value through ``shlex.quote()`` so the wrapper treats them as
+    opaque literals. Tests verify via ``bash -n`` (syntax check)
+    and by sourcing the wrapper to read variable values."""
+
+    def _cfg_with(
+        self, tmp_path: Path, **overrides,
+    ) -> sl.RenderConfig:
+        cfg = _good_config(tmp_path)
+        return sl.RenderConfig(**{**cfg.__dict__, **overrides})
+
+    def test_wrapper_with_dollar_paren_does_not_execute(
+        self, tmp_path: Path,
+    ):
+        """Reviewer reproducer: ``run$(echo injected)`` used to
+        render as command substitution. Post-fix: shlex.quote()
+        wraps the value in single-quotes so it's a literal."""
+        cfg = self._cfg_with(
+            tmp_path, run_id="run$(echo injected)",
+        )
+        rendered = sl.render_wrapper(cfg)
+        # shlex.quote wraps in single quotes when special chars
+        # are present:
+        assert "'run$(echo injected)'" in rendered
+        # bash -n syntax-check (skip if bash unavailable).
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["bash", "-n"],
+                input=rendered,
+                capture_output=True, text=True, timeout=10,
+                check=False,
+            )
+        except FileNotFoundError:
+            pytest.skip("bash not available")
+        assert result.returncode == 0, (
+            f"rendered wrapper failed bash -n: {result.stderr}"
+        )
+
+    def test_wrapper_with_embedded_quote_in_base_dir(
+        self, tmp_path: Path,
+    ):
+        """Reviewer reproducer: a BASE_DIR containing a bare ``"``
+        used to break the template's ``BASE_DIR="..."`` wrapping.
+        Post-fix: shlex.quote() handles it via single-quote
+        wrapping."""
+        weird_base = Path('/tmp/bad"path')
+        cfg = self._cfg_with(tmp_path, base_dir=weird_base)
+        rendered = sl.render_wrapper(cfg)
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["bash", "-n"],
+                input=rendered,
+                capture_output=True, text=True, timeout=10,
+                check=False,
+            )
+        except FileNotFoundError:
+            pytest.skip("bash not available")
+        assert result.returncode == 0, (
+            f"rendered wrapper failed bash -n: {result.stderr}"
+        )
+
+    def test_wrapper_with_safe_input_passes_bash_n(
+        self, tmp_path: Path,
+    ):
+        """Safe values (no shell metacharacters) should produce a
+        wrapper that bash -n accepts."""
+        cfg = _good_config(tmp_path)
+        rendered = sl.render_wrapper(cfg)
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["bash", "-n"],
+                input=rendered,
+                capture_output=True, text=True, timeout=10,
+                check=False,
+            )
+        except FileNotFoundError:
+            pytest.skip("bash not available")
+        assert result.returncode == 0
+
+    def test_wrapper_run_id_value_round_trips_via_source(
+        self, tmp_path: Path,
+    ):
+        """End-to-end: source the rendered wrapper up to the
+        variable assignments and confirm RUN_ID holds the literal
+        value, including hostile characters. We truncate the
+        wrapper at the ``mkdir -p`` line so the exec / log-writing
+        path doesn't run."""
+        cfg = self._cfg_with(
+            tmp_path, run_id="run$(echo injected)",
+        )
+        rendered = sl.render_wrapper(cfg)
+        head = rendered.split("\nmkdir -p")[0]
+        probe_script = head + '\necho "RUN_ID_VALUE=$RUN_ID"\n'
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["bash", "-c", probe_script],
+                capture_output=True, text=True, timeout=10,
+                check=True,
+            )
+        except FileNotFoundError:
+            pytest.skip("bash not available")
+        # The literal value round-trips; no command substitution
+        # fired:
+        assert "RUN_ID_VALUE=run$(echo injected)" in result.stdout
+        # Belt-and-suspenders: the dangerous substring should NOT
+        # have been evaluated.
+        assert "RUN_ID_VALUE=runinjected" not in result.stdout
+
+    def test_wrapper_base_dir_with_quote_round_trips(
+        self, tmp_path: Path,
+    ):
+        """The other reviewer reproducer: BASE_DIR='/tmp/bad"path'.
+        Variable should hold the literal value."""
+        weird_base = "/tmp/bad\"path"
+        cfg = self._cfg_with(tmp_path, base_dir=Path(weird_base))
+        rendered = sl.render_wrapper(cfg)
+        head = rendered.split("\nmkdir -p")[0]
+        probe_script = head + '\necho "BASE_DIR_VALUE=$BASE_DIR"\n'
+        import subprocess as _sp
+        try:
+            result = _sp.run(
+                ["bash", "-c", probe_script],
+                capture_output=True, text=True, timeout=10,
+                check=True,
+            )
+        except FileNotFoundError:
+            pytest.skip("bash not available")
+        assert f"BASE_DIR_VALUE={weird_base}" in result.stdout

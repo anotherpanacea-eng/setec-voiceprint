@@ -5,10 +5,17 @@ Operator-facing helper for v1.44.1.C of the sharded-calibration
 toolchain. Takes runtime parameters (paths, run_id, time window,
 worker count) and:
 
-  1. Renders ``com.anotherpanacea.setec-voiceprint.shard-worker.plist.template``
-     with the operator-supplied values.
+  1. Builds a launchd plist dict via ``_build_plist_dict`` and
+     serializes it with ``plistlib.dumps`` (which auto-escapes
+     XML special characters in operator-supplied paths and ids).
+     The plist's spec §2.8 contract — KeepAlive.Crashed=True,
+     SuccessfulExit=False, RunAtLoad=False, ProcessType=Background,
+     ThrottleInterval=60 — lives in ``_build_plist_dict``.
   2. Renders ``run_shard_worker.sh.template`` to a per-host wrapper
-     script with executable permissions.
+     script with executable permissions. Operator-supplied values
+     go through ``shlex.quote`` so shell metacharacters
+     (``$()``, embedded quotes) can't break or execute the
+     wrapper.
   3. Optionally installs the plist into ``~/Library/LaunchAgents/``
      and loads it via ``launchctl``.
 
@@ -127,49 +134,102 @@ def _load_template(name: str) -> str:
     return path.read_text(encoding="utf-8")
 
 
-def render_plist(cfg: RenderConfig) -> str:
-    """Render the launchd plist template with the supplied config.
+def _build_plist_dict(cfg: RenderConfig) -> dict:
+    """Build the plist dictionary that ``plistlib.dumps`` serializes.
 
-    Returns the rendered XML as a string. The output is valid
-    Apple plist XML; the ``parse_plist`` helper round-trips it
-    through ``plistlib`` for verification.
+    Encodes the spec §2.8 contract directly: ``KeepAlive.Crashed=
+    True``, ``KeepAlive.SuccessfulExit=False`` (load-bearing for
+    the ``--time-window`` clean-exit semantics), ``RunAtLoad=False``,
+    ``ProcessType=Background``, ``ThrottleInterval=60``.
+
+    The ``StandardOutPath`` and ``StandardErrorPath`` both point at
+    the same ``launchd_log_path`` because launchd-level log lines
+    are sparse and don't need separate streams; the wrapper handles
+    per-day shard-worker logging itself.
     """
-    template = _load_template(
-        "com.anotherpanacea.setec-voiceprint.shard-worker.plist.template"
-    )
-    substitutions = {
-        "{{LABEL}}": cfg.label,
-        "{{WRAPPER_PATH}}": str(cfg.wrapper_path),
-        "{{LAUNCHD_LOG_PATH}}": str(cfg.launchd_log_path),
-        "{{START_HOUR}}": str(int(cfg.start_hour)),
-        "{{START_MINUTE}}": str(int(cfg.start_minute)),
+    return {
+        "Label": cfg.label,
+        "ProgramArguments": [str(cfg.wrapper_path)],
+        "StartCalendarInterval": {
+            "Hour": int(cfg.start_hour),
+            "Minute": int(cfg.start_minute),
+        },
+        "KeepAlive": {
+            # Respawn on unexpected death (segfault, OOM kill).
+            "Crashed": True,
+            # DO NOT respawn on clean exit — that's how the
+            # --time-window gate signals "stop until next scheduled
+            # fire."
+            "SuccessfulExit": False,
+        },
+        # macOS scheduler hint: gentle CPU/IO priority for a
+        # long-running overnight job.
+        "ProcessType": "Background",
+        # Guard against tight respawn loops on immediate-crash.
+        "ThrottleInterval": 60,
+        # launchd-level lifecycle logs (process started / exited).
+        # Per-day shard-worker logs are produced by the wrapper.
+        "StandardOutPath": str(cfg.launchd_log_path),
+        "StandardErrorPath": str(cfg.launchd_log_path),
+        # Don't fire on `launchctl load` — only at the scheduled
+        # hour. Operators who need an out-of-band run use
+        # `launchctl start <label>` or invoke the wrapper directly.
+        "RunAtLoad": False,
     }
-    rendered = template
-    for key, value in substitutions.items():
-        rendered = rendered.replace(key, value)
-    # Sanity check: no unsubstituted placeholders remain.
-    if "{{" in rendered or "}}" in rendered:
-        raise ValueError(
-            "Plist template still contains unsubstituted placeholders "
-            "after render. This is a bug in setup_launchd.py."
-        )
-    return rendered
+
+
+def render_plist(cfg: RenderConfig) -> str:
+    """Render the launchd plist with the supplied config.
+
+    Reviewer P2 (2026-05-14): previously this used string
+    substitution on a template, which produced invalid XML when
+    operator-supplied paths contained ``&``, ``<``, ``>``, or
+    bare-quote characters. The fix builds the plist dictionary
+    programmatically with ``plistlib.dumps``, which handles XML
+    escaping for every value automatically (encoding ``&`` as
+    ``&amp;`` etc. before emission).
+
+    Returns the rendered XML as a UTF-8 string. The output is
+    valid Apple plist XML by construction; ``parse_plist`` exists
+    only as a defense-in-depth round-trip check at test time.
+    """
+    plist_dict = _build_plist_dict(cfg)
+    # plistlib uses FMT_XML by default. The output starts with
+    # the XML 1.0 + PLIST DTD declarations, includes the
+    # <plist version="1.0"> wrapper, and properly escapes every
+    # value. plistlib.dumps returns bytes; decode to str so the
+    # caller's `write_text(...)` path stays unchanged.
+    return plistlib.dumps(plist_dict, fmt=plistlib.FMT_XML).decode("utf-8")
 
 
 def render_wrapper(cfg: RenderConfig) -> str:
     """Render the wrapper shell-script template with the supplied
     config. Output is a bash script (the caller is responsible for
-    writing it to disk and chmod +x; ``write_files`` does both)."""
+    writing it to disk and chmod +x; ``write_files`` does both).
+
+    Reviewer P2 (2026-05-14): previously this used string
+    substitution on the bash template, which broke (or worse,
+    executed) when operator-supplied values contained shell
+    metacharacters — paths with embedded quotes, run-ids with
+    ``$()`` command substitution, etc. The fix runs every
+    substituted value through ``shlex.quote()`` so the rendered
+    script treats them as opaque literals regardless of what
+    metacharacters they contain. ``bash -n`` validates the output
+    syntactically; tests pass operator-controlled values through
+    a deliberately-hostile fixture to confirm no command
+    injection.
+    """
+    import shlex
     template = _load_template("run_shard_worker.sh.template")
     substitutions = {
-        "{{LOG_DIR}}": str(cfg.log_dir),
-        "{{PYTHON_BIN}}": str(cfg.python_bin),
-        "{{SHARD_RUNNER}}": str(cfg.shard_runner),
-        "{{BASE_DIR}}": str(cfg.base_dir),
-        "{{RUN_ID}}": cfg.run_id,
-        "{{TIME_WINDOW}}": cfg.time_window,
-        "{{WORKERS}}": str(int(cfg.workers)),
-        "{{USE}}": cfg.use,
+        "{{LOG_DIR}}": shlex.quote(str(cfg.log_dir)),
+        "{{PYTHON_BIN}}": shlex.quote(str(cfg.python_bin)),
+        "{{SHARD_RUNNER}}": shlex.quote(str(cfg.shard_runner)),
+        "{{BASE_DIR}}": shlex.quote(str(cfg.base_dir)),
+        "{{RUN_ID}}": shlex.quote(cfg.run_id),
+        "{{TIME_WINDOW}}": shlex.quote(cfg.time_window),
+        "{{WORKERS}}": shlex.quote(str(int(cfg.workers))),
+        "{{USE}}": shlex.quote(cfg.use),
     }
     rendered = template
     for key, value in substitutions.items():

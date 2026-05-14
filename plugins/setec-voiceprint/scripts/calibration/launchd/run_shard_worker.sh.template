@@ -32,14 +32,23 @@
 
 set -euo pipefail
 
-LOG_DIR="{{LOG_DIR}}"
-PYTHON_BIN="{{PYTHON_BIN}}"
-SHARD_RUNNER="{{SHARD_RUNNER}}"
-BASE_DIR="{{BASE_DIR}}"
-RUN_ID="{{RUN_ID}}"
-TIME_WINDOW="{{TIME_WINDOW}}"
-WORKERS="{{WORKERS}}"
-USE="{{USE}}"
+# Reviewer P2 (2026-05-14): values below are inserted by
+# setup_launchd.render_wrapper() via shlex.quote(), so each
+# substituted token is its own shell-safe quoted literal —
+# either an unquoted "already safe" word like `/usr/bin/python3`
+# or a single-quoted block like `'/path with $weird/chars'`.
+# Do NOT wrap these RHS substitutions in additional quotes:
+# `LOG_DIR="{{LOG_DIR}}"` would produce
+# `LOG_DIR="'/path with $weird/chars'"` for hostile inputs,
+# leaking the surrounding quotes into the assigned value.
+LOG_DIR={{LOG_DIR}}
+PYTHON_BIN={{PYTHON_BIN}}
+SHARD_RUNNER={{SHARD_RUNNER}}
+BASE_DIR={{BASE_DIR}}
+RUN_ID={{RUN_ID}}
+TIME_WINDOW={{TIME_WINDOW}}
+WORKERS={{WORKERS}}
+USE={{USE}}
 
 mkdir -p "$LOG_DIR"
 
