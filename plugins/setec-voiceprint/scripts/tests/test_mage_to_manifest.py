@@ -505,6 +505,233 @@ class TestConvertEndToEnd:
         assert rc == 2
 
 
+# ---------- v1.50.0+ (B.4): authorship-state refinements ----------
+
+
+class TestB4OutlineSourceRouting:
+    """``_ai_status_for_label(label, src, outline_sources)`` should
+    return ``ai_generated_from_outline`` instead of ``ai_generated``
+    when the row's src is in the configured outline-sources set.
+
+    Case-insensitive + whitespace-tolerant — different MAGE exports
+    use different src-column conventions (e.g.,
+    ``"Hello-SimpleAI/HC3"`` vs ``"hello-simpleai-hc3"``), so the
+    operator's outline-sources list should match without exact
+    casing pedantry.
+    """
+
+    def test_default_outline_sources_is_empty(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        # Empty default = no row gets the outline refinement
+        # without operator opt-in. Honest about the framework's
+        # uncertainty about which MAGE subsets used outline-based
+        # generation.
+        assert mt.DEFAULT_OUTLINE_SOURCES == frozenset()
+
+    def test_outline_source_routes_to_ai_generated_from_outline(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        result = mt._ai_status_for_label(
+            1, src="hello-simpleai/hc3",
+            outline_sources=frozenset({"hello-simpleai/hc3"}),
+        )
+        assert result == "ai_generated_from_outline"
+
+    def test_outline_source_lookup_is_case_insensitive(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        result = mt._ai_status_for_label(
+            1, src="Hello-SimpleAI/HC3",
+            outline_sources=frozenset({"hello-simpleai/hc3"}),
+        )
+        assert result == "ai_generated_from_outline"
+
+    def test_non_outline_source_stays_ai_generated(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        result = mt._ai_status_for_label(
+            1, src="grover",
+            outline_sources=frozenset({"hello-simpleai/hc3"}),
+        )
+        assert result == "ai_generated"
+
+    def test_label_0_unaffected_by_outline_sources(self):
+        """Human rows (label 0) should never become
+        ai_generated_from_outline regardless of src match."""
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        result = mt._ai_status_for_label(
+            0, src="hello-simpleai/hc3",
+            outline_sources=frozenset({"hello-simpleai/hc3"}),
+        )
+        assert result == "pre_ai_human"
+
+
+class TestB4ParaphraseDetection:
+    """``_is_paraphrase_src`` heuristic + the convert() main loop
+    flip from ai_generated → ai_edited when the heuristic fires."""
+
+    def test_paraphrase_substring_matches(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        assert mt._is_paraphrase_src("OOD-set-gpt-paraphrased") is True
+        assert mt._is_paraphrase_src("dipper-attack") is True
+        assert mt._is_paraphrase_src("foo_DIPPER_bar") is True
+        # Case-insensitive.
+        assert mt._is_paraphrase_src("PARAPHRASED") is True
+
+    def test_non_paraphrase_returns_false(self):
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        assert mt._is_paraphrase_src("hc3") is False
+        assert mt._is_paraphrase_src("grover") is False
+        assert mt._is_paraphrase_src(None) is False
+        assert mt._is_paraphrase_src("") is False
+
+    def test_convert_remaps_paraphrase_row_to_ai_edited(self, tmp_path):
+        """End-to-end: a row whose src indicates DIPPER paraphrase
+        should land with ai_status=ai_edited and a
+        notes.attack=dipper_paraphrase annotation."""
+        rows = [
+            {"text": "Original prose.", "label": "1", "src": "gpt4"},
+            {"text": "Paraphrased prose.", "label": "1",
+             "src": "OOD-set-gpt-paraphrased"},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "test-ood-para.csv", rows)
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, allow_public_output=False,
+            outline_sources="",
+            no_paraphrase_detection=False,
+        )
+        assert mt.convert(args) == 0
+        entries = [
+            json.loads(line) for line in manifest_path.read_text().splitlines()
+            if line
+        ]
+        assert len(entries) == 2
+        # First row: normal ai_generated.
+        assert entries[0]["ai_status"] == "ai_generated"
+        assert "attack" not in entries[0].get("notes", {})
+        # Second row: detected as paraphrase, remapped + annotated.
+        assert entries[1]["ai_status"] == "ai_edited"
+        assert entries[1]["notes"]["attack"] == "dipper_paraphrase"
+
+    def test_no_paraphrase_detection_flag_disables_remap(self, tmp_path):
+        """Operator can opt out of B.4 paraphrase detection via
+        --no-paraphrase-detection. The paraphrase row then stays
+        ai_generated with no attack annotation."""
+        rows = [
+            {"text": "Paraphrased prose.", "label": "1",
+             "src": "OOD-set-gpt-paraphrased"},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "test-ood-para.csv", rows)
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, allow_public_output=False,
+            outline_sources="",
+            no_paraphrase_detection=True,  # opt-out
+        )
+        assert mt.convert(args) == 0
+        entry = json.loads(manifest_path.read_text().strip())
+        assert entry["ai_status"] == "ai_generated"
+        assert "attack" not in entry.get("notes", {})
+
+
+class TestB4OutlineSourceEndToEnd:
+    """End-to-end: a row whose src matches --outline-sources should
+    land with ai_status=ai_generated_from_outline."""
+
+    def test_outline_source_via_convert(self, tmp_path):
+        rows = [
+            {"text": "Outline-based prose.", "label": "1",
+             "src": "hello-simpleai/hc3"},
+            {"text": "Thin-prompt prose.", "label": "1",
+             "src": "gpt4"},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "train.csv", rows)
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, allow_public_output=False,
+            outline_sources="hello-simpleai/hc3",
+            no_paraphrase_detection=False,
+        )
+        assert mt.convert(args) == 0
+        entries = [
+            json.loads(line) for line in manifest_path.read_text().splitlines()
+            if line
+        ]
+        assert entries[0]["ai_status"] == "ai_generated_from_outline"
+        assert entries[1]["ai_status"] == "ai_generated"
+
+
+class TestB4BackwardsCompatibility:
+    """The existing tests construct argparse.Namespace without the
+    new outline_sources / no_paraphrase_detection fields. convert()
+    must tolerate the missing attributes via getattr defaults so
+    older test fixtures and any external callers don't break."""
+
+    def test_convert_without_new_args_still_works(self, tmp_path):
+        rows = [
+            {"text": "Human prose.", "label": "0", "src": "cmv_human"},
+            {"text": "AI prose.", "label": "1", "src": "gpt4"},
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "mage"
+        source_dir.mkdir(parents=True)
+        _write_real_csv(source_dir, "train.csv", rows)
+        _install_mock_pyarrow({})
+        mt = _import_mage_to_manifest()
+        mt.PRIVATE_DIR = private_dir
+        import argparse
+        manifest_path = source_dir / "manifest.jsonl"
+        # Namespace built without outline_sources / no_paraphrase_detection.
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(manifest_path),
+            text_dir=str(source_dir / "text"),
+            limit=0, allow_public_output=False,
+        )
+        assert mt.convert(args) == 0
+        entries = [
+            json.loads(line) for line in manifest_path.read_text().splitlines()
+            if line
+        ]
+        assert entries[0]["ai_status"] == "pre_ai_human"
+        assert entries[1]["ai_status"] == "ai_generated"
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

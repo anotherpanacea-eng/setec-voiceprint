@@ -27,7 +27,14 @@ Manifest mapping (aligned with
   - `path`            relative path under --text-dir to the
                       spilled text file
   - `ai_status`       "pre_ai_human" if label == 0;
-                      "ai_generated" if label == 1
+                      "ai_generated" if label == 1.
+                      v1.50.0+ (B.4) refinements:
+                      * `src` listed in --outline-sources →
+                        "ai_generated_from_outline"
+                      * `src` matches DIPPER paraphrase tokens
+                        ('paraphrase' or 'dipper') → "ai_edited"
+                        with `notes.attack: "dipper_paraphrase"`
+                        (disable via --no-paraphrase-detection)
   - `editing_status`  "raw_draft" (MAGE doesn't expose edit
                       provenance; raw_draft is the validator's
                       most honest default)
@@ -180,13 +187,47 @@ def _split_for_source_file(source_name: str) -> str:
 _split_for_parquet = _split_for_source_file
 
 
-def _ai_status_for_label(label: Any) -> str:
+# B.4 (v1.50.0+): MAGE source subsets known to use documented
+# outline-based generation, where the LLM was given a substantive
+# human seed (outline, brief, point-by-point structure). The exact
+# set depends on the maintainer's MAGE export — different MAGE
+# distributions on HF use different `src` column conventions — so
+# the module ships an empty default and operators opt in via
+# ``--outline-sources``. See internal/SPEC_authorship_states.md
+# §7.2 for the policy and which subsets warrant the refined value
+# (Hello-SimpleAI-hardcoded subsets, when present).
+DEFAULT_OUTLINE_SOURCES: frozenset[str] = frozenset()
+
+
+# B.4: substring tokens that mark a `src` value as a DIPPER (or
+# similar) adversarial-paraphrase rewrite. When a row's src matches,
+# the row's ai_status flips from ai_generated → ai_edited (the
+# paraphrased text is a human-or-AI source rewritten by an LLM —
+# closer to ai_edited semantically) and a ``notes.attack`` field is
+# emitted. Default-on per SPEC §7.2 bullet 4; ``--no-paraphrase-
+# detection`` disables.
+PARAPHRASE_SRC_TOKENS: tuple[str, ...] = ("paraphrase", "dipper")
+
+
+def _ai_status_for_label(
+    label: Any,
+    src: Any = None,
+    *,
+    outline_sources: frozenset[str] | set[str] = DEFAULT_OUTLINE_SOURCES,
+) -> str:
     """MAGE's label is binary: 0 = human, 1 = machine.
 
     Maps to manifest_validator.ALLOWED_AI_STATUS:
       0 → "pre_ai_human"
-      1 → "ai_generated"
+      1 → "ai_generated" — unless the row's ``src`` is in
+           ``outline_sources``, in which case we emit
+           "ai_generated_from_outline" per SPEC §7.2 (B.4).
       anything else → "unknown"
+
+    The ``src`` lookup is case-insensitive and whitespace-tolerant so
+    a MAGE export with ``"Hello-SimpleAI/HC3"`` matches an
+    outline-sources entry of ``"hello-simpleai/hc3"`` (and vice
+    versa).
     """
     try:
         label_int = int(label)
@@ -195,8 +236,28 @@ def _ai_status_for_label(label: Any) -> str:
     if label_int == 0:
         return "pre_ai_human"
     if label_int == 1:
+        if src is not None and outline_sources:
+            normalized = str(src).strip().lower()
+            if normalized in {s.lower() for s in outline_sources}:
+                return "ai_generated_from_outline"
         return "ai_generated"
     return "unknown"
+
+
+def _is_paraphrase_src(src: Any) -> bool:
+    """B.4: heuristic for adversarial-paraphrase rows.
+
+    Returns True when the row's ``src`` value contains one of the
+    documented paraphrase-attack tokens (e.g., MAGE's
+    ``OOD-set-gpt-paraphrased`` subset surfaces as ``src`` strings
+    containing 'paraphrase'). Caller pairs the True result with an
+    ``ai_status`` override to ``ai_edited`` and a
+    ``notes.attack: "dipper_paraphrase"`` annotation.
+    """
+    if src is None:
+        return False
+    low = str(src).lower()
+    return any(token in low for token in PARAPHRASE_SRC_TOKENS)
 
 
 def convert(args: argparse.Namespace) -> int:
@@ -204,6 +265,18 @@ def convert(args: argparse.Namespace) -> int:
     if not source_dir.is_dir():
         sys.stderr.write(f"--source-dir not found: {source_dir}\n")
         return 1
+
+    # B.4: parse --outline-sources once at startup. ``getattr`` so
+    # callers that build a Namespace directly (tests, other
+    # callers in the framework) don't have to include the new
+    # arguments.
+    outline_sources_raw = getattr(args, "outline_sources", "") or ""
+    outline_sources: frozenset[str] = frozenset(
+        s.strip() for s in outline_sources_raw.split(",") if s.strip()
+    )
+    detect_paraphrase = not getattr(
+        args, "no_paraphrase_detection", False,
+    )
 
     source_files = sorted(
         list(source_dir.rglob("*.csv"))
@@ -254,10 +327,30 @@ def convert(args: argparse.Namespace) -> int:
                     n_skipped_empty += 1
                     continue
 
-                ai_status = _ai_status_for_label(row.get("label"))
+                src_value = row.get("src") or row.get("source")
+                ai_status = _ai_status_for_label(
+                    row.get("label"),
+                    src=src_value,
+                    outline_sources=outline_sources,
+                )
                 if ai_status == "unknown":
                     n_skipped_unknown_label += 1
                     continue
+
+                # B.4: adversarial-paraphrase rows (DIPPER and
+                # similar) are operationally human/AI source text
+                # rewritten by an LLM — ai_edited is the more
+                # accurate state than ai_generated. Skip the
+                # remapping for pre_ai_human rows (no AI in the
+                # pipeline → no remap).
+                attack_label: str | None = None
+                if (
+                    detect_paraphrase
+                    and ai_status in ("ai_generated", "ai_generated_from_outline")
+                    and _is_paraphrase_src(src_value)
+                ):
+                    attack_label = "dipper_paraphrase"
+                    ai_status = "ai_edited"
 
                 row_id = f"mage_{split}_{row_index:07d}"
                 text_path = _bucketed_text_path(text_dir, row_id)
@@ -293,17 +386,26 @@ def convert(args: argparse.Namespace) -> int:
                     # be wrong (MIT/Apache retain copyright).
                     "privacy": "shareable",
                     "source": "mage",
-                    "source_id": row.get("src") or row.get("source"),
+                    "source_id": src_value,
                     "notes": {
                         "label": row.get("label"),
-                        "original_source": (
-                            row.get("src") or row.get("source")
-                        ),
+                        "original_source": src_value,
                         "split": split,
                         "source_file": source_file.name,
                         "hf_revision": revision,
                     },
                 }
+                # B.4: attach attack annotation when the row was
+                # detected as adversarial-paraphrase, and record
+                # composite_states when ai_status was flipped to
+                # mixed (currently only outline-detection produces
+                # mixed; this branch is forward-compat).
+                if attack_label is not None:
+                    entry["notes"]["attack"] = attack_label
+                if ai_status == "mixed":
+                    entry["notes"].setdefault(
+                        "composite_states", ["ai_edited"],
+                    )
                 fh_out.write(
                     json.dumps(entry, default=str) + "\n",
                 )
@@ -361,6 +463,35 @@ def main(argv: list[str] | None = None) -> int:
             "Permit writing the manifest and text files "
             "outside ai-prose-baselines-private/. MAGE is "
             "MIT-licensed."
+        ),
+    )
+    # B.4 (v1.50.0+): per SPEC_authorship_states.md §7.2, certain
+    # MAGE subsets used documented outline-based generation and
+    # should map to ``ai_generated_from_outline`` rather than the
+    # default ``ai_generated``. The exact src strings depend on the
+    # operator's MAGE export, so we ship an empty default and let
+    # the operator opt in.
+    parser.add_argument(
+        "--outline-sources",
+        default="",
+        help=(
+            "Comma-separated MAGE `src` values to map to "
+            "ai_status=ai_generated_from_outline instead of "
+            "ai_generated. Case-insensitive. Example: "
+            "'hello-simpleai/hc3,hello-simpleai-finance'. "
+            "Default empty (everything stays ai_generated). "
+            "See internal/SPEC_authorship_states.md §7.2."
+        ),
+    )
+    parser.add_argument(
+        "--no-paraphrase-detection",
+        action="store_true",
+        default=False,
+        help=(
+            "Disable B.4 adversarial-paraphrase detection. Default: "
+            "rows whose `src` contains 'paraphrase' or 'dipper' are "
+            "remapped to ai_status=ai_edited with "
+            "notes.attack=dipper_paraphrase. See SPEC §7.2 bullet 4."
         ),
     )
     return convert(parser.parse_args(argv))

@@ -47,6 +47,16 @@ without errors. Reference-detector scores from the source row
 `pangram_v3.2_score`) are preserved in the entry's `notes` field for
 cross-tool comparison; the manifest itself stays in the gitignored
 private directory.
+
+**v1.49.0+ (B.4)**: Pangram label `-1` (the "edited/mixed" class)
+maps to `ai_status: mixed` with `notes.composite_states: ["ai_edited"]`
+by default, satisfying the B.2 validator soft warning and giving
+downstream consumers the sub-state granularity to route on. Previous
+behavior dropped label `-1` rows silently; the new behavior preserves
+them. Operators who want the previous "drop -1" behavior can pass
+`--label-map "0=pre_ai_human,1=ai_generated"` (without the `-1`
+entry) to keep those rows out of the manifest. See
+`internal/SPEC_authorship_states.md` §7.1 for the mapping rationale.
 """
 
 from __future__ import annotations
@@ -69,15 +79,33 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 
+# Default composite-states list for any row mapped to `ai_status:
+# mixed`. Per SPEC_authorship_states.md §7.1, EditLens's label `-1`
+# (mixed/edited class) is operationally "human-authored AI-modified"
+# without further granularity, so a single-element list with
+# `ai_edited` captures that honestly. Operators can override per-run
+# via the --mixed-composite-states CLI flag.
+DEFAULT_MIXED_COMPOSITE_STATES: tuple[str, ...] = ("ai_edited",)
+
+
 # Built-in presets covering the common Pangram split shapes. Each maps
 # to the column / labeling decisions a v1 calibration run would use.
 # Users are not required to use a preset; explicit flags always
 # override the preset.
+#
+# v1.49.0+ (B.4): label `-1` maps to `mixed` instead of being silently
+# dropped. The row receives a `notes.composite_states` list (default
+# `["ai_edited"]`) so the soft validator check from B.2 is satisfied
+# and downstream consumers can route by sub-state.
 PRESETS: dict[str, dict[str, Any]] = {
     "editlens_nonnative": {
         "text_column": "text",
         "label_column": "label",
-        "label_map": {"0": "pre_ai_human", "1": "ai_generated"},
+        "label_map": {
+            "0": "pre_ai_human",
+            "1": "ai_generated",
+            "-1": "mixed",
+        },
         "register": "essay",
         "language_status": "non_native_advanced",
         "notes_columns": (
@@ -90,7 +118,11 @@ PRESETS: dict[str, dict[str, Any]] = {
     "editlens_test": {
         "text_column": "text",
         "label_column": "label",
-        "label_map": {"0": "pre_ai_human", "1": "ai_generated"},
+        "label_map": {
+            "0": "pre_ai_human",
+            "1": "ai_generated",
+            "-1": "mixed",
+        },
         "register": "essay",
         "language_status": "native",
         "notes_columns": (
@@ -103,7 +135,11 @@ PRESETS: dict[str, dict[str, Any]] = {
     "editlens_human_detectors": {
         "text_column": "text",
         "label_column": "label",
-        "label_map": {"0": "pre_ai_human", "1": "ai_generated"},
+        "label_map": {
+            "0": "pre_ai_human",
+            "1": "ai_generated",
+            "-1": "mixed",
+        },
         "register": "mixed",
         "language_status": "native",
         "notes_columns": (
@@ -261,6 +297,24 @@ def convert(args: argparse.Namespace) -> int:
         tuple(args.notes_columns.split(",")) if args.notes_columns
         else tuple(preset_data.get("notes_columns", ()))
     )
+    # B.4: composite states for ai_status=mixed rows. CLI flag wins;
+    # preset's mixed_composite_states is the fallback; module-level
+    # DEFAULT_MIXED_COMPOSITE_STATES is the floor. The empty-string
+    # case (--mixed-composite-states "") leaves it empty so the
+    # validator's B.2 soft check still fires (useful for operators
+    # who want to surface the warning).
+    if args.mixed_composite_states is not None:
+        mixed_composite_states = tuple(
+            s.strip() for s in args.mixed_composite_states.split(",")
+            if s.strip()
+        )
+    else:
+        mixed_composite_states = tuple(
+            preset_data.get(
+                "mixed_composite_states",
+                DEFAULT_MIXED_COMPOSITE_STATES,
+            )
+        )
 
     if not text_column or not label_column or not label_map:
         sys.stderr.write(
@@ -345,6 +399,11 @@ def convert(args: argparse.Namespace) -> int:
             for col in notes_columns:
                 if col in row and row[col] is not None:
                     notes[col] = row[col]
+            # B.4: ai_status=mixed rows carry `composite_states` so
+            # the B.2 validator soft check is satisfied and downstream
+            # consumers can route by sub-state (per SPEC §6.4).
+            if ai_status == "mixed" and mixed_composite_states:
+                notes["composite_states"] = list(mixed_composite_states)
 
             entry: dict[str, Any] = {
                 "id": entry_id,
@@ -359,8 +418,22 @@ def convert(args: argparse.Namespace) -> int:
                 "source": source_label,
                 "adversarial_class": "none",
             }
+            # B.4 (v1.49.0+): write notes as a dict, not a JSON
+            # string. The manifest validator inspects
+            # `entry["notes"]["composite_states"]` for the B.2 soft
+            # check on `ai_status: mixed`; a JSON-string `notes`
+            # field defeats that check (and any other downstream
+            # consumer that walks notes structurally). MAGE's
+            # converter has always written notes as a dict; this
+            # change aligns EditLens with that convention.
+            #
+            # Backwards compat: consumers that previously read
+            # `notes` as a JSON string get a structured dict
+            # instead. Calling `json.loads()` on the dict-form is
+            # a TypeError; any downstream code that defensively
+            # checks `isinstance(notes, str)` keeps working.
             if notes:
-                entry["notes"] = json.dumps(notes, ensure_ascii=False)
+                entry["notes"] = notes
             fh_out.write(
                 json.dumps(entry, ensure_ascii=False) + "\n"
             )
@@ -465,6 +538,18 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Comma-separated source columns to preserve in each entry's "
             "notes field for cross-tool comparison."
+        ),
+    )
+    parser.add_argument(
+        "--mixed-composite-states",
+        default=None,
+        help=(
+            "Comma-separated SETEC ai_status sub-values to record as "
+            "`notes.composite_states` for any row mapped to "
+            "`ai_status: mixed`. Default: ai_edited. Pass an empty "
+            "string to omit (which will trigger the B.2 validator "
+            "soft warning). See "
+            "internal/SPEC_authorship_states.md §6.4."
         ),
     )
     parser.add_argument(

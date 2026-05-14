@@ -6,6 +6,30 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.48.0] - 2026-05-14
+
+**Authorship-state taxonomy refinement — phase B.4: converter updates.** Wires the B.2 authorship-state vocabulary additions (`ai_generated_from_outline`, `mixed` + `composite_states`) into the EditLens and MAGE converters per `internal/SPEC_authorship_states.md` §7. Stacked on B.2 (PR #22). RAID is unchanged per SPEC §7.3.
+
+### Added
+
+- **`editlens_to_manifest.py`**: Pangram label `-1` (the "edited/mixed" class) now maps to `ai_status: mixed` with `notes.composite_states: ["ai_edited"]` instead of being silently dropped. All three built-in presets (`editlens_nonnative`, `editlens_test`, `editlens_human_detectors`) gain the `-1=mixed` entry in their `label_map`. New `--mixed-composite-states` flag (default `ai_edited`) lets the operator customize the sub-state list; passing `""` omits the field (useful for surfacing the B.2 validator soft warning during manual review). Backwards-compat: operators who prefer the old "drop -1" behavior pass `--label-map "0=pre_ai_human,1=ai_generated"` to keep those rows out of the manifest.
+- **`editlens_to_manifest.py` notes-as-dict**: notes are now written as a structured dict instead of a JSON-serialized string. Brings EditLens in line with MAGE's convention and lets the B.2 validator soft check actually walk into `notes.composite_states`. Consumers that previously called `json.loads(entry["notes"])` will now see a `TypeError` (the field is already a dict); a `isinstance(notes, str)` guard makes downstream code work with either form.
+- **`mage_to_manifest.py` outline-source routing**: `_ai_status_for_label(label, src, *, outline_sources)` returns `ai_generated_from_outline` when the row's `src` is in the operator-supplied outline-sources set (case-insensitive lookup). New `--outline-sources` CLI flag (comma-separated, default empty) lets the operator opt in. Empty default is honest about the framework's uncertainty about which MAGE subsets used documented outline-based generation — see SPEC §7.2.
+- **`mage_to_manifest.py` paraphrase detection**: rows whose `src` contains the tokens `paraphrase` or `dipper` (case-insensitive) are remapped from `ai_generated` to `ai_status: ai_edited` with `notes.attack: "dipper_paraphrase"` — capturing the operational reality that DIPPER paraphrase rewrites are AI-edited source text, not from-scratch generation. Default-on per SPEC §7.2 bullet 4; `--no-paraphrase-detection` opts out.
+- **18 new tests** across `test_mage_to_manifest.py` (+10) and the new `test_editlens_to_manifest.py` (+13). Coverage: outline-source routing happy-paths + case-insensitivity + non-outline default; paraphrase detection heuristic + end-to-end remap + opt-out; default outline-sources empty (no surprise behavior); backwards-compat for callers building Namespace without the new args; EditLens preset label-maps include `-1=mixed`; mixed-composite-states override + empty-override; validator round-trip clean (no `composite_states`-missing warning).
+
+### Changed
+
+- `mage_to_manifest.py`'s `_ai_status_for_label` signature gained the optional `src` and `outline_sources` keyword arguments. Backwards-compat: positional `label`-only calls still work; the additional params default to "no outline routing."
+- `editlens_to_manifest.py`'s `convert()` reads `args.mixed_composite_states` via the new flag; the flag's `None` default falls back to the preset's `mixed_composite_states` field if set, else the module-level `DEFAULT_MIXED_COMPOSITE_STATES = ("ai_edited",)`.
+
+### Notes
+
+- B.4 ships the converter side of the SPEC §10 phase plan. B.3 (audit-script claim-license routing) is a parallel follow-up that consumes the manifests B.4 produces.
+- No converter changes for RAID — RAID has no documented outline-vs-thin-prompt distinction in its metadata (SPEC §7.3).
+- Calibration runs against MAGE that want to slice on outline-derived AI prose vs thin-prompt AI prose can now do so by passing `--outline-sources` matched to the operator's MAGE export's `src` strings. PROVENANCE entries should record the `--outline-sources` value for reproducibility.
+- **Version-bump note**: rebased from declared 1.46.0 → 1.48.0 because PRs #21 / #22 / #24 / #32 merged ahead at 1.45.0 / 1.46.0 / 1.47.0 / 1.47.1. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.47.1] - 2026-05-14
 
 **Sharded calibration: end-to-end smoke fixture.** A test-only PATCH bump that adds `plugins/setec-voiceprint/scripts/tests/test_sharded_smoke_pipeline.py` — the canonical-operator-pipeline integration test that the existing per-subcommand tests in `test_shard_runner.py` don't cover. No production code changes; this is the regression guard that catches "operator pipeline broke even though each subcommand's unit tests pass."
