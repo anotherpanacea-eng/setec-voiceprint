@@ -6,6 +6,34 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.52.0] - 2026-05-14
+
+**Standalone surprisal audit (phase C.3).** Adds `plugins/setec-voiceprint/scripts/surprisal_audit.py`, the standalone CLI that wraps the C.2 surprisal backend and reports the per-token surprisal series statistics pinned in `internal/SPEC_surprisal_signal.md` §2.2 / §2.3. Task surface: `smoothing_diagnosis`. Stacked on C.2 (PR #23). The Tier 4 integration into `variance_audit.py` (C.4) ships separately so each phase reviews independently.
+
+The audit answers: how evenly is the LM's surprise distributed across this draft? Smoothing — the operational fingerprint of LLM editing / generation — manifests as low mean surprisal, low SD, and high small-lag autocorrelation. The audit reports raw numbers and a PROVISIONAL band call; the ClaimLicense block names `calibration_anchor: user-baseline-required` so the band is never read as load-bearing.
+
+### Added
+
+- **`surprisal_audit.py`** — new standalone audit CLI.
+  - `audit_surprisal(text, backend|score_fn, ...)` — pure function. Accepts either a `SurprisalBackend` or a callable `score_fn` matching the backend's `score_text(text, return_top_k=...)` signature (the test-friendly path).
+  - Distribution summary: mean (bits/token), sample SD + variance, min/max, skew, excess kurtosis, position of max surprisal.
+  - Autocorrelation at lags 1, 2, 3, 5, 10 per SPEC §2.2. ACF is `None` for series below `MIN_SERIES_FOR_ACF = 30` tokens (with a `series_too_short_for_acf` flag) and for constant series (zero denominator).
+  - Top-k most-surprising tokens (default k=20) — reader-facing diagnostic with decoded token text + position.
+  - `--sliding-window` mode per SPEC §2.4: token-indexed (not word-indexed; surprisal's native unit is tokens). Default W=200, S=100. Per-window stats: mean, sd, lag-1 ACF.
+  - `_provisional_band()` — 2-of-3 majority-vote classifier over mean / SD / lag-1 ACF using illustrative thresholds. Always emits `provisional=True` and `calibration_anchor: user-baseline-required` so the band call is never read as load-bearing.
+  - `render_markdown()` — markdown report with distribution summary, autocorrelation, sliding-window trajectory (when enabled), top-k table, PROVISIONAL band, and the ClaimLicense block.
+  - `ClaimLicense` block names `smoothing_diagnosis` task surface and refuses an AI-provenance verdict explicitly; PROVISIONAL banding called out in `additional_caveats`.
+  - CLI: `--model`, `--revision`, `--sliding-window`, `--window-size`, `--stride`, `--top-k`, `--json`, `--out`.
+- **`plugins/setec-voiceprint/scripts/tests/test_surprisal_audit.py`** — 41 tests in 6 classes covering pure math helpers (14), sliding-window logic (6), provisional banding (4), end-to-end audit_surprisal (10), markdown rendering (3), CLI end-to-end (3). Tests use a stub `score_fn` so no real causal LM is loaded.
+
+### Notes
+
+- No real causal LM is loaded by the test suite — the stub-backend pattern from `test_surprisal_backend.py` is reused. The `score_fn` parameter on `audit_surprisal` is the explicit hook for that.
+- Phase C.4 (`variance_audit.py` Tier 4 integration) ships next as a separate PR. It uses the same backend + audit math but inside the existing variance-audit tier structure; the standalone CLI here remains the single-purpose entry point for operators who want a focused surprisal report without the Tier 1-3 overhead.
+- Bands are PROVISIONAL: thresholds come from fixture-derived heuristics, not anchored calibration. Operators who want load-bearing thresholds run the Phase C.5 fixture suite per SPEC.
+- **P2 fix carried**: clean long-input failure path (Codex review). Wraps backend runtime failures so the CLI exits cleanly when the input exceeds the model's context window.
+- **Version-bump note**: rebased from declared 1.46.0 → 1.52.0 because Waves 1 + 2 + PRs #33 / #34 / #35 / #25 / #23 merged ahead at 1.45.0 – 1.51.0. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.51.0] - 2026-05-14
 
 **Surprisal backend (phase C.2).** Implements the pluggable causal-LM wrapper from `internal/SPEC_surprisal_signal.md` §6 and `internal/SPEC_surprisal_model_choice.md`. Structurally parallel to `embedding_backend.py`: alias table, lazy load, honest failure (no silent fallback), deterministic mode, `identifier_block()` for PROVENANCE. Adds Tier-4 (surprisal) dependency on `transformers` + `torch`; opt-in, not part of core install.
