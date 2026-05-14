@@ -320,20 +320,45 @@ def install_plist(
 
 
 def launchctl_load(
-    plist_path: Path, *, dry_run: bool = True,
+    plist_path: Path,
+    *,
+    dry_run: bool = True,
+    reload_before_bootstrap: bool = False,
 ) -> list[str]:
     """Build the ``launchctl load`` command for an installed plist.
-    Returns the argv list. With ``dry_run=False`` actually runs it
-    via subprocess.
+    Returns the argv list of the bootstrap call. With
+    ``dry_run=False`` actually runs it via subprocess.
 
     We use ``launchctl bootstrap gui/<uid>`` syntax (modern macOS,
     Catalina+) so the agent loads into the current GUI session.
-    Older ``launchctl load`` would also work but is deprecated."""
+    Older ``launchctl load`` would also work but is deprecated.
+
+    When ``reload_before_bootstrap=True`` we first run
+    ``launchctl bootout`` (best-effort, errors tolerated) on the same
+    plist path. This makes the install path idempotent: re-running
+    setup after config changes succeeds even when a previous agent
+    is already loaded under the same label. The bootout command is
+    NOT returned (the return value remains the bootstrap argv for
+    backwards compatibility with callers that introspect it); use
+    :func:`launchctl_unload` directly when you need the bootout argv.
+    """
     uid = os.getuid()
     cmd = [
         "launchctl", "bootstrap", f"gui/{uid}", str(plist_path),
     ]
     if not dry_run:
+        if reload_before_bootstrap:
+            # Best-effort: clear any existing agent with the same
+            # plist path before bootstrapping the new one. We
+            # tolerate "not loaded" (rc != 0) since the common case
+            # is no prior agent.
+            bootout_cmd = [
+                "launchctl",
+                "bootout",
+                f"gui/{uid}",
+                str(plist_path),
+            ]
+            subprocess.run(bootout_cmd, check=False)
         subprocess.run(cmd, check=True)
     return cmd
 
@@ -516,7 +541,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.install:
         installed = install_plist(plist_path, dry_run=False)
         sys.stderr.write(f"Installed plist: {installed}\n")
-        cmd = launchctl_load(installed, dry_run=False)
+        # Idempotent install: best-effort bootout first so re-running
+        # setup after a config change succeeds even when a previous
+        # agent is already loaded under the same label.
+        sys.stderr.write(
+            "  Running best-effort bootout (errors ignored if no "
+            "prior agent)...\n"
+        )
+        cmd = launchctl_load(
+            installed, dry_run=False, reload_before_bootstrap=True,
+        )
         sys.stderr.write(f"  Ran: {' '.join(cmd)}\n")
         sys.stderr.write(
             "\nAgent loaded. Check status with:\n"
@@ -529,10 +563,12 @@ def main(argv: list[str] | None = None) -> int:
     # Dry-run path: print what an operator would run.
     installed = install_plist(plist_path, dry_run=True)
     load_cmd = launchctl_load(installed, dry_run=True)
+    unload_cmd = launchctl_unload(installed, dry_run=True)
     sys.stderr.write(
         "\nDry-run complete. To install, either re-run with "
         "--install, or run these commands manually:\n\n"
         f"  cp {plist_path} {installed}\n"
+        f"  {' '.join(unload_cmd)}  # best-effort, ignore errors if no prior agent\n"
         f"  {' '.join(load_cmd)}\n\n"
         "To uninstall later, run this helper with --uninstall.\n"
     )

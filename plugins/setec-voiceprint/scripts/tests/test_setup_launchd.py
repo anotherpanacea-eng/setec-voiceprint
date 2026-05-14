@@ -296,6 +296,197 @@ def test_launchctl_unload_builds_bootout_command(tmp_path: Path):
     assert cmd[-1] == str(target)
 
 
+# --------------- Idempotent install (bootout-before-bootstrap) ---
+#
+# Codex review P1 (PR #26): re-running ``--install`` after a config
+# change can fail when a previous agent is still loaded. The fix
+# threads ``reload_before_bootstrap=True`` through ``launchctl_load``
+# which runs a best-effort ``bootout`` before ``bootstrap``. These
+# tests pin that contract.
+
+
+class TestIdempotentInstall:
+    """``launchctl_load(reload_before_bootstrap=True, dry_run=False)``
+    must run bootout before bootstrap; bootout errors are tolerated
+    so the no-prior-agent path succeeds."""
+
+    def test_reload_runs_bootout_then_bootstrap(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Two subprocess.run calls in order: bootout (check=False),
+        then bootstrap (check=True). Confirms the load-bearing
+        ordering."""
+        calls: list[dict] = []
+
+        def fake_run(cmd, *, check=False, **kwargs):
+            calls.append({"cmd": list(cmd), "check": check})
+
+            class _Result:
+                returncode = 0
+
+            return _Result()
+
+        monkeypatch.setattr(sl.subprocess, "run", fake_run)
+        target = tmp_path / "test.plist"
+        sl.launchctl_load(
+            target, dry_run=False, reload_before_bootstrap=True,
+        )
+        assert len(calls) == 2, (
+            "Reload path must run exactly two subprocess.run calls "
+            "(bootout + bootstrap)."
+        )
+        assert calls[0]["cmd"][:2] == ["launchctl", "bootout"]
+        assert calls[0]["check"] is False, (
+            "bootout must be best-effort (check=False) so no-prior-"
+            "agent doesn't fail the install."
+        )
+        assert calls[1]["cmd"][:2] == ["launchctl", "bootstrap"]
+        assert calls[1]["check"] is True, (
+            "bootstrap must check (check=True) so install failures "
+            "still surface to the operator."
+        )
+        # Same plist path for both:
+        assert calls[0]["cmd"][-1] == str(target)
+        assert calls[1]["cmd"][-1] == str(target)
+
+    def test_reload_tolerates_bootout_failure(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Bootout returning non-zero (no prior agent) must NOT
+        abort the install; bootstrap still runs."""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, *, check=False, **kwargs):
+            calls.append(list(cmd))
+            # Bootout fails (no prior agent); bootstrap succeeds.
+            if cmd[1] == "bootout":
+                class _Result:
+                    returncode = 64  # "Unknown service"
+
+                return _Result()
+
+            class _Result:
+                returncode = 0
+
+            return _Result()
+
+        monkeypatch.setattr(sl.subprocess, "run", fake_run)
+        target = tmp_path / "test.plist"
+        # Must not raise — bootstrap proceeds despite bootout rc!=0.
+        sl.launchctl_load(
+            target, dry_run=False, reload_before_bootstrap=True,
+        )
+        assert len(calls) == 2
+        assert calls[1][1] == "bootstrap"
+
+    def test_no_reload_default_keeps_single_call(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Default ``reload_before_bootstrap=False`` runs only the
+        bootstrap, preserving the pre-fix subprocess shape (matters
+        for any caller that introspects subprocess.run call counts)."""
+        calls: list[list[str]] = []
+
+        def fake_run(cmd, *, check=False, **kwargs):
+            calls.append(list(cmd))
+
+            class _Result:
+                returncode = 0
+
+            return _Result()
+
+        monkeypatch.setattr(sl.subprocess, "run", fake_run)
+        target = tmp_path / "test.plist"
+        sl.launchctl_load(target, dry_run=False)
+        assert len(calls) == 1
+        assert calls[0][1] == "bootstrap"
+
+    def test_reload_dry_run_skips_subprocess(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """``dry_run=True`` short-circuits — no subprocess invocation
+        even when ``reload_before_bootstrap=True``. Operators see the
+        command via stderr; nothing touches the live system."""
+        calls: list = []
+
+        def fake_run(cmd, **kwargs):
+            calls.append(list(cmd))
+
+            class _Result:
+                returncode = 0
+
+            return _Result()
+
+        monkeypatch.setattr(sl.subprocess, "run", fake_run)
+        target = tmp_path / "test.plist"
+        cmd = sl.launchctl_load(
+            target, dry_run=True, reload_before_bootstrap=True,
+        )
+        assert calls == []
+        # The returned argv is still the bootstrap call (back-compat).
+        assert cmd[1] == "bootstrap"
+
+    def test_reload_returns_bootstrap_argv_for_back_compat(
+        self, tmp_path: Path,
+    ):
+        """The return value of ``launchctl_load`` is the bootstrap
+        argv regardless of ``reload_before_bootstrap``. Callers that
+        introspect it (e.g., the dry-run printer) keep working."""
+        target = tmp_path / "test.plist"
+        cmd_no_reload = sl.launchctl_load(target, dry_run=True)
+        cmd_reload = sl.launchctl_load(
+            target, dry_run=True, reload_before_bootstrap=True,
+        )
+        assert cmd_no_reload == cmd_reload
+
+
+def test_cli_install_path_uses_reload(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """End-to-end: ``setup_launchd.py --install`` invokes
+    ``launchctl_load`` with ``reload_before_bootstrap=True`` so the
+    install path is idempotent under re-runs."""
+    captured: dict = {}
+
+    real_launchctl_load = sl.launchctl_load
+
+    def spy(plist_path, *, dry_run=True, reload_before_bootstrap=False):
+        captured["dry_run"] = dry_run
+        captured["reload"] = reload_before_bootstrap
+        # Avoid actually calling subprocess; return the bootstrap
+        # argv shape callers expect.
+        return real_launchctl_load(
+            plist_path,
+            dry_run=True,  # never touch subprocess in tests
+            reload_before_bootstrap=False,
+        )
+
+    monkeypatch.setattr(sl, "launchctl_load", spy)
+    # Stub install_plist so we don't touch ~/Library/LaunchAgents/.
+    monkeypatch.setattr(
+        sl,
+        "install_plist",
+        lambda plist_path, *, dry_run=True: plist_path,
+    )
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    rc = sl.main([
+        "--label", "com.example.test",
+        "--base-dir", str(tmp_path / "base"),
+        "--run-id", "run-001",
+        "--time-window", "23:00-06:00",
+        "--workers", "2",
+        "--use", "embedding-mxbai",
+        "--staging-dir", str(staging),
+        "--install",
+    ])
+    assert rc == 0
+    assert captured.get("reload") is True, (
+        "--install must call launchctl_load with "
+        "reload_before_bootstrap=True so re-runs are idempotent."
+    )
+
+
 # --------------- _parse_start_time -----------------------------
 
 
