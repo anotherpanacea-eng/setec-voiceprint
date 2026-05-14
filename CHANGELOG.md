@@ -6,6 +6,21 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.45.0] - 2026-05-13
+
+**Harrier-OSS-v1-270m candidate alias.** Adds `harrier` to `embedding_backend.MODEL_ALIASES` per the embedding-model-choice spec's revision 4 candidate list. Harrier-OSS-v1-270m (Microsoft, MIT, released 2026-03-30) is one of the five §6.4 fixture-test candidates; the alias lets users select it via `--model harrier` without typing the full HuggingFace id.
+
+### Added
+
+- **`embedding_backend.MODEL_ALIASES["harrier"]` → `microsoft/harrier-oss-v1-270m`.** The fourth alias in the table alongside `mxbai`, `gemma`, and `minilm`. The two other §6.4 candidates (`bge-large-en-v1.5` and `Qwen3-Embedding-0.6B`) remain accessible via full HuggingFace identifier; aliases for those wait on whether the §6.4 fixture run keeps them in the load-bearing candidate set.
+- **Two new tests** in `test_embedding_backend.py`: forward resolution (alias → full id) and reverse lookup (full id → alias for identifier-block reporting).
+
+### Notes
+
+- **No `--model` default change.** The CLI default stays at `mxbai`. Harrier is opt-in by `--model harrier` until the §6.4 fixture run designates an operational default for the user's register mix (per the no-priority posture in the spec).
+- **`embedding_backend.py` comment refresh.** The alias-table comment block was updated from the "co-primary" framing (which described the pre-revision-4 posture) to "candidate aliases with no priority designated."
+- **Test count**: 16 in `test_embedding_backend.py` (was 14; +2 harrier-specific). Full suite expected to grow by 2.
+
 ## [1.44.0] - 2026-05-12
 
 **Sharded calibration toolchain v1.44.0 — core infrastructure.** Implements the core of the `internal/SPEC_sharded_calibration.md` design: deterministic stratified sharding, single-worker scoring with SIGTERM-safe checkpointing, and per-signal aggregation across shards with cache integrity enforced by default. Single-worker only for v1.44.0; `--workers N` concurrent execution, time-window scheduling, pause-all / terminate-all / kill-all, and multi-machine git-synced state file are scoped to v1.44.1 and v1.44.2 per the spec's phased rollout.

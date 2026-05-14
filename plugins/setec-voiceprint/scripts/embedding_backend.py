@@ -48,14 +48,24 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-# Co-primary aliases per `internal/SPEC_embedding_model_choice.md` §6.1.
-# Both `mxbai` and `gemma` are first-class; `minilm` is a smaller
-# fallback that ships with the existing `variance_audit.py` Tier-3
-# adjacent-cosine signal. Tools that accept a `--model` argument
-# resolve any of these aliases or any full HuggingFace model id.
+# Candidate aliases per `internal/SPEC_embedding_model_choice.md` §6.1
+# (revision 4: no-priority posture; the §6.4 fixture test is the
+# load-bearing decision on which candidate is the user's CLI
+# default). Tools that accept a `--model` argument resolve any of
+# these aliases or any full HuggingFace model id passed verbatim.
+#
+# - `mxbai`, `gemma`, `harrier`: three of the five §6.4 candidates
+#   with stable HuggingFace identifiers. `bge-large` and `qwen3-0.6b`
+#   are also §6.4 candidates but ship as full IDs (no alias) until
+#   the fixture test runs on the user's register mix and identifies
+#   which set of aliases is worth keeping load-bearing.
+# - `minilm`: the small / fast fallback shipped with the existing
+#   `variance_audit.py` Tier-3 adjacent-cosine signal. Predates the
+#   §6.4 candidate set; kept for back-compat.
 MODEL_ALIASES: dict[str, str] = {
     "mxbai": "mixedbread-ai/mxbai-embed-large-v1",
     "gemma": "google/embeddinggemma-300m",
+    "harrier": "microsoft/harrier-oss-v1-270m",
     "minilm": "sentence-transformers/all-MiniLM-L6-v2",
 }
 
