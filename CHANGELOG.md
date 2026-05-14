@@ -6,6 +6,24 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.47.1] - 2026-05-14
+
+**Sharded calibration: end-to-end smoke fixture.** A test-only PATCH bump that adds `plugins/setec-voiceprint/scripts/tests/test_sharded_smoke_pipeline.py` — the canonical-operator-pipeline integration test that the existing per-subcommand tests in `test_shard_runner.py` don't cover. No production code changes; this is the regression guard that catches "operator pipeline broke even though each subcommand's unit tests pass."
+
+### Added
+
+- **`test_sharded_smoke_pipeline.py`** — 11 tests in 3 classes covering the full operator pipeline (`shard → work → verify → aggregate → status`) end-to-end:
+  - **`TestCanonicalPipeline`** (5): `shard` writes state.json + per-shard manifests; `work` marks every shard done with cache_path + cache_sha256; `verify` passes on clean caches; `aggregate` concatenates ALL records (`n_records == source rows`); `status --json` reports 3-of-3 done.
+  - **`TestPipelineFailureModes`** (4): post-work cache tampering caught by both `verify` (rc=4) AND `aggregate` (rc=2, integrity refusal); `status` before `work` shows all pending (not garbage); `aggregate` before `work` refuses cleanly; `shard` refuses to overwrite without `--force`.
+  - **`TestStateCacheContract`** (2): state.json's per-shard `cache_sha256` matches the on-disk cache's actual SHA-256 (the load-bearing invariant both `verify` and `aggregate`'s integrity check depend on); `aggregate`'s `n_records` equals the sum of per-shard `n_entries` in state.json (catches silent record drops mid-merge).
+
+### Notes
+
+- Uses the same stub-scorer pattern as `test_shard_runner.py` (deterministic synthetic records via `hash(text_id)`). No real corpus or scoring backend involved.
+- Catches integration-level regressions the per-subcommand tests miss: refactors that silently break the inter-subcommand contract (state.json fields, cache SHA path matching, aggregate's n_records math).
+- This file complements rather than replaces `test_shard_runner.py`. Per-subcommand tests stay where they are; the smoke pipeline pins the cross-subcommand sequence specifically.
+- **Version-bump note**: rebased from declared 1.44.1 → 1.47.1 because PRs #21 / #22 / #24 merged ahead at 1.45.0 / 1.46.0 / 1.47.0. PATCH-tier bump preserved since this is a test-only change.
+
 ## [1.47.0] - 2026-05-14
 
 **Sharded calibration v1.44.1.A — concurrent workers with atomic claim coordination.** The first of three v1.44.1 phases per `internal/SPEC_sharded_calibration.md` §7.2. Adds `--workers N` to `shard_runner work`, multi-worker coordination via atomic per-shard claim files, and a state-update lock that serializes concurrent state.json read-modify-writes. Multi-worker sessions cut wall-clock for RAID-scale Tier 1 calibration from "single-threaded multi-day" to "N-worker proportional," with cleaner crash recovery than the v1.44.0 single-worker path.
