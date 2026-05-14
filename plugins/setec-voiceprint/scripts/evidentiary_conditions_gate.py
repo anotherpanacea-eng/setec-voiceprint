@@ -160,13 +160,22 @@ def _read_baseline_size(
     Returns the *maximum* count across audits — the best signal
     of how rich the user's actual baseline is.
     """
+    # Reviewer P2 (2026-05-14 retroactive R6 audit): every read of
+    # baseline metadata MUST honor `available is False`. An audit
+    # that failed (dependency missing, input too short, scoring
+    # error) can still carry a baseline block from a previous
+    # successful run, or from a partial output that the framework
+    # wrote before failing. Pre-fix, the gate trusted that
+    # baseline metadata as evidence of a real baseline and
+    # promoted posture to research_grade_validation against an
+    # audit that produced no actual evidence.
     candidates: list[int] = []
-    if variance:
+    if variance and variance.get("available") is not False:
         baseline = variance.get("baseline") or {}
         n = baseline.get("n_files")
         if isinstance(n, int):
             candidates.append(n)
-    if voice_distance:
+    if voice_distance and voice_distance.get("available") is not False:
         bs = voice_distance.get("baseline_summary") or {}
         n = bs.get("n_files")
         if isinstance(n, int):
@@ -176,6 +185,8 @@ def _read_baseline_size(
         function_grammar,
     ):
         if not audit:
+            continue
+        if audit.get("available") is False:
             continue
         block = audit.get("baseline_block") or {}
         n = block.get("n_files")
@@ -187,7 +198,13 @@ def _read_baseline_size(
 def _read_register_match_strength(
     voice_distance: dict[str, Any] | None,
 ) -> str | None:
+    # Reviewer P2 (2026-05-14 retroactive R6 audit): refuse to
+    # read register-match metadata from an unavailable
+    # voice_distance payload. A failed voice_distance could carry
+    # a stale register_match block from a previous run.
     if not voice_distance:
+        return None
+    if voice_distance.get("available") is False:
         return None
     rmatch = voice_distance.get("register_match") or {}
     match = rmatch.get("match") or {}
@@ -197,7 +214,12 @@ def _read_register_match_strength(
 def _read_strip_ratio(
     variance: dict[str, Any] | None,
 ) -> float | None:
+    # Reviewer P2 (2026-05-14 retroactive R6 audit): same fix
+    # shape as _read_register_match_strength. An unavailable
+    # variance payload's preprocessing block may be stale.
     if not variance:
+        return None
+    if variance.get("available") is False:
         return None
     prep = variance.get("preprocessing") or {}
     if isinstance(prep, dict):
@@ -245,15 +267,36 @@ def _is_usable_paragraph(audit: dict[str, Any] | None) -> bool:
 
 
 def _is_usable_variance(audit: dict[str, Any] | None) -> bool:
-    """variance_audit emits a `compression` block at top level."""
+    """variance_audit emits a `compression` block at top level.
+
+    Reviewer P2 (2026-05-14 retroactive R6 audit): a payload
+    marked ``available: False`` could still carry a ``compression``
+    block from a partial run or a stale snapshot. The structural
+    check alone counted it as a usable surface and the gate
+    promoted posture to research_grade against an audit that
+    produced no actual evidence. Mirror the
+    ``_is_usable_paragraph`` shape and refuse explicitly-
+    unavailable payloads.
+    """
     if not isinstance(audit, dict):
+        return False
+    if audit.get("available") is False:
         return False
     return isinstance(audit.get("compression"), dict)
 
 
 def _is_usable_voice_distance(audit: dict[str, Any] | None) -> bool:
-    """voice_distance emits `overall` or `families` at top level."""
+    """voice_distance emits `overall` or `families` at top level.
+
+    Reviewer P2 (2026-05-14 retroactive R6 audit): same fix shape
+    as ``_is_usable_variance``. An unavailable voice_distance
+    payload (e.g., baseline missing, embedding load failed) can
+    still have stale ``overall`` / ``families`` blocks from a
+    previous run; refuse them explicitly via the available flag.
+    """
     if not isinstance(audit, dict):
+        return False
+    if audit.get("available") is False:
         return False
     return (
         isinstance(audit.get("overall"), dict)
@@ -262,15 +305,29 @@ def _is_usable_voice_distance(audit: dict[str, Any] | None) -> bool:
 
 
 def _is_usable_confounder(audit: dict[str, Any] | None) -> bool:
-    """confounder_audit emits `ranked_confounders`."""
+    """confounder_audit emits `ranked_confounders`.
+
+    Reviewer P2 (2026-05-14 retroactive R6 audit): parity with
+    the other ``_is_usable_*`` helpers — refuse explicitly-
+    unavailable payloads even if they carry a structural
+    ``ranked_confounders`` field (e.g., from a partial-run
+    output written before the audit reported its failure).
+    """
     if not isinstance(audit, dict):
+        return False
+    if audit.get("available") is False:
         return False
     return isinstance(audit.get("ranked_confounders"), list)
 
 
 def _is_usable_gi(audit: dict[str, Any] | None) -> bool:
-    """general_imposters emits a `decision` field."""
+    """general_imposters emits a `decision` field.
+
+    Reviewer P2 (2026-05-14 retroactive R6 audit): same fix shape.
+    """
     if not isinstance(audit, dict):
+        return False
+    if audit.get("available") is False:
         return False
     return audit.get("decision") in {
         "consistent_with_candidate",

@@ -6,6 +6,28 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.49.3] - 2026-05-14
+
+**Retroactive P2 fix — `evidentiary_conditions_gate` honors `available` flag in usability checks + metadata reads.** Reviewer P2 from the retroactive audit of R6 (commit 7eaa1ef — evidentiary gate + controls audit). `_is_usable_variance` and `_is_usable_voice_distance` checked structural keys (`compression`, `overall`, `families`) but did NOT honor `available: False`. An unavailable payload can still carry these blocks from a stale snapshot or partial run, and the gate counted them as usable surfaces. Reviewer reproduced `research_grade_validation` from a variance payload marked unavailable plus a confounder, because `_read_baseline_size` pulled `n_files` without checking availability AND the variance surface was counted via the structural check alone.
+
+### Fixed
+
+- `_is_usable_variance` and `_is_usable_voice_distance` now refuse payloads with `available: False`, mirroring the existing `_is_usable_paragraph` shape. `_is_usable_confounder` and `_is_usable_gi` get the same fix for parity — all four usability helpers now share consistent semantics.
+- `_read_baseline_size` skips payloads with `available: False` for the variance / voice_distance reads AND for the per-surface paragraph / discourse / agency / punctuation / stance / function_grammar reads. Pre-fix, an unavailable payload's stale `baseline.n_files` contributed to the baseline-size indicator.
+- `_read_register_match_strength` and `_read_strip_ratio` also honor the available flag — pre-fix they pulled from possibly-stale `register_match` / `preprocessing` blocks on unavailable payloads.
+
+### Tests
+
+- `+18 new` across four classes:
+  - `TestUnavailablePayloadsAreRefused` (7): each usability helper refuses available=False; backwards compat for missing `available` key preserved.
+  - `TestBaselineSizeIgnoresUnavailable` (6): each baseline-read source (variance, voice_distance, paragraph) skips unavailable payloads; max-of-multiple sees only the available payloads; missing-`available`-key backwards compat preserved.
+  - `TestReadHelpersIgnoreUnavailable` (4): register-match-strength + strip-ratio both ignore unavailable payloads.
+  - `TestReviewerReproducerScenario` (1): end-to-end reproducer of the reviewer's exact scenario (unavailable variance + confounder) — posture is NOT promoted to `research_grade_validation` post-fix.
+
+### Notes
+
+- **Version-bump note**: rebased from declared 1.44.1 → 1.49.3 because Waves 1 + 2 + PRs #33 / #34 merged ahead at 1.45.0 – 1.49.2. PATCH-tier bump preserved since this is a `fix:` change.
+
 ## [1.49.2] - 2026-05-14
 
 **Retroactive P2 fix — `confounder_audit` honors `available` flag + density-key presence.** Reviewer P2 from the retroactive audit of R3 (commit 489e1b7 — confounder_audit + Layer D). `extract_observations()` treated `if audit:` as "input present" and walked into `.get(key, 0.0)` calls for failed audits. A discourse audit with `available: False` silently emitted `discourse_marker_density=low`. An unavailable agency audit silently emitted four "low" observations (nominalization, agentless_passive, generic_institutional, concrete_detail), altering the ranked confounders without any actual evidence.
