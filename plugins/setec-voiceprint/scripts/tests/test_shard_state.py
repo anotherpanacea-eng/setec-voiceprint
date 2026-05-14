@@ -257,6 +257,174 @@ def test_status_summary():
     assert summ["fraction_done"] == pytest.approx(1.0 / 3)
 
 
+# --------------- Atomic claim files (v1.44.1) -----------------
+
+
+def test_try_claim_shard_atomically_first_caller_wins(tmp_path: Path):
+    """The kernel's O_CREAT | O_EXCL guarantee: when two callers
+    race to create the same claim file, exactly one wins."""
+    claim_path = tmp_path / ".claim"
+    assert ss.try_claim_shard_atomically(claim_path, host="hostA", pid=1) is True
+    # Second attempt sees the file already exists.
+    assert ss.try_claim_shard_atomically(claim_path, host="hostB", pid=2) is False
+    # File content reflects the first winner.
+    content = json.loads(claim_path.read_text(encoding="utf-8"))
+    assert content["host"] == "hostA"
+    assert content["pid"] == 1
+    assert "claimed_at" in content
+
+
+def test_try_claim_shard_atomically_after_release_succeeds(tmp_path: Path):
+    """Once a claim is released, another caller can re-claim. This
+    is the path the resume / re-run case relies on."""
+    claim_path = tmp_path / ".claim"
+    assert ss.try_claim_shard_atomically(claim_path, host="hostA", pid=1) is True
+    ss.release_claim(claim_path)
+    assert ss.try_claim_shard_atomically(claim_path, host="hostB", pid=2) is True
+    content = json.loads(claim_path.read_text(encoding="utf-8"))
+    assert content["host"] == "hostB"
+
+
+def test_release_claim_is_idempotent(tmp_path: Path):
+    """Releasing a claim that's already gone should not raise.
+    Workers call release on every shard completion regardless of
+    whether the claim file still exists (e.g., after sweep-stale
+    intervened)."""
+    claim_path = tmp_path / ".claim"
+    # Release a non-existent claim — no error.
+    ss.release_claim(claim_path)
+    # Create then release twice in a row — second release no-ops.
+    ss.try_claim_shard_atomically(claim_path)
+    ss.release_claim(claim_path)
+    ss.release_claim(claim_path)
+    assert not claim_path.exists()
+
+
+def test_read_claim_file_returns_metadata(tmp_path: Path):
+    claim_path = tmp_path / ".claim"
+    ss.try_claim_shard_atomically(claim_path, host="some-host", pid=12345)
+    out = ss.read_claim_file(claim_path)
+    assert out is not None
+    assert out["host"] == "some-host"
+    assert out["pid"] == 12345
+
+
+def test_read_claim_file_returns_none_when_missing(tmp_path: Path):
+    out = ss.read_claim_file(tmp_path / ".claim")
+    assert out is None
+
+
+def test_read_claim_file_returns_none_when_malformed(tmp_path: Path):
+    """Truncated or corrupted claim files (e.g., from a worker crash
+    mid-write) should be treated as absent rather than crashing the
+    caller. ``sweep-stale`` will handle the cleanup in v1.44.1.B."""
+    claim_path = tmp_path / ".claim"
+    claim_path.write_text("{not valid json")
+    assert ss.read_claim_file(claim_path) is None
+
+
+def test_try_claim_shard_atomically_multiprocess_race(tmp_path: Path):
+    """Spawn N subprocesses that race to claim the same shard.
+    Exactly one should win; the rest see FileExistsError and
+    return False. This is the load-bearing test for v1.44.1's
+    multi-worker correctness — without it, two workers could end
+    up scoring the same shard and producing redundant cache files.
+    """
+    import multiprocessing as mp
+
+    claim_path = tmp_path / ".claim"
+
+    def _race_worker(idx, q):  # pragma: no cover — runs in subprocess
+        won = ss.try_claim_shard_atomically(
+            claim_path, host=f"host-{idx}", pid=10000 + idx,
+        )
+        q.put((idx, won))
+
+    ctx = mp.get_context("fork")
+    q = ctx.Queue()
+    n = 8
+    procs = [ctx.Process(target=_race_worker, args=(i, q)) for i in range(n)]
+    for p in procs:
+        p.start()
+    for p in procs:
+        p.join(timeout=10)
+    results = []
+    while not q.empty():
+        results.append(q.get())
+    won = [idx for idx, w in results if w]
+    lost = [idx for idx, w in results if not w]
+    assert len(won) == 1, (
+        f"Expected exactly one winner; got {len(won)}: {won}"
+    )
+    assert len(lost) == n - 1
+
+
+# --------------- state_update_lock (v1.44.1) ------------------
+
+
+def test_state_update_lock_serializes_concurrent_writers(tmp_path: Path):
+    """When multiple workers update state.json concurrently, the
+    lock serializes them. Without the lock, two workers can read
+    the same state, modify different shards, and overwrite each
+    other's writes (the last writer wins, the other shard's update
+    is lost).
+
+    This test starts with both shards pending, runs two workers
+    concurrently — each claiming its own shard — and asserts that
+    both claims are visible in the final state.
+    """
+    import multiprocessing as mp
+
+    # Set up a state with two pending shards.
+    state = ss.build_initial_state(
+        run_id="lock_test",
+        source_manifest_path=Path("/tmp/src.jsonl"),
+        source_manifest_sha256="abc",
+        shard_count=2,
+        shard_size_target=100,
+        stratify_by=["register"],
+        shuffle_seed=42,
+        fpr_target=0.01,
+        tier1=True, tier2=False, tier3=False,
+        embedding_model=None, embedding_revision=None,
+        shard_summaries=[
+            {"n_entries": 100, "stratum_counts": {}},
+            {"n_entries": 100, "stratum_counts": {}},
+        ],
+    )
+    sp = tmp_path / "state.json"
+    ss.write_state(sp, state)
+
+    def _lock_worker(shard_id):  # pragma: no cover — subprocess
+        # Hold the lock, read, modify, write. Sleep briefly inside
+        # the lock to make the race-without-lock scenario reliably
+        # surface — without serialization, both workers would race
+        # in the read-modify-write window and one's update would
+        # be lost.
+        with ss.state_update_lock(sp):
+            local_state = ss.read_state(sp)
+            local_state = ss.claim_shard(
+                local_state, shard_id, host=f"host-{shard_id}", pid=1,
+            )
+            import time
+            time.sleep(0.05)
+            ss.write_state(sp, local_state)
+
+    ctx = mp.get_context("fork")
+    p_a = ctx.Process(target=_lock_worker, args=("000",))
+    p_b = ctx.Process(target=_lock_worker, args=("001",))
+    p_a.start()
+    p_b.start()
+    p_a.join(timeout=10)
+    p_b.join(timeout=10)
+    # Both workers' claims must be visible in the final state.
+    final = ss.read_state(sp)
+    assert final["shards"]["000"]["state"] == "claimed"
+    assert final["shards"]["001"]["state"] == "claimed"
+    assert final["shards"]["000"]["claimed_by_host"] == "host-000"
+    assert final["shards"]["001"]["claimed_by_host"] == "host-001"
+
+
 # --------------- Atomicity simulation ---------------------------
 
 

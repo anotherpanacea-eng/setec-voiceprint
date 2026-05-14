@@ -6,6 +6,35 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.47.0] - 2026-05-14
+
+**Sharded calibration v1.44.1.A — concurrent workers with atomic claim coordination.** The first of three v1.44.1 phases per `internal/SPEC_sharded_calibration.md` §7.2. Adds `--workers N` to `shard_runner work`, multi-worker coordination via atomic per-shard claim files, and a state-update lock that serializes concurrent state.json read-modify-writes. Multi-worker sessions cut wall-clock for RAID-scale Tier 1 calibration from "single-threaded multi-day" to "N-worker proportional," with cleaner crash recovery than the v1.44.0 single-worker path.
+
+### Added
+
+- **`shard_state.try_claim_shard_atomically(claim_path, host, pid)`** — creates `shards/<id>/.claim` via `O_CREAT | O_EXCL | O_WRONLY`. The kernel guarantees exactly one caller wins when multiple workers race for the same shard. File content is JSON with the winning worker's host, pid, and timestamp so `sweep-stale` (v1.44.1.B) can later identify dead-host claims.
+- **`shard_state.release_claim(claim_path)`** — idempotent deletion of a claim file. Workers call this on shard completion; `sweep-stale` calls it on dead-host claims.
+- **`shard_state.read_claim_file(claim_path)`** — returns the claim metadata as a dict, or `None` when missing / malformed. Used by `sweep-stale` and `status` for surfacing worker ownership.
+- **`shard_state.state_update_lock(state_path)`** — context manager that wraps the state.json read-modify-write window in `fcntl.flock(LOCK_EX)`. Workers serialize on the lock; the actual write still goes through `write_state`'s atomic-rename pattern. POSIX-only (the calibration host is WSL2 Linux); Windows-native is a no-op fallback.
+- **`shard_runner.shard_claim_path(base, run_id, shard_id)`** — path helper for the per-shard claim file.
+- **`shard_runner` `--workers N` flag on the `work` subcommand**. Default 1 (single-worker, same as v1.44.0). N > 1 spawns N subprocesses (via `multiprocessing` with the `fork` start method on POSIX) that share the run-directory but coordinate atomically.
+- **`_select_next_shard(state, base, run_id)` helper** — picks the next shard candidate, preferring resumable shards owned by this host. Filters out pending shards with existing claim files so two workers racing for the same shard cannot land in an infinite retry loop.
+- **9 new tests in `test_shard_state.py`** covering atomic claim contract (first wins, after-release succeeds, idempotent release, multiprocess race) plus the state-update lock serialization proof (two workers update state.json concurrently; both claims visible in the final state).
+- **4 new tests in `test_shard_runner.py`** covering single-worker uses the atomic-claim path (claim files cleaned up on completion), pre-claimed-shard skip semantics (won't double-claim), two-worker integration (all shards completed cleanly, no leftover claim files, no duplicate scoring), and the workers-default-to-one backwards-compat path.
+
+### Changed
+
+- **`cmd_work` restructured** into a single-worker entry (`_run_single_worker`) and a multi-worker spawner (`_run_multi_worker`). Single-worker mode is unchanged from v1.44.0 in observable behavior; the implementation now goes through the atomic-claim path even with `--workers 1`, so the same coordination guarantees apply if a user manually runs multiple `shard_runner work` invocations.
+- **`_process_shard` state.json updates** (mark_failed, mark_done) now go through `state_update_lock`. Single-worker mode is unaffected; multi-worker mode serializes the read-modify-write window cleanly.
+
+### Notes
+
+- **No mid-shard SIGTERM checkpointing yet.** v1.44.0's per-shard SIGTERM granularity carries forward. Mid-shard interrupt (the scorer threads the SIGTERM event into its loop, flushes partial cache, transitions to `claimed_pending_resume`) is scoped to v1.44.1.B per the spec.
+- **No `--time-window`, no `pause-all` / `terminate-all` / `kill-all` / `sweep-stale`, no launchd plist.** Those ship in v1.44.1.B and v1.44.1.C respectively.
+- **Stale-claim handling**: if a worker crashes between creating a claim file and updating state.json, the affected shard appears pending in state.json but is unclaimable (the .claim file persists). This is the case `sweep-stale` (v1.44.1.B) will handle. For v1.44.1.A, workarounds are manual: delete the offending `.claim` file by hand, or wait for `sweep-stale` to ship.
+- **POSIX-only locking.** `state_update_lock` uses `fcntl.flock` on POSIX (which the calibration host runs as WSL2 Linux per `SPEC_embedding_model_choice.md` §6.3). Windows-native is a no-op fallback; the per-shard atomic claim files still coordinate correctly there, just without the state.json read-modify-write serialization. SETEC's supported calibration host is POSIX.
+- **Version-bump note**: rebased from declared 1.45.0 → 1.47.0 because PRs #21 (harrier) and #22 (B.2) merged first and took the 1.45.0 / 1.46.0 slots.
+
 ## [1.46.0] - 2026-05-14
 
 **Authorship-state taxonomy refinement (phase B.2).** Implements the validator + manifest-schema piece of the `internal/SPEC_authorship_states.md` plan: adds `ai_generated_from_outline` to the `ai_status` vocabulary and a soft consistency check on `ai_status: mixed`. Schema-additive (no existing manifests break); backwards-compat (the bare `ai_generated` value remains the catch-all when seed degree is unknown).

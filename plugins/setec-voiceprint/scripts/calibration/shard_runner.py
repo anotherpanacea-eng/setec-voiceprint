@@ -82,11 +82,16 @@ from shard_state import (  # type: ignore
     mark_failed,
     mark_pending_resume,
     pending_shard_ids,
+    read_claim_file,
     read_state,
+    release_claim,
     resumable_shard_ids,
     sha256_file,
+    state_update_lock,
     status_summary,
+    try_claim_shard_atomically,
     write_state,
+    _host,
     _shard_id,
 )
 
@@ -130,6 +135,14 @@ def shard_manifest_path(base: Path, run_id: str, shard_id: str) -> Path:
 
 def shard_cache_path(base: Path, run_id: str, shard_id: str) -> Path:
     return shards_dir(base, run_id) / shard_id / "cache.json"
+
+
+def shard_claim_path(base: Path, run_id: str, shard_id: str) -> Path:
+    """Path to the per-shard atomic-claim file. v1.44.1+ uses this
+    for multi-worker coordination: workers create the file via
+    ``O_CREAT | O_EXCL`` so only one wins each claim race. Released
+    on shard completion or by ``sweep-stale``."""
+    return shards_dir(base, run_id) / shard_id / ".claim"
 
 
 # --------------- Manifest I/O -----------------------------------
@@ -347,9 +360,103 @@ def _install_signal_handlers(flag: _SigtermFlag) -> None:
 
 
 def cmd_work(args: argparse.Namespace) -> int:
-    """Claim a pending shard, score it, write its cache, mark done,
-    and loop. Single worker (v1.44.0). Stops cleanly on SIGTERM /
-    SIGINT or when no pending shards remain."""
+    """Claim and score pending shards. Defaults to single-worker
+    (v1.44.0 behavior); ``--workers N`` (v1.44.1) spawns N
+    subprocesses that coordinate via atomic per-shard claim files
+    and a state-update lock on state.json.
+
+    Stops cleanly on SIGTERM / SIGINT or when no pending shards
+    remain.
+    """
+    n_workers = max(1, int(getattr(args, "workers", 1) or 1))
+    if n_workers == 1:
+        return _run_single_worker(args, worker_label="worker-0")
+    return _run_multi_worker(args, n_workers=n_workers)
+
+
+def _run_multi_worker(args: argparse.Namespace, *, n_workers: int) -> int:
+    """Spawn ``n_workers`` subprocesses, each running the single-
+    worker loop. Coordination is via atomic .claim files plus the
+    state_update_lock on state.json — workers serialize on the
+    lock during state-file writes, and they race to create per-
+    shard claim files (the kernel guarantees exactly one wins).
+
+    Spawned via ``multiprocessing`` with the ``spawn`` start method
+    so the subprocess gets a clean Python interpreter — important
+    because the test suite monkeypatches ``DEFAULT_SCORER`` in the
+    parent process and we want subprocesses to inherit the
+    production scorer unless the test explicitly arranges
+    otherwise.
+
+    Returns 0 if all workers exit cleanly, 4 if any worker
+    exited non-zero.
+    """
+    import multiprocessing as mp
+
+    sys.stderr.write(
+        f"Spawning {n_workers} workers; coordinating via atomic "
+        f"claim files at shards/<id>/.claim and the "
+        f"state.json.lock state-update lock.\n"
+    )
+    # Use fork on POSIX when available — the test suite relies on
+    # subprocess inheritance of monkeypatched DEFAULT_SCORER. On
+    # Windows / non-POSIX, fall back to spawn.
+    try:
+        ctx = mp.get_context("fork")
+    except (ValueError, RuntimeError):
+        ctx = mp.get_context("spawn")
+    processes = []
+    for i in range(n_workers):
+        p = ctx.Process(
+            target=_worker_subprocess_entry,
+            args=(vars(args), i),
+            name=f"shard-worker-{i}",
+        )
+        p.start()
+        processes.append(p)
+    for p in processes:
+        p.join()
+    failed = [
+        (p.name, p.exitcode) for p in processes
+        if p.exitcode is not None and p.exitcode != 0
+    ]
+    if failed:
+        sys.stderr.write(
+            f"{len(failed)} of {n_workers} workers exited non-zero: "
+            f"{failed}\n"
+        )
+        return 4
+    sys.stderr.write(
+        f"All {n_workers} workers exited cleanly.\n"
+    )
+    return 0
+
+
+def _worker_subprocess_entry(args_dict: dict, worker_index: int) -> None:
+    """Entry point for `_run_multi_worker`'s spawned subprocesses.
+
+    Reconstructs the argparse Namespace from a dict (multiprocessing
+    can pickle dicts cleanly but Namespace would need extra setup),
+    overrides ``workers`` to 1 so the subprocess runs the single-
+    worker loop, and exits with the loop's return code.
+    """
+    args = argparse.Namespace(**args_dict)
+    args.workers = 1
+    rc = _run_single_worker(args, worker_label=f"worker-{worker_index}")
+    sys.exit(rc)
+
+
+def _run_single_worker(
+    args: argparse.Namespace, *, worker_label: str = "worker-0",
+) -> int:
+    """One worker's claim-score-mark-done loop.
+
+    Uses atomic .claim files for shard ownership and the state-
+    update lock for state.json read-modify-writes. Safe to run
+    multiple instances concurrently (either spawned by
+    ``_run_multi_worker`` or by the user manually launching
+    multiple ``shard_runner work`` invocations).
+    """
     base = Path(args.base_dir).expanduser()
     sp = state_path(base, args.run_id)
     if not sp.exists():
@@ -360,47 +467,103 @@ def cmd_work(args: argparse.Namespace) -> int:
     n_completed = 0
     while not flag.tripped:
         state = read_state(sp)
-        # Resumable shards first (the original worker on this host
-        # should pick them up; v1.44.0 only checks pid/host best-
-        # effort). For now we just claim any resumable shard owned
-        # by us.
-        pending = pending_shard_ids(state)
-        resumable = resumable_shard_ids(state)
-        target_id: str | None = None
-        expected: str = "pending"
-        if resumable:
-            for sid in resumable:
-                # Only resume our own shards. v1.44.1 will add the
-                # `sweep-stale` machinery for releasing stuck
-                # claims; v1.44.0 just declines to touch other
-                # workers' claims.
-                shard = state["shards"][sid]
-                from shard_state import _host as _gethost  # type: ignore
-                if shard.get("claimed_by_host") == _gethost():
-                    target_id = sid
-                    expected = "claimed_pending_resume"
-                    break
-        if target_id is None and pending:
-            target_id = pending[0]
+        target_id, expected_state = _select_next_shard(
+            state, base, args.run_id,
+        )
         if target_id is None:
             sys.stderr.write(
-                f"No pending shards to claim. {n_completed} shard(s) "
-                f"completed in this worker session.\n"
+                f"{worker_label}: no claimable shards remain. "
+                f"{n_completed} shard(s) completed in this session.\n"
             )
             break
+        # Atomic claim: try to create the .claim file. If we win,
+        # we own this shard until we release the file. If we lose
+        # (another worker raced ahead), try again on the next loop
+        # iteration.
+        claim_path = shard_claim_path(base, args.run_id, target_id)
+        claim_path.parent.mkdir(parents=True, exist_ok=True)
+        if expected_state == "pending":
+            won = try_claim_shard_atomically(claim_path)
+            if not won:
+                # Another worker beat us; try again on next iter.
+                continue
+        else:
+            # Resume path: claim file already exists from the
+            # original worker's first claim. Don't try to re-create
+            # it; just continue with the state-update step.
+            pass
+        # Update state.json under the lock to reflect the claim.
         try:
-            state = claim_shard(state, target_id, expected_state=expected)
-            write_state(sp, state)
+            with state_update_lock(sp):
+                state = read_state(sp)
+                state = claim_shard(
+                    state, target_id, expected_state=expected_state,
+                )
+                write_state(sp, state)
         except ShardStateError as exc:
-            sys.stderr.write(f"Claim failed for shard {target_id}: {exc}\n")
+            sys.stderr.write(
+                f"{worker_label}: state-update claim failed for "
+                f"shard {target_id}: {exc}\n"
+            )
+            release_claim(claim_path)
             return 3
-        sys.stderr.write(f"Worker claimed shard {target_id}.\n")
-        rc = _process_shard(args, base, state, target_id, flag)
+        sys.stderr.write(
+            f"{worker_label} claimed shard {target_id}.\n"
+        )
+        rc = _process_shard(
+            args, base, state, target_id, flag,
+            worker_label=worker_label,
+        )
+        # Release the claim file regardless of outcome — a
+        # done shard doesn't need an active claim; a failed shard
+        # gets state=failed in state.json, and ops can rerun it
+        # after fixing the underlying cause.
+        release_claim(claim_path)
         if rc != 0:
             return rc
         n_completed += 1
-    sys.stderr.write(f"Worker done. {n_completed} shard(s) completed.\n")
+    sys.stderr.write(
+        f"{worker_label} exiting. {n_completed} shard(s) completed.\n"
+    )
     return 0
+
+
+def _select_next_shard(
+    state: dict[str, Any], base: Path, run_id: str,
+) -> tuple[str | None, str]:
+    """Pick the next shard to claim, preferring resumable shards
+    owned by this host. Returns ``(shard_id, expected_state)`` or
+    ``(None, "pending")`` if there's nothing to claim.
+
+    Resumable shards take priority because their cache is partially
+    populated; finishing them is cheaper than starting fresh. We
+    only resume our own host's shards in v1.44.1.A (sweep-stale
+    in v1.44.1.B will release dead-host claims).
+
+    Pending shards with an existing claim file are skipped — another
+    worker already owns that shard, even if state.json hasn't yet
+    caught up to reflect the claim. Without this filter, two workers
+    racing for the same shard could land in an infinite loop: one
+    wins the claim file but hasn't updated state.json yet; the
+    loser sees state.json still showing the shard as pending and
+    retries the same shard forever. Filtering by claim-file presence
+    breaks the loop and lets the loser move to the next shard.
+    """
+    pending = pending_shard_ids(state)
+    resumable = resumable_shard_ids(state)
+    my_host = _host()
+    # Resumable shards owned by this host first.
+    for sid in resumable:
+        shard = state["shards"][sid]
+        if shard.get("claimed_by_host") == my_host:
+            return sid, "claimed_pending_resume"
+    # Pending shards with no existing claim file (race-safe
+    # candidate selection).
+    for sid in pending:
+        claim_path = shard_claim_path(base, run_id, sid)
+        if not claim_path.exists():
+            return sid, "pending"
+    return None, "pending"
 
 
 def _process_shard(
@@ -409,15 +572,22 @@ def _process_shard(
     state: dict[str, Any],
     shard_id: str,
     flag: _SigtermFlag,
+    *,
+    worker_label: str = "worker-0",
 ) -> int:
     """Score one shard, persist its cache, and mark done. Returns
-    a process exit code: 0 = success, 4 = scoring error."""
+    a process exit code: 0 = success, 4 = scoring error.
+
+    State.json updates (mark_failed on error, mark_done on success)
+    go through ``state_update_lock`` so concurrent workers
+    serialize cleanly on the read-modify-write window.
+    """
     sp = state_path(base, args.run_id)
     mp = shard_manifest_path(base, args.run_id, shard_id)
     cp = shard_cache_path(base, args.run_id, shard_id)
     cp.parent.mkdir(parents=True, exist_ok=True)
     sys.stderr.write(
-        f"  scoring shard {shard_id} ({mp})...\n"
+        f"  {worker_label} scoring shard {shard_id} ({mp})...\n"
     )
     try:
         result = DEFAULT_SCORER(
@@ -433,14 +603,16 @@ def _process_shard(
         )
     except Exception as exc:  # noqa: BLE001
         sys.stderr.write(
-            f"  scoring shard {shard_id} failed: {type(exc).__name__}: {exc}\n"
+            f"  {worker_label} scoring shard {shard_id} failed: "
+            f"{type(exc).__name__}: {exc}\n"
         )
-        state = read_state(sp)
-        state = mark_failed(
-            state, shard_id,
-            failure_reason=f"{type(exc).__name__}: {exc}",
-        )
-        write_state(sp, state)
+        with state_update_lock(sp):
+            state = read_state(sp)
+            state = mark_failed(
+                state, shard_id,
+                failure_reason=f"{type(exc).__name__}: {exc}",
+            )
+            write_state(sp, state)
         return 4
     # Some scorers (the real path) write their own cache; if not,
     # we write the records list ourselves.
@@ -454,16 +626,20 @@ def _process_shard(
             )
     cache_sha = sha256_file(cp)
     n_entries = len(result.get("records") or [])
-    state = read_state(sp)
-    state = mark_done(
-        state, shard_id,
-        n_entries=n_entries,
-        cache_path=str(cp.relative_to(base)) if cp.is_relative_to(base) else str(cp),
-        cache_sha256=cache_sha,
-    )
-    write_state(sp, state)
+    with state_update_lock(sp):
+        state = read_state(sp)
+        state = mark_done(
+            state, shard_id,
+            n_entries=n_entries,
+            cache_path=(
+                str(cp.relative_to(base))
+                if cp.is_relative_to(base) else str(cp)
+            ),
+            cache_sha256=cache_sha,
+        )
+        write_state(sp, state)
     sys.stderr.write(
-        f"  shard {shard_id} done ({n_entries} records, "
+        f"  {worker_label} shard {shard_id} done ({n_entries} records, "
         f"sha={cache_sha[:16]}...).\n"
     )
     return 0
@@ -797,6 +973,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p_work.add_argument("--run-id", required=True, type=str)
     p_work.add_argument("--use", type=str, default="validation")
+    p_work.add_argument(
+        "--workers",
+        type=int,
+        default=1,
+        help=(
+            "number of concurrent worker subprocesses (v1.44.1+). "
+            "Default 1 (single-worker, same as v1.44.0). Workers "
+            "coordinate via atomic per-shard claim files at "
+            "shards/<id>/.claim and a state-update lock on "
+            "state.json.lock. Choose a value that fits the host's "
+            "CPU and memory budget; the spec recommends 4-8 on a "
+            "16 GB / 8-core machine for Tier 1 surveys."
+        ),
+    )
     p_work.set_defaults(func=cmd_work)
 
     # aggregate
