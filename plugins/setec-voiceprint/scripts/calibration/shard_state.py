@@ -564,13 +564,83 @@ def read_claim_file(claim_path: Path) -> dict[str, Any] | None:
     missing or malformed (the caller decides what to do — typically
     treat it as "no active claim"). Used by ``sweep-stale`` and by
     ``status`` to surface which worker holds each claim.
+
+    For callers that need to distinguish missing-from-malformed —
+    e.g., ``sweep-stale``, which should warn and release orphaned
+    malformed claim files after the stale threshold — use
+    ``claim_file_status()`` instead.
     """
     if not Path(claim_path).exists():
         return None
     try:
-        return json.loads(Path(claim_path).read_text(encoding="utf-8"))
+        parsed = json.loads(
+            Path(claim_path).read_text(encoding="utf-8"),
+        )
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+# Reviewer P2 (2026-05-14): claim_file_status sentinels. A crash
+# after ``O_CREAT|O_EXCL`` but before a complete json.dump() leaves
+# a zero-byte or truncated ``.claim`` file. The existing
+# ``read_claim_file()`` collapsed missing-and-malformed into
+# ``None``, which caused two failures in concert:
+#
+#   * ``_select_next_shard()`` filtered shards with an existing
+#     claim file, so the shard stayed unclaimable.
+#   * ``sweep-stale`` got ``None`` from ``read_claim_file()`` and
+#     skipped, so the malformed file never got released.
+#
+# Net effect: a malformed local claim could block a shard forever.
+# The fix preserves the missing-vs-malformed distinction at the
+# inspection layer; ``sweep-stale`` then warns and releases
+# malformed local claims after the stale threshold.
+
+CLAIM_STATUS_MISSING = "missing"
+CLAIM_STATUS_VALID = "valid"
+CLAIM_STATUS_MALFORMED = "malformed"
+
+
+def claim_file_status(claim_path: Path) -> str:
+    """Inspect a claim file without returning its contents.
+
+    Returns one of three sentinel strings:
+
+      * ``CLAIM_STATUS_MISSING`` — the file does not exist.
+      * ``CLAIM_STATUS_VALID`` — the file exists, parses as JSON,
+        and decodes to a dict (the shape ``try_claim_shard_atomically``
+        writes).
+      * ``CLAIM_STATUS_MALFORMED`` — the file exists but cannot be
+        read, is empty, fails JSON decode, or decodes to something
+        other than a dict (e.g., a list or a bare string from a
+        partial / corrupted write).
+
+    Callers route on the result: ``read_claim_file`` returns
+    ``None`` for missing OR malformed (preserving its existing
+    contract); ``sweep-stale`` uses ``claim_file_status`` directly
+    so it can warn + release malformed claims that exceed the
+    stale threshold (measured by file mtime, since
+    ``claimed_at`` may itself be unreadable in a truncated file).
+    """
+    path = Path(claim_path)
+    if not path.exists():
+        return CLAIM_STATUS_MISSING
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return CLAIM_STATUS_MALFORMED
+    if not text.strip():
+        return CLAIM_STATUS_MALFORMED
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return CLAIM_STATUS_MALFORMED
+    if not isinstance(parsed, dict):
+        return CLAIM_STATUS_MALFORMED
+    return CLAIM_STATUS_VALID
 
 
 def pid_alive(pid: int) -> bool:
@@ -668,6 +738,433 @@ def state_update_lock(state_path: Path):
             fcntl.flock(fd, fcntl.LOCK_UN)
     finally:
         os.close(fd)
+
+
+# --------------- Git sync layer (v1.44.2) ----------------------
+#
+# Multi-machine coordination uses git itself as the cross-host
+# coordination layer. When state.json lives inside a git working
+# tree (the operator has committed ``calibration_runs/<run_id>/``
+# to a repo with a remote), workers pull before reading and commit
+# + push after writing. Different shards by different machines
+# produce disjoint diffs and merge trivially via ``git pull
+# --rebase``. Same-shard concurrent claims (which the file-system
+# .claim primitive does NOT prevent cross-host) get caught at push
+# time as merge conflicts, and ``shard_runner resolve-conflict``
+# offers a structured 3-way merge for the JSON.
+#
+# Auto-detect: ``find_git_repo(path)`` walks up from ``path``
+# looking for ``.git``. When found, sync is active by default.
+# When not found, the helpers silently no-op so the v1.44.0 /
+# v1.44.1.x single-host paths are unaffected.
+#
+# Failure resilience (spec §4.3): pull / push errors are
+# non-fatal. The worker logs the error and continues with the
+# local state; the next successful sync brings everything back
+# into agreement. The cost of an occasional transient blip is
+# at most "this transition wasn't visible to the other host until
+# the next push," which is acceptable for a calibration run that
+# spans hours or days.
+
+
+import subprocess
+
+
+class SyncError(RuntimeError):
+    """Raised when git sync encounters an unrecoverable error
+    (unresolved merge conflict, missing remote, etc.). Transient
+    network errors do NOT raise this — the caller handles those
+    by logging and retrying on the next transition."""
+
+
+def find_git_repo(path: Path) -> Path | None:
+    """Walk up from ``path`` looking for a ``.git`` entry.
+
+    Returns the directory containing ``.git`` (the repo root), or
+    ``None`` if no git working tree is found within the path's
+    ancestors. Used by the sync helpers to decide whether
+    state.json is git-tracked.
+
+    Pure Python — no subprocess, so this is cheap enough to call
+    on every state-update transition without measurable overhead.
+    """
+    current = Path(path).resolve()
+    if current.is_file():
+        current = current.parent
+    # Walk up until we hit the filesystem root.
+    while current != current.parent:
+        if (current / ".git").exists():
+            return current
+        current = current.parent
+    # Check the root directory itself (rare but possible: /.git).
+    if (current / ".git").exists():
+        return current
+    return None
+
+
+def is_git_synced(state_path: Path) -> bool:
+    """Whether ``state_path`` lives inside a git working tree.
+
+    True means workers will attempt pull/commit/push around state
+    transitions; False means they treat state.json as a purely
+    local file. The auto-detect approach means operators don't
+    have to pass a flag to opt into sync — committing the
+    calibration_runs/ directory to a git repo IS the opt-in.
+    """
+    return find_git_repo(state_path) is not None
+
+
+def _git(
+    repo_root: Path,
+    args: list[str],
+    *,
+    timeout: float = 30.0,
+    check: bool = True,
+) -> subprocess.CompletedProcess:
+    """Invoke ``git -C <repo_root> <args>`` with sensible defaults.
+
+    Centralized so the test suite can monkeypatch one function
+    rather than dozens of subprocess calls. ``check=True`` raises
+    ``subprocess.CalledProcessError`` on non-zero exit, the same
+    error class operators see when they run git manually.
+    """
+    cmd = ["git", "-C", str(repo_root), *args]
+    return subprocess.run(
+        cmd,
+        check=check,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
+def pull_state(
+    state_path: Path,
+    *,
+    enabled: bool = True,
+    remote: str = "origin",
+    branch: str | None = None,
+) -> bool:
+    """Run ``git pull --rebase`` for the repo containing
+    ``state_path``.
+
+    Returns True if a pull was actually attempted (state was in a
+    git repo and ``enabled`` was True), False if the pull was
+    skipped (not in a repo, or operator passed ``--no-sync-state``).
+    Network errors raise ``SyncError`` so the caller can log and
+    continue — they are not fatal to the worker loop.
+
+    Why ``--rebase`` and not a merge? A rebase keeps the state-
+    transition history linear, which makes operator inspection
+    easier. The state.json edits done by individual workers are
+    semantically commutative (different shards), so the rebase
+    almost never produces a real conflict.
+    """
+    if not enabled:
+        return False
+    repo_root = find_git_repo(state_path)
+    if repo_root is None:
+        return False
+    args = ["pull", "--rebase", "--quiet", remote]
+    if branch:
+        args.append(branch)
+    try:
+        _git(repo_root, args)
+        return True
+    except subprocess.CalledProcessError as exc:
+        # Distinguish "real merge conflict on state.json" (caller
+        # should run resolve-conflict) from "transient network
+        # error" (caller can ignore and retry). Conflict markers
+        # in state.json show up after a failed rebase; the
+        # presence of CONFLICT in stderr is a strong signal.
+        if "CONFLICT" in (exc.stderr or "") or "conflict" in (exc.stderr or "").lower():
+            raise SyncError(
+                f"git pull --rebase produced a conflict in "
+                f"{state_path}; run `shard_runner resolve-conflict` "
+                f"to inspect and merge."
+            ) from exc
+        # Transient: network down, push race, etc. Not fatal —
+        # the caller logs and continues.
+        raise SyncError(
+            f"git pull failed for {state_path}: "
+            f"{exc.stderr or exc.stdout or exc}"
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        raise SyncError(
+            f"git pull timed out for {state_path} (network slow "
+            f"or remote unreachable)"
+        ) from exc
+
+
+def push_state(
+    state_path: Path,
+    *,
+    message: str,
+    enabled: bool = True,
+    remote: str = "origin",
+    branch: str | None = None,
+    retries: int = 3,
+) -> bool:
+    """Stage ``state_path``, commit with ``message``, and push.
+
+    Retries up to ``retries`` times on push race (another machine
+    pushed first); between retries, runs ``git pull --rebase`` to
+    bring in the other side's commit. On final failure, raises
+    ``SyncError`` so the caller can log and continue — the local
+    state is still consistent, and the next successful push will
+    catch the remote up.
+
+    Returns True if the push succeeded, False if there was nothing
+    to commit (state unchanged since the last commit). False is
+    informational; the caller treats it the same as success.
+    """
+    if not enabled:
+        return False
+    repo_root = find_git_repo(state_path)
+    if repo_root is None:
+        return False
+    # Reviewer P2 (2026-05-14): split commit-once from push-with-retry.
+    # The previous structure had `add` + `commit` + `push` all inside
+    # the retry loop, so when push failed with non-fast-forward, the
+    # exception handler did pull --rebase and `continue`d back to the
+    # top of the loop — which re-ran add+commit. The rebased local
+    # commit was already there, so `commit -m ...` exited rc=1
+    # ("nothing to commit, working tree clean"), the function
+    # returned False, and the local branch's transition commit
+    # never got pushed.
+    #
+    # Fix: commit happens once outside the retry loop. The retry
+    # loop is push-only. On non-fast-forward, the loop pulls + rebases
+    # + retries the push directly, without touching the staged
+    # commit.
+    _git(repo_root, ["add", str(state_path)])
+    # Reviewer P2 (2026-05-14): distinguish "nothing to commit"
+    # (benign no-op) from real commit failures (missing
+    # user.name/user.email, pre-commit hook rejection, index
+    # corruption, repo mid-rebase / mid-merge) BEFORE attempting
+    # the commit. The prior `if commit.returncode != 0 → return
+    # False` collapsed both cases into "informational success,"
+    # which silently left state transitions local-only on a
+    # multi-machine run when (e.g.) the git identity wasn't
+    # configured on the calibration host.
+    #
+    # Detection: ``git diff --cached --quiet`` exits 0 when the
+    # index is identical to HEAD (nothing staged), 1 when there
+    # are staged changes, ≥128 on git error. The 0 case is the
+    # only benign-no-op signal; everything else means we ought
+    # to attempt the commit and surface any failure.
+    diff_check = _git(
+        repo_root, ["diff", "--cached", "--quiet"], check=False,
+    )
+    if diff_check.returncode == 0:
+        # Index identical to HEAD — state.json unchanged since
+        # the last sync. Benign no-op; caller treats False the
+        # same as success.
+        return False
+    try:
+        _git(repo_root, ["commit", "-m", message])
+    except subprocess.CalledProcessError as exc:
+        raise SyncError(
+            f"git commit failed for {state_path}: "
+            f"{exc.stderr or exc.stdout or exc}. "
+            f"Common causes: missing user.name / user.email in "
+            f"git config (set via `git config user.name ...` + "
+            f"`git config user.email ...`), a pre-commit hook "
+            f"rejecting the change, the repo is mid-rebase or "
+            f"mid-merge, or the index is corrupted. Inspect "
+            f"with `git -C {repo_root} status` and resolve "
+            f"before retrying the worker."
+        ) from exc
+    push_args = ["push", "--quiet", remote]
+    if branch:
+        push_args.append(branch)
+    last_error: Exception | None = None
+    for attempt in range(max(1, retries)):
+        try:
+            _git(repo_root, push_args)
+            return True
+        except subprocess.CalledProcessError as exc:
+            last_error = exc
+            stderr = (exc.stderr or "").lower()
+            # Push race: rebase and retry the push (NOT the commit).
+            if (
+                attempt < retries - 1
+                and ("rejected" in stderr or "non-fast-forward" in stderr)
+            ):
+                try:
+                    _git(
+                        repo_root,
+                        ["pull", "--rebase", "--quiet", remote],
+                        check=True,
+                    )
+                except subprocess.CalledProcessError:
+                    # Rebase itself failed (real conflict). Bail.
+                    raise SyncError(
+                        f"git push race with a real conflict in "
+                        f"{state_path}; run `shard_runner "
+                        f"resolve-conflict`."
+                    ) from exc
+                continue
+            # Non-retryable or out of retries.
+            raise SyncError(
+                f"git push failed for {state_path}: "
+                f"{exc.stderr or exc.stdout or exc}"
+            ) from exc
+        except subprocess.TimeoutExpired as exc:
+            last_error = exc
+            if attempt < retries - 1:
+                continue
+            raise SyncError(
+                f"git push timed out for {state_path}"
+            ) from exc
+    # Exhausted retries without raising — shouldn't normally happen
+    # since the loop always raises or returns. Defensive fallback:
+    raise SyncError(
+        f"git push exhausted retries for {state_path}: {last_error}"
+    )
+
+
+# --------------- Structured 3-way merge for state.json ----------
+
+
+def _shard_state_rank(state_str: str | None) -> int:
+    """Order the shard-state strings by "how much work has been
+    done." Higher is more advanced.
+
+    pending(0) < claimed(1) < claimed_pending_resume(2) < done(3)
+
+    ``failed`` is intentionally OMITTED from the rank ladder and
+    handled out-of-band by :func:`merge_state_files` (it's terminal
+    unless the other side recorded ``done``). Callers that rely on
+    rank ordering should special-case ``failed`` first.
+
+    The rank for the unknown state is conservatively 0 (treated as
+    ``pending``) so a typo doesn't accidentally win a merge.
+    """
+    return {
+        "pending": 0,
+        "claimed": 1,
+        "claimed_pending_resume": 2,
+        "done": 3,
+    }.get(state_str or "pending", 0)
+
+
+def merge_state_files(
+    base: dict[str, Any],
+    ours: dict[str, Any],
+    theirs: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    """Three-way structured merge over two competing state.json
+    revisions.
+
+    Inputs:
+      * ``base``: the common ancestor (typically the state.json
+        from the merge base — what both sides started from).
+      * ``ours``: this host's local revision.
+      * ``theirs``: the remote revision (the other host's).
+
+    Returns ``(merged_state, unresolved_shard_ids)``:
+      * ``merged_state``: the auto-merged JSON dict.
+      * ``unresolved_shard_ids``: shard ids that both sides
+        modified in incompatible ways. These require manual
+        review per spec §4.6.
+
+    Merge policy (per shard):
+      * If only one side changed the shard relative to base: take
+        that side.
+      * If both changed it identically: take ours (arbitrary; the
+        merged result is the same).
+      * If both changed it differently:
+          - If ours' state rank >= theirs' state rank: take ours
+            (this host has progressed further).
+          - If theirs' state rank > ours' state rank: take theirs
+            (remote host has progressed further).
+          - If the ranks tie AND the host/pid differ: SAME-SHARD
+            CONCURRENT CLAIM. Report in unresolved_shard_ids;
+            keep ours in the merged output as a placeholder.
+
+    Top-level non-shard fields (run_id, shard_count, etc.) are
+    taken from ``ours`` because they should be identical anyway —
+    the run metadata is set at ``shard_runner shard`` time and
+    never changes during the run.
+    """
+    merged = dict(ours)  # start from ours; we'll overwrite shards
+    base_shards = base.get("shards", {})
+    ours_shards = ours.get("shards", {})
+    theirs_shards = theirs.get("shards", {})
+    merged_shards: dict[str, Any] = {}
+    unresolved: list[str] = []
+    all_sids = sorted(
+        set(base_shards) | set(ours_shards) | set(theirs_shards)
+    )
+    for sid in all_sids:
+        b = base_shards.get(sid)
+        o = ours_shards.get(sid)
+        t = theirs_shards.get(sid)
+        if o == t:
+            # Both sides agree (including both-equal-to-base).
+            merged_shards[sid] = o if o is not None else (b or {})
+            continue
+        if o == b:
+            # We didn't change it; theirs did.
+            merged_shards[sid] = t
+            continue
+        if t == b:
+            # They didn't change it; we did.
+            merged_shards[sid] = o
+            continue
+        # Both sides changed and the results differ.
+        #
+        # Special case: ``failed`` is terminal — the only state that
+        # overrides ``failed`` is ``done`` (the other host genuinely
+        # re-ran the shard and it succeeded). Any non-``done``
+        # competing state must yield to ``failed`` so a downstream
+        # sweep / re-claim / pull cannot silently resurrect a failed
+        # shard back to ``pending`` / ``claimed`` /
+        # ``claimed_pending_resume``. Codex PR #27 review P0.
+        o_state = (o or {}).get("state")
+        t_state = (t or {}).get("state")
+        if o_state == "failed" and t_state == "done":
+            merged_shards[sid] = t
+            continue
+        if t_state == "failed" and o_state == "done":
+            merged_shards[sid] = o
+            continue
+        if o_state == "failed" and t_state != "done":
+            merged_shards[sid] = o
+            continue
+        if t_state == "failed" and o_state != "done":
+            merged_shards[sid] = t
+            continue
+        # Neither side is failed (or both are; rare but symmetric).
+        # Use rank ordering to pick the more-advanced state.
+        o_rank = _shard_state_rank(o_state)
+        t_rank = _shard_state_rank(t_state)
+        if o_rank > t_rank:
+            merged_shards[sid] = o
+        elif t_rank > o_rank:
+            merged_shards[sid] = t
+        else:
+            # Tied rank. Same-shard concurrent claim is the canonical
+            # ambiguous case: both sides say "claimed" but by
+            # different hosts/pids. We mark it unresolved and keep
+            # ours as the placeholder (the caller decides what to
+            # do — typically write the merged file with conflict
+            # comments, alert the operator, and abort).
+            o_host = (o or {}).get("claimed_by_host")
+            t_host = (t or {}).get("claimed_by_host")
+            if o_host != t_host:
+                unresolved.append(sid)
+                merged_shards[sid] = o
+            else:
+                # Same host, same rank, different content. Probably
+                # a transient race between two pids on one machine
+                # — pick the more recent timestamp.
+                o_ts = (o or {}).get("claimed_at") or ""
+                t_ts = (t or {}).get("claimed_at") or ""
+                merged_shards[sid] = t if t_ts > o_ts else o
+    merged["shards"] = merged_shards
+    return merged, unresolved
 
 
 def status_summary(state: dict[str, Any]) -> dict[str, Any]:
