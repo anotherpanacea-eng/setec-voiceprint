@@ -6,6 +6,29 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.49.2] - 2026-05-14
+
+**Retroactive P2 fix — `confounder_audit` honors `available` flag + density-key presence.** Reviewer P2 from the retroactive audit of R3 (commit 489e1b7 — confounder_audit + Layer D). `extract_observations()` treated `if audit:` as "input present" and walked into `.get(key, 0.0)` calls for failed audits. A discourse audit with `available: False` silently emitted `discourse_marker_density=low`. An unavailable agency audit silently emitted four "low" observations (nominalization, agentless_passive, generic_institutional, concrete_detail), altering the ranked confounders without any actual evidence.
+
+### Fixed
+
+- New `_audit_is_usable(audit)` helper: returns True iff `audit` is not None AND `audit.get("available")` is not False. Missing `available` key is treated as True for backwards compat with older audit JSONs (R1-R6 era).
+- Every audit-input gate in `extract_observations` (variance, voice_distance, paragraph, discourse, aic, agency, idiolect) now uses `_audit_is_usable()` instead of the bare truth check.
+- Density-keyed observations in the discourse and agency blocks now require the specific per-1k key to be present AND numeric. Pre-fix, missing keys defaulted to 0.0 via `.get(..., 0.0)` and fired the low-band branch silently. Post-fix, missing keys produce no observation.
+
+### Tests
+
+- `+12 new` in `TestUnavailableAuditsAreIgnored` (7) and `TestDensityKeyPresenceRequired` (5):
+  - Each audit input emits no observations when `available: False`
+  - Missing `available` key is treated as available (backwards compat)
+  - Empty `densities_per_1k` emits nothing
+  - Partial densities emit only the present keys
+  - Non-numeric density values produce no observation
+
+### Notes
+
+- **Version-bump note**: rebased from declared 1.44.1 → 1.49.2 because Waves 1 + 2 + PR #33 merged ahead at 1.45.0 – 1.49.1. PATCH-tier bump preserved since this is a `fix:` change.
+
 ## [1.49.1] - 2026-05-14
 
 **Retroactive P2 fix — `embedding_backend` encode-time runtime-error wrapping.** Reviewer P2 from the retroactive audit of R12 semantic-trajectory (PR #16). `EmbeddingBackend.encode()` wrapped load failures in `EmbeddingBackendError` but NOT runtime failures from `model.encode()`. A bare `RuntimeError` / `IndexError` / `MemoryError` from sentence-transformers (context-window overflow, device OOM, tokenizer surprise) escaped, and `semantic_trajectory_audit.main()` only catches `EmbeddingBackendError` → CLI tracebacked instead of the documented clean-error path. Same shape as the surprisal-audit P2 fix from PR #30.
