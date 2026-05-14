@@ -6,6 +6,77 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.48.0] - 2026-05-14
+
+**Authorship-state taxonomy refinement — phase B.4: converter updates.** Wires the B.2 authorship-state vocabulary additions (`ai_generated_from_outline`, `mixed` + `composite_states`) into the EditLens and MAGE converters per `internal/SPEC_authorship_states.md` §7. Stacked on B.2 (PR #22). RAID is unchanged per SPEC §7.3.
+
+### Added
+
+- **`editlens_to_manifest.py`**: Pangram label `-1` (the "edited/mixed" class) now maps to `ai_status: mixed` with `notes.composite_states: ["ai_edited"]` instead of being silently dropped. All three built-in presets (`editlens_nonnative`, `editlens_test`, `editlens_human_detectors`) gain the `-1=mixed` entry in their `label_map`. New `--mixed-composite-states` flag (default `ai_edited`) lets the operator customize the sub-state list; passing `""` omits the field (useful for surfacing the B.2 validator soft warning during manual review). Backwards-compat: operators who prefer the old "drop -1" behavior pass `--label-map "0=pre_ai_human,1=ai_generated"` to keep those rows out of the manifest.
+- **`editlens_to_manifest.py` notes-as-dict**: notes are now written as a structured dict instead of a JSON-serialized string. Brings EditLens in line with MAGE's convention and lets the B.2 validator soft check actually walk into `notes.composite_states`. Consumers that previously called `json.loads(entry["notes"])` will now see a `TypeError` (the field is already a dict); a `isinstance(notes, str)` guard makes downstream code work with either form.
+- **`mage_to_manifest.py` outline-source routing**: `_ai_status_for_label(label, src, *, outline_sources)` returns `ai_generated_from_outline` when the row's `src` is in the operator-supplied outline-sources set (case-insensitive lookup). New `--outline-sources` CLI flag (comma-separated, default empty) lets the operator opt in. Empty default is honest about the framework's uncertainty about which MAGE subsets used documented outline-based generation — see SPEC §7.2.
+- **`mage_to_manifest.py` paraphrase detection**: rows whose `src` contains the tokens `paraphrase` or `dipper` (case-insensitive) are remapped from `ai_generated` to `ai_status: ai_edited` with `notes.attack: "dipper_paraphrase"` — capturing the operational reality that DIPPER paraphrase rewrites are AI-edited source text, not from-scratch generation. Default-on per SPEC §7.2 bullet 4; `--no-paraphrase-detection` opts out.
+- **18 new tests** across `test_mage_to_manifest.py` (+10) and the new `test_editlens_to_manifest.py` (+13). Coverage: outline-source routing happy-paths + case-insensitivity + non-outline default; paraphrase detection heuristic + end-to-end remap + opt-out; default outline-sources empty (no surprise behavior); backwards-compat for callers building Namespace without the new args; EditLens preset label-maps include `-1=mixed`; mixed-composite-states override + empty-override; validator round-trip clean (no `composite_states`-missing warning).
+
+### Changed
+
+- `mage_to_manifest.py`'s `_ai_status_for_label` signature gained the optional `src` and `outline_sources` keyword arguments. Backwards-compat: positional `label`-only calls still work; the additional params default to "no outline routing."
+- `editlens_to_manifest.py`'s `convert()` reads `args.mixed_composite_states` via the new flag; the flag's `None` default falls back to the preset's `mixed_composite_states` field if set, else the module-level `DEFAULT_MIXED_COMPOSITE_STATES = ("ai_edited",)`.
+
+### Notes
+
+- B.4 ships the converter side of the SPEC §10 phase plan. B.3 (audit-script claim-license routing) is a parallel follow-up that consumes the manifests B.4 produces.
+- No converter changes for RAID — RAID has no documented outline-vs-thin-prompt distinction in its metadata (SPEC §7.3).
+- Calibration runs against MAGE that want to slice on outline-derived AI prose vs thin-prompt AI prose can now do so by passing `--outline-sources` matched to the operator's MAGE export's `src` strings. PROVENANCE entries should record the `--outline-sources` value for reproducibility.
+- **Version-bump note**: rebased from declared 1.46.0 → 1.48.0 because PRs #21 / #22 / #24 / #32 merged ahead at 1.45.0 / 1.46.0 / 1.47.0 / 1.47.1. MINOR-tier bump preserved since this is a `feat:` change.
+
+## [1.47.1] - 2026-05-14
+
+**Sharded calibration: end-to-end smoke fixture.** A test-only PATCH bump that adds `plugins/setec-voiceprint/scripts/tests/test_sharded_smoke_pipeline.py` — the canonical-operator-pipeline integration test that the existing per-subcommand tests in `test_shard_runner.py` don't cover. No production code changes; this is the regression guard that catches "operator pipeline broke even though each subcommand's unit tests pass."
+
+### Added
+
+- **`test_sharded_smoke_pipeline.py`** — 11 tests in 3 classes covering the full operator pipeline (`shard → work → verify → aggregate → status`) end-to-end:
+  - **`TestCanonicalPipeline`** (5): `shard` writes state.json + per-shard manifests; `work` marks every shard done with cache_path + cache_sha256; `verify` passes on clean caches; `aggregate` concatenates ALL records (`n_records == source rows`); `status --json` reports 3-of-3 done.
+  - **`TestPipelineFailureModes`** (4): post-work cache tampering caught by both `verify` (rc=4) AND `aggregate` (rc=2, integrity refusal); `status` before `work` shows all pending (not garbage); `aggregate` before `work` refuses cleanly; `shard` refuses to overwrite without `--force`.
+  - **`TestStateCacheContract`** (2): state.json's per-shard `cache_sha256` matches the on-disk cache's actual SHA-256 (the load-bearing invariant both `verify` and `aggregate`'s integrity check depend on); `aggregate`'s `n_records` equals the sum of per-shard `n_entries` in state.json (catches silent record drops mid-merge).
+
+### Notes
+
+- Uses the same stub-scorer pattern as `test_shard_runner.py` (deterministic synthetic records via `hash(text_id)`). No real corpus or scoring backend involved.
+- Catches integration-level regressions the per-subcommand tests miss: refactors that silently break the inter-subcommand contract (state.json fields, cache SHA path matching, aggregate's n_records math).
+- This file complements rather than replaces `test_shard_runner.py`. Per-subcommand tests stay where they are; the smoke pipeline pins the cross-subcommand sequence specifically.
+- **Version-bump note**: rebased from declared 1.44.1 → 1.47.1 because PRs #21 / #22 / #24 merged ahead at 1.45.0 / 1.46.0 / 1.47.0. PATCH-tier bump preserved since this is a test-only change.
+
+## [1.47.0] - 2026-05-14
+
+**Sharded calibration v1.44.1.A — concurrent workers with atomic claim coordination.** The first of three v1.44.1 phases per `internal/SPEC_sharded_calibration.md` §7.2. Adds `--workers N` to `shard_runner work`, multi-worker coordination via atomic per-shard claim files, and a state-update lock that serializes concurrent state.json read-modify-writes. Multi-worker sessions cut wall-clock for RAID-scale Tier 1 calibration from "single-threaded multi-day" to "N-worker proportional," with cleaner crash recovery than the v1.44.0 single-worker path.
+
+### Added
+
+- **`shard_state.try_claim_shard_atomically(claim_path, host, pid)`** — creates `shards/<id>/.claim` via `O_CREAT | O_EXCL | O_WRONLY`. The kernel guarantees exactly one caller wins when multiple workers race for the same shard. File content is JSON with the winning worker's host, pid, and timestamp so `sweep-stale` (v1.44.1.B) can later identify dead-host claims.
+- **`shard_state.release_claim(claim_path)`** — idempotent deletion of a claim file. Workers call this on shard completion; `sweep-stale` calls it on dead-host claims.
+- **`shard_state.read_claim_file(claim_path)`** — returns the claim metadata as a dict, or `None` when missing / malformed. Used by `sweep-stale` and `status` for surfacing worker ownership.
+- **`shard_state.state_update_lock(state_path)`** — context manager that wraps the state.json read-modify-write window in `fcntl.flock(LOCK_EX)`. Workers serialize on the lock; the actual write still goes through `write_state`'s atomic-rename pattern. POSIX-only (the calibration host is WSL2 Linux); Windows-native is a no-op fallback.
+- **`shard_runner.shard_claim_path(base, run_id, shard_id)`** — path helper for the per-shard claim file.
+- **`shard_runner` `--workers N` flag on the `work` subcommand**. Default 1 (single-worker, same as v1.44.0). N > 1 spawns N subprocesses (via `multiprocessing` with the `fork` start method on POSIX) that share the run-directory but coordinate atomically.
+- **`_select_next_shard(state, base, run_id)` helper** — picks the next shard candidate, preferring resumable shards owned by this host. Filters out pending shards with existing claim files so two workers racing for the same shard cannot land in an infinite retry loop.
+- **9 new tests in `test_shard_state.py`** covering atomic claim contract (first wins, after-release succeeds, idempotent release, multiprocess race) plus the state-update lock serialization proof (two workers update state.json concurrently; both claims visible in the final state).
+- **4 new tests in `test_shard_runner.py`** covering single-worker uses the atomic-claim path (claim files cleaned up on completion), pre-claimed-shard skip semantics (won't double-claim), two-worker integration (all shards completed cleanly, no leftover claim files, no duplicate scoring), and the workers-default-to-one backwards-compat path.
+
+### Changed
+
+- **`cmd_work` restructured** into a single-worker entry (`_run_single_worker`) and a multi-worker spawner (`_run_multi_worker`). Single-worker mode is unchanged from v1.44.0 in observable behavior; the implementation now goes through the atomic-claim path even with `--workers 1`, so the same coordination guarantees apply if a user manually runs multiple `shard_runner work` invocations.
+- **`_process_shard` state.json updates** (mark_failed, mark_done) now go through `state_update_lock`. Single-worker mode is unaffected; multi-worker mode serializes the read-modify-write window cleanly.
+
+### Notes
+
+- **No mid-shard SIGTERM checkpointing yet.** v1.44.0's per-shard SIGTERM granularity carries forward. Mid-shard interrupt (the scorer threads the SIGTERM event into its loop, flushes partial cache, transitions to `claimed_pending_resume`) is scoped to v1.44.1.B per the spec.
+- **No `--time-window`, no `pause-all` / `terminate-all` / `kill-all` / `sweep-stale`, no launchd plist.** Those ship in v1.44.1.B and v1.44.1.C respectively.
+- **Stale-claim handling**: if a worker crashes between creating a claim file and updating state.json, the affected shard appears pending in state.json but is unclaimable (the .claim file persists). This is the case `sweep-stale` (v1.44.1.B) will handle. For v1.44.1.A, workarounds are manual: delete the offending `.claim` file by hand, or wait for `sweep-stale` to ship.
+- **POSIX-only locking.** `state_update_lock` uses `fcntl.flock` on POSIX (which the calibration host runs as WSL2 Linux per `SPEC_embedding_model_choice.md` §6.3). Windows-native is a no-op fallback; the per-shard atomic claim files still coordinate correctly there, just without the state.json read-modify-write serialization. SETEC's supported calibration host is POSIX.
+- **Version-bump note**: rebased from declared 1.45.0 → 1.47.0 because PRs #21 (harrier) and #22 (B.2) merged first and took the 1.45.0 / 1.46.0 slots.
+
 ## [1.46.0] - 2026-05-14
 
 **Authorship-state taxonomy refinement (phase B.2).** Implements the validator + manifest-schema piece of the `internal/SPEC_authorship_states.md` plan: adds `ai_generated_from_outline` to the `ai_status` vocabulary and a soft consistency check on `ai_status: mixed`. Schema-additive (no existing manifests break); backwards-compat (the bare `ai_generated` value remains the catch-all when seed degree is unknown).
