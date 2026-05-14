@@ -741,6 +741,70 @@ def load_or_score_corpus(
 
 DEFAULT_POLARITY_INVERSION_MARGIN = 0.0
 
+# Upper bound for the margin. A margin of exactly 0.5 would shift
+# the chance line to 0.0, at which point a DA-AUC of 0.0 (the most
+# extreme inverted polarity possible) just barely passes the gate
+# — silently disabling the refusal. Values above 0.5 shift the
+# line below zero and disable the gate entirely. The valid range
+# is therefore the half-open interval [0.0, 0.5). Pinned as a
+# constant so the validator, the tests, and the CLI help text all
+# read from the same source.
+MAX_POLARITY_INVERSION_MARGIN = 0.5
+
+
+def _validate_polarity_margin(margin: Any) -> float:
+    """Validate that ``margin`` is a real number in [0.0, 0.5) and
+    return the normalized float.
+
+    Raises ``SystemExit`` (which argparse turns into rc=2 at the
+    CLI and lets programmatic callers catch by type) with a clear
+    diagnostic if the value is outside range, NaN, or non-numeric.
+
+    The valid range is the half-open interval ``[0.0, 0.5)``:
+
+      * margin == 0.0 is strict (chance line stays at 0.5).
+      * margin > 0.0 widens the chance line downward by exactly
+        that amount.
+      * margin == 0.5 would shift the line to 0.0 and a DA-AUC
+        of 0.0 (the most extreme inverted polarity possible)
+        would pass the gate. We refuse the boundary explicitly.
+      * margin > 0.5 shifts the line below zero — every possible
+        DA-AUC value passes, silently disabling the gate. This is
+        the typo-class failure Codex flagged on PR #40 (e.g.,
+        ``--polarity-inversion-margin 5`` instead of ``0.5``).
+      * margin < 0.0 would shift the line above 0.5 — refusing
+        readings that match the registry's hypothesis, which
+        would invert the gate's meaning rather than disable it.
+    """
+    try:
+        m = float(margin)
+    except (TypeError, ValueError):
+        raise SystemExit(
+            f"--polarity-inversion-margin must be a real number; "
+            f"got {margin!r}."
+        )
+    if m != m:  # NaN check (NaN is the only float != itself)
+        raise SystemExit(
+            "--polarity-inversion-margin must be a real number; "
+            "got NaN."
+        )
+    if not (0.0 <= m < MAX_POLARITY_INVERSION_MARGIN):
+        raise SystemExit(
+            f"--polarity-inversion-margin must satisfy "
+            f"0.0 <= margin < {MAX_POLARITY_INVERSION_MARGIN}; "
+            f"got {m}. The margin shifts the chance line down "
+            f"from 0.5 by exactly that amount; values outside "
+            f"this range either disable the gate (margin >= "
+            f"{MAX_POLARITY_INVERSION_MARGIN}, chance line at "
+            f"or below 0.0 so every DA-AUC passes) or invert "
+            f"its meaning (margin < 0.0, chance line above 0.5 "
+            f"so the gate refuses readings that AGREE with the "
+            f"registry hypothesis). Use 0.0 for strict, ~0.05 "
+            f"for borderline-tolerant calibration on small "
+            f"corpora."
+        )
+    return m
+
 
 class PolarityInversionRefusal(SystemExit):
     """Raised when the corpus's direction-aware AUC falls below the
@@ -766,23 +830,43 @@ def _check_polarity_inversion(
     corpus_label: str,
     allow_polarity_inversion: bool,
     margin: float,
-) -> bool:
-    """Return True iff the polarity gate flagged an inversion (and
-    the run is proceeding under ``--allow-polarity-inversion``).
+) -> tuple[bool, float]:
+    """Return ``(triggered, chance_line)``.
+
+    * ``triggered`` is True iff the polarity gate flagged an
+      inversion and the run is proceeding under
+      ``--allow-polarity-inversion``.
+    * ``chance_line`` is the normalized cutoff (``0.5 - margin``
+      after validation). Returned so the caller can use the same
+      value for the gate logic and for the provenance block —
+      Codex review P1 on PR #40 flagged that the two had drifted
+      and that a typo-class invalid margin could silently disable
+      the gate.
 
     Raises :class:`PolarityInversionRefusal` when DA-AUC is below
     the chance line AND the override flag is False.
+
+    Raises ``SystemExit`` (via :func:`_validate_polarity_margin`)
+    when ``margin`` is out of the valid range ``[0.0, 0.5)``.
+    This validation runs even when ``direction_aware_auc`` is None
+    (the no-op back-compat path) — an invalid margin should fail
+    loudly regardless of whether the gate would ultimately fire.
 
     When ``direction_aware_auc`` is None (older test fixtures that
     mock ``_ranking_metrics`` with the legacy ``{auc, ap}`` shape),
     the gate is skipped — there is no information to refuse on.
     Same back-compat posture as the survey-row builder.
     """
+    # Validate margin upfront; raises SystemExit on invalid. This
+    # runs unconditionally so a typo-class margin (e.g., 5 instead
+    # of 0.5) fails loudly even on the DA-AUC-is-None back-compat
+    # path. Codex PR #40 review P1.
+    validated_margin = _validate_polarity_margin(margin)
+    chance_line = 0.5 - validated_margin
     if direction_aware_auc is None:
-        return False
-    chance_line = 0.5 - max(0.0, float(margin))
+        return False, chance_line
     if direction_aware_auc >= chance_line:
-        return False
+        return False, chance_line
     # Inversion detected. Compose a diagnostic that names every
     # piece of context an operator needs to act on (or override).
     diagnostic = (
@@ -826,7 +910,7 @@ def _check_polarity_inversion(
         f"\n--allow-polarity-inversion set; proceeding under "
         f"override. Entry's notes will be prefixed accordingly.\n"
     )
-    return True
+    return True, chance_line
 
 
 def derive_threshold_from_records(
@@ -878,20 +962,22 @@ def derive_threshold_from_records(
     # ``getattr`` with default for back-compat with programmatic
     # callers (older tests, scripts) that build a Namespace manually
     # and don't know about the new flags.
-    polarity_inversion_recorded = _check_polarity_inversion(
-        signal=args.signal,
-        signal_path=signal_path,
-        direction=direction,
-        direction_aware_auc=metrics.get("direction_aware_auc"),
-        corpus_label=str(Path(args.manifest)),
-        allow_polarity_inversion=bool(
-            getattr(args, "allow_polarity_inversion", False)
-        ),
-        margin=float(getattr(
-            args,
-            "polarity_inversion_margin",
-            DEFAULT_POLARITY_INVERSION_MARGIN,
-        )),
+    polarity_inversion_recorded, polarity_chance_line = (
+        _check_polarity_inversion(
+            signal=args.signal,
+            signal_path=signal_path,
+            direction=direction,
+            direction_aware_auc=metrics.get("direction_aware_auc"),
+            corpus_label=str(Path(args.manifest)),
+            allow_polarity_inversion=bool(
+                getattr(args, "allow_polarity_inversion", False)
+            ),
+            margin=float(getattr(
+                args,
+                "polarity_inversion_margin",
+                DEFAULT_POLARITY_INVERSION_MARGIN,
+            )),
+        )
     )
 
     seed = _stable_seed(
@@ -991,14 +1077,16 @@ def derive_threshold_from_records(
     # convention sub_sample uses (PIPELINE CHECK / POLARITY INVERSION).
     if polarity_inversion_recorded:
         da_auc = metrics.get("direction_aware_auc")
+        # Reuse the validated chance_line from the gate so the
+        # provenance block and the gate logic agree on the exact
+        # cutoff used. Codex PR #40 review P1: pre-fix the
+        # provenance block recomputed `0.5 - raw_margin` without
+        # validation, so a typo-class invalid margin could land
+        # in the ledger as a negative chance line.
         entry["polarity_inversion"] = {
             "recorded": True,
             "direction_aware_auc": da_auc,
-            "chance_line": 0.5 - float(getattr(
-                args,
-                "polarity_inversion_margin",
-                DEFAULT_POLARITY_INVERSION_MARGIN,
-            )),
+            "chance_line": polarity_chance_line,
             "registry_direction": direction,
         }
         da_auc_str = (

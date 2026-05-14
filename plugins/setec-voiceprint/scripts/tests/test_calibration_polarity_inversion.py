@@ -408,5 +408,163 @@ class TestPolarityGateCli:
             pass
 
 
+# ---------- Codex PR #40 review P1: margin range validation ----
+#
+# Codex flagged that ``--polarity-inversion-margin 5`` (typo for
+# ``0.5``) would shift the chance line below zero, silently
+# disabling the refusal gate without setting the override block.
+# The fix validates ``0.0 <= margin < 0.5`` before use and reuses
+# the validated chance_line for both the gate and the provenance
+# block.
+
+
+class TestPolarityMarginValidation:
+    """``_validate_polarity_margin`` enforces the half-open
+    interval [0.0, 0.5). Anything outside raises ``SystemExit``
+    with a clear diagnostic."""
+
+    def test_zero_margin_passes(self):
+        assert ct._validate_polarity_margin(0.0) == 0.0
+
+    def test_small_positive_margin_passes(self):
+        assert ct._validate_polarity_margin(0.05) == pytest.approx(0.05)
+
+    def test_margin_just_below_upper_bound_passes(self):
+        """The half-open interval includes values arbitrarily close
+        to but less than 0.5."""
+        result = ct._validate_polarity_margin(0.499)
+        assert result == pytest.approx(0.499)
+
+    def test_negative_margin_refused(self):
+        """A negative margin would shift the chance line above 0.5,
+        refusing readings that AGREE with the registry hypothesis
+        — the inverse of the intended semantics."""
+        with pytest.raises(SystemExit) as excinfo:
+            ct._validate_polarity_margin(-0.1)
+        msg = str(excinfo.value)
+        assert "0.0 <= margin" in msg
+        assert "-0.1" in msg
+
+    def test_margin_at_upper_bound_refused(self):
+        """margin == 0.5 would shift the line to 0.0; a DA-AUC of
+        0.0 (the most extreme inverted polarity possible) would
+        just pass the gate. The upper bound is exclusive."""
+        with pytest.raises(SystemExit):
+            ct._validate_polarity_margin(0.5)
+
+    def test_margin_above_upper_bound_refused(self):
+        """Codex's reproducer case: --polarity-inversion-margin 5
+        (typo for 0.5). Pre-fix this shifted the chance line to
+        -4.5 and silently disabled the gate. Post-fix it fails
+        loudly."""
+        with pytest.raises(SystemExit) as excinfo:
+            ct._validate_polarity_margin(5.0)
+        msg = str(excinfo.value)
+        # Diagnostic names the load-bearing failure mode so the
+        # operator understands why the typo was caught.
+        assert (
+            "disable the gate" in msg or "passes" in msg.lower()
+        )
+        assert "5" in msg
+
+    def test_non_numeric_margin_refused(self):
+        with pytest.raises(SystemExit) as excinfo:
+            ct._validate_polarity_margin("not a number")
+        msg = str(excinfo.value)
+        assert "real number" in msg
+
+    def test_nan_margin_refused(self):
+        """NaN compares as neither <, >, nor == any value. Without
+        an explicit NaN check the range comparison would silently
+        be False and the gate would skip — but the operator passed
+        a non-real value and should know."""
+        with pytest.raises(SystemExit) as excinfo:
+            ct._validate_polarity_margin(float("nan"))
+        msg = str(excinfo.value)
+        assert "NaN" in msg or "real number" in msg
+
+
+class TestPolarityGateInvalidMargin:
+    """End-to-end: when ``derive_threshold(args)`` is called with
+    an invalid margin, the gate runs validation upfront and fails
+    loudly — regardless of whether DA-AUC would have tripped the
+    gate or not. Pin the two cases:
+
+      1. DA-AUC is matched (gate would have passed) → still fails.
+      2. DA-AUC is None (gate would have been a no-op) → still fails.
+
+    Both cases catch the typo-class failure mode at the earliest
+    possible point.
+    """
+
+    def test_invalid_margin_fails_even_when_da_auc_matches(self):
+        ranking = {
+            "auc": 0.80, "ap": 0.78,
+            "direction_aware_auc": 0.80,
+            "direction_aware_ap": 0.78,
+        }
+        args = _make_inner_args(polarity_inversion_margin=5.0)
+        with _stub_pipeline(ranking=ranking):
+            with pytest.raises(SystemExit) as excinfo:
+                ct.derive_threshold(args)
+        # Validation diagnostic, not the inversion diagnostic.
+        assert "0.0 <= margin" in str(excinfo.value)
+        # And specifically NOT a PolarityInversionRefusal (the
+        # validator raises plain SystemExit so the failure mode is
+        # distinguishable).
+        assert not isinstance(
+            excinfo.value, ct.PolarityInversionRefusal,
+        )
+
+    def test_invalid_margin_fails_even_when_da_auc_missing(self):
+        """Legacy ``{auc, ap}`` shape would normally skip the gate.
+        Margin validation still runs."""
+        ranking = {"auc": 0.50, "ap": 0.50}
+        args = _make_inner_args(polarity_inversion_margin=-0.1)
+        with _stub_pipeline(ranking=ranking):
+            with pytest.raises(SystemExit) as excinfo:
+                ct.derive_threshold(args)
+        assert "0.0 <= margin" in str(excinfo.value)
+
+
+class TestPolarityChanceLineReuse:
+    """The provenance block's recorded chance_line must equal the
+    value the gate used. Codex PR #40 review P1: pre-fix the
+    provenance block recomputed `0.5 - raw_margin` without
+    validation, so the two could drift."""
+
+    def test_provenance_chance_line_matches_validated_value(self):
+        """A valid margin of 0.10 → chance_line == 0.4 in the
+        provenance block."""
+        ranking = {
+            "auc": 0.65, "ap": 0.60,
+            "direction_aware_auc": 0.35,
+            "direction_aware_ap": 0.40,
+        }
+        args = _make_inner_args(
+            allow_polarity_inversion=True,
+            polarity_inversion_margin=0.10,
+        )
+        with _stub_pipeline(ranking=ranking):
+            entry = ct.derive_threshold(args)
+        block = entry["polarity_inversion"]
+        # chance_line == 0.5 - 0.10 == 0.4, exactly.
+        assert block["chance_line"] == pytest.approx(0.4)
+
+    def test_strict_margin_records_canonical_chance_line(self):
+        """Default margin (0.0) → chance_line == 0.5 in the
+        provenance block."""
+        ranking = {
+            "auc": 0.75, "ap": 0.70,
+            "direction_aware_auc": 0.25,
+            "direction_aware_ap": 0.30,
+        }
+        args = _make_inner_args(allow_polarity_inversion=True)
+        with _stub_pipeline(ranking=ranking):
+            entry = ct.derive_threshold(args)
+        block = entry["polarity_inversion"]
+        assert block["chance_line"] == pytest.approx(0.5)
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
