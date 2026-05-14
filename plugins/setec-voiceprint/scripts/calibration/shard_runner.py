@@ -13,15 +13,22 @@ Phase contents:
   * v1.44.1.A — Concurrent workers: ``--workers N`` spawns N
     subprocesses coordinating via atomic per-shard claim files
     plus a state-update lock on state.json.
-  * v1.44.1.B (this commit) — Scheduling + control plane:
+  * v1.44.1.B — Scheduling + control plane:
     ``--time-window HH:MM-HH:MM`` for hour-of-day worker gates,
     ``pause-all`` / ``terminate-all`` / ``kill-all`` / ``sweep-stale``
     subcommands, and the ``SigtermInterrupt`` contract for
     mid-shard SIGTERM checkpointing by opt-in scorers.
+  * v1.44.1.C — macOS launchd nightly setup. See
+    ``launchd/RUNBOOK_macos_nightly.md`` for the operator path.
+  * v1.44.2 (this commit) — Multi-machine git-synced state file.
+    When state.json lives inside a git working tree, workers
+    pull-before-read and commit + push after each transition,
+    so multiple hosts share a sharded run via git. ``--no-sync-state``
+    opts out (debugging, alternative sync mechanisms). The new
+    ``resolve-conflict`` subcommand runs a structured 3-way merge
+    on state.json after a rare cross-host conflict.
 
-Deferred to v1.44.1.C+:
-  * launchd plist + caffeinate runbook for macOS nightly setup.
-  * Multi-machine git-synced state file (v1.44.2).
+Deferred to follow-ups:
   * Default scorer's opt-in to ``SigtermInterrupt`` (the contract
     is in place; ``load_or_score_corpus`` integration ships once
     we have a real RAID-scale run to test against).
@@ -86,14 +93,20 @@ from sharding import (  # type: ignore
 )
 from shard_state import (  # type: ignore
     ShardStateError,
+    SyncError,
     build_initial_state,
     claim_shard,
+    find_git_repo,
+    is_git_synced,
     mark_done,
     mark_failed,
     mark_pending_resume,
+    merge_state_files,
     pending_shard_ids,
     pid_alive,
     process_start_time_epoch,
+    pull_state,
+    push_state,
     read_claim_file,
     read_state,
     refresh_claim_file,
@@ -594,6 +607,83 @@ def cmd_work(args: argparse.Namespace) -> int:
     return _run_multi_worker(args, n_workers=n_workers)
 
 
+# --------------- Git-sync state-update wrapper (v1.44.2) ---------
+
+
+def _should_sync(args: argparse.Namespace, state_path: Path) -> bool:
+    """Decide whether to git-sync this state.json transition.
+
+    Auto-detect: if state.json is inside a git working tree AND
+    the operator did NOT pass ``--no-sync-state``, sync. The
+    auto-detection means single-host operators don't have to
+    pass a flag — they get sync if they put their
+    calibration_runs/ in a git repo, and no-sync otherwise.
+
+    Tests are unaffected: pytest's tmp_path is under ``/tmp`` or
+    similar, never inside a git tree, so ``is_git_synced`` returns
+    False and the sync path is silently skipped.
+    """
+    if getattr(args, "no_sync_state", False):
+        return False
+    return is_git_synced(state_path)
+
+
+import contextlib
+
+
+@contextlib.contextmanager
+def _synced_state_update(
+    args: argparse.Namespace,
+    state_path: Path,
+    *,
+    message: str,
+    worker_label: str = "worker",
+):
+    """Context manager: pull state.json (best-effort), hold the
+    state-update lock, push state.json after the yield.
+
+    Sync errors during pull / push are logged but NOT raised:
+    per spec §4.3 the worker should continue scoring on transient
+    network failures; the next successful sync brings everything
+    back into agreement. The local state is always consistent
+    because the inner ``state_update_lock`` and the JSON-write
+    atomicity protect it.
+
+    Real merge conflicts on state.json (rare — different shards
+    by different machines should merge trivially) DO surface
+    here, because they prevent the pull from completing cleanly.
+    The caller sees a ``SyncError`` re-raised from the pull
+    attempt and can decide what to do (typically: bail out and
+    instruct the operator to run ``resolve-conflict``).
+    """
+    sync_enabled = _should_sync(args, state_path)
+    if sync_enabled:
+        try:
+            pull_state(state_path, enabled=True)
+        except SyncError as exc:
+            # Discriminate: a conflict-bearing error (rare) is
+            # operator-actionable and we re-raise so the caller
+            # bails out with a clear message; a transient error
+            # (network blip) we tolerate.
+            if "resolve-conflict" in str(exc):
+                raise
+            sys.stderr.write(
+                f"  [sync] {worker_label}: pull failed "
+                f"(continuing with local state): {exc}\n"
+            )
+    with state_update_lock(state_path):
+        yield
+    if sync_enabled:
+        try:
+            push_state(state_path, message=message, enabled=True)
+        except SyncError as exc:
+            sys.stderr.write(
+                f"  [sync] {worker_label}: push failed "
+                f"(local state remains consistent; will retry on "
+                f"next transition): {exc}\n"
+            )
+
+
 def _run_multi_worker(args: argparse.Namespace, *, n_workers: int) -> int:
     """Spawn ``n_workers`` subprocesses, each running the single-
     worker loop. Coordination is via atomic .claim files plus the
@@ -777,8 +867,20 @@ def _run_single_worker(
         # Without this distinction, every two-worker run exhibited
         # the race intermittently and reported the whole run as
         # rc=3 failed (as the pre-existing test flake confirmed).
+        #
+        # v1.44.2: if state.json is git-synced, pull-before-read and
+        # push-after-write happen automatically inside
+        # _synced_state_update. A real merge conflict on state.json
+        # raises SyncError; we treat that as operator-actionable.
         try:
-            with state_update_lock(sp):
+            with _synced_state_update(
+                args, sp,
+                message=(
+                    f"shard {target_id} claimed by "
+                    f"{_host()} pid {os.getpid()}"
+                ),
+                worker_label=worker_label,
+            ):
                 state = read_state(sp)
                 state = claim_shard(
                     state, target_id, expected_state=expected_state,
@@ -803,6 +905,15 @@ def _run_single_worker(
             )
             release_claim(claim_path)
             return 3
+        except SyncError as exc:
+            sys.stderr.write(
+                f"{worker_label}: state.json sync conflict on "
+                f"claim of shard {target_id}: {exc}\n"
+                f"Run `shard_runner resolve-conflict --run-id "
+                f"{args.run_id}` to inspect.\n"
+            )
+            release_claim(claim_path)
+            return 6
         sys.stderr.write(
             f"{worker_label} claimed shard {target_id}.\n"
         )
@@ -932,7 +1043,15 @@ def _process_shard(
             f"{exc.n_entries_total or '?'} entries flushed. "
             f"Marking claimed_pending_resume.\n"
         )
-        with state_update_lock(sp):
+        with _synced_state_update(
+            args, sp,
+            message=(
+                f"shard {shard_id} checkpoint "
+                f"{exc.n_entries_flushed}/"
+                f"{exc.n_entries_total or '?'} ({_host()})"
+            ),
+            worker_label=worker_label,
+        ):
             state = read_state(sp)
             state = mark_pending_resume(
                 state, shard_id,
@@ -953,7 +1072,14 @@ def _process_shard(
             f"  {worker_label} scoring shard {shard_id} failed: "
             f"{type(exc).__name__}: {exc}\n"
         )
-        with state_update_lock(sp):
+        with _synced_state_update(
+            args, sp,
+            message=(
+                f"shard {shard_id} failed: "
+                f"{type(exc).__name__} ({_host()})"
+            ),
+            worker_label=worker_label,
+        ):
             state = read_state(sp)
             state = mark_failed(
                 state, shard_id,
@@ -973,7 +1099,14 @@ def _process_shard(
             )
     cache_sha = sha256_file(cp)
     n_entries = len(result.get("records") or [])
-    with state_update_lock(sp):
+    with _synced_state_update(
+        args, sp,
+        message=(
+            f"shard {shard_id} done: {n_entries} entries "
+            f"sha={cache_sha[:8]}... ({_host()})"
+        ),
+        worker_label=worker_label,
+    ):
         state = read_state(sp)
         state = mark_done(
             state, shard_id,
@@ -1658,7 +1791,15 @@ def cmd_sweep_stale(args: argparse.Namespace) -> int:
             # worker can re-claim it. Clear the partial-progress
             # fields if we're sweeping a claimed_pending_resume
             # shard (operator opted in via --include-resume).
-            with state_update_lock(sp):
+            #
+            # v1.44.2: sweep-stale also pushes state.json when sync
+            # is on, so a multi-machine run sees the release on
+            # every host within one git round-trip.
+            with _synced_state_update(
+                args, sp,
+                message=f"sweep-stale released shard {sid} on {local_host}",
+                worker_label="sweep-stale",
+            ):
                 state = read_state(sp)
                 shard = state.get("shards", {}).get(sid)
                 if shard is not None:
@@ -1698,6 +1839,186 @@ def cmd_sweep_stale(args: argparse.Namespace) -> int:
             f"shard(s): pass --include-resume to also release these.\n"
         )
     return 0
+
+
+# --------------- resolve-conflict subcommand (v1.44.2) -----------
+
+
+def cmd_resolve_conflict(args: argparse.Namespace) -> int:
+    """Structured 3-way merge for state.json after a multi-machine
+    sync conflict.
+
+    Pre-condition: a ``git pull --rebase`` or ``git merge`` has
+    left state.json in conflict. Git's index has three stages for
+    the conflicting file:
+      * stage 1 — the common ancestor (base)
+      * stage 2 — HEAD's version (ours)
+      * stage 3 — the incoming version (theirs)
+
+    This subcommand reads all three via ``git show :1:<path>``,
+    ``:2:``, ``:3:``, runs ``merge_state_files``, and writes the
+    merged result back to the working tree. The operator can then
+    inspect the result, optionally re-run with
+    ``--continue-rebase`` to stage + continue, or stage and
+    continue manually.
+
+    Why not call ``git mergetool``? The framework knows the
+    semantics of state.json — different shards by different
+    machines produce disjoint diffs, the rank order on shard
+    states implies an obvious "more advanced" winner — and the
+    operator should not have to figure this out shard by shard
+    in a generic 3-way text merge view.
+
+    Returns:
+      * 0 — auto-merge produced a complete resolution
+      * 2 — pre-conditions not met (no conflict, state.json not
+        in git, etc.)
+      * 7 — unresolved shards remain after auto-merge (operator
+        review needed)
+    """
+    base = Path(args.base_dir).expanduser()
+    sp = state_path(base, args.run_id)
+    if not sp.exists():
+        sys.stderr.write(f"State file not found: {sp}\n")
+        return 2
+    repo_root = find_git_repo(sp)
+    if repo_root is None:
+        sys.stderr.write(
+            f"state.json is not inside a git working tree: {sp}\n"
+            f"resolve-conflict is only applicable to git-synced runs.\n"
+        )
+        return 2
+    rel = sp.relative_to(repo_root)
+    # Read the three index stages. If any of them is missing, this
+    # file isn't actually in conflict, and the operator should
+    # check `git status`.
+    try:
+        base_text = _git_show_stage(repo_root, 1, rel)
+        ours_text = _git_show_stage(repo_root, 2, rel)
+        theirs_text = _git_show_stage(repo_root, 3, rel)
+    except SyncError as exc:
+        sys.stderr.write(f"{exc}\n")
+        return 2
+    try:
+        base_state = json.loads(base_text)
+        ours_state = json.loads(ours_text)
+        theirs_state = json.loads(theirs_text)
+    except json.JSONDecodeError as exc:
+        sys.stderr.write(
+            f"One of the three index stages is not valid JSON: {exc}\n"
+            f"This is a degenerate case (state.json was corrupted on "
+            f"one side); inspect via `git show :2:{rel}` and "
+            f"`git show :3:{rel}`.\n"
+        )
+        return 2
+    merged_state, unresolved = merge_state_files(
+        base_state, ours_state, theirs_state,
+    )
+    sys.stderr.write(
+        f"resolve-conflict on {sp}:\n"
+        f"  base={len(base_state.get('shards', {}))} shards, "
+        f"ours={len(ours_state.get('shards', {}))} shards, "
+        f"theirs={len(theirs_state.get('shards', {}))} shards.\n"
+        f"  Merged: {len(merged_state.get('shards', {}))} shards.\n"
+        f"  Unresolved (same-shard concurrent claims): "
+        f"{len(unresolved)}.\n"
+    )
+    if unresolved:
+        sys.stderr.write(
+            "\nUnresolved shards (both sides claimed by different "
+            "hosts):\n"
+        )
+        for sid in unresolved:
+            ours_sh = ours_state.get("shards", {}).get(sid, {})
+            theirs_sh = theirs_state.get("shards", {}).get(sid, {})
+            sys.stderr.write(
+                f"  shard {sid}: "
+                f"ours=({ours_sh.get('state')}, "
+                f"host={ours_sh.get('claimed_by_host')}, "
+                f"pid={ours_sh.get('claimed_by_pid')}); "
+                f"theirs=({theirs_sh.get('state')}, "
+                f"host={theirs_sh.get('claimed_by_host')}, "
+                f"pid={theirs_sh.get('claimed_by_pid')})\n"
+            )
+        if args.abort_on_unresolved:
+            sys.stderr.write(
+                "\nAborting per --abort-on-unresolved. Resolve manually: "
+                "pick one host's claim, edit state.json, then "
+                "`git add` and `git rebase --continue`. "
+                "Cross-host same-shard claims should not normally "
+                "happen — investigate why both machines targeted the "
+                "same shard.\n"
+            )
+            return 7
+        sys.stderr.write(
+            "\nWriting merged file anyway per --no-abort-on-unresolved. "
+            "Tied shards default to ours; you MUST inspect before "
+            "continuing the rebase.\n"
+        )
+    # Write the merged state back to the working tree.
+    sp.write_text(
+        json.dumps(merged_state, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    sys.stderr.write(f"  Wrote merged state to: {sp}\n")
+    if args.continue_rebase:
+        try:
+            import subprocess as _sub
+            _sub.run(
+                ["git", "-C", str(repo_root), "add", str(rel)],
+                check=True,
+            )
+            # `git rebase --continue` only makes sense in a rebase;
+            # for a regular merge use `git commit`. We try rebase
+            # first and fall back to commit -- this is best-effort
+            # for the common case.
+            rb = _sub.run(
+                ["git", "-C", str(repo_root), "rebase", "--continue"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if rb.returncode != 0:
+                sys.stderr.write(
+                    f"  `git rebase --continue` returned {rb.returncode}:\n"
+                    f"    stdout: {rb.stdout}\n"
+                    f"    stderr: {rb.stderr}\n"
+                    f"  If this isn't a rebase, run `git commit` manually.\n"
+                )
+            else:
+                sys.stderr.write("  Rebase continued cleanly.\n")
+        except _sub.CalledProcessError as exc:
+            sys.stderr.write(
+                f"  git stage/continue failed: {exc}\n"
+                f"  Stage and continue manually.\n"
+            )
+            return 4
+    return 0
+
+
+def _git_show_stage(repo_root: Path, stage: int, rel_path: Path) -> str:
+    """Read ``git show :<stage>:<path>`` and return the file contents.
+
+    Stages: 1 = common ancestor, 2 = HEAD, 3 = MERGE_HEAD. A
+    stage that's missing (no conflict at this file) makes git
+    exit non-zero, which we surface as a SyncError so the caller
+    can tell the operator that resolve-conflict isn't applicable.
+    """
+    import subprocess as _sub
+    try:
+        result = _sub.run(
+            ["git", "-C", str(repo_root), "show", f":{stage}:{rel_path}"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except _sub.CalledProcessError as exc:
+        raise SyncError(
+            f"git show :{stage}:{rel_path} failed; state.json "
+            f"is probably not in conflict. Check `git status`.\n"
+            f"(stderr: {exc.stderr})"
+        ) from exc
+    return result.stdout
 
 
 # --------------- status subcommand -------------------------------
@@ -1819,6 +2140,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "runs until the queue is empty or it receives SIGTERM)."
         ),
     )
+    p_work.add_argument(
+        "--no-sync-state",
+        action="store_true",
+        default=False,
+        help=(
+            "disable git-sync of state.json (v1.44.2). Default behavior: "
+            "if state.json lives inside a git working tree, the worker "
+            "pulls before each state transition and commits + pushes "
+            "after, so multiple machines share the run via git. Pass "
+            "this flag to disable sync (debugging, or a setup that uses "
+            "a different cross-host coordination mechanism)."
+        ),
+    )
     p_work.set_defaults(func=cmd_work)
 
     # pause-all
@@ -1890,7 +2224,52 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--dry-run", action="store_true", default=False,
         help="report what would be released without releasing",
     )
+    p_sweep.add_argument(
+        "--no-sync-state",
+        action="store_true",
+        default=False,
+        help=(
+            "disable git-sync of state.json (v1.44.2); same semantics "
+            "as on `work`"
+        ),
+    )
     p_sweep.set_defaults(func=cmd_sweep_stale)
+
+    # resolve-conflict (v1.44.2)
+    p_resolve = sub.add_parser(
+        "resolve-conflict",
+        help=(
+            "structured 3-way merge for state.json after a "
+            "multi-machine sync conflict"
+        ),
+    )
+    p_resolve.add_argument("--run-id", required=True, type=str)
+    p_resolve.add_argument(
+        "--continue-rebase",
+        action="store_true",
+        default=False,
+        help=(
+            "after a successful merge, run `git add` + `git rebase "
+            "--continue`. Default is to leave the merged file staged "
+            "and let the operator complete the rebase manually."
+        ),
+    )
+    p_resolve.add_argument(
+        "--abort-on-unresolved",
+        action="store_true",
+        default=True,
+        help=(
+            "exit non-zero if any shards remain unresolved after the "
+            "auto-merge (default). Pass --no-abort-on-unresolved to "
+            "instead write the merged file anyway and warn."
+        ),
+    )
+    p_resolve.add_argument(
+        "--no-abort-on-unresolved",
+        dest="abort_on_unresolved",
+        action="store_false",
+    )
+    p_resolve.set_defaults(func=cmd_resolve_conflict)
 
     # aggregate
     p_agg = sub.add_parser(

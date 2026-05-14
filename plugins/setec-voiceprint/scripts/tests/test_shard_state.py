@@ -506,3 +506,469 @@ def test_pid_alive_treats_unknown_oserror_conservatively(
 
     monkeypatch.setattr(ss.os, "kill", _raise_oserror)
     assert ss.pid_alive(1) is True
+
+
+# --------------- find_git_repo / is_git_synced (v1.44.2) -------
+
+
+def test_find_git_repo_returns_none_outside_repo(tmp_path: Path):
+    """A directory under pytest's tmp_path (typically /tmp) is not
+    in a git tree; find_git_repo should return None. This is what
+    keeps the existing tests unaffected by v1.44.2's sync layer."""
+    assert ss.find_git_repo(tmp_path / "state.json") is None
+    assert ss.find_git_repo(tmp_path) is None
+
+
+def test_find_git_repo_finds_dot_git_in_ancestor(tmp_path: Path):
+    """A state.json inside a directory whose ancestor has .git/
+    should be found. We simulate a git repo by just creating a
+    .git directory — find_git_repo does a file-system walk, not
+    a git command, so this is sufficient."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    nested = repo_root / "calibration_runs" / "test_run"
+    nested.mkdir(parents=True)
+    state_file = nested / "state.json"
+    state_file.write_text("{}")
+    found = ss.find_git_repo(state_file)
+    assert found == repo_root
+
+
+def test_is_git_synced_matches_find_git_repo(tmp_path: Path):
+    """is_git_synced is just ``find_git_repo() is not None``."""
+    assert ss.is_git_synced(tmp_path / "state.json") is False
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    nested_state = repo_root / "calibration_runs" / "x" / "state.json"
+    nested_state.parent.mkdir(parents=True)
+    nested_state.write_text("{}")
+    assert ss.is_git_synced(nested_state) is True
+
+
+# --------------- pull_state / push_state (v1.44.2) -------------
+
+
+def test_pull_state_skips_when_not_in_repo(tmp_path: Path):
+    """Outside a git repo, pull_state silently no-ops (returns
+    False), never raises. This is what keeps the test suite
+    running without touching real git."""
+    sp = tmp_path / "state.json"
+    sp.write_text("{}")
+    assert ss.pull_state(sp) is False
+
+
+def test_pull_state_skips_when_disabled(tmp_path: Path):
+    """enabled=False short-circuits even inside a repo. Used by
+    --no-sync-state in shard_runner."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    assert ss.pull_state(state_file, enabled=False) is False
+
+
+def test_pull_state_invokes_git_pull(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Inside a git repo with enabled=True, pull_state should call
+    ``git pull --rebase``. We monkeypatch _git so the test
+    observes the call shape without touching real git."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    calls = []
+
+    def _fake_git(repo, args, *, timeout=30.0, check=True):
+        calls.append((repo, args))
+        import subprocess as sp_module
+        return sp_module.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr="",
+        )
+
+    monkeypatch.setattr(ss, "_git", _fake_git)
+    result = ss.pull_state(state_file)
+    assert result is True
+    assert len(calls) == 1
+    repo, args = calls[0]
+    assert repo == repo_root
+    assert args[:3] == ["pull", "--rebase", "--quiet"]
+
+
+def test_pull_state_raises_sync_error_on_conflict(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """A ``git pull --rebase`` that hits a CONFLICT must raise
+    SyncError with a message pointing the operator at
+    resolve-conflict."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    import subprocess as sp_module
+
+    def _conflict_git(repo, args, *, timeout=30.0, check=True):
+        raise sp_module.CalledProcessError(
+            returncode=1, cmd=["git"] + args,
+            stderr="CONFLICT (content): Merge conflict in state.json",
+        )
+
+    monkeypatch.setattr(ss, "_git", _conflict_git)
+    with pytest.raises(ss.SyncError, match="resolve-conflict"):
+        ss.pull_state(state_file)
+
+
+def test_push_state_invokes_add_commit_push_in_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """push_state should run, in order: git add, git commit, git push."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    calls = []
+
+    def _fake_git(repo, args, *, timeout=30.0, check=True):
+        calls.append(args)
+        import subprocess as sp_module
+        return sp_module.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr="",
+        )
+
+    monkeypatch.setattr(ss, "_git", _fake_git)
+    result = ss.push_state(state_file, message="test commit")
+    assert result is True
+    # Three git invocations: add, commit, push.
+    assert len(calls) == 3
+    assert calls[0][0] == "add"
+    assert calls[1][0] == "commit"
+    assert "test commit" in calls[1]
+    assert calls[2][0] == "push"
+
+
+def test_push_state_returns_false_on_nothing_to_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """``git commit`` returns 1 when there's nothing to commit.
+    That's informational, not an error: push_state should return
+    False without raising and without attempting the push."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    calls = []
+
+    def _fake_git(repo, args, *, timeout=30.0, check=True):
+        calls.append(args)
+        import subprocess as sp_module
+        rc = 1 if args[0] == "commit" else 0
+        return sp_module.CompletedProcess(
+            args=args, returncode=rc, stdout="", stderr="",
+        )
+
+    monkeypatch.setattr(ss, "_git", _fake_git)
+    result = ss.push_state(state_file, message="test")
+    assert result is False
+    # No push attempted.
+    assert not any(c[0] == "push" for c in calls)
+
+
+def test_push_state_retries_on_push_race(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """If push fails because another machine pushed first
+    (non-fast-forward), pull + retry. After the rebase, the
+    second push should succeed."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    calls = []
+    push_attempts = {"n": 0}
+
+    def _fake_git(repo, args, *, timeout=30.0, check=True):
+        calls.append(args)
+        import subprocess as sp_module
+        if args[0] == "push":
+            push_attempts["n"] += 1
+            if push_attempts["n"] == 1:
+                raise sp_module.CalledProcessError(
+                    returncode=1, cmd=["git"] + args,
+                    stderr="! [rejected] main -> main (non-fast-forward)",
+                )
+        return sp_module.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr="",
+        )
+
+    monkeypatch.setattr(ss, "_git", _fake_git)
+    result = ss.push_state(state_file, message="m")
+    assert result is True
+    push_calls = [c for c in calls if c[0] == "push"]
+    pull_calls = [c for c in calls if c[0] == "pull"]
+    assert len(push_calls) == 2
+    assert len(pull_calls) == 1
+
+
+# --------------- merge_state_files (v1.44.2) -------------------
+
+
+def _shard(state="pending", **extra):
+    """Helper: build a shard dict in the canonical shape."""
+    return {"state": state, **extra}
+
+
+def test_merge_state_files_identical_no_op():
+    """When ours == theirs == base, the merge is a no-op."""
+    base = {"shards": {"000": _shard("pending")}, "run_id": "x"}
+    merged, unresolved = ss.merge_state_files(base, base, base)
+    assert merged["shards"] == base["shards"]
+    assert unresolved == []
+
+
+def test_merge_state_files_only_ours_changed():
+    """If only our side advanced a shard, take ours."""
+    base = {"shards": {"000": _shard("pending"), "001": _shard("pending")}}
+    ours = {"shards": {"000": _shard("done", n_entries=10), "001": _shard("pending")}}
+    theirs = base
+    merged, unresolved = ss.merge_state_files(base, ours, theirs)
+    assert merged["shards"]["000"]["state"] == "done"
+    assert merged["shards"]["001"]["state"] == "pending"
+    assert unresolved == []
+
+
+def test_merge_state_files_only_theirs_changed():
+    """If only their side advanced a shard, take theirs."""
+    base = {"shards": {"000": _shard("pending"), "001": _shard("pending")}}
+    ours = base
+    theirs = {"shards": {"000": _shard("pending"), "001": _shard("done", n_entries=5)}}
+    merged, unresolved = ss.merge_state_files(base, ours, theirs)
+    assert merged["shards"]["001"]["state"] == "done"
+    assert unresolved == []
+
+
+def test_merge_state_files_disjoint_changes():
+    """Different shards changed by different sides → both changes
+    preserved (the trivial-merge case per spec §4.6: "different
+    shards by different machines produce disjoint diffs and merge
+    trivially")."""
+    base = {"shards": {"000": _shard("pending"), "001": _shard("pending")}}
+    ours = {"shards": {"000": _shard("done"), "001": _shard("pending")}}
+    theirs = {"shards": {"000": _shard("pending"), "001": _shard("done")}}
+    merged, unresolved = ss.merge_state_files(base, ours, theirs)
+    assert merged["shards"]["000"]["state"] == "done"
+    assert merged["shards"]["001"]["state"] == "done"
+    assert unresolved == []
+
+
+def test_merge_state_files_takes_more_advanced_state():
+    """Both sides modified the same shard but to different states:
+    take the more advanced one (done > claimed_pending_resume >
+    claimed > pending)."""
+    base = {"shards": {"000": _shard("pending")}}
+    ours = {"shards": {"000": _shard("claimed", claimed_by_host="A")}}
+    theirs = {"shards": {"000": _shard("done", n_entries=100)}}
+    merged, unresolved = ss.merge_state_files(base, ours, theirs)
+    assert merged["shards"]["000"]["state"] == "done"
+    assert unresolved == []
+
+
+def test_merge_state_files_same_shard_concurrent_claim_unresolved():
+    """Both sides claimed the same shard from different hosts at
+    the same rank → unresolved. This is the canonical "should not
+    happen" case per spec §4.6, but the helper still has to
+    handle it gracefully and signal to the operator."""
+    base = {"shards": {"000": _shard("pending")}}
+    ours = {"shards": {"000": _shard(
+        "claimed", claimed_by_host="hostA", claimed_by_pid=1,
+        claimed_at="2026-05-13T01:00:00+00:00",
+    )}}
+    theirs = {"shards": {"000": _shard(
+        "claimed", claimed_by_host="hostB", claimed_by_pid=2,
+        claimed_at="2026-05-13T01:00:01+00:00",
+    )}}
+    merged, unresolved = ss.merge_state_files(base, ours, theirs)
+    assert "000" in unresolved
+    # Placeholder for callers that want to write something out.
+    assert merged["shards"]["000"]["claimed_by_host"] == "hostA"
+
+
+def test_merge_state_files_same_host_different_pid_picks_newer():
+    """Two pids on the same host racing the same shard is a sane
+    case (e.g., worker crashed + restarted). Pick the more recent
+    timestamp; no unresolved entry needed."""
+    base = {"shards": {"000": _shard("pending")}}
+    ours = {"shards": {"000": _shard(
+        "claimed", claimed_by_host="hostA", claimed_by_pid=1,
+        claimed_at="2026-05-13T01:00:00+00:00",
+    )}}
+    theirs = {"shards": {"000": _shard(
+        "claimed", claimed_by_host="hostA", claimed_by_pid=2,
+        claimed_at="2026-05-13T02:00:00+00:00",
+    )}}
+    merged, unresolved = ss.merge_state_files(base, ours, theirs)
+    assert unresolved == []
+    assert merged["shards"]["000"]["claimed_by_pid"] == 2
+
+
+def test_merge_state_files_handles_new_shards_only_on_one_side():
+    """If a shard exists only in ours OR only in theirs (rare —
+    shard_count is fixed at shard time — but the helper should
+    still handle it gracefully)."""
+    base = {"shards": {"000": _shard("pending")}}
+    ours = {"shards": {"000": _shard("pending"), "001": _shard("done")}}
+    theirs = {"shards": {"000": _shard("pending")}}
+    merged, unresolved = ss.merge_state_files(base, ours, theirs)
+    assert "001" in merged["shards"]
+    assert merged["shards"]["001"]["state"] == "done"
+    assert unresolved == []
+
+
+# ---------- Codex PR #27 review P0: failed-is-terminal ----------
+#
+# Codex flagged that the pre-fix state-rank table put ``failed``
+# below ``pending``, so a remote-side ``pending`` / ``claimed`` /
+# ``claimed_pending_resume`` could silently overwrite a local
+# ``failed`` shard during the merge — resurrecting a failed shard
+# without any operator action and without the failure ever being
+# recorded in the merged state. The fix treats ``failed`` as
+# terminal unless the other side recorded ``done`` (the only state
+# that legitimately overrides ``failed`` because it means the other
+# host genuinely re-ran the shard and it succeeded).
+
+
+class TestFailedIsTerminalUnlessDone:
+    """``failed`` must persist through merges unless the other side
+    is ``done``. Anything else (pending, claimed,
+    claimed_pending_resume) yields to ``failed``."""
+
+    def test_failed_vs_pending_keeps_failed(self):
+        """Reviewer reproducer: a remote ``pending`` (e.g., from
+        sweep-stale that released a stale claim) must NOT overwrite
+        our ``failed``."""
+        base = {"shards": {"000": _shard("claimed")}}
+        ours = {"shards": {"000": _shard(
+            "failed", failed_at="2026-05-14T01:00:00+00:00",
+            failure_reason="OOM kill",
+        )}}
+        theirs = {"shards": {"000": _shard("pending")}}
+        merged, unresolved = ss.merge_state_files(
+            base, ours, theirs,
+        )
+        assert merged["shards"]["000"]["state"] == "failed", (
+            "failed must not be overwritten by pending — the "
+            "failure was a real signal and must persist."
+        )
+        assert (
+            merged["shards"]["000"].get("failure_reason")
+            == "OOM kill"
+        )
+        assert unresolved == []
+
+    def test_failed_vs_claimed_keeps_failed(self):
+        """A remote ``claimed`` (another host took the shard before
+        seeing our failure) must NOT overwrite ``failed``."""
+        base = {"shards": {"000": _shard("pending")}}
+        ours = {"shards": {"000": _shard(
+            "failed", failure_reason="scorer crashed",
+        )}}
+        theirs = {"shards": {"000": _shard(
+            "claimed", claimed_by_host="hostB", claimed_by_pid=42,
+        )}}
+        merged, unresolved = ss.merge_state_files(
+            base, ours, theirs,
+        )
+        assert merged["shards"]["000"]["state"] == "failed"
+        assert unresolved == []
+
+    def test_failed_vs_claimed_pending_resume_keeps_failed(self):
+        """A remote ``claimed_pending_resume`` (mid-shard SIGTERM
+        on the other host) must NOT overwrite ``failed`` — the
+        local failure record outranks an in-flight resume claim."""
+        base = {"shards": {"000": _shard("pending")}}
+        ours = {"shards": {"000": _shard("failed")}}
+        theirs = {"shards": {"000": _shard(
+            "claimed_pending_resume",
+            claimed_by_host="hostB",
+            n_entries_flushed=50,
+        )}}
+        merged, unresolved = ss.merge_state_files(
+            base, ours, theirs,
+        )
+        assert merged["shards"]["000"]["state"] == "failed"
+        assert unresolved == []
+
+    def test_failed_vs_done_done_wins(self):
+        """The one exception: a remote ``done`` legitimately
+        overrides ``failed`` — another host re-ran the shard and it
+        succeeded. The merged result records the success."""
+        base = {"shards": {"000": _shard("pending")}}
+        ours = {"shards": {"000": _shard("failed")}}
+        theirs = {"shards": {"000": _shard(
+            "done", n_entries=100, completed_at="…",
+        )}}
+        merged, unresolved = ss.merge_state_files(
+            base, ours, theirs,
+        )
+        assert merged["shards"]["000"]["state"] == "done", (
+            "done is the only state that overrides failed — "
+            "another host genuinely re-ran the shard."
+        )
+        assert merged["shards"]["000"].get("n_entries") == 100
+        assert unresolved == []
+
+    def test_symmetric_failed_on_theirs_against_pending_ours(self):
+        """Symmetric to the first test: ``failed`` on theirs must
+        persist when ours is ``pending`` (e.g., we never observed
+        the failure because the local claim file was swept)."""
+        base = {"shards": {"000": _shard("claimed")}}
+        ours = {"shards": {"000": _shard("pending")}}
+        theirs = {"shards": {"000": _shard(
+            "failed", failure_reason="kernel panic",
+        )}}
+        merged, unresolved = ss.merge_state_files(
+            base, ours, theirs,
+        )
+        assert merged["shards"]["000"]["state"] == "failed"
+        assert (
+            merged["shards"]["000"].get("failure_reason")
+            == "kernel panic"
+        )
+        assert unresolved == []
+
+    def test_symmetric_ours_done_overrides_theirs_failed(self):
+        """Symmetric to the done-wins test: ``done`` on ours must
+        override ``failed`` on theirs."""
+        base = {"shards": {"000": _shard("pending")}}
+        ours = {"shards": {"000": _shard("done", n_entries=100)}}
+        theirs = {"shards": {"000": _shard("failed")}}
+        merged, unresolved = ss.merge_state_files(
+            base, ours, theirs,
+        )
+        assert merged["shards"]["000"]["state"] == "done"
+        assert unresolved == []
+
+    def test_both_failed_picks_ours_no_unresolved(self):
+        """Both sides failed (same shard failed independently). The
+        merge picks ours arbitrarily (the failure records are likely
+        identical or near-identical); no unresolved entry is needed
+        because both sides agree the shard is terminally failed."""
+        base = {"shards": {"000": _shard("claimed")}}
+        ours = {"shards": {"000": _shard(
+            "failed", failure_reason="ours: OOM",
+        )}}
+        theirs = {"shards": {"000": _shard(
+            "failed", failure_reason="theirs: OOM",
+        )}}
+        merged, unresolved = ss.merge_state_files(
+            base, ours, theirs,
+        )
+        assert merged["shards"]["000"]["state"] == "failed"
+        assert unresolved == []

@@ -6,6 +6,54 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.54.0] - 2026-05-14
+
+**Sharded calibration v1.44.2 — multi-machine git-synced state file.** The final phase of the sharded-calibration toolchain per `internal/SPEC_sharded_calibration.md` §7.3 (originally v1.43.2). When state.json lives inside a git working tree with a configured remote, workers automatically pull-before-read and commit + push after each state transition (claim, done, failed, resume). Multiple hosts share one logical sharded run via git; rare cross-host conflicts are caught at push time and resolved via the new `resolve-conflict` subcommand. Stacked on v1.44.1.C (PR #26).
+
+The framework's three sharded-calibration coordination layers are now complete:
+
+1. **Within a process** (v1.44.1.A): atomic `O_CREAT | O_EXCL` claim files prevent two workers in the same process from claiming the same shard.
+2. **Within a host** (v1.44.1.A): `fcntl.flock(LOCK_EX)` state-update lock serializes RMW windows on `state.json`.
+3. **Across hosts** (this commit): git pull-rebase + commit + push round-trip on every transition, with a structured 3-way merge for the rare cross-host conflict.
+
+### Added
+
+- **`shard_state.find_git_repo(path)`** — pure-Python walk up from `path` looking for a `.git` entry. Returns the repo root, or `None`. Auto-detects whether state.json is under git without invoking the git CLI for the check.
+- **`shard_state.is_git_synced(state_path)`** — convenience predicate (`find_git_repo() is not None`). Wrapping enables the auto-detect-by-default sync semantics: operators don't have to pass a flag — committing the `calibration_runs/` directory to a git repo IS the opt-in.
+- **`shard_state.pull_state(state_path, *, enabled=True, remote, branch)`** — runs `git -C <repo_root> pull --rebase --quiet` for the repo containing `state_path`. Returns True if a pull was attempted, False if skipped (not in repo, or `enabled=False`). Discriminates conflict-bearing errors (raises `SyncError` with a `resolve-conflict` hint) from transient errors (raises `SyncError` with a "transient" hint that callers can swallow).
+- **`shard_state.push_state(state_path, *, message, enabled=True, remote, branch, retries=3)`** — stages state.json, commits with `message`, and pushes. Returns False on "nothing to commit" (informational, treated as success). On push race (`non-fast-forward`), pulls + retries up to `retries` times before giving up.
+- **`shard_state._git(repo_root, args, *, timeout, check)`** — centralized git invocation so tests can monkeypatch one function instead of dozens of `subprocess.run` calls.
+- **`shard_state.SyncError`** — exception type raised on unrecoverable sync errors. Transient errors (network blips) raise `SyncError` too; the caller decides whether to swallow based on the message.
+- **`shard_state.merge_state_files(base, ours, theirs)`** — structured 3-way merge over two competing state.json revisions. Returns `(merged_state, unresolved_shard_ids)`. Merge policy: trivially-mergeable cases (one side untouched, or both sides made identical changes, or both touched disjoint shards) auto-merge; for same-shard-both-sides-changed, the helper takes the more-advanced state by rank with `failed` treated as terminal unless the other side recorded `done` (the policy fix below); for tied-rank-different-host (the canonical "same-shard concurrent claim" case per spec §4.6), the shard is reported in `unresolved_shard_ids` and the operator must intervene.
+- **`shard_runner._synced_state_update(args, state_path, *, message, worker_label)`** — context manager that wraps the state-update lock with `pull_state` before and `push_state` after. Replaces every `with state_update_lock(sp):` call site in the worker and sweep-stale paths. Transient sync errors are logged and swallowed; conflict-bearing errors re-raise so the caller can bail out and point the operator at `resolve-conflict`.
+- **`shard_runner._should_sync(args, state_path)`** — central decision helper: returns False if `--no-sync-state` was passed, else `is_git_synced(state_path)`. Tests use tmp_path (not in a git repo) so the sync path is silently skipped without any flag dance.
+- **`shard_runner work --no-sync-state`** flag — opt out of git sync even when state.json is in a git repo (debugging, alternative sync mechanisms). Default behavior remains "sync if state.json is in a git repo, else local-only."
+- **`shard_runner sweep-stale --no-sync-state`** — same flag on sweep-stale (which also mutates state.json).
+- **`shard_runner resolve-conflict --run-id RUN` subcommand** — structured 3-way merge for state.json after a multi-machine sync conflict. Reads the three git index stages via `git show :1:<path>`, `:2:`, `:3:`, runs `merge_state_files`, writes the merged result back to the working tree. Exits rc=7 if any shards remain unresolved (default `--abort-on-unresolved`); rc=0 if the merge resolved everything. `--continue-rebase` automatically runs `git add` + `git rebase --continue` on a clean merge.
+- **`plugins/setec-voiceprint/scripts/calibration/RUNBOOK_multi_machine_sync.md`** — operator-facing 6-section runbook: when to use sync, deterministic-split fallback vs. git-synced state tradeoffs, one-time per-host setup, daily progress checks, failure-mode triage (network blip / push race / real conflict / permanently-offline host), teardown + aggregation.
+
+### Changed
+
+- **`_run_single_worker` claim path**: replaces `with state_update_lock(sp):` with `with _synced_state_update(args, sp, message=...):`. Sync errors of the conflict-bearing variety propagate; the worker exits with the new rc=6 sentinel after `release_claim`, pointing the operator at `resolve-conflict`.
+- **`_process_shard`** (mark_pending_resume, mark_failed, mark_done paths): same replacement. Commit messages encode the transition (shard id, host, what happened) so the git history is a readable audit trail of who did what when.
+- **`cmd_sweep_stale`**: state.json release also goes through `_synced_state_update` so a multi-machine run sees the release on every host within one git round-trip.
+
+### Notes
+
+- The git layer is the cross-host coordination primitive. The atomic-rename `.claim` files from v1.44.1.A only prevent races within one host's filesystem; cross-host races get caught at `git push` time as non-fast-forward errors and trigger the pull-rebase-retry loop.
+- Most cross-host runs will never trigger `resolve-conflict`: different hosts naturally pick different shards (claim files in the local filesystem ensure that, with worker-loop logic backing them up), and disjoint shard diffs merge trivially via `git pull --rebase`. The subcommand exists for the genuinely-pathological case (clock skew + race + bad luck).
+- Spec §2.7's "deterministic-split fallback mode" is supported and documented in the RUNBOOK as the recommended path for 2-host setups: each host gets a fixed half of the shards, no git sync needed. The runbook calls this out explicitly because it's the simpler path.
+- This completes the v1.44.x sharded-calibration toolchain. The pending follow-ups are:
+  1. Default scorer's opt-in to `SigtermInterrupt` for mid-shard checkpointing (deferred to its own PR; framework primitive shipped in v1.44.1.B).
+  2. Smoke test against MAGE under the sharded pipeline (end-to-end validation; spec §6.3).
+  3. Real RAID-scale Tier 1 calibration on the AMD desktop (the load-bearing motivation for all of v1.44).
+- **Round-2 reviewer P0 fix carried**: `merge_state_files` now treats `failed` as terminal unless the other side recorded `done`. Pre-fix the state-rank `failed` < `pending` < `claimed` could silently resurrect a failed shard when the other side bumped the shard back to pending/claimed (e.g., a `sweep-stale` on the remote, or a host that never observed the failure attempting to re-claim). Post-fix the merge keeps `failed` in place against any non-`done` competing state; the only state that overrides `failed` is `done` (because `done` means another host genuinely re-ran and succeeded). Tests cover failed-vs-pending, failed-vs-claimed, failed-vs-claimed-pending-resume, and failed-vs-done.
+- **Round-2 reviewer P2 carried**: `push_state` retries on transient push-race rc=128; malformed claim files (non-JSON, missing keys) are treated as missing for the read path rather than crashing the worker (Codex review P2).
+- **Round-2 reviewer P2 round-2 carried**: `git commit` failure now distinguishes no-op (clean working tree) from a real commit failure (`git diff --cached --quiet` separates the two before `git commit` runs; identity / hook failures still surface as `SyncError`).
+- **Cross-stack rebase against #25**: this branch was rebased against the latest v1.44.1.B in main (Codex flagged the pre-fix base). `_synced_state_update` is layered on top of #25's race tolerance + signal-dedupe ordering + resume claim refresh; tests confirm the synced path preserves those invariants.
+- **Test counts updated**: 18 new tests in `test_shard_state.py` (was 15: +3 to cover the failed-terminal-vs-done policy), 13 new tests in `test_shard_runner.py`.
+- **Version-bump note**: rebased from declared 1.48.0 → 1.54.0 because Waves 1 + 2 + Wave 3 + #26 (1.53.0) merged ahead at 1.45.0 – 1.53.0. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.53.0] - 2026-05-14
 
 **Sharded calibration v1.44.1.C — launchd nightly setup for macOS.** The third of three v1.44.1 phases per `internal/SPEC_sharded_calibration.md` §7.2 (originally v1.43.1 in the spec). Ships the launchd plist template, the caffeinate wrapper script, the operator-facing `setup_launchd.py` renderer/installer, and a step-by-step RUNBOOK for macOS nightly setup. Stacked on v1.44.1.B (PR #25).

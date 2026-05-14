@@ -1974,3 +1974,305 @@ class TestSignalWorkersDedupeOrdering:
         # Only ONE SIGTERM even though three claims pointed at
         # the same pid — the post-success dedupe still works.
         assert len(sigterm_calls) == 1
+
+
+# --------------- v1.44.2: --no-sync-state flag ---------------
+
+
+def test_work_no_sync_state_flag_parses(sharded_run):
+    """`--no-sync-state` is accepted by the work subparser and
+    sets args.no_sync_state=True. Since the sharded_run fixture
+    uses tmp_path (not in a git repo), sync is silently skipped
+    regardless of the flag — this test just verifies the flag
+    wiring doesn't break the normal run path."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main([
+        "--base-dir", str(base), "work",
+        "--run-id", run_id, "--no-sync-state",
+    ])
+    assert rc == 0
+    state = ss.read_state(sr.state_path(base, run_id))
+    for sid in ("000", "001", "002"):
+        assert state["shards"][sid]["state"] == "done"
+
+
+def test_should_sync_returns_false_for_tmp_path(sharded_run):
+    """Internal helper: tmp_path is never in a git repo, so
+    _should_sync returns False even without --no-sync-state."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    sp = sr.state_path(base, run_id)
+    import argparse as _ap
+    args = _ap.Namespace(no_sync_state=False)
+    assert sr._should_sync(args, sp) is False
+
+
+def test_should_sync_respects_no_sync_state_flag(tmp_path: Path):
+    """When state.json IS inside a git repo, _should_sync returns
+    True by default and False when --no-sync-state was passed."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    nested = repo_root / "calibration_runs" / "x"
+    nested.mkdir(parents=True)
+    state_file = nested / "state.json"
+    state_file.write_text("{}")
+    import argparse as _ap
+    args_default = _ap.Namespace(no_sync_state=False)
+    args_opt_out = _ap.Namespace(no_sync_state=True)
+    assert sr._should_sync(args_default, state_file) is True
+    assert sr._should_sync(args_opt_out, state_file) is False
+
+
+def test_synced_state_update_calls_pull_and_push_in_repo(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """When state.json IS in a git repo, _synced_state_update
+    should call pull_state before yielding and push_state after.
+    Monkeypatch both so we can observe without touching real git."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    nested = repo_root / "calibration_runs" / "x"
+    nested.mkdir(parents=True)
+    state_file = nested / "state.json"
+    state_file.write_text("{}")
+    pull_calls = []
+    push_calls = []
+
+    def _fake_pull(path, **kwargs):
+        pull_calls.append((path, kwargs))
+        return True
+
+    def _fake_push(path, *, message, **kwargs):
+        push_calls.append((path, message))
+        return True
+
+    monkeypatch.setattr(sr, "pull_state", _fake_pull)
+    monkeypatch.setattr(sr, "push_state", _fake_push)
+    import argparse as _ap
+    args = _ap.Namespace(no_sync_state=False)
+    with sr._synced_state_update(args, state_file, message="test"):
+        pass
+    assert len(pull_calls) == 1
+    assert len(push_calls) == 1
+    assert push_calls[0][1] == "test"
+
+
+def test_synced_state_update_skips_when_no_sync_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """With --no-sync-state, neither pull nor push should be
+    called — _should_sync returns False and the helper takes
+    the local-only fast path."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    pull_calls = []
+    push_calls = []
+
+    def _fake_pull(path, **kwargs):
+        pull_calls.append(path)
+        return True
+
+    def _fake_push(path, *, message, **kwargs):
+        push_calls.append(path)
+        return True
+
+    monkeypatch.setattr(sr, "pull_state", _fake_pull)
+    monkeypatch.setattr(sr, "push_state", _fake_push)
+    import argparse as _ap
+    args = _ap.Namespace(no_sync_state=True)
+    with sr._synced_state_update(args, state_file, message="test"):
+        pass
+    assert pull_calls == []
+    assert push_calls == []
+
+
+def test_synced_state_update_tolerates_transient_pull_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+):
+    """A non-conflict SyncError on pull is non-fatal: the helper
+    logs and continues. The wrapped state-update still runs."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    nested = repo_root / "calibration_runs" / "x"
+    nested.mkdir(parents=True)
+    state_file = nested / "state.json"
+    state_file.write_text("{}")
+
+    def _flaky_pull(path, **kwargs):
+        raise ss.SyncError("transient network error")
+
+    def _fake_push(path, *, message, **kwargs):
+        return True
+
+    monkeypatch.setattr(sr, "pull_state", _flaky_pull)
+    monkeypatch.setattr(sr, "push_state", _fake_push)
+    import argparse as _ap
+    args = _ap.Namespace(no_sync_state=False)
+    body_ran = False
+    with sr._synced_state_update(args, state_file, message="t"):
+        body_ran = True
+    assert body_ran is True  # the locked region still ran
+    err = capsys.readouterr().err
+    assert "transient" in err
+    assert "continuing" in err.lower()
+
+
+def test_synced_state_update_reraises_conflict_pull_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """A SyncError that mentions resolve-conflict (real merge
+    conflict) IS re-raised — the worker should bail out so the
+    operator can run resolve-conflict."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    nested = repo_root / "calibration_runs" / "x"
+    nested.mkdir(parents=True)
+    state_file = nested / "state.json"
+    state_file.write_text("{}")
+
+    def _conflict_pull(path, **kwargs):
+        raise ss.SyncError("run `shard_runner resolve-conflict` to merge")
+
+    monkeypatch.setattr(sr, "pull_state", _conflict_pull)
+    import argparse as _ap
+    args = _ap.Namespace(no_sync_state=False)
+    with pytest.raises(ss.SyncError, match="resolve-conflict"):
+        with sr._synced_state_update(args, state_file, message="t"):
+            pass
+
+
+# --------------- v1.44.2: resolve-conflict subcommand --------
+
+
+def test_resolve_conflict_fails_outside_git_repo(
+    sharded_run, capsys: pytest.CaptureFixture,
+):
+    """resolve-conflict only makes sense in a git-synced run.
+    Outside a repo, it should exit rc=2 with a clear message."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    rc = sr.main([
+        "--base-dir", str(base), "resolve-conflict",
+        "--run-id", run_id,
+    ])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "not inside a git working tree" in err
+
+
+def test_resolve_conflict_auto_merges_disjoint_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Set up a fake git index with three stages of state.json
+    (base, ours, theirs) where the two sides changed different
+    shards. resolve-conflict should auto-merge and write the
+    result to disk."""
+    # Build a fake repo
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    base_dir = repo_root / "baselines"
+    run_id = "test-resolve"
+    nested = base_dir / "calibration_runs" / run_id
+    nested.mkdir(parents=True)
+    state_file = nested / "state.json"
+    # Write a placeholder; the real content comes from the fake
+    # git-show stages.
+    state_file.write_text(json.dumps({"shards": {}}))
+
+    base_state = json.dumps({
+        "run_id": run_id,
+        "shards": {
+            "000": {"state": "pending"},
+            "001": {"state": "pending"},
+        },
+    })
+    ours_state = json.dumps({
+        "run_id": run_id,
+        "shards": {
+            "000": {"state": "done", "n_entries": 100,
+                    "cache_path": "shards/000/cache.json",
+                    "cache_sha256": "abc"},
+            "001": {"state": "pending"},
+        },
+    })
+    theirs_state = json.dumps({
+        "run_id": run_id,
+        "shards": {
+            "000": {"state": "pending"},
+            "001": {"state": "done", "n_entries": 50,
+                    "cache_path": "shards/001/cache.json",
+                    "cache_sha256": "def"},
+        },
+    })
+
+    def _fake_show(repo, stage, rel):
+        return {1: base_state, 2: ours_state, 3: theirs_state}[stage]
+
+    monkeypatch.setattr(sr, "_git_show_stage", _fake_show)
+    rc = sr.main([
+        "--base-dir", str(base_dir), "resolve-conflict",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    merged = json.loads(state_file.read_text())
+    assert merged["shards"]["000"]["state"] == "done"
+    assert merged["shards"]["001"]["state"] == "done"
+
+
+def test_resolve_conflict_reports_unresolved_same_shard(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture,
+):
+    """When both sides claimed the same shard from different
+    hosts, resolve-conflict should report the unresolved shard
+    and exit rc=7."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    base_dir = repo_root / "baselines"
+    run_id = "test-conflict"
+    nested = base_dir / "calibration_runs" / run_id
+    nested.mkdir(parents=True)
+    state_file = nested / "state.json"
+    state_file.write_text(json.dumps({"shards": {}}))
+
+    base_state = json.dumps({"run_id": run_id, "shards": {"000": {"state": "pending"}}})
+    ours_state = json.dumps({
+        "run_id": run_id,
+        "shards": {"000": {
+            "state": "claimed", "claimed_by_host": "hostA",
+            "claimed_by_pid": 1,
+            "claimed_at": "2026-05-13T01:00:00+00:00",
+        }},
+    })
+    theirs_state = json.dumps({
+        "run_id": run_id,
+        "shards": {"000": {
+            "state": "claimed", "claimed_by_host": "hostB",
+            "claimed_by_pid": 2,
+            "claimed_at": "2026-05-13T01:00:01+00:00",
+        }},
+    })
+
+    def _fake_show(repo, stage, rel):
+        return {1: base_state, 2: ours_state, 3: theirs_state}[stage]
+
+    monkeypatch.setattr(sr, "_git_show_stage", _fake_show)
+    rc = sr.main([
+        "--base-dir", str(base_dir), "resolve-conflict",
+        "--run-id", run_id,
+    ])
+    assert rc == 7
+    err = capsys.readouterr().err
+    assert "Unresolved" in err
+    assert "hostA" in err and "hostB" in err
