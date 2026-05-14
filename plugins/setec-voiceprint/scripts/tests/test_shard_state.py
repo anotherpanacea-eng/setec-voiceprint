@@ -626,7 +626,10 @@ def test_pull_state_raises_sync_error_on_conflict(
 def test_push_state_invokes_add_commit_push_in_order(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
-    """push_state should run, in order: git add, git commit, git push."""
+    """push_state should run, in order: git add, git diff --cached
+    (the v1.49.0+ staged-changes check that distinguishes
+    nothing-to-commit from real commit failure), git commit,
+    git push."""
     repo_root = tmp_path / "repo"
     repo_root.mkdir()
     (repo_root / ".git").mkdir()
@@ -637,47 +640,150 @@ def test_push_state_invokes_add_commit_push_in_order(
     def _fake_git(repo, args, *, timeout=30.0, check=True):
         calls.append(args)
         import subprocess as sp_module
-        return sp_module.CompletedProcess(
-            args=args, returncode=0, stdout="", stderr="",
-        )
-
-    monkeypatch.setattr(ss, "_git", _fake_git)
-    result = ss.push_state(state_file, message="test commit")
-    assert result is True
-    # Three git invocations: add, commit, push.
-    assert len(calls) == 3
-    assert calls[0][0] == "add"
-    assert calls[1][0] == "commit"
-    assert "test commit" in calls[1]
-    assert calls[2][0] == "push"
-
-
-def test_push_state_returns_false_on_nothing_to_commit(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-):
-    """``git commit`` returns 1 when there's nothing to commit.
-    That's informational, not an error: push_state should return
-    False without raising and without attempting the push."""
-    repo_root = tmp_path / "repo"
-    repo_root.mkdir()
-    (repo_root / ".git").mkdir()
-    state_file = repo_root / "state.json"
-    state_file.write_text("{}")
-    calls = []
-
-    def _fake_git(repo, args, *, timeout=30.0, check=True):
-        calls.append(args)
-        import subprocess as sp_module
-        rc = 1 if args[0] == "commit" else 0
+        # `git diff --cached --quiet`: rc=1 means "changes are
+        # staged" (the case this test exercises). All other
+        # commands succeed with rc=0.
+        if args[:3] == ["diff", "--cached", "--quiet"]:
+            rc = 1
+        else:
+            rc = 0
         return sp_module.CompletedProcess(
             args=args, returncode=rc, stdout="", stderr="",
         )
 
     monkeypatch.setattr(ss, "_git", _fake_git)
+    result = ss.push_state(state_file, message="test commit")
+    assert result is True
+    # Expected git invocations: add, diff --cached, commit, push.
+    op_sequence = [c[0] for c in calls]
+    assert op_sequence == ["add", "diff", "commit", "push"]
+    assert "test commit" in calls[2]  # commit message arg
+
+
+def test_push_state_returns_false_on_nothing_to_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """When nothing is staged (``git diff --cached --quiet`` rc=0),
+    push_state should return False without attempting commit or
+    push. The v1.49.0+ implementation detects this case BEFORE
+    calling commit so genuine commit failures (missing user
+    config, hook rejection) can be distinguished from no-ops."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    calls = []
+
+    def _fake_git(repo, args, *, timeout=30.0, check=True):
+        calls.append(args)
+        import subprocess as sp_module
+        # `git diff --cached --quiet` rc=0 → nothing staged.
+        return sp_module.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr="",
+        )
+
+    monkeypatch.setattr(ss, "_git", _fake_git)
     result = ss.push_state(state_file, message="test")
     assert result is False
-    # No push attempted.
+    # Neither commit nor push should be attempted.
+    assert not any(c[0] == "commit" for c in calls)
     assert not any(c[0] == "push" for c in calls)
+
+
+def test_push_state_raises_sync_error_on_commit_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Reviewer P2 (2026-05-14): a genuine ``git commit`` failure
+    (missing user.name/user.email, pre-commit hook rejection,
+    index corruption, repo mid-rebase) must raise ``SyncError`` —
+    NOT be silently collapsed into ``return False`` along with
+    the nothing-to-commit case. Pre-fix, this kind of failure
+    looked like a benign no-op and silently left state
+    transitions local-only on a multi-machine run.
+
+    We exercise this by:
+      * making ``git diff --cached --quiet`` exit 1 (i.e.,
+        something IS staged), so the commit will be attempted;
+      * making ``git commit`` raise CalledProcessError with the
+        canonical "missing user.email" stderr message.
+    """
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    calls = []
+    import subprocess as sp_module
+
+    def _fake_git(repo, args, *, timeout=30.0, check=True):
+        calls.append(args)
+        if args[:3] == ["diff", "--cached", "--quiet"]:
+            # Changes ARE staged.
+            return sp_module.CompletedProcess(
+                args=args, returncode=1, stdout="", stderr="",
+            )
+        if args[0] == "commit":
+            raise sp_module.CalledProcessError(
+                returncode=128, cmd=["git"] + args,
+                stderr=(
+                    "Author identity unknown\n\n"
+                    "*** Please tell me who you are.\n\n"
+                    "Run\n\n"
+                    "  git config --global user.email "
+                    '"you@example.com"\n'
+                ),
+            )
+        return sp_module.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr="",
+        )
+
+    monkeypatch.setattr(ss, "_git", _fake_git)
+    with pytest.raises(ss.SyncError) as excinfo:
+        ss.push_state(state_file, message="hostA shard 000 claim")
+    # Error message mentions the user.name/user.email cause AND
+    # tells the operator how to inspect.
+    msg = str(excinfo.value)
+    assert "git commit failed" in msg
+    assert "user.name" in msg or "user.email" in msg
+    assert "git -C" in msg and "status" in msg
+    # Push must NOT have been attempted after a commit failure —
+    # pushing a non-existent commit would be either a no-op or
+    # an even more confusing failure mode.
+    assert not any(c[0] == "push" for c in calls)
+
+
+def test_push_state_raises_sync_error_on_pre_commit_hook_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """A pre-commit hook rejection looks like a commit failure
+    too. Same path: distinguish from no-op, surface as SyncError."""
+    repo_root = tmp_path / "repo"
+    repo_root.mkdir()
+    (repo_root / ".git").mkdir()
+    state_file = repo_root / "state.json"
+    state_file.write_text("{}")
+    import subprocess as sp_module
+
+    def _fake_git(repo, args, *, timeout=30.0, check=True):
+        if args[:3] == ["diff", "--cached", "--quiet"]:
+            return sp_module.CompletedProcess(
+                args=args, returncode=1, stdout="", stderr="",
+            )
+        if args[0] == "commit":
+            raise sp_module.CalledProcessError(
+                returncode=1, cmd=["git"] + args,
+                stderr=(
+                    ".git/hooks/pre-commit: line 3: forbidden\n"
+                ),
+            )
+        return sp_module.CompletedProcess(
+            args=args, returncode=0, stdout="", stderr="",
+        )
+
+    monkeypatch.setattr(ss, "_git", _fake_git)
+    with pytest.raises(ss.SyncError, match="git commit failed"):
+        ss.push_state(state_file, message="m")
 
 
 def test_push_state_retries_on_push_race(
@@ -697,6 +803,13 @@ def test_push_state_retries_on_push_race(
     def _fake_git(repo, args, *, timeout=30.0, check=True):
         calls.append(args)
         import subprocess as sp_module
+        # v1.49.0+: `git diff --cached --quiet` rc=1 means "staged
+        # changes exist" → proceed to commit. rc=0 would mean
+        # "nothing staged" and short-circuit before commit.
+        if args[:3] == ["diff", "--cached", "--quiet"]:
+            return sp_module.CompletedProcess(
+                args=args, returncode=1, stdout="", stderr="",
+            )
         if args[0] == "push":
             push_attempts["n"] += 1
             if push_attempts["n"] == 1:
@@ -994,7 +1107,11 @@ class TestPushStateRetryAfterRebase:
     def _make_fake_git(self, push_outcomes):
         """Build a fake _git that records call args and pops a
         prescribed push outcome from ``push_outcomes`` each time
-        push is invoked. Other commands always succeed."""
+        push is invoked. Other commands always succeed.
+
+        ``git diff --cached --quiet`` reports rc=1 (staged changes
+        present) so the v1.49.0+ commit-or-noop distinction
+        proceeds to commit."""
         calls: list[tuple[str, ...]] = []
         remaining = list(push_outcomes)
         import subprocess as _sp
@@ -1002,6 +1119,11 @@ class TestPushStateRetryAfterRebase:
         def _fake(repo, args, *, timeout=30.0, check=True):
             calls.append(tuple(args))
             cmd = args[0]
+            # The post-2026-05-14 commit-or-no-op check:
+            if args[:3] == ["diff", "--cached", "--quiet"]:
+                return _sp.CompletedProcess(
+                    args=args, returncode=1, stdout="", stderr="",
+                )
             if cmd == "push":
                 outcome = remaining.pop(0) if remaining else "ok"
                 if outcome == "rejected":

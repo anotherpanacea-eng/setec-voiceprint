@@ -938,12 +938,43 @@ def push_state(
     # + retries the push directly, without touching the staged
     # commit.
     _git(repo_root, ["add", str(state_path)])
-    result = _git(
-        repo_root, ["commit", "-m", message], check=False,
+    # Reviewer P2 (2026-05-14): distinguish "nothing to commit"
+    # (benign no-op) from real commit failures (missing
+    # user.name/user.email, pre-commit hook rejection, index
+    # corruption, repo mid-rebase / mid-merge) BEFORE attempting
+    # the commit. The prior `if commit.returncode != 0 → return
+    # False` collapsed both cases into "informational success,"
+    # which silently left state transitions local-only on a
+    # multi-machine run when (e.g.) the git identity wasn't
+    # configured on the calibration host.
+    #
+    # Detection: ``git diff --cached --quiet`` exits 0 when the
+    # index is identical to HEAD (nothing staged), 1 when there
+    # are staged changes, ≥128 on git error. The 0 case is the
+    # only benign-no-op signal; everything else means we ought
+    # to attempt the commit and surface any failure.
+    diff_check = _git(
+        repo_root, ["diff", "--cached", "--quiet"], check=False,
     )
-    if result.returncode != 0:
-        # No changes staged; nothing to push.
+    if diff_check.returncode == 0:
+        # Index identical to HEAD — state.json unchanged since
+        # the last sync. Benign no-op; caller treats False the
+        # same as success.
         return False
+    try:
+        _git(repo_root, ["commit", "-m", message])
+    except subprocess.CalledProcessError as exc:
+        raise SyncError(
+            f"git commit failed for {state_path}: "
+            f"{exc.stderr or exc.stdout or exc}. "
+            f"Common causes: missing user.name / user.email in "
+            f"git config (set via `git config user.name ...` + "
+            f"`git config user.email ...`), a pre-commit hook "
+            f"rejecting the change, the repo is mid-rebase or "
+            f"mid-merge, or the index is corrupted. Inspect "
+            f"with `git -C {repo_root} status` and resolve "
+            f"before retrying the worker."
+        ) from exc
     push_args = ["push", "--quiet", remote]
     if branch:
         push_args.append(branch)
