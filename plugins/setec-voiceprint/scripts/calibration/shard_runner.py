@@ -93,6 +93,7 @@ from shard_state import (  # type: ignore
     mark_pending_resume,
     pending_shard_ids,
     pid_alive,
+    process_start_time_epoch,
     read_claim_file,
     read_state,
     release_claim,
@@ -1246,30 +1247,100 @@ def cmd_pause_all(args: argparse.Namespace) -> int:
 # --------------- terminate-all / kill-all subcommands ------------
 
 
+# Reviewer P2 (2026-05-14): PID-reuse identity tolerance.
+# `ps -o lstart=` resolution is one second, so the recorded
+# start_time_epoch vs the live ps reading can differ by < 1 s
+# even for the same process. 2 seconds is a comfortable margin
+# that still tightly bounds the "is this the same process"
+# question.
+_PID_IDENTITY_TOLERANCE_SECONDS = 2.0
+
+
+def _claim_matches_live_process(
+    claim: dict[str, Any], live_pid: int,
+) -> tuple[bool, str]:
+    """Check whether the live process at ``live_pid`` is the same
+    process that wrote ``claim`` — by comparing the recorded
+    ``start_time_epoch`` against the live process's start time.
+
+    Returns ``(matches, reason)``:
+
+      * ``(True, "...")`` — start times agree within tolerance;
+        signaling this PID is signaling the original worker.
+      * ``(False, "...")`` — start times disagree, or one side
+        is unreadable. Caller skips the signal. ``reason`` is a
+        human-readable string for the operator-facing log.
+
+    Conservative defaults: if the claim has no recorded
+    ``start_time_epoch`` (legacy claim files from before this
+    safety fix), we refuse. If we can't read the live pid's
+    start time, we refuse. The cost of refusing is "operator
+    has to investigate and hand-kill the worker"; the cost of
+    sending blindly is "SIGTERM an unrelated process," which
+    is much worse.
+    """
+    recorded = claim.get("start_time_epoch")
+    if not isinstance(recorded, (int, float)):
+        return False, (
+            "claim has no recorded start_time_epoch — likely a "
+            "pre-2026-05-14 claim file. Cannot verify PID identity; "
+            "skipping signal to defend against PID reuse. Restart "
+            "the worker to refresh the claim, or hand-delete the "
+            ".claim file if the worker is known dead."
+        )
+    live = process_start_time_epoch(live_pid)
+    if live is None:
+        return False, (
+            f"cannot read pid {live_pid}'s start time via `ps`; "
+            f"skipping signal to defend against PID reuse."
+        )
+    if abs(live - recorded) > _PID_IDENTITY_TOLERANCE_SECONDS:
+        return False, (
+            f"pid {live_pid} is alive but its start time "
+            f"({live:.0f}) does not match the recorded start time "
+            f"({recorded:.0f}); PID has been reused since the claim "
+            f"was written. The original worker is gone. Run "
+            f"`sweep-stale` to clean up the stale claim."
+        )
+    return True, "identity verified"
+
+
 def _signal_active_workers(
     base: Path, run_id: str, sig: int, *, label: str,
-) -> tuple[int, int, int]:
+) -> tuple[int, int, int, int]:
     """Send ``sig`` to every distinct worker pid that holds a claim
     on this run's local host.
 
-    Returns ``(n_signaled, n_skipped_remote, n_dead)``. We only
-    signal pids whose claim file's recorded host matches the
-    local host — cross-host signaling isn't possible from POSIX
+    Returns ``(n_signaled, n_skipped_remote, n_dead, n_skipped_identity)``.
+    We only signal pids whose claim file's recorded host matches
+    the local host — cross-host signaling isn't possible from POSIX
     user-space without out-of-band mechanisms (ssh, etc.), so
     ``terminate-all`` on host A only stops host A's workers.
     Operators with a multi-host run must invoke the command on
     each host.
 
-    Skips dead pids (already-exited workers don't need signaling
-    and OS-level pid reuse means signaling them risks killing an
-    unrelated process). Skips remote-host claims with a warning.
+    Skips dead pids (already-exited workers don't need signaling).
+    Skips remote-host claims with a warning. Skips PIDs whose
+    live start time doesn't match the claim's recorded
+    ``start_time_epoch`` — that's the PID-reuse defense added in
+    the 2026-05-14 reviewer P2 fix.
+
+    PID-reuse defense: at claim time, the worker recorded its
+    start time in the claim file. Before signaling, we re-read
+    the live pid's start time via `ps` and compare. A mismatch
+    means the OS recycled the PID into an unrelated process
+    after the original worker exited; signaling that PID would
+    SIGTERM (or SIGKILL) something the framework knows nothing
+    about. Reviewer reproduced the pre-fix bug with a dummy
+    `sleep 60` whose PID happened to match a stale claim.
     """
     n_signaled = 0
     n_skipped_remote = 0
     n_dead = 0
+    n_skipped_identity = 0
     sd = shards_dir(base, run_id)
     if not sd.exists():
-        return 0, 0, 0
+        return 0, 0, 0, 0
     seen_pids: set[int] = set()
     local_host = _host()
     for shard_dir in sorted(sd.iterdir()):
@@ -1303,18 +1374,28 @@ def _signal_active_workers(
                 f"claim.\n"
             )
             continue
+        # Reviewer P2 (2026-05-14): identity check before signaling.
+        # Defends against PID reuse — see _claim_matches_live_process.
+        matches, reason = _claim_matches_live_process(claim, claim_pid)
+        if not matches:
+            n_skipped_identity += 1
+            sys.stderr.write(
+                f"  shard {shard_dir.name}: skipping signal to pid "
+                f"{claim_pid}: {reason}\n"
+            )
+            continue
         try:
             os.kill(claim_pid, sig)
             n_signaled += 1
             sys.stderr.write(
                 f"  shard {shard_dir.name}: sent {label} to pid "
-                f"{claim_pid} (host {claim_host}).\n"
+                f"{claim_pid} (host {claim_host}; identity verified).\n"
             )
         except ProcessLookupError:
             n_dead += 1
             sys.stderr.write(
                 f"  shard {shard_dir.name}: pid {claim_pid} exited "
-                f"between liveness check and signal send.\n"
+                f"between identity check and signal send.\n"
             )
         except PermissionError as exc:
             sys.stderr.write(
@@ -1322,7 +1403,7 @@ def _signal_active_workers(
                 f"signaling pid {claim_pid}: {exc}. Retry as the "
                 f"owning user.\n"
             )
-    return n_signaled, n_skipped_remote, n_dead
+    return n_signaled, n_skipped_remote, n_dead, n_skipped_identity
 
 
 def cmd_terminate_all(args: argparse.Namespace) -> int:
@@ -1347,13 +1428,14 @@ def cmd_terminate_all(args: argparse.Namespace) -> int:
     sys.stderr.write(
         f"Sending SIGTERM to active workers on {_host()!r}...\n"
     )
-    n_sig, n_remote, n_dead = _signal_active_workers(
+    n_sig, n_remote, n_dead, n_identity = _signal_active_workers(
         base, args.run_id, signal.SIGTERM, label="terminate-all",
     )
     sys.stderr.write(
         f"\nterminate-all summary: {n_sig} pid(s) signaled, "
         f"{n_remote} remote-host claim(s) skipped, "
-        f"{n_dead} dead pid(s) skipped.\n"
+        f"{n_dead} dead pid(s) skipped, "
+        f"{n_identity} PID-reuse mismatch(es) skipped.\n"
     )
     return 0 if n_sig > 0 else 1
 
@@ -1384,13 +1466,14 @@ def cmd_kill_all(args: argparse.Namespace) -> int:
         f"Sending SIGKILL to active workers on {_host()!r} "
         f"(last-resort path; partial state will NOT be flushed)...\n"
     )
-    n_sig, n_remote, n_dead = _signal_active_workers(
+    n_sig, n_remote, n_dead, n_identity = _signal_active_workers(
         base, args.run_id, signal.SIGKILL, label="kill-all",
     )
     sys.stderr.write(
         f"\nkill-all summary: {n_sig} pid(s) killed, "
         f"{n_remote} remote-host claim(s) skipped, "
-        f"{n_dead} dead pid(s) skipped.\n"
+        f"{n_dead} dead pid(s) skipped, "
+        f"{n_identity} PID-reuse mismatch(es) skipped.\n"
         f"Run `sweep-stale` next to release any abandoned claims.\n"
     )
     return 0 if n_sig > 0 else 1

@@ -358,6 +358,57 @@ def resumable_shard_ids(state: dict[str, Any]) -> list[str]:
 # claim correctness.
 
 
+def process_start_time_epoch(pid: int) -> float | None:
+    """Return the start time (epoch seconds) of the process with
+    the given pid, or ``None`` if it can't be determined.
+
+    Reviewer P2 (2026-05-14): used by ``terminate-all`` /
+    ``kill-all`` to verify the process the framework is about to
+    signal is the same process that originally claimed the shard,
+    not an unrelated process that happened to inherit a reused PID.
+    Without this check, a stale ``.claim`` file pointing at a PID
+    the OS recycled into a different program could make
+    ``terminate-all`` SIGTERM that unrelated program.
+
+    Implementation: ``ps -o lstart= -p PID``. The ``lstart`` column
+    is the same human-readable BSD-style timestamp on macOS and
+    Linux ("Wed Oct  1 14:30:00 2025"), and Python's strptime with
+    ``%a %b %d %H:%M:%S %Y`` parses both. We normalize whitespace
+    first so single-digit days padded with a leading space parse
+    cleanly. Returns ``None`` if:
+
+      * ``ps`` is missing (unlikely on POSIX; would break the
+        framework's reliance on POSIX shell tools more broadly).
+      * The PID doesn't exist (process gone).
+      * The timestamp doesn't parse (locale / ps-format mismatch).
+
+    Treat ``None`` as "couldn't verify identity"; callers should
+    conservatively skip the signal rather than send blindly.
+    """
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["ps", "-o", "lstart=", "-p", str(int(pid))],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+    except (_sp.CalledProcessError, _sp.TimeoutExpired,
+            FileNotFoundError, ValueError):
+        return None
+    raw = result.stdout.strip()
+    if not raw:
+        return None
+    # Normalize internal whitespace so single-digit days
+    # ("Wed Oct  1 14:30:00 2025") parse the same as double-digit.
+    normalized = " ".join(raw.split())
+    try:
+        parsed = _dt.datetime.strptime(
+            normalized, "%a %b %d %H:%M:%S %Y",
+        )
+    except ValueError:
+        return None
+    return parsed.timestamp()
+
+
 def try_claim_shard_atomically(
     claim_path: Path,
     *,
@@ -371,10 +422,16 @@ def try_claim_shard_atomically(
     ``O_CREAT | O_EXCL | O_WRONLY`` — the kernel guarantees exactly
     one process succeeds when multiple race.
 
-    The file's content is a JSON object with ``host``, ``pid``, and
-    ``claimed_at`` so ``sweep-stale`` can later identify and reclaim
-    dead-worker claims. Cross-platform: works on POSIX (the
-    calibration host) and on Windows-native (fallback environments).
+    The file's content is a JSON object with ``host``, ``pid``,
+    ``claimed_at``, ``start_time_epoch``, and ``tool`` so
+    ``sweep-stale`` can later identify and reclaim dead-worker
+    claims AND ``terminate-all`` / ``kill-all`` can verify the
+    process they're about to signal is the same process that
+    claimed (defending against PID reuse — the reviewer P2 fix
+    from 2026-05-14). Cross-platform: works on POSIX (the
+    calibration host) and on Windows-native (fallback environments;
+    start_time_epoch will be None there but the host/pid fields
+    still pin the claim's owner).
 
     Parent directory must exist; the caller is responsible for
     creating ``shards/<id>/`` before calling this. We don't create
@@ -383,10 +440,21 @@ def try_claim_shard_atomically(
     """
     host = host or _host()
     pid = pid if pid is not None else os.getpid()
+    # Reviewer P2 (2026-05-14): record the claiming process's start
+    # time so terminate-all / kill-all can verify identity before
+    # signaling. Captured at claim time (not signal time) because
+    # at signal time we want to compare what's-there against
+    # what-the-original-worker-was. A None result (ps unavailable,
+    # process already gone) gets stored as None and the identity
+    # check at signal time will refuse to signal — safer than
+    # trying to back-fill the start time later.
+    start_time_epoch = process_start_time_epoch(pid)
     payload = json.dumps({
         "host": host,
         "pid": pid,
         "claimed_at": _now_iso(),
+        "start_time_epoch": start_time_epoch,
+        "tool": "shard_runner",
     }, sort_keys=True).encode("utf-8")
     try:
         fd = os.open(

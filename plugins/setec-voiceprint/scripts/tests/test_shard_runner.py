@@ -1219,12 +1219,20 @@ def test_terminate_all_signals_active_pid(
     """terminate-all should send SIGTERM to every distinct local
     pid recorded in a .claim file on this run. We stub os.kill so
     the test can observe the signal without actually killing
-    anything."""
+    anything.
+
+    Reviewer P2 (2026-05-14): claim files must carry the new
+    ``start_time_epoch`` field for the PID-identity check to pass.
+    We record the live pid's actual start time here so the
+    identity check sees a match.
+    """
     base = sharded_run["base"]
     run_id = sharded_run["run_id"]
     # Plant two claim files: shard 001 with a live pid, shard 002
-    # with the same live pid (de-dup check).
+    # with the same live pid (de-dup check). Include start_time_epoch
+    # so the new identity check (PR #25 review P2 fix) passes.
     live_pid = os.getpid()
+    real_start = ss.process_start_time_epoch(live_pid)
     for sid in ("001", "002"):
         cp = sr.shard_claim_path(base, run_id, sid)
         cp.parent.mkdir(parents=True, exist_ok=True)
@@ -1232,6 +1240,8 @@ def test_terminate_all_signals_active_pid(
             "host": ss._host(),
             "pid": live_pid,
             "claimed_at": "2026-01-01T00:00:00+00:00",
+            "start_time_epoch": real_start,
+            "tool": "shard_runner",
         }))
     # Capture os.kill calls.
     kill_calls: list[tuple[int, int]] = []
@@ -1267,12 +1277,15 @@ def test_kill_all_uses_sigkill(
     base = sharded_run["base"]
     run_id = sharded_run["run_id"]
     live_pid = os.getpid()
+    real_start = ss.process_start_time_epoch(live_pid)
     cp = sr.shard_claim_path(base, run_id, "001")
     cp.parent.mkdir(parents=True, exist_ok=True)
     cp.write_text(json.dumps({
         "host": ss._host(),
         "pid": live_pid,
         "claimed_at": "2026-01-01T00:00:00+00:00",
+        "start_time_epoch": real_start,
+        "tool": "shard_runner",
     }))
     kill_calls: list[tuple[int, int]] = []
     real_kill = os.kill
@@ -1333,3 +1346,182 @@ def test_terminate_all_skips_remote_host(
     assert sigterm_calls == []
     err = capsys.readouterr().err
     assert "remote-machine.local" in err
+
+
+# ---------- Reviewer P2: PID-reuse defense (2026-05-14) ---------
+
+
+class TestPidReuseIdentityCheck:
+    """Reviewer P2: ``terminate-all`` / ``kill-all`` used to trust
+    the claim's recorded PID after only `pid_alive()`. A stale or
+    edited claim whose PID had been reused by an unrelated process
+    would make `terminate-all` SIGTERM that unrelated process —
+    the reviewer reproduced this against a dummy `sleep 60`.
+
+    Fix: at claim time, record the worker's
+    ``start_time_epoch`` (via `ps -o lstart= -p PID`). Before
+    sending the signal, re-read the live process's start time and
+    skip the signal if it doesn't match within a small tolerance
+    (the PID has been reused since the claim was written)."""
+
+    def test_process_start_time_epoch_self_is_a_number(self):
+        """`process_start_time_epoch(os.getpid())` should return a
+        positive epoch number — the test process is alive."""
+        start = ss.process_start_time_epoch(os.getpid())
+        assert isinstance(start, float)
+        assert start > 0
+
+    def test_process_start_time_epoch_dead_pid_returns_none(self):
+        """A pid that's almost certainly not allocated should
+        produce None — ps -p will exit non-zero."""
+        assert ss.process_start_time_epoch(999_999_999) is None
+
+    def test_claim_matches_live_process_self(self):
+        """Round-trip: build a claim with our own start time;
+        the identity check should pass for our own pid."""
+        pid = os.getpid()
+        claim = {
+            "host": ss._host(), "pid": pid,
+            "start_time_epoch": ss.process_start_time_epoch(pid),
+            "claimed_at": "2026-05-14T00:00:00+00:00",
+        }
+        matches, reason = sr._claim_matches_live_process(claim, pid)
+        assert matches is True, reason
+
+    def test_claim_matches_live_process_pid_reused(self):
+        """If the recorded start time disagrees with the live pid's
+        start time by more than the tolerance, the check refuses."""
+        pid = os.getpid()
+        claim = {
+            "host": ss._host(), "pid": pid,
+            # Pretend the claim was written for a worker that
+            # started at the Unix epoch — clearly not the same
+            # process as our live pid.
+            "start_time_epoch": 0.0,
+            "claimed_at": "2026-05-14T00:00:00+00:00",
+        }
+        matches, reason = sr._claim_matches_live_process(claim, pid)
+        assert matches is False
+        assert "reused" in reason or "match" in reason.lower()
+
+    def test_claim_matches_live_process_legacy_no_start_time(self):
+        """A pre-fix claim file with no recorded
+        start_time_epoch should be REFUSED — the framework can't
+        verify identity, so the conservative move is to not signal.
+        Cost: operator has to hand-kill or restart the worker.
+        Reward: never signal an unrelated process."""
+        claim = {
+            "host": ss._host(), "pid": os.getpid(),
+            "claimed_at": "2026-05-14T00:00:00+00:00",
+            # No start_time_epoch field.
+        }
+        matches, reason = sr._claim_matches_live_process(
+            claim, os.getpid(),
+        )
+        assert matches is False
+        assert "start_time_epoch" in reason or "legacy" in reason.lower()
+
+    def test_terminate_all_refuses_pid_reused(
+        self,
+        sharded_run, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ):
+        """End-to-end reproducer for the reviewer's scenario: claim
+        file recorded for a PID whose start time has since changed
+        (PID reuse). terminate-all must NOT signal that PID."""
+        import signal as _sig
+        base = sharded_run["base"]
+        run_id = sharded_run["run_id"]
+        # Live pid (the test process); but record a start_time_epoch
+        # that doesn't match (simulate "the PID has been reused").
+        live_pid = os.getpid()
+        cp = sr.shard_claim_path(base, run_id, "001")
+        cp.parent.mkdir(parents=True, exist_ok=True)
+        cp.write_text(json.dumps({
+            "host": ss._host(),
+            "pid": live_pid,
+            "claimed_at": "2026-01-01T00:00:00+00:00",
+            "start_time_epoch": 0.0,  # epoch 0 — definitely not our process
+            "tool": "shard_runner",
+        }))
+        kill_calls: list[tuple[int, int]] = []
+        real_kill = os.kill
+
+        def _fake_kill(pid, sig):
+            kill_calls.append((pid, sig))
+            if sig == 0:
+                return real_kill(pid, sig)
+
+        monkeypatch.setattr(sr.os, "kill", _fake_kill)
+        monkeypatch.setattr(ss.os, "kill", _fake_kill)
+        rc = sr.main([
+            "--base-dir", str(base), "terminate-all",
+            "--run-id", run_id,
+        ])
+        # rc=1: nothing signaled.
+        assert rc == 1
+        # CRITICALLY: no SIGTERM was sent to our pid.
+        sigterm_calls = [
+            (pid, s) for pid, s in kill_calls if s == _sig.SIGTERM
+        ]
+        assert sigterm_calls == []
+        err = capsys.readouterr().err
+        # Operator-facing message names the PID-reuse condition.
+        assert "PID-reuse" in err or "reused" in err.lower()
+
+    def test_terminate_all_refuses_legacy_claim_without_start_time(
+        self,
+        sharded_run, monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ):
+        """A pre-2026-05-14 claim file (no start_time_epoch) is the
+        canonical example of "unverifiable identity." terminate-all
+        must refuse signaling rather than risk hitting an unrelated
+        process."""
+        base = sharded_run["base"]
+        run_id = sharded_run["run_id"]
+        live_pid = os.getpid()
+        cp = sr.shard_claim_path(base, run_id, "001")
+        cp.parent.mkdir(parents=True, exist_ok=True)
+        cp.write_text(json.dumps({
+            "host": ss._host(),
+            "pid": live_pid,
+            "claimed_at": "2026-01-01T00:00:00+00:00",
+            # No start_time_epoch — pre-fix claim file shape.
+        }))
+        kill_calls: list[tuple[int, int]] = []
+        real_kill = os.kill
+
+        def _fake_kill(pid, sig):
+            kill_calls.append((pid, sig))
+            if sig == 0:
+                return real_kill(pid, sig)
+
+        monkeypatch.setattr(sr.os, "kill", _fake_kill)
+        monkeypatch.setattr(ss.os, "kill", _fake_kill)
+        rc = sr.main([
+            "--base-dir", str(base), "terminate-all",
+            "--run-id", run_id,
+        ])
+        assert rc == 1
+        import signal as _sig
+        sigterm_calls = [
+            (pid, s) for pid, s in kill_calls if s == _sig.SIGTERM
+        ]
+        assert sigterm_calls == []
+        err = capsys.readouterr().err
+        assert "start_time_epoch" in err or "legacy" in err.lower()
+
+    def test_claim_file_records_start_time_epoch(self, tmp_path: Path):
+        """The atomic-claim primitive records start_time_epoch in
+        the JSON payload. This is the *fix* — without it,
+        terminate-all can't verify the worker's identity later."""
+        claim_path = tmp_path / ".claim"
+        assert ss.try_claim_shard_atomically(claim_path) is True
+        claim = json.loads(claim_path.read_text(encoding="utf-8"))
+        assert "start_time_epoch" in claim
+        # For the live test process, the recorded value should be
+        # a real number (ps was able to read it).
+        assert isinstance(claim["start_time_epoch"], (int, float))
+        # And the tool fingerprint.
+        assert claim.get("tool") == "shard_runner"
