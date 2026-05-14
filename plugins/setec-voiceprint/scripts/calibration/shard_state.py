@@ -358,6 +358,71 @@ def resumable_shard_ids(state: dict[str, Any]) -> list[str]:
 # claim correctness.
 
 
+def process_start_time_epoch(pid: int) -> float | None:
+    """Return the start time (epoch seconds) of the process with
+    the given pid, or ``None`` if it can't be determined.
+
+    Reviewer P2 (2026-05-14): used by ``terminate-all`` /
+    ``kill-all`` to verify the process the framework is about to
+    signal is the same process that originally claimed the shard,
+    not an unrelated process that happened to inherit a reused PID.
+    Without this check, a stale ``.claim`` file pointing at a PID
+    the OS recycled into a different program could make
+    ``terminate-all`` SIGTERM that unrelated program.
+
+    Implementation: ``ps -o lstart= -p PID``. The ``lstart`` column
+    is the same human-readable BSD-style timestamp on macOS and
+    Linux ("Wed Oct  1 14:30:00 2025"), and Python's strptime with
+    ``%a %b %d %H:%M:%S %Y`` parses both. We normalize whitespace
+    first so single-digit days padded with a leading space parse
+    cleanly. Returns ``None`` if:
+
+      * ``ps`` is missing (unlikely on POSIX; would break the
+        framework's reliance on POSIX shell tools more broadly).
+      * The PID doesn't exist (process gone).
+      * The timestamp doesn't parse (locale / ps-format mismatch).
+
+    Treat ``None`` as "couldn't verify identity"; callers should
+    conservatively skip the signal rather than send blindly.
+    """
+    import subprocess as _sp
+    try:
+        result = _sp.run(
+            ["ps", "-o", "lstart=", "-p", str(int(pid))],
+            capture_output=True, text=True, timeout=5, check=True,
+        )
+    except (_sp.CalledProcessError, _sp.TimeoutExpired,
+            FileNotFoundError, ValueError):
+        return None
+    except OSError:
+        # Reviewer P2 (2026-05-14 round 4): sandboxed environments
+        # (Codex's review sandbox, certain CI containers, locked-down
+        # macOS sandbox profiles) refuse subprocess spawn with
+        # PermissionError or a generic OSError instead of just
+        # making `ps` exit non-zero. The function's documented
+        # contract is "return None when start time can't be
+        # determined" — propagating PermissionError out of here
+        # would break the entire `work` path before a claim could
+        # be created. None tells the downstream identity check
+        # "unverifiable," which already refuses to signal — the
+        # conservative behavior we want when we can't read process
+        # start times at all.
+        return None
+    raw = result.stdout.strip()
+    if not raw:
+        return None
+    # Normalize internal whitespace so single-digit days
+    # ("Wed Oct  1 14:30:00 2025") parse the same as double-digit.
+    normalized = " ".join(raw.split())
+    try:
+        parsed = _dt.datetime.strptime(
+            normalized, "%a %b %d %H:%M:%S %Y",
+        )
+    except ValueError:
+        return None
+    return parsed.timestamp()
+
+
 def try_claim_shard_atomically(
     claim_path: Path,
     *,
@@ -371,10 +436,16 @@ def try_claim_shard_atomically(
     ``O_CREAT | O_EXCL | O_WRONLY`` — the kernel guarantees exactly
     one process succeeds when multiple race.
 
-    The file's content is a JSON object with ``host``, ``pid``, and
-    ``claimed_at`` so ``sweep-stale`` can later identify and reclaim
-    dead-worker claims. Cross-platform: works on POSIX (the
-    calibration host) and on Windows-native (fallback environments).
+    The file's content is a JSON object with ``host``, ``pid``,
+    ``claimed_at``, ``start_time_epoch``, and ``tool`` so
+    ``sweep-stale`` can later identify and reclaim dead-worker
+    claims AND ``terminate-all`` / ``kill-all`` can verify the
+    process they're about to signal is the same process that
+    claimed (defending against PID reuse — the reviewer P2 fix
+    from 2026-05-14). Cross-platform: works on POSIX (the
+    calibration host) and on Windows-native (fallback environments;
+    start_time_epoch will be None there but the host/pid fields
+    still pin the claim's owner).
 
     Parent directory must exist; the caller is responsible for
     creating ``shards/<id>/`` before calling this. We don't create
@@ -383,10 +454,21 @@ def try_claim_shard_atomically(
     """
     host = host or _host()
     pid = pid if pid is not None else os.getpid()
+    # Reviewer P2 (2026-05-14): record the claiming process's start
+    # time so terminate-all / kill-all can verify identity before
+    # signaling. Captured at claim time (not signal time) because
+    # at signal time we want to compare what's-there against
+    # what-the-original-worker-was. A None result (ps unavailable,
+    # process already gone) gets stored as None and the identity
+    # check at signal time will refuse to signal — safer than
+    # trying to back-fill the start time later.
+    start_time_epoch = process_start_time_epoch(pid)
     payload = json.dumps({
         "host": host,
         "pid": pid,
         "claimed_at": _now_iso(),
+        "start_time_epoch": start_time_epoch,
+        "tool": "shard_runner",
     }, sort_keys=True).encode("utf-8")
     try:
         fd = os.open(
@@ -401,6 +483,66 @@ def try_claim_shard_atomically(
     finally:
         os.close(fd)
     return True
+
+
+def refresh_claim_file(
+    claim_path: Path,
+    *,
+    host: str | None = None,
+    pid: int | None = None,
+) -> None:
+    """Overwrite an existing claim file with fresh ownership data.
+
+    Reviewer P2 (2026-05-14 round 4): the resume path skipped
+    recreating the claim file because the original worker's file
+    "already exists from the original worker's first claim." But
+    that file still recorded the dead original-worker pid + start
+    time. After ``claim_shard`` updated state.json with the
+    resumed worker's new pid, ``terminate-all`` / ``kill-all``
+    still read the dead pid from the .claim file and skipped
+    signaling — meaning a live resumed worker was unsignalable.
+
+    This helper writes a fresh claim file with the current pid +
+    start_time_epoch (alongside the existing host / claimed_at /
+    tool fields). Resume paths call it before transitioning state.
+
+    Atomicity: writes to a temp file in the same directory, then
+    ``os.replace``s over the existing claim file. POSIX rename is
+    atomic, so a crash during refresh leaves either the old claim
+    (the resuming worker's predecessor's data) or the new claim
+    (the resuming worker's data) — never a partial. The temp file
+    suffix is ``.claim-refresh-*.tmp`` to distinguish from the
+    state.json temp files.
+    """
+    host = host or _host()
+    pid = pid if pid is not None else os.getpid()
+    start_time_epoch = process_start_time_epoch(pid)
+    payload = json.dumps({
+        "host": host,
+        "pid": pid,
+        "claimed_at": _now_iso(),
+        "start_time_epoch": start_time_epoch,
+        "tool": "shard_runner",
+    }, sort_keys=True).encode("utf-8")
+    claim_path = Path(claim_path)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=".claim-refresh-",
+        suffix=".tmp",
+        dir=str(claim_path.parent),
+    )
+    try:
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp_name, claim_path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def release_claim(claim_path: Path) -> None:
@@ -429,6 +571,44 @@ def read_claim_file(claim_path: Path) -> dict[str, Any] | None:
         return json.loads(Path(claim_path).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
+
+
+def pid_alive(pid: int) -> bool:
+    """Best-effort check whether a process is alive on the local
+    host.
+
+    Uses ``os.kill(pid, 0)`` which sends signal 0 — a no-op signal
+    used precisely for liveness checks. Returns ``True`` if the
+    process exists, ``False`` if it doesn't (``ProcessLookupError``)
+    or if we lack permission to signal it (``PermissionError`` —
+    treated as alive because we can't conclusively say it's gone).
+
+    Important caveats:
+
+      * Only meaningful for processes on this host. Cross-host
+        liveness requires a different signal (heartbeat file, etc.)
+        and is not in scope for v1.44.1. ``sweep-stale`` callers
+        compare the claim file's recorded host against the local
+        host and only attempt liveness checks for local-host pids.
+      * PID reuse: a long-stale claim file could record a pid that
+        the OS has since recycled into an unrelated process. This is
+        why ``sweep-stale`` requires both a dead pid AND a claim
+        age beyond the configured threshold before releasing — the
+        age gate guards against the rare same-pid race.
+    """
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # We can't signal it, but it exists — treat as alive.
+        return True
+    except OSError:
+        # Unknown error talking to the kernel; conservative path
+        # is "treat as alive" so sweep-stale never releases on
+        # incomplete information.
+        return True
+    return True
 
 
 # --------------- State-update lock (v1.44.1) ------------------
