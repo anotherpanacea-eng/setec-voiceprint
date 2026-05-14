@@ -86,7 +86,11 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import acquisition_core as ac  # noqa: E402
-from claim_license import ClaimLicense, from_legacy  # noqa: E402
+from claim_license import (  # noqa: E402
+    ClaimLicense,
+    from_legacy,
+    with_state_caveats,
+)
 
 TASK_SURFACE = "voice_coherence"
 TOOL_NAME = "general_imposters"
@@ -317,9 +321,15 @@ class GIResult:
     refused: bool  # True if MIN_IMPOSTORS gate or other hard gate failed
     refusal_reason: str = ""
     decision: str = ""  # "consistent" / "inconsistent" / "gray_zone"
+    # B.3 (v1.58.0+): authorship-state value from the operator's
+    # manifest entry for the target. Threaded through to the
+    # ClaimLicense block by ``_structured_claim_license`` so per-
+    # state caveats can be appended. ``None`` means "not supplied"
+    # — the helper's no-op path preserves pre-B.3 behavior.
+    target_ai_status: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "task_surface": TASK_SURFACE,
             "tool": TOOL_NAME,
             "version": SCRIPT_VERSION,
@@ -340,6 +350,12 @@ class GIResult:
             "decision": self.decision,
             "claim_license": _claim_license(),
         }
+        # B.3: surface target ai_status in the JSON payload for
+        # downstream state-routed consumers. Only emit when set
+        # so legacy callers see the same shape.
+        if self.target_ai_status is not None:
+            out["ai_status"] = self.target_ai_status
+        return out
 
 
 def _claim_license() -> dict[str, str]:
@@ -621,6 +637,11 @@ def _structured_claim_license(result: GIResult) -> ClaimLicense:
         f"in [{GRAY_ZONE_LOW}, {GRAY_ZONE_HIGH}] → gray-zone refusal.",
         f"Floor: ≥ {MIN_IMPOSTORS} distinct impostor personas in matched register.",
     ]
+    # B.3: append state-routed caveats when the operator supplied
+    # --ai-status on the run. No-op when target_ai_status is None.
+    lic = with_state_caveats(
+        lic, target_ai_status=result.target_ai_status,
+    )
     return lic
 
 
@@ -764,6 +785,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "GI output is voice-cloning-adjacent; only set "
                        "for non-personal corpora."
                    ))
+    # B.3 (v1.58.0+): authorship-state routing for the ClaimLicense
+    # block. The operator's manifest entry for the target carries
+    # an `ai_status` value (pre_ai_human, ai_generated_from_outline,
+    # etc.). Surface it to the audit so the rendered license block
+    # carries the matching state-specific caveats. Per SPEC §9.2,
+    # this is the operational consequence of the B.2 vocabulary —
+    # not threshold-shipping, just per-state licensure language.
+    p.add_argument(
+        "--ai-status",
+        default=None,
+        help=(
+            "Manifest ai_status value for the target text (e.g., "
+            "pre_ai_human, ai_generated, ai_generated_from_outline, "
+            "ai_assisted, ai_edited, mixed, unknown). When supplied, "
+            "the ClaimLicense block gains state-specific caveats per "
+            "SPEC_authorship_states.md §9.2."
+        ),
+    )
     return p
 
 
@@ -808,6 +847,14 @@ def run(args: argparse.Namespace) -> int:
         top_n_features=args.top_n_features,
         seed=args.seed,
     )
+    # B.3: surface --ai-status into the GIResult so the rendered
+    # claim-license block and JSON payload both pick it up. We use
+    # getattr() so callers that build the Namespace manually (older
+    # tests, programmatic invocations from before B.3) don't have
+    # to know about the new flag.
+    ai_status = getattr(args, "ai_status", None)
+    if ai_status:
+        result.target_ai_status = ai_status
 
     md = render_markdown(result)
     js = json.dumps(result.to_dict(), indent=2, sort_keys=True) + "\n"
