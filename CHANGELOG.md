@@ -6,6 +6,30 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.57.0] - 2026-05-14
+
+**Authorship-state taxonomy phase B.3 — wave 3: craft-surface claim-license routing.** Wires per-state caveats into the three craft-surface audit scripts that emit a `ClaimLicense` block: `construction_signature_audit.py`, `punctuation_cadence_audit.py`, and `mimicry_cosplay_audit.py`. Mechanical extension of the B.3 helper shipped in 1.49.0 (PR #29); stacked on wave 2 (PR #37 / 1.56.0). See `internal/SPEC_authorship_states.md` §10 for the rollout plan.
+
+### Added
+
+- **`construction_signature_audit.py --ai-status` flag.** Operator supplies the manifest entry's `ai_status` for the target text. The rendered ClaimLicense block (returned via `_claim_license_dict`) gains the matching state-specific caveat from `claim_license.TARGET_STATE_CAVEAT_TEMPLATES`. Default behavior unchanged when flag is absent.
+- **`punctuation_cadence_audit.py --ai-status` flag.** Same wiring (uses the standard `_claim_license_block(audit)` shape with `audit["ai_status"]`).
+- **`mimicry_cosplay_audit.py --ai-status` flag.** Same wiring (parallel `_claim_license_dict` shape with new `target_ai_status` kwarg threaded through `audit_cosplay`).
+- **13 new tests** in `test_b3_craft_surfaces.py` covering: pre-B.3 backwards-compat for each script, `ai_generated_from_outline` produces the seed caveat, `pre_ai_human` produces the baseline caveat, `mixed` mentions `composite_states`, `ai_edited` matches the low-touch-editing caveat template, the audit dict's `ai_status` field is populated in JSON output (and reports the correct `task_surface`), and the JSON shape doesn't embed the rendered caveats.
+
+### Changed
+
+- `construction_signature_audit.py`'s `build_audit(...)` and `_claim_license_dict(...)` both gain an optional `target_ai_status` kwarg. `main()` threads `args.ai_status` through. Backwards-compat: positional / kwarg-less calls continue to work.
+- `mimicry_cosplay_audit.py`'s `audit_cosplay(...)` and `_claim_license_dict(...)` both gain an optional `target_ai_status` kwarg. `main()` threads `args.ai_status` through.
+- `punctuation_cadence_audit.py`'s `_claim_license_block(audit)` now consults `audit.get("ai_status")` after building the base block. `main()` populates `audit["ai_status"]` from `args.ai_status`.
+
+### Notes
+
+- B.3 wave 4 (the final wave) covers the voice-surface scripts: `general_imposters`, `semantic_preservation_check`.
+- The change is rendering-layer (markdown). JSON output's claim-license shape is unchanged — downstream consumers that read the JSON keep working. The new `ai_status` field is forward-compat additive only.
+- Pre-B.3 callers that don't pass `--ai-status` see the same markdown they got in v1.49.0 – v1.56.0. The helper is no-op without state inputs.
+- **Version-bump note**: rebased from declared 1.54.0 → 1.57.0 because PRs #26 (1.53.0), #27 (1.54.0), #31 (1.55.0), and #37 (1.56.0) merged ahead in Wave 4. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.56.0] - 2026-05-14
 
 **Authorship-state taxonomy phase B.3 — wave 2: validation-surface claim-license routing.** Wires per-state caveats into the three validation-surface audit scripts that emit a `ClaimLicense` block: `confounder_audit.py`, `surface_disagreement_resolver.py`, and `adversarial_robustness_card.py`. Mechanical extension of the B.3 helper shipped in 1.49.0 (PR #29); see `internal/SPEC_authorship_states.md` §10 for the rollout plan.
