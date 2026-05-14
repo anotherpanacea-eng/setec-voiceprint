@@ -564,13 +564,83 @@ def read_claim_file(claim_path: Path) -> dict[str, Any] | None:
     missing or malformed (the caller decides what to do — typically
     treat it as "no active claim"). Used by ``sweep-stale`` and by
     ``status`` to surface which worker holds each claim.
+
+    For callers that need to distinguish missing-from-malformed —
+    e.g., ``sweep-stale``, which should warn and release orphaned
+    malformed claim files after the stale threshold — use
+    ``claim_file_status()`` instead.
     """
     if not Path(claim_path).exists():
         return None
     try:
-        return json.loads(Path(claim_path).read_text(encoding="utf-8"))
+        parsed = json.loads(
+            Path(claim_path).read_text(encoding="utf-8"),
+        )
     except (OSError, json.JSONDecodeError):
         return None
+    if not isinstance(parsed, dict):
+        return None
+    return parsed
+
+
+# Reviewer P2 (2026-05-14): claim_file_status sentinels. A crash
+# after ``O_CREAT|O_EXCL`` but before a complete json.dump() leaves
+# a zero-byte or truncated ``.claim`` file. The existing
+# ``read_claim_file()`` collapsed missing-and-malformed into
+# ``None``, which caused two failures in concert:
+#
+#   * ``_select_next_shard()`` filtered shards with an existing
+#     claim file, so the shard stayed unclaimable.
+#   * ``sweep-stale`` got ``None`` from ``read_claim_file()`` and
+#     skipped, so the malformed file never got released.
+#
+# Net effect: a malformed local claim could block a shard forever.
+# The fix preserves the missing-vs-malformed distinction at the
+# inspection layer; ``sweep-stale`` then warns and releases
+# malformed local claims after the stale threshold.
+
+CLAIM_STATUS_MISSING = "missing"
+CLAIM_STATUS_VALID = "valid"
+CLAIM_STATUS_MALFORMED = "malformed"
+
+
+def claim_file_status(claim_path: Path) -> str:
+    """Inspect a claim file without returning its contents.
+
+    Returns one of three sentinel strings:
+
+      * ``CLAIM_STATUS_MISSING`` — the file does not exist.
+      * ``CLAIM_STATUS_VALID`` — the file exists, parses as JSON,
+        and decodes to a dict (the shape ``try_claim_shard_atomically``
+        writes).
+      * ``CLAIM_STATUS_MALFORMED`` — the file exists but cannot be
+        read, is empty, fails JSON decode, or decodes to something
+        other than a dict (e.g., a list or a bare string from a
+        partial / corrupted write).
+
+    Callers route on the result: ``read_claim_file`` returns
+    ``None`` for missing OR malformed (preserving its existing
+    contract); ``sweep-stale`` uses ``claim_file_status`` directly
+    so it can warn + release malformed claims that exceed the
+    stale threshold (measured by file mtime, since
+    ``claimed_at`` may itself be unreadable in a truncated file).
+    """
+    path = Path(claim_path)
+    if not path.exists():
+        return CLAIM_STATUS_MISSING
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return CLAIM_STATUS_MALFORMED
+    if not text.strip():
+        return CLAIM_STATUS_MALFORMED
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return CLAIM_STATUS_MALFORMED
+    if not isinstance(parsed, dict):
+        return CLAIM_STATUS_MALFORMED
+    return CLAIM_STATUS_VALID
 
 
 def pid_alive(pid: int) -> bool:
@@ -853,28 +923,39 @@ def push_state(
     repo_root = find_git_repo(state_path)
     if repo_root is None:
         return False
+    # Reviewer P2 (2026-05-14): split commit-once from push-with-retry.
+    # The previous structure had `add` + `commit` + `push` all inside
+    # the retry loop, so when push failed with non-fast-forward, the
+    # exception handler did pull --rebase and `continue`d back to the
+    # top of the loop — which re-ran add+commit. The rebased local
+    # commit was already there, so `commit -m ...` exited rc=1
+    # ("nothing to commit, working tree clean"), the function
+    # returned False, and the local branch's transition commit
+    # never got pushed.
+    #
+    # Fix: commit happens once outside the retry loop. The retry
+    # loop is push-only. On non-fast-forward, the loop pulls + rebases
+    # + retries the push directly, without touching the staged
+    # commit.
+    _git(repo_root, ["add", str(state_path)])
+    result = _git(
+        repo_root, ["commit", "-m", message], check=False,
+    )
+    if result.returncode != 0:
+        # No changes staged; nothing to push.
+        return False
+    push_args = ["push", "--quiet", remote]
+    if branch:
+        push_args.append(branch)
     last_error: Exception | None = None
     for attempt in range(max(1, retries)):
         try:
-            _git(repo_root, ["add", str(state_path)])
-            # `git commit` exits non-zero when there's nothing to
-            # commit. That's informational, not an error.
-            result = _git(
-                repo_root, ["commit", "-m", message],
-                check=False,
-            )
-            if result.returncode != 0:
-                # No changes staged; nothing to push.
-                return False
-            push_args = ["push", "--quiet", remote]
-            if branch:
-                push_args.append(branch)
             _git(repo_root, push_args)
             return True
         except subprocess.CalledProcessError as exc:
             last_error = exc
             stderr = (exc.stderr or "").lower()
-            # Push race: rebase and retry.
+            # Push race: rebase and retry the push (NOT the commit).
             if (
                 attempt < retries - 1
                 and ("rejected" in stderr or "non-fast-forward" in stderr)

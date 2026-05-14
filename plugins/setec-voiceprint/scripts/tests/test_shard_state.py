@@ -972,3 +972,174 @@ class TestFailedIsTerminalUnlessDone:
         )
         assert merged["shards"]["000"]["state"] == "failed"
         assert unresolved == []
+
+
+# ---------- Reviewer P2 fixes (2026-05-14) ----------
+
+
+class TestPushStateRetryAfterRebase:
+    """Reviewer P2: after a non-fast-forward rejection,
+    ``push_state`` used to run ``add`` + ``commit`` again in the
+    retry loop. The local transition commit was already created on
+    attempt 1 and rebased on top of the pulled-in remote commit,
+    so attempt 2's ``commit`` exited rc=1 ("nothing to commit")
+    and the function returned False — leaving the local branch
+    ahead by one commit but the remote untouched.
+
+    Fix: commit happens once outside the retry loop; the retry
+    loop only re-pushes (with intermediate ``pull --rebase`` on
+    non-fast-forward). Below we monkeypatch ``_git`` to simulate
+    the race and assert the second push actually runs."""
+
+    def _make_fake_git(self, push_outcomes):
+        """Build a fake _git that records call args and pops a
+        prescribed push outcome from ``push_outcomes`` each time
+        push is invoked. Other commands always succeed."""
+        calls: list[tuple[str, ...]] = []
+        remaining = list(push_outcomes)
+        import subprocess as _sp
+
+        def _fake(repo, args, *, timeout=30.0, check=True):
+            calls.append(tuple(args))
+            cmd = args[0]
+            if cmd == "push":
+                outcome = remaining.pop(0) if remaining else "ok"
+                if outcome == "rejected":
+                    raise _sp.CalledProcessError(
+                        returncode=1, cmd=["git"] + args,
+                        stderr=(
+                            "To origin\n ! [rejected] main -> main "
+                            "(non-fast-forward)\n"
+                        ),
+                    )
+            return _sp.CompletedProcess(
+                args=args, returncode=0, stdout="", stderr="",
+            )
+
+        return calls, _fake
+
+    def test_push_after_rebase_actually_pushes(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Reproducer for the reviewer's bug. Pre-fix this test
+        would fail because the loop returned False before the
+        second push.
+        """
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+        state_file = repo_root / "state.json"
+        state_file.write_text("{}")
+        calls, fake = self._make_fake_git(["rejected", "ok"])
+        monkeypatch.setattr(ss, "_git", fake)
+        result = ss.push_state(state_file, message="hostA shard 000 claim")
+        assert result is True
+        # Expected sequence:
+        #   add → commit → push(rejected) → pull --rebase → push(ok)
+        # Buggy version would have been:
+        #   add → commit → push(rejected) → pull --rebase → add →
+        #   commit(rc=1 nothing-to-commit) → return False.
+        # Load-bearing assertions: exactly ONE commit, exactly
+        # TWO pushes, ONE pull --rebase.
+        commit_calls = [c for c in calls if c[0] == "commit"]
+        push_calls = [c for c in calls if c[0] == "push"]
+        pull_calls = [c for c in calls if c[0] == "pull"]
+        assert len(commit_calls) == 1, (
+            f"commit ran {len(commit_calls)} times; expected 1. "
+            f"Trace: {calls}"
+        )
+        assert len(push_calls) == 2, (
+            f"push ran {len(push_calls)} times; expected 2. "
+            f"Trace: {calls}"
+        )
+        assert len(pull_calls) == 1, (
+            f"pull --rebase ran {len(pull_calls)} times; "
+            f"expected 1. Trace: {calls}"
+        )
+
+    def test_clean_push_runs_one_commit_one_push(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """No race: add → commit → push (ok). One of each."""
+        repo_root = tmp_path / "repo"
+        repo_root.mkdir()
+        (repo_root / ".git").mkdir()
+        state_file = repo_root / "state.json"
+        state_file.write_text("{}")
+        calls, fake = self._make_fake_git(["ok"])
+        monkeypatch.setattr(ss, "_git", fake)
+        result = ss.push_state(state_file, message="m")
+        assert result is True
+        commit_calls = [c for c in calls if c[0] == "commit"]
+        push_calls = [c for c in calls if c[0] == "push"]
+        assert len(commit_calls) == 1
+        assert len(push_calls) == 1
+
+
+class TestClaimFileStatus:
+    """Reviewer P2: distinguish missing-vs-malformed claim files so
+    sweep-stale can warn + release malformed ones after the stale
+    threshold (instead of leaving the shard blocked forever)."""
+
+    def test_missing_returns_missing_sentinel(self, tmp_path: Path):
+        assert (
+            ss.claim_file_status(tmp_path / ".claim")
+            == ss.CLAIM_STATUS_MISSING
+        )
+
+    def test_valid_dict_returns_valid_sentinel(self, tmp_path: Path):
+        cp = tmp_path / ".claim"
+        cp.write_text(
+            json.dumps({
+                "host": "hostA", "pid": 123,
+                "claimed_at": "2026-05-14T00:00:00+00:00",
+            }),
+            encoding="utf-8",
+        )
+        assert ss.claim_file_status(cp) == ss.CLAIM_STATUS_VALID
+
+    def test_zero_byte_file_returns_malformed_sentinel(self, tmp_path: Path):
+        """The canonical "crash after O_CREAT|O_EXCL but before
+        json.dump" failure mode: a zero-byte .claim file. Pre-fix
+        this would collapse into ``None`` and sweep-stale would
+        skip the shard forever."""
+        cp = tmp_path / ".claim"
+        cp.write_text("")
+        assert ss.claim_file_status(cp) == ss.CLAIM_STATUS_MALFORMED
+
+    def test_truncated_json_returns_malformed_sentinel(self, tmp_path: Path):
+        """A partial-write that ended mid-string: also malformed."""
+        cp = tmp_path / ".claim"
+        cp.write_text('{"host": "hostA", "pid":')
+        assert ss.claim_file_status(cp) == ss.CLAIM_STATUS_MALFORMED
+
+    def test_json_list_returns_malformed_sentinel(self, tmp_path: Path):
+        """JSON-valid but not the expected dict shape. Treat as
+        malformed since downstream code reads host/pid/claimed_at
+        as dict keys."""
+        cp = tmp_path / ".claim"
+        cp.write_text("[1, 2, 3]")
+        assert ss.claim_file_status(cp) == ss.CLAIM_STATUS_MALFORMED
+
+    def test_json_scalar_returns_malformed_sentinel(self, tmp_path: Path):
+        cp = tmp_path / ".claim"
+        cp.write_text("\"just-a-string\"")
+        assert ss.claim_file_status(cp) == ss.CLAIM_STATUS_MALFORMED
+
+    def test_whitespace_only_returns_malformed_sentinel(self, tmp_path: Path):
+        cp = tmp_path / ".claim"
+        cp.write_text("   \n\t ")
+        assert ss.claim_file_status(cp) == ss.CLAIM_STATUS_MALFORMED
+
+    def test_read_claim_file_returns_none_for_non_dict(
+        self, tmp_path: Path,
+    ):
+        """The existing read_claim_file API (dict | None) is
+        preserved: non-dict JSON now also returns None, consistent
+        with the missing/malformed collapse contract. This is a
+        strictness improvement — previously a list-shape claim
+        file would have leaked through as a list, which downstream
+        sweep-stale couldn't use."""
+        cp = tmp_path / ".claim"
+        cp.write_text("[1, 2, 3]")
+        assert ss.read_claim_file(cp) is None

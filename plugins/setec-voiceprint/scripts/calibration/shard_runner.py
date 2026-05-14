@@ -92,9 +92,13 @@ from sharding import (  # type: ignore
     split_into_shards,
 )
 from shard_state import (  # type: ignore
+    CLAIM_STATUS_MALFORMED,
+    CLAIM_STATUS_MISSING,
+    CLAIM_STATUS_VALID,
     ShardStateError,
     SyncError,
     build_initial_state,
+    claim_file_status,
     claim_shard,
     find_git_repo,
     is_git_synced,
@@ -1674,6 +1678,45 @@ def cmd_kill_all(args: argparse.Namespace) -> int:
 # --------------- sweep-stale subcommand --------------------------
 
 
+def _sweep_stale_restore_pending(
+    args: argparse.Namespace,
+    sp: Path,
+    sid: str,
+    local_host: str,
+    *,
+    note: str,
+) -> None:
+    """Restore a shard's state.json entry to ``pending`` after
+    sweep-stale released its claim file.
+
+    Hoisted out of ``cmd_sweep_stale`` so both the dead-pid release
+    branch and the malformed-claim release branch (added in the
+    2026-05-14 P2 fix) share the same state-mutation path. Keeping
+    the two paths in lockstep avoids future drift on the
+    field-clearing list.
+
+    Goes through ``_synced_state_update`` so multi-machine runs see
+    the release via git on the next round-trip.
+    """
+    with _synced_state_update(
+        args, sp,
+        message=f"sweep-stale released shard {sid} on {local_host} ({note})",
+        worker_label="sweep-stale",
+    ):
+        state = read_state(sp)
+        shard = state.get("shards", {}).get(sid)
+        if shard is None:
+            return
+        shard["state"] = "pending"
+        for key in (
+            "claimed_by_host", "claimed_by_pid", "claimed_at",
+            "n_entries_flushed", "n_entries_total",
+            "last_flush_at",
+        ):
+            shard.pop(key, None)
+        write_state(sp, state)
+
+
 def cmd_sweep_stale(args: argparse.Namespace) -> int:
     """Walk the run's shard directories, release claim files whose
     owning pid is dead AND whose claim age exceeds the threshold.
@@ -1739,14 +1782,69 @@ def cmd_sweep_stale(args: argparse.Namespace) -> int:
     skipped_remote: list[str] = []
     skipped_young: list[tuple[str, float]] = []
     skipped_resume: list[str] = []
+    # Reviewer P2 (2026-05-14): malformed claim files are now their
+    # own bucket. Without this distinction, a malformed `.claim`
+    # (e.g., zero-byte after a crash mid-write) would block the
+    # shard forever — `_select_next_shard` skips on file existence,
+    # `read_claim_file` returned None so sweep-stale skipped too.
+    # We now use `claim_file_status()` to distinguish missing from
+    # malformed, and treat malformed local claims as candidates for
+    # release once they exceed the stale threshold (measured by
+    # file mtime, since `claimed_at` is itself unreadable in a
+    # truncated file).
+    swept_malformed: list[str] = []
+    skipped_young_malformed: list[tuple[str, float]] = []
     state = read_state(sp)
     for shard_dir in sorted(sd.iterdir()):
         if not shard_dir.is_dir():
             continue
         sid = shard_dir.name
         claim_file = shard_dir / ".claim"
+        status = claim_file_status(claim_file)
+        if status == CLAIM_STATUS_MISSING:
+            continue
+        if status == CLAIM_STATUS_MALFORMED:
+            # We can't tell the originating host from a malformed
+            # file. Conservative posture: treat the mtime as the
+            # claim age and only release after the stale threshold
+            # — same dwell as for dead-pid claims. Warning surfaced
+            # to stderr unconditionally so the operator sees the
+            # condition even on dry-run.
+            try:
+                mtime = claim_file.stat().st_mtime
+            except OSError:
+                continue
+            age_seconds = max(0.0, now.timestamp() - mtime)
+            sys.stderr.write(
+                f"  WARNING: malformed claim file at "
+                f"{claim_file} (age {age_seconds / 3600.0:.1f} h; "
+                f"likely partial-write crash after O_CREAT|O_EXCL).\n"
+            )
+            if age_seconds < threshold_seconds:
+                skipped_young_malformed.append(
+                    (sid, age_seconds / 3600.0),
+                )
+                continue
+            swept_malformed.append(sid)
+            if not dry_run:
+                try:
+                    claim_file.unlink()
+                except FileNotFoundError:
+                    pass
+                # Restore the shard's state.json entry to pending
+                # so a worker can re-claim it. Use the same path
+                # the regular-release branch uses below; lift it
+                # into a helper so the two paths stay in sync.
+                _sweep_stale_restore_pending(
+                    args, sp, sid, local_host,
+                    note="malformed claim file",
+                )
+            continue
+        # status == CLAIM_STATUS_VALID
         claim = read_claim_file(claim_file)
         if claim is None:
+            # Race between claim_file_status and read_claim_file
+            # (file disappeared); just skip.
             continue
         claim_host = claim.get("host")
         claim_pid = claim.get("pid")
@@ -1755,7 +1853,12 @@ def cmd_sweep_stale(args: argparse.Namespace) -> int:
             skipped_remote.append(sid)
             continue
         if not isinstance(claim_pid, int):
-            # Malformed claim file; safer to skip than to release.
+            # Pid field missing or wrong type — defensive guard for
+            # malformed-but-valid-JSON claim files. We could in
+            # principle release these via the malformed path, but
+            # the JSON parsed and the file is well-formed JSON, so
+            # the safer move is to skip and let the operator
+            # inspect.
             continue
         if pid_alive(claim_pid):
             skipped_alive.append(sid)
@@ -1788,38 +1891,32 @@ def cmd_sweep_stale(args: argparse.Namespace) -> int:
             except FileNotFoundError:
                 pass
             # Restore the shard's state-file entry to pending so a
-            # worker can re-claim it. Clear the partial-progress
-            # fields if we're sweeping a claimed_pending_resume
-            # shard (operator opted in via --include-resume).
+            # worker can re-claim it. Goes through the shared
+            # helper so the dead-pid path and the malformed-claim
+            # path emit identical state-mutation logic.
             #
             # v1.44.2: sweep-stale also pushes state.json when sync
             # is on, so a multi-machine run sees the release on
             # every host within one git round-trip.
-            with _synced_state_update(
-                args, sp,
-                message=f"sweep-stale released shard {sid} on {local_host}",
-                worker_label="sweep-stale",
-            ):
-                state = read_state(sp)
-                shard = state.get("shards", {}).get(sid)
-                if shard is not None:
-                    shard["state"] = "pending"
-                    for key in (
-                        "claimed_by_host", "claimed_by_pid", "claimed_at",
-                        "n_entries_flushed", "n_entries_total",
-                        "last_flush_at",
-                    ):
-                        shard.pop(key, None)
-                    write_state(sp, state)
+            _sweep_stale_restore_pending(
+                args, sp, sid, local_host,
+                note="dead-pid claim",
+            )
     label = "Would release" if dry_run else "Released"
     sys.stderr.write(
         f"sweep-stale on {local_host!r}: {label} {len(swept_ids)} "
+        f"dead-pid claim(s) + {len(swept_malformed)} malformed "
         f"claim(s) ({threshold_hours:.1f} h threshold; "
         f"--include-resume={include_resume}; dry-run={dry_run}).\n"
     )
     if swept_ids:
         for sid in swept_ids:
-            sys.stderr.write(f"  {sid}: claim released\n")
+            sys.stderr.write(f"  {sid}: claim released (dead pid)\n")
+    if swept_malformed:
+        for sid in swept_malformed:
+            sys.stderr.write(
+                f"  {sid}: claim released (malformed file)\n"
+            )
     if skipped_alive:
         sys.stderr.write(
             f"  Skipped {len(skipped_alive)} claim(s): owning pid still alive.\n"
@@ -1832,6 +1929,12 @@ def cmd_sweep_stale(args: argparse.Namespace) -> int:
         sys.stderr.write(
             f"  Skipped {len(skipped_young)} claim(s): dead pid but "
             f"age below threshold (need ≥{threshold_hours:.1f} h).\n"
+        )
+    if skipped_young_malformed:
+        sys.stderr.write(
+            f"  Skipped {len(skipped_young_malformed)} malformed "
+            f"claim(s): age below threshold "
+            f"(need ≥{threshold_hours:.1f} h before release).\n"
         )
     if skipped_resume:
         sys.stderr.write(

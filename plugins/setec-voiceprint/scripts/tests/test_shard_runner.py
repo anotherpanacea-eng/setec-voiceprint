@@ -1363,6 +1363,112 @@ def test_sweep_stale_skips_remote_host_claims(sharded_run):
     assert claim_path.exists()
 
 
+# ---------- Reviewer P2: malformed claim handling (2026-05-14) ----
+
+
+def _force_old_mtime(path: Path, hours_ago: float) -> None:
+    """Set the path's mtime to `hours_ago` hours in the past so
+    sweep-stale's mtime-based age check fires."""
+    import os as _os
+    import time as _time
+    target = _time.time() - hours_ago * 3600.0
+    _os.utime(path, (target, target))
+
+
+def test_sweep_stale_releases_malformed_claim_past_threshold(
+    sharded_run, capsys: pytest.CaptureFixture,
+):
+    """Reviewer P2: a malformed local claim file (e.g., zero-byte
+    after a crash mid-write) used to block the shard forever:
+    _select_next_shard skipped because the file existed,
+    sweep-stale skipped because read_claim_file returned None.
+
+    The fix: sweep-stale now uses claim_file_status to distinguish
+    malformed from missing. Malformed local claims are warned about
+    on stderr and released after the stale threshold (measured by
+    file mtime since claimed_at is unreadable)."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # Plant a zero-byte (canonical malformed) claim file with an
+    # old mtime.
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    claim_path.write_text("")  # zero-byte after touch
+    _force_old_mtime(claim_path, hours_ago=12.0)  # > 6 h default
+    # Mark the shard "claimed" in state.json (matching the
+    # would-have-been claim from the worker that crashed mid-write).
+    state = ss.read_state(sr.state_path(base, run_id))
+    state["shards"]["001"]["state"] = "claimed"
+    state["shards"]["001"]["claimed_by_host"] = ss._host()
+    state["shards"]["001"]["claimed_by_pid"] = 999_999_999
+    ss.write_state(sr.state_path(base, run_id), state)
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    err = capsys.readouterr().err
+    # Warning surfaced.
+    assert "malformed claim file" in err.lower()
+    # File released.
+    assert not claim_path.exists()
+    # state.json restored to pending.
+    state = ss.read_state(sr.state_path(base, run_id))
+    assert state["shards"]["001"]["state"] == "pending"
+    assert "claimed_by_pid" not in state["shards"]["001"]
+
+
+def test_sweep_stale_warns_but_preserves_young_malformed(
+    sharded_run, capsys: pytest.CaptureFixture,
+):
+    """A malformed claim file with mtime BELOW the stale threshold
+    is warned about (so the operator sees the condition) but NOT
+    released — same dwell semantics as for dead-pid claims, so the
+    same-pid race protection applies symmetrically."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    claim_path.write_text('{"host": "hostA", "pid":')  # truncated
+    _force_old_mtime(claim_path, hours_ago=0.1)  # 6 minutes ago
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id,
+    ])
+    assert rc == 0
+    err = capsys.readouterr().err
+    # Warning surfaced.
+    assert "malformed claim file" in err.lower()
+    # But NOT released — too young.
+    assert claim_path.exists()
+    # Output names the young-malformed bucket.
+    assert "age below threshold" in err.lower()
+
+
+def test_sweep_stale_dry_run_preserves_malformed(
+    sharded_run, capsys: pytest.CaptureFixture,
+):
+    """--dry-run on a malformed-but-old claim should warn AND
+    report the would-release count, without actually releasing."""
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    claim_path = sr.shard_claim_path(base, run_id, "001")
+    claim_path.parent.mkdir(parents=True, exist_ok=True)
+    claim_path.write_text("")
+    _force_old_mtime(claim_path, hours_ago=12.0)
+    rc = sr.main([
+        "--base-dir", str(base), "sweep-stale",
+        "--run-id", run_id, "--dry-run",
+    ])
+    assert rc == 0
+    # File still in place after dry-run.
+    assert claim_path.exists()
+    err = capsys.readouterr().err
+    assert "Would release" in err
+    # Summary names the malformed bucket.
+    assert "malformed" in err.lower()
+
+
 # --------------- v1.44.1.B: terminate-all / kill-all ---------
 
 
