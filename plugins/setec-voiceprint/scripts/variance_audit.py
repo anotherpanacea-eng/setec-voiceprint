@@ -1708,6 +1708,21 @@ def classify_compression(
         check("adjacent_cosine_mean", adj.get("mean"))
         check("adjacent_cosine_sd", adj.get("sd"))
 
+    # Tier 4 — surprisal (Codex PR #31 review P0). The C.4 signals
+    # were registered in COMPRESSION_HEURISTICS but never wired into
+    # classify_compression's check() loop, so they never entered
+    # ``available_signals`` / ``available_weight`` and the ablation
+    # arithmetic couldn't see them. Now they're checked here under
+    # the same length-floor + threshold contract as Tier 1-3.
+    t4 = audit.get("tier4") or {}
+    surprisal = t4.get("surprisal") if isinstance(t4, dict) else None
+    if isinstance(surprisal, dict) and surprisal.get("available", True):
+        check("surprisal_mean", surprisal.get("mean"))
+        check("surprisal_sd", surprisal.get("sd"))
+        # ACF lives one level deeper.
+        acf = surprisal.get("autocorrelation") or {}
+        check("surprisal_acf_lag1", acf.get("lag_1"))
+
     # POS-bigram KL divergence against baseline aggregate. Only
     # participates when a baseline is supplied and the POS-bigram
     # divergence was computed (which requires Tier 2 / spaCy on both
@@ -1911,6 +1926,22 @@ _ABLATION_SIGNAL_FAMILIES: dict[str, tuple[str, ...]] = {
     # against a register-matched baseline), they belong here.
     "baseline_divergence": (
         "pos_bigram_kl",
+    ),
+    # Codex PR #31 review P0 — predictability_uniformity family.
+    # The Tier 4 surprisal signals (C.4) participate in compression
+    # when `--tier4` is on (combined weight 4.5: mean=1.5 + sd=2.0
+    # + acf=1.0). Pre-fix they were absent from the ablation
+    # mapping, so a band call carried by Tier 4 could report
+    # `is_robust_call=True` with no load-bearing families — the
+    # ablation arithmetic never subtracted the surprisal weight.
+    # The family name `predictability_uniformity` reflects what the
+    # three signals jointly measure: how uniformly the LM
+    # distributes surprise across the text — the operational
+    # fingerprint of LLM smoothing per SPEC §1.2.
+    "predictability_uniformity": (
+        "surprisal_mean",
+        "surprisal_sd",
+        "surprisal_acf_lag1",
     ),
 }
 

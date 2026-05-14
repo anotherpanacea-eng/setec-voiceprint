@@ -470,5 +470,170 @@ class TestTier4MarkdownVisible:
         assert "tinyllama" in text
 
 
+# ---------- Codex PR #31 review P0: ablation family wiring ----
+#
+# Codex flagged that the pre-fix ``_ABLATION_SIGNAL_FAMILIES`` map
+# didn't include the Tier 4 surprisal entries. A Tier-4-driven band
+# call could therefore report ``is_robust_call=True`` because no
+# ablation removed the load-bearing surprisal weight. The fix adds
+# a ``predictability_uniformity`` family that bundles
+# ``surprisal_mean`` + ``surprisal_sd`` + ``surprisal_acf_lag1`` so
+# the ablation arithmetic correctly subtracts the Tier 4 weight.
+
+
+class TestTier4AblationFamily:
+    """The Tier 4 signals must be wired into
+    ``_ABLATION_SIGNAL_FAMILIES`` under a single
+    ``predictability_uniformity`` family so the ablation contract
+    can drop the surprisal weight wholesale."""
+
+    def test_family_membership_matches_compression_heuristics(self):
+        """The family must list exactly the three Tier 4 signals
+        and they must all be registered in COMPRESSION_HEURISTICS.
+        Catches the original Codex bug (entries missing from map)
+        AND any future drift where an entry is removed from the
+        registry but not the family map."""
+        family = va._ABLATION_SIGNAL_FAMILIES.get(
+            "predictability_uniformity",
+        )
+        assert family is not None, (
+            "predictability_uniformity family is missing from "
+            "_ABLATION_SIGNAL_FAMILIES — Tier-4-only band calls "
+            "would falsely report as robust."
+        )
+        assert set(family) == {
+            "surprisal_mean",
+            "surprisal_sd",
+            "surprisal_acf_lag1",
+        }
+        for sig in family:
+            assert sig in va.COMPRESSION_HEURISTICS, (
+                f"family lists {sig!r} but COMPRESSION_HEURISTICS "
+                f"has no such entry — drift between the registry "
+                f"and the ablation map."
+            )
+
+    def test_tier4_signals_enter_classify_compression(self):
+        """Wiring check: the three Tier 4 signals must appear in
+        ``available_signals`` when ``classify_compression`` runs on a
+        long-enough Tier-4 audit. Pre-fix the signals were registered
+        in COMPRESSION_HEURISTICS but never reached the check() loop,
+        so they were silently absent from the band calculus."""
+        long_prose = SAMPLE_PROSE * 3  # ~765 words, above all floors
+        out = va.audit_text(
+            long_prose, do_tier2=False, do_tier3=False,
+            do_tier4=True, tier4_score_fn=_stub_flat_score,
+        )
+        compression = va.classify_compression(out)
+        available = set(compression.get("available_signals") or [])
+        for sig in (
+            "surprisal_mean", "surprisal_sd", "surprisal_acf_lag1",
+        ):
+            assert sig in available, (
+                f"Tier 4 signal {sig!r} did not enter "
+                f"available_signals — classify_compression never "
+                f"called check() on it."
+            )
+
+    def test_tier4_only_call_drops_under_family_ablation(self):
+        """Regression for Codex's exact reproducer scenario: when a
+        band call is genuinely Tier-4-load-bearing (Tier 1-3 signals
+        either absent or below threshold; Tier 4 firing), removing
+        the predictability_uniformity family must drop the band.
+
+        Built against a synthetic audit dict (rather than a prose
+        fixture) so we can pin the exact Tier-4-only scenario
+        without depending on real-prose statistics happening to
+        leave Tier 1 quiet. The synthetic audit:
+          - has n_words above all Tier 4 length floors (500+)
+          - reports Tier 1 sentence-length stats well INSIDE the
+            non-compressive band so burstiness etc. don't fire
+          - reports Tier 4 surprisal stats at the compressive end
+            of the bands so all three Tier 4 signals fire
+        """
+        # COMPRESSION_HEURISTICS thresholds (read at runtime so the
+        # test stays in sync if the registry changes).
+        h = va.COMPRESSION_HEURISTICS
+        sm = h["surprisal_mean"].value   # lt: AI tends LOWER
+        ssd = h["surprisal_sd"].value    # lt: AI tends LOWER
+        sacf = h["surprisal_acf_lag1"].value  # gt: AI tends HIGHER
+
+        synthetic = {
+            "summary": {"n_words": 800},
+            "tier1": {
+                # Pick Tier 1 values clearly OUTSIDE the compressive
+                # band so check() doesn't flag them. burstiness_B
+                # threshold direction is lt; pick a high value.
+                # See COMPRESSION_HEURISTICS for each direction.
+                "sentence_length": {
+                    "burstiness_B": 5.0,
+                    "sd": 50.0,
+                },
+                "connective_density": {"per_1000_tokens": 1.0},
+                "mattr": {"value": 0.95},
+                "mtld": 200.0,
+                "yules_k": 50.0,
+                "shannon_entropy_bits": 12.0,
+                "fkgl": {"sd": 5.0},
+            },
+            "tier4": {
+                "available": True,
+                "surprisal": {
+                    "available": True,
+                    "mean": sm - 0.5,         # below threshold (fires)
+                    "sd": ssd - 0.3,          # below threshold (fires)
+                    "autocorrelation": {
+                        "lag_1": sacf + 0.2,  # above threshold (fires)
+                    },
+                    "provisional": True,
+                    "calibration_anchor": "user-baseline-required",
+                },
+            },
+        }
+
+        compression = va.classify_compression(synthetic)
+        available = set(compression.get("available_signals") or [])
+        flagged = set(compression.get("flagged_signals") or [])
+
+        # Precondition: Tier 4 fires; Tier 1 mostly doesn't.
+        assert "surprisal_mean" in flagged, (
+            "Synthetic audit didn't flag surprisal_mean — fixture "
+            "broken or threshold drifted."
+        )
+        assert "surprisal_sd" in flagged
+        assert "surprisal_acf_lag1" in flagged
+
+        original_band = compression.get("band")
+        assert original_band != "Insufficient signal"
+
+        ablations = va.ablation_band_calls(compression, synthetic)
+        per_family = ablations.get("per_family", {})
+        pred = per_family.get("predictability_uniformity")
+        assert pred is not None, (
+            "predictability_uniformity family missing from "
+            "ablation per_family map."
+        )
+        # The load-bearing assertion: ablating predictability_uniformity
+        # must DROP the band (or at least change it). Pre-fix the
+        # family didn't exist so ablation reported stable; post-fix
+        # the band drops because the Tier 4 weight is removed.
+        assert pred["robustness"] == "fragile_drop", (
+            f"Tier-4-only band call should DROP under "
+            f"predictability_uniformity ablation. Got "
+            f"robustness={pred['robustness']!r}, original band "
+            f"={original_band!r}, ablated band={pred.get('band')!r}. "
+            f"This is the exact regression Codex flagged."
+        )
+        # And the family must appear in load_bearing_families.
+        load_bearing = set(ablations.get("load_bearing_families") or [])
+        assert "predictability_uniformity" in load_bearing, (
+            "predictability_uniformity must be reported as "
+            "load-bearing when it's the sole driver of the band call."
+        )
+        # is_robust_call must be False — the call is fragile because
+        # one family carries it.
+        assert ablations.get("is_robust_call") is False
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
