@@ -762,6 +762,21 @@ def _run_single_worker(
             # resumed worker effectively unsignalable.
             refresh_claim_file(claim_path)
         # Update state.json under the lock to reflect the claim.
+        #
+        # Reviewer P2 (2026-05-14 round 5): a ShardStateError here
+        # is almost always a benign race — _select_next_shard read
+        # a stale state.json snapshot (e.g., before another worker
+        # marked the shard done and released its claim), this
+        # worker won the atomic .claim race, but by the time the
+        # state-update lock was acquired the shard had already
+        # transitioned out of the expected state. Treat that
+        # specific case as a soft race (release the claim and
+        # continue the loop), and reserve rc=3 for unrecognized /
+        # truly corrupt errors (e.g., "Unknown shard id").
+        #
+        # Without this distinction, every two-worker run exhibited
+        # the race intermittently and reported the whole run as
+        # rc=3 failed (as the pre-existing test flake confirmed).
         try:
             with state_update_lock(sp):
                 state = read_state(sp)
@@ -770,6 +785,18 @@ def _run_single_worker(
                 )
                 write_state(sp, state)
         except ShardStateError as exc:
+            msg = str(exc)
+            # The "Cannot claim shard X in state Y; expected Z"
+            # shape is the race we tolerate. Other shapes
+            # (unknown shard id, etc.) remain fatal.
+            if "Cannot claim shard" in msg and "expected" in msg:
+                sys.stderr.write(
+                    f"{worker_label}: race lost on shard "
+                    f"{target_id} (state transitioned between "
+                    f"selection and claim): {exc}\n"
+                )
+                release_claim(claim_path)
+                continue
             sys.stderr.write(
                 f"{worker_label}: state-update claim failed for "
                 f"shard {target_id}: {exc}\n"
@@ -1349,6 +1376,21 @@ def _signal_active_workers(
     sd = shards_dir(base, run_id)
     if not sd.exists():
         return 0, 0, 0, 0
+    # Reviewer P2 (2026-05-14 round 5): de-dupe AFTER a successful
+    # signal, not before. Pre-fix, the dedupe added the pid to
+    # seen_pids as soon as the iteration started processing that
+    # pid. A stale claim file with a reused PID (identity-mismatch)
+    # would add the PID to seen_pids, and the LATER claim file with
+    # the live identity (same PID, current start_time_epoch)
+    # would then be skipped without any identity check or signal.
+    # Reviewer reproduced this with two claim files for the same
+    # PID: shard 000 mismatched, shard 001 matched, and the live
+    # worker received NO signal.
+    #
+    # Fix: only add to seen_pids after a successful kill. A failed
+    # path (remote host, dead pid, identity mismatch) does NOT
+    # claim the de-dupe slot, so a later matching claim still gets
+    # signaled.
     seen_pids: set[int] = set()
     local_host = _host()
     for shard_dir in sorted(sd.iterdir()):
@@ -1371,9 +1413,13 @@ def _signal_active_workers(
                 f"reach it.\n"
             )
             continue
+        # NOTE: dedupe check stays here (before the expensive
+        # pid_alive + identity check) to avoid redundant work when
+        # a worker owns multiple shards and has already been
+        # signaled successfully. Critically, the dedupe SET only
+        # gets entries AFTER os.kill succeeds — see below.
         if claim_pid in seen_pids:
             continue
-        seen_pids.add(claim_pid)
         if not pid_alive(claim_pid):
             n_dead += 1
             sys.stderr.write(
@@ -1391,10 +1437,15 @@ def _signal_active_workers(
                 f"  shard {shard_dir.name}: skipping signal to pid "
                 f"{claim_pid}: {reason}\n"
             )
+            # IMPORTANT: do NOT add claim_pid to seen_pids here.
+            # A later claim file with the SAME pid but a matching
+            # start_time_epoch is the live worker; we must not
+            # preemptively dedupe it.
             continue
         try:
             os.kill(claim_pid, sig)
             n_signaled += 1
+            seen_pids.add(claim_pid)  # only dedupe AFTER success
             sys.stderr.write(
                 f"  shard {shard_dir.name}: sent {label} to pid "
                 f"{claim_pid} (host {claim_host}; identity verified).\n"
