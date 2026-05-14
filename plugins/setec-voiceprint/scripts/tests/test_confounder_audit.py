@@ -680,6 +680,154 @@ class TestIdiolectSurvival:
         assert "idiolect_survival" not in obs
 
 
+# ---------- Reviewer P2 (2026-05-14 retroactive R3 audit) ----------
+
+
+class TestUnavailableAuditsAreIgnored:
+    """Reviewer P2: extract_observations() trusted ``if audit:``
+    as "input present" and walked into defaulted ``.get(key, 0.0)``
+    calls for failed audits. A discourse audit with
+    ``available: False`` (e.g., dependency missing, input too
+    short) still emitted ``discourse_marker_density=low`` because
+    ``discourse.get("total_marker_density_per_1k", 0.0)`` defaulted
+    to 0.0 which fired the < 8.0 branch. The agency block did the
+    same thing four times, silently producing four "low"
+    observations from an audit that found no evidence at all —
+    altering the ranked confounders without any actual signal.
+
+    Post-fix: every audit-input gate honors ``available is False``,
+    and every density-keyed observation requires the key to be
+    present and numeric in the audit payload."""
+
+    def test_unavailable_discourse_emits_no_observation(self):
+        discourse = {
+            "available": False,
+            "reason": "input too short for marker analysis",
+        }
+        obs = ca.extract_observations(discourse=discourse)
+        assert "discourse_marker_density" not in obs
+        assert "marked_move_entropy" not in obs
+
+    def test_unavailable_agency_emits_no_observation(self):
+        """Reviewer's most explicit reproducer: an unavailable
+        agency audit used to emit FOUR low observations silently."""
+        agency = {
+            "available": False,
+            "reason": "spaCy not installed",
+        }
+        obs = ca.extract_observations(agency=agency)
+        assert "nominalization_density" not in obs
+        assert "agentless_passive_rate" not in obs
+        assert "generic_institutional_density" not in obs
+        assert "concrete_detail_density" not in obs
+
+    def test_unavailable_variance_emits_no_observation(self):
+        variance = {"available": False, "reason": "spaCy missing"}
+        obs = ca.extract_observations(variance=variance)
+        assert obs == {}
+
+    def test_unavailable_voice_distance_emits_no_observation(self):
+        vd = {"available": False}
+        obs = ca.extract_observations(voice_distance=vd)
+        assert "char_ngram_delta" not in obs
+        assert "register_match" not in obs
+
+    def test_unavailable_paragraph_emits_no_observation(self):
+        para = {"available": False}
+        obs = ca.extract_observations(paragraph=para)
+        assert "paragraph_regularity" not in obs
+
+    def test_unavailable_idiolect_emits_no_observation(self):
+        """Unavailable idiolect audit shouldn't compute survival
+        rate against the target text."""
+        idiolect = {"available": False, "phrases": []}
+        obs = ca.extract_observations(
+            idiolect=idiolect, target_text="some text",
+        )
+        assert "idiolect_survival" not in obs
+
+    def test_unavailable_aic_emits_no_observation(self):
+        aic = {"available": False}
+        obs = ca.extract_observations(aic=aic)
+        assert "aic_pattern_density" not in obs
+
+    def test_missing_available_key_treated_as_available(self):
+        """Backwards compat: older audit JSONs (R1-R6 era) may not
+        emit ``available`` at all. Missing key is treated as True
+        so existing valid inputs keep working."""
+        agency = {
+            "densities_per_1k": {
+                "nominalization_per_1k": 35.0,
+                "agentless_passive_per_1k": 6.0,
+                "generic_institutional_per_1k": 5.0,
+                "concrete_detail_per_1k": 1.0,
+            },
+        }
+        obs = ca.extract_observations(agency=agency)
+        assert obs["nominalization_density"] == "high"
+        assert obs["agentless_passive_rate"] == "high"
+        assert obs["generic_institutional_density"] == "high"
+        assert obs["concrete_detail_density"] == "low"
+
+
+class TestDensityKeyPresenceRequired:
+    """Reviewer P2 second leg: an *available* audit that's missing
+    the specific density keys (corrupt payload, schema drift,
+    legitimately-empty densities block) used to default to 0.0 and
+    trigger the low-band branch. Post-fix, only present numeric
+    keys produce observations."""
+
+    def test_agency_with_empty_densities_emits_nothing(self):
+        agency = {
+            "available": True,
+            "densities_per_1k": {},
+        }
+        obs = ca.extract_observations(agency=agency)
+        assert "nominalization_density" not in obs
+        assert "agentless_passive_rate" not in obs
+        assert "generic_institutional_density" not in obs
+        assert "concrete_detail_density" not in obs
+
+    def test_agency_with_partial_densities_emits_only_present(self):
+        """If only some density keys are present, only emit
+        observations for those — don't fill in defaults for the
+        missing ones."""
+        agency = {
+            "available": True,
+            "densities_per_1k": {
+                "nominalization_per_1k": 5.0,  # < 8 → low
+                # other three missing
+            },
+        }
+        obs = ca.extract_observations(agency=agency)
+        assert obs.get("nominalization_density") == "low"
+        # Missing keys produce NO observation:
+        assert "agentless_passive_rate" not in obs
+        assert "generic_institutional_density" not in obs
+        assert "concrete_detail_density" not in obs
+
+    def test_discourse_missing_density_emits_nothing(self):
+        """available=True but total_marker_density_per_1k absent —
+        emit no observation."""
+        discourse = {
+            "available": True,
+            "marked_only_entropy_bits": 2.0,
+            # total_marker_density_per_1k missing
+        }
+        obs = ca.extract_observations(discourse=discourse)
+        assert "discourse_marker_density" not in obs
+
+    def test_discourse_with_non_numeric_density_emits_nothing(self):
+        """A corrupt density value (string, None) should not
+        produce an observation."""
+        discourse = {
+            "available": True,
+            "total_marker_density_per_1k": "not a number",
+        }
+        obs = ca.extract_observations(discourse=discourse)
+        assert "discourse_marker_density" not in obs
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

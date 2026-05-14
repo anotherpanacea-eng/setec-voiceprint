@@ -283,6 +283,30 @@ def _idiolect_survival_rate(
     return matches / len(preservation)
 
 
+def _audit_is_usable(audit: dict[str, Any] | None) -> bool:
+    """Reviewer P2 (2026-05-14 retroactive R3 audit): an audit
+    dict is usable iff it's not None AND its ``available`` flag
+    is not False. Audits that fail (missing dependency, input
+    too short, scoring error) emit ``available: False`` with a
+    ``reason`` string per the framework's convention.
+
+    Pre-fix, ``extract_observations()`` treated ``if audit:`` as
+    "input present" and walked into ``.get(key, 0.0)`` calls
+    that silently produced "low" observations from missing
+    data — silently promoting confounders without any actual
+    evidence. Post-fix, audits with ``available=False`` are
+    treated as absent evidence (same as ``None``).
+
+    Missing ``available`` key is treated as True for backwards
+    compat with older audit JSONs (R1-R6 era) that don't emit
+    the field. Going forward, every audit should emit
+    ``available`` explicitly.
+    """
+    if audit is None:
+        return False
+    return audit.get("available") is not False
+
+
 def extract_observations(
     *,
     variance: dict[str, Any] | None = None,
@@ -297,11 +321,21 @@ def extract_observations(
     """Reduce the input audit JSONs to a flat {signal: direction}
     dict. Direction values: "high" / "low" / "uniform" / "localized" /
     "unknown". Signals not in any input are absent from the output.
+
+    Reviewer P2 (2026-05-14 retroactive R3 audit): every
+    audit-input gate now checks ``_audit_is_usable`` (was
+    ``if audit:``) so failed audits (``available: False``) are
+    skipped instead of contributing defaulted "low" observations
+    that silently shifted the confounder ranking. The
+    density-keyed observation blocks (discourse marker density,
+    agency densities) also now require the specific key to be
+    present and numeric — previously a missing key defaulted to
+    0.0 and emitted "low" without any evidence.
     """
     obs: dict[str, str] = {}
 
     # Variance audit ----------------------------------------------
-    if variance:
+    if _audit_is_usable(variance):
         compression = variance.get("compression") or {}
         flagged = set(compression.get("flagged_signals") or [])
         # Sentence-rhythm signals (1.34.2 fix): pre-1.34.2 ANY rhythm
@@ -359,7 +393,7 @@ def extract_observations(
                 # leaves the signal unknown.
 
     # Voice distance ---------------------------------------------
-    if voice_distance:
+    if _audit_is_usable(voice_distance):
         # Char n-gram family Δ: read off families[char_ngrams_*].
         families = voice_distance.get("families") or {}
         char_deltas = [
@@ -385,7 +419,7 @@ def extract_observations(
             obs["register_match"] = "low"
 
     # Paragraph audit --------------------------------------------
-    if paragraph:
+    if _audit_is_usable(paragraph):
         compression = paragraph.get("compression") or {}
         band = compression.get("band")
         para_signal = _extract_band_signal(band)
@@ -397,12 +431,17 @@ def extract_observations(
         # it in elsewhere.
 
     # Discourse move signature -----------------------------------
-    if discourse:
-        density = discourse.get("total_marker_density_per_1k", 0.0)
-        if density >= 30.0:
-            obs["discourse_marker_density"] = "high"
-        elif density < 8.0:
-            obs["discourse_marker_density"] = "low"
+    if _audit_is_usable(discourse):
+        # Reviewer P2 (2026-05-14): only emit an observation when
+        # the density key is present and numeric. Pre-fix, a
+        # missing key defaulted to 0.0 (via .get(..., 0.0)) and
+        # silently triggered the < 8.0 branch → "low".
+        density = discourse.get("total_marker_density_per_1k")
+        if isinstance(density, (int, float)):
+            if density >= 30.0:
+                obs["discourse_marker_density"] = "high"
+            elif density < 8.0:
+                obs["discourse_marker_density"] = "low"
         marked_h = discourse.get("marked_only_entropy_bits")
         if isinstance(marked_h, (int, float)):
             if marked_h <= 1.5:
@@ -411,7 +450,7 @@ def extract_observations(
                 obs["marked_move_entropy"] = "high"
 
     # AIC pattern audit ------------------------------------------
-    if aic:
+    if _audit_is_usable(aic):
         # Future: read named-pattern density. For now we only check
         # if the audit reports any pattern at high density.
         densities = aic.get("pattern_densities") or {}
@@ -430,7 +469,7 @@ def extract_observations(
     # Without target_text we have no survival metric and leave the
     # signal unobserved (consistent with the missing-evidence
     # discipline).
-    if idiolect and target_text:
+    if _audit_is_usable(idiolect) and target_text:
         survival_rate = _idiolect_survival_rate(idiolect, target_text)
         if survival_rate is not None:
             if survival_rate >= 0.6:
@@ -440,28 +479,41 @@ def extract_observations(
             # 0.3-0.6 leaves the signal unobserved — ambiguous range.
 
     # Agency / abstraction audit (Release 4 strengthening complement)
-    if agency:
+    #
+    # Reviewer P2 (2026-05-14): each density observation now
+    # requires the specific per-1k key be present AND numeric.
+    # Pre-fix, missing keys defaulted to 0.0 and triggered the
+    # low-band branch on all four signals — silently emitting
+    # four "low" observations from an agency audit that produced
+    # no actual evidence. Post-fix, an agency audit with
+    # ``available=False`` or with missing density keys emits no
+    # observations.
+    if _audit_is_usable(agency):
         agency_dens = agency.get("densities_per_1k") or {}
-        nominalization = agency_dens.get("nominalization_per_1k", 0.0)
-        if nominalization >= 30.0:
-            obs["nominalization_density"] = "high"
-        elif nominalization < 8.0:
-            obs["nominalization_density"] = "low"
-        passive = agency_dens.get("agentless_passive_per_1k", 0.0)
-        if passive >= 5.0:
-            obs["agentless_passive_rate"] = "high"
-        elif passive < 1.0:
-            obs["agentless_passive_rate"] = "low"
-        generic = agency_dens.get("generic_institutional_per_1k", 0.0)
-        if generic >= 4.0:
-            obs["generic_institutional_density"] = "high"
-        elif generic < 0.5:
-            obs["generic_institutional_density"] = "low"
-        concrete = agency_dens.get("concrete_detail_per_1k", 0.0)
-        if concrete >= 3.0:
-            obs["concrete_detail_density"] = "high"
-        elif concrete < 1.5:
-            obs["concrete_detail_density"] = "low"
+        nominalization = agency_dens.get("nominalization_per_1k")
+        if isinstance(nominalization, (int, float)):
+            if nominalization >= 30.0:
+                obs["nominalization_density"] = "high"
+            elif nominalization < 8.0:
+                obs["nominalization_density"] = "low"
+        passive = agency_dens.get("agentless_passive_per_1k")
+        if isinstance(passive, (int, float)):
+            if passive >= 5.0:
+                obs["agentless_passive_rate"] = "high"
+            elif passive < 1.0:
+                obs["agentless_passive_rate"] = "low"
+        generic = agency_dens.get("generic_institutional_per_1k")
+        if isinstance(generic, (int, float)):
+            if generic >= 4.0:
+                obs["generic_institutional_density"] = "high"
+            elif generic < 0.5:
+                obs["generic_institutional_density"] = "low"
+        concrete = agency_dens.get("concrete_detail_per_1k")
+        if isinstance(concrete, (int, float)):
+            if concrete >= 3.0:
+                obs["concrete_detail_density"] = "high"
+            elif concrete < 1.5:
+                obs["concrete_detail_density"] = "low"
 
     return obs
 
