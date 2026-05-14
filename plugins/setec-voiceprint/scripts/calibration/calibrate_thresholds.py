@@ -719,6 +719,200 @@ def load_or_score_corpus(
     return records, scoring_meta, False
 
 
+# Polarity-inversion gate (1.59.0+) — refuse to publish a threshold
+# entry when the corpus contradicts the registry's direction
+# hypothesis. The framework's README documents the empirical
+# motivation: every Tier 1 signal flipped polarity between the
+# EditLens val split (2026-05-10) and MAGE (2026-05-11). Each per-
+# corpus calibration produces a threshold that does NOT generalize.
+# The gate enforces that finding at code level: if
+# ``direction_aware_auc`` falls below the chance line for a given
+# corpus + signal, the harness refuses to ship the entry as a
+# load-bearing threshold. The operator can override the refusal
+# with ``--allow-polarity-inversion`` when explicitly documenting
+# the inversion (the override path decorates ``notes`` with a loud
+# POLARITY INVERSION marker so the entry can never be silently
+# treated as a calibrated threshold).
+#
+# Default margin is 0.0 (strict: any DA-AUC < 0.5 trips). The
+# operator can widen via ``--polarity-inversion-margin 0.05`` so
+# only DA-AUC < 0.45 trips (useful for borderline cases on small
+# corpora where the AUC estimate has wide variance).
+
+DEFAULT_POLARITY_INVERSION_MARGIN = 0.0
+
+# Upper bound for the margin. A margin of exactly 0.5 would shift
+# the chance line to 0.0, at which point a DA-AUC of 0.0 (the most
+# extreme inverted polarity possible) just barely passes the gate
+# — silently disabling the refusal. Values above 0.5 shift the
+# line below zero and disable the gate entirely. The valid range
+# is therefore the half-open interval [0.0, 0.5). Pinned as a
+# constant so the validator, the tests, and the CLI help text all
+# read from the same source.
+MAX_POLARITY_INVERSION_MARGIN = 0.5
+
+
+def _validate_polarity_margin(margin: Any) -> float:
+    """Validate that ``margin`` is a real number in [0.0, 0.5) and
+    return the normalized float.
+
+    Raises ``SystemExit`` (which argparse turns into rc=2 at the
+    CLI and lets programmatic callers catch by type) with a clear
+    diagnostic if the value is outside range, NaN, or non-numeric.
+
+    The valid range is the half-open interval ``[0.0, 0.5)``:
+
+      * margin == 0.0 is strict (chance line stays at 0.5).
+      * margin > 0.0 widens the chance line downward by exactly
+        that amount.
+      * margin == 0.5 would shift the line to 0.0 and a DA-AUC
+        of 0.0 (the most extreme inverted polarity possible)
+        would pass the gate. We refuse the boundary explicitly.
+      * margin > 0.5 shifts the line below zero — every possible
+        DA-AUC value passes, silently disabling the gate. This is
+        the typo-class failure Codex flagged on PR #40 (e.g.,
+        ``--polarity-inversion-margin 5`` instead of ``0.5``).
+      * margin < 0.0 would shift the line above 0.5 — refusing
+        readings that match the registry's hypothesis, which
+        would invert the gate's meaning rather than disable it.
+    """
+    try:
+        m = float(margin)
+    except (TypeError, ValueError):
+        raise SystemExit(
+            f"--polarity-inversion-margin must be a real number; "
+            f"got {margin!r}."
+        )
+    if m != m:  # NaN check (NaN is the only float != itself)
+        raise SystemExit(
+            "--polarity-inversion-margin must be a real number; "
+            "got NaN."
+        )
+    if not (0.0 <= m < MAX_POLARITY_INVERSION_MARGIN):
+        raise SystemExit(
+            f"--polarity-inversion-margin must satisfy "
+            f"0.0 <= margin < {MAX_POLARITY_INVERSION_MARGIN}; "
+            f"got {m}. The margin shifts the chance line down "
+            f"from 0.5 by exactly that amount; values outside "
+            f"this range either disable the gate (margin >= "
+            f"{MAX_POLARITY_INVERSION_MARGIN}, chance line at "
+            f"or below 0.0 so every DA-AUC passes) or invert "
+            f"its meaning (margin < 0.0, chance line above 0.5 "
+            f"so the gate refuses readings that AGREE with the "
+            f"registry hypothesis). Use 0.0 for strict, ~0.05 "
+            f"for borderline-tolerant calibration on small "
+            f"corpora."
+        )
+    return m
+
+
+class PolarityInversionRefusal(SystemExit):
+    """Raised when the corpus's direction-aware AUC falls below the
+    chance line for the signal under test.
+
+    Subclasses ``SystemExit`` so the CLI exits non-zero with the
+    refusal message; programmatic callers (``derive_threshold(...)``
+    invoked from a notebook or another script) can catch it
+    specifically rather than the generic ``SystemExit``.
+
+    The exception's ``code`` attribute is the diagnostic message
+    string, in the style of every other SystemExit raised in this
+    module.
+    """
+
+
+def _check_polarity_inversion(
+    *,
+    signal: str,
+    signal_path: str,
+    direction: str,
+    direction_aware_auc: float | None,
+    corpus_label: str,
+    allow_polarity_inversion: bool,
+    margin: float,
+) -> tuple[bool, float]:
+    """Return ``(triggered, chance_line)``.
+
+    * ``triggered`` is True iff the polarity gate flagged an
+      inversion and the run is proceeding under
+      ``--allow-polarity-inversion``.
+    * ``chance_line`` is the normalized cutoff (``0.5 - margin``
+      after validation). Returned so the caller can use the same
+      value for the gate logic and for the provenance block —
+      Codex review P1 on PR #40 flagged that the two had drifted
+      and that a typo-class invalid margin could silently disable
+      the gate.
+
+    Raises :class:`PolarityInversionRefusal` when DA-AUC is below
+    the chance line AND the override flag is False.
+
+    Raises ``SystemExit`` (via :func:`_validate_polarity_margin`)
+    when ``margin`` is out of the valid range ``[0.0, 0.5)``.
+    This validation runs even when ``direction_aware_auc`` is None
+    (the no-op back-compat path) — an invalid margin should fail
+    loudly regardless of whether the gate would ultimately fire.
+
+    When ``direction_aware_auc`` is None (older test fixtures that
+    mock ``_ranking_metrics`` with the legacy ``{auc, ap}`` shape),
+    the gate is skipped — there is no information to refuse on.
+    Same back-compat posture as the survey-row builder.
+    """
+    # Validate margin upfront; raises SystemExit on invalid. This
+    # runs unconditionally so a typo-class margin (e.g., 5 instead
+    # of 0.5) fails loudly even on the DA-AUC-is-None back-compat
+    # path. Codex PR #40 review P1.
+    validated_margin = _validate_polarity_margin(margin)
+    chance_line = 0.5 - validated_margin
+    if direction_aware_auc is None:
+        return False, chance_line
+    if direction_aware_auc >= chance_line:
+        return False, chance_line
+    # Inversion detected. Compose a diagnostic that names every
+    # piece of context an operator needs to act on (or override).
+    diagnostic = (
+        f"\nPOLARITY INVERSION refused: signal {signal!r} "
+        f"(path {signal_path!r}, registry direction {direction!r}) "
+        f"shows direction_aware_auc = {direction_aware_auc:.4f}, "
+        f"below the chance line {chance_line:.4f} for this corpus "
+        f"({corpus_label!r}).\n"
+        f"\n"
+        f"What this means: the registry's hypothesis is that "
+        f"AI-shaped prose has a {direction!r}-direction relationship "
+        f"on this signal vs. the human comparator. On this corpus, "
+        f"that direction is reversed — the AI class scores in the "
+        f"opposite direction. Publishing a threshold derived from "
+        f"this corpus would produce a calibration that ranks the "
+        f"AI class wrong on every future input.\n"
+        f"\n"
+        f"This is the load-bearing failure mode documented in "
+        f"README \"Why no verdict\" §cross-corpus polarity "
+        f"volatility. Per-corpus polarity is corpus-bound; "
+        f"calibration thresholds derived from a single corpus do "
+        f"not generalize.\n"
+        f"\n"
+        f"Two principled paths forward:\n"
+        f"  1. Refuse to ship a threshold for this signal on this "
+        f"     corpus. The framework's Stylometry-to-the-people "
+        f"     posture says calibration is the operator's job; this "
+        f"     gate is that posture made operational.\n"
+        f"  2. Override with --allow-polarity-inversion to document "
+        f"     the inversion in the provenance ledger. The entry's "
+        f"     notes will be prefixed with POLARITY INVERSION so "
+        f"     downstream consumers cannot silently treat it as a "
+        f"     calibrated load-bearing threshold. Pair with "
+        f"     --polarity-inversion-margin if the AUC sits near the "
+        f"     chance line and the variance is wide.\n"
+    )
+    if not allow_polarity_inversion:
+        raise PolarityInversionRefusal(diagnostic)
+    sys.stderr.write(
+        f"WARNING: {diagnostic}"
+        f"\n--allow-polarity-inversion set; proceeding under "
+        f"override. Entry's notes will be prefixed accordingly.\n"
+    )
+    return True, chance_line
+
+
 def derive_threshold_from_records(
     records: list[dict[str, Any]],
     *,
@@ -758,6 +952,33 @@ def derive_threshold_from_records(
         raise SystemExit(2)
 
     metrics = _ranking_metrics(pairs, direction=direction)
+
+    # Polarity-inversion gate (1.59.0+). Refuses to publish a
+    # threshold when the corpus's direction-aware AUC falls below
+    # the chance line — the canonical "this corpus's polarity
+    # disagrees with the registry hypothesis" signal. See the
+    # ``_check_polarity_inversion`` docstring for the design and
+    # README "Why no verdict" for the empirical motivation.
+    # ``getattr`` with default for back-compat with programmatic
+    # callers (older tests, scripts) that build a Namespace manually
+    # and don't know about the new flags.
+    polarity_inversion_recorded, polarity_chance_line = (
+        _check_polarity_inversion(
+            signal=args.signal,
+            signal_path=signal_path,
+            direction=direction,
+            direction_aware_auc=metrics.get("direction_aware_auc"),
+            corpus_label=str(Path(args.manifest)),
+            allow_polarity_inversion=bool(
+                getattr(args, "allow_polarity_inversion", False)
+            ),
+            margin=float(getattr(
+                args,
+                "polarity_inversion_margin",
+                DEFAULT_POLARITY_INVERSION_MARGIN,
+            )),
+        )
+    )
 
     seed = _stable_seed(
         args.bootstrap_seed, args.signal, signal_path, str(args.fpr_target),
@@ -847,6 +1068,40 @@ def derive_threshold_from_records(
             f"{sub_sample['n_used']}/{sub_sample['n_full']} entries used. "
             "Do not commit this entry to the ledger as a calibrated "
             "threshold; small-N gates won't pass meaningfully. "
+            + entry["notes"]
+        )
+    # Polarity-inversion provenance: when --allow-polarity-inversion
+    # is set and the corpus tripped the gate, record the inversion
+    # in the entry so downstream consumers cannot silently treat
+    # this as a load-bearing calibration. Same notes-prefix
+    # convention sub_sample uses (PIPELINE CHECK / POLARITY INVERSION).
+    if polarity_inversion_recorded:
+        da_auc = metrics.get("direction_aware_auc")
+        # Reuse the validated chance_line from the gate so the
+        # provenance block and the gate logic agree on the exact
+        # cutoff used. Codex PR #40 review P1: pre-fix the
+        # provenance block recomputed `0.5 - raw_margin` without
+        # validation, so a typo-class invalid margin could land
+        # in the ledger as a negative chance line.
+        entry["polarity_inversion"] = {
+            "recorded": True,
+            "direction_aware_auc": da_auc,
+            "chance_line": polarity_chance_line,
+            "registry_direction": direction,
+        }
+        da_auc_str = (
+            f"{da_auc:.4f}" if isinstance(da_auc, (int, float))
+            else "n/a"
+        )
+        entry["notes"] = (
+            f"POLARITY INVERSION (corpus disagrees with registry "
+            f"direction {direction!r}; direction_aware_auc="
+            f"{da_auc_str}, below the chance line). Override was "
+            f"explicit (--allow-polarity-inversion). DO NOT treat "
+            f"this entry as a load-bearing calibration — the "
+            f"threshold ranks the AI class wrong by the registry's "
+            f"hypothesis. Documenting the inversion is the entry's "
+            f"only legitimate use. "
             + entry["notes"]
         )
     return entry
@@ -993,6 +1248,38 @@ def main(argv: list[str] | None = None) -> int:
             "Force re-scoring even if a compatible cache exists. "
             "Use after a code change that should invalidate cached "
             "records but didn't bump SCORER_CACHE_VERSION."
+        ),
+    )
+    # Polarity-inversion gate (1.59.0+). See _check_polarity_inversion
+    # for the design and README "Why no verdict" for the empirical
+    # motivation. Default behavior: refuse to publish a threshold
+    # when direction_aware_auc falls below the chance line. Override
+    # is explicit-only — no silent fallback.
+    parser.add_argument(
+        "--allow-polarity-inversion", action="store_true",
+        help=(
+            "Override the polarity-inversion refusal gate. Use ONLY "
+            "when documenting an inverted-polarity finding (the "
+            "entry's notes will be loudly prefixed POLARITY "
+            "INVERSION so downstream consumers cannot silently "
+            "treat it as a calibrated load-bearing threshold). The "
+            "default behavior — refuse to ship — is correct for "
+            "every operational use of this tool."
+        ),
+    )
+    parser.add_argument(
+        "--polarity-inversion-margin", type=float,
+        default=DEFAULT_POLARITY_INVERSION_MARGIN,
+        help=(
+            "Margin below the chance line (0.5) at which the "
+            f"polarity-inversion gate trips. Default "
+            f"{DEFAULT_POLARITY_INVERSION_MARGIN} (any DA-AUC < 0.5 "
+            "trips; strict). A wider margin (e.g., 0.05) tolerates "
+            "DA-AUC values close to chance — useful for small "
+            "corpora where the AUC estimate has wide variance and "
+            "you don't want the gate firing on noise. The margin "
+            "shifts the line down: --polarity-inversion-margin 0.05 "
+            "means only DA-AUC < 0.45 trips."
         ),
     )
 

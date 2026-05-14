@@ -353,9 +353,14 @@ def test_derive_threshold_without_cache_flag_still_scores(tmp_path):
 
     def varied_score(entry, **kw):
         counts["calls"] += 1
-        # Positives score high, negatives score low — clean separation.
+        # Polarity-matched separation: burstiness_B's registry
+        # direction is `lt` (AI-shaped prose has LOWER burstiness),
+        # so positives score LOW and negatives score HIGH. This
+        # avoids tripping the 1.59.0 polarity-inversion gate, which
+        # would correctly refuse a corpus with inverted polarity
+        # vs. the registry hypothesis.
         is_pos = entry.get("ai_status") == "ai_generated"
-        score = 0.8 if is_pos else 0.2
+        score = 0.2 if is_pos else 0.8
         return {
             "id": entry.get("id"),
             "path": entry.get("path"),
@@ -400,8 +405,11 @@ def test_derive_threshold_with_missing_records_cache_attr(tmp_path):
 
     def varied_score(entry, **kw):
         counts["calls"] += 1
+        # Polarity-matched (see sibling test): burstiness_B is an
+        # `lt`-direction signal, so positives must score LOWER than
+        # negatives to clear the 1.59.0 polarity-inversion gate.
         is_pos = entry.get("ai_status") == "ai_generated"
-        score = 0.8 if is_pos else 0.2
+        score = 0.2 if is_pos else 0.8
         return {
             "id": entry.get("id"),
             "path": entry.get("path"),

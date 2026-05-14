@@ -6,6 +6,33 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.59.0] - 2026-05-14
+
+**Calibration toolchain — polarity-inversion refusal gate.** Closes the load-bearing methodological gap documented in README "Why no verdict" §cross-corpus polarity volatility. The framework's empirical finding (every Tier 1 signal flipped polarity between EditLens val and MAGE on consecutive days, 2026-05-10 / 2026-05-11) says that per-corpus calibration thresholds do not generalize. Prior to this PR, `calibrate_thresholds.py` would happily publish a threshold from any single corpus regardless of whether the corpus's `direction_aware_auc` agreed with the registry's direction hypothesis — exactly the failure mode the documentation describes. This PR makes the framework's posture operational in code.
+
+### Added
+
+- **`PolarityInversionRefusal` exception class** in `calibrate_thresholds.py`. Subclasses `SystemExit` so the CLI exits non-zero with a diagnostic message; programmatic callers can catch the specific type rather than the generic `SystemExit`. The diagnostic message names the signal, the registry direction, the observed `direction_aware_auc`, the corpus, and the override flag, so an operator hitting the gate sees every input needed to either fix the calibration or document the inversion.
+- **`_check_polarity_inversion(...)` helper** — pure function that compares `direction_aware_auc` against the chance line (0.5 minus optional margin) and raises `PolarityInversionRefusal` when the corpus contradicts the registry's hypothesis. Returns `(triggered, chance_line)` so the caller can reuse the validated chance-line value for the provenance block.
+- **`_validate_polarity_margin(...)` helper** — Codex review P1 fix. Validates that the margin is in `[0.0, 0.5)` before use and raises `SystemExit` with a clear diagnostic on out-of-range / non-numeric / NaN input. Catches the typo-class failure mode where `--polarity-inversion-margin 5` (intended `0.5`) would shift the chance line to -4.5 and silently disable the gate.
+- **`--allow-polarity-inversion` CLI flag** on `calibrate_thresholds.py`. Override the gate when explicitly documenting an inversion in the provenance ledger. The override path is loud: the entry's `notes` field is prefixed with `POLARITY INVERSION` (same convention as the `PIPELINE CHECK` prefix for sub-sampled runs) and a `polarity_inversion` block is added recording the DA-AUC, chance line, and registry direction. Downstream consumers filtering on either prefix can refuse to treat the entry as a calibrated load-bearing threshold.
+- **`--polarity-inversion-margin` CLI flag** (default `0.0`, strict). Widens the chance-line cutoff for borderline DA-AUC values near 0.5. Useful for small corpora where the AUC estimate has wide variance and the operator doesn't want the gate firing on noise. A margin of `0.05` shifts the chance line to 0.45 (only DA-AUC < 0.45 trips). Validated to `[0.0, 0.5)` — a typo-class invalid value fails loudly at the earliest possible point.
+- **24 new tests in `test_calibration_polarity_inversion.py`** covering: the gate behavior (matched / boundary / inverted / override / margin / back-compat), the `_validate_polarity_margin` helper (zero / small positive / near-upper-bound / negative / at-upper-bound / above-upper-bound / non-numeric / NaN), end-to-end failure modes when the margin is invalid (failing even on matched DA-AUC and missing-DA-AUC paths), and the provenance block recording the validated chance-line value.
+
+### Changed
+
+- `derive_threshold_from_records(records, ..., args, ...)` now calls `_check_polarity_inversion` after `_ranking_metrics`. The gate consults `args.allow_polarity_inversion` and `args.polarity_inversion_margin` via `getattr` with defaults — programmatic callers that build a `Namespace` manually (older tests, scripts) keep working without modification.
+- `_check_polarity_inversion(...)` now returns `(triggered, chance_line)` so the caller can reuse the single validated chance-line value for both the gate logic and the provenance block. Pre-fix the provenance block recomputed `0.5 - raw_margin` without validation, allowing a typo-class invalid margin to land in the ledger as semantic garbage (Codex review P1).
+- Two existing tests in `test_calibration_cache.py` (`test_derive_threshold_without_cache_flag_still_scores`, `test_derive_threshold_with_missing_records_cache_attr`) had inadvertently polarity-inverted synthetic scoring fixtures (positives high, negatives low for an `lt`-direction signal). Updated to polarity-matched fixtures (positives low, negatives high) — same separation, correct direction. The tests now exercise what real `lt`-signal data looks like; the polarity gate correctly accepts them.
+
+### Notes
+
+- The infrastructure for polarity detection already existed: `_ranking_metrics` computes `direction_aware_auc` (1 − raw AUC for `lt` signals, raw AUC for `gt` signals) such that ≥ 0.5 means the corpus agrees with the registry. This PR adds the **refusal gate** that consumes that signal — small surface area, high methodological leverage.
+- The gate is `< chance_line`, not `<= chance_line`. Exactly-at-chance (DA-AUC == 0.5) is treated as the boundary case and passes — that decision is pinned in `test_da_auc_exactly_at_chance_publishes_entry` so a future signed-rounding bug can't silently flip it.
+- Override-path entries carry both the `polarity_inversion` provenance block AND the loud notes prefix. The two are redundant on purpose — different downstream consumers filter on different signals (programmatic ledger readers parse the block; operators reading the markdown render see the prefix).
+- The margin validator (`_validate_polarity_margin`) runs unconditionally — even on the back-compat DA-AUC-is-None no-op path. An invalid margin fails loudly regardless of whether the gate would ultimately fire, catching the typo at the earliest possible point.
+- **Version-bump note**: rebased from declared 1.56.0 → 1.59.0 because PRs #26 (1.53.0), #27 (1.54.0), #31 (1.55.0), #37 (1.56.0), #38 (1.57.0), #39 (1.58.0) merged ahead in Wave 4. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.58.0] - 2026-05-14
 
 **Authorship-state taxonomy phase B.3 — wave 4 (final): voice-surface claim-license routing.** Closes out the B.3 rollout by wiring per-state caveats into the two voice-surface audit scripts that emit a `ClaimLicense` block: `general_imposters.py` and `semantic_preservation_check.py`. After this PR, every `claim_license`-using audit script in the framework routes its caveats by authorship state when the operator supplies `--ai-status`.
