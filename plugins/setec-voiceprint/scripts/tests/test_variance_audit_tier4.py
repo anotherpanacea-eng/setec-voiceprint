@@ -308,5 +308,167 @@ class TestTier4CliFlags:
         assert args.surprisal_model is None
 
 
+# ---------- Reviewer P2 fixes (2026-05-14) ----------
+
+
+class TestTier4BackendIdentifierAttached:
+    """Reviewer P2: the Tier 4 block must carry
+    ``backend.identifier_block()`` so two variance runs against
+    different ``--surprisal-model`` values are distinguishable in
+    the JSON. The standalone audit already attaches the
+    identifier_block; the variance Tier 4 path now matches."""
+
+    def test_backend_identifier_attached_when_backend_supplied(self):
+        """When a real-shaped backend is passed (we use a
+        FakeBackend with the identifier_block method), the
+        resulting tier4 block carries `backend` with the
+        model+revision+alias fields."""
+
+        class _FakeBackend:
+            def identifier_block(self):
+                return {
+                    "id": "TinyLlama/TinyLlama-1.1B-...",
+                    "revision": "deadbeef" * 5,
+                    "alias": "tinyllama",
+                    "deterministic_mode": True,
+                    "method": "transformers-causal-lm",
+                }
+
+            def score_text(self, text, *, return_top_k=0):
+                return _stub_flat_score(
+                    text, return_top_k=return_top_k,
+                )
+
+        out = va.audit_text(
+            SAMPLE_PROSE, do_tier2=False, do_tier3=False,
+            do_tier4=True, tier4_backend=_FakeBackend(),
+        )
+        backend_id = out["tier4"]["backend"]
+        assert backend_id["id"].startswith("TinyLlama")
+        assert backend_id["revision"] == "deadbeef" * 5
+        assert backend_id["alias"] == "tinyllama"
+        assert backend_id["method"] == "transformers-causal-lm"
+
+    def test_no_backend_identifier_when_only_score_fn(self):
+        """When only a ``tier4_score_fn`` is supplied (the
+        test/stub path), there is no backend identifier to record.
+        The tier4 block should NOT carry a ``backend`` key — its
+        absence signals to consumers that this run was
+        stub-driven, not from a real causal LM."""
+        out = va.audit_text(
+            SAMPLE_PROSE, do_tier2=False, do_tier3=False,
+            do_tier4=True, tier4_score_fn=_stub_flat_score,
+        )
+        assert "backend" not in out["tier4"]
+
+    def test_defensive_against_broken_identifier_block(self):
+        """If a backend's ``identifier_block`` raises (e.g., a
+        misbehaved third-party backend), the Tier 4 helper must
+        not crash the audit — the identifier is best-effort."""
+
+        class _BrokenBackend:
+            def identifier_block(self):
+                raise RuntimeError("simulated identifier failure")
+
+            def score_text(self, text, *, return_top_k=0):
+                return _stub_flat_score(
+                    text, return_top_k=return_top_k,
+                )
+
+        out = va.audit_text(
+            SAMPLE_PROSE, do_tier2=False, do_tier3=False,
+            do_tier4=True, tier4_backend=_BrokenBackend(),
+        )
+        # The audit ran; the identifier just isn't recorded.
+        assert out["tier4"]["available"] is True
+        assert "backend" not in out["tier4"]
+
+
+class TestTier4MarkdownVisible:
+    """Reviewer P2: ``format_summary`` rendered Tier 1/2/3 but not
+    Tier 4, so the band call's Tier 4 contribution was unauditable
+    for any reader who only saw the markdown. The fixed summary
+    includes a Tier 4 section with mean / SD / lag-1 ACF / band /
+    backend identifier / top-3 token preview."""
+
+    def test_format_summary_renders_tier4_section(self):
+        out = va.audit_text(
+            SAMPLE_PROSE, do_tier2=False, do_tier3=False,
+            do_tier4=True, tier4_score_fn=_stub_flat_score,
+        )
+        compression = va.classify_compression(out)
+        text = va.format_summary(out, compression)
+        # Section header present.
+        assert "Tier 4 (surprisal)" in text
+        # Headline metrics present (the three that feed band).
+        assert "Mean surprisal" in text
+        assert "bits/token" in text
+        assert "SD:" in text
+        assert "lag-1 ACF" in text
+        # PROVISIONAL band call surfaced.
+        assert "Band (PROVISIONAL)" in text
+        assert "user-baseline-required" in text
+
+    def test_format_summary_omits_tier4_section_when_not_run(self):
+        """When --tier4 was off (no tier4 key in the audit dict),
+        the summary should NOT print an empty Tier 4 section."""
+        out = va.audit_text(
+            SAMPLE_PROSE, do_tier2=False, do_tier3=False,
+        )
+        compression = va.classify_compression(out)
+        text = va.format_summary(out, compression)
+        assert "Tier 4 (surprisal)" not in text
+
+    def test_format_summary_unavailable_tier4_shows_reason(self):
+        """When --tier4 was on but the helper couldn't run (e.g.,
+        transformers missing → available=False), the summary
+        renders the unavailable reason rather than silently
+        dropping the section."""
+        def _broken_stub(text, *, return_top_k=0):
+            if return_top_k > 0:
+                return [], []
+            return []
+
+        out = va.audit_text(
+            SAMPLE_PROSE, do_tier2=False, do_tier3=False,
+            do_tier4=True, tier4_score_fn=_broken_stub,
+        )
+        compression = va.classify_compression(out)
+        text = va.format_summary(out, compression)
+        # Section appears as "not available" with the reason
+        # text included so readers can see why.
+        assert "Tier 4 (surprisal): not available" in text
+
+    def test_format_summary_tier4_renders_backend_identifier(self):
+        """The Tier 4 section should surface the backend's model
+        + revision so the reader can audit which causal LM
+        produced the numbers."""
+
+        class _FakeBackend:
+            def identifier_block(self):
+                return {
+                    "id": "TinyLlama/TinyLlama-1.1B-test",
+                    "revision": "abc123def456",
+                    "alias": "tinyllama",
+                    "deterministic_mode": True,
+                    "method": "transformers-causal-lm",
+                }
+
+            def score_text(self, text, *, return_top_k=0):
+                return _stub_flat_score(
+                    text, return_top_k=return_top_k,
+                )
+
+        out = va.audit_text(
+            SAMPLE_PROSE, do_tier2=False, do_tier3=False,
+            do_tier4=True, tier4_backend=_FakeBackend(),
+        )
+        compression = va.classify_compression(out)
+        text = va.format_summary(out, compression)
+        assert "TinyLlama" in text
+        assert "abc123def456" in text
+        assert "tinyllama" in text
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))

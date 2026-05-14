@@ -750,6 +750,21 @@ def _tier4_surprisal_block(
             "calibration_anchor": "user-baseline-required",
         },
     }
+    # Reviewer P2 (2026-05-14): attach the backend identifier so
+    # the variance Tier 4 JSON carries the model + revision +
+    # alias the standalone audit's PROVENANCE block already
+    # records. Surprisal means/SD/ACF are tokenizer- and
+    # checkpoint-dependent, so two variance runs against
+    # different --surprisal-model values must be distinguishable
+    # in their output. When score_fn was supplied (the test path),
+    # there is no backend identifier; tier4_block["backend"] stays
+    # absent and downstream consumers see that this run was
+    # stub-driven.
+    if backend is not None and hasattr(backend, "identifier_block"):
+        try:
+            tier4_block["backend"] = backend.identifier_block()
+        except Exception:  # noqa: BLE001 — defensive
+            pass
     return tier4_block
 
 
@@ -2237,6 +2252,86 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
                 "Install `sentence-transformers` or `scikit-learn`."
             )
 
+    # Reviewer P2 (2026-05-14): Tier 4 surprisal block. Until this
+    # render existed, --tier4 silently contributed to the band call
+    # (via the three COMPRESSION_HEURISTICS entries) but the
+    # human-readable summary never showed the causal-LM stats. That
+    # makes the band call unauditable for any reader who only sees
+    # the markdown. Render mirrors the Tier 3 shape (header,
+    # available-or-not branch, one metric line per signal),
+    # plus the PROVISIONAL marker + calibration anchor + backend
+    # identifier so readers see immediately that:
+    #   (a) the band call's Tier 4 contribution is provisional, and
+    #   (b) which causal LM produced these numbers.
+    t4 = audit.get("tier4")
+    if t4:
+        lines.append("")
+        if t4.get("available"):
+            lines.append("Tier 4 (surprisal):")
+            s4 = t4.get("surprisal", {})
+            mean_b = s4.get("mean")
+            sd_b = s4.get("sd")
+            acf = s4.get("autocorrelation", {}) or {}
+            lag1 = acf.get("lag_1")
+            mean_str = (
+                f"{mean_b:.3f}" if isinstance(mean_b, (int, float)) else "n/a"
+            )
+            sd_str = (
+                f"{sd_b:.3f}" if isinstance(sd_b, (int, float)) else "n/a"
+            )
+            lag1_str = (
+                f"{lag1:.3f}" if isinstance(lag1, (int, float)) else "n/a"
+            )
+            lines.append(
+                f"  Mean surprisal: {mean_str} bits/token   "
+                f"SD: {sd_str}   lag-1 ACF: {lag1_str}"
+            )
+            n_scored = s4.get("n_tokens_scored")
+            slen = s4.get("series_length")
+            if isinstance(n_scored, int) and isinstance(slen, int):
+                lines.append(
+                    f"  Tokens scored: {n_scored:,}   "
+                    f"series length: {slen:,}"
+                )
+            band = s4.get("band") or {}
+            if band:
+                lines.append(
+                    f"  Band (PROVISIONAL): "
+                    f"{band.get('band', 'indeterminate')}   "
+                    f"calibration_anchor: "
+                    f"{band.get('calibration_anchor', 'unknown')}"
+                )
+            backend_id = t4.get("backend") or {}
+            if backend_id:
+                model = backend_id.get("id", "unknown")
+                rev = backend_id.get("revision") or "(no revision pin)"
+                alias = backend_id.get("alias")
+                alias_str = f" (alias `{alias}`)" if alias else ""
+                lines.append(
+                    f"  Model: {model}{alias_str}   "
+                    f"revision: {rev}"
+                )
+            top = s4.get("top_k_tokens") or []
+            if top:
+                # Show only the top-3 in the summary (the full list
+                # is in the JSON output); the markdown is a quick
+                # scan, not the full diagnostic.
+                preview = ", ".join(
+                    f"{tok.get('token_text', '?')!r}"
+                    f"@{tok.get('position', '?')} "
+                    f"({tok.get('surprisal_bits', 0):.1f}b)"
+                    for tok in top[:3]
+                )
+                lines.append(f"  Top surprising tokens: {preview}")
+        else:
+            reason = t4.get("reason", "unknown")
+            lines.append(
+                f"Tier 4 (surprisal): not available "
+                f"({reason}). Install the optional surprisal "
+                f"dependencies (`transformers + torch`) and pass "
+                f"--surprisal-model to enable."
+            )
+
     return "\n".join(lines)
 
 
@@ -2488,6 +2583,19 @@ def main() -> int:
             "Default: tinyllama. See surprisal_backend.MODEL_ALIASES."
         ),
     )
+    # Reviewer P2 (2026-05-14): --surprisal-revision parity with the
+    # standalone surprisal_audit.py CLI. Pinning a HuggingFace commit
+    # SHA in PROVENANCE entries is the reproducibility contract for
+    # any load-bearing surprisal calibration. The flag is optional;
+    # when omitted, the backend records `revision: null`.
+    parser.add_argument(
+        "--surprisal-revision", default=None,
+        help=(
+            "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
+            "(reproducibility). Default: revision-less (records "
+            "`revision: null` in the Tier 4 backend identifier block)."
+        ),
+    )
     parser.add_argument(
         "--allow-non-prose", action="store_true",
         help="Skip default corpus-hygiene stripping. Use only when "
@@ -2615,6 +2723,7 @@ def main() -> int:
             )
             tier4_backend = SurprisalBackend(
                 model_id=_resolve_surprisal_model(args.surprisal_model),
+                revision=args.surprisal_revision,
             )
         except ImportError:
             # Leave tier4_backend None; the audit_text path will
