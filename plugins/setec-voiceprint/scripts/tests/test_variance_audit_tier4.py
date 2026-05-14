@@ -595,13 +595,38 @@ class TestTier4AblationFamily:
         available = set(compression.get("available_signals") or [])
         flagged = set(compression.get("flagged_signals") or [])
 
-        # Precondition: Tier 4 fires; Tier 1 mostly doesn't.
+        # Precondition: Tier 4 fires.
         assert "surprisal_mean" in flagged, (
             "Synthetic audit didn't flag surprisal_mean — fixture "
             "broken or threshold drifted."
         )
         assert "surprisal_sd" in flagged
         assert "surprisal_acf_lag1" in flagged
+
+        # Precondition (Codex review P1): Tier 1 must stay silent.
+        # If a future Tier 1 threshold drift causes a Tier 1 signal
+        # to fire on this synthetic fixture, the ablation would
+        # still drop because predictability_uniformity removes
+        # weight — but the test would no longer be Tier-4-load-
+        # bearing. Pin the precondition explicitly so threshold
+        # drift fails the test loudly rather than silently
+        # weakening the regression.
+        tier4_signals = {
+            "surprisal_mean", "surprisal_sd", "surprisal_acf_lag1",
+        }
+        non_tier4_flagged = flagged - tier4_signals
+        assert not non_tier4_flagged, (
+            f"Synthetic fixture is no longer Tier-4-load-bearing: "
+            f"non-Tier-4 signals also fired: "
+            f"{sorted(non_tier4_flagged)}. The regression's premise "
+            f"is that ONLY Tier 4 fires, so ablating "
+            f"predictability_uniformity drops the band. If a Tier 1 "
+            f"or Tier 2/3 signal joined the firing set, threshold "
+            f"drift may have moved the chosen Tier 1 values inside "
+            f"the compressive band. Re-tune the synthetic fixture "
+            f"(e.g., move burstiness_B further from its threshold) "
+            f"so Tier 1 stays silent."
+        )
 
         original_band = compression.get("band")
         assert original_band != "Insufficient signal"
