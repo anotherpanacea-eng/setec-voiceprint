@@ -373,6 +373,97 @@ class TestAuditSurprisal:
         assert out["band"]["band"] == "smoothed"
 
 
+class TestAuditSurprisalRuntimeFailures:
+    """Reviewer P2 regression (2026-05-14): scoring-time exceptions
+    other than ``SurprisalBackendError`` used to escape
+    ``audit_surprisal`` and produce a traceback. Common causes:
+    RuntimeError on context-window overflow, IndexError on
+    tokenizer surprises, MemoryError on too-large inputs. The
+    fixed code converts these to an ``available=False`` return
+    value so the CLI exits via the documented unavailable path
+    rather than a stacktrace, and the variance Tier 4 helper sees
+    the same clean failure shape it sees for empty-series inputs.
+    """
+
+    def test_runtime_error_is_caught_and_reported(self):
+        def _raise_runtime(text, *, return_top_k=0):
+            raise RuntimeError(
+                "CUDA out of memory: tried to allocate 4.20 GiB"
+            )
+
+        out = sa.audit_surprisal("text", score_fn=_raise_runtime)
+        assert out["available"] is False
+        assert "scoring failed" in out["reason"].lower()
+        assert "RuntimeError" in out["reason"]
+        # Reason mentions the SPEC §3.3 chunking contract so the
+        # operator has a pointer to the documented remediation.
+        assert "context window" in out["reason"] or "§3.3" in out["reason"]
+
+    def test_index_error_is_caught_and_reported(self):
+        """Tokenizer surprises (e.g., unexpected sequence shapes)
+        can raise IndexError out of the model's forward pass.
+        Should not traceback."""
+        def _raise_index(text, *, return_top_k=0):
+            raise IndexError("index 4097 is out of bounds for axis 1")
+
+        out = sa.audit_surprisal("text", score_fn=_raise_index)
+        assert out["available"] is False
+        assert "IndexError" in out["reason"]
+
+    def test_memory_error_is_caught_and_reported(self):
+        def _raise_memory(text, *, return_top_k=0):
+            raise MemoryError("simulated host OOM")
+
+        out = sa.audit_surprisal("text", score_fn=_raise_memory)
+        assert out["available"] is False
+        assert "MemoryError" in out["reason"]
+
+    def test_backend_error_still_propagates(self):
+        """``SurprisalBackendError`` from the backend (e.g., model
+        failed to load) must still bubble up so the CLI's existing
+        rc=3 path keeps working — callers depending on the
+        distinction (load failure vs runtime failure) shouldn't
+        regress."""
+        from surprisal_backend import (  # type: ignore
+            SurprisalBackendError,
+        )
+
+        def _raise_backend(text, *, return_top_k=0):
+            raise SurprisalBackendError("model load failed")
+
+        with pytest.raises(SurprisalBackendError):
+            sa.audit_surprisal("text", score_fn=_raise_backend)
+
+    def test_cli_main_handles_runtime_error_cleanly(
+        self, tmp_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture,
+    ):
+        """End-to-end via main(): a RuntimeError from
+        SurprisalBackend.score_text must produce a clean
+        unavailable-audit output rather than a traceback."""
+        target = tmp_path / "essay.txt"
+        target.write_text("Some prose text.", encoding="utf-8")
+
+        def _stub_runtime_err(self_, text, *, return_top_k=0):
+            raise RuntimeError("context overflow")
+
+        monkeypatch.setattr(
+            SurprisalBackend, "score_text", _stub_runtime_err,
+        )
+        out = tmp_path / "out.md"
+        rc = sa.main([str(target), "--out", str(out)])
+        # rc=0: the audit completed and the unavailable-path was
+        # rendered cleanly. The CLI's existing rc=3 is for
+        # SurprisalBackendError specifically; runtime errors land
+        # in audit_surprisal's converted-result path.
+        assert rc == 0
+        text = out.read_text()
+        assert "Unavailable" in text
+        # The reason text was surfaced in the markdown.
+        assert "context overflow" in text.lower() or "scoring failed" in text.lower()
+
+
 # ---------- Markdown rendering ----------
 
 

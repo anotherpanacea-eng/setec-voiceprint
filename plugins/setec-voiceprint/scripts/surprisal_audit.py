@@ -366,16 +366,53 @@ def audit_surprisal(
     # We ask for top-k tokens directly from the scorer; the SPEC
     # backend supports this in one pass so we don't pay scoring cost
     # twice.
-    if top_k > 0:
-        result = scorer(text, return_top_k=top_k)
-        if isinstance(result, tuple):
-            series, top_tokens = result
-        else:  # pragma: no cover — defensive
-            series, top_tokens = result, []
-    else:
-        result = scorer(text, return_top_k=0)
-        series = result if not isinstance(result, tuple) else result[0]
-        top_tokens = []
+    #
+    # Reviewer P2 (2026-05-14): scoring-time exceptions other than
+    # SurprisalBackendError (e.g., RuntimeError on context-window
+    # overflow, IndexError on tokenizer surprises, MemoryError on
+    # too-large inputs) used to escape audit_surprisal and produce a
+    # traceback. They're now caught here and converted to an
+    # ``available=False`` return value with the typed exception name
+    # surfaced as the reason. SurprisalBackendError still passes
+    # through unchanged so callers that want backend-typed handling
+    # (the CLI's main(), variance Tier 4's helper) keep their
+    # existing behavior. The variance Tier 4 path was already
+    # catching broad exceptions; this aligns audit_surprisal with
+    # that posture so all callers see the same clean-failure shape.
+    try:
+        if top_k > 0:
+            result = scorer(text, return_top_k=top_k)
+            if isinstance(result, tuple):
+                series, top_tokens = result
+            else:  # pragma: no cover — defensive
+                series, top_tokens = result, []
+        else:
+            result = scorer(text, return_top_k=0)
+            series = (
+                result if not isinstance(result, tuple) else result[0]
+            )
+            top_tokens = []
+    except SurprisalBackendError:
+        # Backend-typed errors pass through; CLI main() catches.
+        raise
+    except (
+        MemoryError, RuntimeError, IndexError, ValueError, OSError,
+    ) as exc:
+        return {
+            "task_surface": TASK_SURFACE,
+            "tool": TOOL_NAME,
+            "version": SCRIPT_VERSION,
+            "available": False,
+            "reason": (
+                f"surprisal scoring failed at backend "
+                f"({type(exc).__name__}: {exc}). Common causes: "
+                f"input exceeded the model's context window, the "
+                f"tokenizer produced an unexpected shape, or the "
+                f"device ran out of memory. See SPEC §3.3 for the "
+                f"chunking contract that addresses context-window "
+                f"overflows."
+            ),
+        }
 
     series_list = [float(x) for x in (series or [])]
     n_series = len(series_list)
@@ -693,8 +730,16 @@ def main(argv: list[str] | None = None) -> int:
             top_k=args.top_k,
         )
     except SurprisalBackendError as exc:
+        # Backend-typed failures keep the existing rc=3 path so
+        # ops scripts depending on the distinction (load failed
+        # vs scored cleanly) continue to work.
         sys.stderr.write(f"Surprisal scoring failed: {exc}\n")
         return 3
+    # audit_surprisal converts non-typed runtime errors
+    # (RuntimeError, IndexError, MemoryError, etc.) into an
+    # ``available=False`` result rather than propagating a
+    # traceback, so the CLI doesn't need a separate catch for
+    # those — we just render the unavailable audit cleanly below.
     # Attach the backend identifier block so PROVENANCE is captured
     # in the audit's JSON output and surfaced in the ClaimLicense.
     audit["backend"] = backend.identifier_block()
