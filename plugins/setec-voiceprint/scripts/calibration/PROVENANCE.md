@@ -103,11 +103,43 @@ To populate this ledger:
 
 Pre-registered before any data was inspected. A signal earns its first committed `provenance` slug only when all five gates pass. A signal that fails any gate is documented as a calibration *finding* (recorded in the survey, not in the committed ledger), not a threshold to encode.
 
-1. **Expected polarity matches.** Empirical AUC ≥ 0.5 in the registry's declared `direction`. If the registry says a signal is `lt` (compressed when low) but the calibration sweep finds the opposite direction discriminates better, the corpus's polarity inverts the registry's. That's a *finding* about the corpus or about the registry's polarity convention, not a threshold to commit.
+1. **Expected polarity matches.** Empirical AUC ≥ 0.5 in the registry's declared `direction` — i.e., `direction_aware_auc ≥ 0.5`. If the registry says a signal is `lt` (compressed when low) but the calibration sweep finds the opposite direction discriminates better, the corpus's polarity inverts the registry's. That's a *finding* about the corpus or about the registry's polarity convention, not a threshold to commit. **As of v1.59.0 this gate is enforced in code** — `calibrate_thresholds.py` refuses to publish a threshold entry when `direction_aware_auc` falls below the chance line, raising `PolarityInversionRefusal`. See the **Polarity-inversion gate** section below for the CLI flags, the override semantics, and the `polarity_inversion` provenance block that override-path entries carry.
 2. **AUC / AP not embarrassing.** No fixed cutoff baked into the toolchain — left to maintainer judgment per signal. Low-discrimination signals (AUC ~0.55-0.65) become part of the visible record via the provenance entry rather than something the threshold value alone can hide. The bar a calibrated threshold should clear is "the empirical evidence in the entry would not embarrass a careful reviewer."
 3. **Enough negative controls for the requested FPR.** The toolchain's `fpr_resolution = 1 / n_neg` check enforces the lower bound. The softer question this gate adds: *even if the FPR target is reachable, is the resulting TPR statistically interpretable?* Wide bootstrap CIs on TPR at the chosen threshold mean the operating point is noisy; commit anyway only with explicit acknowledgement in the entry's `notes` field.
 4. **Interpretable threshold (not "predict almost nothing").** If the highest-TPR threshold within the FPR ceiling fires the signal on 1/130 positives, the threshold is technically valid but operationally meaningless. Look for thresholds with TPR substantially above zero at the chosen FPR target.
 5. **ESL slice behaves conservatively.** When calibrating against `nonnative_english.csv` (the ESL slice), the calibrated threshold is implicitly tuned to spare ESL writers from false-positive labeling. If the threshold ends up *more aggressive* than the heuristic on this corpus, that is surprising — investigate before committing. The framework's ethical commitment is that ESL prose is not the failure mode the band classifier should aggressively flag.
+
+## Polarity-inversion gate (v1.59.0+)
+
+The cross-corpus polarity-inversion finding (every Tier 1 signal flipped polarity between EditLens val and MAGE on consecutive days — see the **mage_full_tier1_fpr0.01_2026-05-11** entry below) was the empirical motivation for adding an automatic gate to the calibration toolchain. The README's "Why no verdict" section names this finding as load-bearing for the Stylometry-to-the-people posture; v1.59.0 wires the posture into code so the operator can't accidentally publish an inverted-polarity threshold.
+
+### How the gate fires
+
+After computing `direction_aware_auc` for the chosen signal, `calibrate_thresholds.py` compares it against the chance line (0.5 minus an optional margin). When `direction_aware_auc < chance_line` the helper raises `PolarityInversionRefusal` — a `SystemExit` subclass with a diagnostic that names the signal, the registry direction, the observed DA-AUC, the corpus, and the override flag. The CLI exits non-zero; programmatic callers can catch the specific exception type.
+
+### CLI flags
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--allow-polarity-inversion` | off (strict) | Override the gate when explicitly documenting an inversion in the ledger. The entry's `notes` field gains a `POLARITY INVERSION` prefix and a `polarity_inversion` provenance block. |
+| `--polarity-inversion-margin <float>` | `0.0` | Widens the chance line downward by exactly this amount. Valid range `[0.0, 0.5)`. A typo-class invalid value (e.g., `5` instead of `0.5`) fails loudly at the earliest possible point. |
+
+The strict default (margin 0.0, no override) means any DA-AUC below 0.5 trips the gate. Set `--polarity-inversion-margin 0.05` to tolerate borderline values down to DA-AUC 0.45 — useful when AUC variance is wide on small corpora. The override (`--allow-polarity-inversion`) is for documenting the inversion in the ledger, not for shipping the threshold as load-bearing.
+
+### Override-path entries
+
+When the operator runs with `--allow-polarity-inversion`, the resulting provenance entry carries:
+
+- A `polarity_inversion` block (machine-readable) recording `recorded: true`, the observed `direction_aware_auc`, the validated `chance_line`, and the `registry_direction` the corpus disagreed with.
+- A `POLARITY INVERSION` prefix on the `notes` field (human-readable; same convention as the `PIPELINE CHECK` prefix for sub-sampled runs).
+
+Both are intentionally redundant — different downstream consumers filter on different signals. Programmatic ledger readers parse the block; operators reading the markdown render see the prefix. Either is enough to refuse to treat the entry as a load-bearing calibration.
+
+### Recommended workflow
+
+1. Run `calibrate_thresholds.py` without `--allow-polarity-inversion`. If the gate fires, the diagnostic tells you which signal disagrees with the registry hypothesis on this corpus.
+2. Treat the inversion as a **calibration finding**, not a threshold to commit. Record it in the survey's per-signal results table (rows like `inverted` / `2 of 4` in the MAGE entry below) and reference the synthesis doc.
+3. Only run with `--allow-polarity-inversion` when you want the ledger to *document* the inversion explicitly — e.g., for cross-corpus comparisons where the finding itself is the artifact.
 
 ## Available calibration corpora
 
@@ -269,12 +301,15 @@ When you populate a calibration run, format the entry like this:
 - **Calibration:** direction-aware FPR-target sweep at FPR ≤ `<target>`
 - **Split role:** calibration_only (in-sample; heldout test split is roadmap)
 - **FPR resolution:** `1/n_neg = <value>` (`<n_neg>` negatives)
-- **Empirical:** AUC `<auc>`, AP `<ap>`, TPR `<tpr>` `[<lo>, <hi>]` at FPR `<fpr>`
+- **Empirical:** AUC `<auc>`, AP `<ap>`, TPR `<tpr>` `[<lo>, <hi>]` at FPR `<fpr>`, direction-aware AUC `<da_auc>`
 - **CI method:** fixed-threshold paired bootstrap (`<resamples>` resamples, seed `<seed>`)
+- **Polarity gate:** matched (DA-AUC ≥ 0.5) — _OR, on override-path entries:_ **POLARITY INVERSION** (DA-AUC `<da_auc>` < chance line `<chance_line>`; registry direction `<gt|lt>`; `--allow-polarity-inversion` engaged with margin `<margin>`)
 - **SETEC commit:** `<sha>`
 - **Date:** `<iso>`
-- **Notes:** `<context>`
+- **Notes:** `<context>` _(override-path entries: prefix with `POLARITY INVERSION (…) DO NOT treat as load-bearing calibration. …`)_
 ```
+
+The `Polarity gate` bullet is required as of v1.59.0 — it reads `matched` for normal entries (the common case) and carries the full inversion diagnostic for override-path entries. The corresponding JSON ledger entry gains a `polarity_inversion` block under the same conditions (see `_check_polarity_inversion` in `calibrate_thresholds.py`).
 
 Slugs follow the convention `<corpus>_<signal>_fpr<target>_<iso-date>`,
 e.g. `editlens_nonnative_burstiness_B_fpr0.01_2026-05-08`. The

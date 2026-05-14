@@ -67,10 +67,13 @@ Dry-run complete. To install, either re-run with --install, or run
 these commands manually:
 
   cp ~/.setec-voiceprint/launchd/com.anotherpanacea.setec-voiceprint.shard-worker.plist ~/Library/LaunchAgents/com.anotherpanacea.setec-voiceprint.shard-worker.plist
+  launchctl bootout gui/501 ~/Library/LaunchAgents/com.anotherpanacea.setec-voiceprint.shard-worker.plist  # best-effort, ignore errors if no prior agent
   launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.anotherpanacea.setec-voiceprint.shard-worker.plist
 
 To uninstall later, run this helper with --uninstall.
 ```
+
+The dry-run output shows three steps because `--install` is idempotent (v1.53.0+): re-running setup after changing the time-window, workers, or any other config is safe — the helper runs a best-effort `bootout` before `bootstrap` so a previously-loaded agent gets cleanly unloaded before the new plist is bootstrapped. The `bootout` step runs with `check=False`, so first-time installs (no prior agent loaded) succeed without surfacing the "Unknown service" error from `bootout`.
 
 Open the rendered files and sanity-check the paths:
 
@@ -108,6 +111,7 @@ Output:
 
 ```
 Installed plist: ~/Library/LaunchAgents/com.anotherpanacea.setec-voiceprint.shard-worker.plist
+  Running best-effort bootout (errors ignored if no prior agent)...
   Ran: launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.anotherpanacea.setec-voiceprint.shard-worker.plist
 ```
 
@@ -240,7 +244,7 @@ tail ~/Library/Logs/setec-voiceprint/launchd.log
 Common causes:
 
   * Wrapper script not executable: `chmod +x ~/.setec-voiceprint/launchd/run_shard_worker.sh`
-  * `PYTHON_BIN` path moved (Homebrew upgrade): re-run `setup_launchd.py --install` to regenerate.
+  * `PYTHON_BIN` path moved (Homebrew upgrade): re-run `setup_launchd.py --install` to regenerate. The install path is idempotent (v1.53.0+), so re-running is safe — the helper runs a best-effort `bootout` before `bootstrap`, cleanly unloading the previous agent.
   * `BASE_DIR` doesn't have the expected state.json: `shard_runner status --run-id ...`
 
 ### The worker logs show "outside time window" and exits immediately
