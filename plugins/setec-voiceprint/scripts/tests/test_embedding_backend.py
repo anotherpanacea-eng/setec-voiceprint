@@ -214,3 +214,101 @@ def test_identifier_block_unknown_id_reports_none_alias():
     out = b.identifier_block()
     assert out["alias"] is None
     assert out["id"] == "my-org/my-model"
+
+
+# ---------- Reviewer P2 (2026-05-14 retroactive audit) ----------
+
+
+class TestEncodeRuntimeErrorWrapping:
+    """Reviewer P2 from the retroactive R12 audit: ``encode()``
+    wrapped load failures but not runtime ``model.encode()``
+    failures. A bare RuntimeError / IndexError / MemoryError from
+    sentence-transformers escaped, and
+    ``semantic_trajectory_audit.main()`` only catches
+    ``EmbeddingBackendError`` → CLI traceback instead of the
+    documented clean-error path. Same shape as the
+    ``audit_surprisal`` P2 fix from PR #30."""
+
+    def _make_backend_with_stub_model(self, raises):
+        """Build a backend whose internal ``_model`` is a stub
+        that raises the prescribed exception class on ``encode``.
+        Bypasses ``_load`` so we don't need sentence-transformers
+        installed for the test."""
+        backend = eb.EmbeddingBackend(model_id="stub/test-model")
+
+        class _StubModel:
+            def encode(self, texts, **kwargs):
+                raise raises("simulated sentence-transformers failure")
+
+        backend._model = _StubModel()
+        return backend
+
+    def test_runtime_error_is_wrapped(self):
+        """A bare RuntimeError from model.encode (the
+        sentence-transformers OOM / device-error shape) must be
+        wrapped as EmbeddingBackendError so callers'
+        ``except EmbeddingBackendError`` blocks fire."""
+        backend = self._make_backend_with_stub_model(RuntimeError)
+        with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+            backend.encode(["some text"])
+        msg = str(excinfo.value)
+        assert "encode failed" in msg
+        assert "RuntimeError" in msg
+        # Diagnostic mentions the common causes.
+        assert "context window" in msg or "memory" in msg
+
+    def test_index_error_is_wrapped(self):
+        """IndexError (tokenizer-shape surprise) also wraps."""
+        backend = self._make_backend_with_stub_model(IndexError)
+        with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+            backend.encode(["some text"])
+        assert "IndexError" in str(excinfo.value)
+
+    def test_memory_error_is_wrapped(self):
+        backend = self._make_backend_with_stub_model(MemoryError)
+        with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+            backend.encode(["some text"])
+        assert "MemoryError" in str(excinfo.value)
+
+    def test_value_error_is_wrapped(self):
+        """ValueError catches sentence-transformers' input-shape
+        complaints (e.g., empty string in a batch with strict mode)."""
+        backend = self._make_backend_with_stub_model(ValueError)
+        with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+            backend.encode(["some text"])
+        assert "ValueError" in str(excinfo.value)
+
+    def test_oserror_is_wrapped(self):
+        """OSError covers device-level failures (CUDA driver
+        errors surface as OSError on some platforms)."""
+        backend = self._make_backend_with_stub_model(OSError)
+        with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+            backend.encode(["some text"])
+        assert "OSError" in str(excinfo.value)
+
+    def test_typed_backend_error_passes_through(self):
+        """``EmbeddingBackendError`` raised from inside encode (or
+        re-raised from ``_load`` having been called inside
+        encode's call chain) must NOT be re-wrapped. Callers that
+        distinguish load-vs-runtime failures see the original
+        typed exception verbatim."""
+        backend = eb.EmbeddingBackend(model_id="stub/test")
+
+        class _AlreadyTypedFailureModel:
+            def encode(self, texts, **kwargs):
+                raise eb.EmbeddingBackendError("inner typed failure")
+
+        backend._model = _AlreadyTypedFailureModel()
+        with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+            backend.encode(["x"])
+        # Original message preserved (NOT wrapped with "encode failed").
+        assert str(excinfo.value) == "inner typed failure"
+
+    def test_empty_texts_does_not_trigger_wrapping(self):
+        """The empty-list short-circuit must still return the
+        empty ndarray without going through the encode path
+        (otherwise we'd risk wrapping a non-failure)."""
+        backend = eb.EmbeddingBackend(model_id="stub/test")
+        # No _model set; the empty-list path should not call _load.
+        result = backend.encode([])
+        assert result.shape == (0, 0)
