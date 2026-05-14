@@ -411,8 +411,203 @@ class TestVarianceBaselineRead:
         assert report["indicators"]["baseline_size"] == 25
 
 
-if __name__ == "__main__":
-    if pytest is None:
-        sys.stderr.write("pytest not installed; cannot run tests.\n")
-        sys.exit(2)
-    sys.exit(pytest.main([__file__, "-v"]))
+# ---------- Reviewer P2 (2026-05-14 retroactive R6 audit) ----------
+
+
+class TestUnavailablePayloadsAreRefused:
+    """Reviewer P2: the structural usability checks (variance,
+    voice_distance, confounder, gi) didn't honor
+    ``available: False``. Reviewer reproduced
+    research_grade_validation from a variance payload marked
+    unavailable plus a confounder, because:
+
+      * ``_read_baseline_size`` pulled n_files without checking
+        availability → spuriously high baseline indicator.
+      * ``_is_usable_variance`` counted the variance surface
+        → "two surfaces present."
+      * Combined: posture promoted to research_grade against
+        an audit that produced no actual evidence.
+
+    Post-fix: every usability check + metadata read honors
+    ``available is False`` as "not usable, not present."
+    """
+
+    def test_is_usable_variance_refuses_available_false(self):
+        unavail = {
+            "available": False,
+            "reason": "spaCy missing",
+            "compression": {"band": "Heavily smoothed"},
+        }
+        assert ecg._is_usable_variance(unavail) is False
+
+    def test_is_usable_variance_accepts_available_true(self):
+        ok = {
+            "available": True,
+            "compression": {"band": "Heavily smoothed"},
+        }
+        assert ecg._is_usable_variance(ok) is True
+
+    def test_is_usable_variance_accepts_missing_available_key(self):
+        """Backwards compat: older payloads (R1-R6 era) without
+        the available key are still treated as usable."""
+        old_shape = {"compression": {"band": "Heavily smoothed"}}
+        assert ecg._is_usable_variance(old_shape) is True
+
+    def test_is_usable_voice_distance_refuses_available_false(self):
+        unavail = {
+            "available": False,
+            "overall": {"burrows_delta": 1.5},
+        }
+        assert ecg._is_usable_voice_distance(unavail) is False
+
+    def test_is_usable_voice_distance_accepts_available_true(self):
+        ok = {
+            "available": True,
+            "overall": {"burrows_delta": 1.5},
+        }
+        assert ecg._is_usable_voice_distance(ok) is True
+
+    def test_is_usable_confounder_refuses_available_false(self):
+        unavail = {
+            "available": False,
+            "ranked_confounders": [{"confounder": "ai_smoothing"}],
+        }
+        assert ecg._is_usable_confounder(unavail) is False
+
+    def test_is_usable_gi_refuses_available_false(self):
+        unavail = {
+            "available": False,
+            "decision": "consistent_with_candidate",
+        }
+        assert ecg._is_usable_gi(unavail) is False
+
+
+class TestBaselineSizeIgnoresUnavailable:
+    """Reviewer P2: ``_read_baseline_size`` pulled n_files from
+    any payload that had the field, without honoring
+    ``available: False``. Unavailable payloads must be skipped —
+    the baseline-size indicator only reflects audits that actually
+    produced evidence."""
+
+    def test_unavailable_variance_baseline_ignored(self):
+        unavail = {
+            "available": False,
+            "baseline": {"n_files": 50},
+        }
+        n = ecg._read_baseline_size(variance=unavail)
+        assert n == 0
+
+    def test_unavailable_voice_distance_baseline_ignored(self):
+        unavail = {
+            "available": False,
+            "baseline_summary": {"n_files": 30},
+        }
+        n = ecg._read_baseline_size(voice_distance=unavail)
+        assert n == 0
+
+    def test_unavailable_paragraph_baseline_ignored(self):
+        unavail = {
+            "available": False,
+            "baseline_block": {"n_files": 12},
+        }
+        n = ecg._read_baseline_size(paragraph=unavail)
+        assert n == 0
+
+    def test_available_variance_baseline_counted(self):
+        ok = {
+            "available": True,
+            "baseline": {"n_files": 25},
+        }
+        n = ecg._read_baseline_size(variance=ok)
+        assert n == 25
+
+    def test_missing_available_key_still_counts(self):
+        """Older payload shape (no available key) still
+        contributes."""
+        old_shape = {"baseline": {"n_files": 25}}
+        n = ecg._read_baseline_size(variance=old_shape)
+        assert n == 25
+
+    def test_unavailable_takes_max_of_available_only(self):
+        """When some payloads are available and others aren't,
+        the max only sees the available ones."""
+        unavail_variance = {
+            "available": False, "baseline": {"n_files": 50},
+        }
+        avail_voice = {
+            "available": True, "baseline_summary": {"n_files": 10},
+        }
+        n = ecg._read_baseline_size(
+            variance=unavail_variance, voice_distance=avail_voice,
+        )
+        assert n == 10
+
+
+class TestReadHelpersIgnoreUnavailable:
+    """Reviewer P2 third leg: the read-helpers
+    ``_read_register_match_strength`` and ``_read_strip_ratio``
+    also pulled from unavailable payloads. Pin them too."""
+
+    def test_register_match_strength_ignores_unavailable(self):
+        unavail = {
+            "available": False,
+            "register_match": {"match": {"strength": "strong"}},
+        }
+        assert ecg._read_register_match_strength(unavail) is None
+
+    def test_register_match_strength_reads_available(self):
+        ok = {
+            "available": True,
+            "register_match": {"match": {"strength": "strong"}},
+        }
+        assert ecg._read_register_match_strength(ok) == "strong"
+
+    def test_strip_ratio_ignores_unavailable(self):
+        unavail = {
+            "available": False,
+            "preprocessing": {"strip_ratio": 0.45},
+        }
+        assert ecg._read_strip_ratio(unavail) is None
+
+    def test_strip_ratio_reads_available(self):
+        ok = {
+            "available": True,
+            "preprocessing": {"strip_ratio": 0.45},
+        }
+        assert ecg._read_strip_ratio(ok) == 0.45
+
+
+class TestReviewerReproducerScenario:
+    """End-to-end reproducer for the reviewer's exact scenario:
+    a variance payload marked unavailable plus a confounder
+    used to produce research_grade_validation. Post-fix, the
+    posture should NOT be promoted to research_grade."""
+
+    def test_unavailable_variance_does_not_promote_to_research_grade(
+        self,
+    ):
+        unavail_variance = {
+            "available": False,
+            "reason": "spaCy missing",
+            "compression": {"band": "Heavily smoothed"},
+            "baseline": {"n_files": 50},
+        }
+        confounder = {
+            "available": True,
+            "ranked_confounders": [
+                {"confounder": "ai_smoothing", "score": 0.6},
+            ],
+        }
+        # 2500 words of target text so the length cap is at the
+        # research-grade tier (≥ 2000 words allows the top posture
+        # IF other indicators support it).
+        target_text = "word " * 2500
+        report = ecg.gate(
+            variance=unavail_variance,
+            confounder=confounder,
+            target_text=target_text,
+        )
+        # Pre-fix: research_grade_validation. Post-fix: lower
+        # posture (the variance surface doesn't count + baseline
+        # size reads as 0).
+        assert report["posture"] != "research_grade_validation"
