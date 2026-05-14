@@ -6,6 +6,45 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.55.0] - 2026-05-14
+
+**variance_audit.py Tier 4 — surprisal integration (phase C.4).** Wires the C.2 surprisal backend + C.3 audit math into `variance_audit.py` as a new Tier 4. Opt-in via `--tier4` (default OFF, mirroring Tier 3's SBERT path). Adds three new `COMPRESSION_HEURISTICS` entries — `surprisal_mean`, `surprisal_sd`, `surprisal_acf_lag1` — all `provisional=True` per SPEC `internal/SPEC_surprisal_signal.md` §3.5. Stacked on C.3 (PR #30); closes the Phase C plan.
+
+The Tier 4 path uses the same `audit_surprisal` math as the C.3 standalone CLI, so the standalone audit and the variance-audit Tier 4 block produce the same numbers. The band classifier picks up the new entries automatically (they're regular `ThresholdSpec`s); operators see the new signals contribute to the compression-fraction band call once `--tier4` is on. The PROVISIONAL marker (`calibration_anchor: user-baseline-required`) propagates from the Tier 4 audit block all the way into the rendered output, so the band call is never read as load-bearing.
+
+### Added
+
+- **`_tier4_surprisal_block(text, *, score_fn=None, backend=None, sliding_window=False, ...)`** — new helper in `variance_audit.py`. Reuses `surprisal_audit.audit_surprisal` for the math; lazy-imports `surprisal_audit` and (optionally) `surprisal_backend` so operators who don't run Tier 4 never pay the import cost. Returns `{"available": False, "reason": ...}` for transformers-missing / empty-text / empty-series cases without crashing.
+- **`audit_text(..., do_tier4=False, tier4_score_fn=None, tier4_backend=None)`** — new keyword arguments. Default OFF; when on, builds the `tier4.surprisal` block. The test-friendly `tier4_score_fn` accepts any callable matching `backend.score_text(text, return_top_k=...)` so the test suite injects a stub without loading transformers.
+- **`COMPRESSION_HEURISTICS` entries** — three new `ThresholdSpec`s per SPEC §4.3:
+  - `surprisal_mean` — `signal_path=tier4.surprisal.mean`, `direction=lt`, `weight=1.5`, `length_floor=300`, `value=3.5` (PROVISIONAL — AI prose tends LOWER as LM samples near its mode).
+  - `surprisal_sd` — `signal_path=tier4.surprisal.sd`, `direction=lt`, `weight=2.0`, `length_floor=300`, `value=1.5` (PROVISIONAL — DivEye's load-bearing signal; AI tends LOWER for uniform surprise).
+  - `surprisal_acf_lag1` — `signal_path=tier4.surprisal.autocorrelation.lag_1`, `direction=gt`, `weight=1.0`, `length_floor=500`, `value=0.30` (PROVISIONAL — AI tends HIGHER for smooth local predictability).
+  All three carry `provisional=True` and `provenance=None` — the `ThresholdSpec.__post_init__` invariant is preserved.
+- **`predictability_uniformity` ablation family** — Codex PR #31 review P0 fix. Groups the three Tier 4 signals into a single ablation family so `classify_compression()`'s robustness check can drop ALL of them at once. Pre-fix the family map didn't include the Tier 4 entries; a Tier-4-driven band call would report as robust because no ablation removed the load-bearing surprisal weight. Post-fix, ablating `predictability_uniformity` removes all three signals and the band call demotes appropriately.
+- **CLI flags**: `--tier4` (action store_true, default False) and `--surprisal-model` (default None → `tinyllama` via `resolve_model_arg`). The CLI lazily constructs a `SurprisalBackend` when `--tier4` is set, then threads it through to `audit_text`. ImportError from `surprisal_backend` leaves `tier4_backend=None`; the audit_text fallback emits the available=False block with a clear reason.
+- **`plugins/setec-voiceprint/scripts/tests/test_variance_audit_tier4.py`** — 17 tests in 6 classes (was 16; +1 ablation regression):
+  - `TestTier4DisabledByDefault` (2): default audit_text omits tier4; explicit `do_tier4=False` is the same as omission.
+  - `TestTier4WithStub` (4): stub `score_fn` produces fully-populated tier4 block; provisional markers propagate; band call + top-k diagnostic present; COMPRESSION_HEURISTICS signal_paths resolve via `_extract_signal` (the load-bearing band-classifier contract).
+  - `TestTier4EdgeCases` (3): empty stub → available=False; empty text → available=False; short text still works in helper.
+  - `TestCompressionHeuristicsTier4` (6): three entries registered; all provisional=True with provenance=None; directions match SPEC §4.3 (mean=lt, sd=lt, acf=gt); weights match SPEC §4.3 (1.5, 2.0, 1.0); signal_paths point under `tier4.surprisal.*`; listed in `provisional_signals()`.
+  - `TestTier4CliFlags` (1): `--tier4` default False.
+  - `TestTier4AblationFamily` (1): regression for the Codex-flagged ablation bug — a Tier-4-only `moderate` band call drops when the `predictability_uniformity` family is ablated, with an additional Tier-1-silent precondition (Codex round 2 P1) to catch threshold drift that would weaken the regression.
+
+### Changed
+
+- `audit_text()`'s signature grows three optional keyword args (`do_tier4`, `tier4_score_fn`, `tier4_backend`) — all default to OFF/None so every existing caller's behavior is preserved bit-for-bit.
+
+### Notes
+
+- Tier 4 is **opt-in**. Operators who don't pass `--tier4` see the v1.46.0 behavior end-to-end. This protects existing test runs, calibration runs, and downstream consumers from the 1-2 orders of magnitude scoring cost overhead that Tier 4 carries.
+- Tests inject a stub `score_fn` so no real causal LM is loaded — the test suite remains transformers-free and fast.
+- PROVISIONAL bands per SPEC §3.5: the Tier 4 entries' values come from fixture-derived heuristics, NOT a labeled-corpus calibration. Operators wanting load-bearing thresholds run the Phase C.5 fixture suite against their own baseline per `scripts/calibration/PROVENANCE.md`.
+- Phase C is now complete: C.1 (this spec), C.2 (backend, PR #23), C.3 (standalone audit, PR #30), C.4 (this PR, Tier 4 integration). C.5 is operational (calibration runs on the AMD desktop), not a framework PR.
+- **Round-2 reviewer P2 fix carried**: Tier 4 backend identifier + markdown rendering.
+- **Round-2 reviewer P1 carried**: Tier-1-silent precondition pinned in the ablation regression test (Codex review).
+- **Version-bump note**: rebased from declared 1.47.0 → 1.55.0 because Waves 1 + 2 + Wave 3 + #26 (1.53.0) + #27 (1.54.0) merged ahead at 1.45.0 – 1.54.0. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.54.0] - 2026-05-14
 
 **Sharded calibration v1.44.2 — multi-machine git-synced state file.** The final phase of the sharded-calibration toolchain per `internal/SPEC_sharded_calibration.md` §7.3 (originally v1.43.2). When state.json lives inside a git working tree with a configured remote, workers automatically pull-before-read and commit + push after each state transition (claim, done, failed, resume). Multiple hosts share one logical sharded run via git; rare cross-host conflicts are caught at push time and resolved via the new `resolve-conflict` subcommand. Stacked on v1.44.1.C (PR #26).
