@@ -82,7 +82,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from claim_license import ClaimLicense  # type: ignore
+from claim_license import (  # type: ignore
+    ClaimLicense,
+    with_state_caveats,
+)
 
 try:
     from variance_audit import HAS_SPACY, _NLP, split_sentences  # type: ignore
@@ -517,6 +520,7 @@ def check_preservation(
     after_text: str,
     keep_quotes: bool = False,
     category_filter: list[str] | None = None,
+    target_ai_status: str | None = None,
 ) -> dict[str, Any]:
     """Run the seven-category preservation check on a (before,
     after) pair. Returns a dict shaped for both JSON serialization
@@ -680,7 +684,7 @@ def check_preservation(
 
     overall = _overall_verdict(categories)
 
-    return {
+    out: dict[str, Any] = {
         "task_surface": TASK_SURFACE,
         "tool": TOOL_NAME,
         "version": SCRIPT_VERSION,
@@ -691,9 +695,16 @@ def check_preservation(
         },
         "overall_verdict": overall,
         "claim_license": _claim_license_dict(
-            categories=categories, overall=overall,
+            categories=categories,
+            overall=overall,
+            target_ai_status=target_ai_status,
         ),
     }
+    # B.3: surface ai_status at the top of the report dict so JSON
+    # consumers can route on state without re-passing the flag.
+    if target_ai_status:
+        out["ai_status"] = target_ai_status
+    return out
 
 
 def _category_to_dict(cat: CategoryResult) -> dict[str, Any]:
@@ -744,6 +755,7 @@ def _claim_license_dict(
     *,
     categories: dict[str, CategoryResult],
     overall: str,
+    target_ai_status: str | None = None,
 ) -> dict[str, Any]:
     n_categories = len(categories)
     n_shifted = sum(
@@ -801,6 +813,10 @@ def _claim_license_dict(
             "before/after-restoration corpora.",
         ],
     )
+    # B.3: append state-routed caveats when the operator supplied
+    # --ai-status. No-op when target_ai_status is None — pre-B.3
+    # callers keep their previous behavior.
+    lic = with_state_caveats(lic, target_ai_status=target_ai_status)
     return {"rendered": lic.render_block().rstrip()}
 
 
@@ -930,6 +946,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--json", action="store_true")
     p.add_argument("--out")
+    # B.3 (v1.58.0+): authorship-state routing for the ClaimLicense
+    # block. The operator's manifest entry for the target (AFTER)
+    # text carries an `ai_status` value (pre_ai_human,
+    # ai_generated_from_outline, etc.). Surface it to the audit so
+    # the rendered license block carries the matching state-specific
+    # caveats. Per SPEC §9.2, this is the operational consequence
+    # of the B.2 vocabulary — not threshold-shipping, just per-
+    # state licensure language.
+    p.add_argument(
+        "--ai-status",
+        default=None,
+        help=(
+            "Manifest ai_status value for the AFTER text (e.g., "
+            "pre_ai_human, ai_generated, ai_generated_from_outline, "
+            "ai_assisted, ai_edited, mixed, unknown). When supplied, "
+            "the ClaimLicense block gains state-specific caveats per "
+            "SPEC_authorship_states.md §9.2."
+        ),
+    )
     return p
 
 
@@ -959,6 +994,7 @@ def main(argv: list[str] | None = None) -> int:
             after_text=after,
             keep_quotes=args.keep_quotes,
             category_filter=args.categories,
+            target_ai_status=args.ai_status,
         )
     except ValueError as exc:
         sys.stderr.write(f"--category: {exc}\n")

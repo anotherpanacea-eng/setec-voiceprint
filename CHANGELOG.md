@@ -6,6 +6,30 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.58.0] - 2026-05-14
+
+**Authorship-state taxonomy phase B.3 — wave 4 (final): voice-surface claim-license routing.** Closes out the B.3 rollout by wiring per-state caveats into the two voice-surface audit scripts that emit a `ClaimLicense` block: `general_imposters.py` and `semantic_preservation_check.py`. After this PR, every `claim_license`-using audit script in the framework routes its caveats by authorship state when the operator supplies `--ai-status`.
+
+### Added
+
+- **`general_imposters.py --ai-status` flag.** The General Imposters attribution harness now accepts the manifest's `ai_status` for the target text. Threaded through `GIResult.target_ai_status` to `_structured_claim_license`, which calls `with_state_caveats(...)` after building the base ClaimLicense block. JSON output's `to_dict()` emits the new `ai_status` field only when set, preserving the legacy JSON shape for callers that don't pass the flag.
+- **`semantic_preservation_check.py --ai-status` flag.** The before/after preservation guardrail now routes its caveats on the AFTER text's authorship state. `check_preservation(...)` and `_claim_license_dict(...)` both gain a `target_ai_status` kwarg threaded through `main()`.
+- **10 new tests** in `test_b3_voice_surfaces.py` covering: pre-B.3 backwards-compat for each script, `ai_generated_from_outline` → seed caveat, `pre_ai_human` → baseline caveat, `mixed` → composite-states mention, JSON output carries `ai_status` when supplied, JSON shape is preserved (no `ai_status` key) when flag is omitted, and the rendered caveat text lives only inside `claim_license.rendered` (not leaked into the structured JSON payload).
+
+### Changed
+
+- `general_imposters.GIResult` gains an optional `target_ai_status: str | None = None` field. `GIResult.to_dict()` emits the new `ai_status` key only when the field is set, so pre-B.3 JSON consumers see the v1.49.0 – v1.57.0 shape unchanged.
+- `general_imposters._structured_claim_license(result)` now appends state-routed caveats via `with_state_caveats(lic, target_ai_status=result.target_ai_status)`.
+- `general_imposters.run(args)` reads `args.ai_status` via `getattr(args, "ai_status", None)` so programmatic callers that build the Namespace manually (e.g., older tests) keep working — no `AttributeError` on missing field.
+- `semantic_preservation_check.check_preservation(...)` and `_claim_license_dict(...)` both gain optional `target_ai_status` kwargs. `main()` threads `args.ai_status` through. Backwards-compat: keyword-less calls continue to work.
+
+### Notes
+
+- **B.3 rollout complete.** Wave 1 (1.49.0, PR #29) shipped the helper + 2 exemplar scripts. Wave 2 (PR #37) covered validation surfaces (3). Wave 3 (PR #38) covered craft surfaces (3). This wave covers voice surfaces (2). All 10 `claim_license`-using audit scripts in the framework now route per-state caveats via the same `with_state_caveats(...)` mechanism.
+- The change is rendering-layer (markdown). JSON output's claim-license shape is unchanged for both scripts — downstream consumers that read the JSON keep working. The new `ai_status` field is forward-compat additive only.
+- Pre-B.3 callers that don't pass `--ai-status` see the same markdown they got in v1.49.0 – v1.57.0. The helper is no-op without state inputs.
+- **Version-bump note**: rebased from declared 1.55.0 → 1.58.0 because PRs #26 (1.53.0), #27 (1.54.0), #31 (1.55.0), #37 (1.56.0), and #38 (1.57.0) merged ahead in Wave 4. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.57.0] - 2026-05-14
 
 **Authorship-state taxonomy phase B.3 — wave 3: craft-surface claim-license routing.** Wires per-state caveats into the three craft-surface audit scripts that emit a `ClaimLicense` block: `construction_signature_audit.py`, `punctuation_cadence_audit.py`, and `mimicry_cosplay_audit.py`. Mechanical extension of the B.3 helper shipped in 1.49.0 (PR #29); stacked on wave 2 (PR #37 / 1.56.0). See `internal/SPEC_authorship_states.md` §10 for the rollout plan.
