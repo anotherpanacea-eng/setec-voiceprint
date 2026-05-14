@@ -6,6 +6,22 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.49.1] - 2026-05-14
+
+**Retroactive P2 fix — `embedding_backend` encode-time runtime-error wrapping.** Reviewer P2 from the retroactive audit of R12 semantic-trajectory (PR #16). `EmbeddingBackend.encode()` wrapped load failures in `EmbeddingBackendError` but NOT runtime failures from `model.encode()`. A bare `RuntimeError` / `IndexError` / `MemoryError` from sentence-transformers (context-window overflow, device OOM, tokenizer surprise) escaped, and `semantic_trajectory_audit.main()` only catches `EmbeddingBackendError` → CLI tracebacked instead of the documented clean-error path. Same shape as the surprisal-audit P2 fix from PR #30.
+
+### Fixed
+
+- `EmbeddingBackend.encode()` now wraps `(MemoryError, RuntimeError, IndexError, ValueError, OSError)` from the underlying `model.encode()` call in `EmbeddingBackendError`, with a diagnostic message naming the typed exception and the common causes (context window, memory, tokenizer shape). Typed `EmbeddingBackendError` exceptions raised from inside the model pass through unchanged so callers that distinguish load-vs-runtime failures see the original message.
+
+### Tests
+
+- `+7 new tests` in `TestEncodeRuntimeErrorWrapping`: every wrapped exception class (RuntimeError, IndexError, MemoryError, ValueError, OSError) gets a focused test; typed `EmbeddingBackendError` pass-through preserved; empty-input short-circuit unaffected. Stubbed model (no sentence-transformers dependency) so the test runs without GPU/transformers installed.
+
+### Notes
+
+- **Version-bump note**: rebased from declared 1.44.1 → 1.49.1 because Waves 1 + 2 (PRs #21 / #22 / #24 / #32 / #36 / #29) merged ahead at 1.45.0 – 1.49.0. PATCH-tier bump preserved since this is a `fix:` change.
+
 ## [1.49.0] - 2026-05-14
 
 **Authorship-state taxonomy refinement — phase B.3 (start): claim-license state routing.** Adds the shared `claim_license` helper that audit scripts use to emit state-routed caveats, plus wires the first two exemplar scripts (`stance_modality_audit.py`, `discourse_move_signature.py`) per `internal/SPEC_authorship_states.md` §9. Other audit scripts that import `claim_license` (general_imposters, semantic_preservation_check, etc.) get wired in follow-up PATCH PRs thematically grouped per SPEC §10. Stacked on B.4 (PRs #28 / #36).

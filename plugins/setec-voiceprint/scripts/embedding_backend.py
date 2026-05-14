@@ -187,18 +187,49 @@ class EmbeddingBackend:
         want raw vectors (e.g., for trajectory drift slopes that
         care about magnitude as well as direction) pass
         ``normalize=False``.
+
+        Reviewer P2 (2026-05-14 retroactive audit): the prior
+        version wrapped load failures (``_load``) but NOT runtime
+        failures from ``model.encode``. A normal runtime exception
+        from sentence-transformers — context-window overflow,
+        out-of-memory on the device, tokenizer surprise on a
+        pathological input — escapes as a bare ``RuntimeError`` /
+        ``IndexError`` / ``MemoryError``. Callers like
+        ``semantic_trajectory_audit.main()`` only catch
+        ``EmbeddingBackendError``, so the CLI tracebacks instead of
+        the documented clean-error path. The same fix shape was
+        applied to ``surprisal_audit.audit_surprisal`` in PR #30;
+        this is the embedding-side analogue.
         """
         if not texts:
             import numpy as np  # type: ignore
             return np.empty((0, 0), dtype="float32")
         model = self._load()
-        return model.encode(
-            texts,
-            show_progress_bar=False,
-            batch_size=batch_size,
-            convert_to_numpy=True,
-            normalize_embeddings=normalize,
-        )
+        try:
+            return model.encode(
+                texts,
+                show_progress_bar=False,
+                batch_size=batch_size,
+                convert_to_numpy=True,
+                normalize_embeddings=normalize,
+            )
+        except EmbeddingBackendError:
+            # Already typed; pass through unchanged so callers
+            # that distinguish load-vs-runtime still see the
+            # typed error.
+            raise
+        except (
+            MemoryError, RuntimeError, IndexError, ValueError,
+            OSError,
+        ) as exc:
+            raise EmbeddingBackendError(
+                f"sentence-transformers encode failed "
+                f"({type(exc).__name__}: {exc}). Common causes: "
+                f"a text in the batch exceeded the model's context "
+                f"window, the device ran out of memory, or the "
+                f"tokenizer produced an unexpected shape. Consider "
+                f"chunking long inputs before calling encode."
+            ) from exc
 
     def identifier_block(self) -> dict[str, Any]:
         """Provenance block consumers paste into their JSON output.
