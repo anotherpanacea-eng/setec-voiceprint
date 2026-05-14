@@ -58,7 +58,9 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from claim_license import ClaimLicense  # type: ignore
+from claim_license import (  # type: ignore
+    ClaimLicense, with_state_caveats,
+)
 from preprocessing import strip_non_prose  # type: ignore
 
 TASK_SURFACE = "smoothing_diagnosis"
@@ -492,6 +494,10 @@ def _claim_license_block(audit: dict[str, Any]) -> str:
             "pending; treat the band as a cue, not a verdict.",
         ],
     )
+    # B.3: state-routed caveats when --ai-status was passed.
+    lic = with_state_caveats(
+        lic, target_ai_status=audit.get("ai_status"),
+    )
     return lic.render_block().rstrip()
 
 
@@ -603,6 +609,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "(privacy default: anonymized as `baseline_001`)."
         ),
     )
+    # B.3 (v1.47.0+): authorship-state routing for the ClaimLicense.
+    p.add_argument(
+        "--ai-status",
+        default=None,
+        help=(
+            "Manifest ai_status value for the target text. When "
+            "supplied, the ClaimLicense block gains state-specific "
+            "caveats per SPEC_authorship_states.md §9.2."
+        ),
+    )
     return p
 
 
@@ -621,6 +637,10 @@ def main(argv: list[str] | None = None) -> int:
     )
     audit = audit_discourse_moves(cleaned)
     audit["preprocessing"] = prep_meta
+    # B.3: propagate --ai-status into the audit dict for the
+    # claim-license block.
+    if args.ai_status:
+        audit["ai_status"] = args.ai_status
 
     baseline_comparison: dict[str, Any] | None = None
     if args.baseline_dir:

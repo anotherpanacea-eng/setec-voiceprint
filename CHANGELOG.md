@@ -6,6 +6,35 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.49.0] - 2026-05-14
+
+**Authorship-state taxonomy refinement — phase B.3 (start): claim-license state routing.** Adds the shared `claim_license` helper that audit scripts use to emit state-routed caveats, plus wires the first two exemplar scripts (`stance_modality_audit.py`, `discourse_move_signature.py`) per `internal/SPEC_authorship_states.md` §9. Other audit scripts that import `claim_license` (general_imposters, semantic_preservation_check, etc.) get wired in follow-up PATCH PRs thematically grouped per SPEC §10. Stacked on B.4 (PRs #28 / #36).
+
+The framework now distinguishes inference licensure by authorship state: a ClaimLicense block emitted against a `pre_ai_human` target reads differently from one emitted against `ai_generated_from_outline`. The differential matters because the stylometric fingerprint of outline-seeded LLM generation differs from thin-prompt generation, and a verdict that doesn't acknowledge this distinction is licensure overreach.
+
+### Added
+
+- **`claim_license.TARGET_STATE_CAVEAT_TEMPLATES`** — dict mapping each of the seven canonical `ai_status` values to operator-readable caveat text. Pinned per SPEC §9.2. Covers `pre_ai_human`, `ai_generated`, `ai_generated_from_outline`, `ai_assisted`, `ai_edited`, `mixed`, `unknown`.
+- **`claim_license.COMPARISON_STATE_CAVEAT_TEMPLATES`** — dict mapping exact-match comparison-baseline state sets (e.g., `{pre_ai_human}` only, or `{ai_generated}` only) to anchored caveats. The helper falls back to a generic "mixes authorship states" caveat (naming each state) when no exact match.
+- **`claim_license.state_routed_caveats(target_ai_status, comparison_ai_statuses)`** — pure function returning the list of state-routed caveats for the given inputs. Returns `[]` when neither input is supplied — keeps the helper a safe-by-default no-op for pre-B.3 callers.
+- **`claim_license.with_state_caveats(license_block, *, target_ai_status, comparison_ai_statuses)`** — takes a `ClaimLicense` and returns a new one with state caveats appended to `additional_caveats`. All other fields pass through unchanged. Idempotent when called with no state inputs.
+- **`stance_modality_audit.py --ai-status` flag** — operator supplies the manifest entry's `ai_status` for the target; the rendered ClaimLicense block gains the matching caveat.
+- **`discourse_move_signature.py --ai-status` flag** — same wiring.
+- **21 new tests** across `test_claim_license_migration.py` (+13 covering the helper) and the new `test_b3_state_routing.py` (+8 covering end-to-end CLI behavior for both exemplar scripts).
+
+### Changed
+
+- `stance_modality_audit._claim_license_block` calls `with_state_caveats(lic, target_ai_status=audit.get("ai_status"))` after building the base block. No behavior change when `--ai-status` is absent.
+- `discourse_move_signature._claim_license_block` — same wiring.
+- Both audit scripts surface `--ai-status` into their JSON output dict as an `ai_status` field, so downstream consumers reading the JSON path can also route on state without having to re-pass the flag.
+
+### Notes
+
+- B.3 is intentionally a rollout, not a single PR. This commit ships the helper + 2 exemplar scripts; the remaining `claim_license`-using audit scripts (general_imposters, semantic_preservation_check, mimicry_cosplay_audit, surface_disagreement_resolver, confounder_audit, construction_signature_audit, punctuation_cadence_audit, adversarial_robustness_card) get wired in subsequent PATCH PRs per the SPEC §10 plan. The helper is the load-bearing piece; per-script wiring is mechanical.
+- The change is rendering-layer (markdown). JSON output's claim-license shape is unchanged — downstream consumers that read the JSON keep working.
+- Pre-B.3 callers that don't pass `--ai-status` see the same markdown they got in v1.45.0 / v1.46.0 / v1.48.0. The helper is no-op without state inputs.
+- **Version-bump note**: rebased from declared 1.47.0 → 1.49.0 because PRs #21 / #22 / #24 / #32 / #36 merged ahead at 1.45.0 / 1.46.0 / 1.47.0 / 1.47.1 / 1.48.0. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.48.0] - 2026-05-14
 
 **Authorship-state taxonomy refinement — phase B.4: converter updates.** Wires the B.2 authorship-state vocabulary additions (`ai_generated_from_outline`, `mixed` + `composite_states`) into the EditLens and MAGE converters per `internal/SPEC_authorship_states.md` §7. Stacked on B.2 (PR #22). RAID is unchanged per SPEC §7.3.

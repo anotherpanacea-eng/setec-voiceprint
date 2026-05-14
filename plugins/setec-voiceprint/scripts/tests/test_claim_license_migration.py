@@ -217,6 +217,202 @@ class TestVoiceValidationHarnessMigration:
         assert "0.05" in block  # fpr_target
 
 
+# -------------------- B.3: state-routed caveats ----------------
+
+
+from claim_license import (  # type: ignore  # noqa: E402
+    COMPARISON_STATE_CAVEAT_TEMPLATES,
+    TARGET_STATE_CAVEAT_TEMPLATES,
+    state_routed_caveats,
+    with_state_caveats,
+)
+
+
+class TestB3StateRoutedCaveats:
+    """``state_routed_caveats(...)`` is a pure function — easy to
+    test in isolation. Covers the seven canonical target states
+    and the two anchored comparison-baseline cases plus the
+    generic fallbacks."""
+
+    def test_no_inputs_returns_empty(self):
+        """Safe-by-default no-op when called with no state inputs."""
+        assert state_routed_caveats() == []
+
+    def test_unrecognized_target_state_returns_empty(self):
+        """An ai_status value outside the SPEC vocabulary should
+        NOT produce a caveat (no template), but the helper must
+        not raise — defensive against operator-supplied free-text."""
+        assert state_routed_caveats(target_ai_status="garbage") == []
+
+    def test_all_canonical_target_states_have_templates(self):
+        """Coverage: every value in ALLOWED_AI_STATUS gets a
+        template, so a B.3-wired audit script always emits a
+        caveat when --ai-status was passed with a valid value."""
+        canonical = (
+            "pre_ai_human", "ai_generated", "ai_generated_from_outline",
+            "ai_assisted", "ai_edited", "mixed", "unknown",
+        )
+        for state in canonical:
+            assert state in TARGET_STATE_CAVEAT_TEMPLATES, (
+                f"missing target-state template for {state!r}"
+            )
+            cs = state_routed_caveats(target_ai_status=state)
+            assert len(cs) == 1
+            assert cs[0]  # non-empty
+
+    def test_outline_caveat_distinguishes_from_thin_prompt(self):
+        """SPEC §9.2: ai_generated_from_outline's caveat must
+        emphasize the human-seed origin AND the lack of
+        license-to-infer-about-fully-AI-generated."""
+        cs = state_routed_caveats(
+            target_ai_status="ai_generated_from_outline",
+        )
+        text = cs[0].lower()
+        assert "human seed" in text or "outline" in text
+        assert "fully-ai" in text or "thin-prompt" in text
+
+    def test_pre_ai_human_baseline_caveat(self):
+        """Exact-match comparison-state caveat for the
+        pre-AI-only baseline case."""
+        cs = state_routed_caveats(
+            comparison_ai_statuses=["pre_ai_human"],
+        )
+        assert len(cs) == 1
+        assert "pre-AI" in cs[0] or "pre_ai_human" in cs[0]
+
+    def test_ai_generated_only_baseline_caveat(self):
+        cs = state_routed_caveats(
+            comparison_ai_statuses=["ai_generated"],
+        )
+        assert len(cs) == 1
+        assert "ai_generated" in cs[0] or "LLM baseline" in cs[0]
+
+    def test_mixed_baseline_falls_back_to_generic(self):
+        """A multi-state baseline that doesn't exactly match a
+        template generates the generic "mixes authorship states"
+        caveat naming each state present."""
+        cs = state_routed_caveats(
+            comparison_ai_statuses=["pre_ai_human", "ai_assisted"],
+        )
+        assert len(cs) == 1
+        text = cs[0]
+        assert "`pre_ai_human`" in text
+        assert "`ai_assisted`" in text
+
+    def test_single_unrecognized_baseline_falls_back_to_generic(self):
+        """A single-state baseline that's not pre_ai_human or
+        ai_generated still produces a caveat — generic form."""
+        cs = state_routed_caveats(
+            comparison_ai_statuses=["ai_edited"],
+        )
+        assert len(cs) == 1
+        assert "ai_edited" in cs[0]
+
+    def test_target_and_comparison_combine(self):
+        """Both inputs produce both caveats; target first, then
+        comparison."""
+        cs = state_routed_caveats(
+            target_ai_status="ai_assisted",
+            comparison_ai_statuses=["pre_ai_human"],
+        )
+        assert len(cs) == 2
+        assert "pre_ai_human" in cs[1] or "pre-AI" in cs[1]
+
+
+class TestB3WithStateCaveats:
+    """``with_state_caveats(license_block, ...)`` returns a new
+    ClaimLicense with state caveats appended to
+    additional_caveats. Original block's other fields are
+    preserved."""
+
+    def test_no_state_inputs_returns_structural_copy(self):
+        base = ClaimLicense(
+            task_surface="smoothing_diagnosis",
+            licenses="L",
+            does_not_license="D",
+            additional_caveats=["existing caveat"],
+        )
+        out = with_state_caveats(base)
+        assert out.licenses == base.licenses
+        assert out.does_not_license == base.does_not_license
+        assert out.additional_caveats == ["existing caveat"]
+        # Independent copy.
+        out.additional_caveats.append("mutation")
+        assert "mutation" not in base.additional_caveats
+
+    def test_target_state_appends_caveat(self):
+        base = ClaimLicense(
+            task_surface="smoothing_diagnosis",
+            licenses="L", does_not_license="D",
+            additional_caveats=["pre-existing"],
+        )
+        out = with_state_caveats(
+            base, target_ai_status="ai_generated_from_outline",
+        )
+        assert out.additional_caveats[0] == "pre-existing"
+        assert len(out.additional_caveats) == 2
+        assert (
+            "outline" in out.additional_caveats[1].lower()
+            or "human seed" in out.additional_caveats[1].lower()
+        )
+
+    def test_target_plus_comparison(self):
+        base = ClaimLicense(
+            task_surface="smoothing_diagnosis",
+            licenses="L", does_not_license="D",
+        )
+        out = with_state_caveats(
+            base,
+            target_ai_status="mixed",
+            comparison_ai_statuses=["pre_ai_human"],
+        )
+        assert len(out.additional_caveats) == 2
+
+    def test_render_block_includes_state_caveats(self):
+        """End-to-end: the rendered markdown block carries the
+        state caveat in its ### Caveats section."""
+        base = ClaimLicense(
+            task_surface="voice_coherence",
+            licenses="L", does_not_license="D",
+        )
+        out = with_state_caveats(
+            base, target_ai_status="ai_generated_from_outline",
+        )
+        block = out.render_block()
+        assert "### Caveats" in block
+        assert (
+            "outline" in block.lower() or "human seed" in block.lower()
+        )
+
+    def test_preserves_all_other_fields(self):
+        """The new helper must not drop any of the surrounding
+        context fields."""
+        base = ClaimLicense(
+            task_surface="validation",
+            licenses="L", does_not_license="D",
+            comparison_set={"n_pairs": 100, "label_by": "author"},
+            length_range_words=(300, 5000),
+            register_match=["literary_fiction"],
+            language_match=["native"],
+            fpr_target=0.01,
+            confidence_interval_95=(0.45, 0.65),
+            references=["ref1", "ref2"],
+        )
+        out = with_state_caveats(
+            base, target_ai_status="ai_edited",
+        )
+        assert out.task_surface == "validation"
+        assert out.comparison_set == {
+            "n_pairs": 100, "label_by": "author",
+        }
+        assert out.length_range_words == (300, 5000)
+        assert out.register_match == ["literary_fiction"]
+        assert out.language_match == ["native"]
+        assert out.fpr_target == 0.01
+        assert out.confidence_interval_95 == (0.45, 0.65)
+        assert out.references == ["ref1", "ref2"]
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
