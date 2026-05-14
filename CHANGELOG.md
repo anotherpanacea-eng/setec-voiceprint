@@ -6,6 +6,23 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.51.0] - 2026-05-14
+
+**Surprisal backend (phase C.2).** Implements the pluggable causal-LM wrapper from `internal/SPEC_surprisal_signal.md` §6 and `internal/SPEC_surprisal_model_choice.md`. Structurally parallel to `embedding_backend.py`: alias table, lazy load, honest failure (no silent fallback), deterministic mode, `identifier_block()` for PROVENANCE. Adds Tier-4 (surprisal) dependency on `transformers` + `torch`; opt-in, not part of core install.
+
+### Added
+
+- **`scripts/surprisal_backend.py`** — pluggable wrapper around `transformers` causal LMs. Alias table covers the five §6.4 candidates per the embedding-spec analog (`gpt2`, `llama32_1b`, `phi3_mini`, `qwen25_1_5b`, `tinyllama`). Implements teacher-forcing surprisal computation: tokenize → single forward pass → log-softmax → per-position surprisal in bits. Returns the surprisal series for any text; optional `return_top_k` produces a reader-facing diagnostic of the k most-surprising tokens with decoded text.
+- **`scripts/tests/test_surprisal_backend.py`** — 20 tests covering alias resolution (5 §6.4 candidates plus default), reverse lookup, lazy load (no model download on `--help`), missing-package handling (raises `SurprisalBackendError` with install hint when `transformers` is missing), model-load failure handling, empty/whitespace input bypassing load, top-k diagnostic shape, identifier-block PROVENANCE shape. Three math tests (uniform-logits → expected surprisal, top-k contract, single-token empty-series) gated on `torch` being installed; skipped cleanly without it.
+
+### Notes
+
+- **Default model: `tinyllama`** — chosen on documented-training-cutoff + smallest-footprint grounds, NOT on a claim that tinyllama is best. The spec's no-priority posture stands; the §5.4 fixture test on the user's register mix is the load-bearing decision for what becomes the operational default in any given deployment.
+- **No audit-script integration yet.** C.2 ships the backend alone. **C.3** (standalone `surprisal_audit.py`) and **C.4** (`variance_audit.py` Tier-4 integration) follow as separate PRs.
+- **Opt-in dependency.** `transformers` and `torch` are not part of the core install. Users who want surprisal install them explicitly (will be documented in `requirements-surprisal.txt` when C.3 ships). The wrapper raises `SurprisalBackendError` with an install hint when the deps are missing — no silent fallback.
+- **Stylometry-to-the-people compliance.** Per-document surprisal series stay local — the wrapper does not redistribute. Future surprisal-derived thresholds land in PROVENANCE-as-audit-record, not in `COMPRESSION_HEURISTICS` as load-bearing defaults.
+- **Version-bump note**: rebased from declared 1.45.0 → 1.51.0 because Waves 1 + 2 + PRs #33 / #34 / #35 / #25 merged ahead at 1.45.0 – 1.50.0. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.50.0] - 2026-05-14
 
 **Sharded calibration v1.44.1.B — scheduling + control plane.** The second of three v1.44.1 phases per `internal/SPEC_sharded_calibration.md` §7.2 (the spec originally labelled it v1.43.1; we're shipping under the v1.44.1 banner with the same scope). Adds the cooperative-shutdown and operator-control primitives that make multi-day unattended runs survivable: `--time-window` for nightly schedules, `pause-all` / `terminate-all` / `kill-all` / `sweep-stale` subcommands for operator control, and a `SigtermInterrupt` exception contract that lets opt-in scorers checkpoint mid-shard. The default scorer doesn't yet honor `SigtermInterrupt`; the contract is in place so a follow-up can wire up `load_or_score_corpus` once we have a real RAID-scale run to test against. Stacked on v1.44.1.A (PR #24).
