@@ -228,6 +228,17 @@ fields. The framework's atomic-rename claim files DO NOT prevent
 this cross-host (claim files are local-filesystem only); the git
 layer catches it.
 
+**Failed-state precedence (v1.54.0+).** When `merge_state_files`
+encounters two sides that disagree on the same shard, `failed` is
+terminal — the only state that overrides `failed` is `done`. Any
+non-`done` competing state (`pending`, `claimed`, or
+`claimed_pending_resume`) yields to `failed`. This prevents a
+remote-side `sweep-stale` from silently resurrecting a failed
+shard back to `pending`. If the auto-merge surfaces a `failed`
+shard you don't expect, the failure was real — check the host
+that recorded it for the underlying scoring error before
+manually overriding to any other state.
+
 **Recovery**:
 
 ```bash

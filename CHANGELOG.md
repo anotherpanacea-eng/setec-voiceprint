@@ -6,6 +6,24 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.59.1] - 2026-05-14
+
+**Operator docs alignment with v1.53.0 – v1.59.0 changes.** A docs-only PATCH bump that brings the three operator-facing reference docs into alignment with the framework features that landed in Wave 4. Pre-AMD-shift readiness pass: an operator following any of these docs end-to-end should land on the actual current behavior rather than the pre-Wave-4 state.
+
+### Changed
+
+- **`PROVENANCE.md`** — adds the v1.59.0 polarity-inversion gate to the docs:
+  - Selection-criteria gate 1 now notes the in-code enforcement (`calibrate_thresholds.py` refuses to publish a threshold when `direction_aware_auc` falls below the chance line, raising `PolarityInversionRefusal`) alongside the pre-existing empirical-finding language.
+  - New top-level **Polarity-inversion gate (v1.59.0+)** section between selection criteria and available corpora. Documents: how the gate fires, the two new CLI flags (`--allow-polarity-inversion`, `--polarity-inversion-margin`), the override-path provenance shape (`polarity_inversion` block + `POLARITY INVERSION` notes prefix), and the recommended operator workflow (treat inversions as findings, only override to *document* an inversion, never to ship the threshold as load-bearing).
+  - Template for new entries gains a required `Polarity gate` bullet (reads "matched" in the common case, carries the full inversion diagnostic for override-path entries) and a notes-prefix annotation guiding override-path entries to lead with `POLARITY INVERSION` so downstream consumers cannot mistake them for calibrated thresholds.
+- **`launchd/RUNBOOK_macos_nightly.md`** — aligns the dry-run example output and the install-step output with the v1.53.0 idempotent install flow. The dry-run snippet now shows the three steps (`cp` + `bootout` + `bootstrap`) the operator would run manually, with the bootout marked best-effort. The install output shows the new "Running best-effort bootout..." status line. Troubleshooting bullet for `setup_launchd.py --install` regeneration explicitly notes the install path is idempotent — re-running after a config change is safe.
+- **`RUNBOOK_multi_machine_sync.md`** — adds a "Failed-state precedence (v1.54.0+)" paragraph to section 3.3 (real cross-host conflict on state.json). Documents that `merge_state_files` treats `failed` as terminal except against `done`, so a remote `sweep-stale` cannot silently resurrect a failed shard. Operators seeing an unexpected `failed` after `resolve-conflict` should investigate the failure rather than overriding the state.
+
+### Notes
+
+- This is a docs-only PATCH bump. No code, no tests, no behavior changes.
+- The three docs were already structurally aligned with the framework (the runbooks shipped with their respective feature PRs); the gaps were specifically the post-PR refinements (idempotent install fix in #26 round 2, failed-state-terminal fix in #27 round 2, the entire polarity-inversion gate in #40). The doc updates close those gaps before the operator workflow shifts to the AMD desktop.
+
 ## [1.59.0] - 2026-05-14
 
 **Calibration toolchain — polarity-inversion refusal gate.** Closes the load-bearing methodological gap documented in README "Why no verdict" §cross-corpus polarity volatility. The framework's empirical finding (every Tier 1 signal flipped polarity between EditLens val and MAGE on consecutive days, 2026-05-10 / 2026-05-11) says that per-corpus calibration thresholds do not generalize. Prior to this PR, `calibrate_thresholds.py` would happily publish a threshold from any single corpus regardless of whether the corpus's `direction_aware_auc` agreed with the registry's direction hypothesis — exactly the failure mode the documentation describes. This PR makes the framework's posture operational in code.
