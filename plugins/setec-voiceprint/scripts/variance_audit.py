@@ -616,6 +616,158 @@ def adjacent_sentence_cosine(sentences: list[str]) -> dict[str, Any] | None:
     return None
 
 
+# ---------- Tier 4 (surprisal) helper, v1.47.0+ (C.4) ----------
+#
+# Reuses the `audit_surprisal` math from the C.3 standalone module so
+# the standalone CLI and the variance-audit Tier 4 path share the
+# same numbers. The lazy import means an operator who doesn't run
+# Tier 4 never pays the surprisal_audit / surprisal_backend import
+# cost. Operators who run Tier 4 without `transformers` installed
+# get an available=False block with a clear reason rather than a
+# crash — same posture as Tier 3 when sentence_transformers / sklearn
+# are missing.
+
+def _tier4_surprisal_block(
+    text: str,
+    *,
+    score_fn=None,
+    backend=None,
+    sliding_window: bool = False,
+    window_size: int = 200,
+    stride: int = 100,
+    top_k: int = 20,
+) -> dict[str, Any]:
+    """Compute Tier 4 surprisal statistics for ``text``.
+
+    Returns a dict whose ``surprisal`` sub-block carries the same
+    statistics the C.3 ``surprisal_audit`` script produces — mean,
+    sd, variance, min/max, autocorrelation at lags 1/2/3/5/10,
+    skew, excess kurtosis, position of max, top-k surprising
+    tokens — plus a ``provisional`` marker so consumers see the
+    band-calibration story (``user-baseline-required``) carries
+    through to the variance-audit context. Shape is keyed by
+    ``signal_path`` matching the new ``COMPRESSION_HEURISTICS``
+    entries (``tier4.surprisal.mean``, ``tier4.surprisal.sd``,
+    ``tier4.surprisal.autocorrelation.lag_1``).
+
+    Either ``score_fn`` or ``backend`` may be supplied; defaults to
+    constructing a ``SurprisalBackend`` with the module's
+    ``DEFAULT_MODEL`` (TinyLlama). The test suite passes
+    ``score_fn`` so no real causal LM is loaded.
+
+    Returns ``{"available": False, "reason": ...}`` for any of:
+      * transformers / surprisal_backend unimportable
+      * empty or whitespace text
+      * surprisal series empty (input too short)
+
+    The band classifier downstream uses
+    ``COMPRESSION_HEURISTICS`` entries which carry
+    ``provisional=True`` — Tier 4 contributes to the band call
+    only when the operator has explicitly opted in via
+    ``--tier4`` AND has either calibrated the thresholds or
+    accepted the PROVISIONAL ones documented in the C.3 SPEC.
+    """
+    if not text or not text.strip():
+        return {"available": False, "reason": "empty text"}
+    try:
+        # Lazy import: avoids surprisal_audit / surprisal_backend
+        # import cost when Tier 4 is off (the common case).
+        from surprisal_audit import audit_surprisal  # type: ignore
+    except ImportError as exc:
+        return {
+            "available": False,
+            "reason": (
+                f"surprisal_audit unimportable: {exc}. Install the "
+                f"Tier-4 dependencies (transformers + torch) and "
+                f"ensure surprisal_audit.py is on the path."
+            ),
+        }
+    if score_fn is None and backend is None:
+        try:
+            # Construct a default backend lazily. Same lazy-load
+            # semantics as the audit script's CLI path.
+            from surprisal_backend import (  # type: ignore
+                DEFAULT_MODEL, SurprisalBackend,
+            )
+            backend = SurprisalBackend(model_id=DEFAULT_MODEL)
+        except ImportError as exc:
+            return {
+                "available": False,
+                "reason": (
+                    f"surprisal_backend unimportable: {exc}. Tier-4 "
+                    f"requires transformers + torch."
+                ),
+            }
+    try:
+        sub = audit_surprisal(
+            text,
+            backend=backend,
+            score_fn=score_fn,
+            sliding_window=sliding_window,
+            window_size=window_size,
+            stride=stride,
+            top_k=top_k,
+        )
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "available": False,
+            "reason": (
+                f"surprisal scoring failed: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        }
+    if not sub.get("available"):
+        return {
+            "available": False,
+            "reason": sub.get("reason", "surprisal audit unavailable"),
+        }
+    # Reshape the audit dict so the COMPRESSION_HEURISTICS
+    # signal_path entries (tier4.surprisal.mean, etc.) can be
+    # walked directly via _extract_signal. The standalone audit's
+    # `summary` key is the new tier4.surprisal block.
+    summary = sub["summary"]
+    tier4_block: dict[str, Any] = {
+        "available": True,
+        "surprisal": {
+            "mean": summary["mean_surprisal_bits"],
+            "sd": summary["sd_surprisal_bits"],
+            "variance": summary["variance_surprisal_bits"],
+            "min": summary["min"],
+            "max": summary["max"],
+            "autocorrelation": dict(summary["autocorrelation"]),
+            "skew": summary.get("skew"),
+            "excess_kurtosis": summary.get("excess_kurtosis"),
+            "position_of_max": summary.get("position_of_max"),
+            "series_too_short_for_acf": summary.get(
+                "series_too_short_for_acf", False,
+            ),
+            "n_tokens_scored": sub.get("n_tokens_scored"),
+            "series_length": sub.get("series_length"),
+            "top_k_tokens": sub.get("top_k_tokens", []),
+            "band": sub.get("band"),
+            "sliding_window": sub.get("sliding_window"),
+            "provisional": True,
+            "calibration_anchor": "user-baseline-required",
+        },
+    }
+    # Reviewer P2 (2026-05-14): attach the backend identifier so
+    # the variance Tier 4 JSON carries the model + revision +
+    # alias the standalone audit's PROVENANCE block already
+    # records. Surprisal means/SD/ACF are tokenizer- and
+    # checkpoint-dependent, so two variance runs against
+    # different --surprisal-model values must be distinguishable
+    # in their output. When score_fn was supplied (the test path),
+    # there is no backend identifier; tier4_block["backend"] stays
+    # absent and downstream consumers see that this run was
+    # stub-driven.
+    if backend is not None and hasattr(backend, "identifier_block"):
+        try:
+            tier4_block["backend"] = backend.identifier_block()
+        except Exception:  # noqa: BLE001 — defensive
+            pass
+    return tier4_block
+
+
 # ---------- Aggregator ----------
 
 def audit_text(
@@ -623,6 +775,9 @@ def audit_text(
     mattr_window: int = 50,
     do_tier2: bool = True,
     do_tier3: bool = True,
+    do_tier4: bool = False,
+    tier4_score_fn=None,
+    tier4_backend=None,
     allow_non_prose: bool = False,
     strip_rules: str | list[str] | None = None,
     strip_aggressive: bool = False,
@@ -677,6 +832,17 @@ def audit_text(
             "available": HAS_ST or HAS_SKLEARN,
             "adjacent_cosine": adjacent_sentence_cosine(sentences) if (HAS_ST or HAS_SKLEARN) else None,
         }
+    if do_tier4:
+        # v1.47.0+ (C.4): Tier 4 (surprisal). Opt-in; lazy import
+        # of surprisal_audit + surprisal_backend so callers that
+        # don't enable Tier 4 never pay the import cost. When
+        # tier4_score_fn is supplied (the test path), no real
+        # causal LM is loaded.
+        out["tier4"] = _tier4_surprisal_block(
+            text,
+            score_fn=tier4_score_fn,
+            backend=tier4_backend,
+        )
     return out
 
 
@@ -1381,6 +1547,38 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
         signal_path="tier2.mdd.sd",
         value=0.7, direction="lt", weight=1.0, length_floor=300,
     ),
+    # ---- Tier 4 (surprisal), C.4, v1.47.0+ ----
+    # PROVISIONAL per SPEC_surprisal_signal.md §3.5 and §4.3: the
+    # three Tier 4 thresholds ship with provisional=True. Values
+    # come from fixture-derived heuristics (the same numbers used
+    # in surprisal_audit.py's PROVISIONAL_BAND_THRESHOLDS), NOT
+    # from a labeled-corpus calibration. The framework's posture
+    # is that load-bearing surprisal thresholds belong to the
+    # operator's calibration; these provisional values exist so
+    # the band classifier has something to chew on when Tier 4 is
+    # enabled but never get treated as authoritative. The
+    # ClaimLicense block downstream surfaces
+    # calibration_anchor: user-baseline-required.
+    #
+    # Direction semantics:
+    #   surprisal_mean (lt): AI prose tends LOWER (LM samples near
+    #     its own mode → more predictable).
+    #   surprisal_sd (lt): AI prose tends LOWER (more uniform
+    #     surprise). DivEye's load-bearing signal.
+    #   surprisal_acf_lag1 (gt): AI prose tends HIGHER (smooth
+    #     local predictability).
+    "surprisal_mean": ThresholdSpec(
+        signal_path="tier4.surprisal.mean",
+        value=3.5, direction="lt", weight=1.5, length_floor=300,
+    ),
+    "surprisal_sd": ThresholdSpec(
+        signal_path="tier4.surprisal.sd",
+        value=1.5, direction="lt", weight=2.0, length_floor=300,
+    ),
+    "surprisal_acf_lag1": ThresholdSpec(
+        signal_path="tier4.surprisal.autocorrelation.lag_1",
+        value=0.30, direction="gt", weight=1.0, length_floor=500,
+    ),
 }
 
 
@@ -1509,6 +1707,21 @@ def classify_compression(
     if adj:
         check("adjacent_cosine_mean", adj.get("mean"))
         check("adjacent_cosine_sd", adj.get("sd"))
+
+    # Tier 4 — surprisal (Codex PR #31 review P0). The C.4 signals
+    # were registered in COMPRESSION_HEURISTICS but never wired into
+    # classify_compression's check() loop, so they never entered
+    # ``available_signals`` / ``available_weight`` and the ablation
+    # arithmetic couldn't see them. Now they're checked here under
+    # the same length-floor + threshold contract as Tier 1-3.
+    t4 = audit.get("tier4") or {}
+    surprisal = t4.get("surprisal") if isinstance(t4, dict) else None
+    if isinstance(surprisal, dict) and surprisal.get("available", True):
+        check("surprisal_mean", surprisal.get("mean"))
+        check("surprisal_sd", surprisal.get("sd"))
+        # ACF lives one level deeper.
+        acf = surprisal.get("autocorrelation") or {}
+        check("surprisal_acf_lag1", acf.get("lag_1"))
 
     # POS-bigram KL divergence against baseline aggregate. Only
     # participates when a baseline is supplied and the POS-bigram
@@ -1713,6 +1926,22 @@ _ABLATION_SIGNAL_FAMILIES: dict[str, tuple[str, ...]] = {
     # against a register-matched baseline), they belong here.
     "baseline_divergence": (
         "pos_bigram_kl",
+    ),
+    # Codex PR #31 review P0 — predictability_uniformity family.
+    # The Tier 4 surprisal signals (C.4) participate in compression
+    # when `--tier4` is on (combined weight 4.5: mean=1.5 + sd=2.0
+    # + acf=1.0). Pre-fix they were absent from the ablation
+    # mapping, so a band call carried by Tier 4 could report
+    # `is_robust_call=True` with no load-bearing families — the
+    # ablation arithmetic never subtracted the surprisal weight.
+    # The family name `predictability_uniformity` reflects what the
+    # three signals jointly measure: how uniformly the LM
+    # distributes surprise across the text — the operational
+    # fingerprint of LLM smoothing per SPEC §1.2.
+    "predictability_uniformity": (
+        "surprisal_mean",
+        "surprisal_sd",
+        "surprisal_acf_lag1",
     ),
 }
 
@@ -2054,6 +2283,86 @@ def format_summary(audit: dict[str, Any], compression: dict[str, Any]) -> str:
                 "Install `sentence-transformers` or `scikit-learn`."
             )
 
+    # Reviewer P2 (2026-05-14): Tier 4 surprisal block. Until this
+    # render existed, --tier4 silently contributed to the band call
+    # (via the three COMPRESSION_HEURISTICS entries) but the
+    # human-readable summary never showed the causal-LM stats. That
+    # makes the band call unauditable for any reader who only sees
+    # the markdown. Render mirrors the Tier 3 shape (header,
+    # available-or-not branch, one metric line per signal),
+    # plus the PROVISIONAL marker + calibration anchor + backend
+    # identifier so readers see immediately that:
+    #   (a) the band call's Tier 4 contribution is provisional, and
+    #   (b) which causal LM produced these numbers.
+    t4 = audit.get("tier4")
+    if t4:
+        lines.append("")
+        if t4.get("available"):
+            lines.append("Tier 4 (surprisal):")
+            s4 = t4.get("surprisal", {})
+            mean_b = s4.get("mean")
+            sd_b = s4.get("sd")
+            acf = s4.get("autocorrelation", {}) or {}
+            lag1 = acf.get("lag_1")
+            mean_str = (
+                f"{mean_b:.3f}" if isinstance(mean_b, (int, float)) else "n/a"
+            )
+            sd_str = (
+                f"{sd_b:.3f}" if isinstance(sd_b, (int, float)) else "n/a"
+            )
+            lag1_str = (
+                f"{lag1:.3f}" if isinstance(lag1, (int, float)) else "n/a"
+            )
+            lines.append(
+                f"  Mean surprisal: {mean_str} bits/token   "
+                f"SD: {sd_str}   lag-1 ACF: {lag1_str}"
+            )
+            n_scored = s4.get("n_tokens_scored")
+            slen = s4.get("series_length")
+            if isinstance(n_scored, int) and isinstance(slen, int):
+                lines.append(
+                    f"  Tokens scored: {n_scored:,}   "
+                    f"series length: {slen:,}"
+                )
+            band = s4.get("band") or {}
+            if band:
+                lines.append(
+                    f"  Band (PROVISIONAL): "
+                    f"{band.get('band', 'indeterminate')}   "
+                    f"calibration_anchor: "
+                    f"{band.get('calibration_anchor', 'unknown')}"
+                )
+            backend_id = t4.get("backend") or {}
+            if backend_id:
+                model = backend_id.get("id", "unknown")
+                rev = backend_id.get("revision") or "(no revision pin)"
+                alias = backend_id.get("alias")
+                alias_str = f" (alias `{alias}`)" if alias else ""
+                lines.append(
+                    f"  Model: {model}{alias_str}   "
+                    f"revision: {rev}"
+                )
+            top = s4.get("top_k_tokens") or []
+            if top:
+                # Show only the top-3 in the summary (the full list
+                # is in the JSON output); the markdown is a quick
+                # scan, not the full diagnostic.
+                preview = ", ".join(
+                    f"{tok.get('token_text', '?')!r}"
+                    f"@{tok.get('position', '?')} "
+                    f"({tok.get('surprisal_bits', 0):.1f}b)"
+                    for tok in top[:3]
+                )
+                lines.append(f"  Top surprising tokens: {preview}")
+        else:
+            reason = t4.get("reason", "unknown")
+            lines.append(
+                f"Tier 4 (surprisal): not available "
+                f"({reason}). Install the optional surprisal "
+                f"dependencies (`transformers + torch`) and pass "
+                f"--surprisal-model to enable."
+            )
+
     return "\n".join(lines)
 
 
@@ -2285,6 +2594,39 @@ def main() -> int:
         "--no-tier3", action="store_true",
         help="Skip Tier 3 metrics (adjacent-sentence cosine)."
     )
+    # v1.47.0+ (C.4): Tier 4 (surprisal). Opt-IN by default — the
+    # extra cost is 1-2 orders of magnitude over Tiers 1-3 and the
+    # PROVISIONAL bands need operator calibration to be load-bearing.
+    parser.add_argument(
+        "--tier4", action="store_true", default=False,
+        help=(
+            "Enable Tier 4 (surprisal) metrics. OPT-IN by default. "
+            "Requires the optional `transformers + torch` install "
+            "and a causal LM (see --surprisal-model). PROVISIONAL "
+            "bands per SPEC §3.5; calibration_anchor: "
+            "user-baseline-required."
+        ),
+    )
+    parser.add_argument(
+        "--surprisal-model", default=None,
+        help=(
+            "Causal LM alias or HuggingFace id for Tier 4. "
+            "Default: tinyllama. See surprisal_backend.MODEL_ALIASES."
+        ),
+    )
+    # Reviewer P2 (2026-05-14): --surprisal-revision parity with the
+    # standalone surprisal_audit.py CLI. Pinning a HuggingFace commit
+    # SHA in PROVENANCE entries is the reproducibility contract for
+    # any load-bearing surprisal calibration. The flag is optional;
+    # when omitted, the backend records `revision: null`.
+    parser.add_argument(
+        "--surprisal-revision", default=None,
+        help=(
+            "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
+            "(reproducibility). Default: revision-less (records "
+            "`revision: null` in the Tier 4 backend identifier block)."
+        ),
+    )
     parser.add_argument(
         "--allow-non-prose", action="store_true",
         help="Skip default corpus-hygiene stripping. Use only when "
@@ -2399,12 +2741,34 @@ def main() -> int:
 
     audit = None
     compression = None
+    # v1.47.0+ (C.4): Tier 4 backend constructed lazily here so
+    # tests that monkeypatch SurprisalBackend.score_text take effect
+    # without us having to thread tier4_score_fn through the CLI
+    # surface. When --tier4 isn't set, tier4_backend stays None.
+    tier4_backend = None
+    if args.tier4:
+        try:
+            from surprisal_backend import (  # type: ignore
+                SurprisalBackend,
+                resolve_model_arg as _resolve_surprisal_model,
+            )
+            tier4_backend = SurprisalBackend(
+                model_id=_resolve_surprisal_model(args.surprisal_model),
+                revision=args.surprisal_revision,
+            )
+        except ImportError:
+            # Leave tier4_backend None; the audit_text path will
+            # fall back to its own lazy import and report
+            # available=False with a clear reason.
+            pass
     if not args.window_only:
         audit = audit_text(
             text,
             mattr_window=args.mattr_window,
             do_tier2=not args.no_tier2,
             do_tier3=not args.no_tier3,
+            do_tier4=args.tier4,
+            tier4_backend=tier4_backend,
             allow_non_prose=args.allow_non_prose,
             strip_rules=args.strip_rules,
             strip_aggressive=args.strip_aggressive,
