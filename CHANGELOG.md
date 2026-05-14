@@ -6,6 +6,24 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.46.0] - 2026-05-14
+
+**Authorship-state taxonomy refinement (phase B.2).** Implements the validator + manifest-schema piece of the `internal/SPEC_authorship_states.md` plan: adds `ai_generated_from_outline` to the `ai_status` vocabulary and a soft consistency check on `ai_status: mixed`. Schema-additive (no existing manifests break); backwards-compat (the bare `ai_generated` value remains the catch-all when seed degree is unknown).
+
+### Added
+
+- **`ai_generated_from_outline`** in `ALLOWED_AI_STATUS`. Opt-in refinement of `ai_generated` for the case where the LLM was given a substantive human seed (outline, brief, transcript, point-by-point structure). The default `ai_generated` remains the backwards-compat catch-all when the seed degree is unknown or unspecified.
+- **Soft consistency check** on `ai_status: mixed`. Entries with this value should carry a `notes.composite_states` array listing the authorship states present across sections. Absence produces a warning (not an error), so legacy `mixed` entries from before this check still validate. The new ratchet rule is documented in `references/manifest-schema.md` as rule 16.
+- **Operational definitions** for the full `ai_status` vocabulary in `references/manifest-schema.md`. Pins the `ai_assisted` vs `ai_edited` distinction (per-suggestion human adjudication vs bulk-accepted editing), the new `ai_generated_from_outline` use criterion, and the `mixed` + `composite_states` shape.
+- **`scripts/tests/test_authorship_states_b2.py`** — 10 tests covering the new vocabulary value (schema-additive, backwards compat), the soft consistency check (proper composite_states clean; absent / empty / non-list warns; non-`mixed` entries unaffected), and the warning-not-error contract.
+
+### Notes
+
+- **No new field.** The roadmap entry (item B) initially scoped this as adding a parallel `authorship_state` field; the spec's revision discovered `ai_status` was already six-way and only one Costa distinction (AI-generated-from-human-inputs vs fully-AI-generated) was missing from the framework's vocabulary. The chosen direction refines the existing taxonomy.
+- **Phase B.3** (per-script claim-license routing where audits' evidence licensure distinguishes states) and **phase B.4** (converter updates to map source corpora onto `ai_generated_from_outline` where documented) ship as separate follow-up PRs. This PR is schema-additive only.
+- **Stylometry-to-the-people compliance.** No threshold changes. No claim that anchored signals discriminate `ai_generated_from_outline` from `ai_generated`. The refinement is a vocabulary refinement that enables future audit-routing granularity (B.3), not a load-bearing per-state calibration claim.
+- **Version-bump note**: rebased from declared 1.45.0 → 1.46.0 because PR #21 (harrier alias) merged first and took the 1.45.0 slot.
+
 ## [1.45.0] - 2026-05-13
 
 **Harrier-OSS-v1-270m candidate alias.** Adds `harrier` to `embedding_backend.MODEL_ALIASES` per the embedding-model-choice spec's revision 4 candidate list. Harrier-OSS-v1-270m (Microsoft, MIT, released 2026-03-30) is one of the five §6.4 fixture-test candidates; the alias lets users select it via `--model harrier` without typing the full HuggingFace id.
