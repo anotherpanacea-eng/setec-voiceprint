@@ -394,6 +394,20 @@ def process_start_time_epoch(pid: int) -> float | None:
     except (_sp.CalledProcessError, _sp.TimeoutExpired,
             FileNotFoundError, ValueError):
         return None
+    except OSError:
+        # Reviewer P2 (2026-05-14 round 4): sandboxed environments
+        # (Codex's review sandbox, certain CI containers, locked-down
+        # macOS sandbox profiles) refuse subprocess spawn with
+        # PermissionError or a generic OSError instead of just
+        # making `ps` exit non-zero. The function's documented
+        # contract is "return None when start time can't be
+        # determined" — propagating PermissionError out of here
+        # would break the entire `work` path before a claim could
+        # be created. None tells the downstream identity check
+        # "unverifiable," which already refuses to signal — the
+        # conservative behavior we want when we can't read process
+        # start times at all.
+        return None
     raw = result.stdout.strip()
     if not raw:
         return None
@@ -469,6 +483,66 @@ def try_claim_shard_atomically(
     finally:
         os.close(fd)
     return True
+
+
+def refresh_claim_file(
+    claim_path: Path,
+    *,
+    host: str | None = None,
+    pid: int | None = None,
+) -> None:
+    """Overwrite an existing claim file with fresh ownership data.
+
+    Reviewer P2 (2026-05-14 round 4): the resume path skipped
+    recreating the claim file because the original worker's file
+    "already exists from the original worker's first claim." But
+    that file still recorded the dead original-worker pid + start
+    time. After ``claim_shard`` updated state.json with the
+    resumed worker's new pid, ``terminate-all`` / ``kill-all``
+    still read the dead pid from the .claim file and skipped
+    signaling — meaning a live resumed worker was unsignalable.
+
+    This helper writes a fresh claim file with the current pid +
+    start_time_epoch (alongside the existing host / claimed_at /
+    tool fields). Resume paths call it before transitioning state.
+
+    Atomicity: writes to a temp file in the same directory, then
+    ``os.replace``s over the existing claim file. POSIX rename is
+    atomic, so a crash during refresh leaves either the old claim
+    (the resuming worker's predecessor's data) or the new claim
+    (the resuming worker's data) — never a partial. The temp file
+    suffix is ``.claim-refresh-*.tmp`` to distinguish from the
+    state.json temp files.
+    """
+    host = host or _host()
+    pid = pid if pid is not None else os.getpid()
+    start_time_epoch = process_start_time_epoch(pid)
+    payload = json.dumps({
+        "host": host,
+        "pid": pid,
+        "claimed_at": _now_iso(),
+        "start_time_epoch": start_time_epoch,
+        "tool": "shard_runner",
+    }, sort_keys=True).encode("utf-8")
+    claim_path = Path(claim_path)
+    fd, tmp_name = tempfile.mkstemp(
+        prefix=".claim-refresh-",
+        suffix=".tmp",
+        dir=str(claim_path.parent),
+    )
+    try:
+        try:
+            os.write(fd, payload)
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+        os.replace(tmp_name, claim_path)
+    except Exception:
+        try:
+            os.unlink(tmp_name)
+        except OSError:
+            pass
+        raise
 
 
 def release_claim(claim_path: Path) -> None:

@@ -96,6 +96,7 @@ from shard_state import (  # type: ignore
     process_start_time_epoch,
     read_claim_file,
     read_state,
+    refresh_claim_file,
     release_claim,
     resumable_shard_ids,
     sha256_file,
@@ -749,10 +750,17 @@ def _run_single_worker(
                 # Another worker beat us; try again on next iter.
                 continue
         else:
-            # Resume path: claim file already exists from the
-            # original worker's first claim. Don't try to re-create
-            # it; just continue with the state-update step.
-            pass
+            # Resume path: the .claim file already exists from the
+            # original worker's first claim, but its recorded pid +
+            # start_time_epoch belong to that dead original worker.
+            # Reviewer P2 (2026-05-14 round 4): refresh the claim
+            # file with THIS worker's pid + start time so
+            # terminate-all / kill-all can correctly signal the
+            # resumed worker. Without this, the file's stale pid
+            # fails the PID-identity check (or worse, the OS reused
+            # that pid for an unrelated process), leaving the
+            # resumed worker effectively unsignalable.
+            refresh_claim_file(claim_path)
         # Update state.json under the lock to reflect the claim.
         try:
             with state_update_lock(sp):
