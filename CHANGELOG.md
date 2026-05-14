@@ -6,6 +6,29 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.56.0] - 2026-05-14
+
+**Authorship-state taxonomy phase B.3 — wave 2: validation-surface claim-license routing.** Wires per-state caveats into the three validation-surface audit scripts that emit a `ClaimLicense` block: `confounder_audit.py`, `surface_disagreement_resolver.py`, and `adversarial_robustness_card.py`. Mechanical extension of the B.3 helper shipped in 1.49.0 (PR #29); see `internal/SPEC_authorship_states.md` §10 for the rollout plan.
+
+### Added
+
+- **`confounder_audit.py --ai-status` flag.** Operator supplies the manifest entry's `ai_status` for the target text. The rendered ClaimLicense block gains the matching state-specific caveat from `claim_license.TARGET_STATE_CAVEAT_TEMPLATES`. Default behavior unchanged when flag is absent.
+- **`surface_disagreement_resolver.py --ai-status` flag.** Same wiring. The cross-surface meta-layer's claim-license block now routes on state when the operator provides it.
+- **`adversarial_robustness_card.py --ai-status` flag.** Same wiring. Per-signal robustness cards route the differential by authorship state when supplied.
+- **13 new tests** in `test_b3_validation_surfaces.py` covering: pre-B.3 backwards-compat (no flag → no state caveat), `ai_generated_from_outline` produces the seed caveat, `pre_ai_human` produces the baseline caveat, `mixed` mentions `composite_states`, `ai_edited` produces the edited-source caveat, `unknown` produces the unspecified-state caveat, the audit dict's `ai_status` field is populated in JSON output, and the JSON shape doesn't embed the rendered caveats (separation of concerns).
+
+### Changed
+
+- All three scripts' `_claim_license_block(...)` functions now call `with_state_caveats(lic, target_ai_status=<report|card>.get("ai_status"))` after building the base block. No behavior change when `ai_status` is absent from the input dict.
+- Each script's `main()` populates `report["ai_status"]` (or `card["ai_status"]`) from `args.ai_status` so downstream JSON consumers can route on state without re-passing the flag.
+
+### Notes
+
+- B.3 is intentionally a rollout, not a single PR. Wave 1 (1.49.0, PR #29) shipped the helper + two exemplar scripts. This is wave 2; remaining waves cover the craft-surface scripts (`construction_signature_audit`, `punctuation_cadence_audit`, `mimicry_cosplay_audit`) and the voice-surface scripts (`general_imposters`, `semantic_preservation_check`).
+- The change is rendering-layer (markdown). JSON output's claim-license shape is unchanged — downstream consumers that read the JSON keep working. The new `ai_status` field is forward-compat additive only.
+- Pre-B.3 callers that don't pass `--ai-status` see the same markdown they got in v1.49.0 – v1.55.0. The helper is no-op without state inputs.
+- **Version-bump note**: rebased from declared 1.53.0 → 1.56.0 because PRs #26 (launchd idempotency, 1.53.0), #27 (multi-machine + failed-state fix, 1.54.0), and #31 (Tier-4 wiring + ablation family, 1.55.0) merged ahead in Wave 4. MINOR-tier bump preserved since this is a `feat:` change.
+
 ## [1.55.0] - 2026-05-14
 
 **variance_audit.py Tier 4 — surprisal integration (phase C.4).** Wires the C.2 surprisal backend + C.3 audit math into `variance_audit.py` as a new Tier 4. Opt-in via `--tier4` (default OFF, mirroring Tier 3's SBERT path). Adds three new `COMPRESSION_HEURISTICS` entries — `surprisal_mean`, `surprisal_sd`, `surprisal_acf_lag1` — all `provisional=True` per SPEC `internal/SPEC_surprisal_signal.md` §3.5. Stacked on C.3 (PR #30); closes the Phase C plan.

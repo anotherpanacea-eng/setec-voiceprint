@@ -71,7 +71,10 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from claim_license import ClaimLicense  # type: ignore
+from claim_license import (  # type: ignore
+    ClaimLicense,
+    with_state_caveats,
+)
 
 TASK_SURFACE = "validation"
 TOOL_NAME = "adversarial_robustness_card"
@@ -386,6 +389,12 @@ def _claim_license_block(card: dict[str, Any]) -> str:
             "multi-fixture card.",
         ],
     )
+    # B.3: append state-routed caveats when the operator supplied
+    # --ai-status. No-op when ai_status is absent — pre-B.3 callers
+    # keep their previous behavior.
+    lic = with_state_caveats(
+        lic, target_ai_status=card.get("ai_status"),
+    )
     return lic.render_block().rstrip()
 
 
@@ -576,6 +585,24 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--json", action="store_true")
     p.add_argument("--out")
+    # B.3 (v1.53.0+): authorship-state routing for the ClaimLicense
+    # block. The operator's manifest entry for the target carries
+    # an `ai_status` value (pre_ai_human, ai_generated_from_outline,
+    # etc.). Surface it to the audit so the rendered license block
+    # carries the matching state-specific caveats. Per SPEC §9.2,
+    # this is the operational consequence of the B.2 vocabulary —
+    # not threshold-shipping, just per-state licensure language.
+    p.add_argument(
+        "--ai-status",
+        default=None,
+        help=(
+            "Manifest ai_status value for the target text (e.g., "
+            "pre_ai_human, ai_generated, ai_generated_from_outline, "
+            "ai_assisted, ai_edited, mixed, unknown). When supplied, "
+            "the ClaimLicense block gains state-specific caveats per "
+            "SPEC_authorship_states.md §9.2."
+        ),
+    )
     return p
 
 
@@ -602,6 +629,10 @@ def main(argv: list[str] | None = None) -> int:
         stability_threshold=args.stability_threshold,
         fragile_threshold=args.fragile_threshold,
     )
+    # B.3: surface --ai-status into the card dict so
+    # _claim_license_block can route per state.
+    if args.ai_status:
+        card["ai_status"] = args.ai_status
 
     out = (
         json.dumps(card, indent=2, default=str)
