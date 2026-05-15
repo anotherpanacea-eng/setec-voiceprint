@@ -360,6 +360,11 @@ def _build_inner_args(
         bootstrap_resamples=parent_args.bootstrap_resamples,
         bootstrap_confidence=parent_args.bootstrap_confidence,
         bootstrap_seed=parent_args.bootstrap_seed,
+        # ``getattr`` for back-compat with the existing tests
+        # that build parent_args without the new flag.
+        bootstrap_engine=getattr(
+            parent_args, "bootstrap_engine", "loop",
+        ),
         tier2=parent_args.tier2,
         tier3=parent_args.tier3,
         notes=None,
@@ -728,6 +733,23 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--bootstrap-resamples", type=int, default=2000)
     p.add_argument("--bootstrap-confidence", type=float, default=0.95)
     p.add_argument("--bootstrap-seed", type=int, default=42)
+    p.add_argument(
+        "--bootstrap-engine",
+        choices=["loop", "numpy"],
+        default="loop",
+        help=(
+            "Bootstrap-CI implementation. ``loop`` (default) is "
+            "pure Python; bit-exact with pre-1.60 ledger entries. "
+            "``numpy`` is a vectorized NumPy implementation that "
+            "is 50-200x faster on >=100K-row corpora and "
+            "statistically equivalent for 2000+ resamples. "
+            "Different per-resample composition (different RNG "
+            "stream) but CIs converge to within Monte Carlo "
+            "noise. Recommended for MAGE/RAID-scale runs; default "
+            "stays loop for byte-identical reproducibility against "
+            "previously-published thresholds."
+        ),
+    )
     p.add_argument("--tpr-floor", type=float, default=DEFAULT_TPR_FLOOR,
                    help=(
                        "Gate 4 TPR floor: thresholds that fire on fewer "

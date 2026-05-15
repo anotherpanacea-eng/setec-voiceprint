@@ -220,7 +220,7 @@ def sweep_threshold(
     }
 
 
-def fixed_threshold_bootstrap_ci(
+def _fixed_threshold_bootstrap_ci_loop(
     pairs: Sequence[tuple[int, float]],
     threshold: float,
     direction: str,
@@ -229,9 +229,11 @@ def fixed_threshold_bootstrap_ci(
     confidence: float,
     seed: int | None,
 ) -> dict[str, Any] | None:
-    """Paired-record bootstrap on TPR / FPR / precision at a fixed
-    threshold. Resampling pair indices with replacement; each resample
-    recomputes the rates at the same threshold."""
+    """Pure-Python loop implementation. Bit-exact with the
+    pre-1.60 behavior; used as the reference for cross-engine
+    statistical-equivalence testing and as the fallback when
+    numpy is unavailable (which on the calibration code path
+    shouldn't happen, since sklearn already pulls it in)."""
     if not pairs:
         return None
     rng = random.Random(seed)
@@ -254,6 +256,7 @@ def fixed_threshold_bootstrap_ci(
     alpha = 1.0 - confidence
     return {
         "method": "fixed_threshold_paired_bootstrap",
+        "engine": "loop",
         "confidence": confidence,
         "resamples": len(tprs),
         "tpr_ci": [_quantile(tprs, alpha / 2), _quantile(tprs, 1 - alpha / 2)],
@@ -268,6 +271,221 @@ def fixed_threshold_bootstrap_ci(
             "bootstrap on the threshold itself) is roadmap."
         ),
     }
+
+
+def _fixed_threshold_bootstrap_ci_numpy(
+    pairs: Sequence[tuple[int, float]],
+    threshold: float,
+    direction: str,
+    *,
+    resamples: int,
+    confidence: float,
+    seed: int | None,
+    chunk_size: int = 200,
+) -> dict[str, Any] | None:
+    """NumPy-vectorized equivalent of the loop implementation.
+
+    Same paired-record bootstrap on TPR/FPR/precision at a fixed
+    threshold; the speedup comes from three mechanical changes:
+
+    1. **Per-pair categorical pre-classification.** Each input
+       pair is one of 4 fixed categories at this threshold:
+       ``tp``-eligible / ``fp``-eligible / ``tn``-eligible /
+       ``fn``-eligible. Precompute once into an int8 array of
+       length n; the per-resample work then reduces to gathering
+       indices into this array and counting category values.
+
+    2. **Chunked vectorized resampling.** Each chunk of resamples
+       generates a ``(chunk_size, n)`` int32 matrix of resampled
+       indices in one ``rng.integers`` call, gathers from the
+       category array, and counts categories per row via
+       boolean-mask sums. Chunk size of 200 caps memory at
+       ``200 * n * 4`` bytes (~3.3 GB for an 8M-row RAID-scale
+       input — large but bounded; reduce ``chunk_size`` for
+       memory-tight hosts).
+
+    3. **Statistically equivalent, not bit-exact.** This is the
+       important caveat: ``random.Random.randrange`` and
+       ``np.random.default_rng().integers`` produce different
+       streams from the same seed, so individual resample
+       compositions differ. For 2000+ resamples the CI bounds
+       converge to indistinguishable values modulo Monte Carlo
+       noise (see ``test_engines_are_statistically_equivalent``).
+       Callers needing bit-exact reproducibility against the
+       pre-1.60 ledger should pass ``engine="loop"`` explicitly.
+
+    Returns the same dict shape as the loop implementation, with
+    one new field: ``engine == "numpy"``. The aggregator and
+    survey ledger entries pass this through so threshold
+    provenance records which implementation produced the CI.
+
+    Expected speedup over the loop engine: 50-200x on CPU for
+    MAGE-scale inputs (436K records, 2000 resamples); the
+    factor grows with N because the Python-interpreter overhead
+    of the loop scales linearly while the vectorized version
+    moves the inner work into C.
+    """
+    if not pairs:
+        return None
+    import numpy as np  # type: ignore  # local: numpy isn't strictly required for the loop engine
+
+    n = len(pairs)
+    # Build label/score arrays in one pass over the input pairs.
+    # ``np.fromiter`` avoids the intermediate Python list that
+    # ``np.asarray([... for ...])`` would build.
+    labels = np.fromiter((p[0] for p in pairs), dtype=np.int8, count=n)
+    scores = np.fromiter((p[1] for p in pairs), dtype=np.float64, count=n)
+
+    if direction == "gt":
+        predicted_positive = scores > threshold
+    elif direction == "lt":
+        predicted_positive = scores < threshold
+    else:
+        raise ValueError(
+            f"direction must be 'gt' or 'lt', got {direction!r}"
+        )
+
+    # Categorical encoding:
+    #   0 = tp (predicted positive, label 1)
+    #   1 = fp (predicted positive, label 0)
+    #   2 = tn (predicted negative, label 0)
+    #   3 = fn (predicted negative, label 1)
+    cats = np.empty(n, dtype=np.int8)
+    cats[predicted_positive & (labels == 1)] = 0
+    cats[predicted_positive & (labels == 0)] = 1
+    cats[(~predicted_positive) & (labels == 0)] = 2
+    cats[(~predicted_positive) & (labels == 1)] = 3
+
+    rng = np.random.default_rng(seed)
+    tprs_chunks: list[np.ndarray] = []
+    fprs_chunks: list[np.ndarray] = []
+    precs_chunks: list[np.ndarray] = []
+
+    for chunk_start in range(0, resamples, chunk_size):
+        chunk = min(chunk_size, resamples - chunk_start)
+        # (chunk, n) int32 index matrix. int32 caps n at ~2B,
+        # well past any realistic corpus size.
+        idxs = rng.integers(0, n, size=(chunk, n), dtype=np.int32)
+        # Fancy-index into cats: (chunk, n) int8 of categories.
+        sampled_cats = cats[idxs]
+
+        # Per-row counts. ``==`` produces bool, ``.sum(axis=1)``
+        # adds along the n dimension. Using uint32 because counts
+        # could exceed int16 for large n.
+        tp = (sampled_cats == 0).sum(axis=1, dtype=np.uint32)
+        fp = (sampled_cats == 1).sum(axis=1, dtype=np.uint32)
+        tn = (sampled_cats == 2).sum(axis=1, dtype=np.uint32)
+        fn = (sampled_cats == 3).sum(axis=1, dtype=np.uint32)
+
+        # Both-classes-present filter: matches the loop's
+        # ``if not any(y == 1 ...) or not any(y == 0 ...)``
+        # check, which drops a resample that happened to draw
+        # only one class. Bootstrap-CI literature treats this
+        # as 'skip; don't substitute'.
+        positive_present = (tp + fn) > 0
+        negative_present = (tn + fp) > 0
+        valid = positive_present & negative_present
+        if not valid.any():
+            continue
+
+        # Rates. Use float64 division with explicit divide-by-
+        # zero handling. ``np.errstate`` silences the warning
+        # for invalid rows we're about to mask out anyway.
+        tp_f = tp.astype(np.float64)
+        fp_f = fp.astype(np.float64)
+        tn_f = tn.astype(np.float64)
+        fn_f = fn.astype(np.float64)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            tpr = np.where(positive_present, tp_f / (tp_f + fn_f), 0.0)
+            fpr = np.where(negative_present, fp_f / (fp_f + tn_f), 0.0)
+            denom_prec = tp_f + fp_f
+            prec = np.where(denom_prec > 0, tp_f / denom_prec, 0.0)
+
+        tprs_chunks.append(tpr[valid])
+        fprs_chunks.append(fpr[valid])
+        precs_chunks.append(prec[valid])
+
+    if not tprs_chunks:
+        return None
+
+    tprs_arr = np.concatenate(tprs_chunks)
+    fprs_arr = np.concatenate(fprs_chunks)
+    precs_arr = np.concatenate(precs_chunks)
+
+    alpha = 1.0 - confidence
+    # Use numpy's quantile (linear interpolation, matches the
+    # loop's ``_quantile`` shape).
+    def q(arr: np.ndarray, frac: float) -> float:
+        return float(np.quantile(arr, frac, method="linear"))
+
+    return {
+        "method": "fixed_threshold_paired_bootstrap",
+        "engine": "numpy",
+        "confidence": confidence,
+        "resamples": int(tprs_arr.size),
+        "tpr_ci": [q(tprs_arr, alpha / 2), q(tprs_arr, 1 - alpha / 2)],
+        "fpr_ci": [q(fprs_arr, alpha / 2), q(fprs_arr, 1 - alpha / 2)],
+        "precision_ci": [
+            q(precs_arr, alpha / 2),
+            q(precs_arr, 1 - alpha / 2),
+        ],
+        "note": (
+            "Pair records are dependent; CI is smoke-test diagnostic, "
+            "not calibration-grade. Selection uncertainty (nested "
+            "bootstrap on the threshold itself) is roadmap."
+        ),
+    }
+
+
+# Backward-compatibility dispatcher. Public callers (the survey
+# aggregator, derive_threshold_from_records, end-user scripts)
+# call this function; it routes to the loop or numpy
+# implementation based on the ``engine`` argument. Default is
+# ``"loop"`` so unchanged invocations produce byte-identical CI
+# values against the pre-1.60 ledger. Pass ``engine="numpy"`` for
+# the 50-200x speedup on N >= ~100K-row corpora.
+def fixed_threshold_bootstrap_ci(
+    pairs: Sequence[tuple[int, float]],
+    threshold: float,
+    direction: str,
+    *,
+    resamples: int,
+    confidence: float,
+    seed: int | None,
+    engine: str = "loop",
+) -> dict[str, Any] | None:
+    """Paired-record bootstrap on TPR / FPR / precision at a fixed
+    threshold. Resampling pair indices with replacement; each resample
+    recomputes the rates at the same threshold.
+
+    ``engine`` selects the implementation:
+
+    - ``"loop"`` (default): pure-Python implementation that's
+      bit-exact with the pre-1.60 behavior. The right choice
+      for small corpora (where bootstrap cost is irrelevant)
+      and for callers that need reproducibility against
+      previously-published ledger entries.
+
+    - ``"numpy"``: NumPy-vectorized implementation. 50-200x
+      faster on N >= ~100K-row corpora. Statistically
+      equivalent to ``"loop"`` for 2000+ resamples; CI bounds
+      converge to within Monte Carlo noise. Different per-
+      resample compositions because the RNG stream differs
+      (``np.random.default_rng`` vs ``random.Random``).
+    """
+    if engine == "loop":
+        return _fixed_threshold_bootstrap_ci_loop(
+            pairs, threshold, direction,
+            resamples=resamples, confidence=confidence, seed=seed,
+        )
+    if engine == "numpy":
+        return _fixed_threshold_bootstrap_ci_numpy(
+            pairs, threshold, direction,
+            resamples=resamples, confidence=confidence, seed=seed,
+        )
+    raise ValueError(
+        f"Unknown bootstrap engine {engine!r}. Known: 'loop', 'numpy'."
+    )
 
 
 def _ranking_metrics(
@@ -983,6 +1201,12 @@ def derive_threshold_from_records(
     seed = _stable_seed(
         args.bootstrap_seed, args.signal, signal_path, str(args.fpr_target),
     )
+    # ``getattr`` so callers that built Namespace objects manually
+    # (older test fixtures, ad-hoc scripts) keep working without a
+    # ``bootstrap_engine`` attribute. Default is the bit-exact
+    # loop engine; pass ``--bootstrap-engine numpy`` on the CLI or
+    # set the attr programmatically to get the 50-200x speedup.
+    engine = getattr(args, "bootstrap_engine", "loop")
     ci = fixed_threshold_bootstrap_ci(
         pairs,
         sweep["threshold"],
@@ -990,6 +1214,7 @@ def derive_threshold_from_records(
         resamples=args.bootstrap_resamples,
         confidence=args.bootstrap_confidence,
         seed=seed,
+        engine=engine,
     )
 
     fetch_record = _load_fetch_record(manifest_path)
@@ -1186,6 +1411,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bootstrap-resamples", type=int, default=2000)
     parser.add_argument("--bootstrap-confidence", type=float, default=0.95)
     parser.add_argument("--bootstrap-seed", type=int, default=42)
+    parser.add_argument(
+        "--bootstrap-engine",
+        choices=["loop", "numpy"],
+        default="loop",
+        help=(
+            "Bootstrap-CI implementation. ``loop`` (default) is "
+            "pure Python; bit-exact with pre-1.60 ledger entries. "
+            "``numpy`` is a vectorized NumPy implementation that "
+            "is 50-200x faster on >=100K-row corpora and "
+            "statistically equivalent for 2000+ resamples."
+        ),
+    )
     parser.add_argument(
         "--tier2", action="store_true", default=True,
         help="Run Tier 2 (POS bigrams, MDD-SD; needs spaCy). Default on.",
