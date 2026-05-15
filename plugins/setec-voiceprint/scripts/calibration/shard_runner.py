@@ -492,6 +492,13 @@ def cmd_shard(args: argparse.Namespace) -> int:
     manifests + initial state.json. Idempotent: re-running against
     an existing run_id refuses to overwrite (use ``--force`` to
     proceed)."""
+    task_name = getattr(args, "task", "calibration_survey")
+    if task_name not in TASK_REGISTRY:
+        sys.stderr.write(
+            f"Unknown --task {task_name!r}. Registered tasks: "
+            f"{registered_task_names()}\n"
+        )
+        return 2
     source = Path(args.source_manifest).expanduser()
     if not source.exists():
         sys.stderr.write(f"Source manifest not found: {source}\n")
@@ -549,6 +556,20 @@ def cmd_shard(args: argparse.Namespace) -> int:
         if (idx + 1) % 10 == 0:
             sys.stderr.write(f"  ... wrote shard {sid}\n")
     sys.stderr.write(f"  All {n_shards} shard manifests written.\n")
+    # Compose task_params from CLI flags. For calibration_survey we
+    # fold tier1/tier2/tier3/fpr_target into the params blob so a
+    # future read-back can use task_params uniformly. The existing
+    # top-level fpr_target/tier* fields stay populated for
+    # byte-identical backwards compat with pre-v1.45.0 state.json
+    # readers.
+    task_params: dict[str, Any] = {}
+    if task_name == "calibration_survey":
+        task_params = {
+            "fpr_target": args.fpr_target,
+            "tier1": args.tier1,
+            "tier2": args.tier2,
+            "tier3": args.tier3,
+        }
     state = build_initial_state(
         run_id=args.run_id,
         source_manifest_path=source,
@@ -564,6 +585,8 @@ def cmd_shard(args: argparse.Namespace) -> int:
         embedding_model=args.embedding_model,
         embedding_revision=args.embedding_revision,
         shard_summaries=summaries,
+        task=task_name,
+        task_params=task_params,
     )
     write_state(sp, state)
     sys.stderr.write(f"State file written: {sp}\n")
@@ -795,6 +818,21 @@ def _run_single_worker(
     sp = state_path(base, args.run_id)
     if not sp.exists():
         sys.stderr.write(f"State file not found: {sp}\n")
+        return 2
+    # Task-mismatch sanity check. If the operator passed --task,
+    # confirm it agrees with what was baked into state.json by
+    # `shard`. Missing field defaults to calibration_survey so a
+    # legacy run with no --task on either side passes silently.
+    cli_task = getattr(args, "task", "calibration_survey")
+    state_for_check = read_state(sp)
+    state_task = state_for_check.get("task", "calibration_survey")
+    if cli_task != state_task:
+        sys.stderr.write(
+            f"{worker_label}: --task {cli_task!r} does not match "
+            f"state.json's task {state_task!r}. The state file's "
+            f"task is authoritative; pass --task "
+            f"{state_task} or omit --task to silence this error.\n"
+        )
         return 2
     # Parse --time-window once; subsequent loop iterations just
     # check the result.
@@ -1147,6 +1185,18 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
         sys.stderr.write(f"State file not found: {sp}\n")
         return 2
     state = read_state(sp)
+    # Task-mismatch sanity check (v1.45.0). State.json is
+    # authoritative; we just confirm the operator-supplied flag
+    # doesn't disagree.
+    cli_task = getattr(args, "task", "calibration_survey")
+    state_task = state.get("task", "calibration_survey")
+    if cli_task != state_task:
+        sys.stderr.write(
+            f"--task {cli_task!r} does not match state.json's task "
+            f"{state_task!r}. Pass --task {state_task} or omit "
+            f"--task to silence this error.\n"
+        )
+        return 2
     shards = state.get("shards", {})
     not_done = [
         sid for sid, sh in shards.items() if sh.get("state") != "done"
@@ -2142,6 +2192,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_shard.add_argument("--shard-count", type=int, default=None)
     p_shard.add_argument("--stratify", type=str, default="register,ai_status")
     p_shard.add_argument("--shuffle-seed", type=int, default=42)
+    p_shard.add_argument(
+        "--task",
+        type=str,
+        default="calibration_survey",
+        help=(
+            "task surface this run targets (v1.45.0+). Default "
+            "%(default)s preserves pre-v1.45.0 behavior. Each task "
+            "registers its own scorer + aggregator via "
+            "task_surfaces.py. Pass an unregistered name to see "
+            "the registered list and a clear error. Registered: "
+            f"{registered_task_names()}."
+        ),
+    )
     p_shard.add_argument("--fpr-target", type=float, default=0.01)
     p_shard.add_argument("--tier1", action="store_true", default=True)
     p_shard.add_argument("--no-tier1", dest="tier1", action="store_false")
@@ -2160,6 +2223,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="claim and score pending shards (single worker)",
     )
     p_work.add_argument("--run-id", required=True, type=str)
+    p_work.add_argument(
+        "--task",
+        type=str,
+        default="calibration_survey",
+        help=(
+            "task surface to score this run as (v1.45.0+). Default "
+            "%(default)s matches the legacy single-task behavior. "
+            "If passed, must match the task recorded in state.json "
+            "(set at `shard` time); a mismatch is a fatal "
+            "operator error. Registered: "
+            f"{registered_task_names()}."
+        ),
+    )
     p_work.add_argument("--use", type=str, default="validation")
     p_work.add_argument(
         "--workers",
@@ -2326,6 +2402,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="combine shard caches + per-signal threshold sweep",
     )
     p_agg.add_argument("--run-id", required=True, type=str)
+    p_agg.add_argument(
+        "--task",
+        type=str,
+        default="calibration_survey",
+        help=(
+            "task surface to aggregate this run as (v1.45.0+). "
+            "Default %(default)s. If passed, must match the task "
+            "recorded in state.json; the aggregator dispatches on "
+            "state[\"task\"] either way. Registered: "
+            f"{registered_task_names()}."
+        ),
+    )
     p_agg.add_argument("--out", type=str, default=None)
     p_agg.add_argument("--allow-partial", action="store_true", default=False)
     p_agg.add_argument("--no-derive", action="store_true", default=False)
