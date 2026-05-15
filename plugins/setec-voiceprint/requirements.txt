@@ -76,3 +76,25 @@ statsmodels>=0.14
 # either of the optional paths above. After install, run
 # `python -m nltk.downloader brown` to fetch the Brown corpus data.
 # nltk>=3.8
+
+# AIC-8 / AIC-9 family (Aesthetic Authority Laundering, Closure Inflation).
+#
+# Foundation infrastructure shipped in 1.61.0; the AIC-8/9 detectors land
+# in subsequent releases. Three additional requirements:
+#
+#   1. openpyxl: re-fetcher for the Brysbaert concreteness norms
+#      (`scripts/fetch_brysbaert.py`). The norms ship in-repo at
+#      `data/brysbaert_concreteness.csv`; openpyxl is only needed when
+#      regenerating from the upstream XLSX. Listed as a soft requirement
+#      because the in-repo CSV satisfies most operators.
+#   2. spaCy vectors-bearing model: `en_core_web_md` (~50 MB) or
+#      `en_core_web_lg` (~700 MB). The framework's other Tier 2/3 work
+#      uses `en_core_web_sm` which has no word vectors. AIC-8 image-
+#      conjunction and prestige-metaphor detectors require word vectors;
+#      install `en_core_web_md` (preferred) via:
+#         python -m spacy download en_core_web_md
+#   3. requests: more reliable SSL handling than urllib for the Brysbaert
+#      fetcher's macOS-Python-without-certifi failure mode. Already
+#      listed in requirements-acquisition.txt; the fetcher falls back to
+#      curl-via-subprocess if requests isn't installed.
+openpyxl>=3.1
