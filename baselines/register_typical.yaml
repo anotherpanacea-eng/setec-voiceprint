@@ -1,0 +1,203 @@
+# register_typical.yaml — register-typical default baselines for AIC-8 / AIC-9.
+#
+# Per `internal/SPEC_aic_8_9_implementation.md` Step 9. Provides
+# baseline values (mean, sd, band) for the three AIC-8/9 signals
+# across six register categories. The framework reads this file as
+# a fallback when no personal baseline is available for the
+# operator's register, OR when the operator passes
+# `--baseline-source register_typical_<register>` explicitly.
+#
+# Status: PROVISIONAL. The values below are illustrative starting
+# points derived from spec defaults plus literature anchors. They
+# are NOT calibrated against a labeled corpus. The §5.4 calibration
+# corpus task in `ROADMAP.md` ("AIC-8 / AIC-9 calibration corpus")
+# will replace these with empirically-grounded values.
+#
+# Per the Stylometry-to-the-people policy, every entry below
+# carries `provisional: true` and `provenance: null`. Operators
+# who want load-bearing thresholds run their own calibration
+# locally on their register mix.
+#
+# Schema:
+#
+#   register_typical_baselines:
+#     <register_name>:
+#       <signal_name>:
+#         mean: <float>      # central tendency
+#         sd: <float>        # standard deviation across register samples
+#         band: [low, high]  # operator-facing typical-range band
+#         provisional: true  # always true at the framework default
+#
+# Signals registered:
+#
+#   kicker_density                       (AIC-9; unit: proportion of paragraphs)
+#   image_conjunction_per_1000_tokens    (AIC-8; unit: count / 1000 tokens)
+#   prestige_metaphor_per_1000_tokens    (AIC-8; unit: count / 1000 tokens)
+#   domain_scatter_entropy               (AIC-8; unit: normalized [0, 1])
+#
+# Registers:
+#
+#   contemporary_essay        — modern essayistic prose, mixed-tone op-ed
+#   literary_fiction          — character-centered narrative prose
+#   hard_science_fiction      — speculative-fiction with technical register
+#   academic_prose            — scholarly nonfiction with citation discipline
+#   blog_post                 — informal personal essay / opinion
+#   technical_documentation   — engineering / API / how-to writing
+
+register_typical_baselines:
+
+  contemporary_essay:
+    kicker_density:
+      mean: 0.08
+      sd: 0.04
+      band: [0.04, 0.16]
+      provisional: true
+      provenance: null
+    image_conjunction_per_1000_tokens:
+      mean: 5.0
+      sd: 2.0
+      band: [2.0, 10.0]
+      provisional: true
+      provenance: null
+    prestige_metaphor_per_1000_tokens:
+      mean: 2.0
+      sd: 1.0
+      band: [1.0, 4.0]
+      provisional: true
+      provenance: null
+    domain_scatter_entropy:
+      mean: 0.50
+      sd: 0.15
+      band: [0.20, 0.80]
+      provisional: true
+      provenance: null
+
+  literary_fiction:
+    kicker_density:
+      mean: 0.05
+      sd: 0.03
+      band: [0.02, 0.12]
+      provisional: true
+      provenance: null
+    image_conjunction_per_1000_tokens:
+      mean: 7.0
+      sd: 3.0
+      band: [3.0, 14.0]
+      provisional: true
+      provenance: null
+    prestige_metaphor_per_1000_tokens:
+      mean: 1.0
+      sd: 0.5
+      band: [0.0, 3.0]
+      provisional: true
+      provenance: null
+    domain_scatter_entropy:
+      mean: 0.40
+      sd: 0.15
+      band: [0.15, 0.70]
+      provisional: true
+      provenance: null
+
+  hard_science_fiction:
+    kicker_density:
+      mean: 0.04
+      sd: 0.03
+      band: [0.01, 0.10]
+      provisional: true
+      provenance: null
+    image_conjunction_per_1000_tokens:
+      mean: 4.0
+      sd: 2.0
+      band: [1.0, 9.0]
+      provisional: true
+      provenance: null
+    prestige_metaphor_per_1000_tokens:
+      mean: 1.5
+      sd: 1.0
+      band: [0.5, 4.0]
+      provisional: true
+      provenance: null
+    domain_scatter_entropy:
+      mean: 0.35
+      sd: 0.15
+      band: [0.10, 0.65]
+      provisional: true
+      provenance: null
+
+  academic_prose:
+    kicker_density:
+      mean: 0.10
+      sd: 0.05
+      band: [0.05, 0.20]
+      provisional: true
+      provenance: null
+    image_conjunction_per_1000_tokens:
+      mean: 3.0
+      sd: 1.5
+      band: [1.0, 7.0]
+      provisional: true
+      provenance: null
+    prestige_metaphor_per_1000_tokens:
+      mean: 1.5
+      sd: 0.8
+      band: [0.5, 3.5]
+      provisional: true
+      provenance: null
+    domain_scatter_entropy:
+      mean: 0.45
+      sd: 0.15
+      band: [0.20, 0.75]
+      provisional: true
+      provenance: null
+
+  blog_post:
+    kicker_density:
+      mean: 0.12
+      sd: 0.06
+      band: [0.05, 0.25]
+      provisional: true
+      provenance: null
+    image_conjunction_per_1000_tokens:
+      mean: 4.0
+      sd: 2.0
+      band: [1.0, 9.0]
+      provisional: true
+      provenance: null
+    prestige_metaphor_per_1000_tokens:
+      mean: 1.0
+      sd: 0.8
+      band: [0.0, 3.0]
+      provisional: true
+      provenance: null
+    domain_scatter_entropy:
+      mean: 0.50
+      sd: 0.18
+      band: [0.20, 0.85]
+      provisional: true
+      provenance: null
+
+  technical_documentation:
+    kicker_density:
+      mean: 0.02
+      sd: 0.02
+      band: [0.00, 0.07]
+      provisional: true
+      provenance: null
+    image_conjunction_per_1000_tokens:
+      mean: 1.0
+      sd: 1.0
+      band: [0.0, 4.0]
+      provisional: true
+      provenance: null
+    prestige_metaphor_per_1000_tokens:
+      mean: 0.5
+      sd: 0.5
+      band: [0.0, 2.0]
+      provisional: true
+      provenance: null
+    domain_scatter_entropy:
+      mean: 0.25
+      sd: 0.15
+      band: [0.00, 0.55]
+      provisional: true
+      provenance: null

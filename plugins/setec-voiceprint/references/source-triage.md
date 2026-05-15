@@ -2,6 +2,24 @@
 
 The voice-attribution layer. Answers the question that distributional analysis and pattern-matching cannot: whose voice is this, and is it doing real work?
 
+## Source triage as secondary check (variance-and-frequency reframing, 2026-05-15)
+
+The framework's primary diagnostic for AIC patterns is the elevation of pattern frequency against a register-matched baseline (per `aic-flags.md` "The Variance-and-Frequency Reframing"). Source triage is now a **secondary contextual check** rather than the primary adjudication.
+
+The shift in posture: every rhetorical device works in moderation, and AI prose spends them constantly. The elevation itself is the diagnostic. Source triage continues to explain elevations — when a reader wants to know whether a flagged density is artifact (register variation, intentional rhetorical move, character-bound use) or signature (AI-prose pattern), source triage answers that question. But source triage no longer gatekeeps whether the elevation matters.
+
+The practical consequence: when an AIC pattern fires at elevated density against the baseline, the rewrite directive is "ration the pattern" first. Source triage then refines: which specific instances stay because they earn the move, which get cut because they're spending capital without earning it. The earned-versus-unearned distinction still does important work; it has just moved from primary diagnostic to per-instance refinement.
+
+The per-pattern rules below — which retain their earned/unearned framing for the Five Named Patterns (fiction) and the Five Patterns Parallel Set (nonfiction) — apply as the secondary refinement layer once the primary frequency-elevation flag has fired.
+
+For the AIC-8 (image conjunction + prestige metaphor) and AIC-9 (kicker density) named patterns added in 2026-05-15, source triage at the per-instance level asks:
+
+  * For **image conjunctions**: is this pair doing thematic work, or is it decoration? A novel about labor that uses "the machinery of family" earns its machinery metaphors when machinery is the thematic commitment. The same novel using machinery / topology / grammar metaphors across three unrelated passages is scattering decoration.
+  * For **prestige metaphors**: does the chosen prestige domain track a theoretical commitment the writer is making, or is it borrowed for its felt seriousness? "The architecture of grief" in a memoir about a family of architects is earned; the same phrasing in a personal essay with no architectural commitment is borrowed authority.
+  * For **kicker density**: is the writer rationing aphoristic closure deliberately, or is every paragraph performing landing by default? An aphoristic essayist working in the Borges / Bacon / La Rochefoucauld tradition earns high kicker density as genre; the same density in a memoir or a policy brief is closure inflation.
+
+In all three cases the **frequency elevation** is the primary diagnostic flag; source triage helps the operator decide which specific kickers, image conjunctions, or prestige metaphors to keep and which to cut. See `aic-flags.md` for the full pattern descriptions.
+
 ## The Principle
 
 Almost all the AI-prose work depends on being able to ask "whose voice is this, and is that voice doing real work or pretending to?" Pattern-matching surface tells without that triage produces the failure mode common in external critiques: generic recommendations that flatten character voice in the name of cleaning up prose.
