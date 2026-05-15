@@ -6,6 +6,47 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.63.0] - 2026-05-15
+
+**AIC-8 Aesthetic Authority Laundering: image-conjunction and prestige-metaphor detectors.** Third of four PRs implementing `internal/SPEC_aic_8_9_implementation.md`. Two detectors that work together:
+
+- **Image conjunction** flags abstract-concrete word pairs at elevated density relative to a baseline. The canonical pattern: "the machinery of grief", "the architecture of attention", "lowercase love". Uses a compound filter: concreteness gap (Brysbaert 2014 norms, T1 default 2.5) AND embedding cosine similarity (spaCy GloVe vectors, T2 default 0.4). The compound is critical because concreteness gap alone catches conventional idioms ("heavy burden", "sharp decline"); compound + low similarity isolates the deliberate-juxtaposition pattern.
+- **Prestige metaphor** classifies each image conjunction's scaffolding word into a prestige domain (architecture / grammar / cartography / ecology / machinery / weather / ritual / infrastructure / topology / geology / economy / music / theater / mathematics / biology / navigation / geometry / choreography), then computes the normalized Shannon entropy of the domain distribution. High entropy + elevated density = "metaphor confetti" diagnostic (the prestige-metaphor signature).
+
+### Added
+
+- **`plugins/setec-voiceprint/scripts/image_conjunction.py`** — AIC-8 image-conjunction detector. Public API:
+  - `extract_candidate_pairs(doc)` → iterator of `(word_a, word_b, relation)` tuples. Walks spaCy dependency parse for five relation patterns: `amod` (ADJ → NOUN), `compound` (NOUN → NOUN), `nsubj_verb` (subject → non-copular verb), `attr` (predicate complement), `prep_of` ("X of Y" genitive).
+  - `evaluate_pair(word_a, word_b, relation, *, t1, t2, concreteness_path)` → dict if pair passes both filters, else None.
+  - `image_conjunction_density(text, *, nlp, t1, t2, ...)` → JSON-ready dict matching spec §6 schema. Density per 1000 tokens, spacing variance (SD of inter-conjunction paragraph distances), paragraph-final co-occurrence rate (AIC-9 cross-tie), per-conjunction diagnostics, optional baseline comparison.
+  - Standalone CLI with `--t1`, `--t2`, `--baseline`, `--baseline-source`, `--out` flags.
+- **`plugins/setec-voiceprint/scripts/prestige_metaphor.py`** — AIC-8 prestige-metaphor detector. Composes on `image_conjunction.py`. Public API:
+  - `classify_domain(word, *, use_wordnet, extra_domains)` → prestige-domain name or None. Lookup order: operator-supplied `extra_domains` → hardcoded `PRESTIGE_DOMAIN_VOCAB` (~50 entries covering the spec's 18 domains plus derived forms: architectural, grammatical, topological, etc.) → WordNet hypernym chain at level 3-4 from root (catches the long tail).
+  - `_normalized_shannon_entropy(counts)` → entropy of distribution in [0, 1]. 1.0 = uniform spread; 0.0 = concentrated.
+  - `prestige_metaphor_density(text, *, nlp, t1, t2, t3, use_wordnet, extra_domains, ...)` → JSON-ready dict. Reports `value` (prestige-metaphor density per 1000 tokens), `domain_scatter_entropy`, `domain_distribution`, `flag_fires` (the joint diagnostic: entropy > T3 AND density > baseline if provided), per-conjunction `scaffolding_word` + `target_word` + `domain`.
+  - Standalone CLI with `--t1`, `--t2`, `--t3`, `--no-wordnet`, `--baseline`, `--baseline-source`, `--out` flags.
+- **Three new synthetic test fixtures** in `scripts/test_data/aic_8_9/`:
+  - `idiom_negative.md` — conventional collocations (heavy burden, sharp decline, simple machine).
+  - `ai_image_conjunction_positive.md` — canonical AI image conjunctions (machinery of grief, architecture of attention, grammar of desire, topology of memory).
+  - `concentrated_metaphor_negative.md` — image conjunctions concentrated around the machinery domain (tests scatter-entropy ordering: should be LOWER than the AI fixture's scatter).
+- **41 new regression tests** across `test_image_conjunction.py` (20 tests) and `test_prestige_metaphor.py` (21 tests): pair-evaluation compound filter, threshold tuning, ImageConjunction dataclass (abstract/concrete property resolution, immutability), spacing variance edge cases, end-to-end fixture integration (gated on `en_core_web_md` + `en_core_web_sm`), JSON schema completeness, baseline comparison, classifier hardcoded + WordNet + extra_domains paths, entropy math edge cases (empty / single / uniform / skewed / zero-count categories), scatter-entropy ordering (AI > concentrated), flag-fires joint condition, scaffolding-word-is-higher-concreteness invariant, CLI smoke tests.
+
+### Documented (spec-interpretation choice)
+
+- **`prestige_metaphor.py` classifies the HIGHER-concreteness member of each pair as the "scaffolding word"**, not the lower-concreteness member as the spec's Step 7 parenthetical reads. Rationale documented inline + in module docstring: the spec's running examples ("machinery of grief", "architecture of grief", "grammar of desire", "topology of attention") all have the prestige-domain word at higher Brysbaert concreteness than the emotional/cognitive target (machinery 4.75 vs grief 2.7; grammar 3.19 vs desire 1.7; architecture 3.59 vs grief 2.7). The §AIC-8 enumeration of prestige domains (architecture, grammar, machinery, etc.) describes the higher-concreteness words specifically. The operationally-correct interpretation: classify the higher-concreteness scaffolding word so the "metaphor confetti" scatter-entropy diagnostic actually catches the pattern the spec describes. JSON output records both `scaffolding_word` and `target_word` so consumers see the full pair structure.
+
+### Empirical findings (calibration-pending)
+
+- **Spec's default T1 = 2.5 doesn't crisply separate idioms from AI positives** on the Brysbaert data. The canonical AI example "machinery of grief" has gap 2.05 (below T1=2.5); other examples ("architecture of grief" 0.89, "grammar of desire" 1.49) also fall below. With T1 = 2.0, the detector catches the canonical AI positives but also catches some idiom false positives ("writer adjudicates", "simple machine"). The compound filter (T1 + T2) needs joint calibration against the §5.4 four-corpus fixture (roadmap item documented in 1.61.0 entry). Detector ships with spec defaults; operators tuning for their register can override via CLI.
+- **Scatter-entropy ordering is correct on synthetic fixtures**: AI-fixture (4 distinct domains, even spread) registers entropy ≈ 0.96; concentrated-metaphor-fixture (machinery-dominated) registers ≈ 0.77. The ordering matches the diagnostic intent; the absolute threshold T3 = 0.7 is calibration-pending.
+
+### Notes
+
+- Operators using AIC-8 features need to install `en_core_web_md` via `python -m spacy download en_core_web_md` (~50 MB). Documented in `requirements.txt` since 1.61.0. NLTK + WordNet data is optional for the prestige-metaphor WordNet fallback; the detector runs hardcoded-list-only when NLTK is unavailable.
+- Per the Stylometry-to-the-people policy, both detectors ship with `status: "provisional"` and no calibrated band. The §5.4 calibration corpus is roadmap work.
+- Signals **not yet registered** in `COMPRESSION_HEURISTICS`. Registry plumbing + the full documentation update (aic-flags.md, source-triage.md, signals-glossary.md, new laundering-vocabulary.md) + register_typical.yaml + compound aesthetic_authority_audit all land in PR #4.
+- Operators can run `scripts/image_conjunction.py` and `scripts/prestige_metaphor.py` standalone today; integration into `variance_audit.py --aic8` follows in PR #4.
+
 ## [1.62.0] - 2026-05-15
 
 **AIC-9 Closure Inflation: kicker-density detector.** Second of four PRs implementing `internal/SPEC_aic_8_9_implementation.md`. Identifies sentences with **kicker shape** — short, declarative, generalizable, sentence-final period — and computes the proportion of paragraphs that end with one. AI-smoothed essayistic prose elevates this rate because the default assistant register has learned that "good paragraphs end with quotable summaries." Human writers ration kickers; aphoristic essayists (Borges, Bacon, La Rochefoucauld) deploy them as genre.
