@@ -6,6 +6,47 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.64.0] - 2026-05-15
+
+**AIC-8 / AIC-9 wave complete: compound audit + register-typical baselines + documentation.** Fourth and final PR implementing `internal/SPEC_aic_8_9_implementation.md`. Closes out the four-PR wave (1.61.0 foundation → 1.62.0 AIC-9 → 1.63.0 AIC-8 → 1.64.0 compound + docs). The framework's craft-restoration surface now has named operational signals for Aesthetic Authority Laundering and Closure Inflation, plus a compound audit that surfaces the joint co-occurrence pattern the spec calls "the canonical AI-prose closing move."
+
+### Added
+
+- **`scripts/aesthetic_authority_audit.py`** — compound audit that runs kicker_density + image_conjunction + prestige_metaphor in a single pass and computes joint co-occurrence metrics: `kicker_with_image_conjunction_rate`, `kicker_with_prestige_metaphor_rate`, `all_three_co_occurrence_rate` (proportion of paragraphs ending with a kicker that ALSO contain an image conjunction classified into a hardcoded prestige domain — the strongest single AIC-8/9 signature). Standalone CLI with `--register`, per-signal explicit baselines, threshold tunables.
+- **`baselines/register_typical.yaml`** — register-typical default baselines for the four AIC-8/9 signals (`kicker_density`, `image_conjunction_per_1000_tokens`, `prestige_metaphor_per_1000_tokens`, `domain_scatter_entropy`) across six register categories (`contemporary_essay`, `literary_fiction`, `hard_science_fiction`, `academic_prose`, `blog_post`, `technical_documentation`). All entries ship `provisional: true` / `provenance: null` per the Stylometry-to-the-people policy. Operators wanting load-bearing thresholds run their own calibration locally.
+- **`baselines/hard-science-fiction/` and `baselines/technical-documentation/`** — two new register subdirectories (matching the existing 5: academic-philosophy, blog-essay, literary-fiction, personal, testimony-policy) for operator-populated personal baselines in those registers. Each ships an empty README explaining the intended structure.
+- **`scripts/register_typical_baselines.py`** — YAML loader for the register-typical baselines. Public API:
+  - `available_registers(yaml_path=None)` → sorted list of register names.
+  - `get_baseline(register, signal, *, yaml_path)` → full baseline dict (mean / sd / band / provisional / provenance).
+  - `get_baseline_mean(register, signal, *, yaml_path)` → mean float, convenience for callers that only need the central tendency.
+  - `resolve_baseline(register, signal, *, explicit_value, explicit_source, yaml_path)` → dict with `value` + `source`, applying the precedence rule (explicit > register-typical > None). Used by the compound audit to thread baselines through to the component detectors.
+- **`references/laundering-vocabulary.md`** — new consolidated reference doc for the four laundering moves (calibration / procedural / audit / image-aesthetic-authority). Documents the unifying rhetorical mechanism (deploy a surface form historically marking completed work, exploit reader deference to the form) and cross-references the originating posts plus the AIC-8 operationalization. Per spec Step 15.
+- **49 new regression tests** across `test_register_typical_baselines.py` (20 tests) and `test_aesthetic_authority_audit.py` (9 tests): YAML loader contract (parse / typed errors / missing keys), `get_baseline` lookups (case-insensitive / unknown registers / unknown signals), `resolve_baseline` precedence (explicit > register > None), shipped-YAML integration (6 registers × 4 signals × all-provisional invariant), compound joint-metric math (rates in [0, 1], all-three ≤ pairwise rates), register-based baseline resolution, explicit-override-wins, no-register-no-baselines, diagnostics-populated, CLI smoke.
+
+### Changed
+
+- **`scripts/variance_audit.py` `COMPRESSION_HEURISTICS` registry** — adds three new entries: `kicker_density` (signal_path `aic_8_9.kicker_density.value`, direction `gt`, threshold 0.25), `image_conjunction_density` (signal_path `aic_8_9.image_conjunction_density.value`, direction `gt`, threshold 15.0 per 1000 tokens), `prestige_metaphor_scatter` (signal_path `aic_8_9.prestige_metaphor_density.domain_scatter_entropy`, direction `gt`, threshold 0.7 normalized entropy). All three ship `provisional=True` with `provenance=None`; the registry's "0 of N signal thresholds carry calibration provenance" invariant is preserved (17 of 17 provisional). The thresholds are the spec's starting values; the §5.4 calibration corpus is roadmap work.
+- **`references/aic-flags.md`** — adds three substantial new blocks per spec Step 11:
+  - "The Variance-and-Frequency Reframing" note above AIC-1, documenting the policy shift from earned-versus-unearned-as-primary-diagnostic to frequency-elevation-as-primary-diagnostic (with source triage as the secondary contextual check).
+  - Full AIC-8 entry (Aesthetic Authority Laundering) after AIC-7, with image-conjunction and prestige-metaphor named subtypes, distinguished-from notes, severity bands.
+  - Full AIC-9 entry (Closure Inflation) after AIC-8, with kicker-density subtype, severity bands.
+  - Genre Tolerance Quick Reference table extended with AIC-8 + AIC-9 rows and three new footnotes (⁷, ⁸, ⁹).
+  - Pattern Synthesis: Flag Compounds extended with three new compound entries (AIC-8 + AIC-9 at paragraph ends; AIC-8 + AIC-7 in interiority; AIC-9 + Layer A "Heavily smoothed").
+  - "The seven flag families" header updated to "The nine flag families."
+- **`references/source-triage.md`** — adds "Source triage as secondary check (variance-and-frequency reframing, 2026-05-15)" section at the top per spec Step 12. Documents the shift in posture (elevation is the diagnostic; source triage refines per-instance). Adds per-instance source-triage rules for the three new patterns (image conjunctions, prestige metaphors, kicker density). The existing Five Named Patterns (fiction) + Five Patterns Parallel Set (nonfiction) per-pattern rules retain their earned/unearned framing as the secondary refinement layer.
+- **`plugins/setec-voiceprint/requirements.txt`** — adds `pyyaml>=6.0` as a hard requirement (for the register-typical baselines loader). Updated commentary block.
+
+### Documented (out of scope, per the spec)
+
+- **APODICTIC framing update** (spec Step 14) lives in a separate project. The framework-side rhetorical-bankruptcy framing for AIC-8 / AIC-9 (replacing the earned-versus-unearned justification prompt) is now in `aic-flags.md`; APODICTIC consumers apply it on their side.
+- **`signals-glossary.md` three new entries** (spec Step 13) intentionally not landed in this PR. Per the 1.60.2 split, the in-repo glossary is a stable v1.60.1 snapshot; the maintainer iterates a separate longer-form primer on a private track. The new entries for `kicker_density`, `image_conjunction`, `prestige_metaphor` go into that primer rather than into the orphaned repo snapshot.
+
+### Notes
+
+- This release closes out the four-PR AIC-8/9 wave. Operators can now run `scripts/aesthetic_authority_audit.py --register contemporary_essay path/to/draft.md` to get the full AIC-8 + AIC-9 + joint-metrics report in a single call.
+- Signals remain `status: "provisional"` per the Stylometry-to-the-people policy. The §5.4 calibration corpus (idiom negatives + AI-image-conjunction positives + aphoristic essayist negatives + AI-rewrite positives) is the roadmap follow-on that would replace provisional thresholds with empirically-grounded values.
+- Test suite: 2121 passed, 4 skipped, 0 failed (was 2092 on main; +29 net new tests across the two new test files).
+
 ## [1.63.0] - 2026-05-15
 
 **AIC-8 Aesthetic Authority Laundering: image-conjunction and prestige-metaphor detectors.** Third of four PRs implementing `internal/SPEC_aic_8_9_implementation.md`. Two detectors that work together:

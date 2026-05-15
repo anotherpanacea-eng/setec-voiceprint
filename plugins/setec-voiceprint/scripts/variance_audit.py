@@ -1579,6 +1579,43 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
         signal_path="tier4.surprisal.autocorrelation.lag_1",
         value=0.30, direction="gt", weight=1.0, length_floor=500,
     ),
+    # AIC-8 / AIC-9 family (added 1.64.0). Per
+    # `internal/SPEC_aic_8_9_implementation.md` Step 10. All three
+    # entries ship `provisional=True` with `provenance=None` per the
+    # Stylometry-to-the-people policy. The §5.4 calibration corpus
+    # (idiom negatives + AI-image-conjunction positives + aphoristic
+    # essayist negatives + AI-rewrite positives) is roadmap work;
+    # operators wanting load-bearing thresholds for these signals
+    # run their own calibration locally OR override at the CLI.
+    #
+    # Direction notes:
+    #   kicker_density (gt): AI prose elevates the rate of
+    #     paragraph-ending aphoristic sentences. Threshold 0.25
+    #     starts well above register-typical contemporary essay
+    #     (~0.08) so the framework's default catches the elevation
+    #     pattern, not the genre-typical aphoristic essay.
+    #   image_conjunction_density (gt): AI prose elevates the
+    #     rate of abstract-concrete word pairings at high
+    #     concreteness gap + low embedding similarity. Threshold
+    #     15 per 1000 tokens starts well above register-typical
+    #     contemporary essay (~5).
+    #   prestige_metaphor_scatter (gt): AI prose scatters image
+    #     conjunctions across many prestige domains rather than
+    #     concentrating around a thematic commitment. Threshold
+    #     0.7 on normalized Shannon entropy is the spec's starting
+    #     point.
+    "kicker_density": ThresholdSpec(
+        signal_path="aic_8_9.kicker_density.value",
+        value=0.25, direction="gt", weight=1.0, length_floor=400,
+    ),
+    "image_conjunction_density": ThresholdSpec(
+        signal_path="aic_8_9.image_conjunction_density.value",
+        value=15.0, direction="gt", weight=1.0, length_floor=400,
+    ),
+    "prestige_metaphor_scatter": ThresholdSpec(
+        signal_path="aic_8_9.prestige_metaphor_density.domain_scatter_entropy",
+        value=0.7, direction="gt", weight=1.0, length_floor=400,
+    ),
 }
 
 

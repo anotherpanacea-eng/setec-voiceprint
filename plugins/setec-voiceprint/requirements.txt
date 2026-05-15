@@ -98,3 +98,11 @@ statsmodels>=0.14
 #      listed in requirements-acquisition.txt; the fetcher falls back to
 #      curl-via-subprocess if requests isn't installed.
 openpyxl>=3.1
+
+# PyYAML: register-typical baseline loader for AIC-8 / AIC-9.
+# `scripts/register_typical_baselines.py` reads
+# `baselines/register_typical.yaml`. Required when running
+# `scripts/aesthetic_authority_audit.py` against a register or
+# when the AIC-8/9 detectors fall back to register-typical
+# defaults.
+pyyaml>=6.0

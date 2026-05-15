@@ -6,7 +6,17 @@ The pattern-resolution layer. Each flag catalogs a specific manifestation of the
 
 Prose that reads smoothly without having earned that smoothness through specificity, voice, or structural pressure. The sentences are grammatically competent, the paragraphs transition logically, the rhythm is consistent, and none of it required a human consciousness to select these particular words in this particular order. The hallmark: you can swap any sentence with a paraphrase and lose nothing.
 
-The seven flag families below are specific manifestations of unearned fluency, and each has a distributional signature in Layer A.
+The nine flag families below are specific manifestations of unearned fluency, and each has a distributional signature in Layer A.
+
+---
+
+## The Variance-and-Frequency Reframing
+
+The framework's primary diagnostic for AIC patterns is the elevation of pattern frequency against a register-matched baseline. Earned-versus-unearned source triage (see `source-triage.md`) becomes a secondary contextual check rather than the primary adjudication. Any rhetorical device, used at sufficient frequency, becomes diagnostic regardless of whether each individual instance is doing analytical work. The aphorism that captures the move: every rhetorical device works in moderation, and AI prose spends them constantly.
+
+The reframing has five advantages: it is measurable (frequency is a number rather than a judgment); it is baseline-relative (the writer's own baseline or the register-typical baseline establishes the operative range); it does not require subjective per-instance adjudication; it generalizes cleanly across all AIC named patterns; and it is consistent with the Layer A variance-compression framing scaled up to rhetorical-device frequency.
+
+Source triage continues to do important work as a secondary contextual check: when a reader wants to know whether a flagged elevation is artifact (register variation, intentional rhetorical move) or signature (AI-prose pattern), source triage explains the elevation. But the elevation itself is the diagnostic. Source triage no longer gatekeeps whether the elevation matters.
 
 ---
 
@@ -213,6 +223,62 @@ When a guardrail applies, note it: "AIC-7 evidence present but consistent with [
 
 ---
 
+## AIC-8: Aesthetic Authority Laundering (Vivid Surface Substituting for Substance)
+
+The vivid concrete surface launders the abstract claim, making vague reasoning feel observed or earned. AIC-8 joins the bundle's laundering-vocabulary family (calibration laundering at Post 3; procedural laundering at Post 7; audit laundering at methodology Part III) as the rhetorical-aesthetic member. Each laundering move invokes a form of authority to bypass scrutiny: calibration laundering invokes mathematical authority; procedural laundering invokes administrative authority; audit laundering invokes peer-model authority; AIC-8 invokes aesthetic authority, where the vividness of the image intimidates the reader into assuming the underlying intellectual work has been done.
+
+**Distributional signature.** Elevated image conjunction density (compressed image-pairings of words at different concreteness levels that also sit far apart in semantic-embedding space). Elevated prestige metaphor density (image conjunctions whose abstract or scaffolding words scatter across many semantic domains without thematic clustering, indicated by high domain-scatter entropy). Often correlated with high adjacent-sentence cosine and elevated connective density at Layer A.
+
+**Test.** Read for image-pairings that conjoin abstract and concrete words: how often per thousand tokens? Are they doing thematic work or arriving as decoration? Read for metaphors drawn from intellectually-serious domains (architecture, grammar, cartography, ecology, machinery, weather, ritual, infrastructure, topology, geology, economy, music, theater, mathematics, biology, navigation, geometry, choreography). Are they clustered around a thematic commitment, or scattered across many domains? Where both signals elevate together, AIC-8 is firing.
+
+**Indicators.**
+- Compressed image-pairings appear at frequency rather than as rhetorical punctuation
+- The abstract member of each pair sits far from the concrete member in semantic-embedding space (the conjunctions are deliberate juxtapositions of distant neighborhoods, not conventional collocations)
+- Prestige-domain words scatter across multiple serious-sounding domains in a single short text without thematic coherence
+- The reader feels the prose is doing more imagery-work than the argument supports
+
+**Named subtypes.**
+
+*Image conjunction.* Abstract-concrete word pairings ("constraints humming," "lowercase love," "the machinery of grief") at elevated density relative to register baseline. Detected via concreteness gap above threshold T1 (suggest 2.5 on Brysbaert 1-5 scale) AND embedding similarity below threshold T2 (suggest 0.4 on cosine 0-1 scale). The compound diagnostic is critical: concreteness gap alone catches conventional idioms ("heavy burden," "sharp decline"); concreteness gap plus low embedding similarity isolates the deliberate-juxtaposition pattern. Literary lineage name: *eyeball kick* (via nostalgebraist, Ginsberg, Turkey City Lexicon).
+
+*Prestige metaphor.* Image conjunctions where the abstract or scaffolding word is drawn from intellectually-serious domains. Detection via domain-scatter entropy: high entropy (scatter across domains) plus high image-conjunction density is the diagnostic. The hardcoded prestige-domain vocabulary (architecture, grammar, cartography, ecology, machinery, weather, ritual, infrastructure, topology, geology, economy, music, theater, mathematics, biology, navigation, geometry, choreography) ships as orientation only; the operative signal is the entropy. Colloquial naming when scatter is the diagnostic feel: *metaphor confetti*.
+
+**Distinguished from** earned vivid prose. Literary fiction naturally elevates image conjunction density (3-8 per 1000 tokens typical against the register-typical baseline). Aphoristic essayists use prestige metaphors deliberately when the metaphors track theoretical commitments (concentrated, low domain-scatter entropy). The flag fires on (a) elevation against the writer's own baseline or the register-typical baseline, (b) low embedding similarity for image conjunctions, (c) high domain-scatter entropy for prestige metaphors, (d) joint co-occurrence with kicker density at paragraph ends.
+
+**Severity.**
+- **Spot** — image conjunction or prestige metaphor density elevated in one passage; surrounding text is clean
+- **Pattern** — both subtypes elevated; image-conjunction-at-paragraph-end co-occurrence recurring
+- **Systemic** — the prose's diagnostic feel is metaphor confetti; aesthetic authority laundering is the default rhetorical posture
+
+---
+
+## AIC-9: Closure Inflation (Every Paragraph Performing Landing)
+
+Every paragraph closes with a short, declarative, generalizable aphoristic sentence. Human writers land kickers occasionally for rhetorical effect; aphoristic essayists land them as genre. AI prose lands them at high density across registers that do not call for them, because the default assistant register has learned that good paragraphs end with quotable summaries. The result: prose in which every paragraph performs landing where the argument should be earning the landing. Joshua's working name for the habit when severe: *kickerism*.
+
+**Distributional signature.** Elevated proportion of paragraphs ending with aphoristic-shape sentences. Aphoristic shape: short (under ~15 words), declarative, generalizable (no proper nouns or numerical referents), sentence-final period, often parallel-structured to other paragraph-ending sentences. Spacing variance is part of the signature: distributed kickers (every paragraph ends with one) are more diagnostic than clustered kickers (a single dense aphoristic passage). Often co-occurs with AIC-8 (closure-inflation kickers often deploy image conjunctions or prestige metaphors).
+
+**Test.** Read paragraph endings across the document. How many close with aphoristic-shape sentences? Is the rate distributed or clustered? The diagnostic question: is the writer rationing rhetorical closure deliberately, or is every paragraph ending performing landing by default?
+
+**Indicators.**
+- Paragraph-ending sentences at characteristic aphoristic density (short, declarative, generalizable)
+- The aphorisms are distributed across the document rather than clustered in one passage
+- Parallel structure across paragraph-ending sentences
+- The reader feels the prose is trying too hard to be quotable
+
+**Named subtypes.**
+
+*Kicker density.* The frequency of paragraph-ending aphoristic sentences. Aphoristic essays (Borges, Bacon, La Rochefoucauld) deploy high-density kickers as genre, typically 30-60% of paragraphs. Most contemporary essayistic prose lands kickers at under 10% of paragraphs. AI-smoothed academic and essayistic prose often climbs to 40-70%. The register-typical baseline is what establishes the operative range.
+
+**Distinguished from** aphoristic essay genre, where the form is the point. The flag fires when (a) the writer's documented register does not call for high kicker density, and (b) the elevation is against the writer's own baseline or the register-typical baseline.
+
+**Severity.**
+- **Spot** — one passage has elevated kicker density; surrounding text reads normally
+- **Pattern** — kicker density elevated across multiple sections; distributed rather than clustered
+- **Systemic** — every paragraph ending performs landing; the prose has bankrupted its aphoristic capital
+
+---
+
 ## Nonfiction Parallel Pattern Set
 
 For testimony, briefs, op-eds, scholarly articles, and policy memos, the AI-prose patterns differ. Five argument-shaped poses common in AI-assisted nonfiction:
@@ -251,6 +317,8 @@ Each AIC flag fires at different thresholds in different genres. A pattern that 
 | **AIC-5** Puppet Dialogue | Low | Med | Low | N/A | N/A | N/A |
 | **AIC-6** Continuity Smear | Low | Low | Low | N/A | Med | Low |
 | **AIC-7** Discourse Leak | Low | Med | Med | High³ | Mixed⁵ | High³ |
+| **AIC-8** Aesthetic Authority Laundering | Med⁷ | Low | Low | Med | Med | Mixed⁸ |
+| **AIC-9** Closure Inflation | Low | Low | Low | Med⁹ | Med | Low |
 
 ¹ Institutional voice is the form. A consistent register is appropriate to formal advocacy; "voice singularity" reads as professionalism. The flag still fires on a generic non-institutional voice that fails to advance the argument's specifics.
 
@@ -263,6 +331,12 @@ Each AIC flag fires at different thresholds in different genres. A pattern that 
 ⁵ AIC-7 in blog is asymmetric. Low tolerance for Assistant Frame and Template Loop subtypes (resumptive parroting, throat-clearing before points, magic-triple synonym stacking), which read as AI-generated regardless of the writer's voice. Medium tolerance for the Hedge Drift subtype: genuine personal hedging is part of conversational voice. The diagnostic is whether the hedge tracks the writer's specific uncertainty or flattens into LLM-generic caution.
 
 ⁶ AIC-3 in testimony is split. Medium tolerance for numbered and parallel advocacy structure (recommendation lists, "first ... second ... third," or anaphora across enumerated points), which is conventional and rhetorically warranted. Low tolerance for template rhetoric (every section opening "We urge the Council to consider," every recommendation matching the same syntactic shell), which reads as the AI-assisted Recommendation Template pattern from the Nonfiction Parallel Pattern Set.
+
+⁷ AIC-8 in literary fiction has medium tolerance because vivid imagery is part of the genre. The flag fires at higher absolute thresholds and on joint co-occurrence (image conjunction + prestige metaphor scatter) rather than on either subtype alone.
+
+⁸ AIC-8 in testimony is mixed. High tolerance for prestige metaphors drawn from a single theoretical framework (legal-doctrine architecture, policy-system topology) because the institutional register naturally draws on these. Low tolerance for scattered prestige-metaphor reach across multiple unrelated domains within a single document.
+
+⁹ AIC-9 in essay has medium tolerance because aphoristic essay is a real genre. The flag fires when kicker density elevates against the writer's documented baseline rather than against the genre-typical band.
 
 ### Reading the table
 
@@ -300,6 +374,9 @@ Some flag combinations are more damaging than their parts:
 | AIC-7 + AIC-1 (Pattern+) | Voice *and* register both wrong | Most damaging compound; voice layer needs rebuilding |
 | AIC-3 + AIC-4 | Template applied unevenly across sources | Structural rhythm needs unifying |
 | Multiple nonfiction patterns + Layer A "Heavily smoothed" | Generic advocacy register; argument is template | Rebuild from specific evidence and named actors |
+| AIC-8 + AIC-9 at paragraph ends | The canonical AI-prose closing move: every paragraph ends with a vivid image-conjunction-shaped kicker | Rewrite paragraph endings; ration aphoristic moves |
+| AIC-8 + AIC-7 in interiority | Discourse leak plus aesthetic authority laundering; the narrator's interior monologue is both AI-shaped and image-laundering | Voice layer needs rebuilding from specifics |
+| AIC-9 + Layer A "Heavily smoothed" | Compressed variance plus closure inflation; the prose is structurally flat and ending every paragraph aphoristically | Likely systemic AI-rewrite signature |
 
 ---
 
