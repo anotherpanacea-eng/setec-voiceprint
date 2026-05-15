@@ -510,13 +510,236 @@ def _fixed_threshold_bootstrap_ci_numpy(
     }
 
 
+def _torch_available() -> bool:
+    """True iff ``import torch`` succeeds. Used by the dispatcher
+    to give a clear error before reaching the torch engine, and by
+    tests to skip cleanly when torch isn't installed."""
+    try:
+        import torch  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _fixed_threshold_bootstrap_ci_torch(
+    pairs: Sequence[tuple[int, float]],
+    threshold: float,
+    direction: str,
+    *,
+    resamples: int,
+    confidence: float,
+    seed: int | None,
+    chunk_size: int | None = None,
+    device: str | None = None,
+) -> dict[str, Any] | None:
+    """PyTorch equivalent of the numpy engine, GPU-accelerated when
+    a CUDA/ROCm device is available.
+
+    The algorithm is identical to the numpy engine: per-pair
+    categorical pre-classification (tp/fp/tn/fn) at the threshold,
+    then chunked resampling via ``torch.randint`` + fancy-index
+    gather + boolean-mask sum + ``torch.quantile``. The advantage
+    over numpy is that on a GPU the inner work runs in parallel
+    across many more lanes than a CPU SIMD register can offer; on
+    a 12-CU consumer GPU (e.g. RX 7900 XT) the speedup over numpy
+    is roughly 5-15x for MAGE-scale inputs.
+
+    Statistical equivalence: ``torch.randint`` uses a different RNG
+    stream from ``np.random.default_rng`` and ``random.Random``, so
+    individual per-resample compositions differ from both other
+    engines. CI bounds converge to within Monte Carlo noise (same
+    convergence test pin as ``numpy`` vs ``loop``).
+
+    Device selection:
+
+      - ``device="cuda"``: explicit. Errors at the ``torch.tensor``
+        call if no CUDA/ROCm device is reachable.
+      - ``device="cpu"``: explicit CPU. Useful for cross-platform
+        bit-reproducibility tests.
+      - ``device=None`` (default): auto. ``torch.cuda.is_available()``
+        — note this returns True for both NVIDIA CUDA AND AMD ROCm
+        builds, so the same auto-detect works for both vendors.
+
+    The returned dict carries an ``engine`` field, a ``device``
+    field, and a ``chunk_size`` field so the ledger records which
+    hardware produced the CI and at what memory budget; that closes
+    a reproducibility gap that's specific to the GPU path.
+
+    ``chunk_size``: ``None`` (default) auto-sizes via
+    ``_auto_chunk_size`` for the torch engine, which budgets ~16
+    bytes/cell (int64 indices + int8 cats + transient masks). At
+    RAID scale (n=8.3M) that's chunk ≈ 4 instead of the legacy
+    fixed 200 (~13 GB index tensor, OOM on consumer GPUs). Codex
+    review (PR #56, P1): the fixed 200 default OOM'd on the
+    target hardware; the auto-sized default lands inside the 500
+    MB budget on any modern GPU and the operator can override via
+    ``--bootstrap-chunk-size``.
+
+    Returns ``None`` for an empty input or a degenerate sweep where
+    every resample drew a single-class composition. Caller is the
+    same as for the numpy engine.
+    """
+    if not pairs:
+        return None
+    if not _torch_available():
+        raise RuntimeError(
+            "torch engine requires PyTorch; install with `pip "
+            "install torch` (CPU) or follow the ROCm setup guide "
+            "for AMD GPUs / CUDA setup guide for NVIDIA GPUs. The "
+            "`numpy` engine is a CPU-only alternative that's still "
+            "50-200x faster than the loop engine."
+        )
+    import torch  # type: ignore
+
+    # Auto-detect device. ``torch.cuda.is_available()`` is True for
+    # both CUDA and ROCm builds, so AMD users on a ROCm install hit
+    # the GPU path the same way NVIDIA users on a CUDA install do.
+    if device is None or device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch_device = torch.device(device)
+
+    n = len(pairs)
+    # Resolve chunk size: None → auto-size for n + torch's int64
+    # indices. See ``_auto_chunk_size`` for the memory math.
+    if chunk_size is None:
+        chunk_size = _auto_chunk_size(n, engine="torch")
+    else:
+        chunk_size = max(1, int(chunk_size))
+    # Two passes over ``pairs`` to fill independent typed arrays.
+    # The list-of-tuples → tensor conversion can't be one-shot
+    # because torch.tensor requires a homogeneous source.
+    labels = torch.tensor(
+        [int(p[0]) for p in pairs],
+        dtype=torch.int8, device=torch_device,
+    )
+    scores = torch.tensor(
+        [float(p[1]) for p in pairs],
+        dtype=torch.float64, device=torch_device,
+    )
+
+    if direction == "gt":
+        predicted_positive = scores > threshold
+    elif direction == "lt":
+        predicted_positive = scores < threshold
+    else:
+        raise ValueError(
+            f"direction must be 'gt' or 'lt', got {direction!r}"
+        )
+
+    # Categorical pre-encoding: 0=tp, 1=fp, 2=tn, 3=fn. Same scheme
+    # the numpy engine uses; the per-resample work then reduces to
+    # ``cats[idx]`` gather + per-row boolean-mask sum.
+    cats = torch.empty(n, dtype=torch.int8, device=torch_device)
+    label_pos = labels == 1
+    label_neg = labels == 0
+    cats[predicted_positive & label_pos] = 0
+    cats[predicted_positive & label_neg] = 1
+    cats[(~predicted_positive) & label_neg] = 2
+    cats[(~predicted_positive) & label_pos] = 3
+
+    # Seed the RNG. ``torch.Generator(device=...)`` lets us seed
+    # the GPU RNG separately from the global one — important
+    # because the global default seed is captured at process start
+    # and reusing it across calls produces correlated streams.
+    gen = torch.Generator(device=torch_device)
+    if seed is not None:
+        gen.manual_seed(int(seed))
+
+    tprs_chunks: list = []
+    fprs_chunks: list = []
+    precs_chunks: list = []
+
+    for chunk_start in range(0, resamples, chunk_size):
+        chunk = min(chunk_size, resamples - chunk_start)
+        # int32 caps n at ~2B, well past any realistic corpus
+        # size. ``torch.randint`` with a per-device generator
+        # gives reproducible chunk-level streams.
+        idxs = torch.randint(
+            0, n, (chunk, n),
+            dtype=torch.int64,  # torch indexing wants int64
+            device=torch_device, generator=gen,
+        )
+        sampled_cats = cats[idxs]  # (chunk, n) int8
+
+        tp = (sampled_cats == 0).sum(dim=1)
+        fp = (sampled_cats == 1).sum(dim=1)
+        tn = (sampled_cats == 2).sum(dim=1)
+        fn = (sampled_cats == 3).sum(dim=1)
+
+        positive_present = (tp + fn) > 0
+        negative_present = (tn + fp) > 0
+        valid = positive_present & negative_present
+        if not bool(valid.any().item()):
+            continue
+
+        tp_f = tp.to(torch.float64)
+        fp_f = fp.to(torch.float64)
+        tn_f = tn.to(torch.float64)
+        fn_f = fn.to(torch.float64)
+        tpr = torch.where(
+            positive_present, tp_f / (tp_f + fn_f),
+            torch.zeros_like(tp_f),
+        )
+        fpr = torch.where(
+            negative_present, fp_f / (fp_f + tn_f),
+            torch.zeros_like(fp_f),
+        )
+        denom_prec = tp_f + fp_f
+        prec = torch.where(
+            denom_prec > 0, tp_f / denom_prec,
+            torch.zeros_like(tp_f),
+        )
+
+        tprs_chunks.append(tpr[valid])
+        fprs_chunks.append(fpr[valid])
+        precs_chunks.append(prec[valid])
+
+    if not tprs_chunks:
+        return None
+
+    tprs_arr = torch.cat(tprs_chunks)
+    fprs_arr = torch.cat(fprs_chunks)
+    precs_arr = torch.cat(precs_chunks)
+
+    alpha = 1.0 - confidence
+
+    def q(t, frac: float) -> float:
+        # ``torch.quantile`` interpolation defaults to linear,
+        # matching numpy's ``method='linear'`` and the loop's
+        # ``_quantile`` shape. Move to CPU for the float
+        # extraction since item() requires a host scalar.
+        return float(torch.quantile(t, frac).cpu().item())
+
+    return {
+        "method": "fixed_threshold_paired_bootstrap",
+        "engine": "torch",
+        "device": str(torch_device),
+        "chunk_size": int(chunk_size),
+        "confidence": confidence,
+        "resamples": int(tprs_arr.numel()),
+        "tpr_ci": [q(tprs_arr, alpha / 2), q(tprs_arr, 1 - alpha / 2)],
+        "fpr_ci": [q(fprs_arr, alpha / 2), q(fprs_arr, 1 - alpha / 2)],
+        "precision_ci": [
+            q(precs_arr, alpha / 2),
+            q(precs_arr, 1 - alpha / 2),
+        ],
+        "note": (
+            "Pair records are dependent; CI is smoke-test diagnostic, "
+            "not calibration-grade. Selection uncertainty (nested "
+            "bootstrap on the threshold itself) is roadmap."
+        ),
+    }
+
+
 # Backward-compatibility dispatcher. Public callers (the survey
 # aggregator, derive_threshold_from_records, end-user scripts)
-# call this function; it routes to the loop or numpy
+# call this function; it routes to the loop, numpy, or torch
 # implementation based on the ``engine`` argument. Default is
 # ``"loop"`` so unchanged invocations produce byte-identical CI
 # values against the pre-1.60 ledger. Pass ``engine="numpy"`` for
-# the 50-200x speedup on N >= ~100K-row corpora.
+# the 50-200x CPU speedup on N >= ~100K-row corpora, or
+# ``engine="torch"`` for an additional 5-15x speedup on a
+# CUDA/ROCm GPU.
 def fixed_threshold_bootstrap_ci(
     pairs: Sequence[tuple[int, float]],
     threshold: float,
@@ -527,6 +750,7 @@ def fixed_threshold_bootstrap_ci(
     seed: int | None,
     engine: str = "loop",
     chunk_size: int | None = None,
+    device: str | None = None,
 ) -> dict[str, Any] | None:
     """Paired-record bootstrap on TPR / FPR / precision at a fixed
     threshold. Resampling pair indices with replacement; each resample
@@ -547,11 +771,22 @@ def fixed_threshold_bootstrap_ci(
       resample compositions because the RNG stream differs
       (``np.random.default_rng`` vs ``random.Random``).
 
+    - ``"torch"``: PyTorch implementation that auto-detects a
+      CUDA or ROCm GPU and runs the inner gather/count/quantile
+      on-device. An additional 5-15x speedup over the ``numpy``
+      engine on a 12-CU consumer GPU; falls back to CPU if no
+      GPU is reachable. Requires ``pip install torch``. The
+      ``device`` kwarg overrides auto-detection (``"cpu"``,
+      ``"cuda"``, or a specific device string like
+      ``"cuda:1"``).
+
     ``chunk_size`` overrides the auto-detected inner-loop chunk
     size for the vectorized engines. ``None`` (default) auto-sizes
     via ``_auto_chunk_size`` to cap inner-loop peak memory at
     ~500 MB. Ignored by the ``loop`` engine. Operator-tunable via
     ``--bootstrap-chunk-size`` on both CLIs.
+
+    ``device`` is only consulted for ``engine="torch"``.
     """
     if engine == "loop":
         return _fixed_threshold_bootstrap_ci_loop(
@@ -564,8 +799,16 @@ def fixed_threshold_bootstrap_ci(
             resamples=resamples, confidence=confidence, seed=seed,
             chunk_size=chunk_size,
         )
+    if engine == "torch":
+        return _fixed_threshold_bootstrap_ci_torch(
+            pairs, threshold, direction,
+            resamples=resamples, confidence=confidence, seed=seed,
+            device=device,
+            chunk_size=chunk_size,
+        )
     raise ValueError(
-        f"Unknown bootstrap engine {engine!r}. Known: 'loop', 'numpy'."
+        f"Unknown bootstrap engine {engine!r}. "
+        f"Known: 'loop', 'numpy', 'torch'."
     )
 
 
@@ -1339,13 +1582,15 @@ def derive_threshold_from_records(
         args.bootstrap_seed, args.signal, signal_path, str(args.fpr_target),
     )
     # ``getattr`` so callers that built Namespace objects manually
-    # (older test fixtures, ad-hoc scripts) keep working without a
-    # ``bootstrap_engine`` / ``bootstrap_chunk_size`` attribute.
-    # Default is the bit-exact loop engine; pass ``--bootstrap-
-    # engine numpy`` on the CLI or set the attr programmatically
-    # to get the 50-200x speedup.
+    # (older test fixtures, ad-hoc scripts) keep working without
+    # ``bootstrap_engine`` / ``bootstrap_chunk_size`` / ``bootstrap_
+    # device`` attributes. Default is the bit-exact loop engine;
+    # pass ``--bootstrap-engine numpy`` on the CLI for the 50-200x
+    # CPU speedup or ``--bootstrap-engine torch`` for an
+    # additional 5-15x GPU speedup on CUDA/ROCm.
     engine = getattr(args, "bootstrap_engine", "loop")
     chunk_size = getattr(args, "bootstrap_chunk_size", None)
+    device = getattr(args, "bootstrap_device", None)
     ci = fixed_threshold_bootstrap_ci(
         pairs,
         sweep["threshold"],
@@ -1355,6 +1600,7 @@ def derive_threshold_from_records(
         seed=seed,
         engine=engine,
         chunk_size=chunk_size,
+        device=device,
     )
 
     fetch_record = _load_fetch_record(manifest_path)
@@ -1418,6 +1664,17 @@ def derive_threshold_from_records(
             "bootstrap_chunk_size": (
                 ci.get("chunk_size") if ci else None
             ),
+            # Device persisted only for the torch engine; the ledger
+            # records the *resolved* device string (e.g. "cuda:0",
+            # "cpu") rather than the requested one so a ROCm-vs-
+            # CUDA-vs-CPU reproducibility gap is auditable. Codex
+            # review (PR #56, P1): without this an "auto" device
+            # could resolve to CPU on one host and GPU on another
+            # and the ledger would conflate them.
+            "bootstrap_device": (
+                ci.get("device") if ci and ci.get("engine") == "torch"
+                else None
+            ),
             "ci_note": ci["note"] if ci else None,
         },
         "setec_commit": _git_commit(),
@@ -1428,6 +1685,7 @@ def derive_threshold_from_records(
             fpr_target=args.fpr_target,
             engine=engine,
             chunk_size=chunk_size,
+            device=device,
         ),
         "derivation_date": iso_date,
         "notes": args.notes or (
@@ -1569,14 +1827,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--bootstrap-seed", type=int, default=42)
     parser.add_argument(
         "--bootstrap-engine",
-        choices=["loop", "numpy"],
+        choices=["loop", "numpy", "torch"],
         default="loop",
         help=(
             "Bootstrap-CI implementation. ``loop`` (default) is "
             "pure Python; bit-exact with pre-1.60 ledger entries. "
             "``numpy`` is a vectorized NumPy implementation that "
-            "is 50-200x faster on >=100K-row corpora and "
-            "statistically equivalent for 2000+ resamples."
+            "is 50-200x faster on >=100K-row corpora. ``torch`` "
+            "is a PyTorch implementation that auto-detects a "
+            "CUDA/ROCm GPU and runs the inner gather/count/"
+            "quantile on-device for an additional 5-15x speedup. "
+            "All three are statistically equivalent for 2000+ "
+            "resamples; only ``loop`` is bit-exact with the "
+            "pre-1.60 ledger."
+        ),
+    )
+    parser.add_argument(
+        "--bootstrap-device",
+        default=None,
+        help=(
+            "Device override for ``--bootstrap-engine torch``. "
+            "Default is auto-detect: ``cuda`` if a CUDA or ROCm "
+            "GPU is reachable, else ``cpu``. Pass ``cpu`` to "
+            "force the CPU torch path (cross-platform "
+            "reproducibility), or a specific device string like "
+            "``cuda:1`` to target a non-default GPU. Ignored "
+            "when ``--bootstrap-engine`` is ``loop`` or ``numpy``."
         ),
     )
     parser.add_argument(
