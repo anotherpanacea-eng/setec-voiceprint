@@ -30,8 +30,23 @@ This skill checks the integrity and content hygiene of a SETEC corpus, then repo
 | Script | Scope | Use when |
 |---|---|---|
 | `manifest_validator.py` | One JSONL manifest | Refusing contaminated or contradictory inputs before any manifest-driven flow runs |
-| `check_corpus.py` | Files, directories, or manifest slice | Refusing HTML/CSS/code/table contamination before KL-sensitive or validation runs |
+| `check_corpus.py` | Files, directories, or manifest slice ≤ ~1M files | Refusing HTML/CSS/code/table contamination before KL-sensitive or validation runs |
+| `shard_runner.py --task corpus_hygiene` | Manifest > ~1M files | Same contamination check, sharded with workers + state.json checkpointing for corpora at RAID scale |
 | `validation_harness.py` | Labeled validation entries in a manifest | Measuring empirical performance by register, length, AI status, and language status |
+
+### Picking between `check_corpus.py` and the sharded path
+
+`check_corpus.py` is the right tool for manifests up to ~1M files. Beyond that the single-process iteration sinks into NTFS small-file open latency and becomes impractical. As an order-of-magnitude guide:
+
+| Manifest size | Tool | Approximate wall-clock |
+|---|---|---|
+| 10K files | `check_corpus.py` | seconds |
+| 100K files | `check_corpus.py` | ~5 min |
+| 436K files (MAGE) | `check_corpus.py` | ~30 min |
+| 1M files | borderline — either tool | ~1-2 hr direct, ~15 min sharded |
+| 8.3M files (RAID) | `shard_runner.py --task corpus_hygiene` (with `--workers 8`) | ~13 hr direct, ~1.5 hr sharded |
+
+`check_corpus.py` prints a runtime warning suggesting the sharded path when the input manifest exceeds ~1M files. See `scripts/calibration/RUNBOOK_corpus_hygiene_sharded.md` for the sharded workflow.
 
 ## Quick CLI
 

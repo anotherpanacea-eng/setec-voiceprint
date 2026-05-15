@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from collections import Counter
 from pathlib import Path
@@ -25,6 +26,20 @@ from preprocessing import available_rule_names, strip_non_prose
 TASK_SURFACE = "validation"
 DEFAULT_WARN_THRESHOLD = 0.01
 DEFAULT_FAIL_THRESHOLD = 0.05
+
+# Above this many input files, the single-process iteration this
+# script does becomes the wrong tool for the job: NTFS small-file
+# open latency + no parallelism push wall-clock into many hours
+# on corpora at the scale of RAID (~8M files). The sharded path
+# via ``shard_runner --task corpus_hygiene`` reuses the same
+# scoring logic with workers, state.json checkpointing, and
+# multi-host coordination — typically 10-30× faster end-to-end.
+# The threshold is intentionally generous: MAGE-scale (~436K
+# files) completes in ~30 min single-process and doesn't warrant
+# the sharded ceremony; an order of magnitude above that is where
+# the trade-off flips. Tuned for the practical complaint, not for
+# theoretical optimality.
+LARGE_MANIFEST_WARN_THRESHOLD = 1_000_000
 
 
 class CorpusCheckError(Exception):
@@ -150,6 +165,69 @@ def collect_paths(
     if not unique:
         raise CorpusCheckError("No corpus files were supplied.")
     return unique
+
+
+def warn_if_large_manifest(
+    n_files: int,
+    manifest: str | None,
+    *,
+    threshold: int = LARGE_MANIFEST_WARN_THRESHOLD,
+    out: Any = None,
+) -> bool:
+    """If the input is large enough that the sharded path is the
+    right tool, print a stderr discoverability warning and return
+    True. Returns False when the input is below threshold (no
+    warning) or when no manifest was supplied (the sharded
+    workflow needs a manifest input; `--path` / `--dir` aren't
+    addressable that way).
+
+    The ``out`` parameter is for tests; defaults to ``sys.stderr``.
+    """
+    if out is None:
+        out = sys.stderr
+    if n_files < threshold:
+        return False
+    if not manifest:
+        return False
+    # ``shlex.quote`` so the manifest path is a copy-pasteable
+    # POSIX-shell token even when it contains spaces, ampersands,
+    # parentheses, or other characters the shell treats specially.
+    # Without this the recipe fails for exactly the operator the
+    # warning is trying to help — RAID-scale corpora often live
+    # under user-named directories with spaces (e.g., today's
+    # workspace at ``C:\Users\Joshua\Documents\Claude Cowork
+    # Working Folder\...``).
+    #
+    # Codex P2 on PR #52. Quoted with POSIX shell rules; if the
+    # operator is on cmd.exe rather than bash they may still need
+    # to adjust the quoting style, but bash / WSL / pwsh-with-bash
+    # is the documented host for the sharded workflow anyway
+    # (RUNBOOK_corpus_hygiene_sharded.md).
+    manifest_arg = shlex.quote(str(manifest))
+    out.write(
+        f"\n  warning: {n_files:,} input files matched. Single-process "
+        f"check_corpus at this scale typically runs for many hours\n"
+        f"  on Windows (NTFS small-file open latency dominates).\n"
+        f"\n"
+        f"  Consider the sharded path, which reuses the same scoring\n"
+        f"  logic via shard_runner --task corpus_hygiene with workers\n"
+        f"  and state.json checkpointing:\n"
+        f"\n"
+        f"    shard_runner shard --task corpus_hygiene \\\n"
+        f"        --source-manifest {manifest_arg} \\\n"
+        f"        --run-id <YOUR_RUN_ID>\n"
+        f"    shard_runner work --task corpus_hygiene \\\n"
+        f"        --run-id <YOUR_RUN_ID> --workers 8\n"
+        f"    shard_runner aggregate --task corpus_hygiene \\\n"
+        f"        --run-id <YOUR_RUN_ID> --out hygiene_report.json\n"
+        f"\n"
+        f"  See plugins/setec-voiceprint/scripts/calibration/"
+        f"RUNBOOK_corpus_hygiene_sharded.md for details.\n"
+        f"\n"
+        f"  Continuing with single-process check_corpus anyway...\n\n"
+    )
+    out.flush()
+    return True
 
 
 def classify_file(strip_ratio: float, warn_threshold: float, fail_threshold: float) -> str:
@@ -491,6 +569,10 @@ def main() -> int:
             manifest=args.manifest,
             filter_text=args.filter,
         )
+        # Discoverability: at corpus scales where the single-
+        # process loop is the wrong tool, warn the operator about
+        # the sharded path before sinking hours into the run.
+        warn_if_large_manifest(len(paths), args.manifest)
         result = check_corpus_paths(
             paths,
             strip_rules=args.strip_rules,
