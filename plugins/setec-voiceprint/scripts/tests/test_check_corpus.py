@@ -11,7 +11,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from check_corpus import check_corpus_paths, paths_from_manifest
+from check_corpus import (
+    LARGE_MANIFEST_WARN_THRESHOLD,
+    check_corpus_paths,
+    paths_from_manifest,
+    warn_if_large_manifest,
+)
 
 
 FIXTURE_DIR = ROOT / "test_data" / "preprocessing"
@@ -65,3 +70,83 @@ def test_manifest_filter_loads_paths_for_checking(tmp_path: Path) -> None:
     assert paths == [CONTAMINATED]
     result = check_corpus_paths(paths)
     assert result["status"] == "fail"
+
+
+# ----- warn_if_large_manifest ----------------------------------
+
+
+class _CaptureStream:
+    """Tiny stand-in for sys.stderr that records writes for
+    assertion."""
+
+    def __init__(self) -> None:
+        self._chunks: list[str] = []
+
+    def write(self, s: str) -> None:
+        self._chunks.append(s)
+
+    def flush(self) -> None:
+        return None
+
+    @property
+    def text(self) -> str:
+        return "".join(self._chunks)
+
+
+def test_warn_below_threshold_no_output() -> None:
+    out = _CaptureStream()
+    fired = warn_if_large_manifest(
+        n_files=100,
+        manifest="path/to/manifest.jsonl",
+        threshold=1_000_000,
+        out=out,
+    )
+    assert fired is False
+    assert out.text == ""
+
+
+def test_warn_above_threshold_with_manifest_prints_guidance() -> None:
+    out = _CaptureStream()
+    fired = warn_if_large_manifest(
+        n_files=5_000_000,
+        manifest="path/to/raid_manifest.jsonl",
+        threshold=1_000_000,
+        out=out,
+    )
+    assert fired is True
+    text = out.text
+    assert "5,000,000" in text
+    # The warning must surface the sharded invocation so the
+    # operator can copy/paste; without that, the warning is
+    # noise rather than discoverability.
+    assert "shard_runner" in text
+    assert "--task corpus_hygiene" in text
+    assert "path/to/raid_manifest.jsonl" in text
+    # And it must point at the runbook for the long-form
+    # walkthrough.
+    assert "RUNBOOK_corpus_hygiene_sharded.md" in text
+
+
+def test_warn_above_threshold_without_manifest_no_output() -> None:
+    """When the operator passed --path or --dir rather than
+    --manifest, the sharded path isn't directly applicable (it
+    requires a manifest input). Suppress the warning to avoid
+    pointing at an inappropriate alternative."""
+    out = _CaptureStream()
+    fired = warn_if_large_manifest(
+        n_files=5_000_000,
+        manifest=None,
+        threshold=1_000_000,
+        out=out,
+    )
+    assert fired is False
+    assert out.text == ""
+
+
+def test_warn_default_threshold_is_a_million() -> None:
+    """The threshold default tracks the practical crossover
+    point: MAGE-scale (~436K) doesn't warrant the sharded
+    ceremony; an order of magnitude above that is where the
+    trade-off flips. Pinning the constant in a test makes the
+    decision explicit and reviewable."""
+    assert LARGE_MANIFEST_WARN_THRESHOLD == 1_000_000
