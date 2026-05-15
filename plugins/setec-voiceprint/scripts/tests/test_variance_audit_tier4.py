@@ -284,39 +284,235 @@ class TestCompressionHeuristicsTier4:
             assert sig in provisional
 
 
-class TestAic89RegistryGuard:
-    """Codex P2 review of PR #59: the AIC-8/9 signal paths
-    (`aic_8_9.kicker_density.value`, `image_conjunction_density.value`,
-    `prestige_metaphor_density.domain_scatter_entropy`) must NOT be
-    in `COMPRESSION_HEURISTICS` while they remain unwired into
-    `audit_text()` and `_ABLATION_SIGNAL_FAMILIES`. Re-registering
-    them without simultaneously wiring the classifier + ablation
-    reproduces the Tier-4 wiring-failure pattern (registered but
-    not classified). This test guards that contract.
+class TestAic789Registration:
+    """v1.65.0: AIC-7 / AIC-8 / AIC-9 integration. Seven signals
+    registered in COMPRESSION_HEURISTICS, three ablation families.
 
-    When `variance_audit.py` integrates AIC-8/9 (planned `--aic8`
-    / `--aic9` flags, `audit_text(do_aic8=True, ...)`,
-    `aic_8_9.*` blocks in the audit dict, plus an
-    `aesthetic_authority_laundering` ablation family), this test
-    can be deleted and replaced with positive registration tests.
+    Flipped from the negative-assertion `TestAic89RegistryGuard`
+    that PR #61 (1.64.1) put in place to prevent orphaned-registry
+    entries. Now the entries ARE wired (audit_text() emits the
+    blocks, classify_compression() walks them, ablation families
+    name them); these tests assert the wiring contract holds.
     """
 
-    def test_no_kicker_density_entry(self):
-        assert "kicker_density" not in va.COMPRESSION_HEURISTICS
+    AIC7_SIGNALS = (
+        "correctio_density",
+        "triplet_density",
+        "manifesto_cadence_density",
+        "professional_parallel_stack_density",
+    )
+    AIC8_SIGNALS = (
+        "image_conjunction_density",
+        "prestige_metaphor_scatter",
+    )
+    AIC9_SIGNALS = (
+        "kicker_density",
+    )
 
-    def test_no_image_conjunction_density_entry(self):
-        assert "image_conjunction_density" not in va.COMPRESSION_HEURISTICS
+    def test_aic7_signals_registered(self):
+        for sig in self.AIC7_SIGNALS:
+            assert sig in va.COMPRESSION_HEURISTICS, (
+                f"{sig} should be in COMPRESSION_HEURISTICS"
+            )
 
-    def test_no_prestige_metaphor_scatter_entry(self):
-        assert "prestige_metaphor_scatter" not in va.COMPRESSION_HEURISTICS
+    def test_aic8_signals_registered(self):
+        for sig in self.AIC8_SIGNALS:
+            assert sig in va.COMPRESSION_HEURISTICS, (
+                f"{sig} should be in COMPRESSION_HEURISTICS"
+            )
 
-    def test_no_aic_8_9_signal_paths_in_registry(self):
-        """No entry should carry a signal_path that walks into the
-        non-existent `aic_8_9.*` keys in the audit dict."""
-        for sig, spec in va.COMPRESSION_HEURISTICS.items():
-            assert not spec.signal_path.startswith("aic_8_9."), (
-                f"{sig}: signal_path={spec.signal_path!r} walks "
-                "into aic_8_9.* which `audit_text()` does not emit"
+    def test_aic9_signal_registered(self):
+        for sig in self.AIC9_SIGNALS:
+            assert sig in va.COMPRESSION_HEURISTICS
+
+    def test_all_seven_are_provisional(self):
+        """Per the Stylometry-to-the-people policy, none of the
+        AIC-7/8/9 thresholds carry calibration provenance yet."""
+        all_signals = (
+            self.AIC7_SIGNALS + self.AIC8_SIGNALS + self.AIC9_SIGNALS
+        )
+        for sig in all_signals:
+            spec = va.COMPRESSION_HEURISTICS[sig]
+            assert spec.provisional is True, f"{sig} is not provisional"
+            assert spec.provenance is None, f"{sig} carries provenance"
+
+    def test_aic7_signal_paths_walk_into_patterns(self):
+        """AIC-7 entries' signal_path values resolve via the
+        `patterns.<key>.density_per_1k` shape that
+        `_aic7_named_pattern_block` emits."""
+        expected = {
+            "correctio_density": "patterns.correctio.density_per_1k",
+            "triplet_density": "patterns.triplet.density_per_1k",
+            "manifesto_cadence_density":
+                "patterns.manifesto_cadence.density_per_1k",
+            "professional_parallel_stack_density":
+                "patterns.professional_parallel_stack.density_per_1k",
+        }
+        for sig, path in expected.items():
+            assert va.COMPRESSION_HEURISTICS[sig].signal_path == path
+
+    def test_aic_8_9_signal_paths_walk_into_aic_8_9(self):
+        """AIC-8/9 entries' signal_path values resolve via the
+        `aic_8_9.<detector>.value` shape that the AIC-8/9 block
+        helpers emit."""
+        expected = {
+            "kicker_density": "aic_8_9.kicker_density.value",
+            "image_conjunction_density":
+                "aic_8_9.image_conjunction_density.value",
+            "prestige_metaphor_scatter":
+                "aic_8_9.prestige_metaphor_density."
+                "domain_scatter_entropy",
+        }
+        for sig, path in expected.items():
+            assert va.COMPRESSION_HEURISTICS[sig].signal_path == path
+
+    def test_three_new_ablation_families_registered(self):
+        """The three new ablation families exist with the
+        spec-named keys."""
+        for family in (
+            "assistant_register_intrusion",
+            "closure_inflation",
+            "aesthetic_authority_laundering",
+        ):
+            assert family in va._ABLATION_SIGNAL_FAMILIES
+
+    def test_assistant_register_intrusion_family_membership(self):
+        family = va._ABLATION_SIGNAL_FAMILIES["assistant_register_intrusion"]
+        assert set(family) == set(self.AIC7_SIGNALS)
+
+    def test_closure_inflation_family_membership(self):
+        family = va._ABLATION_SIGNAL_FAMILIES["closure_inflation"]
+        assert set(family) == set(self.AIC9_SIGNALS)
+
+    def test_aesthetic_authority_laundering_family_membership(self):
+        family = va._ABLATION_SIGNAL_FAMILIES[
+            "aesthetic_authority_laundering"
+        ]
+        assert set(family) == set(self.AIC8_SIGNALS)
+
+    def test_no_signal_orphaned_from_ablation(self):
+        """Codex P2 invariant: every AIC-7/8/9 signal in
+        COMPRESSION_HEURISTICS appears in exactly one ablation
+        family. Re-registration without wiring an ablation family
+        is what made the Tier-4 wiring failure (PR #31) and the
+        1.64.0 orphaned-registry mistake (PR #61) so easy to ship."""
+        all_signals = set(
+            self.AIC7_SIGNALS + self.AIC8_SIGNALS + self.AIC9_SIGNALS
+        )
+        all_family_members: set[str] = set()
+        for family_signals in va._ABLATION_SIGNAL_FAMILIES.values():
+            all_family_members.update(family_signals)
+        unwired = all_signals - all_family_members
+        assert not unwired, (
+            f"signals in COMPRESSION_HEURISTICS but absent from all "
+            f"ablation families: {sorted(unwired)}"
+        )
+
+
+class TestAic789AuditTextWiring:
+    """End-to-end: `audit_text(do_aic7=True, ...)` populates the
+    audit dict with the expected blocks. The blocks live at the
+    paths COMPRESSION_HEURISTICS expects so classify_compression
+    walks them automatically."""
+
+    FIXTURE_DIR = (
+        Path(__file__).resolve().parents[1] / "test_data" / "aic_8_9"
+    )
+
+    def _load_fixture(self) -> str:
+        """Load and pad the AI fixture to clear length floors."""
+        text = (
+            self.FIXTURE_DIR / "ai_image_conjunction_positive.md"
+        ).read_text(encoding="utf-8")
+        return (text + " ") * 5  # ~700 tokens
+
+    def test_audit_text_no_aic_flags_omits_blocks(self):
+        text = self._load_fixture()
+        audit = va.audit_text(text)
+        assert "patterns" not in audit
+        assert "aic_8_9" not in audit
+
+    def test_audit_text_do_aic7_adds_patterns(self):
+        text = self._load_fixture()
+        audit = va.audit_text(text, do_aic7=True)
+        assert "patterns" in audit
+        for key in ("correctio", "triplet",
+                    "manifesto_cadence", "professional_parallel_stack"):
+            assert key in audit["patterns"]
+            assert "density_per_1k" in audit["patterns"][key]
+
+    def test_audit_text_do_aic9_adds_kicker_density(self):
+        text = self._load_fixture()
+        audit = va.audit_text(text, do_aic9=True)
+        assert "aic_8_9" in audit
+        assert "kicker_density" in audit["aic_8_9"]
+        assert "value" in audit["aic_8_9"]["kicker_density"]
+
+
+class TestAic789ClassifierWiring:
+    """`classify_compression()` walks the new signal paths and
+    counts them in `available_signals` / `available_weight`. This is
+    the contract Codex flagged on PR #59 (registry entries without
+    classifier walks).
+    """
+
+    FIXTURE_DIR = (
+        Path(__file__).resolve().parents[1] / "test_data" / "aic_8_9"
+    )
+
+    def _audit(self, **kwargs):
+        text = (
+            (self.FIXTURE_DIR / "ai_image_conjunction_positive.md")
+            .read_text(encoding="utf-8")
+        )
+        text = (text + " ") * 5
+        return va.audit_text(text, **kwargs)
+
+    def test_aic9_kicker_enters_available_signals(self):
+        audit = self._audit(do_aic9=True)
+        cls = va.classify_compression(audit)
+        assert "kicker_density" in cls["available_signals"]
+
+    def test_aic9_kicker_fires_on_high_density(self):
+        """The AI fixture's kicker density is 1.0 (every paragraph
+        ends with a kicker). The default threshold is 0.25. The
+        signal should fire."""
+        audit = self._audit(do_aic9=True)
+        cls = va.classify_compression(audit)
+        assert "kicker_density" in cls["flagged_signals"]
+
+    def test_aic7_signals_enter_available_signals(self):
+        audit = self._audit(do_aic7=True)
+        cls = va.classify_compression(audit)
+        for sig in ("correctio_density", "triplet_density",
+                    "manifesto_cadence_density",
+                    "professional_parallel_stack_density"):
+            assert sig in cls["available_signals"]
+
+    def test_ablation_family_appears_for_aic9(self):
+        """When AIC-9 is on AND its signal contributes to the band
+        call, the `closure_inflation` family appears in
+        `load_bearing_families` (or at least in the per-family
+        ablation results)."""
+        audit = self._audit(do_aic9=True)
+        cls = va.classify_compression(audit)
+        ablation = va.ablation_band_calls(cls, audit)
+        # The family should appear in per_family regardless.
+        assert "closure_inflation" in ablation["per_family"]
+
+    def test_no_aic_flag_means_no_aic_signal_in_available(self):
+        """When `--aic7/8/9` are all off, none of the new signals
+        appear in `available_signals` (length-floor would block
+        them anyway, but more importantly the audit dict doesn't
+        carry their values). Pin this contract."""
+        audit = self._audit()  # no AIC flags
+        cls = va.classify_compression(audit)
+        for sig in ("correctio_density", "kicker_density",
+                    "image_conjunction_density",
+                    "prestige_metaphor_scatter"):
+            assert sig not in cls["available_signals"], (
+                f"{sig} appeared in available_signals without its "
+                f"--aic flag being set"
             )
 
 

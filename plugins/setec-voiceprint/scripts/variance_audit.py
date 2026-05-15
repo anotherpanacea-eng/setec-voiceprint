@@ -768,6 +768,183 @@ def _tier4_surprisal_block(
     return tier4_block
 
 
+# ---------- AIC-7 / AIC-8 / AIC-9 named-pattern integration ----------
+#
+# v1.65.0: opt-in `--aic7` / `--aic8` / `--aic9` flags wire the named-
+# pattern detectors (`aic_pattern_audit.py`, `image_conjunction.py`
+# + `prestige_metaphor.py`, `kicker_density.py`) into the audit
+# dict. Closes spec Step 10 from `SPEC_aic_8_9_implementation.md`:
+# COMPRESSION_HEURISTICS gets corresponding entries below, and
+# `_ABLATION_SIGNAL_FAMILIES` gets three new families
+# (assistant_register_intrusion / closure_inflation /
+# aesthetic_authority_laundering).
+#
+# Same opt-in posture as `--tier4`: lazy import inside the block
+# helpers so callers that don't enable the flags never pay the
+# import cost.
+
+
+def _aic7_named_pattern_block(text: str) -> dict[str, Any]:
+    """Run `aic_pattern_audit.all_patterns()` and reshape its output
+    to the `patterns.<key>.density_per_1k` shape that
+    COMPRESSION_HEURISTICS reads.
+
+    Returns ``{"available": True, "patterns": {...}, "diagnostics":
+    {...}}`` on success. Returns ``{"available": False, "reason":
+    ...}`` if the detector is unimportable (extremely unlikely
+    since aic_pattern_audit is regex-only) or the text is too
+    short for meaningful pattern density.
+    """
+    if not text or not text.strip():
+        return {"available": False, "reason": "empty text"}
+    try:
+        import aic_pattern_audit as ap  # type: ignore  # noqa: PLC0415
+    except ImportError as exc:
+        return {
+            "available": False,
+            "reason": (
+                f"aic_pattern_audit unimportable: {exc}. Ensure "
+                f"aic_pattern_audit.py is on the path."
+            ),
+        }
+    sentences = split_sentences(text)
+    words = split_words(text)
+    n_words = max(len(words), 1)
+    results = ap.all_patterns(text, sentences)
+    pattern_blocks: dict[str, dict[str, Any]] = {}
+    for key, result in results.items():
+        count = len(result.hits)
+        density_per_1k = (count / n_words) * 1000.0
+        pattern_blocks[key] = {
+            "label": result.label,
+            "count": count,
+            "density_per_1k": density_per_1k,
+            "severity_note": result.severity_note,
+        }
+    return {
+        "available": True,
+        "patterns": pattern_blocks,
+        "diagnostics": {
+            "n_words": n_words,
+            "n_sentences": len(sentences),
+            "pattern_keys": sorted(pattern_blocks.keys()),
+        },
+    }
+
+
+def _aic8_image_prestige_block(text: str) -> dict[str, Any]:
+    """Run `image_conjunction_density()` and
+    `prestige_metaphor_density()` and reshape their output to the
+    `aic_8_9.image_conjunction_density.*` and
+    `aic_8_9.prestige_metaphor_density.*` shapes that
+    COMPRESSION_HEURISTICS reads.
+
+    Heavier dependency chain than AIC-7: requires spaCy with parsing
+    (`en_core_web_sm`) AND a vectors-bearing model
+    (`en_core_web_md` or `_lg`). Returns
+    ``{"available": False, "reason": ...}`` on missing dependencies.
+    """
+    if not text or not text.strip():
+        return {"available": False, "reason": "empty text"}
+    try:
+        import image_conjunction as ic  # type: ignore  # noqa: PLC0415
+        import prestige_metaphor as pm  # type: ignore  # noqa: PLC0415
+        import embeddings as emb  # type: ignore  # noqa: PLC0415
+    except ImportError as exc:
+        return {
+            "available": False,
+            "reason": f"AIC-8 modules unimportable: {exc}",
+        }
+    try:
+        nlp = ic._load_spacy_with_parsing()
+    except emb.EmbeddingsBackendError as exc:
+        return {
+            "available": False,
+            "reason": str(exc),
+        }
+    try:
+        pm_block = pm.prestige_metaphor_density(text, nlp=nlp)
+    except emb.EmbeddingsBackendError as exc:
+        return {
+            "available": False,
+            "reason": str(exc),
+        }
+    # The prestige-metaphor block embeds the full image-conjunction
+    # detection. Surface both subtypes at the spec-registered
+    # signal_path locations so _extract_signal can walk them.
+    total_tokens = pm_block["diagnostics"].get("total_tokens", 0)
+    n_conjs = pm_block["diagnostics"].get("conjunction_count", 0)
+    ic_density_per_1k = (
+        (n_conjs / total_tokens) * 1000.0 if total_tokens > 0 else 0.0
+    )
+    return {
+        "available": True,
+        "image_conjunction_density": {
+            "value": ic_density_per_1k,
+            "conjunction_count": n_conjs,
+            "total_tokens": total_tokens,
+        },
+        "prestige_metaphor_density": {
+            "value": pm_block.get("value", 0.0),
+            "domain_scatter_entropy": pm_block.get(
+                "domain_scatter_entropy", 0.0
+            ),
+            "domain_distribution": pm_block.get("domain_distribution", {}),
+            "flag_fires": pm_block.get("flag_fires", False),
+        },
+        "diagnostics": {
+            "total_tokens": total_tokens,
+            "conjunction_count": n_conjs,
+            "n_distinct_domains": pm_block["diagnostics"].get(
+                "n_distinct_domains", 0
+            ),
+        },
+    }
+
+
+def _aic9_kicker_block(text: str) -> dict[str, Any]:
+    """Run `kicker_density.kicker_density()` and reshape to the
+    `aic_8_9.kicker_density.value` shape that COMPRESSION_HEURISTICS
+    reads.
+
+    Lightest dependency chain: prefers `en_core_web_sm` for the
+    proper-noun PROPN/NER check but falls back to a regex
+    heuristic when spaCy isn't installed, so this never fails
+    hard on missing dependencies.
+    """
+    if not text or not text.strip():
+        return {"available": False, "reason": "empty text"}
+    try:
+        import kicker_density as kd  # type: ignore  # noqa: PLC0415
+    except ImportError as exc:
+        return {
+            "available": False,
+            "reason": f"kicker_density unimportable: {exc}",
+        }
+    # spaCy is preferred but optional. Pass nlp=None when sm isn't
+    # installed; the detector's regex fallback handles it.
+    nlp = None
+    try:
+        import spacy  # type: ignore  # noqa: PLC0415
+        nlp = spacy.load("en_core_web_sm")
+    except (ImportError, OSError):
+        pass
+    block = kd.kicker_density(text, nlp=nlp)
+    return {
+        "available": True,
+        "kicker_density": {
+            "value": block.get("value", 0.0),
+            "spacing_variance": block.get("spacing_variance", 0.0),
+            "paragraph_count": block.get("diagnostics", {}).get(
+                "total_paragraphs", 0
+            ),
+            "kicker_count": block.get("diagnostics", {}).get(
+                "kicker_count", 0
+            ),
+        },
+    }
+
+
 # ---------- Aggregator ----------
 
 def audit_text(
@@ -778,6 +955,9 @@ def audit_text(
     do_tier4: bool = False,
     tier4_score_fn=None,
     tier4_backend=None,
+    do_aic7: bool = False,
+    do_aic8: bool = False,
+    do_aic9: bool = False,
     allow_non_prose: bool = False,
     strip_rules: str | list[str] | None = None,
     strip_aggressive: bool = False,
@@ -843,6 +1023,59 @@ def audit_text(
             score_fn=tier4_score_fn,
             backend=tier4_backend,
         )
+    # v1.65.0: AIC-7 / AIC-8 / AIC-9 named-pattern integration.
+    # Each is opt-in via its own flag. The three families have
+    # very different dependency profiles:
+    #   AIC-7: regex-only; always available when aic_pattern_audit
+    #     imports.
+    #   AIC-8: requires spaCy with parsing + a vectors-bearing
+    #     model (en_core_web_md or _lg); falls back to
+    #     `available: False` with install hint otherwise.
+    #   AIC-9: regex + optional spaCy POS check; falls back to
+    #     regex when spaCy isn't installed.
+    # Each block emits at the signal_path location that
+    # COMPRESSION_HEURISTICS registers, so _extract_signal walks
+    # them automatically and the ablation families measure their
+    # load-bearing contribution.
+    if do_aic7:
+        out["patterns"] = _aic7_named_pattern_block(text).get(
+            "patterns", {}
+        )
+        # Keep the diagnostic / availability metadata under a
+        # parallel key so classify_compression can still walk
+        # patterns.<key>.density_per_1k cleanly.
+        aic7_full = _aic7_named_pattern_block(text)
+        out["aic7_diagnostics"] = {
+            "available": aic7_full.get("available", False),
+            "reason": aic7_full.get("reason"),
+            **(aic7_full.get("diagnostics") or {}),
+        }
+    if do_aic8:
+        out.setdefault("aic_8_9", {})
+        aic8 = _aic8_image_prestige_block(text)
+        if aic8.get("available"):
+            out["aic_8_9"]["image_conjunction_density"] = (
+                aic8["image_conjunction_density"]
+            )
+            out["aic_8_9"]["prestige_metaphor_density"] = (
+                aic8["prestige_metaphor_density"]
+            )
+            out["aic_8_9"].setdefault("diagnostics", {}).update(
+                aic8.get("diagnostics") or {}
+            )
+        else:
+            out["aic_8_9"].setdefault("diagnostics", {})[
+                "aic8_unavailable_reason"
+            ] = aic8.get("reason")
+    if do_aic9:
+        out.setdefault("aic_8_9", {})
+        aic9 = _aic9_kicker_block(text)
+        if aic9.get("available"):
+            out["aic_8_9"]["kicker_density"] = aic9["kicker_density"]
+        else:
+            out["aic_8_9"].setdefault("diagnostics", {})[
+                "aic9_unavailable_reason"
+            ] = aic9.get("reason")
     return out
 
 
@@ -1579,32 +1812,65 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
         signal_path="tier4.surprisal.autocorrelation.lag_1",
         value=0.30, direction="gt", weight=1.0, length_floor=500,
     ),
-    # AIC-8 / AIC-9 signals are intentionally NOT registered here
-    # (Codex P2 review of PR #59, 2026-05-15). The detectors ship
-    # as standalone CLIs (`scripts/kicker_density.py`,
-    # `scripts/image_conjunction.py`,
-    # `scripts/prestige_metaphor.py`,
-    # `scripts/aesthetic_authority_audit.py`) but their signal
-    # paths are NOT wired into `classify_compression()` or
-    # `_ABLATION_SIGNAL_FAMILIES`.
+    # AIC-7 named-pattern density (v1.65.0). Per
+    # `internal/SPEC_aic_8_9_implementation.md` Step 10 part 2.
+    # Backfilled when `--aic7` integration landed; emits at
+    # `patterns.<key>.density_per_1k` via `_aic7_named_pattern_block`.
     #
-    # Why not registered:
+    # The four spec-named patterns get registry entries. Other
+    # patterns the detector emits (negation_hedge, pseudo_aphorism,
+    # false_balance, hedge_and_affirm, recommendation_template,
+    # authority_laundering) are visible in the audit output but
+    # not in the band-classifier loop; they remain diagnostic-only
+    # until empirical work pins thresholds.
     #
-    #   * `audit_text()` does not invoke the AIC-8/9 detectors,
-    #     so an audit dict has no `aic_8_9.*` keys for
-    #     `_extract_signal` to walk. Registering would produce
-    #     dangling entries that the classifier silently skips.
-    #   * No corresponding ablation family means the band call
-    #     never tests "what if AIC-8/9 weren't load-bearing?" —
-    #     reproducing the Tier-4 wiring-failure pattern.
-    #
-    # When AIC-8/9 integrates into `variance_audit.py` (planned
-    # `--aic8` / `--aic9` flags, `audit_text(do_aic8=True, ...)`,
-    # lazy-import the detectors, emit `aic_8_9.*` blocks under
-    # the audit dict), this is the place to add the registry
-    # entries AND a corresponding ablation family
-    # `aesthetic_authority_laundering` (or similar). Until then,
-    # keep them out so the registry contract holds.
+    # Thresholds are PROVISIONAL placeholders. The Schnell case
+    # study (Glass-Box Stylometry Sequence Post 2) anchors
+    # correctio at 15.8 / 1000 words but that's the Schnell-author
+    # baseline, not a smoothing-detection threshold. Calibration
+    # against a labeled corpus replaces these.
+    "correctio_density": ThresholdSpec(
+        signal_path="patterns.correctio.density_per_1k",
+        value=12.0, direction="gt", weight=1.0, length_floor=400,
+    ),
+    "triplet_density": ThresholdSpec(
+        signal_path="patterns.triplet.density_per_1k",
+        value=8.0, direction="gt", weight=1.0, length_floor=400,
+    ),
+    "manifesto_cadence_density": ThresholdSpec(
+        signal_path="patterns.manifesto_cadence.density_per_1k",
+        value=3.0, direction="gt", weight=1.0, length_floor=400,
+    ),
+    "professional_parallel_stack_density": ThresholdSpec(
+        signal_path="patterns.professional_parallel_stack.density_per_1k",
+        value=2.0, direction="gt", weight=1.0, length_floor=400,
+    ),
+    # AIC-9 closure inflation (v1.65.0). Per spec Step 10 part 1.
+    # Emits at `aic_8_9.kicker_density.value` via
+    # `_aic9_kicker_block`. Threshold 0.25 (25% of paragraphs)
+    # starts well above register-typical contemporary essay
+    # (~0.08) so the default catches the elevation pattern, not
+    # the genre-typical aphoristic essay.
+    "kicker_density": ThresholdSpec(
+        signal_path="aic_8_9.kicker_density.value",
+        value=0.25, direction="gt", weight=1.0, length_floor=400,
+    ),
+    # AIC-8 aesthetic authority laundering (v1.65.0). Per spec
+    # Step 10 part 1. Two signals emitted at
+    # `aic_8_9.image_conjunction_density.value` and
+    # `aic_8_9.prestige_metaphor_density.domain_scatter_entropy`
+    # via `_aic8_image_prestige_block`. PROVISIONAL thresholds;
+    # spec's T1/T2/T3 starting values don't crisply separate
+    # idioms from AI positives on Brysbaert data (documented
+    # finding in 1.61.0 CHANGELOG + ROADMAP).
+    "image_conjunction_density": ThresholdSpec(
+        signal_path="aic_8_9.image_conjunction_density.value",
+        value=15.0, direction="gt", weight=1.0, length_floor=400,
+    ),
+    "prestige_metaphor_scatter": ThresholdSpec(
+        signal_path="aic_8_9.prestige_metaphor_density.domain_scatter_entropy",
+        value=0.7, direction="gt", weight=1.0, length_floor=400,
+    ),
 }
 
 
@@ -1748,6 +2014,32 @@ def classify_compression(
         # ACF lives one level deeper.
         acf = surprisal.get("autocorrelation") or {}
         check("surprisal_acf_lag1", acf.get("lag_1"))
+
+    # AIC-7 named-pattern density (v1.65.0). Same wiring contract
+    # as Tier 4 above: signals are registered in COMPRESSION_HEURISTICS
+    # AND in `_ABLATION_SIGNAL_FAMILIES["assistant_register_intrusion"]`
+    # AND checked here. Without the check() call the registry
+    # entry would be orphaned (the Tier-4-pre-Codex-#31 failure
+    # mode).
+    patterns = audit.get("patterns") or {}
+    if patterns:
+        for pattern_key in (
+            "correctio", "triplet",
+            "manifesto_cadence", "professional_parallel_stack",
+        ):
+            pattern_block = patterns.get(pattern_key) or {}
+            density = pattern_block.get("density_per_1k")
+            check(f"{pattern_key}_density", density)
+
+    # AIC-8 + AIC-9 (v1.65.0). Three signals across two flag
+    # families; same wiring contract.
+    aic_8_9 = audit.get("aic_8_9") or {}
+    kicker = aic_8_9.get("kicker_density") or {}
+    check("kicker_density", kicker.get("value"))
+    image_conj = aic_8_9.get("image_conjunction_density") or {}
+    check("image_conjunction_density", image_conj.get("value"))
+    prestige = aic_8_9.get("prestige_metaphor_density") or {}
+    check("prestige_metaphor_scatter", prestige.get("domain_scatter_entropy"))
 
     # POS-bigram KL divergence against baseline aggregate. Only
     # participates when a baseline is supplied and the POS-bigram
@@ -1968,6 +2260,38 @@ _ABLATION_SIGNAL_FAMILIES: dict[str, tuple[str, ...]] = {
         "surprisal_mean",
         "surprisal_sd",
         "surprisal_acf_lag1",
+    ),
+    # v1.65.0: three new families for the AIC-7 / AIC-8 / AIC-9
+    # integration. Each family bundles the signals from one
+    # discourse-pattern family so ablation can ask "is this AIC
+    # subtype load-bearing for the band call?" separately.
+    #
+    # assistant_register_intrusion: AIC-7's four spec-named
+    # patterns (correctio, triplet, manifesto cadence, professional-
+    # parallel stack). Combined weight 4.0 when --aic7 is on.
+    "assistant_register_intrusion": (
+        "correctio_density",
+        "triplet_density",
+        "manifesto_cadence_density",
+        "professional_parallel_stack_density",
+    ),
+    # closure_inflation: AIC-9's single signal. Weight 1.0 when
+    # --aic9 is on. Single-signal family kept separate from
+    # aesthetic_authority_laundering so ablation distinguishes
+    # "the kicker shape was load-bearing" from "the image
+    # conjunctions were load-bearing."
+    "closure_inflation": (
+        "kicker_density",
+    ),
+    # aesthetic_authority_laundering: AIC-8's two signals
+    # (image conjunction density + prestige metaphor scatter
+    # entropy). Combined weight 2.0 when --aic8 is on. Per the
+    # spec's compound-diagnostic framing: image conjunctions and
+    # prestige metaphors jointly produce the "metaphor confetti"
+    # signature; ablation should remove them together.
+    "aesthetic_authority_laundering": (
+        "image_conjunction_density",
+        "prestige_metaphor_scatter",
     ),
 }
 
@@ -2638,6 +2962,44 @@ def main() -> int:
             "calibration_anchor: user-baseline-required."
         ),
     )
+    # v1.65.0: AIC-7 / AIC-8 / AIC-9 named-pattern integration per
+    # `internal/SPEC_aic_8_9_implementation.md` Step 10. All three
+    # are opt-in; default off because they add per-document cost
+    # (AIC-8 in particular requires spaCy + word vectors).
+    parser.add_argument(
+        "--aic7", action="store_true", default=False,
+        help=(
+            "Enable AIC-7 named-pattern density (Discourse Leak / "
+            "Assistant-Register Intrusion). Regex-only; cheap. "
+            "Reports per-pattern density per 1000 tokens for "
+            "correctio, triplet, manifesto cadence, professional-"
+            "parallel stack, plus four nonfiction parallel patterns "
+            "and three diagnostic fiction patterns. Registers four "
+            "load-bearing signals in COMPRESSION_HEURISTICS; "
+            "PROVISIONAL bands."
+        ),
+    )
+    parser.add_argument(
+        "--aic8", action="store_true", default=False,
+        help=(
+            "Enable AIC-8 image conjunction + prestige metaphor "
+            "(Aesthetic Authority Laundering). Requires spaCy with "
+            "`en_core_web_md` or `_lg` (~50-700 MB) for word vectors "
+            "and the Brysbaert concreteness norms (ship in-repo at "
+            "`plugins/setec-voiceprint/data/brysbaert_concreteness.csv`). "
+            "Registers two load-bearing signals (image_conjunction_"
+            "density, prestige_metaphor_scatter); PROVISIONAL bands."
+        ),
+    )
+    parser.add_argument(
+        "--aic9", action="store_true", default=False,
+        help=(
+            "Enable AIC-9 kicker density (Closure Inflation). Regex-"
+            "only with optional spaCy POS check; cheap. Registers "
+            "one load-bearing signal (kicker_density); PROVISIONAL "
+            "bands."
+        ),
+    )
     parser.add_argument(
         "--surprisal-model", default=None,
         help=(
@@ -2803,6 +3165,9 @@ def main() -> int:
             do_tier3=not args.no_tier3,
             do_tier4=args.tier4,
             tier4_backend=tier4_backend,
+            do_aic7=args.aic7,
+            do_aic8=args.aic8,
+            do_aic9=args.aic9,
             allow_non_prose=args.allow_non_prose,
             strip_rules=args.strip_rules,
             strip_aggressive=args.strip_aggressive,
