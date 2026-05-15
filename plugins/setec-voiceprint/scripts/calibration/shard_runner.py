@@ -570,6 +570,25 @@ def cmd_shard(args: argparse.Namespace) -> int:
             "tier2": args.tier2,
             "tier3": args.tier3,
         }
+    elif task_name == "corpus_hygiene":
+        # Fall back to the registered defaults for any flag the
+        # operator didn't pass — None on the CLI side means "use
+        # the task surface's default."
+        defaults = TASK_REGISTRY[task_name].default_task_params
+        task_params = {
+            "warn_threshold": (
+                args.warn_threshold
+                if args.warn_threshold is not None
+                else defaults.get("warn_threshold")
+            ),
+            "fail_threshold": (
+                args.fail_threshold
+                if args.fail_threshold is not None
+                else defaults.get("fail_threshold")
+            ),
+            "strip_rules": args.strip_rules,
+            "strip_aggressive": bool(args.strip_aggressive),
+        }
     state = build_initial_state(
         run_id=args.run_id,
         source_manifest_path=source,
@@ -1065,17 +1084,36 @@ def _process_shard(
     sys.stderr.write(
         f"  {worker_label} scoring shard {shard_id} ({mp})...\n"
     )
+    # Look up the task surface for this run. The
+    # calibration_survey surface wraps DEFAULT_SCORER for
+    # backwards compat with the legacy single-task path; the
+    # corpus_hygiene surface calls check_corpus.score_manifest_rows
+    # directly. Both honor the SIGTERM contract by accepting
+    # sigterm_event.
+    surface = task_for_state(state)
+    # Compose task_params: prefer the state.json value, fall back
+    # to the surface's defaults. This lets pre-v1.45.0 state.json
+    # files (no task_params key) still resolve sensibly.
+    task_params: dict[str, Any] = dict(surface.default_task_params)
+    task_params.update(state.get("task_params") or {})
+    # For the legacy calibration_survey path, the top-level
+    # tier/fpr fields are still authoritative if they got written
+    # (we keep both for byte-identical backcompat on the wire).
+    if surface.name == "calibration_survey":
+        for key in ("fpr_target", "tier1", "tier2", "tier3"):
+            if state.get(key) is not None:
+                task_params[key] = state.get(key)
     try:
-        result = DEFAULT_SCORER(
-            mp,
-            fpr_target=state.get("fpr_target", 0.01),
-            tier1=state.get("tier1", True),
-            tier2=state.get("tier2", False),
-            tier3=state.get("tier3", False),
-            use=getattr(args, "use", "validation"),
+        result = surface.score_shard(
+            shard_manifest_path=mp,
             cache_path=cp,
-            flush_every=DEFAULT_FLUSH_EVERY,
             sigterm_event=flag,
+            flush_every=DEFAULT_FLUSH_EVERY,
+            task_params=task_params,
+            run_context={
+                "use": getattr(args, "use", "validation"),
+                "run_id": args.run_id,
+            },
         )
     except SigtermInterrupt as exc:
         # Mid-shard SIGTERM checkpoint (v1.44.1.B contract). The
@@ -2215,6 +2253,51 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_shard.add_argument("--embedding-model", type=str, default=None)
     p_shard.add_argument("--embedding-revision", type=str, default=None)
     p_shard.add_argument("--force", action="store_true", default=False)
+    # corpus_hygiene-specific flags (v1.45.0). Grouped on shard so
+    # the threshold/strip parameters get baked into state.json at
+    # shard time and propagate to every worker. The
+    # calibration_survey task ignores these (and vice versa for
+    # the tier flags).
+    p_shard_hygiene = p_shard.add_argument_group(
+        "corpus_hygiene options (v1.45.0+)",
+        "Flags consumed only when --task corpus_hygiene.",
+    )
+    p_shard_hygiene.add_argument(
+        "--warn-threshold",
+        type=float,
+        default=None,
+        help=(
+            "strip-ratio warning threshold (default %(default)s; "
+            "uses check_corpus.DEFAULT_WARN_THRESHOLD when None)"
+        ),
+    )
+    p_shard_hygiene.add_argument(
+        "--fail-threshold",
+        type=float,
+        default=None,
+        help=(
+            "strip-ratio failure threshold (default %(default)s; "
+            "uses check_corpus.DEFAULT_FAIL_THRESHOLD when None)"
+        ),
+    )
+    p_shard_hygiene.add_argument(
+        "--strip-rules",
+        type=str,
+        default=None,
+        help=(
+            "comma-separated preprocessing rule names to enable. "
+            "Default: all conservative rules."
+        ),
+    )
+    p_shard_hygiene.add_argument(
+        "--strip-aggressive",
+        action="store_true",
+        default=False,
+        help=(
+            "also enable aggressive URL/image/footnote/citation "
+            "stripping rules."
+        ),
+    )
     p_shard.set_defaults(func=cmd_shard)
 
     # work

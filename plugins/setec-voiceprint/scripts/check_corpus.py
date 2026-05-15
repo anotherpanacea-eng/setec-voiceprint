@@ -209,6 +209,127 @@ def check_path(
     return meta
 
 
+def score_manifest_rows(
+    shard_manifest_path: Path,
+    *,
+    strip_rules: str | None = None,
+    strip_aggressive: bool = False,
+    collect_stripped: bool = False,
+    warn_threshold: float = DEFAULT_WARN_THRESHOLD,
+    fail_threshold: float = DEFAULT_FAIL_THRESHOLD,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Per-path hygiene scoring for the shard_runner corpus_hygiene
+    task surface.
+
+    Reads a JSON-lines shard manifest where each row carries a
+    ``path`` field (resolved relative to the manifest's parent
+    directory, matching ``paths_from_manifest``'s contract). For
+    every row, runs :func:`check_path` and emits one record. The
+    returned summary dict has the per-shard aggregate counts a
+    multi-shard aggregator can fold together.
+
+    Lifted out of :func:`check_corpus_paths` so the sharded
+    hygiene scorer reuses the per-path checking loop without
+    re-implementing path resolution or status classification. The
+    single-process :func:`check_corpus_paths` retains its
+    historical signature by delegating here.
+    """
+    manifest = Path(shard_manifest_path)
+    records: list[dict[str, Any]] = []
+    with manifest.open("r", encoding="utf-8") as fh:
+        for raw in fh:
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(entry, dict):
+                continue
+            raw_path = entry.get("path")
+            if not isinstance(raw_path, str) or not raw_path.strip():
+                # Skip rows without a usable path field. The
+                # single-process check_corpus path errors out
+                # loudly on this; the sharded path is more
+                # permissive because a single bad row shouldn't
+                # break a whole shard.
+                continue
+            target = resolve_path(manifest, raw_path)
+            record = check_path(
+                target,
+                strip_rules=strip_rules,
+                strip_aggressive=strip_aggressive,
+                collect_stripped=collect_stripped,
+                warn_threshold=warn_threshold,
+                fail_threshold=fail_threshold,
+            )
+            # Carry the manifest text_id (or id) through so the
+            # aggregator can join back to the source manifest.
+            for key in ("text_id", "id"):
+                if key in entry and key not in record:
+                    record[key] = entry[key]
+            records.append(record)
+    summary = _summarize_hygiene_records(
+        records,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+    )
+    return records, summary
+
+
+def _summarize_hygiene_records(
+    records: list[dict[str, Any]],
+    *,
+    warn_threshold: float,
+    fail_threshold: float,
+) -> dict[str, Any]:
+    """Roll a list of per-path hygiene records into the aggregate
+    shape :func:`check_corpus_paths` returns.
+
+    Pulled out as a helper so the per-shard scorer and the
+    cross-shard aggregator (in task_surfaces.py) share one
+    implementation of the rollup logic.
+    """
+    counts = Counter(record["status"] for record in records)
+    tokens_before = sum(
+        int(r.get("input_tokens_before", 0) or 0) for r in records
+    )
+    tokens_after = sum(
+        int(r.get("input_tokens_after", 0) or 0) for r in records
+    )
+    by_rule: Counter[str] = Counter()
+    for record in records:
+        by_rule.update(record.get("tokens_stripped_by_rule") or {})
+    dominant_rule = by_rule.most_common(1)[0][0] if by_rule else None
+    if counts.get("error", 0) or counts.get("fail", 0):
+        status = "fail"
+    elif counts.get("warning", 0):
+        status = "warning"
+    else:
+        status = "clean"
+    stripped = max(0, tokens_before - tokens_after)
+    return {
+        "task_surface": TASK_SURFACE,
+        "status": status,
+        "thresholds": {
+            "warn_threshold": warn_threshold,
+            "fail_threshold": fail_threshold,
+        },
+        "n_files": len(records),
+        "n_clean": counts.get("clean", 0),
+        "n_warning": counts.get("warning", 0),
+        "n_fail": counts.get("fail", 0),
+        "n_error": counts.get("error", 0),
+        "input_tokens_before": tokens_before,
+        "input_tokens_after": tokens_after,
+        "tokens_stripped": stripped,
+        "strip_ratio": (stripped / tokens_before) if tokens_before else 0.0,
+        "tokens_stripped_by_rule": dict(by_rule),
+        "dominant_rule": dominant_rule,
+    }
+
+
 def check_corpus_paths(
     paths: list[str | Path],
     *,
@@ -229,40 +350,13 @@ def check_corpus_paths(
         )
         for path in paths
     ]
-
-    counts = Counter(record["status"] for record in records)
-    tokens_before = sum(int(r.get("input_tokens_before", 0) or 0) for r in records)
-    tokens_after = sum(int(r.get("input_tokens_after", 0) or 0) for r in records)
-    by_rule: Counter[str] = Counter()
-    for record in records:
-        by_rule.update(record.get("tokens_stripped_by_rule") or {})
-    dominant_rule = by_rule.most_common(1)[0][0] if by_rule else None
-    status = "clean"
-    if counts.get("error", 0) or counts.get("fail", 0):
-        status = "fail"
-    elif counts.get("warning", 0):
-        status = "warning"
-    stripped = max(0, tokens_before - tokens_after)
-    return {
-        "task_surface": TASK_SURFACE,
-        "status": status,
-        "thresholds": {
-            "warn_threshold": warn_threshold,
-            "fail_threshold": fail_threshold,
-        },
-        "n_files": len(records),
-        "n_clean": counts.get("clean", 0),
-        "n_warning": counts.get("warning", 0),
-        "n_fail": counts.get("fail", 0),
-        "n_error": counts.get("error", 0),
-        "input_tokens_before": tokens_before,
-        "input_tokens_after": tokens_after,
-        "tokens_stripped": stripped,
-        "strip_ratio": (stripped / tokens_before) if tokens_before else 0.0,
-        "tokens_stripped_by_rule": dict(by_rule),
-        "dominant_rule": dominant_rule,
-        "files": records,
-    }
+    summary = _summarize_hygiene_records(
+        records,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+    )
+    summary["files"] = records
+    return summary
 
 
 def render_report(result: dict[str, Any]) -> str:

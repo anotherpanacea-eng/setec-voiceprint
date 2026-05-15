@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import json
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -306,6 +307,132 @@ def _aggregate_calibration_records(
     }
 
 
+# --------------- corpus_hygiene scorer adapter ------------------
+
+
+def _score_shard_corpus_hygiene(
+    *,
+    shard_manifest_path: Path,
+    cache_path: Path,
+    sigterm_event: Any,
+    flush_every: int,
+    task_params: dict[str, Any],
+    run_context: dict[str, Any],
+) -> ShardResult:
+    """Run ``check_corpus.score_manifest_rows`` against the shard's
+    manifest slice and emit per-file hygiene records + a meta
+    summary.
+
+    The shard manifest contains rows that originated from the
+    operator's source manifest, each carrying a ``path`` field that
+    points at the file on disk to audit. We pass the manifest path
+    through to ``score_manifest_rows`` so it can resolve relative
+    paths the same way ``check_corpus.paths_from_manifest`` does.
+    """
+    # Lazy import for the same reasons as the calibration-survey
+    # adapter: shard_runner / check_corpus may import this module
+    # before their own dependencies are ready.
+    import check_corpus as cc  # type: ignore
+
+    warn_threshold = float(
+        task_params.get("warn_threshold", cc.DEFAULT_WARN_THRESHOLD)
+    )
+    fail_threshold = float(
+        task_params.get("fail_threshold", cc.DEFAULT_FAIL_THRESHOLD)
+    )
+    strip_rules = task_params.get("strip_rules") or None
+    strip_aggressive = bool(task_params.get("strip_aggressive", False))
+    collect_stripped = bool(task_params.get("collect_stripped", False))
+
+    records, summary = cc.score_manifest_rows(
+        Path(shard_manifest_path),
+        strip_rules=strip_rules,
+        strip_aggressive=strip_aggressive,
+        collect_stripped=collect_stripped,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+    )
+    meta = {
+        "scorer_version": "corpus_hygiene-1.0",
+        "warn_threshold": warn_threshold,
+        "fail_threshold": fail_threshold,
+        "strip_rules": strip_rules,
+        "strip_aggressive": strip_aggressive,
+        "summary": summary,
+    }
+    # Write the cache ourselves: the orchestrator's "write cache if
+    # the scorer didn't" fallback works, but doing it here keeps
+    # the corpus_hygiene path symmetric with the calibration_survey
+    # path (the real scorer writes its own cache via
+    # load_or_score_corpus).
+    cp = Path(cache_path)
+    cp.parent.mkdir(parents=True, exist_ok=True)
+    with cp.open("w", encoding="utf-8") as fh:
+        json.dump(
+            {"records": records, "meta": meta},
+            fh,
+            sort_keys=True,
+        )
+    return {
+        "records": records,
+        "meta": meta,
+        "cache_hit": False,
+    }
+
+
+# --------------- corpus_hygiene aggregator ----------------------
+
+
+def _aggregate_corpus_hygiene_records(
+    *,
+    all_records: list[dict[str, Any]],
+    meta_list: list[dict[str, Any]],
+    contributing_shards: list[str],
+    state: dict[str, Any],
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    """Roll up per-file hygiene records into the aggregate shape
+    ``check_corpus.check_corpus_paths`` produces for single-process
+    runs.
+
+    We delegate to the same ``_summarize_hygiene_records`` helper
+    the single-process path uses, then layer on the cross-shard
+    bookkeeping (contributing_shards, run_id, etc.) so a future
+    parity test can confirm the sharded artifact matches the
+    single-process artifact on the same input.
+    """
+    # Lazy import — same reasons as the scorer adapter.
+    import check_corpus as cc  # type: ignore
+
+    task_params = state.get("task_params") or {}
+    warn_threshold = float(
+        task_params.get("warn_threshold", cc.DEFAULT_WARN_THRESHOLD)
+    )
+    fail_threshold = float(
+        task_params.get("fail_threshold", cc.DEFAULT_FAIL_THRESHOLD)
+    )
+
+    summary = cc._summarize_hygiene_records(
+        all_records,
+        warn_threshold=warn_threshold,
+        fail_threshold=fail_threshold,
+    )
+    summary.update({
+        "tool": "shard_runner",
+        "tool_version": "1.0",
+        "task": "corpus_hygiene",
+        "run_id": state.get("run_id"),
+        "source_manifest_sha256": state.get("source_manifest_sha256"),
+        "n_shards_contributed": len(contributing_shards),
+        "contributing_shards": contributing_shards,
+        "files": all_records,
+        "aggregated_at": _dt.datetime.now(
+            _dt.timezone.utc,
+        ).isoformat(timespec="seconds"),
+    })
+    return summary
+
+
 # --------------- Initial registrations --------------------------
 
 
@@ -318,6 +445,24 @@ register_task(TaskSurface(
         "tier1": True,
         "tier2": False,
         "tier3": False,
+    },
+    required_state_fields=[
+        "source_manifest_path",
+        "source_manifest_sha256",
+    ],
+))
+
+
+register_task(TaskSurface(
+    name="corpus_hygiene",
+    score_shard=_score_shard_corpus_hygiene,
+    aggregate_records=_aggregate_corpus_hygiene_records,
+    default_task_params={
+        "warn_threshold": 0.01,
+        "fail_threshold": 0.05,
+        "strip_rules": None,
+        "strip_aggressive": False,
+        "collect_stripped": False,
     },
     required_state_fields=[
         "source_manifest_path",
