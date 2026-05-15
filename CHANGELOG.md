@@ -6,6 +6,58 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.65.0] - 2026-05-15
+
+**AIC-7 / AIC-8 / AIC-9 integration into `variance_audit.py` — closes spec Step 10.** The detectors shipped as standalone CLIs in 1.61.0-1.64.0, but `audit_text()` didn't invoke them and `COMPRESSION_HEURISTICS` couldn't carry their signal paths without orphaned-registry entries (Codex P2 finding on PR #59, resolved in 1.64.1 by removing the entries). This release ships the proper wiring: opt-in `--aic7` / `--aic8` / `--aic9` flags, registry entries that resolve cleanly, three new ablation families.
+
+### Added
+
+- **Three new opt-in CLI flags** on `variance_audit.py`:
+  - `--aic7`: enables the regex-only Discourse Leak / Assistant-Register Intrusion detector (`aic_pattern_audit.all_patterns`). Cheap; only needs the existing regex stack.
+  - `--aic8`: enables the Aesthetic Authority Laundering detectors (image conjunction + prestige metaphor). Requires spaCy with `en_core_web_md` or `_lg` for word vectors + the Brysbaert concreteness norms (ship in-repo). Falls back to `available: False` with install hint when dependencies are missing.
+  - `--aic9`: enables the Closure Inflation detector (kicker density). Regex with optional spaCy POS check; cheapest of the three to enable.
+
+- **Three new block helpers in `variance_audit.py`**:
+  - `_aic7_named_pattern_block(text)` — runs `aic_pattern_audit.all_patterns()` and reshapes to `patterns.<key>.density_per_1k`.
+  - `_aic8_image_prestige_block(text)` — runs `image_conjunction_density` + `prestige_metaphor_density`, surfaces both at `aic_8_9.image_conjunction_density.*` and `aic_8_9.prestige_metaphor_density.*`.
+  - `_aic9_kicker_block(text)` — runs `kicker_density.kicker_density()`, surfaces at `aic_8_9.kicker_density.value`. Lazy spaCy load with regex fallback.
+
+- **Three new parameters on `audit_text()`**: `do_aic7`, `do_aic8`, `do_aic9` (all default `False`, opt-in per the `--tier4` precedent). When set, the relevant helper runs and its block lands at the spec-registered path so `classify_compression()` walks it automatically.
+
+- **Seven new `COMPRESSION_HEURISTICS` entries** (all `provisional=True`, `provenance=None`):
+  - **AIC-7**: `correctio_density`, `triplet_density`, `manifesto_cadence_density`, `professional_parallel_stack_density` (signal_paths under `patterns.*`). Per the spec's Step 10 part 2 backfill.
+  - **AIC-8**: `image_conjunction_density`, `prestige_metaphor_scatter` (signal_paths under `aic_8_9.*`). Re-added after 1.64.1's removal; now wired.
+  - **AIC-9**: `kicker_density` (signal_path under `aic_8_9.*`). Re-added after 1.64.1's removal; now wired.
+
+  Registry size: 14 → 21. All 21 signals remain provisional (calibrated-signals invariant preserved).
+
+- **Three new ablation families in `_ABLATION_SIGNAL_FAMILIES`**:
+  - `assistant_register_intrusion` — bundles the four AIC-7 signals (combined weight 4.0 when `--aic7` is on).
+  - `closure_inflation` — wraps the single AIC-9 signal (weight 1.0). Kept separate from `aesthetic_authority_laundering` so ablation distinguishes "the kicker shape was load-bearing" from "the image conjunctions were."
+  - `aesthetic_authority_laundering` — bundles the two AIC-8 signals (combined weight 2.0).
+
+  Total ablation families: 6 → 9.
+
+- **`classify_compression()` walks the new signal paths** under the same length-floor + threshold contract as Tier 1-3 and Tier 4. The check loop names each AIC-7/8/9 signal explicitly (the wiring contract Codex flagged on PR #59).
+
+### Changed
+
+- **`TestAic89RegistryGuard` (negative-assertion guard introduced in 1.64.1) replaced with `TestAic789Registration`** (positive-assertion suite). The class docstring documents the wiring contract that must hold for the entries to remain in the registry: signal_paths resolve via `audit_text()` blocks; ablation families name them; classifier walks them.
+
+### Added (tests)
+
+- **`TestAic789Registration` (11 tests)**: AIC-7/8/9 signals registered with expected signal_paths; all provisional; three new ablation families exist with expected membership; no signal orphaned from ablation (invariant test that catches the 1.64.0 mistake from re-occurring).
+- **`TestAic789AuditTextWiring` (3 tests)**: `audit_text(do_aic7/8/9=True)` populates the expected blocks; no-flag default omits them.
+- **`TestAic789ClassifierWiring` (5 tests)**: signals enter `available_signals` when their flag is set; kicker fires on high-density fixture; ablation family appears in per-family results; no AIC flag means no AIC signal in available (contract guard).
+
+### Notes
+
+- This release closes spec Step 10 in full. Steps 1-12 + 15 are now complete in this repo. Steps 13 (`signals-glossary.md` three new entries) and 14 (APODICTIC framing) remain out-of-scope per earlier maintainer decisions.
+- Per the Stylometry-to-the-people policy, all seven new thresholds ship provisional. The §5.4 calibration corpus (idiom negatives + AI-image-conjunction positives + aphoristic essayist negatives + AI-rewrite positives) is the roadmap follow-on that would replace provisional values with empirically-grounded thresholds. Documented in ROADMAP since 1.61.0.
+- Operators using `--aic7` get the Discourse Leak detector at minimal cost (regex-only). `--aic8` adds the spaCy + vectors + Brysbaert + WordNet stack and is the heaviest of the three. `--aic9` is cheap (regex with optional POS check). Each flag is independently opt-in; combining them is supported.
+- Empirical caveat (documented since 1.61.0 / 1.63.0): the spec's starting thresholds for AIC-8 (T1 = 2.5 concreteness gap, T2 = 0.4 cosine similarity, T3 = 0.7 scatter entropy) don't crisply separate idioms from AI positives on Brysbaert data. The compound diagnostic with cosine similarity carries the load, but calibration is needed before the bands are operational.
+- Test suite: **2202 passed, 16 skipped, 0 failed** (was 2129 on main; +19 new tests across `TestAic789Registration` / `TestAic789AuditTextWiring` / `TestAic789ClassifierWiring`).
+
 ## [1.64.1] - 2026-05-15
 
 **Codex P2 review of the AIC-8/9 wave: typed dependency errors + remove orphaned registry entries.** Fixes four P2 findings on PRs #58 and #59. None of the bugs are blockers, but all four would bite operators in predictable ways: the three CLI scripts dumped a Python traceback instead of the clean install hint when no spaCy model was installed, and the three `COMPRESSION_HEURISTICS` entries added in 1.64.0 were registered without classifier or ablation wiring — reproducing the Tier-4 wiring-failure pattern that PR #31 fixed.
