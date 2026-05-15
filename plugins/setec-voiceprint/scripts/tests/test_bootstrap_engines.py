@@ -496,6 +496,77 @@ class TestHarnessCommand:
         )
         assert "--bootstrap-chunk-size" not in cmd
 
+    def test_manifest_path_with_spaces_is_shell_quoted(self):
+        """Codex P2 (PR #53): the operator's runtime workspace
+        lives under ``Claude Cowork Working Folder``, whose path
+        contains spaces. The unquoted recipe would split the path
+        across tokens — copy-paste replay would fail with
+        ``manifest: file not found`` or worse, silently pick up a
+        differently-named manifest. ``shlex.quote`` wraps the
+        path in single quotes when it contains whitespace.
+
+        Verify by parsing the recipe back with ``shlex.split`` and
+        confirming the manifest argument round-trips to the
+        original path."""
+        import shlex
+        path_with_spaces = Path(
+            "/users/anotherpanacea/Documents/"
+            "Claude Cowork Working Folder/manifest.jsonl"
+        )
+        cmd = _build_harness_command(
+            manifest_path=path_with_spaces,
+            use="validation",
+            signal="burstiness_B", fpr_target=0.01,
+            engine="numpy",
+        )
+        # The quoted path appears verbatim as a single shell
+        # token (round-trips through shlex.split).
+        tokens = shlex.split(cmd)
+        manifest_idx = tokens.index("--manifest")
+        assert tokens[manifest_idx + 1] == str(path_with_spaces), (
+            f"--manifest argument didn't round-trip through "
+            f"shlex.split: got {tokens[manifest_idx + 1]!r}, "
+            f"expected {str(path_with_spaces)!r}"
+        )
+        # And the recipe text contains the shlex-quoted form, not
+        # the bare unquoted path.
+        assert shlex.quote(str(path_with_spaces)) in cmd
+
+    def test_use_with_spaces_is_shell_quoted(self):
+        """Defense in depth: even if ``--use`` is normally a bare
+        identifier, an operator-supplied value with whitespace
+        should still round-trip cleanly."""
+        import shlex
+        cmd = _build_harness_command(
+            manifest_path=Path("m.jsonl"),
+            use="validation set",  # space in the value
+            signal="burstiness_B", fpr_target=0.01,
+        )
+        tokens = shlex.split(cmd)
+        use_idx = tokens.index("--use")
+        assert tokens[use_idx + 1] == "validation set"
+
+    def test_shell_safe_tokens_are_not_quoted(self):
+        """``shlex.quote`` is a no-op for tokens without
+        whitespace or shell metacharacters. Pin this by using
+        values guaranteed shell-safe on both POSIX and Windows
+        (no path separators, no special chars) so the test
+        works cross-platform — the real cross-platform concern
+        is just that paths with spaces don't break, which is
+        covered by ``test_manifest_path_with_spaces_is_shell_quoted``
+        above."""
+        cmd = _build_harness_command(
+            manifest_path=Path("manifest.jsonl"),  # no slashes
+            use="validation",
+            signal="burstiness_B", fpr_target=0.01,
+        )
+        # The bare 'manifest.jsonl' should appear unquoted —
+        # shlex.quote leaves shell-safe identifiers alone.
+        assert "--manifest manifest.jsonl" in cmd
+        # And nothing gets wrapped over-aggressively (no stray
+        # quote characters around the flag name itself).
+        assert "'--manifest'" not in cmd
+
 
 class TestProvenanceRecordsEngine:
     """End-to-end: a real derive_threshold call should record the

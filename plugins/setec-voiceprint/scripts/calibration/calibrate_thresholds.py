@@ -50,6 +50,7 @@ import hashlib
 import json
 import math
 import random
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -657,25 +658,40 @@ def _build_harness_command(
     persisting the CI provenance. We surface every non-default
     bootstrap flag the user (or auto-detect) selected.
 
+    Codex review (PR #53, P2): every interpolated value is shell-
+    quoted via ``shlex.quote``. The runtime workspace lives under
+    ``Claude Cowork Working Folder`` whose path contains a space,
+    so unquoted interpolation breaks copy-paste replay on the
+    operator's primary machine. ``shlex.quote`` is a no-op on
+    shell-safe tokens (``--use validation`` stays bare) and wraps
+    anything containing whitespace or shell metacharacters.
+
     Defaults are not emitted: ``engine="loop"`` is the historical
     behavior so omitting it is loud; ``chunk_size=None`` means
     auto-sized and replaying with the same n auto-sizes the same
     way; ``device=None`` means auto-detect and is only relevant
     for ``engine="torch"``.
     """
+    def q(value: Any) -> str:
+        """Shell-quote a value's string form. Numbers, simple
+        identifiers, and POSIX-safe paths come through bare;
+        anything with whitespace or shell metacharacters gets
+        wrapped in single quotes."""
+        return shlex.quote(str(value))
+
     parts = [
         "python3 scripts/calibration/calibrate_thresholds.py",
-        f"--manifest {manifest_path}",
-        f"--use {use}",
-        f"--signal {signal}",
-        f"--fpr-target {fpr_target}",
+        f"--manifest {q(manifest_path)}",
+        f"--use {q(use)}",
+        f"--signal {q(signal)}",
+        f"--fpr-target {q(fpr_target)}",
     ]
     if engine != "loop":
-        parts.append(f"--bootstrap-engine {engine}")
+        parts.append(f"--bootstrap-engine {q(engine)}")
     if chunk_size is not None:
-        parts.append(f"--bootstrap-chunk-size {chunk_size}")
+        parts.append(f"--bootstrap-chunk-size {q(chunk_size)}")
     if engine == "torch" and device is not None:
-        parts.append(f"--bootstrap-device {device}")
+        parts.append(f"--bootstrap-device {q(device)}")
     return " ".join(parts)
 
 
