@@ -225,3 +225,45 @@ def test_cli_help_runs():
     )
     assert result.returncode == 0
     assert "compound" in result.stdout.lower() or "AIC-8" in result.stdout
+
+
+def test_cli_clean_exit_when_no_spacy_model(tmp_path: Path):
+    """End-to-end: the compound CLI exits cleanly with exit code 2
+    and an install hint when no spaCy model is installed, instead
+    of producing a Python traceback.
+
+    Codex P2 review of PR #59: the compound CLI was missing a
+    try/except around `_load_spacy_with_parsing()` entirely. Fix
+    wraps the load + compound run in the typed-error handler.
+    """
+    fixture = tmp_path / "tiny.md"
+    fixture.write_text("A sentence.\n", encoding="utf-8")
+    setup = tmp_path / "sitecustomize.py"
+    setup.write_text(
+        "import spacy\n"
+        "def _fail(*a, **kw):\n"
+        "    raise OSError('[E050] simulated no model')\n"
+        "spacy.load = _fail\n",
+        encoding="utf-8",
+    )
+    env = {"PATH": "/usr/bin:/bin", "PYTHONPATH": f"{tmp_path}:{ROOT}"}
+    import os as _os
+    for k in ("HOME", "USER", "LANG", "LC_ALL"):
+        v = _os.environ.get(k)
+        if v:
+            env[k] = v
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "aesthetic_authority_audit.py"),
+            str(fixture),
+        ],
+        capture_output=True, text=True, timeout=30,
+        env=env,
+    )
+    assert result.returncode == 2, (
+        f"expected exit 2 (clean typed-error); got "
+        f"{result.returncode}\nstderr: {result.stderr}"
+    )
+    assert "Traceback" not in result.stderr

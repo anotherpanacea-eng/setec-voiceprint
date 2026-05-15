@@ -1579,43 +1579,32 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
         signal_path="tier4.surprisal.autocorrelation.lag_1",
         value=0.30, direction="gt", weight=1.0, length_floor=500,
     ),
-    # AIC-8 / AIC-9 family (added 1.64.0). Per
-    # `internal/SPEC_aic_8_9_implementation.md` Step 10. All three
-    # entries ship `provisional=True` with `provenance=None` per the
-    # Stylometry-to-the-people policy. The §5.4 calibration corpus
-    # (idiom negatives + AI-image-conjunction positives + aphoristic
-    # essayist negatives + AI-rewrite positives) is roadmap work;
-    # operators wanting load-bearing thresholds for these signals
-    # run their own calibration locally OR override at the CLI.
+    # AIC-8 / AIC-9 signals are intentionally NOT registered here
+    # (Codex P2 review of PR #59, 2026-05-15). The detectors ship
+    # as standalone CLIs (`scripts/kicker_density.py`,
+    # `scripts/image_conjunction.py`,
+    # `scripts/prestige_metaphor.py`,
+    # `scripts/aesthetic_authority_audit.py`) but their signal
+    # paths are NOT wired into `classify_compression()` or
+    # `_ABLATION_SIGNAL_FAMILIES`.
     #
-    # Direction notes:
-    #   kicker_density (gt): AI prose elevates the rate of
-    #     paragraph-ending aphoristic sentences. Threshold 0.25
-    #     starts well above register-typical contemporary essay
-    #     (~0.08) so the framework's default catches the elevation
-    #     pattern, not the genre-typical aphoristic essay.
-    #   image_conjunction_density (gt): AI prose elevates the
-    #     rate of abstract-concrete word pairings at high
-    #     concreteness gap + low embedding similarity. Threshold
-    #     15 per 1000 tokens starts well above register-typical
-    #     contemporary essay (~5).
-    #   prestige_metaphor_scatter (gt): AI prose scatters image
-    #     conjunctions across many prestige domains rather than
-    #     concentrating around a thematic commitment. Threshold
-    #     0.7 on normalized Shannon entropy is the spec's starting
-    #     point.
-    "kicker_density": ThresholdSpec(
-        signal_path="aic_8_9.kicker_density.value",
-        value=0.25, direction="gt", weight=1.0, length_floor=400,
-    ),
-    "image_conjunction_density": ThresholdSpec(
-        signal_path="aic_8_9.image_conjunction_density.value",
-        value=15.0, direction="gt", weight=1.0, length_floor=400,
-    ),
-    "prestige_metaphor_scatter": ThresholdSpec(
-        signal_path="aic_8_9.prestige_metaphor_density.domain_scatter_entropy",
-        value=0.7, direction="gt", weight=1.0, length_floor=400,
-    ),
+    # Why not registered:
+    #
+    #   * `audit_text()` does not invoke the AIC-8/9 detectors,
+    #     so an audit dict has no `aic_8_9.*` keys for
+    #     `_extract_signal` to walk. Registering would produce
+    #     dangling entries that the classifier silently skips.
+    #   * No corresponding ablation family means the band call
+    #     never tests "what if AIC-8/9 weren't load-bearing?" —
+    #     reproducing the Tier-4 wiring-failure pattern.
+    #
+    # When AIC-8/9 integrates into `variance_audit.py` (planned
+    # `--aic8` / `--aic9` flags, `audit_text(do_aic8=True, ...)`,
+    # lazy-import the detectors, emit `aic_8_9.*` blocks under
+    # the audit dict), this is the place to add the registry
+    # entries AND a corresponding ablation family
+    # `aesthetic_authority_laundering` (or similar). Until then,
+    # keep them out so the registry contract holds.
 }
 
 

@@ -510,9 +510,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     text = args.input.read_text(encoding="utf-8")
-    nlp = image_conjunction._load_spacy_with_parsing()
 
+    # Wrap both the spaCy load (which raises EmbeddingsBackendError
+    # when no model is installed) AND the audit (which raises the
+    # same typed error from the embedding-vectors helper) in one
+    # try/except so dependency failures exit cleanly with the
+    # install hint instead of producing a traceback.
     try:
+        nlp = image_conjunction._load_spacy_with_parsing()
         block = prestige_metaphor_density(
             text,
             nlp=nlp,
