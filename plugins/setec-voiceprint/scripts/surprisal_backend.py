@@ -153,7 +153,10 @@ class SurprisalBackend:
                 "Install with: pip install -r requirements-surprisal.txt "
                 "(opt-in Tier-4 / surprisal dependency layer; the file "
                 "documents how to pick the right torch wheel for your "
-                "accelerator — ROCm / CUDA / MPS / CPU-only)."
+                "accelerator — ROCm / CUDA / MPS / CPU-only). For the "
+                "full decision tree, per-path install steps, smoke "
+                "test, and fallback ladder see "
+                "scripts/calibration/RUNBOOK_tier4_install.md."
             ) from exc
         try:
             kwargs: dict[str, Any] = {}
