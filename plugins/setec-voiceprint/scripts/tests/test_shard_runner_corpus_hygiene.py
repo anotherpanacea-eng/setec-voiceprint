@@ -258,26 +258,46 @@ class TestWorkCorpusHygiene:
         assert n_clean == 4
 
     def test_work_omitting_task_dispatches_via_state(self, hygiene_run):
-        """The default --task value is calibration_survey, but
-        state.json says corpus_hygiene; the mismatch check kicks
-        in. Operators who want to omit --task have to pass
-        --task corpus_hygiene explicitly. (Alternatively, omit
-        --task on `shard` to default the task to
-        calibration_survey.)
+        """Omitting ``--task`` reads the task from state.json
+        and dispatches accordingly. The mismatch detection
+        kicks in only when the operator passes ``--task``
+        *explicitly* AND it disagrees with state.json.
 
-        This is a backcompat tradeoff: defaulting --task to
-        whatever state.json says would silently work for runs the
-        operator forgot to label, but would also break the
-        ``--task different_task`` mismatch detection. We chose the
-        latter to keep operator intent explicit. Pin the behavior
-        so a future contributor doesn't quietly invert it.
+        v1.45.0 originally defaulted ``--task`` to
+        ``calibration_survey`` everywhere, which made the
+        mismatch error message ("omit ``--task`` to silence
+        this error") a lie for ``corpus_hygiene`` runs:
+        omitting still tripped the mismatch because the
+        default was a positive value. Codex review on PR #50
+        caught this; the fix is to default to ``None`` and
+        treat ``None`` as "read from state.json". This test
+        pins the corrected behavior — a future contributor
+        who flips the default back to a positive string will
+        break this test.
         """
         base = hygiene_run["base"]
         run_id = hygiene_run["run_id"]
         rc = sr.main([
             "--base-dir", str(base), "work", "--run-id", run_id,
         ])
-        assert rc == 2  # task mismatch
+        # Work succeeds: --task omitted means "use state.json's
+        # task", which is corpus_hygiene per the hygiene_run
+        # fixture's `shard` invocation.
+        assert rc == 0
+
+    def test_work_explicit_task_mismatch_still_errors(
+        self, hygiene_run,
+    ):
+        """Explicit ``--task`` that disagrees with state.json is
+        still a fatal operator error. The mismatch detection
+        survives the None-default change."""
+        base = hygiene_run["base"]
+        run_id = hygiene_run["run_id"]
+        rc = sr.main([
+            "--base-dir", str(base), "work", "--run-id", run_id,
+            "--task", "calibration_survey",
+        ])
+        assert rc == 2
 
 
 # --------------- aggregate subcommand ----------------------------
@@ -395,14 +415,14 @@ class TestScoreManifestRows:
         records, _summary = cc.score_manifest_rows(manifest)
         assert records[0]["text_id"] == "carryover_id_42"
 
-    def test_score_manifest_rows_skips_missing_path_rows(
+    def test_score_manifest_rows_emits_error_for_missing_path(
         self, tmp_path: Path,
     ):
-        """A manifest row without a usable ``path`` is silently
-        skipped (the sharded path is more permissive than the
-        single-process path, which errors loudly — at RAID scale
-        an operator probably doesn't want one malformed row to
-        nuke a whole shard)."""
+        """A manifest row without a usable ``path`` field must
+        emit an error record (not silently skip). Hygiene gates
+        underreport when bad rows vanish; the aggregator's
+        ``status: clean`` claim must be auditable against
+        ``n_files == source_manifest_row_count``."""
         clean = tmp_path / "clean.md"
         clean.write_text(CLEAN.read_text(), encoding="utf-8")
         manifest = tmp_path / "manifest.jsonl"
@@ -412,9 +432,211 @@ class TestScoreManifestRows:
             encoding="utf-8",
         )
         records, _ = cc.score_manifest_rows(manifest)
-        # Only the good row was scored.
-        assert len(records) == 1
-        assert records[0]["text_id"] == "good"
+        # Both rows produce records now — the bad one as an error.
+        assert len(records) == 2
+        good = next(r for r in records if r.get("text_id") == "good")
+        bad = next(r for r in records if r.get("status") == "error")
+        assert good["status"] in ("clean", "warning", "fail")
+        assert bad["status"] == "error"
+        assert bad.get("id") == "bad_no_path"
+        assert "missing" in bad["error"].lower() or "path" in bad["error"].lower()
+        assert bad["manifest_lineno"] == 2
+
+    def test_score_manifest_rows_emits_error_for_malformed_json(
+        self, tmp_path: Path,
+    ):
+        """Malformed JSON lines must surface as error records,
+        not silent skips. Without this, a partially-written
+        manifest (e.g., from a crash mid-write) would underreport
+        rather than fail loud."""
+        clean = tmp_path / "clean.md"
+        clean.write_text(CLEAN.read_text(), encoding="utf-8")
+        manifest = tmp_path / "manifest.jsonl"
+        manifest.write_text(
+            json.dumps({"text_id": "good", "path": "clean.md"}) + "\n"
+            + "{not valid json\n"
+            + json.dumps({"text_id": "good2", "path": "clean.md"}) + "\n",
+            encoding="utf-8",
+        )
+        records, _ = cc.score_manifest_rows(manifest)
+        # 3 records: good, error, good2 (the error gets emitted,
+        # iteration continues on the next line).
+        statuses = [r["status"] for r in records]
+        assert "error" in statuses
+        bad = next(r for r in records if r["status"] == "error")
+        assert "malformed" in bad["error"].lower() or "json" in bad["error"].lower()
+        assert bad["manifest_lineno"] == 2
+
+    def test_score_manifest_rows_emits_error_for_non_object_row(
+        self, tmp_path: Path,
+    ):
+        """A JSON-valid line that isn't a dict (e.g., a bare list
+        or string) must surface as an error record. Same
+        rationale: the aggregator must not under-count."""
+        clean = tmp_path / "clean.md"
+        clean.write_text(CLEAN.read_text(), encoding="utf-8")
+        manifest = tmp_path / "manifest.jsonl"
+        manifest.write_text(
+            json.dumps({"text_id": "good", "path": "clean.md"}) + "\n"
+            + json.dumps(["not", "a", "dict"]) + "\n",
+            encoding="utf-8",
+        )
+        records, _ = cc.score_manifest_rows(manifest)
+        assert len(records) == 2
+        bad = next(r for r in records if r["status"] == "error")
+        assert "object" in bad["error"].lower() or "dict" in bad["error"].lower()
+
+
+class TestAbsolutizeManifestPaths:
+    """The shard-write step rewrites relative ``path`` fields to
+    absolute paths anchored at the source manifest's parent
+    directory. Without this, sharded ``corpus_hygiene`` (and any
+    other manifest-row consumer that resolves paths relative to
+    the manifest file) emits phantom errors for every row whose
+    source path is relative — because after sharding the row
+    lands in ``<run>/shards/<sid>/manifest.jsonl`` and ``relative
+    to that parent`` means a different directory than the
+    operator intended.
+
+    Regression for the bug Codex's static review surfaced on
+    PR #50, which I had personally hit by hand on the MAGE
+    corpus earlier the same day."""
+
+    def test_relative_paths_become_absolute(self, tmp_path: Path):
+        # Source-side layout: manifest at <source>/m.jsonl with
+        # text files at <source>/texts/<id>.txt — the natural
+        # convention for the converters in this repo.
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "texts").mkdir()
+        (source / "texts" / "a.txt").write_text("alpha", encoding="utf-8")
+        (source / "texts" / "b.txt").write_text("beta", encoding="utf-8")
+
+        rows = [
+            {"id": "a", "path": "texts/a.txt"},
+            {"id": "b", "path": "texts/b.txt"},
+        ]
+        # absolutize against the source manifest's parent (== source/).
+        from shard_runner import absolutize_manifest_paths
+        rewritten = absolutize_manifest_paths(rows, source)
+        # Each path is now absolute.
+        for row in rewritten:
+            assert Path(row["path"]).is_absolute()
+            assert Path(row["path"]).is_file()
+
+    def test_absolute_paths_pass_through_unchanged(
+        self, tmp_path: Path,
+    ):
+        source = tmp_path / "source"
+        source.mkdir()
+        target = tmp_path / "elsewhere" / "x.txt"
+        target.parent.mkdir(parents=True)
+        target.write_text("x", encoding="utf-8")
+        abs_str = str(target.resolve())
+
+        rows = [{"id": "x", "path": abs_str}]
+        from shard_runner import absolutize_manifest_paths
+        rewritten = absolutize_manifest_paths(rows, source)
+        assert rewritten[0]["path"] == abs_str
+
+    def test_rows_without_path_field_pass_through(
+        self, tmp_path: Path,
+    ):
+        from shard_runner import absolutize_manifest_paths
+        rows = [{"id": "no_path"}, {"id": "empty", "path": ""}]
+        rewritten = absolutize_manifest_paths(rows, tmp_path)
+        # Neither row gets a synthesized path; both come through.
+        assert len(rewritten) == 2
+        assert "path" not in rewritten[0]
+        assert rewritten[1].get("path", "") == ""
+
+    def test_does_not_mutate_input_rows(self, tmp_path: Path):
+        source = tmp_path / "source"
+        source.mkdir()
+        (source / "x.txt").write_text("x", encoding="utf-8")
+        original = {"id": "a", "path": "x.txt"}
+        rows = [original]
+        from shard_runner import absolutize_manifest_paths
+        _ = absolutize_manifest_paths(rows, source)
+        # Caller's input dict is untouched.
+        assert original["path"] == "x.txt"
+
+
+class TestCmdShardAbsolutizesPathsEndToEnd:
+    """The shard subcommand's writes to per-shard manifests must
+    contain absolute paths so downstream workers see paths
+    relative to the original corpus, not the per-shard directory."""
+
+    def test_shard_manifest_has_absolute_paths(self, tmp_path: Path):
+        # Build a source manifest with relative paths to text files
+        # in a sibling texts/ directory.
+        source_dir = tmp_path / "source"
+        source_dir.mkdir()
+        texts_dir = source_dir / "texts"
+        texts_dir.mkdir()
+        # 8 small files so we can shard at small shard-count.
+        for i in range(8):
+            (texts_dir / f"f{i}.md").write_text(
+                CLEAN.read_text(), encoding="utf-8",
+            )
+        source_manifest = source_dir / "manifest.jsonl"
+        with source_manifest.open("w", encoding="utf-8") as fh:
+            for i in range(8):
+                fh.write(json.dumps({
+                    "id": f"row_{i}",
+                    "path": f"texts/f{i}.md",
+                    "register": "personal",
+                    "ai_status": "pre_ai_human",
+                }) + "\n")
+
+        # Run cmd_shard via the public CLI entry.
+        base_dir = tmp_path / "calibration_runs_base"
+        import argparse
+        import shard_runner
+        args = argparse.Namespace(
+            base_dir=str(base_dir),
+            source_manifest=str(source_manifest),
+            run_id="absolutize_smoke",
+            shard_size=4,
+            shard_count=None,
+            stratify="register,ai_status",
+            shuffle_seed=42,
+            fpr_target=0.01,
+            tier1=True, tier2=False, tier3=False,
+            embedding_model=None,
+            embedding_revision=None,
+            force=False,
+            task="corpus_hygiene",
+            warn_threshold=0.01,
+            fail_threshold=0.05,
+            strip_rules=None,
+            strip_aggressive=False,
+        )
+        rc = shard_runner.cmd_shard(args)
+        assert rc == 0
+
+        # Each shard manifest must have absolute paths so a
+        # consumer that resolves paths against the shard
+        # manifest's parent (the documented contract) finds the
+        # real files. Prior to the fix, paths would have been
+        # 'texts/f0.md' interpreted relative to the shard dir,
+        # which doesn't contain a 'texts/' subtree.
+        shard_root = base_dir / "calibration_runs" / "absolutize_smoke" / "shards"
+        shard_manifests = sorted(shard_root.rglob("manifest.jsonl"))
+        assert shard_manifests, "no shard manifests written"
+        for sm in shard_manifests:
+            for line in sm.read_text(
+                encoding="utf-8",
+            ).splitlines():
+                if not line.strip():
+                    continue
+                row = json.loads(line)
+                assert Path(row["path"]).is_absolute(), (
+                    f"shard {sm.parent.name} has non-absolute "
+                    f"path: {row['path']!r}"
+                )
+                # And the file actually exists.
+                assert Path(row["path"]).is_file()
 
 
 if __name__ == "__main__":

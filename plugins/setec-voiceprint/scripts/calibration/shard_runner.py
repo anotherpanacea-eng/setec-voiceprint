@@ -421,6 +421,47 @@ def write_manifest(path: Path, rows: list[dict[str, Any]]) -> None:
             fh.write(json.dumps(row, sort_keys=True) + "\n")
 
 
+def absolutize_manifest_paths(
+    rows: list[dict[str, Any]], source_manifest_parent: Path,
+) -> list[dict[str, Any]]:
+    """Rewrite each row's ``path`` field to an absolute path
+    anchored against the source manifest's parent directory.
+
+    The shard machinery copies rows from a source manifest into
+    per-shard manifests at ``<run_dir>/shards/<sid>/manifest.jsonl``.
+    Manifest paths are conventionally stored relative to the
+    manifest file's location (matching ``check_corpus``'s
+    ``paths_from_manifest`` and ``manifest_validator``'s
+    ``resolve_path``). After sharding, that convention silently
+    breaks: a relative ``texts/foo.txt`` written in the source
+    manifest would resolve under the shard manifest's directory
+    once it lands there, not under the source's. Single-process
+    consumers fail loudly; the sharded ``corpus_hygiene`` scorer
+    that resolves paths the same way would emit phantom errors
+    for every row.
+
+    Resolving to absolute paths at shard-write time keeps the
+    shard manifests self-contained regardless of the consumer's
+    cwd or the shard manifest's location. Absolute path entries
+    are passed through unchanged.
+
+    Returns a new list with the rewritten rows; the input list
+    is not mutated.
+    """
+    rewritten: list[dict[str, Any]] = []
+    for row in rows:
+        new_row = dict(row)
+        raw_path = new_row.get("path")
+        if isinstance(raw_path, str) and raw_path.strip():
+            p = Path(raw_path)
+            if not p.is_absolute():
+                new_row["path"] = str(
+                    (source_manifest_parent / p).resolve()
+                )
+        rewritten.append(new_row)
+    return rewritten
+
+
 # --------------- Default scorer (real path) ----------------------
 
 
@@ -517,6 +558,16 @@ def cmd_shard(args: argparse.Namespace) -> int:
     sys.stderr.write(f"  {len(rows)} rows loaded.\n")
     source_sha = sha256_file(source)
     sys.stderr.write(f"  sha256={source_sha[:16]}...\n")
+    # Resolve relative ``path`` fields against the source manifest's
+    # parent directory before writing into per-shard manifests.
+    # Without this, ``check_corpus``'s ``score_manifest_rows`` (and
+    # any other consumer that resolves paths relative to the
+    # manifest's location) sees the shard manifest's parent, not the
+    # source manifest's, and looks for files under
+    # ``<run_dir>/shards/<sid>/`` instead of the source corpus tree.
+    # Already-absolute paths pass through unchanged.
+    source_parent = source.expanduser().resolve().parent
+    rows = absolutize_manifest_paths(rows, source_parent)
     stratify_by = (
         [s.strip() for s in args.stratify.split(",") if s.strip()]
         if args.stratify else ["register", "ai_status"]
@@ -838,19 +889,21 @@ def _run_single_worker(
     if not sp.exists():
         sys.stderr.write(f"State file not found: {sp}\n")
         return 2
-    # Task-mismatch sanity check. If the operator passed --task,
-    # confirm it agrees with what was baked into state.json by
-    # `shard`. Missing field defaults to calibration_survey so a
-    # legacy run with no --task on either side passes silently.
-    cli_task = getattr(args, "task", "calibration_survey")
+    # Task-mismatch sanity check. v1.45.x default: --task is
+    # None at the argparse level, meaning "read from state.json"
+    # — so a bare ``shard_runner work --run-id X`` always picks
+    # up whatever task was baked in at `shard` time. The mismatch
+    # error only fires when the operator passed --task explicitly
+    # AND it disagrees with state.json.
     state_for_check = read_state(sp)
     state_task = state_for_check.get("task", "calibration_survey")
-    if cli_task != state_task:
+    cli_task = getattr(args, "task", None)
+    if cli_task is not None and cli_task != state_task:
         sys.stderr.write(
             f"{worker_label}: --task {cli_task!r} does not match "
             f"state.json's task {state_task!r}. The state file's "
-            f"task is authoritative; pass --task "
-            f"{state_task} or omit --task to silence this error.\n"
+            f"task is authoritative; pass --task {state_task} or "
+            f"omit --task entirely to silence this error.\n"
         )
         return 2
     # Parse --time-window once; subsequent loop iterations just
@@ -1223,16 +1276,17 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
         sys.stderr.write(f"State file not found: {sp}\n")
         return 2
     state = read_state(sp)
-    # Task-mismatch sanity check (v1.45.0). State.json is
-    # authoritative; we just confirm the operator-supplied flag
-    # doesn't disagree.
-    cli_task = getattr(args, "task", "calibration_survey")
+    # Task-mismatch sanity check (v1.45.x). state.json is
+    # authoritative; --task defaults to None at the argparse
+    # layer, meaning "read from state.json". Only the *explicit*
+    # --task case can mismatch.
     state_task = state.get("task", "calibration_survey")
-    if cli_task != state_task:
+    cli_task = getattr(args, "task", None)
+    if cli_task is not None and cli_task != state_task:
         sys.stderr.write(
             f"--task {cli_task!r} does not match state.json's task "
             f"{state_task!r}. Pass --task {state_task} or omit "
-            f"--task to silence this error.\n"
+            f"--task entirely to silence this error.\n"
         )
         return 2
     shards = state.get("shards", {})
@@ -2309,12 +2363,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_work.add_argument(
         "--task",
         type=str,
-        default="calibration_survey",
+        default=None,
         help=(
-            "task surface to score this run as (v1.45.0+). Default "
-            "%(default)s matches the legacy single-task behavior. "
-            "If passed, must match the task recorded in state.json "
-            "(set at `shard` time); a mismatch is a fatal "
+            "task surface to score this run as (v1.45.0+). Default: "
+            "read from state.json (which `shard` baked in at run "
+            "creation time). Pass explicitly only to assert what "
+            "the run is; a mismatch with state.json is a fatal "
             "operator error. Registered: "
             f"{registered_task_names()}."
         ),
@@ -2488,12 +2542,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_agg.add_argument(
         "--task",
         type=str,
-        default="calibration_survey",
+        default=None,
         help=(
             "task surface to aggregate this run as (v1.45.0+). "
-            "Default %(default)s. If passed, must match the task "
-            "recorded in state.json; the aggregator dispatches on "
-            "state[\"task\"] either way. Registered: "
+            "Default: read from state.json. Pass explicitly only "
+            "to assert what the run is; a mismatch with state.json "
+            "is a fatal operator error. The aggregator dispatches "
+            "on state[\"task\"] either way. Registered: "
             f"{registered_task_names()}."
         ),
     )

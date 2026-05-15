@@ -236,24 +236,64 @@ def score_manifest_rows(
     """
     manifest = Path(shard_manifest_path)
     records: list[dict[str, Any]] = []
+
+    def _error_record(
+        lineno: int, raw_line: str, msg: str, *, row_id: Any = None,
+    ) -> dict[str, Any]:
+        """Build the same error-shape record ``check_path`` emits
+        for unreadable files, so the aggregator's existing
+        ``n_error`` counter picks it up and the operator sees the
+        bad row in the report rather than getting silent under-
+        counting."""
+        rec: dict[str, Any] = {
+            "path": f"<manifest line {lineno}>",
+            "status": "error",
+            "error": msg,
+            "input_tokens_before": 0,
+            "input_tokens_after": 0,
+            "tokens_stripped": 0,
+            "tokens_stripped_by_rule": {},
+            "strip_ratio": 0.0,
+            "dominant_rule": None,
+            "manifest_path": str(manifest),
+            "manifest_lineno": lineno,
+            "raw_line_excerpt": raw_line[:200],
+        }
+        if row_id is not None:
+            rec["id"] = row_id
+        return rec
+
     with manifest.open("r", encoding="utf-8") as fh:
-        for raw in fh:
+        for lineno, raw in enumerate(fh, start=1):
             line = raw.strip()
             if not line or line.startswith("#"):
                 continue
             try:
                 entry = json.loads(line)
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as exc:
+                # Surface as an error record rather than silently
+                # skipping. Hygiene gates must be loud about
+                # broken inputs — silent skipping caused under-
+                # counting that the aggregator's "n_clean ==
+                # n_files" check would have missed entirely.
+                records.append(_error_record(
+                    lineno, line,
+                    f"Malformed JSON: {exc.msg}",
+                ))
                 continue
             if not isinstance(entry, dict):
+                records.append(_error_record(
+                    lineno, line,
+                    "Manifest row is not a JSON object.",
+                ))
                 continue
             raw_path = entry.get("path")
             if not isinstance(raw_path, str) or not raw_path.strip():
-                # Skip rows without a usable path field. The
-                # single-process check_corpus path errors out
-                # loudly on this; the sharded path is more
-                # permissive because a single bad row shouldn't
-                # break a whole shard.
+                records.append(_error_record(
+                    lineno, line,
+                    "Manifest row is missing a non-empty `path`.",
+                    row_id=entry.get("id"),
+                ))
                 continue
             target = resolve_path(manifest, raw_path)
             record = check_path(
