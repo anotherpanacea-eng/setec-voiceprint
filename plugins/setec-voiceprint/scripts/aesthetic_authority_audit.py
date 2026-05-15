@@ -51,6 +51,7 @@ _SCRIPTS_DIR = Path(__file__).resolve().parent
 if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
+import embeddings  # type: ignore
 import image_conjunction  # type: ignore
 import kicker_density  # type: ignore
 import prestige_metaphor  # type: ignore
@@ -364,7 +365,6 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     text = args.input.read_text(encoding="utf-8")
-    nlp = image_conjunction._load_spacy_with_parsing()
 
     explicit = {}
     if args.kicker_baseline is not None:
@@ -374,14 +374,26 @@ def main(argv: Optional[list[str]] = None) -> int:
     if args.pm_baseline is not None:
         explicit["prestige_metaphor_per_1000_tokens"] = args.pm_baseline
 
-    block = aesthetic_authority_audit(
-        text,
-        nlp=nlp, t1=args.t1, t2=args.t2, t3=args.t3,
-        word_limit=args.word_limit,
-        use_wordnet=not args.no_wordnet,
-        register=args.register,
-        explicit_baselines=explicit,
-    )
+    # Wrap both the model load AND the compound audit in one
+    # try/except. Dependency failures (no spaCy model installed,
+    # no vectors-bearing model for the embedding similarity check)
+    # all raise `EmbeddingsBackendError` and route through the
+    # same actionable-message exit. Without this wrapping, the
+    # operator saw a traceback instead of the install hint —
+    # Codex P2 finding on PR #59.
+    try:
+        nlp = image_conjunction._load_spacy_with_parsing()
+        block = aesthetic_authority_audit(
+            text,
+            nlp=nlp, t1=args.t1, t2=args.t2, t3=args.t3,
+            word_limit=args.word_limit,
+            use_wordnet=not args.no_wordnet,
+            register=args.register,
+            explicit_baselines=explicit,
+        )
+    except embeddings.EmbeddingsBackendError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
 
     output = json.dumps(block, indent=2)
     if args.out is None:

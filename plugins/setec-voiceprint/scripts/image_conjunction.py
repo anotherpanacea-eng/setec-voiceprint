@@ -351,17 +351,25 @@ def _load_spacy_with_parsing() -> Any:
     """Load a spaCy pipeline with parsing. Prefers `_md` (has vectors
     too), falls back to `_sm` (vectors are looked up via `embeddings`).
 
-    Returns the pipeline. The caller is responsible for ensuring
-    the embedding-vectors model is installed; the
-    `embeddings._get_nlp()` cache handles that separately.
+    Returns the pipeline. Raises ``EmbeddingsBackendError`` (the
+    same typed exception the embedding-vectors helper raises) when
+    no model is installed, so CLI callers can wrap one try/except
+    around both load steps and exit cleanly with an actionable
+    install message instead of dumping a traceback.
     """
-    import spacy  # type: ignore
+    try:
+        import spacy  # type: ignore
+    except ImportError as exc:
+        raise embeddings.EmbeddingsBackendError(
+            "spaCy is not installed. Install with: "
+            "pip install -r plugins/setec-voiceprint/requirements.txt"
+        ) from exc
     for name in ("en_core_web_md", "en_core_web_lg", "en_core_web_sm"):
         try:
             return spacy.load(name)
         except OSError:
             continue
-    raise RuntimeError(
+    raise embeddings.EmbeddingsBackendError(
         "No spaCy model installed. AIC-8 requires "
         "`en_core_web_sm` for parsing AND a vectors-bearing model "
         "(`en_core_web_md` or `_lg`) for the embedding similarity "
@@ -426,9 +434,14 @@ def main(argv: Optional[list[str]] = None) -> int:
         return 1
 
     text = args.input.read_text(encoding="utf-8")
-    nlp = _load_spacy_with_parsing()
 
+    # Wrap both the model load AND the audit in a single try/except.
+    # `_load_spacy_with_parsing` raises `EmbeddingsBackendError`
+    # (typed) when no spaCy model is installed, matching the typed
+    # error the audit's embedding-similarity check raises. Both
+    # failure modes route through the same actionable-message exit.
     try:
+        nlp = _load_spacy_with_parsing()
         block = image_conjunction_density(
             text,
             nlp=nlp, t1=args.t1, t2=args.t2,

@@ -342,3 +342,47 @@ def test_cli_help_runs_cleanly():
     )
     assert result.returncode == 0
     assert "prestige" in result.stdout.lower() or "AIC-8" in result.stdout
+
+
+def test_cli_clean_exit_when_no_spacy_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+):
+    """End-to-end: when the CLI runs and no spaCy model is
+    installed, the user gets a clean exit-2 with an install hint
+    on stderr — NOT a Python traceback.
+
+    Codex P2 review of PR #58: ensures the prestige-metaphor CLI's
+    typed-error handler covers the spaCy-load path, not just the
+    embedding-lookup path.
+    """
+    fixture = tmp_path / "tiny.md"
+    fixture.write_text("A sentence.\n", encoding="utf-8")
+    setup = tmp_path / "sitecustomize.py"
+    setup.write_text(
+        "import spacy\n"
+        "def _fail(*a, **kw):\n"
+        "    raise OSError('[E050] simulated no model')\n"
+        "spacy.load = _fail\n",
+        encoding="utf-8",
+    )
+    env = {"PATH": "/usr/bin:/bin", "PYTHONPATH": f"{tmp_path}:{ROOT}"}
+    import os as _os
+    for k in ("HOME", "USER", "LANG", "LC_ALL"):
+        v = _os.environ.get(k)
+        if v:
+            env[k] = v
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "prestige_metaphor.py"),
+            str(fixture),
+        ],
+        capture_output=True, text=True, timeout=30,
+        env=env,
+    )
+    assert result.returncode == 2, (
+        f"expected exit 2 (clean typed-error); got "
+        f"{result.returncode}\nstderr: {result.stderr}"
+    )
+    assert "Traceback" not in result.stderr

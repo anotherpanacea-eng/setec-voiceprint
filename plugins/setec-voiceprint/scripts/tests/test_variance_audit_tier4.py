@@ -284,6 +284,42 @@ class TestCompressionHeuristicsTier4:
             assert sig in provisional
 
 
+class TestAic89RegistryGuard:
+    """Codex P2 review of PR #59: the AIC-8/9 signal paths
+    (`aic_8_9.kicker_density.value`, `image_conjunction_density.value`,
+    `prestige_metaphor_density.domain_scatter_entropy`) must NOT be
+    in `COMPRESSION_HEURISTICS` while they remain unwired into
+    `audit_text()` and `_ABLATION_SIGNAL_FAMILIES`. Re-registering
+    them without simultaneously wiring the classifier + ablation
+    reproduces the Tier-4 wiring-failure pattern (registered but
+    not classified). This test guards that contract.
+
+    When `variance_audit.py` integrates AIC-8/9 (planned `--aic8`
+    / `--aic9` flags, `audit_text(do_aic8=True, ...)`,
+    `aic_8_9.*` blocks in the audit dict, plus an
+    `aesthetic_authority_laundering` ablation family), this test
+    can be deleted and replaced with positive registration tests.
+    """
+
+    def test_no_kicker_density_entry(self):
+        assert "kicker_density" not in va.COMPRESSION_HEURISTICS
+
+    def test_no_image_conjunction_density_entry(self):
+        assert "image_conjunction_density" not in va.COMPRESSION_HEURISTICS
+
+    def test_no_prestige_metaphor_scatter_entry(self):
+        assert "prestige_metaphor_scatter" not in va.COMPRESSION_HEURISTICS
+
+    def test_no_aic_8_9_signal_paths_in_registry(self):
+        """No entry should carry a signal_path that walks into the
+        non-existent `aic_8_9.*` keys in the audit dict."""
+        for sig, spec in va.COMPRESSION_HEURISTICS.items():
+            assert not spec.signal_path.startswith("aic_8_9."), (
+                f"{sig}: signal_path={spec.signal_path!r} walks "
+                "into aic_8_9.* which `audit_text()` does not emit"
+            )
+
+
 # ---------- CLI argparse ----------
 
 

@@ -6,6 +6,33 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.64.1] - 2026-05-15
+
+**Codex P2 review of the AIC-8/9 wave: typed dependency errors + remove orphaned registry entries.** Fixes four P2 findings on PRs #58 and #59. None of the bugs are blockers, but all four would bite operators in predictable ways: the three CLI scripts dumped a Python traceback instead of the clean install hint when no spaCy model was installed, and the three `COMPRESSION_HEURISTICS` entries added in 1.64.0 were registered without classifier or ablation wiring — reproducing the Tier-4 wiring-failure pattern that PR #31 fixed.
+
+### Fixed
+
+- **`scripts/image_conjunction.py::_load_spacy_with_parsing()` now raises `EmbeddingsBackendError`** instead of a generic `RuntimeError`. The CLI's existing `try/except embeddings.EmbeddingsBackendError` block now catches the no-spaCy-model failure mode at the same exit path the no-vectors-model failure mode uses. Codex P2: operator without `en_core_web_sm` installed previously saw a traceback; now sees the typed-error install hint and exits with code 2.
+- **`scripts/image_conjunction.py::main()` moves the `_load_spacy_with_parsing()` call inside the `try/except`** block. Both the load and the audit run under the same handler; either failure mode produces the install-hint exit.
+- **`scripts/prestige_metaphor.py::main()` same fix.** The prestige-metaphor CLI calls `image_conjunction._load_spacy_with_parsing()` and inherits the typed-error behavior automatically; the loader call is now inside the CLI's `try/except` for symmetry with the image-conjunction CLI.
+- **`scripts/aesthetic_authority_audit.py::main()` adds a `try/except` block that was missing entirely.** The compound CLI previously had no exception handler around the spaCy load AND the compound audit run; both now route through the typed-error exit. Adds `import embeddings` (was missing) for the exception type.
+- **`scripts/variance_audit.py` `COMPRESSION_HEURISTICS` registry**: removes the three orphaned entries added in 1.64.0 (`kicker_density`, `image_conjunction_density`, `prestige_metaphor_scatter`). Registry size returns to 14 (same as 1.63.0). Codex P2: the three entries were registered with `signal_path` values that walked into `aic_8_9.*` keys, but `audit_text()` never emits those keys (the AIC-8/9 detectors are standalone) AND there was no corresponding ablation family. A future band call that relied on these signals would have reported `is_robust_call=True` because ablation never removed them. The fix matches Codex's recommendation: keep the entries out of the shared heuristic registry until classification is intended. The removal block carries an explanatory comment naming the wiring requirements (audit_text emission + ablation family) that re-registration would need to satisfy.
+
+### Added
+
+- **5 new regression tests**:
+  - `test_image_conjunction.py::test_load_spacy_raises_typed_error_when_no_model` — pins the typed-error contract of `_load_spacy_with_parsing()` directly.
+  - `test_image_conjunction.py::test_cli_clean_exit_when_no_spacy_model` — subprocess-isolated end-to-end test that the CLI exits with code 2 and no traceback when no spaCy model is installed.
+  - `test_prestige_metaphor.py::test_cli_clean_exit_when_no_spacy_model` — parallel for the prestige-metaphor CLI.
+  - `test_aesthetic_authority_audit.py::test_cli_clean_exit_when_no_spacy_model` — parallel for the compound CLI.
+  - `test_variance_audit_tier4.py::TestAic89RegistryGuard` (4 tests) — guards against re-registering the AIC-8/9 entries in `COMPRESSION_HEURISTICS` without simultaneously wiring `audit_text()` emission + an ablation family. The class docstring documents the wiring requirements and notes that the tests can be deleted and replaced with positive registration tests when integration lands.
+
+### Notes
+
+- Behavior change: operators without `en_core_web_md` installed who run `scripts/image_conjunction.py`, `scripts/prestige_metaphor.py`, or `scripts/aesthetic_authority_audit.py` now see a clean error message and exit code 2 instead of a Python traceback. This matches the framework's behavior pattern for other typed dependency errors (surprisal backend, embedding backend).
+- No new functionality. The AIC-8/9 detectors still work the same way when their dependencies are present; only the failure-mode behavior changes.
+- The AIC-8/9 integration into `variance_audit.py --aic8` / `--aic9` (which would re-justify the `COMPRESSION_HEURISTICS` entries) remains a future PR per the spec's Step 10 wiring requirements. That work would add: (a) CLI flags + `do_aic8: bool` / `do_aic9: bool` parameters to `audit_text()`; (b) lazy import of the detectors when flags are set; (c) `aic_8_9.*` blocks emitted under the audit dict; (d) re-add `COMPRESSION_HEURISTICS` entries; (e) add `aesthetic_authority_laundering` ablation family; (f) update the `TestAic89RegistryGuard` tests to positive registration tests.
+
 ## [1.64.0] - 2026-05-15
 
 **AIC-8 / AIC-9 wave complete: compound audit + register-typical baselines + documentation.** Fourth and final PR implementing `internal/SPEC_aic_8_9_implementation.md`. Closes out the four-PR wave (1.61.0 foundation → 1.62.0 AIC-9 → 1.63.0 AIC-8 → 1.64.0 compound + docs). The framework's craft-restoration surface now has named operational signals for Aesthetic Authority Laundering and Closure Inflation, plus a compound audit that surfaces the joint co-occurrence pattern the spec calls "the canonical AI-prose closing move."

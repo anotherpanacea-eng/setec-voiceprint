@@ -419,3 +419,86 @@ def test_cli_help_runs_cleanly():
     )
     assert result.returncode == 0
     assert "AIC-8" in result.stdout
+
+
+def test_load_spacy_raises_typed_error_when_no_model(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When no spaCy English model is installed,
+    `_load_spacy_with_parsing` raises ``EmbeddingsBackendError``
+    (typed) — not a generic ``RuntimeError`` that would traceback
+    past the CLI's typed handler.
+
+    Codex P2 review of PR #58: the previous `RuntimeError` bypassed
+    the CLI's `except EmbeddingsBackendError` block and operators
+    saw a traceback instead of the install hint.
+    """
+    import embeddings as e
+    import spacy as _spacy  # type: ignore
+
+    def _no_model(name):
+        raise OSError(f"[E050] simulated: no model {name}")
+
+    monkeypatch.setattr(_spacy, "load", _no_model)
+    with pytest.raises(e.EmbeddingsBackendError) as exc:
+        ic._load_spacy_with_parsing()
+    msg = str(exc.value)
+    # Install hint surfaced.
+    assert "en_core_web_md" in msg
+    assert "spacy download" in msg
+
+
+def test_cli_clean_exit_when_no_spacy_model(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
+):
+    """End-to-end: when the CLI runs and no spaCy model is
+    installed, the user gets a clean exit-2 with an install hint
+    on stderr — NOT a Python traceback. Subprocess-isolated so the
+    monkeypatch doesn't bleed across tests."""
+    fixture = tmp_path / "tiny.md"
+    fixture.write_text("A sentence.\n", encoding="utf-8")
+    # Inject a sitecustomize that forces spacy.load() to fail
+    # before the script runs. Tests the actual CLI exit path.
+    setup = tmp_path / "sitecustomize.py"
+    setup.write_text(
+        "import spacy\n"
+        "_orig = spacy.load\n"
+        "def _fail(*a, **kw):\n"
+        "    raise OSError('[E050] simulated no model')\n"
+        "spacy.load = _fail\n",
+        encoding="utf-8",
+    )
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "PYTHONPATH": (
+            f"{tmp_path}:{ROOT}:" + (str(ROOT) if str(ROOT) else "")
+        ),
+    }
+    # Some envs need HOME set for spaCy's cache lookups; mirror
+    # the current shell env minimally to avoid surprises.
+    import os as _os
+    for k in ("HOME", "USER", "LANG", "LC_ALL"):
+        v = _os.environ.get(k)
+        if v:
+            env[k] = v
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "image_conjunction.py"),
+            str(fixture),
+        ],
+        capture_output=True, text=True, timeout=30,
+        env=env,
+    )
+    # Clean exit code 2 (typed-error path), not 1 (file not found)
+    # or nonzero from traceback.
+    assert result.returncode == 2, (
+        f"expected exit 2 (clean typed-error path); got "
+        f"{result.returncode}\nstdout: {result.stdout}\n"
+        f"stderr: {result.stderr}"
+    )
+    # No Python traceback artifact in stderr.
+    assert "Traceback" not in result.stderr
+    # Install hint reaches the user.
+    assert "spacy download" in result.stderr or "spaCy" in result.stderr
