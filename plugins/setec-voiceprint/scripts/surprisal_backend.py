@@ -5,10 +5,16 @@ Wraps `transformers` causal language models behind a thin abstraction
 so SETEC's surprisal-based audits (the planned R12+1 surprisal signal
 per `internal/SPEC_surprisal_signal.md`) can swap causal LMs without
 touching call sites. The `internal/SPEC_surprisal_model_choice.md`
-decision registers five candidate LMs (GPT-2 small, Llama 3.2 1B,
-Phi-3 Mini, Qwen 2.5 1.5B, TinyLlama 1.1B) with a no-priority
-posture — the §5.4 fixture test decides which is the user's CLI
-default.
+decision registers nine core candidate LMs (GPT-2 small, Llama 3.2 1B,
+Llama 3.2 3B, OLMo 2 1B, OpenELM 1.1B, Qwen 2.5 1.5B, Qwen 3 1.7B Base,
+SmolLM2 1.7B, TinyLlama 1.1B) with a no-priority posture; the §5.4
+fixture test decides which is the user's CLI default, subject to the
+constraint that the operational default must come from the pre-mid-2024
+training-cutoff bucket. Revised 2026-05-15 per
+`SPEC_surprisal_model_choice_UPDATE_2026-05-15.md`; the original
+five-candidate set is documented in the spec's 2026-05-11 decision-log
+entry. Phi-3 Mini was dropped in the 2026-05-15 revision per the
+spec's §3.7 base-only posture.
 
 Design goals (mirror `embedding_backend.py`):
 
@@ -51,37 +57,99 @@ from typing import Any
 
 # Candidate aliases per `internal/SPEC_surprisal_model_choice.md` §4.1
 # (no priority designated; §5.4 fixture test decides the user's CLI
-# default). Listed alphabetically — the order is not a ranking.
+# default). Revised 2026-05-15 per the verification pass landing in
+# `SPEC_surprisal_model_choice_UPDATE_2026-05-15.md`. Listed
+# alphabetically by alias key; the order is not a ranking. The
+# bracketed tag at the end of each line is the training-cutoff
+# bucket per spec §3.8 (used by §5.4's per-bucket reporting).
 #
-# - `gpt2`: OpenAI GPT-2 small (124M, MIT). Archived, no longer
-#   changing; old training data may be less contaminated by modern
-#   AI-generated web content than the modern LMs in this list.
-# - `llama32_1b`: Meta Llama 3.2 1B (1.2B, Llama Community License).
-#   Modern training data (contamination concern); custom license
-#   propagates to outputs in some jurisdictions.
-# - `phi3_mini`: Microsoft Phi-3 Mini 4K Instruct (3.8B, MIT). Upper
-#   end of the candidate size range; strongest English performance.
-# - `qwen25_1_5b`: Alibaba Qwen 2.5 1.5B (1.5B, Apache 2.0). Only
-#   multilingual-capable candidate. Modern training (contamination
-#   concern).
-# - `tinyllama`: TinyLlama 1.1B-intermediate-step-1431k-3T
-#   (1.1B, Apache 2.0). Documented training cutoff (less likely
-#   to be contaminated by AI-generated web content); English-only.
+# - `gpt2`: OpenAI GPT-2 small (124M, MIT). Archived 2019, no longer
+#   changing; oldest training data in the set (2017 cutoff) and
+#   diagnostically the contamination-cleanest comparator. [pre-mid-2024]
+# - `llama32_1b`: Meta Llama 3.2 1B (1.23B, Llama 3.2 Community
+#   License). Custom license has redistribution + acceptable-use
+#   clauses. December 2023 training cutoff. [pre-mid-2024]
+# - `llama32_3b`: Meta Llama 3.2 3B (3.21B, Llama 3.2 Community
+#   License). Same family, same training data, same architecture as
+#   `llama32_1b` with more capacity. Within-family parameter scan.
+#   [pre-mid-2024]
+# - `olmo2_1b`: AI2 OLMo 2 1B (1B, Apache 2.0). Openly-published
+#   training corpus (OLMo-mix-1124, ~4T tokens, downloadable);
+#   documented December 2023 cutoff. The only candidate where
+#   PROVENANCE can audit the input corpus directly. [pre-mid-2024]
+# - `openelm_1b`: Apple OpenELM 1.1B (1.1B, apple-amlr). Documented
+#   pre-mid-2024 training corpus (RefinedWeb + Pile + RedPajama +
+#   Dolma v1.6, ~1.8T tokens). Apple Sample Code License is
+#   permissive but not OSI-certified. [pre-mid-2024]
+# - `qwen25_1_5b`: Alibaba Qwen 2.5 1.5B (1.54B, Apache 2.0).
+#   Multilingual (29 languages). Training cutoff not documented;
+#   presumed mid-2024 effective window. [boundary]
+# - `qwen3_1_7b`: Alibaba Qwen 3 1.7B Base (1.7B, Apache 2.0).
+#   Same-family successor to `qwen25_1_5b` with broader multilingual
+#   coverage (119 languages). Training cutoff not documented; release
+#   date (May 14 2025) implies post-mid-2024. [post-mid-2024]
+# - `smollm2_1_7b`: HuggingFace SmolLM2 1.7B (1.7B, Apache 2.0).
+#   English-only. Effective training cutoff bounded to April-June
+#   2024 via FineWeb-Edu source snapshot dates available at SmolLM2
+#   training time. [boundary]
+# - `tinyllama`: TinyLlama 1.1B-intermediate-step-1431k-3T (1.1B,
+#   Apache 2.0). Documented training cutoff (mid-2023); English-only;
+#   smallest-footprint pre-cutoff candidate. [pre-mid-2024]
+#
+# Dropped 2026-05-15 (was in the original five): `phi3_mini`
+# (Microsoft Phi-3 Mini 4K Instruct). Instruction-tuned; Microsoft
+# confirmed no base variant is planned across the Phi family; violates
+# spec §3.7 base-only posture. Operators who pinned `phi3_mini` get a
+# typed `SurprisalBackendError` with migration guidance pointing at
+# (a) the full HF id route for ad-hoc use, and (b) `qwen3_4b_base` as
+# the recommended Apache-2.0 upper-bound base replacement (available
+# via the full HF id route `Qwen/Qwen3-4B-Base`; not aliased because
+# it is an optional comparator per spec §4.1, not a core-set member).
 MODEL_ALIASES: dict[str, str] = {
     "gpt2": "openai-community/gpt2",
     "llama32_1b": "meta-llama/Llama-3.2-1B",
-    "phi3_mini": "microsoft/Phi-3-mini-4k-instruct",
+    "llama32_3b": "meta-llama/Llama-3.2-3B",
+    "olmo2_1b": "allenai/OLMo-2-0425-1B",
+    "openelm_1b": "apple/OpenELM-1_1B",
     "qwen25_1_5b": "Qwen/Qwen2.5-1.5B",
+    "qwen3_1_7b": "Qwen/Qwen3-1.7B-Base",
+    "smollm2_1_7b": "HuggingFaceTB/SmolLM2-1.7B",
     "tinyllama": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
+}
+
+# Aliases removed in 2026-05-15. Kept in a separate dict so the
+# constructor can recognise an operator's pinned legacy alias and
+# raise `SurprisalBackendError` with migration guidance, rather than
+# passing the alias through as a bogus HF id and producing a confusing
+# weight-download error. Value is the migration message body.
+DEPRECATED_ALIASES: dict[str, str] = {
+    "phi3_mini": (
+        "Microsoft Phi-3 Mini was dropped from the candidate set in "
+        "2026-05-15. It is instruction-tuned, and Microsoft has "
+        "confirmed no base variant of any Phi family member will be "
+        "published. Per `SPEC_surprisal_model_choice.md` §3.7, only "
+        "pretrained base models are eligible candidates. Migration "
+        "options: (a) pass the full HF id directly via "
+        "`--surprisal-model microsoft/Phi-3-mini-4k-instruct` if you "
+        "have a calibration that requires the original model "
+        "(deprecated, instruct-tuned); (b) use the recommended "
+        "Apache-2.0 upper-bound base replacement "
+        "`--surprisal-model Qwen/Qwen3-4B-Base`; (c) drop to one of "
+        "the core-set aliases (gpt2 / llama32_1b / llama32_3b / "
+        "olmo2_1b / openelm_1b / qwen25_1_5b / qwen3_1_7b / "
+        "smollm2_1_7b / tinyllama)."
+    ),
 }
 
 # Default when no `--model` is passed. `tinyllama` chosen as the
 # documented-training-cutoff + small-footprint default for users
 # who haven't run the §5.4 fixture suite. NOT a recommendation
 # that tinyllama is best — only that it has the lowest contamination
-# concern among the candidates and the smallest footprint. The §5.4
+# concern among the candidates and the smallest footprint, and that
+# it satisfies the §5.4 decision-rule constraint of "operational
+# CLI default must come from the pre-mid-2024 bucket." The §5.4
 # fixture test on the user's register mix is the load-bearing
-# decision.
+# decision; this default is the conservative pick in its absence.
 DEFAULT_MODEL: str = "tinyllama"
 
 
@@ -120,6 +188,17 @@ class SurprisalBackend:
     _alias: str | None = field(default=None, repr=False, init=False, compare=False)
 
     def __post_init__(self) -> None:
+        # Deprecation gate (added 2026-05-15). Operators who pinned a
+        # removed alias get a typed error with migration guidance
+        # rather than a downstream HF-id-not-found failure. The full
+        # HF id route still works for operators who need the underlying
+        # model for ad-hoc comparison; only the alias indirection is
+        # gone.
+        if self.model_id in DEPRECATED_ALIASES:
+            raise SurprisalBackendError(
+                f"Alias {self.model_id!r} was removed in 2026-05-15. "
+                + DEPRECATED_ALIASES[self.model_id]
+            )
         # Resolve alias → full id once at construction.
         if self.model_id in MODEL_ALIASES:
             self._alias = self.model_id

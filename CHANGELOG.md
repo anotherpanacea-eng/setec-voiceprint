@@ -6,6 +6,52 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.60.0] - 2026-05-15
+
+**Refresh the Tier-4 surprisal candidate set after the 2026-05-15 verification pass.** The original Phase C.1 spec finalized 2026-05-11 listed five candidate causal LMs without a fresh market scan. The 2026-05-15 verification pass against primary sources (HF model cards, arXiv technical reports, license files) dropped one candidate on a constraint violation, added four candidates from the 2024-Q4 through 2026-Q2 release window, and introduced training-cutoff bucketing as a structural input to the §5.4 fixture-test decision rule. This release lands the corresponding code change in `scripts/surprisal_backend.py`: the public `MODEL_ALIASES` table is now the nine-candidate post-2026-05-15 core set, with a typed deprecation gate for the removed `phi3_mini` alias.
+
+### Added
+
+- **Four new core-set aliases in `MODEL_ALIASES`** per `SPEC_surprisal_model_choice.md` §4.1:
+  - `llama32_3b` → `meta-llama/Llama-3.2-3B` (3.21B, Llama 3.2 Community License, Dec 2023 cutoff). Within-family parameter scan paired with the existing `llama32_1b`.
+  - `olmo2_1b` → `allenai/OLMo-2-0425-1B` (1B, Apache 2.0, openly-published training corpus, Dec 2023 cutoff). The only candidate where PROVENANCE can audit the input corpus directly rather than trust the model creator's documentation; the verification pass flagged it as the best diagnostic fit in the candidate pool.
+  - `openelm_1b` → `apple/OpenELM-1_1B` (1.1B, apple-amlr, pre-mid-2024 training corpus fully documented). Apple Sample Code License is permissive but not OSI-certified; flagged in spec §3.1.
+  - `qwen3_1_7b` → `Qwen/Qwen3-1.7B-Base` (1.7B, Apache 2.0, 119 languages). Same-family successor to `qwen25_1_5b` with broader multilingual coverage. Training cutoff not documented in arXiv 2505.09388; release-date inference places it post-mid-2024.
+  - `smollm2_1_7b` → `HuggingFaceTB/SmolLM2-1.7B` (1.7B, Apache 2.0, English-only). Effective cutoff bounded to April-June 2024 via FineWeb-Edu source snapshot dates available at SmolLM2 training time.
+- **`DEPRECATED_ALIASES` dict** — a parallel table the constructor reads to raise typed `SurprisalBackendError` with migration guidance when an operator pins a removed alias. The pattern lets future spec revisions drop aliases cleanly without operators hitting confusing downstream HF-id-not-found failures.
+- **Four regression tests in `test_surprisal_backend.py`**:
+  - `test_phi3_mini_removed_from_alias_table` (negative-presence assertion)
+  - `test_phi3_mini_alias_raises_deprecation_error` (positive-error assertion with substring checks for the alias name, the 2026-05-15 date, and at least one migration path)
+  - `test_phi3_mini_full_huggingface_id_still_passes_through` (operators with legacy calibrations can keep using Phi-3 via the full HF id route)
+  - `test_deprecated_aliases_table_is_populated` (gate-message rendering sanity check)
+- **Module docstring + per-alias commentary** now points at `SPEC_surprisal_model_choice_UPDATE_2026-05-15.md` for the verification log and at the per-candidate training-cutoff bucket tags (`[pre-mid-2024]`, `[boundary]`, `[post-mid-2024]`) that §5.4 reports against.
+
+### Changed
+
+- **`MODEL_ALIASES` table size**: 5 → 9. Existing aliases (`gpt2`, `llama32_1b`, `qwen25_1_5b`, `tinyllama`) unchanged in both key and value.
+- **`SurprisalBackend.__post_init__`** now runs the deprecation-alias check before the regular alias-resolution step. Pinning a key in `DEPRECATED_ALIASES` raises `SurprisalBackendError` immediately at construction with the alias's migration-message body, rather than passing through to a downstream load failure.
+- **Module docstring** updated to reflect the nine-candidate core set and to reference the spec's §3.7 base-only posture as the reason for the Phi-3 drop.
+- **Spec cross-references**: surprisal_backend.py now points at `internal/SPEC_surprisal_model_choice_UPDATE_2026-05-15.md` (the verification pass) in addition to `SPEC_surprisal_model_choice.md` (the spec proper, post-revision).
+
+### Removed
+
+- **`phi3_mini` alias** removed from `MODEL_ALIASES`. Microsoft confirmed in April 2024 on the HF discussion thread that no base variant of any Phi family member would be published; that posture has held through Phi-3.5 Mini (Aug 2024) and Phi-4 Mini (Feb 2025). Instruction-tuning skews per-token distributions in exactly the direction the framework's discrimination test is sensitive to, so the spec's §3.7 base-only posture (added 2026-05-15) excludes the entire Phi family from the alias set.
+
+### Migration
+
+Operators who pinned `--surprisal-model phi3_mini` get a typed error at construction with three documented migration paths:
+
+1. **Full HF id pass-through** (preserves prior behavior for operators with legacy calibrations): `--surprisal-model microsoft/Phi-3-mini-4k-instruct`. The underlying model is still on HuggingFace; only the alias indirection is gone.
+2. **Apache-2.0 upper-bound base replacement** (recommended): `--surprisal-model Qwen/Qwen3-4B-Base`. Comparable parameter count, base variant explicit, fully permissive license. Listed as an optional comparator in spec §4.1.
+3. **Core-set fallback** to any of the nine new aliases listed above. `tinyllama` remains the conservative default.
+
+### Notes
+
+- This is a public-CLI change (`MODEL_ALIASES` is reachable from `variance_audit.py --surprisal-model`), hence the MINOR bump rather than PATCH.
+- No spec changes ship with this release; the spec updates (`internal/SPEC_surprisal_model_choice.md` and the companion `_UPDATE_2026-05-15.md`) are in the `internal/` working tree which is gitignored. This release lands only the code change that makes the spec's §5.5 implementation step 3 operational.
+- The `DEFAULT_MODEL` value stays `tinyllama` — unchanged from prior. The verification pass surfaced OLMo 2 1B as "the best diagnostic fit" but the spec is explicit that the default is the conservative pre-mid-2024 footprint pick, not a quality recommendation. Changing the default would be a behavior change without empirical backing from §5.4.
+- The §5.4 fixture run remains pending. This release ships the candidate-set plumbing; running the fixture against the new candidates on the AMD calibration host is the next operator step.
+
 ## [1.59.4] - 2026-05-14
 
 **Fix `variance_audit.py --help` crash on unescaped `%`.** Running `python3 variance_audit.py --help` (or `--tier4 --help`, or any path that triggers argparse's help formatter) raised:
