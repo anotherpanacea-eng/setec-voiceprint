@@ -273,6 +273,66 @@ def _fixed_threshold_bootstrap_ci_loop(
     }
 
 
+# Per-cell peak-memory rough estimates used by ``_auto_chunk_size``.
+# Each (chunk, n) cell in the inner loop costs:
+#   - one index entry (int32 for numpy = 4 bytes; int64 for torch = 8)
+#   - one ``sampled_cats`` cell (int8 = 1 byte)
+#   - approximately four transient boolean masks during the count
+#     reductions (4 × 1 byte = 4 bytes)
+#   - some small per-row scratch (rates, division masks); rolled in
+#     conservatively.
+# Total ~ 12 bytes/cell for numpy, ~ 16 bytes/cell for torch. Codex
+# review (PR #53) flagged that the original docstring counted only
+# the index matrix, which undershoots actual peak by ~3x.
+_PER_CELL_BYTES = {"numpy": 12, "torch": 16}
+
+# Target peak-memory budget for the inner loop. 500 MB is a safe
+# default for laptops + single-GPU consumer hosts; the operator can
+# override via ``--bootstrap-chunk-size`` on the CLI. Picked at the
+# crossover where MAGE-scale (n=436K) still gets a chunk near the
+# legacy 200 and RAID-scale (n=8.3M) auto-shrinks to ~8 — the
+# difference between "fine on a Steam Machine" and "OOM."
+_AUTO_CHUNK_TARGET_BYTES = 500_000_000
+
+# Cap on the auto-detected chunk size. Even when ``_PER_CELL_BYTES``
+# would allow a huge chunk on a small corpus, no benefit to going
+# past 200 (the legacy default) — the per-chunk overhead is dominated
+# by the resample itself, not the loop iteration.
+_AUTO_CHUNK_MAX = 200
+_AUTO_CHUNK_MIN = 1
+
+
+def _auto_chunk_size(n: int, engine: str = "numpy") -> int:
+    """Pick a chunk size that caps the inner-loop peak memory at
+    roughly ``_AUTO_CHUNK_TARGET_BYTES`` for a corpus of size ``n``.
+
+    Engine-aware because torch indices are int64 (vs int32 for
+    numpy) so the same chunk × n footprint is ~33% larger on the
+    torch path. Returns the clamped chunk size; caller never needs
+    to second-guess.
+
+    Memory math (per chunk):
+
+      bytes ≈ chunk * n * per_cell_bytes
+
+    where per_cell_bytes accounts for the index tensor, the
+    ``sampled_cats`` array, transient boolean masks during the
+    count reductions, and small per-row scratch. For numpy at
+    n=8.3M and a 500 MB cap, this returns chunk ≈ 5; for n=436K,
+    chunk ≈ 96; for n=5K, chunk hits the 200 cap.
+
+    Codex review (PR #53, P1): the original numpy default of 200
+    silently consumed ~13 GB at RAID scale once all transients
+    were included. This helper makes the budget explicit and
+    operator-tunable.
+    """
+    if n <= 0:
+        return _AUTO_CHUNK_MAX
+    per_cell = _PER_CELL_BYTES.get(engine, _PER_CELL_BYTES["numpy"])
+    raw = _AUTO_CHUNK_TARGET_BYTES // max(1, n * per_cell)
+    return max(_AUTO_CHUNK_MIN, min(_AUTO_CHUNK_MAX, int(raw)))
+
+
 def _fixed_threshold_bootstrap_ci_numpy(
     pairs: Sequence[tuple[int, float]],
     threshold: float,
@@ -281,7 +341,7 @@ def _fixed_threshold_bootstrap_ci_numpy(
     resamples: int,
     confidence: float,
     seed: int | None,
-    chunk_size: int = 200,
+    chunk_size: int | None = None,
 ) -> dict[str, Any] | None:
     """NumPy-vectorized equivalent of the loop implementation.
 
@@ -299,10 +359,16 @@ def _fixed_threshold_bootstrap_ci_numpy(
        generates a ``(chunk_size, n)`` int32 matrix of resampled
        indices in one ``rng.integers`` call, gathers from the
        category array, and counts categories per row via
-       boolean-mask sums. Chunk size of 200 caps memory at
-       ``200 * n * 4`` bytes (~3.3 GB for an 8M-row RAID-scale
-       input — large but bounded; reduce ``chunk_size`` for
-       memory-tight hosts).
+       boolean-mask sums. ``chunk_size=None`` (default) auto-sizes
+       via ``_auto_chunk_size`` to cap inner-loop peak at ~500 MB
+       — at RAID scale (n=8.3M) that's chunk ≈ 5; at MAGE scale
+       (n=436K) chunk ≈ 96; at small N (n=5K) chunk hits the 200
+       cap. Pass an explicit int to override (e.g. for memory-
+       tight hosts or to maximize throughput when memory is
+       plentiful). Codex review (PR #53, P1): the legacy fixed
+       chunk_size=200 OOM'd at RAID scale once the transient
+       boolean masks were counted; the auto-sizing default closes
+       that gap.
 
     3. **Statistically equivalent, not bit-exact.** This is the
        important caveat: ``random.Random.randrange`` and
@@ -330,6 +396,11 @@ def _fixed_threshold_bootstrap_ci_numpy(
     import numpy as np  # type: ignore  # local: numpy isn't strictly required for the loop engine
 
     n = len(pairs)
+    # Resolve chunk size: None → auto-size for n.
+    if chunk_size is None:
+        chunk_size = _auto_chunk_size(n, engine="numpy")
+    else:
+        chunk_size = max(1, int(chunk_size))
     # Build label/score arrays in one pass over the input pairs.
     # ``np.fromiter`` avoids the intermediate Python list that
     # ``np.asarray([... for ...])`` would build.
@@ -421,6 +492,7 @@ def _fixed_threshold_bootstrap_ci_numpy(
     return {
         "method": "fixed_threshold_paired_bootstrap",
         "engine": "numpy",
+        "chunk_size": int(chunk_size),
         "confidence": confidence,
         "resamples": int(tprs_arr.size),
         "tpr_ci": [q(tprs_arr, alpha / 2), q(tprs_arr, 1 - alpha / 2)],
@@ -453,6 +525,7 @@ def fixed_threshold_bootstrap_ci(
     confidence: float,
     seed: int | None,
     engine: str = "loop",
+    chunk_size: int | None = None,
 ) -> dict[str, Any] | None:
     """Paired-record bootstrap on TPR / FPR / precision at a fixed
     threshold. Resampling pair indices with replacement; each resample
@@ -472,6 +545,12 @@ def fixed_threshold_bootstrap_ci(
       converge to within Monte Carlo noise. Different per-
       resample compositions because the RNG stream differs
       (``np.random.default_rng`` vs ``random.Random``).
+
+    ``chunk_size`` overrides the auto-detected inner-loop chunk
+    size for the vectorized engines. ``None`` (default) auto-sizes
+    via ``_auto_chunk_size`` to cap inner-loop peak memory at
+    ~500 MB. Ignored by the ``loop`` engine. Operator-tunable via
+    ``--bootstrap-chunk-size`` on both CLIs.
     """
     if engine == "loop":
         return _fixed_threshold_bootstrap_ci_loop(
@@ -482,6 +561,7 @@ def fixed_threshold_bootstrap_ci(
         return _fixed_threshold_bootstrap_ci_numpy(
             pairs, threshold, direction,
             resamples=resamples, confidence=confidence, seed=seed,
+            chunk_size=chunk_size,
         )
     raise ValueError(
         f"Unknown bootstrap engine {engine!r}. Known: 'loop', 'numpy'."
@@ -556,6 +636,47 @@ def _ranking_metrics(
         "direction_aware_auc": da_auc,
         "direction_aware_ap": da_ap,
     }
+
+
+def _build_harness_command(
+    *,
+    manifest_path: Path,
+    use: str,
+    signal: str,
+    fpr_target: float,
+    engine: str = "loop",
+    chunk_size: int | None = None,
+    device: str | None = None,
+) -> str:
+    """Compose the replay command stamped into the ledger entry.
+
+    Codex review (PR #53/#56, P1): the original harness_command
+    omitted ``--bootstrap-engine`` and ``--bootstrap-chunk-size``,
+    so a threshold derived with the numpy or torch engine would
+    silently replay on the loop engine, defeating the point of
+    persisting the CI provenance. We surface every non-default
+    bootstrap flag the user (or auto-detect) selected.
+
+    Defaults are not emitted: ``engine="loop"`` is the historical
+    behavior so omitting it is loud; ``chunk_size=None`` means
+    auto-sized and replaying with the same n auto-sizes the same
+    way; ``device=None`` means auto-detect and is only relevant
+    for ``engine="torch"``.
+    """
+    parts = [
+        "python3 scripts/calibration/calibrate_thresholds.py",
+        f"--manifest {manifest_path}",
+        f"--use {use}",
+        f"--signal {signal}",
+        f"--fpr-target {fpr_target}",
+    ]
+    if engine != "loop":
+        parts.append(f"--bootstrap-engine {engine}")
+    if chunk_size is not None:
+        parts.append(f"--bootstrap-chunk-size {chunk_size}")
+    if engine == "torch" and device is not None:
+        parts.append(f"--bootstrap-device {device}")
+    return " ".join(parts)
 
 
 def _git_commit() -> str:
@@ -1203,10 +1324,12 @@ def derive_threshold_from_records(
     )
     # ``getattr`` so callers that built Namespace objects manually
     # (older test fixtures, ad-hoc scripts) keep working without a
-    # ``bootstrap_engine`` attribute. Default is the bit-exact
-    # loop engine; pass ``--bootstrap-engine numpy`` on the CLI or
-    # set the attr programmatically to get the 50-200x speedup.
+    # ``bootstrap_engine`` / ``bootstrap_chunk_size`` attribute.
+    # Default is the bit-exact loop engine; pass ``--bootstrap-
+    # engine numpy`` on the CLI or set the attr programmatically
+    # to get the 50-200x speedup.
     engine = getattr(args, "bootstrap_engine", "loop")
+    chunk_size = getattr(args, "bootstrap_chunk_size", None)
     ci = fixed_threshold_bootstrap_ci(
         pairs,
         sweep["threshold"],
@@ -1215,6 +1338,7 @@ def derive_threshold_from_records(
         confidence=args.bootstrap_confidence,
         seed=seed,
         engine=engine,
+        chunk_size=chunk_size,
     )
 
     fetch_record = _load_fetch_record(manifest_path)
@@ -1265,13 +1389,29 @@ def derive_threshold_from_records(
             "ci_method": ci["method"] if ci else None,
             "bootstrap_resamples": args.bootstrap_resamples,
             "bootstrap_seed": args.bootstrap_seed,
+            # Engine + chunk_size are pulled from the CI dict so the
+            # ledger records *what actually ran*, not what was
+            # requested (relevant when ``chunk_size`` was auto-sized
+            # by ``_auto_chunk_size`` and when ``engine="loop"``
+            # leaves chunk_size unset). Codex review (PR #53, P1):
+            # without these the ledger couldn't tell which
+            # implementation produced the CI and the
+            # ``--bootstrap-engine`` replay flag silently regressed
+            # to the default.
+            "bootstrap_engine": (ci.get("engine") if ci else engine),
+            "bootstrap_chunk_size": (
+                ci.get("chunk_size") if ci else None
+            ),
             "ci_note": ci["note"] if ci else None,
         },
         "setec_commit": _git_commit(),
-        "harness_command": (
-            f"python3 scripts/calibration/calibrate_thresholds.py "
-            f"--manifest {manifest_path} --use {args.use} "
-            f"--signal {args.signal} --fpr-target {args.fpr_target}"
+        "harness_command": _build_harness_command(
+            manifest_path=manifest_path,
+            use=args.use,
+            signal=args.signal,
+            fpr_target=args.fpr_target,
+            engine=engine,
+            chunk_size=chunk_size,
         ),
         "derivation_date": iso_date,
         "notes": args.notes or (
@@ -1421,6 +1561,23 @@ def main(argv: list[str] | None = None) -> int:
             "``numpy`` is a vectorized NumPy implementation that "
             "is 50-200x faster on >=100K-row corpora and "
             "statistically equivalent for 2000+ resamples."
+        ),
+    )
+    parser.add_argument(
+        "--bootstrap-chunk-size",
+        type=int,
+        default=None,
+        help=(
+            "Override the inner-loop chunk size for the vectorized "
+            "engines (``numpy``, ``torch``). Default is auto-sized "
+            "via ``_auto_chunk_size`` to cap inner-loop peak "
+            "memory at ~500 MB: at MAGE scale (n=436K) that's "
+            "chunk ~96, at RAID scale (n=8.3M) chunk ~5. Pass an "
+            "explicit value to override — larger chunks for "
+            "throughput on memory-plentiful hosts, smaller for "
+            "memory-tight ones. Ignored by the ``loop`` engine. "
+            "The actual chunk size used is recorded in the "
+            "ledger's ``calibration.bootstrap_chunk_size`` field."
         ),
     )
     parser.add_argument(

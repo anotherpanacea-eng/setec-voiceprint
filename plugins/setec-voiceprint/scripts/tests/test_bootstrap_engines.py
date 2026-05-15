@@ -30,6 +30,10 @@ if str(CALIB_DIR) not in sys.path:
     sys.path.insert(0, str(CALIB_DIR))
 
 from calibrate_thresholds import (  # type: ignore  # noqa: E402
+    _AUTO_CHUNK_MAX,
+    _AUTO_CHUNK_MIN,
+    _auto_chunk_size,
+    _build_harness_command,
     _fixed_threshold_bootstrap_ci_loop,
     _fixed_threshold_bootstrap_ci_numpy,
     fixed_threshold_bootstrap_ci,
@@ -104,11 +108,15 @@ class TestEngineDispatch:
 
 
 class TestSchemaParity:
-    """Both engines must return the same dict-key set so the
-    aggregator can consume either output. The new ``engine``
-    field is the only intentional schema delta."""
+    """Both engines must return the same core dict-key set so the
+    aggregator can consume either output. The vectorized engine
+    carries one engine-specific extra (``chunk_size``) for
+    ledger provenance — that's documented as an additive delta,
+    not a renamed-or-removed key."""
 
-    def test_schema_keys_identical_except_engine(self):
+    def test_loop_schema_is_subset_of_numpy(self):
+        """Numpy returns a superset: same core keys + the
+        engine-specific ``chunk_size`` for provenance."""
         pairs = _make_pairs(100)
         loop_out = _fixed_threshold_bootstrap_ci_loop(
             pairs, threshold=0.0, direction="gt",
@@ -120,7 +128,14 @@ class TestSchemaParity:
         )
         assert loop_out is not None
         assert numpy_out is not None
-        assert set(loop_out.keys()) == set(numpy_out.keys())
+        # Loop's keys must all be present in numpy. Numpy adds
+        # one documented key: ``chunk_size``.
+        assert set(loop_out.keys()) <= set(numpy_out.keys())
+        assert set(numpy_out.keys()) - set(loop_out.keys()) == {"chunk_size"}
+        # The numpy chunk_size is a positive int, ready to be
+        # persisted in the ledger.
+        assert isinstance(numpy_out["chunk_size"], int)
+        assert numpy_out["chunk_size"] >= 1
 
     def test_ci_field_shapes_match(self):
         pairs = _make_pairs(100)
@@ -333,6 +348,286 @@ class TestPerformanceSmoke:
             f"numpy ({numpy_s:.2f}s) should be >=5x faster than "
             f"loop ({loop_s:.2f}s) at N=5000, R=500"
         )
+
+
+# ----- Auto chunk-size + provenance (Codex P1 on PR #53) -------
+
+
+class TestAutoChunkSize:
+    """_auto_chunk_size caps inner-loop memory at ~500 MB by
+    picking a chunk size proportional to 1/n. Codex review (P1):
+    the original fixed chunk_size=200 default OOM'd at RAID
+    scale; this helper makes the budget explicit + operator-
+    tunable, and persists the actual chunk used in provenance."""
+
+    def test_returns_max_for_tiny_n(self):
+        assert _auto_chunk_size(0, "numpy") == _AUTO_CHUNK_MAX
+        assert _auto_chunk_size(1, "numpy") == _AUTO_CHUNK_MAX
+
+    def test_returns_max_for_small_n(self):
+        """At n=5K the 500 MB cap easily fits 200 chunks, so
+        small corpora keep the legacy chunk size."""
+        assert _auto_chunk_size(5_000, "numpy") == _AUTO_CHUNK_MAX
+
+    def test_scales_down_for_mage_scale(self):
+        """At MAGE n=436K, numpy should land roughly in the
+        middle (~100) — well under 200, well above 1."""
+        chunk = _auto_chunk_size(436_000, "numpy")
+        assert 50 < chunk < _AUTO_CHUNK_MAX
+
+    def test_scales_down_aggressively_for_raid_scale(self):
+        """At RAID n=8.3M, numpy should shrink to single digits
+        to keep the index matrix under the 500 MB budget."""
+        chunk = _auto_chunk_size(8_300_000, "numpy")
+        assert chunk >= _AUTO_CHUNK_MIN
+        assert chunk < 20
+
+    def test_torch_engine_is_more_conservative(self):
+        """Torch uses int64 indices (vs int32 for numpy), so for
+        the same n + budget torch should pick a smaller chunk."""
+        n = 1_000_000
+        np_chunk = _auto_chunk_size(n, "numpy")
+        torch_chunk = _auto_chunk_size(n, "torch")
+        assert torch_chunk <= np_chunk
+
+    def test_never_returns_below_minimum(self):
+        """Even at absurd n the chunk shouldn't drop below 1."""
+        assert _auto_chunk_size(10**12, "numpy") >= 1
+
+
+class TestChunkSizeRespectsExplicitOverride:
+    """When the operator passes an explicit chunk_size, the engine
+    honors it (within positive-int bounds). Critical for the
+    --bootstrap-chunk-size CLI flag to do what it says."""
+
+    def test_explicit_chunk_size_recorded_in_result(self):
+        pairs = _make_pairs(200)
+        result = fixed_threshold_bootstrap_ci(
+            pairs, threshold=0.0, direction="gt",
+            resamples=100, confidence=0.95, seed=42,
+            engine="numpy",
+            chunk_size=7,
+        )
+        assert result is not None
+        assert result["chunk_size"] == 7
+
+    def test_none_chunk_size_uses_auto(self):
+        pairs = _make_pairs(200)
+        result = fixed_threshold_bootstrap_ci(
+            pairs, threshold=0.0, direction="gt",
+            resamples=100, confidence=0.95, seed=42,
+            engine="numpy",
+            # chunk_size omitted; should auto-size.
+        )
+        assert result is not None
+        # n=200 is small, so we expect the max (200) cap.
+        assert result["chunk_size"] == _AUTO_CHUNK_MAX
+
+    def test_chunk_size_does_not_change_ci_bounds(self):
+        """A smaller chunk_size partitions the resamples
+        differently but the same RNG seed feeds the same
+        sequence of resamples. CI bounds should be insensitive
+        to chunk size; pin the invariant so a future refactor
+        that breaks this is caught."""
+        pairs = _make_pairs(300)
+        big = fixed_threshold_bootstrap_ci(
+            pairs, threshold=0.0, direction="gt",
+            resamples=500, confidence=0.95, seed=42,
+            engine="numpy", chunk_size=200,
+        )
+        small = fixed_threshold_bootstrap_ci(
+            pairs, threshold=0.0, direction="gt",
+            resamples=500, confidence=0.95, seed=42,
+            engine="numpy", chunk_size=10,
+        )
+        assert big is not None and small is not None
+        # CI bounds should be identical (same RNG stream,
+        # same resamples — chunk boundaries are an
+        # implementation detail).
+        assert big["tpr_ci"] == small["tpr_ci"]
+        assert big["fpr_ci"] == small["fpr_ci"]
+        assert big["precision_ci"] == small["precision_ci"]
+
+
+class TestHarnessCommand:
+    """``_build_harness_command`` composes the replay command
+    stamped into the ledger. Codex review P1: the original
+    version dropped --bootstrap-engine / --bootstrap-chunk-size
+    so a numpy/torch-derived threshold replayed on the loop
+    engine."""
+
+    def test_default_loop_engine_omits_flag(self):
+        """Loop is the default; omitting the flag in the recipe
+        keeps replays of legacy ledger entries unchanged."""
+        cmd = _build_harness_command(
+            manifest_path=Path("m.jsonl"), use="validation",
+            signal="burstiness_B", fpr_target=0.01,
+            engine="loop",
+        )
+        assert "--bootstrap-engine" not in cmd
+        assert "--bootstrap-chunk-size" not in cmd
+
+    def test_numpy_engine_surfaces_engine_flag(self):
+        cmd = _build_harness_command(
+            manifest_path=Path("m.jsonl"), use="validation",
+            signal="burstiness_B", fpr_target=0.01,
+            engine="numpy",
+        )
+        assert "--bootstrap-engine numpy" in cmd
+
+    def test_explicit_chunk_size_surfaces_flag(self):
+        cmd = _build_harness_command(
+            manifest_path=Path("m.jsonl"), use="validation",
+            signal="burstiness_B", fpr_target=0.01,
+            engine="numpy",
+            chunk_size=17,
+        )
+        assert "--bootstrap-chunk-size 17" in cmd
+
+    def test_auto_chunk_size_does_not_emit_flag(self):
+        """When the operator didn't pass --bootstrap-chunk-size,
+        the recipe shouldn't pin a specific value either — let
+        the replay auto-size for the same n it sees."""
+        cmd = _build_harness_command(
+            manifest_path=Path("m.jsonl"), use="validation",
+            signal="burstiness_B", fpr_target=0.01,
+            engine="numpy",
+            chunk_size=None,
+        )
+        assert "--bootstrap-chunk-size" not in cmd
+
+
+class TestProvenanceRecordsEngine:
+    """End-to-end: a real derive_threshold call should record the
+    selected engine + chunk_size in ``entry["calibration"]`` and
+    surface ``--bootstrap-engine`` in ``entry["harness_command"]``.
+
+    Codex review (PR #53, P1): without this the ledger couldn't
+    tell which implementation produced the CI, and the replay
+    command silently regressed to the default loop engine.
+    """
+
+    @staticmethod
+    def _make_args(**overrides):
+        import argparse
+        base = dict(
+            manifest="dummy.jsonl",
+            use="validation",
+            signal="burstiness_B",
+            fpr_target=0.01,
+            out=None,
+            slug=None,
+            replace=False,
+            bootstrap_resamples=20,
+            bootstrap_confidence=0.95,
+            bootstrap_seed=42,
+            bootstrap_engine="numpy",
+            bootstrap_chunk_size=None,
+            tier2=False,
+            tier3=False,
+            notes=None,
+            max_entries=None,
+            max_entries_seed=None,
+            records_cache=None,
+            refresh_cache=False,
+            allow_polarity_inversion=False,
+        )
+        base.update(overrides)
+        return argparse.Namespace(**base)
+
+    def _stub_pipeline(self, monkeypatch):
+        """Stub the manifest/scoring/sweep path so the test
+        exercises ONLY the engine-threading code, not spaCy
+        or HF I/O."""
+        import calibrate_thresholds as ct
+        monkeypatch.setattr(
+            ct, "collect_signal_records",
+            lambda records, signal_path: [
+                (i % 2, float(i)) for i in range(40)
+            ],
+        )
+        monkeypatch.setattr(
+            ct, "sweep_threshold",
+            lambda pairs, direction, target: {
+                "available": True, "threshold": 20.0,
+                "fpr_resolution": 0.05,
+                "fpr": 0.05, "tpr": 0.5, "precision": 0.5,
+                "n_pos": 20, "n_neg": 20,
+            },
+        )
+        monkeypatch.setattr(
+            ct, "_ranking_metrics",
+            lambda pairs, *, direction: {
+                "auc": 0.80, "ap": 0.78,
+                "direction_aware_auc": 0.80,
+                "direction_aware_ap": 0.78,
+            },
+        )
+        monkeypatch.setattr(
+            ct, "_load_fetch_record", lambda manifest_path: {},
+        )
+
+    def test_numpy_engine_recorded_in_provenance(self, monkeypatch):
+        import calibrate_thresholds as ct
+        self._stub_pipeline(monkeypatch)
+        args = self._make_args(bootstrap_engine="numpy")
+        entry = ct.derive_threshold_from_records(
+            [], args=args, scoring_meta={},
+        )
+        cal = entry["calibration"]
+        assert cal["bootstrap_engine"] == "numpy"
+        # Chunk size auto-sized for the synthetic n=40 → at the
+        # _AUTO_CHUNK_MAX (small corpus).
+        assert cal["bootstrap_chunk_size"] == _AUTO_CHUNK_MAX
+
+    def test_explicit_chunk_size_recorded_in_provenance(
+        self, monkeypatch,
+    ):
+        import calibrate_thresholds as ct
+        self._stub_pipeline(monkeypatch)
+        args = self._make_args(
+            bootstrap_engine="numpy",
+            bootstrap_chunk_size=33,
+        )
+        entry = ct.derive_threshold_from_records(
+            [], args=args, scoring_meta={},
+        )
+        cal = entry["calibration"]
+        assert cal["bootstrap_engine"] == "numpy"
+        assert cal["bootstrap_chunk_size"] == 33
+
+    def test_harness_command_carries_engine_flag(self, monkeypatch):
+        import calibrate_thresholds as ct
+        self._stub_pipeline(monkeypatch)
+        args = self._make_args(
+            bootstrap_engine="numpy",
+            bootstrap_chunk_size=33,
+        )
+        entry = ct.derive_threshold_from_records(
+            [], args=args, scoring_meta={},
+        )
+        cmd = entry["harness_command"]
+        assert "--bootstrap-engine numpy" in cmd
+        assert "--bootstrap-chunk-size 33" in cmd
+
+    def test_loop_engine_does_not_emit_engine_flag(self, monkeypatch):
+        """Default behavior is unchanged: a ledger entry derived
+        with the loop engine omits the flag, so replays of
+        pre-1.60 entries match byte-for-byte."""
+        import calibrate_thresholds as ct
+        self._stub_pipeline(monkeypatch)
+        args = self._make_args(bootstrap_engine="loop")
+        entry = ct.derive_threshold_from_records(
+            [], args=args, scoring_meta={},
+        )
+        cmd = entry["harness_command"]
+        assert "--bootstrap-engine" not in cmd
+        assert "--bootstrap-chunk-size" not in cmd
+        # Engine field still recorded (so consumers can read it
+        # uniformly without inferring from omission).
+        assert entry["calibration"]["bootstrap_engine"] == "loop"
+        # Loop engine doesn't have chunk_size; field is None.
+        assert entry["calibration"]["bootstrap_chunk_size"] is None
 
 
 if __name__ == "__main__":

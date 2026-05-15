@@ -361,9 +361,12 @@ def _build_inner_args(
         bootstrap_confidence=parent_args.bootstrap_confidence,
         bootstrap_seed=parent_args.bootstrap_seed,
         # ``getattr`` for back-compat with the existing tests
-        # that build parent_args without the new flag.
+        # that build parent_args without the new flags.
         bootstrap_engine=getattr(
             parent_args, "bootstrap_engine", "loop",
+        ),
+        bootstrap_chunk_size=getattr(
+            parent_args, "bootstrap_chunk_size", None,
         ),
         tier2=parent_args.tier2,
         tier3=parent_args.tier3,
@@ -748,6 +751,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "noise. Recommended for MAGE/RAID-scale runs; default "
             "stays loop for byte-identical reproducibility against "
             "previously-published thresholds."
+        ),
+    )
+    p.add_argument(
+        "--bootstrap-chunk-size",
+        type=int,
+        default=None,
+        help=(
+            "Override the inner-loop chunk size for the vectorized "
+            "bootstrap engines. Default auto-sizes to cap peak "
+            "memory at ~500 MB. Pass a smaller value on memory-"
+            "tight hosts or a larger one when memory is plentiful. "
+            "See calibrate_thresholds.py --help for the full "
+            "memory math."
         ),
     )
     p.add_argument("--tpr-floor", type=float, default=DEFAULT_TPR_FLOOR,
