@@ -2604,9 +2604,12 @@ def main() -> int:
             "Requires the optional `transformers + torch` install "
             "(see plugins/setec-voiceprint/requirements-surprisal.txt "
             "for the dependency layer and per-accelerator torch-wheel "
-            "selection) and a causal LM (see --surprisal-model). "
-            "PROVISIONAL bands per SPEC §3.5; calibration_anchor: "
-            "user-baseline-required."
+            "selection; see plugins/setec-voiceprint/scripts/"
+            "calibration/RUNBOOK_tier4_install.md for the full "
+            "cross-platform install runbook with decision tree, smoke "
+            "test, and fallback ladder) and a causal LM (see "
+            "--surprisal-model). PROVISIONAL bands per SPEC §3.5; "
+            "calibration_anchor: user-baseline-required."
         ),
     )
     parser.add_argument(

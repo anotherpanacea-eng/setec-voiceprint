@@ -6,6 +6,37 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.59.3] - 2026-05-14
+
+**Ship `RUNBOOK_tier4_install.md` — cross-platform Tier-4 install guide.** PR #44 (1.59.2) shipped `requirements-surprisal.txt` with inline wheel-selection commentary covering ROCm / CUDA / MPS / DirectML / CPU-only. Operator feedback from the AMD-workspace shift: the inline commentary is enough for the well-trodden paths (MPS, CUDA) but leaves gaps for ROCm-on-WSL2 (driver requirements, GPU support matrix, gfx-version overrides), torch-directml integration status, and the Python 3.13 wheel gap. This PR adds the full runbook.
+
+### Added
+
+- **`plugins/setec-voiceprint/scripts/calibration/RUNBOOK_tier4_install.md`** (~450 lines). Structure:
+  - **§0 Decision table** mapping (host, Python version, GPU) → install path. Five paths total.
+  - **§1 Path A: AMD GPU via ROCm 6.x** — both native Linux (§1.1) and WSL2-on-Windows (§1.2). Includes the GPU support matrix (§1.3, RDNA2/RDNA3 work, RDNA1 doesn't) and `HSA_OVERRIDE_GFX_VERSION` workaround for consumer cards that report a slightly-off gfx string.
+  - **§2 Path B: NVIDIA CUDA 12.x** — driver version requirements, `cu118` vs `cu121` wheel selection, WSL2 CUDA runtime install.
+  - **§3 Path C: Apple Silicon MPS** — the simplest path; `PYTORCH_ENABLE_MPS_FALLBACK=1` for unimplemented ops.
+  - **§4 Path D: torch-directml** — Windows cross-vendor fallback. **Flags the framework's current DirectML integration gap**: `surprisal_backend.py` doesn't yet wire DirectML in automatically, so Path D works for ad-hoc smoke tests but doesn't cleanly integrate into `variance_audit.py --tier4`. Recommends Path A (WSL2 + ROCm) for AMD-on-Windows until DirectML support lands.
+  - **§5 Path E: CPU-only** — universal fallback with realistic perf expectations (20-100 tokens/sec on modern x86; tractable for sample-size work, impractical for full RAID-scale).
+  - **§6 Smoke test** — a copy-pasteable 10-line Python script that loads TinyLlama, scores one sentence, and prints the surprisal series + identifier_block. Documents expected output and the five common failure modes with remediation.
+  - **§7 Fallback ladder** — when the preferred path fails, the order to step down (preferred GPU → CPU → smaller model → skip Tier 4).
+  - **§8 Performance expectations** — order-of-magnitude tokens/sec table across CUDA / ROCm / MPS / CPU / DirectML for TinyLlama 1.1B.
+  - **§9 Common gotchas** — 7 entries: Python 3.13 wheel gap (recommend 3.11/3.12 for accelerator paths), `torch.cuda.is_available()` returning True on ROCm (expected, not a bug), first-load weight download, HuggingFace gated weights (Llama 3.2 1B needs auth), deterministic-mode warnings, torch install size, WSL2 driver requirements.
+  - **§10 After install** — pointers to the smoke test, calibration toolchain, and §6.4 fixture suite for picking the operational model.
+
+### Changed
+
+- **`requirements-surprisal.txt`** header — adds a cross-reference to the runbook in the PyTorch-wheel-selection section. The inline commentary remains (fast path); the runbook is the link to follow when the fast path fails.
+- **`scripts/surprisal_backend.py` install-hint message** — appends a pointer to `scripts/calibration/RUNBOOK_tier4_install.md` for operators who hit the `transformers is not installed` error. The hint still satisfies the existing test's substring assertions (`"transformers"` and `"pip install"`).
+- **`scripts/variance_audit.py` `--tier4` CLI help text** — adds a parallel pointer to the runbook alongside the existing `requirements-surprisal.txt` reference.
+
+### Notes
+
+- Documentation only — no code or behavior changes. The Tier-4 backend has worked end-to-end since v1.45.0 (PR #23 shipped `surprisal_backend.py`) on hosts that already had transformers + torch installed correctly; this runbook makes the "installed correctly" part discoverable across all five reasonable backends.
+- The runbook's perf table is order-of-magnitude only — operator-reported figures from the §6.4 fixture-suite work. Don't treat the numbers as a benchmark; treat them as "you should expect this neighborhood, file a bug if you're off by 10x."
+- The DirectML integration gap (§4) is now explicitly documented. Roadmap item: wire DirectML's device-move into `surprisal_backend._load` and `score_text` so Path D drops into the framework cleanly. Not in scope for this PATCH.
+
 ## [1.59.2] - 2026-05-14
 
 **Ship `requirements-surprisal.txt` — close the Phase C documentation gap.** The Tier-4 surprisal backend (`scripts/surprisal_backend.py`) shipped in 1.45.0 (PR #23) with an install hint that pointed at "the setup skill for tier-by-tier guidance," but the actual pinned dependency layer was scoped-for-when-C.3-ships and then never landed. The framework's calibration toolchain has a sibling `requirements-calibration.txt`; this PR adds the matching Tier-4 file and updates the install hints to point at it.

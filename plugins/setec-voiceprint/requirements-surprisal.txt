@@ -38,6 +38,15 @@
 # torch first and then this file (pip will see torch is already
 # satisfied and skip).
 #
+# For the full decision tree (GPU / OS / Python → backend),
+# step-by-step install for each path, a smoke test, a fallback
+# ladder, and common gotchas, see:
+#
+#   plugins/setec-voiceprint/scripts/calibration/RUNBOOK_tier4_install.md
+#
+# The summary below is the fast path; the RUNBOOK covers what to
+# do when the fast path fails.
+#
 # Choose your wheel:
 #
 #   * AMD GPU (ROCm 6.x on Linux / WSL2):
