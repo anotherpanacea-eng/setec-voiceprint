@@ -6,6 +6,34 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.62.0] - 2026-05-15
+
+**AIC-9 Closure Inflation: kicker-density detector.** Second of four PRs implementing `internal/SPEC_aic_8_9_implementation.md`. Identifies sentences with **kicker shape** — short, declarative, generalizable, sentence-final period — and computes the proportion of paragraphs that end with one. AI-smoothed essayistic prose elevates this rate because the default assistant register has learned that "good paragraphs end with quotable summaries." Human writers ration kickers; aphoristic essayists (Borges, Bacon, La Rochefoucauld) deploy them as genre.
+
+### Added
+
+- **`plugins/setec-voiceprint/scripts/kicker_density.py`** — AIC-9 detector. Public API:
+  - `is_kicker_shape(sentence, *, word_limit=15, nlp=None)` → `KickerClassification(is_kicker, confidence, reasons)`. Heuristic classifier checking word count, sentence-final period (not `?`, `!`, `…`, or quote), absence of digits, and absence of proper nouns. Proper-noun check prefers spaCy (`pos_ == "PROPN"` OR NER entity in PERSON/ORG/GPE/LOC/FAC/WORK_OF_ART/EVENT/NORP/PRODUCT), with a regex fallback that flags mid-sentence capitalized tokens not in the `_CAP_ALLOWLIST` (which lets `I`, `I'm`, `I've`, `I'll`, `I'd` through).
+  - `kicker_density(text, *, word_limit=15, nlp=None, baseline_value=None, baseline_source=None)` → JSON-ready dict matching spec §5 schema (`signal_path: "aic_8_9.kicker_density"`, `family: "aic-9-closure-inflation"`, `value`, `spacing_variance`, `polarity: "↑"`, `status: "provisional"`, `task_surface: "smoothing_diagnosis"`, `claim_license: "voice_diagnostic"`, plus per-paragraph diagnostics and `baseline_comparison` block when a baseline is provided).
+  - `_spacing_variance(positions)` returns the SD of inter-kicker paragraph distances. Diagnostic value: high variance means kickers cluster (a few aphoristic passages punctuating prose that mostly doesn't perform landing); low variance means kickers distribute evenly across the document. Per spec §AIC-9: distributed kickers are more diagnostic than clustered ones.
+  - Standalone CLI: `python3 scripts/kicker_density.py path/to/draft.md [--word-limit 15] [--baseline 0.10] [--baseline-source LABEL] [--force-regex] [--out path]`. Emits JSON to stdout or to the `--out` path.
+- **`plugins/setec-voiceprint/scripts/test_data/aic_8_9/`** — three synthetic test fixtures plus a README documenting scope:
+  - `kicker_aphoristic_positive.md` — 6 paragraphs, 5 ending with kicker-shaped sentences (one closes with an AIC-9 reference that legitimately fails the digit + proper-noun checks). Tests the high-density case.
+  - `kicker_normal_negative.md` — 6 paragraphs of long-form prose, none with kicker-shaped endings. Tests the zero-density baseline.
+  - `kicker_mixed_clustered.md` — 7 paragraphs where kickers cluster in one passage. Tests the clustering vs. distribution math.
+- **35 new regression tests** in `test_kicker_density.py`: per-condition classifier behavior (long sentences fail, questions/exclamations/ellipses fail, digits fail, mid-sentence proper nouns fail, first-person pronouns allowed, word-limit configurable, empty input handled, single-word sentences allowed); spaCy-gated PROPN-detection tests (skipped when `en_core_web_sm` is absent); density math (zero/one/partial ratios, JSON schema completeness, per-paragraph diagnostics); spacing variance (zero for uniform, zero for single kicker, positive for varying distances); baseline-comparison block (emitted when provided, absent when not, zero-baseline edge case); end-to-end fixture integration; CLI smoke tests (runs cleanly, `--baseline` flag, missing-file error, `--help` renders).
+
+### Fixed
+
+- **`scripts/check_corpus.py::score_manifest_rows` propagates `text_id` into error records.** Pre-existing bug discovered while running the full test suite during AIC-9 work. The success path at the bottom of `score_manifest_rows` maps both `text_id` and `id` through to the record dict; the error path for missing-`path` rows only looked up `entry.get("id")`, dropping the identifier when the manifest used `text_id` (the framework's actual convention). The test that exercises this path (`test_score_manifest_rows_emits_error_for_missing_path` in `test_shard_runner_corpus_hygiene.py`) has been failing on main; this one-line fix `entry.get("text_id") or entry.get("id")` resolves it.
+
+### Notes
+
+- This release ships the AIC-9 detector but **does not register the signal** in `COMPRESSION_HEURISTICS` yet. Registry plumbing lands in PR #4 alongside the `aic-flags.md` / `source-triage.md` / `signals-glossary.md` documentation updates. Operators can run `scripts/kicker_density.py` standalone immediately; integration into `variance_audit.py --aic9` follows.
+- Per the Stylometry-to-the-people policy, the detector ships with `status: "provisional"` and no calibrated band. The §5.4 calibration corpus (aphoristic-essayist negatives + AI-rewrite positives) is roadmap work (see `ROADMAP.md` "AIC-8 / AIC-9 calibration corpus"). Operators using the detector before calibration should pass `--baseline` explicitly with a register-typical value (the spec's starting point: 0.05-0.10 for contemporary essay, 0.30-0.60 for aphoristic essay).
+- The spaCy proper-noun check uses both `pos_ == "PROPN"` and NER. The union is strictly more permissive than either alone — useful because `en_core_web_sm` occasionally mistags rare proper nouns (e.g., "Borges" tags as NOUN, not PROPN). `_md` / `_lg` models are sharper; the detector accepts any model with POS + NER.
+- The regex fallback (when spaCy isn't available) has a known false-negative for sentence-initial proper nouns: the first word of every sentence is capitalized, so the heuristic skips position 0 entirely. The aggregate density signal is robust to per-sentence misclassification, but operators wanting per-sentence accuracy should ensure spaCy is installed.
+
 ## [1.61.0] - 2026-05-15
 
 **Foundation for AIC-8 (Aesthetic Authority Laundering) and AIC-9 (Closure Inflation).** First of four PRs implementing `internal/SPEC_aic_8_9_implementation.md`. This release ships the foundation infrastructure that the three new detectors will compose: a concreteness loader, a word-embedding helper, and a paragraph-position parser. No detectors yet — those land in PRs #2-4.

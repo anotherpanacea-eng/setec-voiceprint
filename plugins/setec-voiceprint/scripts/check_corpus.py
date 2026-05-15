@@ -370,7 +370,14 @@ def score_manifest_rows(
                 records.append(_error_record(
                     lineno, line,
                     "Manifest row is missing a non-empty `path`.",
-                    row_id=entry.get("id"),
+                    # Match the success-path logic at lines ~387-389:
+                    # accept the manifest's identifier under either
+                    # `text_id` or `id` (manifests use `text_id` in
+                    # practice; `id` is the legacy / shorter alias).
+                    # Without this fallback, the error record drops
+                    # the identifier and the aggregator can't join
+                    # back to the source manifest row.
+                    row_id=entry.get("text_id") or entry.get("id"),
                 ))
                 continue
             target = resolve_path(manifest, raw_path)
