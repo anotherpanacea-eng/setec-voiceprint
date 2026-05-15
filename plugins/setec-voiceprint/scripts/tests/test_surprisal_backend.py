@@ -4,10 +4,14 @@
 The module is a thin wrapper around transformers causal LMs; tests
 pin the wrapper's contract without loading real model weights:
 
-  * Alias resolution: the five §6.4 candidates map to the right
-    HuggingFace identifiers per `SPEC_surprisal_model_choice.md` §4.1.
+  * Alias resolution: the nine §4.1 core candidates per
+    `SPEC_surprisal_model_choice.md` (revised 2026-05-15) map to the
+    right HuggingFace identifiers.
   * Reverse alias detection: passing a full id matching a known
     alias surfaces the alias in the identifier block.
+  * Deprecation gate: the removed `phi3_mini` alias raises
+    `SurprisalBackendError` with migration guidance, rather than
+    silently passing through as a bogus HF id.
   * Lazy load: instantiation does not load the model; `.score_text()`
     does.
   * Missing-package failure: when transformers is not importable,
@@ -54,21 +58,33 @@ _skip_no_torch = pytest.mark.skipif(
 
 
 def test_aliases_resolve_to_full_huggingface_ids():
-    """All five §6.4 candidates per SPEC_surprisal_model_choice.md
-    §4.1 must be in the alias table, each pointing at the canonical
-    HF identifier."""
+    """All nine §4.1 core candidates per SPEC_surprisal_model_choice.md
+    (revised 2026-05-15) must be in the alias table, each pointing at
+    the canonical HF identifier."""
     assert sb.MODEL_ALIASES["gpt2"] == "openai-community/gpt2"
     assert sb.MODEL_ALIASES["llama32_1b"] == "meta-llama/Llama-3.2-1B"
-    assert sb.MODEL_ALIASES["phi3_mini"] == "microsoft/Phi-3-mini-4k-instruct"
+    assert sb.MODEL_ALIASES["llama32_3b"] == "meta-llama/Llama-3.2-3B"
+    assert sb.MODEL_ALIASES["olmo2_1b"] == "allenai/OLMo-2-0425-1B"
+    assert sb.MODEL_ALIASES["openelm_1b"] == "apple/OpenELM-1_1B"
     assert sb.MODEL_ALIASES["qwen25_1_5b"] == "Qwen/Qwen2.5-1.5B"
+    assert sb.MODEL_ALIASES["qwen3_1_7b"] == "Qwen/Qwen3-1.7B-Base"
+    assert sb.MODEL_ALIASES["smollm2_1_7b"] == "HuggingFaceTB/SmolLM2-1.7B"
     assert "TinyLlama" in sb.MODEL_ALIASES["tinyllama"]
 
 
 def test_alias_table_size():
-    """Five candidates as documented in the spec; if this number
-    changes, the spec's candidate list and this test should change
-    together."""
-    assert len(sb.MODEL_ALIASES) == 5
+    """Nine core candidates as documented in the 2026-05-15 spec
+    revision; if this number changes, the spec's §4.1 candidate
+    table and this test should change together."""
+    assert len(sb.MODEL_ALIASES) == 9
+
+
+def test_phi3_mini_removed_from_alias_table():
+    """The 2026-05-15 spec revision dropped Phi-3 Mini per §3.7
+    (base-only posture). The alias must not appear in the active
+    table; pinning it raises an error per the deprecation gate test
+    below."""
+    assert "phi3_mini" not in sb.MODEL_ALIASES
 
 
 def test_default_model_is_in_alias_table():
@@ -100,6 +116,47 @@ def test_construction_with_unknown_id_passes_through():
     assert b._alias is None
 
 
+# --------------- Deprecation gate (phi3_mini, 2026-05-15) -------
+
+
+def test_phi3_mini_alias_raises_deprecation_error():
+    """Pinning the removed `phi3_mini` alias raises
+    `SurprisalBackendError` at construction time with the migration
+    guidance message body, rather than silently passing through and
+    failing later with a confusing HF-id-not-found error."""
+    with pytest.raises(sb.SurprisalBackendError) as exc:
+        sb.SurprisalBackend(model_id="phi3_mini")
+    msg = str(exc.value)
+    # Names the alias that was removed.
+    assert "phi3_mini" in msg
+    # Names the 2026-05-15 date so operators can find the spec revision.
+    assert "2026-05-15" in msg
+    # Names at least one of the migration paths (HF id pass-through,
+    # Qwen 3 4B Base replacement, or core-set fallback).
+    assert (
+        "Qwen3-4B-Base" in msg
+        or "microsoft/Phi-3-mini-4k-instruct" in msg
+    )
+
+
+def test_phi3_mini_full_huggingface_id_still_passes_through():
+    """The deprecation gate only fires on the alias key. Operators
+    who pass the full HF id directly still get a backend (the
+    instruct-tuned model itself is still on HF; this is the documented
+    migration path for operators with legacy calibrations)."""
+    b = sb.SurprisalBackend(model_id="microsoft/Phi-3-mini-4k-instruct")
+    assert b.model_id == "microsoft/Phi-3-mini-4k-instruct"
+    assert b._alias is None  # No alias for this id post-2026-05-15.
+
+
+def test_deprecated_aliases_table_is_populated():
+    """The deprecation gate reads from `DEPRECATED_ALIASES`; the
+    table must contain at least `phi3_mini` so the gate has a message
+    to render."""
+    assert "phi3_mini" in sb.DEPRECATED_ALIASES
+    assert "base" in sb.DEPRECATED_ALIASES["phi3_mini"].lower()
+
+
 # --------------- resolve_model_arg ------------------------------
 
 
@@ -120,8 +177,10 @@ def test_resolve_model_arg_passes_through_full_id():
 
 def test_construction_does_not_load_model():
     """Instantiating a SurprisalBackend must not trigger a model
-    download or load. Matters more than for embeddings — Phi-3 Mini
-    is ~7.6 GB and shouldn't download just to print `--help`."""
+    download or load. Matters more than for embeddings: the heaviest
+    candidate in the post-2026-05-15 set (Llama 3.2 3B ~6 GB; Qwen 3
+    4B Base from the optional comparators is ~8 GB) shouldn't download
+    just to print `--help`."""
     b = sb.SurprisalBackend(model_id="tinyllama")
     assert b._model is None
     assert b._tokenizer is None

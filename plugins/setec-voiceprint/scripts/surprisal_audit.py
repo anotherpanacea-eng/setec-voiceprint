@@ -45,7 +45,7 @@ Usage::
 
     # Different model, JSON output to file:
     python3 scripts/surprisal_audit.py path/to/draft.txt \\
-        --model phi3_mini --json --out audit.json
+        --model olmo2_1b --json --out audit.json
 
     # Sliding-window mode (token windows):
     python3 scripts/surprisal_audit.py path/to/draft.txt \\
