@@ -103,6 +103,21 @@ import sys
 from pathlib import Path
 from typing import Any, Iterator
 
+try:
+    from tqdm import tqdm  # type: ignore
+except ImportError:
+    class _NullBar:
+        def update(self, n: int = 1) -> None: pass
+        def set_postfix_str(self, s: str, refresh: bool = True) -> None: pass
+        def close(self) -> None: pass
+
+    def tqdm(  # type: ignore[no-redef]
+        iterable=None, total=None, initial=0, unit="it",
+        unit_scale=False, desc=None, file=None, **kwargs,
+    ):
+        return iterable if iterable is not None else _NullBar()
+
+
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SCRIPTS = Path(__file__).resolve().parents[1]
 if str(SCRIPTS) not in sys.path:
@@ -294,6 +309,41 @@ def _row_id(source_basename: str, raw_id: Any) -> str:
     return f"raid_{Path(source_basename).stem}_{raw}"
 
 
+def _count_rows_in_file(source: Path) -> int:
+    """Row count for tqdm total. For CSV, parses with
+    ``csv.reader`` so embedded newlines inside quoted generation
+    fields don't inflate the count (RAID generations frequently
+    span multiple lines). For parquet, reads the metadata's
+    ``num_rows`` (O(1))."""
+    suffix = source.suffix.lower()
+    if suffix == ".csv":
+        try:
+            csv.field_size_limit(sys.maxsize)
+        except (OverflowError, ValueError):
+            csv.field_size_limit(2**31 - 1)
+        with source.open("r", encoding="utf-8-sig", newline="") as fh:
+            reader = csv.reader(fh)
+            try:
+                next(reader)  # discard header
+            except StopIteration:
+                return 0
+            n = sum(1 for _ in reader)
+        return n
+    if suffix == ".parquet":
+        try:
+            import pyarrow.parquet as pq  # type: ignore
+            pf = pq.ParquetFile(str(source))
+            return pf.metadata.num_rows
+        except (ImportError, AttributeError):
+            # AttributeError covers test fixtures / stub parquet
+            # implementations that don't expose .metadata.num_rows.
+            # In that case, fall through to "unknown total" (0)
+            # and let tqdm show indeterminate progress; we don't
+            # want pre-counting to break real conversion runs.
+            return 0
+    return 0
+
+
 def convert(args: argparse.Namespace) -> int:
     source_dir = Path(args.source_dir).expanduser().resolve()
     if not source_dir.is_dir():
@@ -318,14 +368,23 @@ def convert(args: argparse.Namespace) -> int:
     text_dir = Path(args.text_dir).expanduser().resolve()
 
     # Refuse to write outside the private dir unless override.
+    # PRIVATE_DIR is resolved so this check survives Windows
+    # junctions / POSIX symlinks pointing the private dir at a
+    # different physical location (e.g. an Obsidian-synced Cowork
+    # folder). Without ``.resolve()``, manifest_path's resolved
+    # form would diverge from PRIVATE_DIR's logical form and the
+    # ``relative_to`` check would refuse a legitimate write.
+    private_dir_check = (
+        PRIVATE_DIR.resolve() if PRIVATE_DIR.exists() else PRIVATE_DIR
+    )
     if not args.allow_public_output:
         for p in (manifest_path, text_dir):
             try:
-                p.relative_to(PRIVATE_DIR)
+                p.relative_to(private_dir_check)
             except ValueError:
                 sys.stderr.write(
                     f"Refusing to write {p} outside "
-                    f"{PRIVATE_DIR}. RAID is Apache-2.0 — "
+                    f"{private_dir_check}. RAID is Apache-2.0 — "
                     "pass --allow-public-output if you want "
                     "to spill text files into a public "
                     "directory (the manifest still carries "
@@ -339,18 +398,65 @@ def convert(args: argparse.Namespace) -> int:
     fetch_record = _load_revision_record(source_dir)
     revision = fetch_record.get("revision", "unknown")
 
+    # Resume support: if the manifest already exists and --refresh
+    # is not set, count its existing lines and skip that many rows
+    # in the deterministic source-iteration order. Source files
+    # are sorted; csv.DictReader and pyarrow.iter_batches preserve
+    # row order; so "skip the first N rows" reliably resumes from
+    # where a previous interrupted run stopped.
+    #
+    # ``getattr`` with a default keeps backward compatibility with
+    # callers (notably tests) that construct ``argparse.Namespace``
+    # objects directly without the new ``refresh`` attribute.
+    refresh = getattr(args, "refresh", False)
+    n_skip = 0
+    if manifest_path.exists() and not refresh:
+        with manifest_path.open("r", encoding="utf-8") as fh:
+            n_skip = sum(1 for _ in fh)
+        if n_skip > 0:
+            sys.stderr.write(
+                f"Resuming: {n_skip:,} rows already in manifest; "
+                f"skipping ahead in source iteration.\n"
+            )
+    elif refresh and manifest_path.exists():
+        manifest_path.unlink()
+
+    # Pre-count source rows for tqdm total. Fast (byte-level) on
+    # parquet, single-pass csv-aware count on CSV. ~1-3 min of
+    # upfront I/O for RAID-scale corpora; cheap relative to the
+    # conversion run.
+    sys.stderr.write("Counting source rows for progress bar...\n")
+    total_rows = sum(_count_rows_in_file(p) for p in source_files)
+    sys.stderr.write(f"Total source rows: {total_rows:,}\n")
+
+    mode = "a" if n_skip > 0 else "w"
+
     n_written = 0
     n_skipped_adversarial = 0
     n_skipped_empty = 0
     n_skipped_nonprose = 0
+    rows_seen = 0  # global counter across all source files
 
-    with manifest_path.open("w", encoding="utf-8") as fh_out:
+    bar = tqdm(
+        total=total_rows,
+        initial=n_skip,
+        unit="row",
+        unit_scale=True,
+        desc=f"convert {manifest_path.name}",
+        file=sys.stderr,
+    )
+    try:
+      with manifest_path.open(mode, encoding="utf-8") as fh_out:
         for source_file in source_files:
             if args.limit and n_written >= args.limit:
                 break
             for row in _read_rows(source_file):
+                rows_seen += 1
+                if rows_seen <= n_skip:
+                    continue  # already written in a prior run
                 if args.limit and n_written >= args.limit:
                     break
+                bar.update(1)
                 generation = row.get("generation")
                 if not isinstance(generation, str) or not generation.strip():
                     n_skipped_empty += 1
@@ -415,11 +521,18 @@ def convert(args: argparse.Namespace) -> int:
                     json.dumps(entry, default=str) + "\n",
                 )
                 n_written += 1
+    finally:
+        bar.close()
 
+    total_in_manifest = n_skip + n_written
     sys.stdout.write(
-        f"Wrote {n_written} manifest entries to {manifest_path}\n"
-        f"  Text spilled to {text_dir}\n"
-        f"  Skipped: {n_skipped_empty} empty, "
+        f"Wrote {n_written} new manifest entries to {manifest_path}"
+        + (
+            f" (resumed from {n_skip:,}; total {total_in_manifest:,})\n"
+            if n_skip else "\n"
+        )
+        + f"  Text spilled to {text_dir}\n"
+        f"  Skipped this run: {n_skipped_empty} empty, "
         f"{n_skipped_adversarial} adversarial, "
         f"{n_skipped_nonprose} non-prose (Code domain)\n"
         f"  HF revision: {revision}\n"
@@ -487,6 +600,16 @@ def main(argv: list[str] | None = None) -> int:
             "Apache-2.0; this is permitted but the framework's "
             "default is to keep all corpus material under the "
             "private dir."
+        ),
+    )
+    parser.add_argument(
+        "--refresh", action="store_true",
+        help=(
+            "Discard any existing manifest at the output path "
+            "and start over from row 0. Default behavior is to "
+            "resume: if the manifest already has N lines, the "
+            "converter skips the first N rows in deterministic "
+            "iteration order and appends from there."
         ),
     )
     return convert(parser.parse_args(argv))

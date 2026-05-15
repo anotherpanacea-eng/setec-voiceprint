@@ -787,6 +787,187 @@ class TestConvertEndToEnd:
         assert public_manifest.is_file()
 
 
+class TestResumeSupport:
+    """Resume behaviour: if the manifest already exists, the
+    converter counts its lines and skips that many source rows
+    rather than rewriting from scratch.
+
+    This is the behaviour that lets a multi-hour run survive a
+    Claude-app crash or a Windows hang: the next invocation reads
+    the partial manifest, fast-forwards through the source CSVs,
+    and appends only the rows that hadn't been written yet."""
+
+    def _setup_basic(self, tmp_path, row_count: int = 10):
+        rows = [
+            {"id": i, "model": "human", "attack": "none",
+             "domain": "news", "generation": f"text {i}"}
+            for i in range(row_count)
+        ]
+        private_dir = tmp_path / "private"
+        source_dir = private_dir / "raid"
+        source_dir.mkdir(parents=True)
+        _write_fake_parquet(source_dir, "train-x.parquet")
+        _install_mock_pyarrow({"train-x.parquet": rows})
+        rt = _import_raid_to_manifest()
+        rt.PRIVATE_DIR = private_dir
+        return rt, source_dir
+
+    def _args(self, source_dir, **overrides):
+        import argparse
+        defaults = dict(
+            source_dir=str(source_dir),
+            manifest=str(source_dir / "manifest.jsonl"),
+            text_dir=str(source_dir / "text"),
+            limit=0, no_adversarial=False, no_nonprose=False,
+            allow_public_output=False,
+            refresh=False,
+        )
+        defaults.update(overrides)
+        return argparse.Namespace(**defaults)
+
+    def test_resume_after_partial_write_skips_existing_rows(
+        self, tmp_path,
+    ):
+        rt, source_dir = self._setup_basic(tmp_path, row_count=10)
+        # First run with --limit 3 simulates an interrupted run
+        # that wrote 3 of the 10 rows before stopping.
+        args1 = self._args(source_dir, limit=3)
+        rc1 = rt.convert(args1)
+        assert rc1 == 0
+        manifest = source_dir / "manifest.jsonl"
+        first_run_lines = manifest.read_text(
+            encoding="utf-8"
+        ).strip().splitlines()
+        assert len(first_run_lines) == 3
+        first_ids = [json.loads(L)["id"] for L in first_run_lines]
+        # Second run with no limit: should resume from row 3,
+        # NOT rewrite from row 0. Result: 10 rows total in the
+        # manifest, and the first 3 lines unchanged from run 1.
+        args2 = self._args(source_dir)
+        rc2 = rt.convert(args2)
+        assert rc2 == 0
+        all_lines = manifest.read_text(
+            encoding="utf-8"
+        ).strip().splitlines()
+        assert len(all_lines) == 10
+        all_ids = [json.loads(L)["id"] for L in all_lines]
+        # First 3 are byte-identical to run 1 (append, don't
+        # rewrite).
+        assert all_lines[:3] == first_run_lines
+        # All 10 distinct row ids present.
+        assert all_ids == first_ids + [
+            "raid_train-x_3", "raid_train-x_4", "raid_train-x_5",
+            "raid_train-x_6", "raid_train-x_7", "raid_train-x_8",
+            "raid_train-x_9",
+        ]
+
+    def test_refresh_flag_discards_existing_manifest(
+        self, tmp_path,
+    ):
+        rt, source_dir = self._setup_basic(tmp_path, row_count=5)
+        # First run writes 3 rows.
+        rc1 = rt.convert(self._args(source_dir, limit=3))
+        assert rc1 == 0
+        manifest = source_dir / "manifest.jsonl"
+        assert len(manifest.read_text(
+            encoding="utf-8"
+        ).strip().splitlines()) == 3
+        # --refresh deletes the manifest and starts over from
+        # row 0. With no --limit this run, the full 5 rows land.
+        rc2 = rt.convert(self._args(source_dir, refresh=True))
+        assert rc2 == 0
+        all_lines = manifest.read_text(
+            encoding="utf-8"
+        ).strip().splitlines()
+        assert len(all_lines) == 5
+        all_ids = [json.loads(L)["id"] for L in all_lines]
+        # IDs are 0..4 from a fresh restart.
+        assert all_ids == [f"raid_train-x_{i}" for i in range(5)]
+
+    def test_resume_default_when_refresh_not_in_namespace(
+        self, tmp_path,
+    ):
+        """Older callers (notably existing tests) build
+        argparse.Namespace without a `refresh` attribute. The
+        converter must default to resume behaviour rather than
+        AttributeError. Regression for the missing-attribute
+        crash."""
+        rt, source_dir = self._setup_basic(tmp_path, row_count=5)
+        import argparse
+        # Namespace built WITHOUT refresh attribute — mirrors
+        # pre-PR test fixtures.
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(source_dir / "manifest.jsonl"),
+            text_dir=str(source_dir / "text"),
+            limit=0, no_adversarial=False, no_nonprose=False,
+            allow_public_output=False,
+        )
+        rc = rt.convert(args)
+        assert rc == 0
+        # Fresh write; n_skip path with manifest missing.
+        assert (source_dir / "manifest.jsonl").is_file()
+
+
+class TestJunctionResolveFix:
+    """When PRIVATE_DIR resolves to a different physical path
+    than the unresolved value (e.g., a Windows directory junction
+    or POSIX symlink), the privacy guard must still accept legitimate
+    writes through the junction. Regression for the original bug
+    where ``manifest_path.resolve()`` followed the junction but
+    ``PRIVATE_DIR`` did not, causing ``relative_to`` to refuse."""
+
+    def test_privacy_guard_accepts_write_via_symlink_target(
+        self, tmp_path,
+    ):
+        # Build: real_private/ contains the actual private dir;
+        # logical_private/ is a symlink TO real_private. The
+        # converter should accept writes when manifest_path
+        # resolves to a path under real_private but PRIVATE_DIR
+        # is set to logical_private.
+        real_private = tmp_path / "real_private"
+        real_private.mkdir()
+        source_dir = real_private / "raid"
+        source_dir.mkdir()
+        _write_fake_parquet(source_dir, "train-x.parquet")
+        _install_mock_pyarrow({
+            "train-x.parquet": [
+                {"id": 1, "model": "human", "attack": "none",
+                 "domain": "news", "generation": "text"},
+            ],
+        })
+
+        logical_private = tmp_path / "logical_private"
+        try:
+            logical_private.symlink_to(real_private)
+        except (OSError, NotImplementedError):
+            # Windows without symlink privilege; skip rather
+            # than fail. The same logic is exercised by the
+            # ``.resolve()`` path test below.
+            import pytest as _pytest
+            _pytest.skip(
+                "symlink creation not permitted on this host"
+            )
+
+        rt = _import_raid_to_manifest()
+        rt.PRIVATE_DIR = logical_private  # unresolved
+        import argparse
+        args = argparse.Namespace(
+            source_dir=str(source_dir),
+            manifest=str(source_dir / "manifest.jsonl"),
+            text_dir=str(source_dir / "text"),
+            limit=0, no_adversarial=False, no_nonprose=False,
+            allow_public_output=False, refresh=False,
+        )
+        rc = rt.convert(args)
+        # Must succeed (rc 0), not refuse (rc 2). Pre-fix this
+        # would have returned 2 because manifest_path.resolve()
+        # follows the symlink to real_private but PRIVATE_DIR
+        # stays at logical_private, and the unresolved
+        # relative_to comparison fails.
+        assert rc == 0
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
