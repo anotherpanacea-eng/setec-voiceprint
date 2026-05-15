@@ -2602,8 +2602,10 @@ def main() -> int:
         help=(
             "Enable Tier 4 (surprisal) metrics. OPT-IN by default. "
             "Requires the optional `transformers + torch` install "
-            "and a causal LM (see --surprisal-model). PROVISIONAL "
-            "bands per SPEC §3.5; calibration_anchor: "
+            "(see plugins/setec-voiceprint/requirements-surprisal.txt "
+            "for the dependency layer and per-accelerator torch-wheel "
+            "selection) and a causal LM (see --surprisal-model). "
+            "PROVISIONAL bands per SPEC §3.5; calibration_anchor: "
             "user-baseline-required."
         ),
     )

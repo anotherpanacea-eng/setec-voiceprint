@@ -6,6 +6,31 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.59.2] - 2026-05-14
+
+**Ship `requirements-surprisal.txt` — close the Phase C documentation gap.** The Tier-4 surprisal backend (`scripts/surprisal_backend.py`) shipped in 1.45.0 (PR #23) with an install hint that pointed at "the setup skill for tier-by-tier guidance," but the actual pinned dependency layer was scoped-for-when-C.3-ships and then never landed. The framework's calibration toolchain has a sibling `requirements-calibration.txt`; this PR adds the matching Tier-4 file and updates the install hints to point at it.
+
+### Added
+
+- **`plugins/setec-voiceprint/requirements-surprisal.txt`** — pinned dependency layer for the Tier-4 surprisal backend. Includes:
+  - `transformers>=4.40,<5` (HuggingFace causal-LM loader + tokenizer).
+  - `tokenizers>=0.20,<0.22` (explicit pin so a stale transformers build doesn't pull a tokenizers version that breaks the §6.4 candidate tokenizers).
+  - `torch>=2.1,<3` (the inference engine; wheel must be installed first per the platform-specific commentary).
+  - Commented-out `accelerate>=0.30,<2` (only needed when the §6.4 fixture-suite picks a model that requires it — Llama 3.2 1B, Qwen 2.5 1.5B, or Phi-3 Mini at fp16).
+- **PyTorch wheel-selection commentary** in the file header. Documents the four reasonable paths for picking a wheel: ROCm 6.x (AMD GPU on Linux / WSL2), CUDA 12.x (NVIDIA GPU), MPS (Apple Silicon, default wheel), and CPU-only fallback. Also names `torch-directml` as a cross-vendor fallback for Windows operators when ROCm install collapses; flags that the surprisal backend doesn't yet wire DirectML in automatically (DirectML support is roadmap).
+- **Per-accelerator cost commentary**: notes that CPU-only Tier-4 calibration is tractable at sample-size (10K rows ≈ 1-3 hours on TinyLlama 1.1B) but impractical at full RAID-scale (8M rows is days-to-weeks). GPU is mandatory for the latter.
+
+### Changed
+
+- **`scripts/surprisal_backend.py` install-hint message** now points at `requirements-surprisal.txt` instead of "the setup skill." The hint still satisfies the existing test's substring assertions (`"transformers"` and `"pip install"`).
+- **`scripts/variance_audit.py` `--tier4` CLI help text** points at `plugins/setec-voiceprint/requirements-surprisal.txt` for the dependency layer + per-accelerator torch-wheel selection guidance.
+
+### Notes
+
+- This is a documentation / packaging artifact only — no code or behavior changes. The Tier-4 backend has always worked when transformers + torch are installed manually; this just makes the install path discoverable and pinned.
+- The framework's shipped Tier-4 thresholds in `COMPRESSION_HEURISTICS` remain PROVISIONAL (`provisional=True`, `provenance=None`) regardless of dependency-layer shipping. Phase C.5 (operational model-choice fixture suite) is the remaining gap for load-bearing Tier-4 calibration — but it's operational, not framework-side.
+- Existing test (`test_score_text_raises_when_transformers_missing`) still passes — the new hint contains the same substrings the test asserts on.
+
 ## [1.59.1] - 2026-05-14
 
 **Operator docs alignment with v1.53.0 – v1.59.0 changes.** A docs-only PATCH bump that brings the three operator-facing reference docs into alignment with the framework features that landed in Wave 4. Pre-AMD-shift readiness pass: an operator following any of these docs end-to-end should land on the actual current behavior rather than the pre-Wave-4 state.
