@@ -399,24 +399,57 @@ def convert(args: argparse.Namespace) -> int:
     revision = fetch_record.get("revision", "unknown")
 
     # Resume support: if the manifest already exists and --refresh
-    # is not set, count its existing lines and skip that many rows
-    # in the deterministic source-iteration order. Source files
-    # are sorted; csv.DictReader and pyarrow.iter_batches preserve
-    # row order; so "skip the first N rows" reliably resumes from
-    # where a previous interrupted run stopped.
+    # is not set, read the existing manifest and build a set of
+    # already-written row IDs. During iteration we compute each
+    # source row's would-be ID and skip rows whose ID is already
+    # in the set.
+    #
+    # Skip-by-ID rather than skip-by-position is the load-bearing
+    # choice. The previous (1.42.x) implementation used manifest
+    # line count as a source-row cursor: ``rows_seen <= n_skip``.
+    # That breaks under any filter that consumes a source row
+    # without writing a manifest line (``--no-adversarial``,
+    # ``--no-nonprose``, empty-generation skips, decode failures).
+    # On resume the cursor lands too early in the source stream;
+    # rows past the previous endpoint that *were* filter-skipped
+    # the first time get newly written this time, and rows that
+    # were written the first time get *re-written* under their
+    # original IDs — silent duplicates the validator catches
+    # only at audit time (we hit this on RAID overnight: 2
+    # duplicate IDs across crash-restart cycles).
+    #
+    # Skip-by-ID is correct regardless of filters or skip-emitting
+    # branches: if a row's ID is in the manifest we skip it, full
+    # stop. As a side benefit, dedup against the existing manifest
+    # is automatic across restarts.
     #
     # ``getattr`` with a default keeps backward compatibility with
     # callers (notably tests) that construct ``argparse.Namespace``
     # objects directly without the new ``refresh`` attribute.
     refresh = getattr(args, "refresh", False)
-    n_skip = 0
+    seen_ids: set[str] = set()
     if manifest_path.exists() and not refresh:
         with manifest_path.open("r", encoding="utf-8") as fh:
-            n_skip = sum(1 for _ in fh)
-        if n_skip > 0:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    # Tolerate the malformed line in the
+                    # existing manifest. The downstream validator
+                    # is the right place to flag this; here we
+                    # just want to know which IDs are durable.
+                    continue
+                rid = entry.get("id")
+                if isinstance(rid, str) and rid:
+                    seen_ids.add(rid)
+        if seen_ids:
             sys.stderr.write(
-                f"Resuming: {n_skip:,} rows already in manifest; "
-                f"skipping ahead in source iteration.\n"
+                f"Resuming: {len(seen_ids):,} row IDs already in "
+                f"manifest; rows with matching computed IDs will "
+                f"be skipped.\n"
             )
     elif refresh and manifest_path.exists():
         manifest_path.unlink()
@@ -429,17 +462,17 @@ def convert(args: argparse.Namespace) -> int:
     total_rows = sum(_count_rows_in_file(p) for p in source_files)
     sys.stderr.write(f"Total source rows: {total_rows:,}\n")
 
-    mode = "a" if n_skip > 0 else "w"
+    mode = "a" if seen_ids else "w"
 
     n_written = 0
     n_skipped_adversarial = 0
     n_skipped_empty = 0
     n_skipped_nonprose = 0
-    rows_seen = 0  # global counter across all source files
+    n_skipped_resume = 0  # rows skipped because already in manifest
 
     bar = tqdm(
         total=total_rows,
-        initial=n_skip,
+        initial=len(seen_ids),
         unit="row",
         unit_scale=True,
         desc=f"convert {manifest_path.name}",
@@ -451,11 +484,21 @@ def convert(args: argparse.Namespace) -> int:
             if args.limit and n_written >= args.limit:
                 break
             for row in _read_rows(source_file):
-                rows_seen += 1
-                if rows_seen <= n_skip:
-                    continue  # already written in a prior run
                 if args.limit and n_written >= args.limit:
                     break
+                # Compute the would-be ID first; if it's already
+                # in the manifest, skip the entire row (incl. all
+                # filter checks and text-file writes). This is
+                # what makes resume correct under filters: a row
+                # that was filter-skipped in the first run has
+                # NO entry in the manifest, so its ID isn't in
+                # seen_ids, so we process it normally. A row that
+                # was successfully written in the first run has
+                # its ID in seen_ids, so we skip it cleanly.
+                row_id = _row_id(source_file.name, row.get("id"))
+                if row_id in seen_ids:
+                    n_skipped_resume += 1
+                    continue
                 bar.update(1)
                 generation = row.get("generation")
                 if not isinstance(generation, str) or not generation.strip():
@@ -472,7 +515,6 @@ def convert(args: argparse.Namespace) -> int:
                     n_skipped_nonprose += 1
                     continue
 
-                row_id = _row_id(source_file.name, row.get("id"))
                 text_path = _bucketed_text_path(text_dir, row_id)
                 text_path.parent.mkdir(parents=True, exist_ok=True)
                 text_path.write_text(generation, encoding="utf-8")
@@ -520,21 +562,27 @@ def convert(args: argparse.Namespace) -> int:
                 fh_out.write(
                     json.dumps(entry, default=str) + "\n",
                 )
+                # Track this row's ID in seen_ids so within-run
+                # dedup (e.g., from a malformed source row with a
+                # repeating "no_id" fallback) is also automatic.
+                seen_ids.add(row_id)
                 n_written += 1
     finally:
         bar.close()
 
-    total_in_manifest = n_skip + n_written
+    n_resumed = len(seen_ids) - n_written  # IDs present at start
+    total_in_manifest = n_resumed + n_written
     sys.stdout.write(
         f"Wrote {n_written} new manifest entries to {manifest_path}"
         + (
-            f" (resumed from {n_skip:,}; total {total_in_manifest:,})\n"
-            if n_skip else "\n"
+            f" (resumed from {n_resumed:,}; total {total_in_manifest:,})\n"
+            if n_resumed else "\n"
         )
         + f"  Text spilled to {text_dir}\n"
         f"  Skipped this run: {n_skipped_empty} empty, "
         f"{n_skipped_adversarial} adversarial, "
-        f"{n_skipped_nonprose} non-prose (Code domain)\n"
+        f"{n_skipped_nonprose} non-prose (Code domain), "
+        f"{n_skipped_resume} already in manifest\n"
         f"  HF revision: {revision}\n"
     )
     return 0
