@@ -123,6 +123,104 @@ def test_initial_state_has_pending_shards(tmp_path: Path):
         assert state["shards"][sid]["n_entries_planned"] == 1000
 
 
+# --------------- v1.45.0: task / task_params extensions ---------
+
+
+def test_build_initial_state_defaults_task_to_calibration_survey(tmp_path: Path):
+    """Callers that don't pass ``task`` get the legacy task name,
+    so a pre-v1.45.0 invocation (which always meant
+    calibration_survey) produces a state.json whose task field
+    matches the registered surface name."""
+    summaries = [{"n_entries": 10, "stratum_counts": {}}]
+    state = ss.build_initial_state(
+        run_id="r",
+        source_manifest_path=tmp_path / "src.jsonl",
+        source_manifest_sha256="abc",
+        shard_count=1,
+        shard_size_target=10,
+        stratify_by=["register"],
+        shuffle_seed=42,
+        fpr_target=0.01,
+        tier1=True, tier2=False, tier3=False,
+        shard_summaries=summaries,
+    )
+    assert state["task"] == "calibration_survey"
+    assert state["task_params"] == {}
+
+
+def test_build_initial_state_records_explicit_task_and_params(tmp_path: Path):
+    """An opt-in caller (the corpus_hygiene path) passes task name
+    + a task_params blob; the state file records both verbatim so
+    workers and the aggregator can read them back without re-
+    parsing CLI flags."""
+    summaries = [{"n_entries": 10, "stratum_counts": {}}]
+    state = ss.build_initial_state(
+        run_id="hygiene_run",
+        source_manifest_path=tmp_path / "src.jsonl",
+        source_manifest_sha256="abc",
+        shard_count=1,
+        shard_size_target=10,
+        stratify_by=["register"],
+        shuffle_seed=42,
+        shard_summaries=summaries,
+        task="corpus_hygiene",
+        task_params={
+            "warn_threshold": 0.02,
+            "fail_threshold": 0.10,
+            "strip_aggressive": True,
+        },
+    )
+    assert state["task"] == "corpus_hygiene"
+    assert state["task_params"]["warn_threshold"] == 0.02
+    assert state["task_params"]["fail_threshold"] == 0.10
+    assert state["task_params"]["strip_aggressive"] is True
+    # Tier flags are nullable post-v1.45.0; the corpus_hygiene
+    # task doesn't carry them.
+    assert state["tier1"] is None
+    assert state["tier2"] is None
+    assert state["tier3"] is None
+    assert state["fpr_target"] is None
+
+
+def test_build_initial_state_task_params_copied(tmp_path: Path):
+    """The task_params dict must be a defensive copy — mutating
+    the caller's dict after the call should not leak into the
+    returned state. Otherwise concurrent runs sharing a defaults
+    dict could clobber each other."""
+    summaries = [{"n_entries": 10, "stratum_counts": {}}]
+    params = {"warn_threshold": 0.01}
+    state = ss.build_initial_state(
+        run_id="r",
+        source_manifest_path=tmp_path / "src.jsonl",
+        source_manifest_sha256="abc",
+        shard_count=1,
+        shard_size_target=10,
+        stratify_by=["register"],
+        shuffle_seed=42,
+        shard_summaries=summaries,
+        task="corpus_hygiene",
+        task_params=params,
+    )
+    params["warn_threshold"] = 999.0
+    assert state["task_params"]["warn_threshold"] == 0.01
+
+
+def test_task_for_returns_legacy_default_when_missing():
+    """Load an old fixture state without a ``task`` field; the
+    helper must transparently return calibration_survey. This is
+    the load-bearing test for the pre-v1.45.0 state.json
+    backwards-compat contract."""
+    state = {"run_id": "legacy", "shards": {}}
+    assert ss.task_for(state) == "calibration_survey"
+
+
+def test_task_for_returns_explicit_value():
+    state = {
+        "run_id": "new", "task": "corpus_hygiene", "shards": {},
+    }
+    assert ss.task_for(state) == "corpus_hygiene"
+
+
 # --------------- State transitions ------------------------------
 
 

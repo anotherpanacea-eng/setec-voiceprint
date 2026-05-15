@@ -2382,3 +2382,169 @@ def test_resolve_conflict_reports_unresolved_same_shard(
     err = capsys.readouterr().err
     assert "Unresolved" in err
     assert "hostA" in err and "hostB" in err
+
+
+# --------------- v1.45.0: --task CLI backcompat -----------------
+
+
+class TestTaskCliBackcompat:
+    """The --task flag is new in v1.45.0. Omitting it must produce
+    state.json + work + aggregate behavior byte-identical to
+    pre-v1.45.0. A pre-existing state.json that lacks a ``task``
+    field must continue to work under ``work`` and ``aggregate``."""
+
+    def test_shard_records_calibration_survey_task_by_default(
+        self, sharded_run,
+    ):
+        """The fixture invokes `shard` without --task; state.json
+        must record task=calibration_survey so downstream
+        dispatch resolves to the legacy path."""
+        base = sharded_run["base"]
+        run_id = sharded_run["run_id"]
+        state = ss.read_state(sr.state_path(base, run_id))
+        assert state["task"] == "calibration_survey"
+        # task_params should fold tier flags + fpr_target in.
+        assert state["task_params"]["fpr_target"] == 0.01
+        assert state["task_params"]["tier1"] is True
+
+    def test_legacy_state_without_task_field_runs_work(
+        self, sharded_run, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Hand-strip the task / task_params fields from state.json
+        to simulate a pre-v1.45.0 fixture, then invoke `work`.
+        It must claim and score every shard identically to the
+        post-v1.45.0 path. This is the load-bearing backcompat
+        regression — without it, an operator with an in-progress
+        sharded run created under v1.44.x would be broken by
+        upgrading."""
+        monkeypatch.setattr(sr, "DEFAULT_SCORER", _stub_scorer)
+        base = sharded_run["base"]
+        run_id = sharded_run["run_id"]
+        sp = sr.state_path(base, run_id)
+        state = ss.read_state(sp)
+        # Strip the new-in-v1.45.0 fields.
+        state.pop("task", None)
+        state.pop("task_params", None)
+        ss.write_state(sp, state)
+        rc = sr.main([
+            "--base-dir", str(base), "work", "--run-id", run_id,
+        ])
+        assert rc == 0
+        state = ss.read_state(sp)
+        for sid in ("000", "001", "002"):
+            assert state["shards"][sid]["state"] == "done"
+
+    def test_legacy_state_without_task_field_runs_aggregate(
+        self, sharded_run, tmp_path: Path,
+    ):
+        """Same as above but for ``aggregate``: a pre-v1.45.0
+        state.json (no task field) must dispatch to
+        calibration_survey's aggregator without operator
+        intervention."""
+        base = sharded_run["base"]
+        run_id = sharded_run["run_id"]
+        # Complete shards normally.
+        sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+        # Now strip the new fields and re-write.
+        sp = sr.state_path(base, run_id)
+        state = ss.read_state(sp)
+        state.pop("task", None)
+        state.pop("task_params", None)
+        ss.write_state(sp, state)
+        out_path = tmp_path / "legacy-aggregate.json"
+        rc = sr.main([
+            "--base-dir", str(base), "aggregate",
+            "--run-id", run_id,
+            "--out", str(out_path),
+            "--no-derive",
+        ])
+        assert rc == 0
+        payload = json.loads(out_path.read_text())
+        assert payload["n_records"] == 60
+
+    def test_work_rejects_mismatched_task(
+        self, sharded_run, capsys: pytest.CaptureFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        """If state.json says task=calibration_survey but the
+        operator passes a different task name, refuse rather than
+        silently scoring with the wrong adapter.
+
+        We hand-edit state.json so the mismatch is between two
+        legitimately-registered task names; the test stays valid
+        regardless of which extra tasks are registered.
+        """
+        base = sharded_run["base"]
+        run_id = sharded_run["run_id"]
+        # Register a temporary "other" task surface for the
+        # mismatch test.
+        import task_surfaces as ts  # type: ignore
+
+        def _stub(**kwargs):
+            return {"records": [], "meta": {}, "cache_hit": False}
+
+        ts.register_task(ts.TaskSurface(
+            name="_mismatch_check_only",
+            score_shard=_stub,
+            aggregate_records=_stub,
+        ))
+        try:
+            rc = sr.main([
+                "--base-dir", str(base), "work",
+                "--run-id", run_id,
+                "--task", "_mismatch_check_only",
+            ])
+            assert rc == 2
+            err = capsys.readouterr().err
+            assert "task" in err.lower()
+        finally:
+            ts.TASK_REGISTRY.pop("_mismatch_check_only", None)
+
+    def test_aggregate_rejects_mismatched_task(
+        self, sharded_run, tmp_path: Path,
+        capsys: pytest.CaptureFixture,
+    ):
+        base = sharded_run["base"]
+        run_id = sharded_run["run_id"]
+        sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+        import task_surfaces as ts  # type: ignore
+
+        def _stub(**kwargs):
+            return {"records": [], "meta": {}, "cache_hit": False}
+
+        ts.register_task(ts.TaskSurface(
+            name="_mismatch_check_only",
+            score_shard=_stub,
+            aggregate_records=_stub,
+        ))
+        try:
+            rc = sr.main([
+                "--base-dir", str(base), "aggregate",
+                "--run-id", run_id,
+                "--out", str(tmp_path / "agg.json"),
+                "--no-derive",
+                "--task", "_mismatch_check_only",
+            ])
+            assert rc == 2
+            err = capsys.readouterr().err
+            assert "task" in err.lower()
+        finally:
+            ts.TASK_REGISTRY.pop("_mismatch_check_only", None)
+
+    def test_explicit_task_calibration_survey_works(
+        self, sharded_run,
+    ):
+        """Passing --task calibration_survey explicitly is a no-op
+        — same flow, same result. Documenting this for operators
+        who want to be explicit about the task."""
+        base = sharded_run["base"]
+        run_id = sharded_run["run_id"]
+        rc = sr.main([
+            "--base-dir", str(base), "work",
+            "--run-id", run_id,
+            "--task", "calibration_survey",
+        ])
+        assert rc == 0
+        state = ss.read_state(sr.state_path(base, run_id))
+        for sid in ("000", "001", "002"):
+            assert state["shards"][sid]["state"] == "done"

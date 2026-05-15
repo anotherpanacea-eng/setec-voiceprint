@@ -124,6 +124,12 @@ from shard_state import (  # type: ignore
     _host,
     _shard_id,
 )
+from task_surfaces import (  # type: ignore
+    TASK_REGISTRY,
+    get_task,
+    registered_task_names,
+    task_for_state,
+)
 
 
 TASK_SURFACE = "calibration"
@@ -415,6 +421,47 @@ def write_manifest(path: Path, rows: list[dict[str, Any]]) -> None:
             fh.write(json.dumps(row, sort_keys=True) + "\n")
 
 
+def absolutize_manifest_paths(
+    rows: list[dict[str, Any]], source_manifest_parent: Path,
+) -> list[dict[str, Any]]:
+    """Rewrite each row's ``path`` field to an absolute path
+    anchored against the source manifest's parent directory.
+
+    The shard machinery copies rows from a source manifest into
+    per-shard manifests at ``<run_dir>/shards/<sid>/manifest.jsonl``.
+    Manifest paths are conventionally stored relative to the
+    manifest file's location (matching ``check_corpus``'s
+    ``paths_from_manifest`` and ``manifest_validator``'s
+    ``resolve_path``). After sharding, that convention silently
+    breaks: a relative ``texts/foo.txt`` written in the source
+    manifest would resolve under the shard manifest's directory
+    once it lands there, not under the source's. Single-process
+    consumers fail loudly; the sharded ``corpus_hygiene`` scorer
+    that resolves paths the same way would emit phantom errors
+    for every row.
+
+    Resolving to absolute paths at shard-write time keeps the
+    shard manifests self-contained regardless of the consumer's
+    cwd or the shard manifest's location. Absolute path entries
+    are passed through unchanged.
+
+    Returns a new list with the rewritten rows; the input list
+    is not mutated.
+    """
+    rewritten: list[dict[str, Any]] = []
+    for row in rows:
+        new_row = dict(row)
+        raw_path = new_row.get("path")
+        if isinstance(raw_path, str) and raw_path.strip():
+            p = Path(raw_path)
+            if not p.is_absolute():
+                new_row["path"] = str(
+                    (source_manifest_parent / p).resolve()
+                )
+        rewritten.append(new_row)
+    return rewritten
+
+
 # --------------- Default scorer (real path) ----------------------
 
 
@@ -486,6 +533,13 @@ def cmd_shard(args: argparse.Namespace) -> int:
     manifests + initial state.json. Idempotent: re-running against
     an existing run_id refuses to overwrite (use ``--force`` to
     proceed)."""
+    task_name = getattr(args, "task", "calibration_survey")
+    if task_name not in TASK_REGISTRY:
+        sys.stderr.write(
+            f"Unknown --task {task_name!r}. Registered tasks: "
+            f"{registered_task_names()}\n"
+        )
+        return 2
     source = Path(args.source_manifest).expanduser()
     if not source.exists():
         sys.stderr.write(f"Source manifest not found: {source}\n")
@@ -504,6 +558,16 @@ def cmd_shard(args: argparse.Namespace) -> int:
     sys.stderr.write(f"  {len(rows)} rows loaded.\n")
     source_sha = sha256_file(source)
     sys.stderr.write(f"  sha256={source_sha[:16]}...\n")
+    # Resolve relative ``path`` fields against the source manifest's
+    # parent directory before writing into per-shard manifests.
+    # Without this, ``check_corpus``'s ``score_manifest_rows`` (and
+    # any other consumer that resolves paths relative to the
+    # manifest's location) sees the shard manifest's parent, not the
+    # source manifest's, and looks for files under
+    # ``<run_dir>/shards/<sid>/`` instead of the source corpus tree.
+    # Already-absolute paths pass through unchanged.
+    source_parent = source.expanduser().resolve().parent
+    rows = absolutize_manifest_paths(rows, source_parent)
     stratify_by = (
         [s.strip() for s in args.stratify.split(",") if s.strip()]
         if args.stratify else ["register", "ai_status"]
@@ -543,6 +607,39 @@ def cmd_shard(args: argparse.Namespace) -> int:
         if (idx + 1) % 10 == 0:
             sys.stderr.write(f"  ... wrote shard {sid}\n")
     sys.stderr.write(f"  All {n_shards} shard manifests written.\n")
+    # Compose task_params from CLI flags. For calibration_survey we
+    # fold tier1/tier2/tier3/fpr_target into the params blob so a
+    # future read-back can use task_params uniformly. The existing
+    # top-level fpr_target/tier* fields stay populated for
+    # byte-identical backwards compat with pre-v1.45.0 state.json
+    # readers.
+    task_params: dict[str, Any] = {}
+    if task_name == "calibration_survey":
+        task_params = {
+            "fpr_target": args.fpr_target,
+            "tier1": args.tier1,
+            "tier2": args.tier2,
+            "tier3": args.tier3,
+        }
+    elif task_name == "corpus_hygiene":
+        # Fall back to the registered defaults for any flag the
+        # operator didn't pass — None on the CLI side means "use
+        # the task surface's default."
+        defaults = TASK_REGISTRY[task_name].default_task_params
+        task_params = {
+            "warn_threshold": (
+                args.warn_threshold
+                if args.warn_threshold is not None
+                else defaults.get("warn_threshold")
+            ),
+            "fail_threshold": (
+                args.fail_threshold
+                if args.fail_threshold is not None
+                else defaults.get("fail_threshold")
+            ),
+            "strip_rules": args.strip_rules,
+            "strip_aggressive": bool(args.strip_aggressive),
+        }
     state = build_initial_state(
         run_id=args.run_id,
         source_manifest_path=source,
@@ -558,6 +655,8 @@ def cmd_shard(args: argparse.Namespace) -> int:
         embedding_model=args.embedding_model,
         embedding_revision=args.embedding_revision,
         shard_summaries=summaries,
+        task=task_name,
+        task_params=task_params,
     )
     write_state(sp, state)
     sys.stderr.write(f"State file written: {sp}\n")
@@ -790,6 +889,23 @@ def _run_single_worker(
     if not sp.exists():
         sys.stderr.write(f"State file not found: {sp}\n")
         return 2
+    # Task-mismatch sanity check. v1.45.x default: --task is
+    # None at the argparse level, meaning "read from state.json"
+    # — so a bare ``shard_runner work --run-id X`` always picks
+    # up whatever task was baked in at `shard` time. The mismatch
+    # error only fires when the operator passed --task explicitly
+    # AND it disagrees with state.json.
+    state_for_check = read_state(sp)
+    state_task = state_for_check.get("task", "calibration_survey")
+    cli_task = getattr(args, "task", None)
+    if cli_task is not None and cli_task != state_task:
+        sys.stderr.write(
+            f"{worker_label}: --task {cli_task!r} does not match "
+            f"state.json's task {state_task!r}. The state file's "
+            f"task is authoritative; pass --task {state_task} or "
+            f"omit --task entirely to silence this error.\n"
+        )
+        return 2
     # Parse --time-window once; subsequent loop iterations just
     # check the result.
     time_window: tuple[_dt.time, _dt.time] | None = None
@@ -1021,17 +1137,36 @@ def _process_shard(
     sys.stderr.write(
         f"  {worker_label} scoring shard {shard_id} ({mp})...\n"
     )
+    # Look up the task surface for this run. The
+    # calibration_survey surface wraps DEFAULT_SCORER for
+    # backwards compat with the legacy single-task path; the
+    # corpus_hygiene surface calls check_corpus.score_manifest_rows
+    # directly. Both honor the SIGTERM contract by accepting
+    # sigterm_event.
+    surface = task_for_state(state)
+    # Compose task_params: prefer the state.json value, fall back
+    # to the surface's defaults. This lets pre-v1.45.0 state.json
+    # files (no task_params key) still resolve sensibly.
+    task_params: dict[str, Any] = dict(surface.default_task_params)
+    task_params.update(state.get("task_params") or {})
+    # For the legacy calibration_survey path, the top-level
+    # tier/fpr fields are still authoritative if they got written
+    # (we keep both for byte-identical backcompat on the wire).
+    if surface.name == "calibration_survey":
+        for key in ("fpr_target", "tier1", "tier2", "tier3"):
+            if state.get(key) is not None:
+                task_params[key] = state.get(key)
     try:
-        result = DEFAULT_SCORER(
-            mp,
-            fpr_target=state.get("fpr_target", 0.01),
-            tier1=state.get("tier1", True),
-            tier2=state.get("tier2", False),
-            tier3=state.get("tier3", False),
-            use=getattr(args, "use", "validation"),
+        result = surface.score_shard(
+            shard_manifest_path=mp,
             cache_path=cp,
-            flush_every=DEFAULT_FLUSH_EVERY,
             sigterm_event=flag,
+            flush_every=DEFAULT_FLUSH_EVERY,
+            task_params=task_params,
+            run_context={
+                "use": getattr(args, "use", "validation"),
+                "run_id": args.run_id,
+            },
         )
     except SigtermInterrupt as exc:
         # Mid-shard SIGTERM checkpoint (v1.44.1.B contract). The
@@ -1141,6 +1276,19 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
         sys.stderr.write(f"State file not found: {sp}\n")
         return 2
     state = read_state(sp)
+    # Task-mismatch sanity check (v1.45.x). state.json is
+    # authoritative; --task defaults to None at the argparse
+    # layer, meaning "read from state.json". Only the *explicit*
+    # --task case can mismatch.
+    state_task = state.get("task", "calibration_survey")
+    cli_task = getattr(args, "task", None)
+    if cli_task is not None and cli_task != state_task:
+        sys.stderr.write(
+            f"--task {cli_task!r} does not match state.json's task "
+            f"{state_task!r}. Pass --task {state_task} or omit "
+            f"--task entirely to silence this error.\n"
+        )
+        return 2
     shards = state.get("shards", {})
     not_done = [
         sid for sid, sh in shards.items() if sh.get("state") != "done"
@@ -1238,80 +1386,20 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
         f"Aggregated {len(all_records)} records across "
         f"{len(contributing)} shard(s).\n"
     )
-    # Build the aggregated payload. Per-signal threshold sweep
-    # happens via calibrate_thresholds.derive_threshold_from_records,
-    # which we import lazily (same reason as the scorer path).
-    if not args.no_derive:
-        try:
-            import calibrate_thresholds as ct  # type: ignore
-        except ImportError as exc:
-            sys.stderr.write(
-                f"  could not import calibrate_thresholds for "
-                f"per-signal derivation: {exc}. Aggregating records "
-                f"only.\n"
-            )
-            ct = None
-    else:
-        ct = None
-    per_signal: dict[str, Any] = {}
-    if ct is not None and all_records:
-        merged_meta = meta_list[0] if meta_list else {}
-        from argparse import Namespace
-        run_id = state.get("run_id", "sharded_run")
-        fpr_target = state.get("fpr_target", 0.01)
-        iso_date = _dt.date.today().isoformat()
-        for sig_name in sorted(ct.COMPRESSION_HEURISTICS.keys()):
-            try:
-                # `derive_threshold_from_records` reads `args.slug`,
-                # `args.use`, and `args.notes` in addition to the
-                # signal / manifest / fpr / bootstrap fields. A
-                # minimal Namespace that omits any of those raises
-                # AttributeError mid-derivation and gets caught
-                # below as a per-signal error rather than producing
-                # a real entry. Populate the full contract here.
-                ns = Namespace(
-                    signal=sig_name,
-                    manifest=str(state.get("source_manifest_path") or ""),
-                    fpr_target=fpr_target,
-                    bootstrap_seed=42,
-                    bootstrap_resamples=2000,
-                    bootstrap_confidence=0.95,
-                    slug=f"sharded_{run_id}_{sig_name}_fpr{fpr_target}_{iso_date}",
-                    use=getattr(args, "use", "validation"),
-                    notes=(
-                        f"Sharded calibration run {run_id!r}. "
-                        f"Aggregated from {len(contributing)} shard "
-                        f"cache(s). See sharded-run state.json for "
-                        f"shard-level metadata."
-                    ),
-                )
-                entry = ct.derive_threshold_from_records(
-                    all_records, args=ns, scoring_meta=merged_meta,
-                )
-                per_signal[sig_name] = entry
-            except SystemExit as exc:
-                per_signal[sig_name] = {
-                    "error": f"derive_threshold failed: {exc}",
-                }
-            except Exception as exc:  # noqa: BLE001
-                per_signal[sig_name] = {
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-    payload = {
-        "task_surface": TASK_SURFACE,
-        "tool": TOOL_NAME,
-        "tool_version": SCRIPT_VERSION,
-        "run_id": state.get("run_id"),
-        "source_manifest_sha256": state.get("source_manifest_sha256"),
-        "fpr_target": state.get("fpr_target"),
-        "n_records": len(all_records),
-        "n_shards_contributed": len(contributing),
-        "contributing_shards": contributing,
-        "embedding_model": state.get("embedding_model"),
-        "embedding_revision": state.get("embedding_revision"),
-        "per_signal": per_signal,
-        "aggregated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
-    }
+    # Dispatch payload construction on state["task"]. Missing field
+    # maps to calibration_survey for backwards compat with pre-
+    # v1.45.0 state.json files.
+    surface = task_for_state(state)
+    sys.stderr.write(
+        f"  Aggregating via task surface: {surface.name}\n"
+    )
+    payload = surface.aggregate_records(
+        all_records=all_records,
+        meta_list=meta_list,
+        contributing_shards=contributing,
+        state=state,
+        args=args,
+    )
     out_path = Path(args.out).expanduser() if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2196,6 +2284,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_shard.add_argument("--shard-count", type=int, default=None)
     p_shard.add_argument("--stratify", type=str, default="register,ai_status")
     p_shard.add_argument("--shuffle-seed", type=int, default=42)
+    p_shard.add_argument(
+        "--task",
+        type=str,
+        default="calibration_survey",
+        help=(
+            "task surface this run targets (v1.45.0+). Default "
+            "%(default)s preserves pre-v1.45.0 behavior. Each task "
+            "registers its own scorer + aggregator via "
+            "task_surfaces.py. Pass an unregistered name to see "
+            "the registered list and a clear error. Registered: "
+            f"{registered_task_names()}."
+        ),
+    )
     p_shard.add_argument("--fpr-target", type=float, default=0.01)
     p_shard.add_argument("--tier1", action="store_true", default=True)
     p_shard.add_argument("--no-tier1", dest="tier1", action="store_false")
@@ -2206,6 +2307,51 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_shard.add_argument("--embedding-model", type=str, default=None)
     p_shard.add_argument("--embedding-revision", type=str, default=None)
     p_shard.add_argument("--force", action="store_true", default=False)
+    # corpus_hygiene-specific flags (v1.45.0). Grouped on shard so
+    # the threshold/strip parameters get baked into state.json at
+    # shard time and propagate to every worker. The
+    # calibration_survey task ignores these (and vice versa for
+    # the tier flags).
+    p_shard_hygiene = p_shard.add_argument_group(
+        "corpus_hygiene options (v1.45.0+)",
+        "Flags consumed only when --task corpus_hygiene.",
+    )
+    p_shard_hygiene.add_argument(
+        "--warn-threshold",
+        type=float,
+        default=None,
+        help=(
+            "strip-ratio warning threshold (default %(default)s; "
+            "uses check_corpus.DEFAULT_WARN_THRESHOLD when None)"
+        ),
+    )
+    p_shard_hygiene.add_argument(
+        "--fail-threshold",
+        type=float,
+        default=None,
+        help=(
+            "strip-ratio failure threshold (default %(default)s; "
+            "uses check_corpus.DEFAULT_FAIL_THRESHOLD when None)"
+        ),
+    )
+    p_shard_hygiene.add_argument(
+        "--strip-rules",
+        type=str,
+        default=None,
+        help=(
+            "comma-separated preprocessing rule names to enable. "
+            "Default: all conservative rules."
+        ),
+    )
+    p_shard_hygiene.add_argument(
+        "--strip-aggressive",
+        action="store_true",
+        default=False,
+        help=(
+            "also enable aggressive URL/image/footnote/citation "
+            "stripping rules."
+        ),
+    )
     p_shard.set_defaults(func=cmd_shard)
 
     # work
@@ -2214,6 +2360,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="claim and score pending shards (single worker)",
     )
     p_work.add_argument("--run-id", required=True, type=str)
+    p_work.add_argument(
+        "--task",
+        type=str,
+        default=None,
+        help=(
+            "task surface to score this run as (v1.45.0+). Default: "
+            "read from state.json (which `shard` baked in at run "
+            "creation time). Pass explicitly only to assert what "
+            "the run is; a mismatch with state.json is a fatal "
+            "operator error. Registered: "
+            f"{registered_task_names()}."
+        ),
+    )
     p_work.add_argument("--use", type=str, default="validation")
     p_work.add_argument(
         "--workers",
@@ -2380,6 +2539,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="combine shard caches + per-signal threshold sweep",
     )
     p_agg.add_argument("--run-id", required=True, type=str)
+    p_agg.add_argument(
+        "--task",
+        type=str,
+        default=None,
+        help=(
+            "task surface to aggregate this run as (v1.45.0+). "
+            "Default: read from state.json. Pass explicitly only "
+            "to assert what the run is; a mismatch with state.json "
+            "is a fatal operator error. The aggregator dispatches "
+            "on state[\"task\"] either way. Registered: "
+            f"{registered_task_names()}."
+        ),
+    )
     p_agg.add_argument("--out", type=str, default=None)
     p_agg.add_argument("--allow-partial", action="store_true", default=False)
     p_agg.add_argument("--no-derive", action="store_true", default=False)

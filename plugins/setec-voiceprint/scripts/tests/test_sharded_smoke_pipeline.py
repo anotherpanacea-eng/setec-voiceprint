@@ -428,5 +428,133 @@ class TestStateCacheContract:
         assert payload["n_records"] == expected_total
 
 
+# ---------- Multi-task smoke (v1.45.0) ----------
+
+
+class TestCorpusHygieneSmoke:
+    """End-to-end smoke for the corpus_hygiene task surface
+    landing in v1.45.0. Mirrors ``TestCanonicalPipeline`` but on
+    the hygiene task: shard -> work -> aggregate produces a valid
+    cross-shard hygiene summary.
+
+    The single-process check_corpus path stays the operator-facing
+    UX for small corpora; this test pins that the sharded path
+    produces a parity-comparable artifact at scale, which is the
+    contract that lets operators swap paths confidently."""
+
+    @pytest.fixture
+    def hygiene_smoke(self, tmp_path: Path):
+        ROOT_LOCAL = Path(__file__).resolve().parents[1]
+        clean = ROOT_LOCAL / "test_data" / "preprocessing" / (
+            "css_contaminated_fixture_clean.md"
+        )
+        contaminated = ROOT_LOCAL / "test_data" / "preprocessing" / (
+            "css_contaminated_fixture.md"
+        )
+        base = tmp_path / "baselines"
+        base.mkdir()
+        src = base / "hygiene" / "manifest.jsonl"
+        src.parent.mkdir(parents=True, exist_ok=True)
+        with src.open("w", encoding="utf-8") as fh:
+            for i in range(6):
+                fh.write(json.dumps({
+                    "text_id": f"clean_{i:03d}",
+                    "path": str(clean),
+                    "ai_status": "pre_ai_human",
+                    "register": "literary_fiction",
+                }) + "\n")
+            for i in range(3):
+                fh.write(json.dumps({
+                    "text_id": f"contaminated_{i:03d}",
+                    "path": str(contaminated),
+                    "ai_status": "pre_ai_human",
+                    "register": "blog_essay",
+                }) + "\n")
+        run_id = "smoke_hygiene_run"
+        rc = sr.main([
+            "--base-dir", str(base),
+            "shard",
+            "--task", "corpus_hygiene",
+            "--source-manifest", str(src),
+            "--run-id", run_id,
+            "--shard-size", "3",
+            "--stratify", "ai_status",
+            "--shuffle-seed", "42",
+        ])
+        assert rc == 0, "shard subcommand failed"
+        rc = sr.main([
+            "--base-dir", str(base), "work",
+            "--run-id", run_id,
+            "--task", "corpus_hygiene",
+        ])
+        assert rc == 0, "work subcommand failed"
+        return {
+            "base": base, "src": src, "run_id": run_id,
+            "n_files": 9, "n_clean": 6, "n_fail": 3,
+        }
+
+    def test_hygiene_shard_writes_corpus_hygiene_state(self, hygiene_smoke):
+        """After shard, state.json records task=corpus_hygiene and
+        per-shard manifests carry the path field through."""
+        base = hygiene_smoke["base"]
+        run_id = hygiene_smoke["run_id"]
+        state = ss.read_state(sr.state_path(base, run_id))
+        assert state["task"] == "corpus_hygiene"
+        # Source rows should be sharded out.
+        for sid in state["shards"]:
+            mp = sr.shard_manifest_path(base, run_id, sid)
+            assert mp.exists()
+            rows = [
+                json.loads(line) for line in mp.read_text().splitlines()
+                if line
+            ]
+            for row in rows:
+                # Every row must carry through a path field for
+                # the hygiene scorer.
+                assert "path" in row
+
+    def test_hygiene_work_dispatches_via_state(self, hygiene_smoke):
+        """Even though --task corpus_hygiene was passed explicitly,
+        the dispatcher must read state["task"] to decide which
+        scorer to invoke. We verify by inspecting the produced
+        cache shape — hygiene records have status / strip_ratio,
+        calibration records have scores / label."""
+        base = hygiene_smoke["base"]
+        run_id = hygiene_smoke["run_id"]
+        state = ss.read_state(sr.state_path(base, run_id))
+        for sid in state["shards"]:
+            cp = sr.shard_cache_path(base, run_id, sid)
+            cache = json.loads(cp.read_text())
+            for record in cache["records"]:
+                assert "status" in record
+                assert "strip_ratio" in record
+                assert "scores" not in record
+
+    def test_hygiene_aggregate_produces_status_fail(
+        self, hygiene_smoke, tmp_path: Path,
+    ):
+        """The corpus has contaminated rows, so aggregate must
+        report status=fail. Pin this so a future regression
+        doesn't accidentally classify contaminated rows as
+        warnings."""
+        base = hygiene_smoke["base"]
+        run_id = hygiene_smoke["run_id"]
+        out_path = tmp_path / "hygiene-smoke-agg.json"
+        rc = sr.main([
+            "--base-dir", str(base), "aggregate",
+            "--task", "corpus_hygiene",
+            "--run-id", run_id,
+            "--out", str(out_path),
+            "--no-derive",
+        ])
+        assert rc == 0
+        payload = json.loads(out_path.read_text())
+        assert payload["task"] == "corpus_hygiene"
+        assert payload["n_files"] == hygiene_smoke["n_files"]
+        assert payload["n_clean"] == hygiene_smoke["n_clean"]
+        assert payload["n_fail"] == hygiene_smoke["n_fail"]
+        assert payload["status"] == "fail"
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-v"]))
