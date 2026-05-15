@@ -124,6 +124,12 @@ from shard_state import (  # type: ignore
     _host,
     _shard_id,
 )
+from task_surfaces import (  # type: ignore
+    TASK_REGISTRY,
+    get_task,
+    registered_task_names,
+    task_for_state,
+)
 
 
 TASK_SURFACE = "calibration"
@@ -1238,80 +1244,20 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
         f"Aggregated {len(all_records)} records across "
         f"{len(contributing)} shard(s).\n"
     )
-    # Build the aggregated payload. Per-signal threshold sweep
-    # happens via calibrate_thresholds.derive_threshold_from_records,
-    # which we import lazily (same reason as the scorer path).
-    if not args.no_derive:
-        try:
-            import calibrate_thresholds as ct  # type: ignore
-        except ImportError as exc:
-            sys.stderr.write(
-                f"  could not import calibrate_thresholds for "
-                f"per-signal derivation: {exc}. Aggregating records "
-                f"only.\n"
-            )
-            ct = None
-    else:
-        ct = None
-    per_signal: dict[str, Any] = {}
-    if ct is not None and all_records:
-        merged_meta = meta_list[0] if meta_list else {}
-        from argparse import Namespace
-        run_id = state.get("run_id", "sharded_run")
-        fpr_target = state.get("fpr_target", 0.01)
-        iso_date = _dt.date.today().isoformat()
-        for sig_name in sorted(ct.COMPRESSION_HEURISTICS.keys()):
-            try:
-                # `derive_threshold_from_records` reads `args.slug`,
-                # `args.use`, and `args.notes` in addition to the
-                # signal / manifest / fpr / bootstrap fields. A
-                # minimal Namespace that omits any of those raises
-                # AttributeError mid-derivation and gets caught
-                # below as a per-signal error rather than producing
-                # a real entry. Populate the full contract here.
-                ns = Namespace(
-                    signal=sig_name,
-                    manifest=str(state.get("source_manifest_path") or ""),
-                    fpr_target=fpr_target,
-                    bootstrap_seed=42,
-                    bootstrap_resamples=2000,
-                    bootstrap_confidence=0.95,
-                    slug=f"sharded_{run_id}_{sig_name}_fpr{fpr_target}_{iso_date}",
-                    use=getattr(args, "use", "validation"),
-                    notes=(
-                        f"Sharded calibration run {run_id!r}. "
-                        f"Aggregated from {len(contributing)} shard "
-                        f"cache(s). See sharded-run state.json for "
-                        f"shard-level metadata."
-                    ),
-                )
-                entry = ct.derive_threshold_from_records(
-                    all_records, args=ns, scoring_meta=merged_meta,
-                )
-                per_signal[sig_name] = entry
-            except SystemExit as exc:
-                per_signal[sig_name] = {
-                    "error": f"derive_threshold failed: {exc}",
-                }
-            except Exception as exc:  # noqa: BLE001
-                per_signal[sig_name] = {
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-    payload = {
-        "task_surface": TASK_SURFACE,
-        "tool": TOOL_NAME,
-        "tool_version": SCRIPT_VERSION,
-        "run_id": state.get("run_id"),
-        "source_manifest_sha256": state.get("source_manifest_sha256"),
-        "fpr_target": state.get("fpr_target"),
-        "n_records": len(all_records),
-        "n_shards_contributed": len(contributing),
-        "contributing_shards": contributing,
-        "embedding_model": state.get("embedding_model"),
-        "embedding_revision": state.get("embedding_revision"),
-        "per_signal": per_signal,
-        "aggregated_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
-    }
+    # Dispatch payload construction on state["task"]. Missing field
+    # maps to calibration_survey for backwards compat with pre-
+    # v1.45.0 state.json files.
+    surface = task_for_state(state)
+    sys.stderr.write(
+        f"  Aggregating via task surface: {surface.name}\n"
+    )
+    payload = surface.aggregate_records(
+        all_records=all_records,
+        meta_list=meta_list,
+        contributing_shards=contributing,
+        state=state,
+        args=args,
+    )
     out_path = Path(args.out).expanduser() if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
