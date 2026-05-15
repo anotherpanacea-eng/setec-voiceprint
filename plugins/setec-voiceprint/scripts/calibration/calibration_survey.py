@@ -368,6 +368,9 @@ def _build_inner_args(
         bootstrap_chunk_size=getattr(
             parent_args, "bootstrap_chunk_size", None,
         ),
+        bootstrap_device=getattr(
+            parent_args, "bootstrap_device", None,
+        ),
         tier2=parent_args.tier2,
         tier3=parent_args.tier3,
         notes=None,
@@ -738,19 +741,30 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--bootstrap-seed", type=int, default=42)
     p.add_argument(
         "--bootstrap-engine",
-        choices=["loop", "numpy"],
+        choices=["loop", "numpy", "torch"],
         default="loop",
         help=(
             "Bootstrap-CI implementation. ``loop`` (default) is "
             "pure Python; bit-exact with pre-1.60 ledger entries. "
             "``numpy`` is a vectorized NumPy implementation that "
-            "is 50-200x faster on >=100K-row corpora and "
-            "statistically equivalent for 2000+ resamples. "
-            "Different per-resample composition (different RNG "
-            "stream) but CIs converge to within Monte Carlo "
-            "noise. Recommended for MAGE/RAID-scale runs; default "
-            "stays loop for byte-identical reproducibility against "
-            "previously-published thresholds."
+            "is 50-200x faster on >=100K-row corpora. ``torch`` is "
+            "a PyTorch implementation that auto-detects a CUDA/"
+            "ROCm GPU for an additional 5-15x speedup on top of "
+            "``numpy``. All three are statistically equivalent for "
+            "2000+ resamples; only ``loop`` is bit-exact with the "
+            "pre-1.60 ledger. Recommended: ``numpy`` for MAGE/RAID "
+            "CPU-only runs, ``torch`` if a GPU is available."
+        ),
+    )
+    p.add_argument(
+        "--bootstrap-device",
+        default=None,
+        help=(
+            "Device override for ``--bootstrap-engine torch``. "
+            "Default auto-detects (``cuda`` if a CUDA/ROCm GPU is "
+            "reachable, else ``cpu``). Pass ``cpu`` to force the "
+            "CPU torch path or a specific device string like "
+            "``cuda:1`` to target a non-default GPU."
         ),
     )
     p.add_argument(
