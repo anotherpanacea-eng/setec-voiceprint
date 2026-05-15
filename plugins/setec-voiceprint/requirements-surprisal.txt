@@ -1,0 +1,102 @@
+# Tier-4 surprisal backend dependencies for SETEC's smoothing-diagnosis
+# surface (Phase C: DivEye-style surprisal-distribution signal).
+#
+# Install on demand:
+#   pip install -r requirements-surprisal.txt
+#
+# These are required by:
+#   * scripts/surprisal_backend.py
+#   * scripts/surprisal_audit.py
+#   * scripts/variance_audit.py --tier4
+#   * The Tier-4 family in COMPRESSION_HEURISTICS (surprisal_mean,
+#     surprisal_sd, surprisal_acf_lag1).
+#
+# Ordinary SETEC variance audits (Tier 1 + 2), voice distance,
+# General Imposters, the validation harness, and the calibration
+# toolchain do NOT need this layer. The core requirements live in
+# requirements.txt; this layer is opt-in and large
+# (~2-4 GB of model weights on first use, ~500 MB of Python deps
+# pre-weight-download).
+#
+# See internal/SPEC_surprisal_signal.md and
+# internal/SPEC_surprisal_model_choice.md for the design and the
+# §6.4 fixture-suite that picks the operational causal LM. Per the
+# Stylometry-to-the-people posture, the framework's shipped
+# Tier-4 thresholds in COMPRESSION_HEURISTICS are PROVISIONAL
+# (provisional=True, provenance=None) regardless of how the
+# fixture-suite resolves — operators wanting load-bearing
+# Tier-4 thresholds run their own calibration locally.
+#
+# ============================================================
+# PyTorch wheel selection (platform / accelerator-specific)
+# ============================================================
+#
+# The torch pin below does NOT specify a wheel index — torch
+# distributes platform-specific wheels (CPU, CUDA, ROCm, MPS)
+# through separate indices. Install the right wheel BEFORE
+# running `pip install -r requirements-surprisal.txt`, OR install
+# torch first and then this file (pip will see torch is already
+# satisfied and skip).
+#
+# Choose your wheel:
+#
+#   * AMD GPU (ROCm 6.x on Linux / WSL2):
+#       pip install --index-url https://download.pytorch.org/whl/rocm6.0 torch
+#     Confirm with:
+#       python -c "import torch; print(torch.cuda.is_available())"
+#     (ROCm reports as cuda=True under PyTorch's HIP shim — that's
+#     expected, not a CUDA install.)
+#
+#   * NVIDIA GPU (CUDA 12.x):
+#       pip install --index-url https://download.pytorch.org/whl/cu121 torch
+#
+#   * Apple Silicon (MPS):
+#       pip install torch
+#     (default wheel includes MPS support; no index override needed)
+#
+#   * Cross-vendor GPU on Windows (AMD / Intel / NVIDIA via DirectX):
+#       pip install torch-directml
+#     Slower than vendor-native backends; useful when ROCm install
+#     fails or the GPU isn't in ROCm's supported list. Operator
+#     code needs to call `torch_directml.device()` instead of
+#     `torch.cuda`; the framework's surprisal_backend doesn't yet
+#     wire this in automatically — DirectML support is roadmap.
+#
+#   * CPU-only (no GPU, or as a fallback):
+#       pip install --index-url https://download.pytorch.org/whl/cpu torch
+#     Per-token forward passes on TinyLlama (1.1B) run at roughly
+#     20-100 tokens/sec on modern x86. Tractable for sample-size
+#     Tier-4 work (10K rows ≈ 1-3 hours); impractical for full
+#     RAID-scale calibration (8M rows would be days-to-weeks).
+#
+# After installing torch, run:
+#   pip install -r requirements-surprisal.txt
+# to layer transformers + tokenizers on top.
+
+# Transformers — HuggingFace's causal-LM loading + tokenizer +
+# inference primitives. Pin range bounds breaking-change windows:
+# the 4.40 floor catches the `AutoModelForCausalLM` API shape the
+# backend relies on; the <5 ceiling avoids the major-bump that
+# Transformers maintainers have signaled (no firm timeline as of
+# 2026-05).
+transformers>=4.40,<5
+
+# Tokenizers — fast tokenizer backend transformers depends on but
+# does not always pin. Listed explicitly so a stale transformers
+# build doesn't pull a tokenizers version that no longer carries
+# the SentencePiece / BPE tokenizers the §6.4 candidates use.
+tokenizers>=0.20,<0.22
+
+# PyTorch — the inference engine itself. Wheel must be installed
+# BEFORE this file via the platform-specific index above. Pin range
+# bounds the deterministic-algorithms mode + the torch.no_grad
+# context-manager API the surprisal backend uses. The <3 ceiling
+# guards against a hypothetical major-version bump.
+torch>=2.1,<3
+
+# Optional: accelerate. Required when loading larger §6.4 candidates
+# (Llama 3.2 1B, Qwen 2.5 1.5B, Phi-3 Mini at fp16) on hardware
+# tight on VRAM. Not strictly needed for TinyLlama or GPT-2 small.
+# Uncomment if your operational model picked by the §6.4 fixture
+# suite needs it.
+# accelerate>=0.30,<2

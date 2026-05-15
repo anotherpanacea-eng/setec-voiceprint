@@ -150,9 +150,10 @@ class SurprisalBackend:
         except ImportError as exc:
             raise SurprisalBackendError(
                 "transformers is not installed. "
-                "Install with: pip install transformers torch "
-                "(part of the optional Tier-4 / surprisal install; "
-                "see the setup skill for tier-by-tier guidance)."
+                "Install with: pip install -r requirements-surprisal.txt "
+                "(opt-in Tier-4 / surprisal dependency layer; the file "
+                "documents how to pick the right torch wheel for your "
+                "accelerator — ROCm / CUDA / MPS / CPU-only)."
             ) from exc
         try:
             kwargs: dict[str, Any] = {}
