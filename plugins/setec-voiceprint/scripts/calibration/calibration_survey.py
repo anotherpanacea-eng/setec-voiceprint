@@ -475,6 +475,85 @@ def survey_one_signal(
     return row
 
 
+# ---- Pool helpers for parallel per-signal sweep ------------------
+#
+# ProcessPoolExecutor pickles every submitted callable's positional
+# and keyword arguments and ships them to the worker process for
+# each task. At MAGE scale ``cached_records`` is a ~100 MB list of
+# dicts; at RAID scale closer to ~1.8 GB. Naively passing it as a
+# kwarg to each ``survey_one_signal`` submission would re-serialize
+# that payload N times (once per signal) and dominate any
+# parallelism benefit.
+#
+# The standard workaround is ``initializer`` + module-level globals:
+# the pool calls ``_pool_init`` exactly once per worker process on
+# startup, the worker stashes the heavy state in module globals, and
+# subsequent task submissions only need to ship the per-signal name
+# (a single string). The worker pulls the heavy state out of the
+# globals to reconstruct the call to ``survey_one_signal``.
+#
+# These globals are intentionally module-level (not class-level) so
+# ``ProcessPoolExecutor`` on a ``spawn``-start platform (Windows,
+# macOS-Python-3.8+) initializes them correctly when the worker
+# re-imports this module. On Linux ``fork`` they'd be inherited
+# either way; the module-global approach is portable across both.
+_POOL_RECORDS: list[dict[str, Any]] | None = None
+_POOL_SCORING_META: dict[str, Any] | None = None
+_POOL_PARENT_ARGS: argparse.Namespace | None = None
+_POOL_TPR_FLOOR: float = DEFAULT_TPR_FLOOR
+_POOL_AGGRESSIVENESS_TOLERANCE: float = DEFAULT_AGGRESSIVENESS_TOLERANCE
+
+
+def _pool_init(
+    records: list[dict[str, Any]],
+    scoring_meta: dict[str, Any],
+    parent_args: argparse.Namespace,
+    tpr_floor: float,
+    aggressiveness_tolerance: float,
+) -> None:
+    """``ProcessPoolExecutor`` initializer.
+
+    Stashes the per-signal-invariant state — the scored-records
+    cache, the scoring metadata, the parent args namespace, and the
+    two gate floors — into module globals so the worker process
+    holds exactly one copy. Subsequent ``_survey_one_signal_pooled``
+    calls then ship only the signal name across the pickle boundary
+    instead of the full records list.
+    """
+    global _POOL_RECORDS, _POOL_SCORING_META, _POOL_PARENT_ARGS
+    global _POOL_TPR_FLOOR, _POOL_AGGRESSIVENESS_TOLERANCE
+    _POOL_RECORDS = records
+    _POOL_SCORING_META = scoring_meta
+    _POOL_PARENT_ARGS = parent_args
+    _POOL_TPR_FLOOR = tpr_floor
+    _POOL_AGGRESSIVENESS_TOLERANCE = aggressiveness_tolerance
+
+
+def _survey_one_signal_pooled(signal: str) -> SurveyRow:
+    """``ProcessPoolExecutor`` task: dispatch ``survey_one_signal``
+    using the per-signal-invariant state stashed in module globals
+    by ``_pool_init``. Returns a fully-populated ``SurveyRow`` that
+    pickles cleanly back to the parent process.
+    """
+    if _POOL_PARENT_ARGS is None:
+        # Defensive: should never happen because the pool's
+        # ``initializer`` runs before any task is dispatched. Raise
+        # an explicit error so silent ``None`` propagation can't
+        # masquerade as a per-signal failure.
+        raise RuntimeError(
+            "_survey_one_signal_pooled called without _pool_init; "
+            "pool was not initialized correctly"
+        )
+    return survey_one_signal(
+        signal,
+        _POOL_PARENT_ARGS,
+        tpr_floor=_POOL_TPR_FLOOR,
+        aggressiveness_tolerance=_POOL_AGGRESSIVENESS_TOLERANCE,
+        cached_records=_POOL_RECORDS,
+        cached_scoring_meta=_POOL_SCORING_META,
+    )
+
+
 def run_survey(
     parent_args: argparse.Namespace,
     *,
@@ -523,20 +602,76 @@ def run_survey(
         sys.stderr.write(f"corpus scoring failed: {exc}\n")
         raise
 
+    workers = max(1, int(getattr(parent_args, "aggregate_workers", 1)))
     sys.stderr.write(
-        f"Step 2: sweeping per-signal thresholds (cache_hit={cache_hit}).\n"
+        f"Step 2: sweeping per-signal thresholds "
+        f"(cache_hit={cache_hit}, workers={workers}).\n"
     )
-    rows: list[SurveyRow] = []
-    for signal in signals:
-        sys.stderr.write(f"  --> {signal}\n")
-        row = survey_one_signal(
-            signal, parent_args,
-            tpr_floor=tpr_floor,
-            aggressiveness_tolerance=aggressiveness_tolerance,
-            cached_records=cached_records,
-            cached_scoring_meta=cached_scoring_meta,
+    if workers <= 1 or len(signals) <= 1:
+        # Serial path — keeps the historical behavior for small
+        # signal lists and avoids ProcessPoolExecutor's spawn
+        # overhead for the trivial case.
+        rows: list[SurveyRow] = []
+        for signal in signals:
+            sys.stderr.write(f"  --> {signal}\n")
+            row = survey_one_signal(
+                signal, parent_args,
+                tpr_floor=tpr_floor,
+                aggressiveness_tolerance=aggressiveness_tolerance,
+                cached_records=cached_records,
+                cached_scoring_meta=cached_scoring_meta,
+            )
+            rows.append(row)
+    else:
+        # Parallel path: per-signal bootstrap is the dominant cost
+        # at MAGE/RAID scale (~30-60 min per signal × 11 signals
+        # serial = ~6 hours). Each ``survey_one_signal`` call is
+        # independent of every other — same ``cached_records``
+        # input, no cross-signal state — so a process pool gives
+        # near-linear speedup up to the per-signal CPU work.
+        #
+        # The records list is passed via ProcessPoolExecutor's
+        # initializer + module-level globals so each worker
+        # process inherits one copy at spawn rather than
+        # re-deserializing the ~100MB records list per signal
+        # call (which would dominate the parallelism benefit).
+        # See ``_pool_init`` / ``_survey_one_signal_pooled``.
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+
+        sys.stderr.write(
+            f"  ({len(signals)} signals across {workers} worker "
+            f"process(es); each worker holds one copy of the "
+            f"records cache)\n"
         )
-        rows.append(row)
+        rows = [None] * len(signals)  # type: ignore[list-item]
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=_pool_init,
+            initargs=(
+                cached_records, cached_scoring_meta, parent_args,
+                tpr_floor, aggressiveness_tolerance,
+            ),
+        ) as pool:
+            future_to_idx = {
+                pool.submit(_survey_one_signal_pooled, signal): i
+                for i, signal in enumerate(signals)
+            }
+            for fut in as_completed(future_to_idx):
+                i = future_to_idx[fut]
+                row = fut.result()
+                rows[i] = row
+                sys.stderr.write(f"  --> {signals[i]} (done)\n")
+        # rows is now populated in original-signals order;
+        # downstream sort handles re-ranking.
+        rows = [r for r in rows if r is not None]
+        if len(rows) != len(signals):
+            sys.stderr.write(
+                f"WARNING: pool returned {len(rows)} of "
+                f"{len(signals)} expected rows; some signal(s) "
+                f"failed silently. Falling back to serial path is "
+                f"safer for diagnostic completeness; --aggregate-"
+                f"workers 1 reproduces the historical execution.\n"
+            )
 
     # Rank rows: signals that pass all evaluable gates float to the
     # top, then by descending direction-aware AUC (NOT raw AUC —
@@ -764,6 +899,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "tight hosts or a larger one when memory is plentiful. "
             "See calibrate_thresholds.py --help for the full "
             "memory math."
+        ),
+    )
+    p.add_argument(
+        "--aggregate-workers", type=int, default=1,
+        help=(
+            "Number of worker processes for the per-signal threshold "
+            "sweep. Default 1 (serial), which preserves the historical "
+            "execution order and is byte-identical with pre-1.61 "
+            "ledger entries on the deterministic-seed path. With N>1, "
+            "the per-signal bootstrap calls — the dominant cost at "
+            "MAGE/RAID scale (~30-60 min per signal × 11 signals = "
+            "~6 hours serial) — run in a ``ProcessPoolExecutor``. On "
+            "a 12-core consumer CPU, ``--aggregate-workers 11`` "
+            "collapses the 11-signal survey to roughly the slowest "
+            "single signal's wall-clock. Each worker process holds "
+            "one copy of the scored-records cache (~100 MB at MAGE "
+            "scale, ~1.8 GB at RAID scale); size the pool to fit "
+            "available RAM. ``--aggregate-workers 0`` is treated as "
+            "1 (no parallelism) rather than as 'auto-detect' to "
+            "avoid surprising the user."
         ),
     )
     p.add_argument("--tpr-floor", type=float, default=DEFAULT_TPR_FLOOR,
