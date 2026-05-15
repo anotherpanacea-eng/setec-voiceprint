@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shlex
 import sys
 from collections import Counter
 from pathlib import Path
@@ -188,7 +189,21 @@ def warn_if_large_manifest(
         return False
     if not manifest:
         return False
-    manifest_arg = manifest
+    # ``shlex.quote`` so the manifest path is a copy-pasteable
+    # POSIX-shell token even when it contains spaces, ampersands,
+    # parentheses, or other characters the shell treats specially.
+    # Without this the recipe fails for exactly the operator the
+    # warning is trying to help — RAID-scale corpora often live
+    # under user-named directories with spaces (e.g., today's
+    # workspace at ``C:\Users\Joshua\Documents\Claude Cowork
+    # Working Folder\...``).
+    #
+    # Codex P2 on PR #52. Quoted with POSIX shell rules; if the
+    # operator is on cmd.exe rather than bash they may still need
+    # to adjust the quoting style, but bash / WSL / pwsh-with-bash
+    # is the documented host for the sharded workflow anyway
+    # (RUNBOOK_corpus_hygiene_sharded.md).
+    manifest_arg = shlex.quote(str(manifest))
     out.write(
         f"\n  warning: {n_files:,} input files matched. Single-process "
         f"check_corpus at this scale typically runs for many hours\n"

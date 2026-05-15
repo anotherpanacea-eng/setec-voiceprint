@@ -150,3 +150,56 @@ def test_warn_default_threshold_is_a_million() -> None:
     trade-off flips. Pinning the constant in a test makes the
     decision explicit and reviewable."""
     assert LARGE_MANIFEST_WARN_THRESHOLD == 1_000_000
+
+
+def test_warn_quotes_manifest_path_with_spaces() -> None:
+    """Codex P2 on PR #52: paths in this workspace commonly
+    contain spaces (today's runtime path is under
+    ``C:\\Users\\Joshua\\Documents\\Claude Cowork Working
+    Folder\\...``). The copy-pasteable recipe in the warning
+    must shell-quote the manifest path so the command actually
+    works for the operator."""
+    out = _CaptureStream()
+    path_with_spaces = "/some/path with spaces/manifest.jsonl"
+    fired = warn_if_large_manifest(
+        n_files=5_000_000,
+        manifest=path_with_spaces,
+        threshold=1_000_000,
+        out=out,
+    )
+    assert fired is True
+    text = out.text
+    # The recipe must contain the path wrapped in shell quotes,
+    # not the bare unquoted form.
+    import shlex
+    quoted = shlex.quote(path_with_spaces)
+    assert quoted in text, (
+        f"expected shlex-quoted path {quoted!r} in warning, "
+        f"got:\n{text}"
+    )
+    # And the bare unquoted path must NOT appear as a standalone
+    # token (it might appear as a substring inside the quoted
+    # form, which is fine).
+    # Specifically, the recipe line should be of the form
+    # "--source-manifest '/some/path with spaces/manifest.jsonl' \\"
+    # not the broken "--source-manifest /some/path with spaces/..."
+    assert (
+        f"--source-manifest {quoted}" in text
+    ), "warning didn't surface --source-manifest with quoted path"
+
+
+def test_warn_no_quoting_overhead_for_simple_paths() -> None:
+    """shlex.quote is a no-op for paths without shell-special
+    characters. Simple paths shouldn't get gratuitous quotes."""
+    out = _CaptureStream()
+    simple_path = "/tmp/manifest.jsonl"
+    fired = warn_if_large_manifest(
+        n_files=5_000_000,
+        manifest=simple_path,
+        threshold=1_000_000,
+        out=out,
+    )
+    assert fired is True
+    text = out.text
+    # No surrounding quotes added for shell-safe paths.
+    assert f"--source-manifest {simple_path}" in text
