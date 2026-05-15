@@ -2672,8 +2672,11 @@ def main() -> int:
     )
     parser.add_argument(
         "--window-stride", type=int, default=0,
+        # argparse %-substitutes help strings against a params dict, so
+        # any literal % must be doubled to %% to avoid a TypeError on
+        # `--help`. (`%o` here would be read as an octal format spec.)
         help="Word stride between sliding windows (default = window-size, "
-             "i.e. non-overlapping). Pass window-size // 2 for 50% overlap."
+             "i.e. non-overlapping). Pass window-size // 2 for 50%% overlap."
     )
     parser.add_argument(
         "--window-only", action="store_true",

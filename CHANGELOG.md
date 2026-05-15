@@ -6,6 +6,34 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.59.4] - 2026-05-14
+
+**Fix `variance_audit.py --help` crash on unescaped `%`.** Running `python3 variance_audit.py --help` (or `--tier4 --help`, or any path that triggers argparse's help formatter) raised:
+
+```
+TypeError: %o format: an integer is required, not dict
+  File ".../argparse.py", line 602, in _expand_help
+    return self._get_help_string(action) % params
+```
+
+Root cause: argparse %-substitutes every action's `help=` string against a params dict at format time so `%(prog)s` and `%(default)s` work. The `--window-stride` help text contained the literal "50% overlap"; argparse read `% o` as an octal format spec and crashed. Bug pre-existed v1.59.x (was already in tree when PR #44/#45 landed), surfaced while smoke-testing the v1.59.3 install runbook.
+
+### Fixed
+
+- **`scripts/variance_audit.py` `--window-stride` help text** — `50% overlap` → `50%% overlap`. Argparse renders this back to `50% overlap` on `--help` output (verified). Added an adjacent comment explaining the escape so the next operator who writes a `%` in a help string understands the gotcha.
+
+### Added
+
+- **`scripts/tests/test_variance_audit_cli.py`** — regression tests for argparse hygiene. Two complementary checks:
+  - `test_variance_audit_help_runs_cleanly` — subprocess smoke test. Runs `variance_audit.py --help` end-to-end, asserts exit-code 0 and that `usage:` + `--tier4` appear in stdout. Catches any future regression at the level an operator hits.
+  - `test_no_unescaped_percent_in_add_argument_help` — static AST scan. Walks every `add_argument(...)` call, extracts the `help=` literal, attempts argparse-equivalent `% defaultdict(...)` substitution. Surfaces the offending line number directly rather than dumping a TypeError from argparse internals. Verified to trip on the pre-fix help text and pass on the post-fix form.
+
+### Notes
+
+- Behavior change: `--help` now renders. No change to any audit output, JSON shape, threshold table, or other CLI behavior.
+- The full `scripts/` test suite (1902 passed, 4 skipped) runs cleanly with the fix in place.
+- AST scan over all `scripts/**/*.py` found this was the only unescaped-`%` regression in the framework — the rest of the codebase's help strings use `%(default)s`-style substitution, which is the legitimate argparse pattern and isn't affected.
+
 ## [1.59.3] - 2026-05-14
 
 **Ship `RUNBOOK_tier4_install.md` — cross-platform Tier-4 install guide.** PR #44 (1.59.2) shipped `requirements-surprisal.txt` with inline wheel-selection commentary covering ROCm / CUDA / MPS / DirectML / CPU-only. Operator feedback from the AMD-workspace shift: the inline commentary is enough for the well-trodden paths (MPS, CUDA) but leaves gaps for ROCm-on-WSL2 (driver requirements, GPU support matrix, gfx-version overrides), torch-directml integration status, and the Python 3.13 wheel gap. This PR adds the full runbook.
