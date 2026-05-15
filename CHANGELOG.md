@@ -6,6 +6,22 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.60.1] - 2026-05-15
+
+**Ship the stylometric signals glossary.** SETEC computes 49 distinct stylometric measurements across 14 families (Tier 1 variance, Tier 2 syntax, Tier 3 trajectory, Tier 4 surprisal, voice-distance, voice-drift, POV-voice, mimicry, semantic-preservation, phraseology, punctuation, stance-modality, bigram-KL, repetition). Each measurement has a name, a computation, an interpretation, calibration status, and known caveats. Until now those definitions lived dispersed across module docstrings, signal-registry entries in `variance_audit.py`, and per-script README comments. This release consolidates them into a single reader-facing reference.
+
+### Added
+
+- **`plugins/setec-voiceprint/references/signals-glossary.md`** (1004 lines) — comprehensive glossary with one entry per stylometric test. Each entry documents: family, signal path (where registered in `COMPRESSION_HEURISTICS`), polarity (gt/lt/symmetric), calibration status and anchor, what it measures, how it's computed (math in prose), range and units, interpretation guidance (high-vs-low semantics), worked examples (where the codebase / specs document them), and caveats. Entries with sparse interpretation / example sections are explicitly flagged `(NEEDS REFINEMENT)` for the iteration pass; the technical scaffold (definition, computation, range, status, calibration anchor) is filled from primary sources.
+- **README.md "Stylometric tests" section** — compact tables grouping all 49 signals by family. Per signal: name, polarity arrow (↓ / ↑ / ↔ / —), one-line definition. Cross-links to the full glossary for definitions, computation details, examples, and caveats.
+
+### Notes
+
+- This is a documentation-only release. No code changes, no test changes, no behavior changes. Existing audits emit the same signals with the same shapes; the glossary documents what those signals mean.
+- The shipped signal bands remain PROVISIONAL regardless of calibration anchor per the Stylometry-to-the-people policy (`scripts/calibration/PROVENANCE.md`). The glossary makes this explicit per entry.
+- Entries marked `(NEEDS REFINEMENT)` are intentional: they identify where the codebase doesn't yet document typical-value ranges, worked examples, or comparative bands. The framework's maintainer iterates these with non-code Claude / other LLMs against documented before/after restoration pairs and validation-harness output. Subsequent versions of this glossary will fill them in.
+- One signal counted in the source-code inventory (raw Type-Token Ratio) is omitted from the glossary because it isn't surfaced as a standalone framework output; it's an internal sub-computation of MATTR. Composite aggregators (`manuscript_audit`, `paragraph_audit`, `sliding_window_heatmap`) pass through the signals listed; they are not additional signals.
+
 ## [1.60.0] - 2026-05-15
 
 **Refresh the Tier-4 surprisal candidate set after the 2026-05-15 verification pass.** The original Phase C.1 spec finalized 2026-05-11 listed five candidate causal LMs without a fresh market scan. The 2026-05-15 verification pass against primary sources (HF model cards, arXiv technical reports, license files) dropped one candidate on a constraint violation, added four candidates from the 2024-Q4 through 2026-Q2 release window, and introduced training-cutoff bucketing as a structural input to the §5.4 fixture-test decision rule. This release lands the corresponding code change in `scripts/surprisal_backend.py`: the public `MODEL_ALIASES` table is now the nine-candidate post-2026-05-15 core set, with a typed deprecation gate for the removed `phi3_mini` alias.

@@ -53,6 +53,131 @@ The plugin exposes skills as workflows, not just surfaces.
 | `metric-targeted-restoration` | Turning diagnostic JSON into bounded revision packets with post-checks |
 | `corpus-acquisition` | Building private baseline and impostor corpora from blogs, takeouts, PDFs, and magazines |
 
+## Stylometric tests
+
+SETEC computes 49 stylometric measurements organized into 14 families. Each is documented in the full [signals glossary](plugins/setec-voiceprint/references/signals-glossary.md) with definition, computation, interpretation, examples, and caveats. Compact list below; polarity arrows mean ↓ "lower values are more AI-like", ↑ "higher values are more AI-like", ↔ "no single direction, both extremes diagnostic", and — "no polarity (baseline-relative or diagnostic only)".
+
+**Tier 1: variance signals** (cheapest; no baseline required)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Sentence-length burstiness (B) | ↓ | Normalized sentence-length variance: are sentences mixed or uniform |
+| Sentence-length SD | ↓ | Raw variability of sentence length in words |
+| Moving-average type-token ratio (MATTR) | ↓ | Lexical diversity averaged across sliding 50-token windows |
+| Measure of textual lexical diversity (MTLD) | ↓ | Tokens needed before TTR drops below 0.72; length-robust diversity |
+| Yule's K | ↑ | Vocabulary concentration on a small set of frequent types |
+| Shannon entropy (bits/token) | ↓ | Average information per token across the word-frequency distribution |
+| Flesch-Kincaid grade SD | ↓ | Per-sentence reading-grade variability; AI tends to converge on uniform grade |
+| Connective density | ↑ | Discourse-marker rate (furthermore / moreover / however) per 1000 tokens |
+| Function-word ratio | — | Lexical-vector input to Burrows Delta; not directly thresholded |
+
+**Tier 2: syntactic signals** (requires spaCy)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| POS-bigram entropy | — | Distributional entropy over part-of-speech-tag pairs |
+| POS-bigram KL divergence | ↑ | Syntactic-template divergence between target and baseline |
+| Mean dependency distance SD | ↓ | Variability in syntactic compactness across sentences |
+
+**Tier 3: semantic cohesion / trajectory** (requires sentence-transformers, TF-IDF fallback)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Adjacent-sentence cosine mean | ↑ | Average semantic similarity between consecutive sentences |
+| Adjacent-sentence cosine SD | ↓ | Variability in sentence-to-sentence semantic transitions |
+| Semantic trajectory cosine series | ↔ | Per-paragraph cosine series across the document |
+| Semantic trajectory slope | ↔ | Linear trend in adjacent-window cosine across the document |
+
+**Tier 4: surprisal signals** (opt-in `--tier4`; requires transformers + torch + causal LM)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Per-token surprisal mean | ↓ | Average predictability under a causal LM (bits per token) |
+| Per-token surprisal SD | ↓ | Variability of token surprise; uniform = AI |
+| Per-token surprisal autocorrelation lag-1 | ↑ | Whether predictability persists across consecutive tokens |
+
+**Voice-distance signals** (requires baseline)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Burrows Delta (function-word) | ↑ | Standardized function-word distance from baseline |
+| Per-feature cosine distance | ↑ | Cosine-shape distance per feature family (function words, POS-trigrams, …) |
+
+**Voice-drift signals** (requires date-tagged baseline)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Voice drift (cross-period CV) | ↑ | Per-feature coefficient of variation across time periods |
+| Voice stability (low CV) | ↓ | Features with low cross-period CV; the durable idiolect |
+
+**POV-voice signals** (requires multi-POV baseline)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| POV voice-distance matrix | ↑ | Pairwise Burrows Delta + cosine between POV characters |
+| POV voice-collapse verdict | ↑ | Pairs whose Delta sits below the heuristic threshold |
+
+**Mimicry / cosplay signals** (joint condition with voice-distance signals)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Lexical mimicry survival | ↑ | Proportion of baseline n-grams reappearing in target |
+| Syntactic mimicry (POS-trigram Delta) | ↑ | Burrows Delta on POS-trigrams; high + high lexical survival = cosplay |
+
+**Semantic preservation signals** (diagnostic; for restoration before/after)
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Claim inventory preservation | — | Declarative-sentence count before/after |
+| Named-entity preservation | — | Proper-noun count before/after |
+| Citation / authority preservation | — | Evidential-frame count before/after |
+
+**Phraseology signals**
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Lexical bundle survival | — | Proportion of baseline 3- and 4-gram bundles in target |
+| Slot-frame survival | — | Occurrence of variable-slot structural templates ("not X but Y") |
+| Idiom survival | — | Occurrence of curated English idioms |
+| Stance-frame survival | — | Occurrence of evaluative stance frames ("it seems to me") |
+| Hapax-phrase survival | — | Proportion of baseline one-of-a-kind phrases reappearing in target |
+
+**Punctuation cadence signals**
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Sentence-final punctuation distribution | — | Relative frequency of period / question / exclamation / em-dash / ellipsis |
+| Punctuation bigrams | — | Most common pairs of adjacent punctuation marks |
+| Interruption grammar | — | Per-1000-token density of parentheticals / em-dashes / appositives |
+| Comma-period share | — | Ratio of period-class to comma-class punctuation |
+
+**Stance / modality signals**
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Deontic modality density | — | Obligation language (must / shall / should / required) per 1000 tokens |
+| Epistemic modality density | — | Possibility / uncertainty language (may / might / could) per 1000 tokens |
+| Hedge density | — | Qualifier language (somewhat / sort of / kind of / arguably) |
+| Booster density | — | Assertive intensifiers (clearly / obviously / definitely) |
+| Evidential density | — | Source-of-knowledge markers (seems / suggests / shows / indicates) |
+| First-person stance density | — | Evaluative frames ("I think", "we argue", "it seems to me") |
+| Refusal / negation density | — | Limitation language ("this does not show", "cannot conclude") |
+
+**Bigram-KL signals**
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Per-bigram KL contribution | ↑ | Per-bigram decomposition of POS-bigram KL divergence |
+
+**Repetition signals**
+
+| Signal | Polarity | What it measures |
+|---|---|---|
+| Vocabulary repetition ratio | ↑ | Target-vs-baseline per-1000-token frequency ratio |
+| Cluster maximum | ↑ | Maximum occurrences of a word in any sliding 300-token window |
+
+Full definitions, computation details, interpretation guidance, examples, and caveats live in [`plugins/setec-voiceprint/references/signals-glossary.md`](plugins/setec-voiceprint/references/signals-glossary.md).
+
 ## Files
 
 ```
