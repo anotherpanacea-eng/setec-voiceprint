@@ -6,6 +6,19 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.60.2] - 2026-05-15
+
+**Slim the README's stylometric-tests section to a barebones inventory.** The 1.60.1 release shipped a grouped-table layout with per-signal polarity arrows and one-line definitions plus an outbound link to the in-repo signals glossary. The maintainer is iterating the glossary into a longer-form primer on a separate (out-of-repo) track; the in-repo glossary at `plugins/setec-voiceprint/references/signals-glossary.md` is now a stable v1.60.1 snapshot that won't grow alongside the primer. This release reflects the split: the README carries a slim reference inventory only, and stops linking to the glossary so readers don't expect a maintained primer there.
+
+### Changed
+
+- **`README.md` "Stylometric tests" section** — replaced the family-grouped per-signal tables (~110 lines, three columns: signal / polarity / what it measures) with a barebones bulleted inventory (~16 lines, family + count + comma-separated signal names). The outbound link to `signals-glossary.md` is removed; the glossary remains in-repo at its 1.60.1 state but isn't advertised as a maintained reference.
+
+### Notes
+
+- No code changes, no test changes, no behavior changes. The 49 signals listed are the same as in 1.60.1; only the README presentation slims.
+- The `plugins/setec-voiceprint/references/signals-glossary.md` file is unchanged in this release and remains at the 1.60.1 state. Operators clone-and-reading the repo can still find it; the README just doesn't tease it as a primary reference.
+
 ## [1.60.1] - 2026-05-15
 
 **Ship the stylometric signals glossary.** SETEC computes 49 distinct stylometric measurements across 14 families (Tier 1 variance, Tier 2 syntax, Tier 3 trajectory, Tier 4 surprisal, voice-distance, voice-drift, POV-voice, mimicry, semantic-preservation, phraseology, punctuation, stance-modality, bigram-KL, repetition). Each measurement has a name, a computation, an interpretation, calibration status, and known caveats. Until now those definitions lived dispersed across module docstrings, signal-registry entries in `variance_audit.py`, and per-script README comments. This release consolidates them into a single reader-facing reference.
