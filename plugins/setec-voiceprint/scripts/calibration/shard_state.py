@@ -146,14 +146,16 @@ def build_initial_state(
     shard_size_target: int,
     stratify_by: list[str],
     shuffle_seed: int,
-    fpr_target: float,
-    tier1: bool,
-    tier2: bool,
-    tier3: bool,
-    embedding_model: str | None,
-    embedding_revision: str | None,
+    fpr_target: float | None = None,
+    tier1: bool | None = None,
+    tier2: bool | None = None,
+    tier3: bool | None = None,
+    embedding_model: str | None = None,
+    embedding_revision: str | None = None,
     shard_summaries: list[dict[str, Any]],
     created_at: str | None = None,
+    task: str = "calibration_survey",
+    task_params: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Compose the initial state dict before the first write.
 
@@ -161,6 +163,15 @@ def build_initial_state(
     must be aligned with shard indices 0..N-1 and contain per-shard
     ``n_entries`` and ``stratum_counts`` from
     ``sharding.shard_summary``.
+
+    v1.45.0: ``task`` and ``task_params`` describe which task
+    surface this run belongs to and what per-task parameters the
+    scorer / aggregator should read. ``task`` defaults to
+    ``"calibration_survey"`` so callers that don't opt in keep the
+    pre-v1.45.0 behavior. Tier and FPR flags became nullable in
+    v1.45.0 so non-calibration tasks (e.g. corpus_hygiene) don't
+    have to carry them as no-ops; for calibration_survey, callers
+    should pass them explicitly.
     """
     created_at = created_at or _dt.datetime.now(
         _dt.timezone.utc,
@@ -168,6 +179,8 @@ def build_initial_state(
     return {
         "schema_version": SHARD_STATE_VERSION,
         "run_id": run_id,
+        "task": task,
+        "task_params": dict(task_params) if task_params else {},
         "source_manifest_path": str(source_manifest_path),
         "source_manifest_sha256": source_manifest_sha256,
         "shard_count": shard_count,
@@ -190,6 +203,21 @@ def build_initial_state(
             for i in range(shard_count)
         },
     }
+
+
+def task_for(state: dict[str, Any]) -> str:
+    """Return the task name recorded in ``state``.
+
+    Backwards-compat shim: state.json files written before v1.45.0
+    have no ``task`` field. Treat missing as ``calibration_survey``
+    so the legacy operator path (which is the only path that ever
+    produced those files) keeps working transparently. The
+    ``task_surfaces.task_for_state`` helper builds on this to
+    return the registered TaskSurface object; downstream callers
+    that only need the string identifier use ``task_for``
+    directly.
+    """
+    return str(state.get("task", "calibration_survey"))
 
 
 def _shard_id(index: int) -> str:
