@@ -366,6 +366,68 @@ def test_thread_executor_runs_multiple_signals(
     )
 
 
+def test_process_executor_routes_failed_pairs_to_legacy_fallback(
+    hardened_run, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2 on PR #63: when ``--executor process`` is on and
+    pre-extraction fails for some signals, those signals must
+    run via the parent's legacy records-list path (NOT silently
+    fail as "no usable pairs" inside a SharedMemory worker). The
+    thread and serial paths already do this fallback; process
+    must match so ``--executor`` stays a perf knob, not a
+    feature-availability knob.
+
+    Force pair extraction to raise for SOME signals (the cohort
+    split should then route them through the legacy path), and
+    confirm the legacy-fallback cohort is recorded in perf and
+    the signals are NOT silently dropped from per_signal.
+    """
+    base = hardened_run["base"]
+    run_id = hardened_run["run_id"]
+    out = tmp_path / "agg.json"
+    import validation_harness as vh  # noqa: PLC0415
+    real_collect = vh.collect_signal_records
+    fail_signal_paths = {
+        "tier1.sentence_length.burstiness_B",
+        "tier1.mattr.value",
+        "tier1.mtld",
+    }
+
+    def _selective_collect(records, signal_path):
+        if signal_path in fail_signal_paths:
+            raise RuntimeError(
+                f"simulated extraction failure for {signal_path}"
+            )
+        return real_collect(records, signal_path)
+
+    monkeypatch.setattr(
+        vh, "collect_signal_records", _selective_collect,
+    )
+    rc = sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id,
+        "--out", str(out),
+        "--executor", "process",
+        "--aggregate-workers", "2",
+        "--bootstrap-engine", "loop",
+    ])
+    assert rc == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    expected = set(ct.COMPRESSION_HEURISTICS.keys())
+    actual = set(payload["per_signal"].keys())
+    assert expected == actual, (
+        f"signals missing from per_signal: {expected - actual}"
+    )
+    perf = payload["aggregator_perf"]
+    assert "process_signals_legacy_fallback" in perf, (
+        "perf metadata should record the legacy-fallback cohort"
+    )
+    assert perf["process_signals_legacy_fallback"] >= 1, (
+        "with 3 signals forced to fail pair extraction, the "
+        "legacy-fallback cohort should be non-empty"
+    )
+
+
 # --------------- Layer 3 (Buttons): SharedMemory allocation ----------
 
 

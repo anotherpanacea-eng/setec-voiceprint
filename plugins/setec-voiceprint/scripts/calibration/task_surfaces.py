@@ -709,13 +709,61 @@ def _aggregate_calibration_records(
             from concurrent.futures import (  # noqa: PLC0415
                 ProcessPoolExecutor, as_completed,
             )
+            #
+            # Split dispatch_signals into two cohorts (codex P2 on
+            # PR #63):
+            #   * pre_extracted: signals with pairs in
+            #     per_signal_pairs → run via the process pool with
+            #     SharedMemory dispatch (the fast path).
+            #   * legacy_fallback: signals whose pair extraction
+            #     failed (bad spec shape, etc.) → run via the
+            #     parent's serial loop with records_fallback=
+            #     all_records, exactly like the thread/serial paths
+            #     handle them. Without this split the process
+            #     executor would silently drop them as "no usable
+            #     pairs" errors — a feature-availability regression
+            #     vs the other executors.
+            pre_extracted = [
+                s for s in dispatch_signals
+                if s in per_signal_pairs
+            ]
+            legacy_fallback = [
+                s for s in dispatch_signals
+                if s not in per_signal_pairs
+            ]
+            if legacy_fallback:
+                sys.stderr.write(
+                    f"  process executor: {len(legacy_fallback)} "
+                    f"signal(s) lack pre-extracted pairs and will "
+                    f"run via the parent's legacy records-list "
+                    f"path serially before the process pool starts "
+                    f"(no silent drop). Pre-extracted via process "
+                    f"pool: {len(pre_extracted)} signal(s).\n"
+                )
+                for sig_name in legacy_fallback:
+                    ns = _build_signal_namespace(
+                        sig_name, state=state, args=args,
+                        contributing_shards=contributing_shards,
+                        fpr_target=fpr_target, iso_date=iso_date,
+                    )
+                    name, entry = _derive_one_from_pairs(
+                        sig_name,
+                        None,  # no pairs → legacy path
+                        ns,
+                        merged_meta,
+                        records_fallback=all_records,
+                    )
+                    per_signal[name] = entry
+                    _log_signal_done(name, entry, sweep_t0)
+
             shm_handles: list[Any] = []
             try:
-                # Pre-allocate SharedMemory pair arrays per signal.
+                # Pre-allocate SharedMemory pair arrays per signal
+                # in the pre-extracted cohort.
                 shm_per_sig: dict[
                     str, tuple[str, str, int]
                 ] = {}
-                for sig_name in dispatch_signals:
+                for sig_name in pre_extracted:
                     pairs = per_signal_pairs.get(sig_name, [])
                     sm_l, sm_s, l_name, s_name, n = (
                         _allocate_shared_pair_arrays(pairs)
@@ -751,28 +799,29 @@ def _aggregate_calibration_records(
                         f"dispatch."
                     ),
                 }
-                # Per-signal slug carried in kwargs at submit time.
-                with ProcessPoolExecutor(
-                    max_workers=capped_workers,
-                ) as pool:
-                    future_to_sig = {}
-                    for sig_name in dispatch_signals:
-                        l_name, s_name, n = shm_per_sig[sig_name]
-                        ns_kwargs = dict(ns_kwargs_template)
-                        ns_kwargs["slug"] = (
-                            f"sharded_{state.get('run_id', 'sharded_run')}"
-                            f"_{sig_name}_fpr{fpr_target}_{iso_date}"
-                        )
-                        fut = pool.submit(
-                            _derive_one_via_shared_memory,
-                            sig_name, l_name, s_name, n,
-                            ns_kwargs, merged_meta,
-                        )
-                        future_to_sig[fut] = sig_name
-                    for fut in as_completed(future_to_sig):
-                        name, entry = fut.result()
-                        per_signal[name] = entry
-                        _log_signal_done(name, entry, sweep_t0)
+                if pre_extracted:
+                    # Per-signal slug carried in kwargs at submit time.
+                    with ProcessPoolExecutor(
+                        max_workers=capped_workers,
+                    ) as pool:
+                        future_to_sig = {}
+                        for sig_name in pre_extracted:
+                            l_name, s_name, n = shm_per_sig[sig_name]
+                            ns_kwargs = dict(ns_kwargs_template)
+                            ns_kwargs["slug"] = (
+                                f"sharded_{state.get('run_id', 'sharded_run')}"
+                                f"_{sig_name}_fpr{fpr_target}_{iso_date}"
+                            )
+                            fut = pool.submit(
+                                _derive_one_via_shared_memory,
+                                sig_name, l_name, s_name, n,
+                                ns_kwargs, merged_meta,
+                            )
+                            future_to_sig[fut] = sig_name
+                        for fut in as_completed(future_to_sig):
+                            name, entry = fut.result()
+                            per_signal[name] = entry
+                            _log_signal_done(name, entry, sweep_t0)
             finally:
                 # Close + unlink all SharedMemory blocks. Skipping
                 # unlink leaks /dev/shm entries on POSIX or named
@@ -786,6 +835,14 @@ def _aggregate_calibration_records(
                         sm.unlink()
                     except Exception:  # noqa: BLE001
                         pass
+            # Record perf metadata about the split so post-hoc
+            # audits can see which cohort each signal landed in.
+            perf_meta["process_signals_pre_extracted"] = (
+                len(pre_extracted)
+            )
+            perf_meta["process_signals_legacy_fallback"] = (
+                len(legacy_fallback)
+            )
         sweep_s = (_dt.datetime.now() - sweep_t0).total_seconds()
         perf_meta["sweep_s"] = round(sweep_s, 3)
         perf_meta["n_signals_dispatched"] = len(dispatch_signals)
