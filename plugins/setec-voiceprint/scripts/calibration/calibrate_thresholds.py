@@ -1993,10 +1993,13 @@ def main(argv: list[str] | None = None) -> int:
         f"Next: edit scripts/variance_audit.py and set\n"
         f"  COMPRESSION_HEURISTICS[{args.signal!r}].provenance = "
         f"{entry['slug']!r}\n"
-        f"  COMPRESSION_HEURISTICS[{args.signal!r}].provisional = False\n"
+        f"  COMPRESSION_HEURISTICS[{args.signal!r}].status = 'calibrated'\n"
         f"  COMPRESSION_HEURISTICS[{args.signal!r}].value = "
         f"{entry['derived_value']}\n"
         f"and add a section to scripts/calibration/PROVENANCE.md.\n"
+        f"(v1.66.0 retier: `provisional` is now a derived property;\n"
+        f"set `status` to one of {{calibrated, literature_anchored,\n"
+        f"empirically_oriented, heuristic}}.)\n"
     )
     return 0
 

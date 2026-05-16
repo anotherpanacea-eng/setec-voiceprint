@@ -1646,12 +1646,37 @@ def compare_distributions(
 #   - weight is the contribution to band classification (signals differ in reliability)
 #   - length_floor is the minimum word count for the heuristic to be reliable
 #
-# Each threshold is a ThresholdSpec dataclass. v1 thresholds carry
-# `provisional=True` and `provenance=None`; calibrated thresholds set
-# `provenance` to a slug from `scripts/calibration/PROVENANCE.md` and
-# clear `provisional`. The two are mutually exclusive (enforced in
-# __post_init__). See `internal/SPEC_calibration_toolchain.md` for
-# the calibration toolchain that populates `provenance`.
+# Each threshold is a ThresholdSpec dataclass. Calibration status is
+# tracked via the `status` field (4-tier enum + 1 marginal), retiered
+# in v1.66.0 per `internal/SPEC_calibration_status_retier.md` to
+# replace the old binary `provisional: bool`. Provenance conventions
+# per status:
+#
+#   * `calibrated`: provenance MUST cite a labeled corpus with
+#     reported metrics (e.g., "raid_v1_fpr0.01_2026-05-13").
+#   * `literature_anchored`: provenance MUST cite a publication
+#     (e.g., "diveye_basani_chen_tmlr_2026").
+#   * `empirically_oriented`: provenance MUST cite a local source
+#     (e.g., "voice_profile_aggregation_v1").
+#   * `heuristic`: provenance MUST be None. Default for new signals.
+#   * `structural_only`: provenance describes downstream use.
+#
+# See `internal/SPEC_calibration_status_retier.md` for the full
+# tier definitions and the per-signal triage. See
+# `internal/SPEC_calibration_toolchain.md` for the calibration
+# toolchain that promotes signals from heuristic / literature /
+# empirical tiers into calibrated.
+
+# Allowed status values. Order is loose-to-tight calibration tier.
+THRESHOLD_STATUS_VALUES = frozenset({
+    "calibrated",
+    "literature_anchored",
+    "empirically_oriented",
+    "heuristic",
+    "structural_only",
+})
+
+
 @dataclass
 class ThresholdSpec:
     """Per-signal threshold specification + calibration metadata.
@@ -1663,9 +1688,15 @@ class ThresholdSpec:
     `weight` and `length_floor` carry through from the original
     tuple-registry shape.
 
-    Mutual exclusion: `provenance` (calibrated) and `provisional`
-    (heuristic) cannot both be set. A non-provisional threshold must
-    declare a provenance slug; a provisional threshold must not.
+    `status` (v1.66.0): one of {calibrated, literature_anchored,
+    empirically_oriented, heuristic, structural_only}. Replaces the
+    old `provisional: bool` per the v1.66.0 retier. Each tier has
+    its own provenance convention enforced in `__post_init__`.
+
+    For backward compatibility: the `provisional` property returns
+    True for any non-calibrated, non-structural_only status. Code
+    that read the old `spec.provisional` keeps working with the
+    same semantics (calibrated → False, everything else → True).
     """
 
     signal_path: str
@@ -1674,7 +1705,7 @@ class ThresholdSpec:
     weight: float
     length_floor: int
     provenance: str | None = None
-    provisional: bool = True
+    status: str = "heuristic"
 
     def __post_init__(self) -> None:
         if self.direction not in ("gt", "lt"):
@@ -1682,17 +1713,48 @@ class ThresholdSpec:
                 f"ThresholdSpec.direction must be 'gt' or 'lt', "
                 f"got {self.direction!r}"
             )
-        if self.provenance is not None and self.provisional:
+        if self.status not in THRESHOLD_STATUS_VALUES:
             raise ValueError(
-                "ThresholdSpec: provenance and provisional are "
-                "mutually exclusive. Setting provenance to a slug "
-                "must clear provisional."
+                f"ThresholdSpec.status must be one of "
+                f"{sorted(THRESHOLD_STATUS_VALUES)!r}, got "
+                f"{self.status!r}"
             )
-        if self.provenance is None and not self.provisional:
+        # Per-tier provenance invariants.
+        if self.status == "calibrated" and self.provenance is None:
             raise ValueError(
-                "ThresholdSpec: a non-provisional threshold must "
-                "declare a provenance slug."
+                "ThresholdSpec: status='calibrated' requires a "
+                "provenance slug citing the labeled corpus + version "
+                "+ reported metrics."
             )
+        if self.status == "literature_anchored" and self.provenance is None:
+            raise ValueError(
+                "ThresholdSpec: status='literature_anchored' requires "
+                "a provenance slug citing the publication."
+            )
+        if self.status == "empirically_oriented" and self.provenance is None:
+            raise ValueError(
+                "ThresholdSpec: status='empirically_oriented' requires "
+                "a provenance slug citing the local source."
+            )
+        if self.status == "heuristic" and self.provenance is not None:
+            raise ValueError(
+                "ThresholdSpec: status='heuristic' must have "
+                "provenance=None. Promote to one of "
+                "{calibrated, literature_anchored, "
+                "empirically_oriented} to attach provenance."
+            )
+
+    @property
+    def provisional(self) -> bool:
+        """Backward-compat alias: True for any non-calibrated,
+        non-structural status. Existing code that filtered by
+        `spec.provisional` keeps the same operational meaning
+        (calibrated signals are False; everything else is True).
+
+        Deprecated: prefer explicit per-tier checks via
+        `status_signals()` helpers below.
+        """
+        return self.status not in ("calibrated", "structural_only")
 
 
 COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
@@ -1719,18 +1781,27 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     # `scripts/calibration/PROVENANCE.md` for the policy statement.
     "burstiness_B": ThresholdSpec(
         signal_path="tier1.sentence_length.burstiness_B",
+        status="empirically_oriented",
+        provenance="editlens_v1_findings_2026-05-10",
         value=-0.40, direction="lt",
         weight=2.0, length_floor=200,
     ),
     # Connective density: AI-prose runs 25-50 per 1000 tokens; humans 5-15.
+    # Local da_AUC measurement on EditLens v1 (2026-05-10 findings):
+    # 0.529 — the weakest of the six variance signals measured but
+    # the band shape is consistent with literature.
     "connective_density": ThresholdSpec(
         signal_path="tier1.connective_density.per_1000_tokens",
         value=20.0, direction="gt", weight=2.0, length_floor=200,
+        status="empirically_oriented",
+        provenance="editlens_v1_findings_2026-05-10",
     ),
     # MATTR: literary fluent fiction runs 0.70-0.82 at window 50.
     "mattr": ThresholdSpec(
         signal_path="tier1.mattr.value",
         value=0.65, direction="lt", weight=1.0, length_floor=300,
+        status="literature_anchored",
+        provenance="mattr_literary_fiction_baseline_window_50",
     ),
     # MTLD: noisy below ~500 words; threshold tightened.
     "mtld": ThresholdSpec(
@@ -1751,11 +1822,18 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     "shannon_entropy": ThresholdSpec(
         signal_path="tier1.shannon_entropy_bits",
         value=7.0, direction="lt", weight=1.0, length_floor=2000,
+        status="literature_anchored",
+        provenance="shannon_entropy_native_fiction_literature",
     ),
     # FKGL SD: human prose typically 3-5 across sentences; LLM 0.8-1.5.
+    # Local da_AUC measurement on EditLens v1 (2026-05-10 findings):
+    # 0.635. Tier note: literature anchor + local measurement; the
+    # local da_AUC promotes this from literature_anchored.
     "fkgl_sd": ThresholdSpec(
         signal_path="tier1.fkgl.sd",
         value=1.5, direction="lt", weight=1.5, length_floor=200,
+        status="empirically_oriented",
+        provenance="editlens_v1_findings_2026-05-10",
     ),
     # Sentence-length SD is unreliable as a standalone signal because mean
     # sentence length varies dramatically by register (fiction with fragments
@@ -1763,6 +1841,8 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     # carries this signal more reliably. Threshold raised so it almost never
     # fires; rely on B and on personal baseline z-scores instead.
     "sentence_length_sd": ThresholdSpec(
+        status="empirically_oriented",
+        provenance="editlens_v1_findings_2026-05-10",
         signal_path="tier1.sentence_length.sd",
         value=5.0, direction="lt", weight=0.5, length_floor=5000,
     ),
@@ -1772,11 +1852,15 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
         value=0.60, direction="gt", weight=1.5, length_floor=200,
     ),
     "adjacent_cosine_sd": ThresholdSpec(
+        status="empirically_oriented",
+        provenance="editlens_v1_findings_2026-05-10",
         signal_path="tier3.adjacent_cosine.sd",
         value=0.12, direction="lt", weight=1.0, length_floor=300,
     ),
     # MDD-SD: compressed syntactic variation.
     "mdd_sd": ThresholdSpec(
+        status="empirically_oriented",
+        provenance="editlens_v1_findings_2026-05-10",
         signal_path="tier2.mdd.sd",
         value=0.7, direction="lt", weight=1.0, length_floor=300,
     ),
@@ -1803,14 +1887,20 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     "surprisal_mean": ThresholdSpec(
         signal_path="tier4.surprisal.mean",
         value=3.5, direction="lt", weight=1.5, length_floor=300,
+        status="literature_anchored",
+        provenance="diveye_basani_chen_tmlr_2026",
     ),
     "surprisal_sd": ThresholdSpec(
         signal_path="tier4.surprisal.sd",
         value=1.5, direction="lt", weight=2.0, length_floor=300,
+        status="literature_anchored",
+        provenance="diveye_basani_chen_tmlr_2026",
     ),
     "surprisal_acf_lag1": ThresholdSpec(
         signal_path="tier4.surprisal.autocorrelation.lag_1",
         value=0.30, direction="gt", weight=1.0, length_floor=500,
+        status="literature_anchored",
+        provenance="diveye_basani_chen_tmlr_2026",
     ),
     # AIC-7 named-pattern density (v1.65.0). Per
     # `internal/SPEC_aic_8_9_implementation.md` Step 10 part 2.
@@ -1874,22 +1964,89 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
 }
 
 
-def provisional_signals(
+def signals_by_status(
+    status: str,
     heuristics: dict[str, ThresholdSpec] = COMPRESSION_HEURISTICS,
 ) -> list[str]:
-    """Return the keys of any threshold whose `provisional` flag is
-    set (i.e., not yet calibrated). Used by report renderers to
-    surface a "X of Y signal thresholds carry calibration provenance"
-    footer."""
-    return [k for k, spec in heuristics.items() if spec.provisional]
+    """Return signal keys whose `status` matches the given tier.
+
+    Tiers (v1.66.0): "calibrated", "literature_anchored",
+    "empirically_oriented", "heuristic", "structural_only".
+    """
+    if status not in THRESHOLD_STATUS_VALUES:
+        raise ValueError(
+            f"Unknown status {status!r}; expected one of "
+            f"{sorted(THRESHOLD_STATUS_VALUES)!r}"
+        )
+    return [k for k, spec in heuristics.items() if spec.status == status]
 
 
 def calibrated_signals(
     heuristics: dict[str, ThresholdSpec] = COMPRESSION_HEURISTICS,
 ) -> list[str]:
-    """Inverse of `provisional_signals`. Returns keys whose threshold
-    carries a calibration `provenance` slug."""
-    return [k for k, spec in heuristics.items() if not spec.provisional]
+    """Return keys of signals with `status == "calibrated"`.
+
+    A `calibrated` signal carries provenance citing a labeled corpus
+    with reported metrics (FPR / TPR / AUC / distribution moments).
+    The Stylometry-to-the-people invariant: until the §5.4
+    calibration corpus runs, this list is expected to be empty.
+    """
+    return signals_by_status("calibrated", heuristics)
+
+
+def literature_anchored_signals(
+    heuristics: dict[str, ThresholdSpec] = COMPRESSION_HEURISTICS,
+) -> list[str]:
+    """Return keys of signals with `status == "literature_anchored"`.
+
+    A `literature_anchored` signal carries provenance citing a
+    publication (e.g., `diveye_basani_chen_tmlr_2026`). The bands
+    are taken from published work but not corpus-validated locally.
+    """
+    return signals_by_status("literature_anchored", heuristics)
+
+
+def empirically_oriented_signals(
+    heuristics: dict[str, ThresholdSpec] = COMPRESSION_HEURISTICS,
+) -> list[str]:
+    """Return keys of signals with `status == "empirically_oriented"`.
+
+    An `empirically_oriented` signal carries provenance citing a
+    local source (`voice_profile_aggregation_v1`, internal fixture
+    testing). The bands come from local experimentation, not a
+    published study.
+    """
+    return signals_by_status("empirically_oriented", heuristics)
+
+
+def heuristic_signals(
+    heuristics: dict[str, ThresholdSpec] = COMPRESSION_HEURISTICS,
+) -> list[str]:
+    """Return keys of signals with `status == "heuristic"`.
+
+    A `heuristic` signal carries no provenance. The threshold is a
+    plausible working value awaiting validation. The §5.4
+    calibration corpus track is the named promotion path:
+    `heuristic` → `calibrated` as corpus data lands.
+    """
+    return signals_by_status("heuristic", heuristics)
+
+
+def provisional_signals(
+    heuristics: dict[str, ThresholdSpec] = COMPRESSION_HEURISTICS,
+) -> list[str]:
+    """Return keys of signals whose status is not `calibrated` and
+    not `structural_only` — i.e., everything else (`heuristic`,
+    `literature_anchored`, `empirically_oriented`).
+
+    Backward-compat helper (v1.66.0 retier kept the name but
+    redefined the semantics around the new four-tier enum). Prefer
+    the explicit per-tier helpers (`heuristic_signals`,
+    `literature_anchored_signals`, `empirically_oriented_signals`)
+    for new code. Existing callers that just wanted "not calibrated"
+    keep working with the same operational meaning.
+    """
+    return [k for k, spec in heuristics.items() if spec.provisional]
 
 
 # POS-bigram KL divergence against a baseline aggregate. Unlike the 11
@@ -1922,6 +2079,8 @@ def calibrated_signals(
 POS_BIGRAM_KL_HEURISTIC: ThresholdSpec = ThresholdSpec(
     signal_path="baseline_divergences.pos_bigrams.kl",
     value=0.15, direction="gt", weight=2.0, length_floor=500,
+    status="literature_anchored",
+    provenance="pos_bigram_kl_distributional_diagnostics",
 )
 
 
@@ -2132,6 +2291,11 @@ def classify_compression(
             "length_floor": spec.length_floor,
             "signal_path": spec.signal_path,
             "provenance": spec.provenance,
+            "status": spec.status,
+            # Backward-compat: keep `provisional` in the JSON for
+            # consumers from before the v1.66.0 retier. Semantics
+            # unchanged (True for any non-calibrated, non-structural
+            # signal).
             "provisional": spec.provisional,
         }
         for k, spec in COMPRESSION_HEURISTICS.items()
@@ -2147,6 +2311,7 @@ def classify_compression(
         "length_floor": POS_BIGRAM_KL_HEURISTIC.length_floor,
         "signal_path": POS_BIGRAM_KL_HEURISTIC.signal_path,
         "provenance": POS_BIGRAM_KL_HEURISTIC.provenance,
+        "status": POS_BIGRAM_KL_HEURISTIC.status,
         "provisional": POS_BIGRAM_KL_HEURISTIC.provisional,
         "requires_baseline": True,
     }

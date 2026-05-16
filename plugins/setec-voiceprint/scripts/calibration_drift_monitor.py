@@ -177,6 +177,7 @@ def collect_framework_constants() -> dict[str, Any]:
                 "length_floor": spec.length_floor,
                 "signal_path": spec.signal_path,
                 "provenance": spec.provenance,
+                "status": spec.status,
                 "provisional": spec.provisional,
             }
         if POS_BIGRAM_KL_HEURISTIC is not None:
@@ -187,6 +188,7 @@ def collect_framework_constants() -> dict[str, Any]:
                 "length_floor": POS_BIGRAM_KL_HEURISTIC.length_floor,
                 "signal_path": POS_BIGRAM_KL_HEURISTIC.signal_path,
                 "provenance": POS_BIGRAM_KL_HEURISTIC.provenance,
+                "status": POS_BIGRAM_KL_HEURISTIC.status,
                 "provisional": POS_BIGRAM_KL_HEURISTIC.provisional,
             }
     return out

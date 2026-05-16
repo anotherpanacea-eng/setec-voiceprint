@@ -6,6 +6,64 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.66.0] - 2026-05-15
+
+**Calibration-status retier: four-tier taxonomy replaces the binary calibrated/provisional split.** The framework's old `ThresholdSpec.provisional: bool` collapsed corpus-tested, locally-experimented, literature-anchored, and pure-heuristic signals into one bucket. The v1.60.1 glossary's `status: calibrated` label drifted on signals whose anchor text literally said "Provisional." Per `internal/SPEC_calibration_status_retier.md`, this release ships a four-tier status enum (plus structural_only for downstream-feeding signals) with per-tier provenance conventions, coordinated across code and glossary.
+
+### Changed
+
+- **`ThresholdSpec` schema migration** (`scripts/variance_audit.py`):
+  - `provisional: bool` replaced by `status: Literal["calibrated", "literature_anchored", "empirically_oriented", "heuristic", "structural_only"]`. Default value: `"heuristic"`.
+  - `__post_init__` invariant updated: `calibrated`, `literature_anchored`, `empirically_oriented` all require a non-None `provenance` slug citing the appropriate source (corpus / publication / local source respectively). `heuristic` requires `provenance is None`. The old "calibrated XOR provisional" check is generalized.
+  - New module-level constant `THRESHOLD_STATUS_VALUES` enumerates the allowed values.
+  - **Backward-compat**: `ThresholdSpec.provisional` is preserved as a derived `@property` returning `True` for any non-calibrated, non-structural status. Existing code reading `spec.provisional` keeps the same operational meaning (calibrated → False, everything else → True). JSON-emit sites now include both `status` (new) and `provisional` (deprecated alias) so downstream consumers can migrate at their own pace.
+
+- **New per-tier helper functions**: `signals_by_status(status)`, `literature_anchored_signals()`, `empirically_oriented_signals()`, `heuristic_signals()`. `calibrated_signals()` and `provisional_signals()` continue to work; their semantics now derive from the new status field.
+
+- **21 COMPRESSION_HEURISTICS entries retiered**:
+  - 5 → `literature_anchored`: `mattr` (literary-fiction baseline), `shannon_entropy` (native-fiction literature), `surprisal_mean` / `surprisal_sd` / `surprisal_acf_lag1` (all three Tier 4 signals share the DivEye anchor: Basani & Chen, TMLR 2026).
+  - 6 → `empirically_oriented`: `burstiness_B`, `sentence_length_sd`, `adjacent_cosine_sd`, `fkgl_sd`, `mdd_sd`, `connective_density` (all six measured locally in `references/calibration-findings-2026-05-10.md` against EditLens v1; per the Stylometry-to-the-people policy these stay un-promoted to calibrated, but the local da_AUC measurements anchor the bands).
+  - 10 → `heuristic`: `mtld`, `yules_k`, `adjacent_cosine_mean`, and the 7 AIC-7/8/9 entries (correctio, triplet, manifesto cadence, professional parallel stack, kicker, image conjunction, prestige metaphor scatter).
+  - **Plus `POS_BIGRAM_KL_HEURISTIC` → `literature_anchored`** (distributional-diagnostics anchor).
+
+- **`scripts/calibration/calibrate_thresholds.py` operator hint** — the operator-facing string that shows how to promote a signal to calibrated now writes `status = 'calibrated'` instead of `provisional = False`.
+
+- **`scripts/calibration_drift_monitor.py`** — JSON-emit sites surface the new `status` field alongside the backward-compat `provisional` flag.
+
+- **`scripts/variance_audit.py` JSON-emit sites** (the `thresholds_used` block) — same treatment: both `status` and `provisional` fields emitted.
+
+### Rewritten
+
+- **`references/signals-glossary.md`** — full rewrite from the v1.60.1 1004-line semi-pedagogical form to a 528-line terse-reference form. 56 entries, each with metadata line (signal path · family · polarity · status · provenance note) and a one-paragraph definition. No worked examples, no interpretive prose — long-form pedagogy moves to the framework's external primer (Glass-Box Stylometry Sequence in development). Front-matter legend documents the four-tier status taxonomy. Totals table at the end shows the calibration-status distribution.
+
+### Added
+
+- **`README.md` link to the glossary restored.** PR #49 (1.60.2) had removed the link because the in-repo glossary was being deprecated in favor of the maintainer's private primer iteration. Under the new posture (terse reference in-repo, long-form primer external), the link is appropriate again.
+- **README family inventory updated** from 49 signals to 56 — adds the AIC-7 / AIC-8 / AIC-9 family bullets that landed in PRs #57-#62 but weren't in the README's barebones inventory.
+- **5 new regression tests** in `test_variance_audit_tier4.py`:
+  - `TestAic789Registration::test_v1_66_0_retier_schema_invariants` — pins the per-tier provenance contract.
+  - `TestAic789Registration::test_v1_66_0_distribution` — pins the 0 calibrated, N literature, M empirical, K heuristic distribution; surfaces drift.
+  - `TestAic789Registration::test_v1_66_0_backward_compat_provisional_property` — `.provisional` keeps working.
+  - `TestAic789Registration::test_v1_66_0_invalid_status_raises` — constructor rejects typos.
+  - `TestCompressionHeuristicsTier4::test_all_three_are_literature_anchored` (renamed from `test_all_three_are_provisional`) — pins the Tier 4 → DivEye anchor.
+
+### Spec doc
+
+- **`internal/SPEC_calibration_status_retier.md`** — status updated from "Draft for maintainer review" to "SHIPPED in v1.66.0". Implementation-time corrections documented: the schema was bool→string-enum (not an enum-rename); no anchor field added to code; glossary rewrite over per-entry retier; empirical retier for the six EditLens-anchored variance signals; Tier 4 all → literature_anchored per maintainer's DivEye call.
+
+### Migration
+
+- **Code reading `spec.provisional`** continues to work unchanged (backward-compat property).
+- **Code reading `spec.status` directly** needs to use the new string values (no migration needed for fresh code).
+- **JSON consumers** see both `status` (new) and `provisional` (kept) fields. Migrate at your own pace.
+- **Operators calibrating signals** via `scripts/calibration/calibrate_thresholds.py` get an updated operator-facing hint telling them to set `status = 'calibrated'` rather than `provisional = False`.
+
+### Notes
+
+- This is a MINOR bump even though it touches the `ThresholdSpec` shape, because the backward-compat `provisional` property preserves the old API. Operators with code that strictly checks `isinstance(spec.provisional, bool)` need to verify; everyone else is fine.
+- Per the Stylometry-to-the-people policy, no signal is in the `calibrated` tier. The §5.4 calibration corpus track is the named promotion path: `heuristic` → `calibrated` (or `empirically_oriented` → `calibrated`) as labeled-corpus data lands.
+- The retier is an honesty pass, not new empirical work. No threshold values change. No signal added or removed. Same 56 signals before and after; only the labels are tightened.
+
 ## [1.65.1] - 2026-05-15
 
 **Rewrite `register_typical.yaml`'s header to honestly describe the values' epistemic status.** The 1.64.0 header called the bands "illustrative starting points derived from spec defaults plus literature anchors." That's an overstatement — the per-register numerical values aren't grounded in published literature. The maintainer flagged the framing while iterating their out-of-repo primer; this PATCH brings the in-repo file into alignment with the honest framing the primer will adopt.
