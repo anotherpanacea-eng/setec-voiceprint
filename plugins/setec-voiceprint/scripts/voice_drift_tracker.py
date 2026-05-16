@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import math
 import re
@@ -386,27 +387,216 @@ class PeriodProfile:
     # period_centroids[family] = {feature_name: mean_relative_freq}
 
 
+# Bump this when extract_features or its dependencies (the
+# stylometry_core feature families, the function-word list, etc.)
+# change in a way that produces different output for the same
+# input text. Cache entries written under an older version are
+# refused; the operator re-extracts (a slow but correct re-run).
+# Codex P2 on PR #73: prior versions of the cache had no version
+# field, so a code change that altered extract_features's output
+# would be silently served from stale cache.
+VOICE_DRIFT_FEATURES_VERSION = "1"
+
+
+def _doc_content_hash(path: Path) -> str:
+    """SHA-256 of the file bytes at ``path``. Used as part of the
+    cache compat check so editing or regenerating a baseline doc
+    at the same path invalidates its cached features (codex P2 on
+    PR #73)."""
+    try:
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(64 * 1024), b""):
+                h.update(chunk)
+        return f"sha256:{h.hexdigest()}"
+    except OSError:
+        # File unreadable — return a sentinel so the cache treats
+        # the entry as "different from anything we'd cache" and
+        # falls through to re-extraction (which will surface the
+        # I/O error explicitly).
+        return "sha256:unreadable"
+
+
+def _save_feature_cache(
+    path: Path, cache: dict[str, dict[str, Any]],
+) -> None:
+    """Atomic write of the per-doc feature cache. Each entry in
+    ``cache`` is keyed by the doc's absolute path and stores
+    ``{features, summary, text_hash, features_version}``. The
+    text_hash + features_version pair lets a later run detect
+    stale entries (codex P2 on PR #73): editing the doc at the
+    same path changes text_hash; bumping
+    VOICE_DRIFT_FEATURES_VERSION invalidates everything."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "_meta": {
+            "tool": "voice_drift_tracker",
+            "tool_version": "1.70.0",
+            "features_version": VOICE_DRIFT_FEATURES_VERSION,
+            "n_docs": len(cache),
+        },
+        "by_path": cache,
+    }
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, default=str)
+    tmp.replace(path)
+
+
+def _load_feature_cache(path: Path) -> dict[str, dict[str, Any]]:
+    """Load a prior per-doc feature cache. Returns empty dict if
+    the file doesn't exist or is unreadable (the next save
+    overwrites with the current run's contents)."""
+    if not path.exists():
+        return {}
+    try:
+        cached = json.loads(path.read_text(encoding="utf-8"))
+        if isinstance(cached, dict):
+            by_path = cached.get("by_path")
+            if isinstance(by_path, dict):
+                return by_path
+    except (json.JSONDecodeError, OSError) as exc:
+        sys.stderr.write(
+            f"  voice_drift_tracker: feature cache at {path} is "
+            f"unreadable ({exc}); discarding.\n"
+        )
+    return {}
+
+
 def build_period_profiles(
     grouped: dict[str, list[DatedEntry]],
+    *,
+    feature_cache_path: Path | None = None,
+    flush_every: int = 25,
+    refresh_cache: bool = False,
 ) -> tuple[dict[str, PeriodProfile], dict[str, list[str]]]:
     """For each period, run extract_features on every doc and compute
     the period's centroid (per-family mean across docs). Returns
-    (profiles_by_period, selected_features_by_family)."""
+    (profiles_by_period, selected_features_by_family).
+
+    Per-doc feature cache + progress log (1.70.0+): when
+    ``feature_cache_path`` is set, ``extract_features`` results are
+    keyed by the doc's absolute path and reused across runs. A 1200-
+    doc baseline that previously re-extracted every time can re-use
+    99% of its work on a re-run with the same baseline but a
+    different period granularity. ``refresh_cache=True`` discards
+    any prior cache. Per-period progress log to stderr (always on)
+    so an operator running a multi-minute drift report sees what
+    period the loop is in.
+    """
     items_by_period: dict[str, list[dict[str, Any]]] = {}
     n_docs_by_period: dict[str, int] = {}
     n_words_by_period: dict[str, int] = {}
 
-    for period, entries in grouped.items():
+    feature_cache: dict[str, dict[str, Any]] = {}
+    if feature_cache_path is not None and not refresh_cache:
+        feature_cache = _load_feature_cache(feature_cache_path)
+        if feature_cache:
+            sys.stderr.write(
+                f"voice_drift_tracker: feature cache hit at "
+                f"{feature_cache_path} ({len(feature_cache)} doc(s) "
+                f"available for reuse).\n"
+            )
+
+    total_docs = sum(len(v) for v in grouped.values())
+    docs_done = 0
+    extract_t0 = _dt.datetime.now()
+    n_periods = len(grouped)
+    cache_dirty_count = 0
+
+    for period_idx, (period, entries) in enumerate(grouped.items()):
         items: list[dict[str, Any]] = []
         n_words = 0
+        period_t0 = _dt.datetime.now()
+        n_cache_hits_this_period = 0
         for e in entries:
-            text = e.path.read_text(encoding="utf-8", errors="ignore")
-            feats = extract_features(text)
+            cache_key = str(e.path.resolve())
+            cached_feats = feature_cache.get(cache_key)
+            # Compat check (codex P2 on PR #73): only reuse the
+            # cached features when both the source bytes (text_hash)
+            # AND the extract_features version match. Without
+            # these, editing a baseline doc or bumping
+            # extract_features's implementation silently served
+            # stale features. Tolerates missing fields on the
+            # cached entry (pre-fix caches) by falling through to
+            # re-extraction — operator gets one slow run, then
+            # cache regenerates with the new schema.
+            current_text_hash = _doc_content_hash(e.path)
+            feats: dict[str, Any] | None = None
+            if cached_feats is not None:
+                prior_text_hash = cached_feats.get("text_hash")
+                prior_features_version = (
+                    cached_feats.get("features_version")
+                )
+                if (
+                    prior_text_hash == current_text_hash
+                    and prior_features_version
+                    == VOICE_DRIFT_FEATURES_VERSION
+                ):
+                    feats = cached_feats
+                    n_cache_hits_this_period += 1
+            if feats is None:
+                text = e.path.read_text(
+                    encoding="utf-8", errors="ignore",
+                )
+                feats = extract_features(text)
+                # Stamp the cache entry with text_hash and
+                # features_version so future runs can validate it.
+                feats = dict(feats)
+                feats["text_hash"] = current_text_hash
+                feats["features_version"] = (
+                    VOICE_DRIFT_FEATURES_VERSION
+                )
+                feature_cache[cache_key] = feats
+                cache_dirty_count += 1
+                if (
+                    feature_cache_path is not None
+                    and cache_dirty_count >= flush_every
+                ):
+                    try:
+                        _save_feature_cache(
+                            feature_cache_path, feature_cache,
+                        )
+                        cache_dirty_count = 0
+                    except Exception as exc:  # noqa: BLE001
+                        sys.stderr.write(
+                            f"  WARNING: feature-cache flush to "
+                            f"{feature_cache_path} failed: "
+                            f"{type(exc).__name__}: {exc}. "
+                            f"Continuing.\n"
+                        )
             items.append({"id": e.id, "features": feats["features"]})
             n_words += int(feats.get("summary", {}).get("n_words", 0))
+            docs_done += 1
         items_by_period[period] = items
         n_docs_by_period[period] = len(items)
         n_words_by_period[period] = n_words
+        elapsed = (
+            _dt.datetime.now() - extract_t0
+        ).total_seconds()
+        rate = docs_done / max(elapsed, 1e-9)
+        eta_s = (total_docs - docs_done) / max(rate, 1e-9)
+        sys.stderr.write(
+            f"  [{elapsed:6.1f}s] period {period_idx + 1}/"
+            f"{n_periods} '{period}': {len(items)} doc(s) "
+            f"({n_cache_hits_this_period} from cache); "
+            f"overall {docs_done}/{total_docs} "
+            f"({rate:.1f}/s, ETA {eta_s/60:.1f} min).\n"
+        )
+
+    # Final flush of any pending cache updates.
+    if (
+        feature_cache_path is not None
+        and cache_dirty_count > 0
+    ):
+        try:
+            _save_feature_cache(feature_cache_path, feature_cache)
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write(
+                f"  WARNING: final feature-cache flush to "
+                f"{feature_cache_path} failed "
+                f"({type(exc).__name__}: {exc}).\n"
+            )
 
     # Select feature names ONCE over the union of all periods so the
     # cross-period distance matrix lives in a shared feature space.
@@ -985,7 +1175,16 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             f"add more dated baseline documents."
         )
 
-    profiles, selected_features = build_period_profiles(grouped)
+    profiles, selected_features = build_period_profiles(
+        grouped,
+        feature_cache_path=(
+            Path(args.feature_cache).expanduser()
+            if getattr(args, "feature_cache", None)
+            else None
+        ),
+        flush_every=int(getattr(args, "feature_cache_flush_every", 25)),
+        refresh_cache=bool(getattr(args, "refresh_feature_cache", False)),
+    )
     family_distances = cross_period_distances(profiles, selected_features)
     weighted = weighted_cross_period_distances(family_distances)
     drift = drift_scores(
@@ -1049,6 +1248,39 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--top-stable", type=int, default=DEFAULT_TOP_STABLE)
     parser.add_argument("--out", help="Markdown output path.")
     parser.add_argument("--json-out", help="JSON output path.")
+    # Per-doc feature cache (1.70.0). extract_features runs once per
+    # doc; on a 1200-doc baseline that's the dominant cost of the
+    # drift report. The cache keys on absolute doc path, so a re-run
+    # with the same baseline but a different --period-granularity
+    # reuses all per-doc work and only the per-period centroid +
+    # cross-period distance recomputes.
+    parser.add_argument(
+        "--feature-cache", default=None,
+        help=(
+            "Path to a JSON cache of per-doc extract_features results "
+            "(keyed by absolute doc path). Optional; default behavior "
+            "re-extracts on every run. When set, the cache is updated "
+            "every --feature-cache-flush-every docs and reused across "
+            "runs — useful when iterating on --period-granularity / "
+            "--period-boundaries against a stable baseline."
+        ),
+    )
+    parser.add_argument(
+        "--feature-cache-flush-every", type=int, default=25,
+        help=(
+            "Flush --feature-cache every N freshly-extracted docs "
+            "(default 25). A crash mid-extraction loses at most N "
+            "doc-extractions. Ignored when --feature-cache is unset."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-feature-cache", action="store_true",
+        help=(
+            "Discard any existing --feature-cache and re-extract "
+            "every doc from scratch. Use after a code change that "
+            "should invalidate cached features."
+        ),
+    )
     parser.add_argument(
         "--allow-public-output", action="store_true",
         help=(

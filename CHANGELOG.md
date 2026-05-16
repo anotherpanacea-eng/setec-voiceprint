@@ -6,6 +6,25 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.74.0] - 2026-05-16
+
+**voice_drift_tracker: per-doc feature cache + per-period progress log.** Independent PR. Applies MEASURE + SAVE PROGRESS to the script that ran `extract_features(text)` on every doc on every invocation — and silently re-extracted everything when an operator re-ran with a different `--period-granularity` against the same baseline.
+
+### Added
+
+- **`--feature-cache PATH`**: opt-in per-doc feature cache keyed by absolute doc path. Stores the raw `extract_features` output verbatim. Reused across runs: re-running with a different `--period-granularity` / `--period-boundaries` against the same baseline now re-uses every per-doc extraction.
+- **`--feature-cache-flush-every N`** (default 25): atomically flushes the cache every N freshly-extracted docs. Crash mid-extraction loses at most N extractions.
+- **`--refresh-feature-cache`**: discards any prior cache and re-extracts.
+- **Per-period progress log** to stderr (always on, no flag required): `[Xs] period N/M 'label': K doc(s) (J from cache); overall D/T (R/s, ETA Y min)`. Operators running a multi-minute drift report see what period the loop is on.
+- **6 new regression tests** in `scripts/tests/test_voice_drift_tracker_cache.py`: cache written during extraction (1), resume skips already-cached docs (1), refresh re-extracts (1), no-cache back-compat (1), per-period progress log to stderr (1), CLI flags exposed (1).
+
+### Notes
+
+- The cache key is the doc's absolute path. If a doc moves between runs (same content, different path), it'll be re-extracted; pass `--refresh-feature-cache` after major reorganizations.
+- The cache stores `extract_features`'s raw output (a nested dict of `features` + `summary`), not a digest — re-loading is O(1) per doc.
+- 30 pre-existing tests in `test_voice_drift_tracker.py` pass unchanged.
+- Originally landed as 1.70.0 on a wave-2 branch; renumbered to 1.74.0 on rebase as the last of the five wave-2 PRs to land (#69-#73 took 1.70.0 through 1.73.0 sequentially).
+
 ## [1.73.0] - 2026-05-16
 
 **editlens_to_manifest: append-mode + resume + periodic flush + conversion-settings sidecar.** Independent PR. Applies SAVE PROGRESS + full settings-compat check to the EditLens parquet → JSONL manifest converter.
