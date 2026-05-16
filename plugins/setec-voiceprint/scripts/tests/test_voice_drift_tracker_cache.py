@@ -114,12 +114,15 @@ def test_resume_skips_already_cached_docs(
     monkeypatch.setattr(vdt, "extract_features", _stub_extract)
     grouped = _grouped(tmp_path, n_per_period=3)  # 6 docs
     cache = tmp_path / "features.json"
-    # Cache the first 4 docs (both from period 2024-Q1 + first
-    # 2 from 2024-Q2).
+    # Cache the first 4 docs with the new-schema fields
+    # (text_hash + features_version) so the compat check passes.
     paths = [e.path for entries in grouped.values() for e in entries]
-    pre_cache = {
-        str(p.resolve()): _stub_extract("word") for p in paths[:4]
-    }
+    pre_cache = {}
+    for p in paths[:4]:
+        feats = dict(_stub_extract("word"))
+        feats["text_hash"] = vdt._doc_content_hash(p)
+        feats["features_version"] = vdt.VOICE_DRIFT_FEATURES_VERSION
+        pre_cache[str(p.resolve())] = feats
     vdt._save_feature_cache(cache, pre_cache)
 
     extract_count = {"n": 0}
@@ -226,3 +229,105 @@ def test_cli_flags_exist():
     assert "--feature-cache" in help_text
     assert "--feature-cache-flush-every" in help_text
     assert "--refresh-feature-cache" in help_text
+
+
+# --------------- Codex P2 on PR #73: per-doc text-hash + version check
+
+
+def test_edited_doc_invalidates_cache_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: if a baseline doc is edited or regenerated at the
+    same path, the cached features must NOT be reused. The new
+    text_hash check catches this."""
+    monkeypatch.setattr(vdt, "extract_features", _stub_extract)
+    grouped = _grouped(tmp_path, n_per_period=2)  # 4 docs
+    cache = tmp_path / "features.json"
+    # First run: populate the cache.
+    vdt.build_period_profiles(
+        grouped, feature_cache_path=cache, flush_every=10,
+    )
+    # Edit the first doc's content. Same path; different bytes.
+    first_doc = grouped["2024-Q1"][0].path
+    first_doc.write_text("totally different content " * 50, encoding="utf-8")
+
+    extract_count = {"n": 0}
+
+    def _counting_extract(text: str) -> dict:
+        extract_count["n"] += 1
+        return _stub_extract(text)
+
+    monkeypatch.setattr(vdt, "extract_features", _counting_extract)
+    vdt.build_period_profiles(
+        grouped, feature_cache_path=cache, flush_every=10,
+    )
+    assert extract_count["n"] == 1, (
+        f"expected exactly 1 fresh extract for the edited doc "
+        f"(3 reused); got {extract_count['n']}"
+    )
+
+
+def test_features_version_bump_invalidates_all_entries(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: bumping VOICE_DRIFT_FEATURES_VERSION must
+    invalidate every cached entry — the cache stamp no longer
+    matches what the current code would compute."""
+    monkeypatch.setattr(vdt, "extract_features", _stub_extract)
+    grouped = _grouped(tmp_path, n_per_period=2)  # 4 docs
+    cache = tmp_path / "features.json"
+    # First run populates with VOICE_DRIFT_FEATURES_VERSION="1".
+    vdt.build_period_profiles(
+        grouped, feature_cache_path=cache, flush_every=10,
+    )
+    # Simulate a version bump by monkey-patching the constant for
+    # the next call. Every cached entry now has a stale version.
+    monkeypatch.setattr(vdt, "VOICE_DRIFT_FEATURES_VERSION", "2")
+
+    extract_count = {"n": 0}
+
+    def _counting_extract(text: str) -> dict:
+        extract_count["n"] += 1
+        return _stub_extract(text)
+
+    monkeypatch.setattr(vdt, "extract_features", _counting_extract)
+    vdt.build_period_profiles(
+        grouped, feature_cache_path=cache, flush_every=10,
+    )
+    assert extract_count["n"] == 4, (
+        f"expected all 4 docs re-extracted under bumped version; "
+        f"got {extract_count['n']}"
+    )
+
+
+def test_pre_fix_cache_entries_treated_as_misses(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Back-compat: cache entries written before the
+    text_hash/features_version fields existed are treated as
+    cache misses (falls through to re-extraction) rather than
+    served as authoritative. After one re-extraction pass the
+    cache regenerates with the new schema."""
+    monkeypatch.setattr(vdt, "extract_features", _stub_extract)
+    grouped = _grouped(tmp_path, n_per_period=2)
+    cache = tmp_path / "features.json"
+    # Plant a pre-fix cache: features without text_hash/version.
+    paths = [e.path for entries in grouped.values() for e in entries]
+    pre_cache = {
+        str(p.resolve()): _stub_extract("word")  # no compat fields
+        for p in paths
+    }
+    vdt._save_feature_cache(cache, pre_cache)
+    extract_count = {"n": 0}
+
+    def _counting_extract(text: str) -> dict:
+        extract_count["n"] += 1
+        return _stub_extract(text)
+
+    monkeypatch.setattr(vdt, "extract_features", _counting_extract)
+    vdt.build_period_profiles(
+        grouped, feature_cache_path=cache, flush_every=10,
+    )
+    # Pre-fix entries don't have text_hash or features_version,
+    # so all 4 are re-extracted.
+    assert extract_count["n"] == 4

@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import math
 import re
@@ -386,20 +387,53 @@ class PeriodProfile:
     # period_centroids[family] = {feature_name: mean_relative_freq}
 
 
+# Bump this when extract_features or its dependencies (the
+# stylometry_core feature families, the function-word list, etc.)
+# change in a way that produces different output for the same
+# input text. Cache entries written under an older version are
+# refused; the operator re-extracts (a slow but correct re-run).
+# Codex P2 on PR #73: prior versions of the cache had no version
+# field, so a code change that altered extract_features's output
+# would be silently served from stale cache.
+VOICE_DRIFT_FEATURES_VERSION = "1"
+
+
+def _doc_content_hash(path: Path) -> str:
+    """SHA-256 of the file bytes at ``path``. Used as part of the
+    cache compat check so editing or regenerating a baseline doc
+    at the same path invalidates its cached features (codex P2 on
+    PR #73)."""
+    try:
+        h = hashlib.sha256()
+        with path.open("rb") as f:
+            for chunk in iter(lambda: f.read(64 * 1024), b""):
+                h.update(chunk)
+        return f"sha256:{h.hexdigest()}"
+    except OSError:
+        # File unreadable — return a sentinel so the cache treats
+        # the entry as "different from anything we'd cache" and
+        # falls through to re-extraction (which will surface the
+        # I/O error explicitly).
+        return "sha256:unreadable"
+
+
 def _save_feature_cache(
     path: Path, cache: dict[str, dict[str, Any]],
 ) -> None:
-    """Atomic write of the per-doc feature cache. Keyed by the doc
-    path (resolved to absolute string) so the same baseline doc
-    used in two drift runs reuses the prior extraction. Stores the
-    raw ``extract_features`` output verbatim — the caller pulls
-    out ``features`` and ``summary.n_words`` from the dict."""
+    """Atomic write of the per-doc feature cache. Each entry in
+    ``cache`` is keyed by the doc's absolute path and stores
+    ``{features, summary, text_hash, features_version}``. The
+    text_hash + features_version pair lets a later run detect
+    stale entries (codex P2 on PR #73): editing the doc at the
+    same path changes text_hash; bumping
+    VOICE_DRIFT_FEATURES_VERSION invalidates everything."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
     payload = {
         "_meta": {
             "tool": "voice_drift_tracker",
             "tool_version": "1.70.0",
+            "features_version": VOICE_DRIFT_FEATURES_VERSION,
             "n_docs": len(cache),
         },
         "by_path": cache,
@@ -478,14 +512,41 @@ def build_period_profiles(
         for e in entries:
             cache_key = str(e.path.resolve())
             cached_feats = feature_cache.get(cache_key)
+            # Compat check (codex P2 on PR #73): only reuse the
+            # cached features when both the source bytes (text_hash)
+            # AND the extract_features version match. Without
+            # these, editing a baseline doc or bumping
+            # extract_features's implementation silently served
+            # stale features. Tolerates missing fields on the
+            # cached entry (pre-fix caches) by falling through to
+            # re-extraction — operator gets one slow run, then
+            # cache regenerates with the new schema.
+            current_text_hash = _doc_content_hash(e.path)
+            feats: dict[str, Any] | None = None
             if cached_feats is not None:
-                feats = cached_feats
-                n_cache_hits_this_period += 1
-            else:
+                prior_text_hash = cached_feats.get("text_hash")
+                prior_features_version = (
+                    cached_feats.get("features_version")
+                )
+                if (
+                    prior_text_hash == current_text_hash
+                    and prior_features_version
+                    == VOICE_DRIFT_FEATURES_VERSION
+                ):
+                    feats = cached_feats
+                    n_cache_hits_this_period += 1
+            if feats is None:
                 text = e.path.read_text(
                     encoding="utf-8", errors="ignore",
                 )
                 feats = extract_features(text)
+                # Stamp the cache entry with text_hash and
+                # features_version so future runs can validate it.
+                feats = dict(feats)
+                feats["text_hash"] = current_text_hash
+                feats["features_version"] = (
+                    VOICE_DRIFT_FEATURES_VERSION
+                )
                 feature_cache[cache_key] = feats
                 cache_dirty_count += 1
                 if (
