@@ -7,16 +7,65 @@
 # operator's register, OR when the operator passes
 # `--baseline-source register_typical_<register>` explicitly.
 #
-# Status: PROVISIONAL. The values below are illustrative starting
-# points derived from spec defaults plus literature anchors. They
-# are NOT calibrated against a labeled corpus. The §5.4 calibration
-# corpus task in `ROADMAP.md` ("AIC-8 / AIC-9 calibration corpus")
-# will replace these with empirically-grounded values.
+# Status: PROVISIONAL. The values below are PLAUSIBILITY-SET
+# STARTING POINTS, not research-grounded bands.
+#
+# Honest provenance (added 2026-05-15 to correct the 1.64.0
+# header's "derived from spec defaults plus literature anchors"
+# overstatement):
+#
+#   * The numerical means / SDs / bands in this file are the
+#     spec author's intuition about plausible center-of-distribution
+#     values, plus my (the framework integrator's) judgment about
+#     where to set band widths so the typical-range claim doesn't
+#     immediately produce false positives on normal prose. They are
+#     NOT measured against a labeled corpus.
+#
+#   * The relative ordering across registers (e.g., academic prose
+#     has higher kicker density than literary fiction; technical
+#     documentation has near-zero kicker density; blog post has
+#     higher kicker density than essay because of the "the takeaway
+#     is" rhetorical form) is intuitive and plausible but not
+#     measured. A register-aware calibration corpus would test
+#     these orderings; until then they are hypotheses.
+#
+#   * For AIC-8 specifically, the spec's starting thresholds for
+#     concreteness gap (T1=2.5), embedding similarity (T2=0.4), and
+#     scatter entropy (T3=0.7) are documented in 1.61.0's CHANGELOG
+#     as not crisply separating idioms from AI positives on
+#     Brysbaert data. The bands below inherit this calibration gap.
+#
+# What IS research-grounded in the framework (cited so the primer
+# / operator-facing docs can be honest about epistemic status):
+#
+#   * Brysbaert concreteness norms (data/brysbaert_concreteness.csv):
+#     Brysbaert, Warriner & Kuperman (2014), Behavior Research
+#     Methods, 46(3): 904-911. 39,954 ratings from a labeled-rater
+#     study. Real research, cited in data/README.md.
+#
+#   * spaCy GloVe vectors (en_core_web_md / _lg): real research
+#     (Pennington et al., 2014; Common Crawl training corpus).
+#
+#   * WordNet hypernym chain: real research (Princeton WordNet).
+#
+#   * Schnell case-study anchor for correctio at 15.8/1000 words
+#     (Glass-Box Stylometry Sequence Post 2): a real empirical
+#     anchor, but a single-author case study, not a calibrated
+#     corpus.
+#
+# The §5.4 calibration corpus task in `ROADMAP.md` ("AIC-8 / AIC-9
+# calibration corpus") is the work that would replace the bands
+# below with empirically-grounded values. Four labeled fixture
+# corpora needed: idiom negatives, AI-image-conjunction positives,
+# aphoristic essayist negatives, AI-rewrite positives. When that
+# work lands, the provisional+null entries below get replaced with
+# `provisional: false / provenance: "aic_8_9_v1_<date>"`.
 #
 # Per the Stylometry-to-the-people policy, every entry below
 # carries `provisional: true` and `provenance: null`. Operators
 # who want load-bearing thresholds run their own calibration
-# locally on their register mix.
+# locally on their register mix. The bands below are operator
+# orientation, not adjudication.
 #
 # Schema:
 #

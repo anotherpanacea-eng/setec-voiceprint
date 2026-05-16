@@ -6,6 +6,20 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.65.1] - 2026-05-15
+
+**Rewrite `register_typical.yaml`'s header to honestly describe the values' epistemic status.** The 1.64.0 header called the bands "illustrative starting points derived from spec defaults plus literature anchors." That's an overstatement — the per-register numerical values aren't grounded in published literature. The maintainer flagged the framing while iterating their out-of-repo primer; this PATCH brings the in-repo file into alignment with the honest framing the primer will adopt.
+
+### Changed
+
+- **`baselines/register_typical.yaml` header comment block** — rewritten to disambiguate what IS research-grounded in the framework (Brysbaert 2014 concreteness norms; spaCy GloVe vectors; WordNet hypernyms; the Schnell case-study anchor for correctio at 15.8/1000 words) from what ISN'T (the per-register bands themselves, which are plausibility-set placeholders combining spec-author intuition with band widths chosen to avoid immediate false positives on normal prose). The relative-ordering claims across registers (academic > literary fiction; technical near zero; blog > essay) are now explicitly framed as intuitive hypotheses that a register-aware calibration corpus would test.
+
+### Notes
+
+- Documentation only. No code changes. No behavior changes. The YAML's actual numerical values are unchanged; only the explanatory comment block changes.
+- All entries continue to carry `provisional: true` / `provenance: null` per the Stylometry-to-the-people policy. The §5.4 calibration corpus task in `ROADMAP.md` is the work that would replace the bands with empirically-grounded values.
+- The rewrite explicitly cites the four real research / empirical anchors in the framework so the maintainer's primer and any future operator-facing docs can be honest about epistemic status: cite Brysbaert et al. 2014 for concreteness; cite the Schnell anchor for correctio (with the "single-author case study" caveat); don't cite the YAML's per-register bands as published findings.
+
 ## [1.65.0] - 2026-05-15
 
 **AIC-7 / AIC-8 / AIC-9 integration into `variance_audit.py` — closes spec Step 10.** The detectors shipped as standalone CLIs in 1.61.0-1.64.0, but `audit_text()` didn't invoke them and `COMPRESSION_HEURISTICS` couldn't carry their signal paths without orphaned-registry entries (Codex P2 finding on PR #59, resolved in 1.64.1 by removing the entries). This release ships the proper wiring: opt-in `--aic7` / `--aic8` / `--aic9` flags, registry entries that resolve cleanly, three new ablation families.
