@@ -6,6 +6,28 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.70.0] - 2026-05-16
+
+**Validation harness: progress log + optional scored-records cache with resume.** Independent PR (touches `validation_harness.py` only); assumes the 1.65.0-1.69.0 calibration stack lands first (it's the version sequence, not a code dependency).
+
+The validation harness scores every manifest entry in a single list-comprehension and only emits output at the end. At MVP-validation scale (~hundreds of entries) that's fine; at corpus-validation scale (8M-row corpora the framework now ships toolchain for) it's the same all-or-nothing failure mode the calibration stack just addressed for `calibrate_thresholds.score_corpus`. Applies the same two principles (MEASURE + SAVE PROGRESS) to the validation surface.
+
+### Added
+
+- **`_score_validation_entries_with_progress` helper** in `validation_harness.py`: replaces the in-place list-comp at `run_harness` with a for-loop that (a) logs progress every N entries with rate + ETA, and (b) optionally writes a partial scored-records cache atomically every N entries with `status: "in_progress"`, then flips status to `"complete"` on the final write.
+- **`--scored-records-cache PATH` CLI flag**: when set, the helper loads any prior partial cache, derives the set of already-scored entry IDs, and skips those entries during the loop. **Full compatibility check (post-codex P2 fix)**: manifest SHA + corpus text fingerprint + mattr_window + allow_non_prose + strip_rules + strip_aggressive + label maps. Mismatch on any field refuses the cache. Pass `--refresh-scored-records-cache` to override.
+- **`--scored-records-flush-every N` CLI flag** (default 100).
+- **`--refresh-scored-records-cache` CLI flag** to discard any existing cache and re-score from scratch.
+- **All progress + cache logging routes to stderr**, not stdout — keeps `--json` output on stdout parseable for downstream consumers.
+- **Local `_vh_manifest_content_hash` + `_vh_corpus_text_fingerprint`** helpers (mirroring `calibrate_thresholds`'s helpers but local to avoid a cross-script dependency).
+- **`_scored_records_compat_reason()` helper** that returns `None` when the cache_meta is compatible or a one-line human-readable reason on mismatch.
+- **13 new regression tests** in `scripts/tests/test_validation_harness_scored_cache.py` covering CLI surface, save-progress + resume, full compat check (manifest SHA, corpus fingerprint, mattr_window, strip_rules, label_map), back-compat for pre-fix caches, stderr-not-stdout contract.
+
+### Notes
+
+- The helper's `_entry_id_for_validation_record` mirrors the entry-id construction in `validation_harness.score_smoothing_entry` (~line 169) and the corresponding helper in `calibrate_thresholds._entry_id_for_record`. All three must produce identical IDs from the same entry dict or resume silently re-scores. Documented as a contract; consider extracting to a shared helper in a follow-up.
+- Default behavior (no cache flag) is unchanged: list-comp → records list, plus the new stderr progress log. Pre-1.70.0 operator scripts keep working.
+
 ## [1.66.0] - 2026-05-15
 
 **Calibration-status retier: four-tier taxonomy replaces the binary calibrated/provisional split.** The framework's old `ThresholdSpec.provisional: bool` collapsed corpus-tested, locally-experimented, literature-anchored, and pure-heuristic signals into one bucket. The v1.60.1 glossary's `status: calibrated` label drifted on signals whose anchor text literally said "Provisional." Per `internal/SPEC_calibration_status_retier.md`, this release ships a four-tier status enum (plus structural_only for downstream-feeding signals) with per-tier provenance conventions, coordinated across code and glossary.
