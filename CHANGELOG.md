@@ -6,6 +6,27 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.76.0] - 2026-05-16
+
+**Checkpointed aggregator: per-signal incremental save + resume.** Stacked on the 1.75.0 hardened-aggregator PR. Closes the asymmetry where `shard_runner work` is sharded + restartable + monitorable, but `shard_runner aggregate` was monolithic + silent + all-or-nothing. The motivation is psychological as much as technical — a 30-min aggregate that crashes on signal 14 of 17 should not lose the first 13 signals' work, and an operator watching the run should see progress as it lands, not silence followed by a single "written" line.
+
+### Added
+
+- **`--out`-driven incremental save**: when the aggregator's `--out` is set (the standard operator flow), the calibration task surface writes a partial JSON to `--out` after every per-signal completion, with `status: "in_progress"`. Atomic write via tmp + rename so a crash mid-write doesn't leave a corrupted file. Operators can `cat` the partial mid-run to see which signals are done.
+- **`status` field on the survey JSON**: `"in_progress"` during the sweep, `"complete"` on the final return. Downstream consumers can distinguish a finished run from a checkpoint.
+- **`--resume` flag (default ON) + `--no-resume`**: when `--out` exists with parseable per_signal state, the aggregator carries forward the prior entries (success or error) and dispatches only the remaining signals. `--no-resume` forces a fresh sweep regardless of any prior partial — useful when the prior partial is from a stale registry / different task_params and you want to regenerate every signal.
+- **Resume metadata in `aggregator_perf`**: `resumed_from_partial: true` and `resumed_signal_count: N` so post-hoc audits can tell which run did what work.
+- **Idempotent re-run against `complete` payload**: re-running aggregate against an `--out` whose status is already `"complete"` carries forward every signal and dispatches nothing — a no-op that doesn't waste compute. Pass `--no-resume` to force regeneration.
+- **Corrupt-prior-partial tolerance**: an unparseable `--out` (truncated JSON, hand-edited garbage) doesn't break the run; the aggregator logs the parse failure and starts fresh.
+- **9 new regression tests** in `scripts/tests/test_checkpointed_aggregator.py`: parser flag surface (1), partial-save trajectory observed via spy on `_save_aggregator_partial` (1), atomic-write contract (1), final-status-complete contract (1), resume-skips-prior-signals (1), `--no-resume`-forces-fresh (1), resume-from-complete-is-idempotent (1), corrupt-partial-tolerance (1), perf-block-records-resume (1). Re-uses the synthetic-signals fixture from `test_hardened_aggregator.py`.
+
+### Notes
+
+- The checkpoint write happens after EVERY signal completion in both serial and parallel paths. At MAGE / RAID scale (kilobyte payload + atomic rename) the per-signal save cost is well under 50 ms, negligible compared to the per-signal bootstrap.
+- Resume is signal-name keyed, not content-keyed. If the registry changes between runs (a signal added or its `signal_path` changed), the new signals will be dispatched fresh; the old entries remain. To force a complete regeneration after a registry change, pass `--no-resume` or delete `--out` first.
+- A future PR could checkpoint at sub-signal granularity (e.g., per-bootstrap-chunk) to cover the case where a single signal takes longer than the operator's patience window. For now, signal-level granularity matches the natural unit operators reason about.
+- Originally landed as 1.66.0 on a branch stacked under the wave-1 numbering cluster; renumbered to 1.68.0 (first rebase), then to 1.76.0 (second rebase after wave 2 PRs #69–#73 landed).
+
 ## [1.75.0] - 2026-05-16
 
 **Hardened parallel aggregator: closes the wiring gap PRs #53 / #55 / #60 left open, with four-layer memory + concurrency defenses.**

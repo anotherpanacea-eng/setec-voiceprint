@@ -2652,6 +2652,42 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "available."
         ),
     )
+    # ----- Checkpoint + resume (PR feat/checkpointed-aggregate).
+    # Stacked on the hardened-aggregator branch. The aggregator
+    # writes a partial JSON to ``--out`` after every signal
+    # completion (status="in_progress"), so a crash mid-sweep
+    # doesn't lose the work done so far. On restart, ``--resume``
+    # (default ON) picks up where the prior run left off; pass
+    # ``--no-resume`` to force a fresh sweep regardless of any
+    # prior partial.
+    p_agg.add_argument(
+        "--resume",
+        action="store_true",
+        default=True,
+        help=(
+            "auto-resume from a prior partial at ``--out`` when one "
+            "exists with parseable in-progress state. Default ON. "
+            "Use ``--no-resume`` to force a fresh sweep regardless "
+            "of any prior partial. The resume contract is:  "
+            "(a) per_signal entries from a prior 'in_progress' or "
+            "'complete' payload are carried forward as-is — both "
+            "successful entries and errored-cleanly entries; "
+            "(b) only signals NOT in the prior per_signal dict are "
+            "dispatched; (c) the resumed run flips status back to "
+            "'in_progress' until its own sweep completes."
+        ),
+    )
+    p_agg.add_argument(
+        "--no-resume",
+        dest="resume",
+        action="store_false",
+        help=(
+            "force a fresh sweep, ignoring any prior partial at "
+            "``--out``. Use when the prior partial is from a stale "
+            "registry / different task_params and you want to "
+            "regenerate every signal."
+        ),
+    )
     p_agg.set_defaults(func=cmd_aggregate)
 
     # verify
