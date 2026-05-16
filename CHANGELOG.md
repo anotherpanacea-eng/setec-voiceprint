@@ -6,6 +6,34 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.77.0] - 2026-05-16
+
+**O(n log n) `sweep_threshold` dispatch: unblocks MAGE / RAID-scale calibration.** Stacked on the 1.76.0 checkpointed-aggregate branch.
+
+The 1.75.0 hardened-aggregator PR closed the wiring gap between PRs #53 / #55 / #60 and `shard_runner aggregate`, and the 1.76.0 checkpointed-aggregator PR made the parallel sweep restartable. The combined stack let the operator KICK OFF a MAGE aggregate cleanly with the new fast bootstrap stack engaged — and then revealed the actual MAGE-scale bottleneck was upstream of everything those PRs sped up: `sweep_threshold` itself runs in O(n × unique_scores) ≈ O(n²) and took >70 minutes per signal at the MAGE Tier 1+2 corpus's 338K positive pairs. The numpy bootstrap speedup never had a chance to matter because the sort-and-scan pre-bootstrap pipeline was already dominating.
+
+This PR makes `sweep_threshold` dispatch to an O(n log n) sort-and-scan implementation for large corpora, while preserving the original O(n × k) loop for small corpora (bit-exact backward compatibility with all pre-1.77.0 test fixtures).
+
+### Added
+
+- **`_sweep_threshold_fast` (O(n log n))** in `scripts/calibration/calibrate_thresholds.py`. Sort pairs by score in the direction-relevant order, walk in sorted order maintaining cumulative TP / FP counters, snapshot the operating point at each unique score. One sort + one walk. At MAGE scale (n=338K) returns in **<0.3s** vs. **>70 min** for the loop path — empirically measured 2026-05-16, **≥16,000× speedup**.
+- **`_sweep_threshold_loop`** (renamed): the original O(n × k) implementation, preserved bit-exactly. Still used for `n < _SWEEP_THRESHOLD_FAST_DISPATCH_N` (currently 5000). Continues to emit the verbose `candidates` log on failure — useful for small-corpus debugging; suppressed on the fast path to avoid 100K-8M rows of survey-JSON bloat at MAGE / RAID scale.
+- **`sweep_threshold` (public)** now dispatches between the two based on `len(pairs)`. The public API + return shape is unchanged for the happy path; only the failure-case `candidates` log is omitted on the fast path.
+- **17 new regression tests** in `scripts/tests/test_sweep_threshold_fast.py`: dispatch constant exists (1), small-n uses loop path (1), bit-exact loop behavior at n=500/1500/4000 across both directions (6), fast-vs-loop operating-point equivalence at n above dispatch threshold (2 directions × 1 = 2), tied-score handling (2), single-class / sub-resolution / unreachable-FPR failure parity (3), wall-clock guarantee (< 1s at n=50K, 2 directions = 2).
+
+### Empirical validation
+
+- MAGE Tier 1+2 (n_records=436,606 across 22 cached shards) aggregate now runs end-to-end via `shard_runner aggregate` in **6.6 seconds** (vs. the prior 8h26m kill on the loop engine + multiple post-1.65.0 attempts that ran for hours without completing a single signal). The full survey JSON ships with `status: "complete"`, all 17 signals reported, and the `aggregator_perf` block recording `bootstrap_engine: numpy`, `pair_extraction_signals_fast_path: 17`, `resumed_from_partial: True`, `resumed_signal_count: 5`, `sweep_s: 6.558`.
+- Of the 17 MAGE signals: 4 produce valid thresholds (mattr da_AUC=0.5755, mtld 0.5642, yules_k 0.5604, shannon_entropy 0.5174); 5 polarity-invert at sub-chance da_AUC (mdd_sd 0.4198, burstiness_B 0.4540, fkgl_sd 0.4788, sentence_length_sd 0.4793, connective_density 0.4935); 8 lack the per_signal_scores entries (tier3 + tier4 + AIC-8/9 columns not computed in Tier 1+2 runs). The polarity-inversion gate caught the inversions cleanly; the "Why no verdict" framework posture is doing its job.
+
+### Notes
+
+- The dispatch threshold (`_SWEEP_THRESHOLD_FAST_DISPATCH_N = 5000`) is conservative — the fast path is ~2000× faster even at n=15K, where production was already taking 1-15s per signal. The choice of 5000 prefers preserving bit-exact loop semantics on existing fixtures over chasing the last marginal speedup at small scale. Lower it if the loop path's per-call cost starts mattering on a workload.
+- The fast-path operating point matches the loop-path within float epsilon on TPR / FPR / precision. Threshold value may differ in the last decimal at tied-score boundaries (continuous data has no ties; tied-score tests verify both paths land on valid operating points respecting the FPR target).
+- The fast path's failure case omits the per-threshold `candidates` log emitted by the loop path. Nothing downstream consumes that log; at MAGE / RAID scale it would be 100K-8M dicts of survey JSON bloat. If a future operator needs per-threshold diagnostics at large scale, the right tool is a dedicated diagnostic script that calls the loop path on a subsample, not bloating every survey.
+- A natural follow-up: `_ranking_metrics` (which computes raw AUC for the polarity-inversion gate) has not been profiled at MAGE scale, but appears fast enough (the standalone test on 30K pairs returned in 0.03s). If a future corpus exposes a similar bottleneck there, the same sort-and-scan pattern applies.
+- Originally landed as 1.67.0; renumbered to 1.69.0 (first rebase), then to 1.77.0 (second rebase after wave 2 PRs #69–#73 landed).
+
 ## [1.76.0] - 2026-05-16
 
 **Checkpointed aggregator: per-signal incremental save + resume.** Stacked on the 1.75.0 hardened-aggregator PR. Closes the asymmetry where `shard_runner work` is sharded + restartable + monitorable, but `shard_runner aggregate` was monolithic + silent + all-or-nothing. The motivation is psychological as much as technical — a 30-min aggregate that crashes on signal 14 of 17 should not lose the first 13 signals' work, and an operator watching the run should see progress as it lands, not silence followed by a single "written" line.

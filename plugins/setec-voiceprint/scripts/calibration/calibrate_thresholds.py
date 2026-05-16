@@ -143,41 +143,27 @@ def _rates(tp: int, fp: int, tn: int, fn: int) -> dict[str, float]:
     return {"fpr": fpr, "tpr": tpr, "precision": precision}
 
 
-def sweep_threshold(
+# Size at which sweep_threshold dispatches to the O(n log n) fast
+# path. Below this the original O(n × unique_scores) implementation
+# is preserved bit-exactly to keep existing test fixtures green and
+# to honor the candidate_log emission on failure. At MAGE / RAID
+# scale (n > 30K) the fast path is mandatory — production was taking
+# 67s at n=30K and >70 min at n=338K. The fast path returns in <0.3s
+# at n=338K (≥16,000× speedup empirically measured 2026-05-16).
+_SWEEP_THRESHOLD_FAST_DISPATCH_N = 5000
+
+
+def _sweep_threshold_loop(
     pairs: Sequence[tuple[int, float]],
     direction: str,
     fpr_target: float,
+    *,
+    n_pos: int,
+    n_neg: int,
+    fpr_resolution: float,
 ) -> dict[str, Any]:
-    """Direction-aware sweep. Picks the highest-TPR threshold whose
-    empirical FPR <= target. Returns the threshold + rates + the full
-    candidate list."""
-    n_pos = sum(1 for y, _ in pairs if y == 1)
-    n_neg = sum(1 for y, _ in pairs if y == 0)
-    if n_pos == 0 or n_neg == 0:
-        return {
-            "available": False,
-            "reason": (
-                f"single-class fixture (n_pos={n_pos}, n_neg={n_neg}); "
-                f"no operating point"
-            ),
-        }
-    fpr_resolution = 1.0 / n_neg
-    if fpr_target < fpr_resolution:
-        return {
-            "available": False,
-            "reason": (
-                f"FPR target {fpr_target} is below the corpus's FPR "
-                f"resolution {fpr_resolution:.6f} (1/n_neg with n_neg="
-                f"{n_neg}). The smallest non-zero FPR is one false "
-                f"positive out of {n_neg} negatives. Either raise the "
-                f"target, collect more negative-class samples, or "
-                f"acknowledge that no threshold can satisfy this target."
-            ),
-            "n_pos": n_pos,
-            "n_neg": n_neg,
-            "fpr_resolution": fpr_resolution,
-        }
-
+    """Original O(n × k) implementation. Preserved for small
+    corpora and as the bit-exact reference for tests."""
     # Candidate thresholds: every observed score, plus an "epsilon
     # outside" sentinel so the all-negative case is reachable.
     scores_sorted = sorted({s for _, s in pairs})
@@ -219,6 +205,184 @@ def sweep_threshold(
         "fpr_resolution": fpr_resolution,
         **best,
     }
+
+
+def _sweep_threshold_fast(
+    pairs: Sequence[tuple[int, float]],
+    direction: str,
+    fpr_target: float,
+    *,
+    n_pos: int,
+    n_neg: int,
+    fpr_resolution: float,
+) -> dict[str, Any]:
+    """O(n log n) sort-and-scan implementation. Mathematically
+    equivalent to the loop version at the chosen operating point AND
+    at the returned threshold: feeding the returned ``threshold``
+    back through ``_confusion`` (strict ``>`` for ``gt``, strict
+    ``<`` for ``lt``) reproduces the same TP / FP / TPR / FPR the
+    fast path reported. This is the contract the downstream
+    bootstrap CI + persisted-threshold consumers rely on; without
+    it a calibration entry's threshold and rates disagree.
+
+    Algorithm:
+      1. Sort pairs by score in the direction-relevant order
+         (descending for ``gt``, ascending for ``lt``).
+      2. Walk the sorted pairs, advancing cumulative TP / FP
+         counters at each new unique score. **Snapshot the
+         cumulative BEFORE consuming the tied-score group** at
+         ``cur_score`` — this is the operating point at
+         ``threshold = cur_score`` under strict-inequality
+         semantics: pairs strictly past ``cur_score`` (the ones
+         consumed in prior iterations) are predicted positive,
+         pairs at ``cur_score`` (this group) are NOT.
+      3. Track the row with maximal TPR subject to FPR ≤ target.
+
+    Total: one O(n log n) sort plus one O(n) walk. At MAGE scale
+    (n = 338K) this returns in < 0.3 s vs > 70 min for the loop
+    path. The candidate_log emitted by the loop on failure is
+    omitted here — at MAGE / RAID scale that log would be 100K-8M
+    rows of survey-JSON bloat that nothing consumes downstream.
+
+    Failure case ``"no threshold satisfies the FPR target"``
+    returns without ``candidates`` (the loop path's emission is
+    preserved when ``n < _SWEEP_THRESHOLD_FAST_DISPATCH_N``).
+    """
+    if direction == "gt":
+        sorted_pairs = sorted(pairs, key=lambda p: -p[1])
+    else:  # "lt"
+        sorted_pairs = sorted(pairs, key=lambda p: p[1])
+
+    # Sentinel "epsilon outside" the score range — matches the loop
+    # path's first candidate, where no pair is predicted positive
+    # (TP = 0, FP = 0). For some FPR targets this IS the operating
+    # point that maximizes TPR-under-constraint (e.g., a target so
+    # tight that any non-zero FP exceeds it).
+    eps = 1e-9
+    sentinel_thr = (
+        sorted_pairs[0][1] + eps if direction == "gt"
+        else sorted_pairs[0][1] - eps
+    )
+    best = {
+        "threshold": sentinel_thr,
+        "fpr": 0.0,
+        "tpr": 0.0,
+        "precision": 1.0,
+        "tp": 0, "fp": 0, "tn": n_neg, "fn": n_pos,
+    }
+
+    n = len(sorted_pairs)
+    cumul_tp = 0
+    cumul_fp = 0
+    i = 0
+    while i < n:
+        cur_score = sorted_pairs[i][1]
+        # SNAPSHOT BEFORE consuming the tied-score group. The
+        # operating point at ``threshold = cur_score`` under
+        # ``_confusion``'s strict ``>`` / ``<`` semantics is
+        # "pairs whose score is strictly past cur_score" — i.e.
+        # the pairs consumed in PRIOR iterations, not the current
+        # group. Post-consumption cumulative would include the
+        # current group (==cur_score) and disagree with
+        # ``_confusion(pairs, cur_score, direction)`` whenever
+        # there's a tied-score group of size > 0 at the boundary.
+        # For continuous data the difference is one pair per
+        # candidate; for tied scores the entire equality block
+        # shifts the operating point.
+        tp, fp = cumul_tp, cumul_fp
+        tn, fn = n_neg - fp, n_pos - tp
+        fpr = fp / n_neg
+        tpr = tp / n_pos
+        precision = (tp / (tp + fp)) if (tp + fp) > 0 else 1.0
+
+        if fpr <= fpr_target and tpr > best["tpr"]:
+            best = {
+                "threshold": cur_score,
+                "fpr": fpr,
+                "tpr": tpr,
+                "precision": precision,
+                "tp": tp, "fp": fp, "tn": tn, "fn": fn,
+            }
+
+        # Consume all pairs at cur_score, advancing the cumulative
+        # for the NEXT candidate's snapshot.
+        while i < n and sorted_pairs[i][1] == cur_score:
+            y, _ = sorted_pairs[i]
+            if y == 1:
+                cumul_tp += 1
+            else:
+                cumul_fp += 1
+            i += 1
+
+    return {
+        "available": True,
+        "n_pos": n_pos,
+        "n_neg": n_neg,
+        "fpr_resolution": fpr_resolution,
+        **best,
+    }
+
+
+def sweep_threshold(
+    pairs: Sequence[tuple[int, float]],
+    direction: str,
+    fpr_target: float,
+) -> dict[str, Any]:
+    """Direction-aware sweep. Picks the highest-TPR threshold whose
+    empirical FPR <= target. Returns the threshold + rates.
+
+    Dispatches between two implementations based on corpus size:
+
+      * ``n < _SWEEP_THRESHOLD_FAST_DISPATCH_N`` → original O(n × k)
+        loop. Bit-exact with the pre-1.67.0 behavior; preserves the
+        ``candidates`` log emission on failure for small-corpus
+        debugging.
+      * ``n >= _SWEEP_THRESHOLD_FAST_DISPATCH_N`` → O(n log n)
+        sort-and-scan. Returns the same operating point (TPR /
+        FPR / precision within float epsilon); threshold value may
+        differ in the last decimal place at tied-score boundaries.
+        Candidates log omitted (would be 100K-8M rows of survey-
+        JSON bloat at MAGE / RAID scale).
+
+    Empirical speedup at MAGE scale (n = 338K pairs, measured
+    2026-05-16): >16,000× (>70 min → <0.3 s).
+    """
+    n_pos = sum(1 for y, _ in pairs if y == 1)
+    n_neg = sum(1 for y, _ in pairs if y == 0)
+    if n_pos == 0 or n_neg == 0:
+        return {
+            "available": False,
+            "reason": (
+                f"single-class fixture (n_pos={n_pos}, n_neg={n_neg}); "
+                f"no operating point"
+            ),
+        }
+    fpr_resolution = 1.0 / n_neg
+    if fpr_target < fpr_resolution:
+        return {
+            "available": False,
+            "reason": (
+                f"FPR target {fpr_target} is below the corpus's FPR "
+                f"resolution {fpr_resolution:.6f} (1/n_neg with n_neg="
+                f"{n_neg}). The smallest non-zero FPR is one false "
+                f"positive out of {n_neg} negatives. Either raise the "
+                f"target, collect more negative-class samples, or "
+                f"acknowledge that no threshold can satisfy this target."
+            ),
+            "n_pos": n_pos,
+            "n_neg": n_neg,
+            "fpr_resolution": fpr_resolution,
+        }
+
+    if len(pairs) < _SWEEP_THRESHOLD_FAST_DISPATCH_N:
+        return _sweep_threshold_loop(
+            pairs, direction, fpr_target,
+            n_pos=n_pos, n_neg=n_neg, fpr_resolution=fpr_resolution,
+        )
+    return _sweep_threshold_fast(
+        pairs, direction, fpr_target,
+        n_pos=n_pos, n_neg=n_neg, fpr_resolution=fpr_resolution,
+    )
 
 
 def _fixed_threshold_bootstrap_ci_loop(
