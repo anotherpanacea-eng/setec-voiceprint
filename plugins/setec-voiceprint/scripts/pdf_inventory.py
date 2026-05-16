@@ -477,6 +477,81 @@ def discover_pdfs(
 # --------------- Inventory driver -------------------------------
 
 
+def _partial_cache_path_for(output: Path) -> Path:
+    """Canonical location of the partial-inventory cache that
+    pairs with ``output``. We use a sidecar JSON file (path-keyed
+    dict of classified entries) rather than appending to the final
+    output JSONL because (a) deterministic output requires input-
+    order, and a path-keyed dict lets us recompose order at the
+    end, and (b) a JSON dict is naturally restartable — workers
+    completing out of order don't risk interleaving with each
+    other's lines.
+    """
+    return output.with_suffix(output.suffix + ".partial.json")
+
+
+def _load_partial_inventory(
+    partial_path: Path,
+    *,
+    max_file_bytes: int,
+) -> tuple[dict[str, dict[str, Any]], int]:
+    """Load a prior partial inventory keyed by path. Returns
+    ``(path_to_entry_dict, n_loaded)``. The compatibility check is
+    minimal — same ``max_file_bytes``, since that's the one knob
+    that flips an entry from "classified" to "skipped_too_large"
+    and we don't want to silently inherit a wrong skip decision."""
+    if not partial_path.exists():
+        return {}, 0
+    try:
+        cached = json.loads(partial_path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError) as exc:
+        sys.stderr.write(
+            f"  Partial inventory at {partial_path} is unreadable "
+            f"({exc}); discarding and re-classifying.\n"
+        )
+        return {}, 0
+    if not isinstance(cached, dict):
+        return {}, 0
+    cache_max_bytes = cached.get("_meta", {}).get("max_file_bytes")
+    if (
+        cache_max_bytes is not None
+        and cache_max_bytes != max_file_bytes
+    ):
+        sys.stderr.write(
+            f"  Partial inventory at {partial_path} is incompatible "
+            f"(max_file_bytes differs: cached={cache_max_bytes}, "
+            f"current={max_file_bytes}); discarding.\n"
+        )
+        return {}, 0
+    entries = cached.get("entries") or {}
+    if not isinstance(entries, dict):
+        return {}, 0
+    return entries, len(entries)
+
+
+def _save_partial_inventory(
+    partial_path: Path,
+    entries_by_path: dict[str, dict[str, Any]],
+    *,
+    max_file_bytes: int,
+) -> None:
+    """Atomic write of the partial inventory cache."""
+    partial_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = partial_path.with_suffix(partial_path.suffix + ".tmp")
+    payload = {
+        "_meta": {
+            "tool": TOOL_NAME,
+            "tool_version": "1.70.0",
+            "max_file_bytes": max_file_bytes,
+            "n_classified": len(entries_by_path),
+        },
+        "entries": entries_by_path,
+    }
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, sort_keys=True)
+    tmp.replace(partial_path)
+
+
 def write_inventory(
     paths: list[Path],
     *,
@@ -484,6 +559,9 @@ def write_inventory(
     workers: int,
     max_file_bytes: int,
     verbose: bool,
+    incremental_cache: bool = True,
+    flush_every: int = 25,
+    refresh_partial: bool = False,
 ) -> InventorySummary:
     """Classify each PDF and write the JSONL inventory.
 
@@ -491,6 +569,20 @@ def write_inventory(
     so the output stays deterministic. Hash collisions across rows
     are reported in the summary but each row is still emitted (the
     user filters duplicates manually).
+
+    Incremental partial cache (1.70.0+): when ``incremental_cache``
+    is True (default), a sidecar JSON file at ``output + ".partial
+    .json"`` accumulates classified entries (path-keyed dict) every
+    ``flush_every`` worker completions. A crash mid-classification
+    loses at most ``flush_every`` rows. On the next run, the partial
+    cache is loaded and any path already present is skipped — the
+    expensive ``classify_pdf`` call doesn't fire again. After the
+    final JSONL is written, the partial cache is deleted (it was
+    only a checkpoint; the JSONL is the artifact).
+
+    ``refresh_partial=True`` discards any existing partial and
+    re-classifies. Use after a code change that should invalidate
+    cached classifications.
     """
     output.parent.mkdir(parents=True, exist_ok=True)
     summary = InventorySummary()
@@ -498,8 +590,40 @@ def write_inventory(
         output.write_text("", encoding="utf-8")
         return summary
 
+    partial_path = _partial_cache_path_for(output)
+    entries_by_path: dict[str, dict[str, Any]] = {}
+    if incremental_cache and not refresh_partial:
+        entries_by_path, n_loaded = _load_partial_inventory(
+            partial_path, max_file_bytes=max_file_bytes,
+        )
+        if n_loaded:
+            sys.stderr.write(
+                f"Resuming from partial inventory cache "
+                f"({partial_path}): {n_loaded} of {len(paths)} "
+                f"PDF(s) already classified.\n"
+            )
+
     seen_hashes: set[str] = set()
     rows: list[InventoryEntry | None] = [None] * len(paths)
+
+    # Pre-fill rows from the partial cache. The cache stores
+    # ``asdict(entry)`` (preserving None fields), not the trimmed
+    # ``entry.to_dict()`` — round-tripping through to_dict drops
+    # None-valued required fields and breaks reconstruction.
+    for idx, path in enumerate(paths):
+        cached = entries_by_path.get(str(path))
+        if cached is not None:
+            try:
+                rows[idx] = InventoryEntry(**cached)
+            except (TypeError, KeyError):
+                rows[idx] = None
+                entries_by_path.pop(str(path), None)
+
+    # Only classify paths NOT already in the partial cache.
+    work = [
+        (idx, p) for idx, p in enumerate(paths)
+        if rows[idx] is None
+    ]
 
     def _classify_one(idx_path: tuple[int, Path]) -> tuple[int, InventoryEntry | None]:
         idx, path = idx_path
@@ -515,7 +639,23 @@ def write_inventory(
             return idx, None
         return idx, classify_pdf(path)
 
-    work = list(enumerate(paths))
+    def _maybe_flush_partial(n_completed: int, force: bool = False) -> None:
+        if not incremental_cache:
+            return
+        if force or (n_completed > 0 and n_completed % flush_every == 0):
+            try:
+                _save_partial_inventory(
+                    partial_path, entries_by_path,
+                    max_file_bytes=max_file_bytes,
+                )
+            except Exception as exc:  # noqa: BLE001
+                sys.stderr.write(
+                    f"  WARNING: partial-inventory flush to "
+                    f"{partial_path} failed: {type(exc).__name__}: "
+                    f"{exc}. Continuing.\n"
+                )
+
+    n_completed_this_run = 0
     if workers <= 1:
         for ip in work:
             idx, entry = _classify_one(ip)
@@ -523,12 +663,14 @@ def write_inventory(
                 summary.skipped_too_large += 1
             else:
                 rows[idx] = entry
-            if verbose:
-                if entry is not None:
-                    sys.stderr.write(
-                        f"  [{idx + 1}/{len(paths)}] "
-                        f"{entry.classification}: {paths[idx].name}\n"
-                    )
+                entries_by_path[str(paths[idx])] = asdict(entry)
+            n_completed_this_run += 1
+            if verbose and entry is not None:
+                sys.stderr.write(
+                    f"  [{idx + 1}/{len(paths)}] "
+                    f"{entry.classification}: {paths[idx].name}\n"
+                )
+            _maybe_flush_partial(n_completed_this_run)
     else:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {pool.submit(_classify_one, ip): ip[0] for ip in work}
@@ -538,11 +680,16 @@ def write_inventory(
                     summary.skipped_too_large += 1
                 else:
                     rows[idx] = entry
+                    entries_by_path[str(paths[idx])] = asdict(entry)
+                n_completed_this_run += 1
                 if verbose and entry is not None:
                     sys.stderr.write(
                         f"  [{futures[fut] + 1}/{len(paths)}] "
                         f"{entry.classification}: {paths[idx].name}\n"
                     )
+                _maybe_flush_partial(n_completed_this_run)
+    # Final partial flush (catches the tail < flush_every).
+    _maybe_flush_partial(n_completed_this_run, force=True)
 
     with output.open("w", encoding="utf-8") as f:
         for entry in rows:
@@ -562,6 +709,17 @@ def write_inventory(
                 summary.mixed += 1
             elif entry.classification == "corrupted":
                 summary.corrupted += 1
+
+    # Clean up the partial cache once the final artifact is on
+    # disk. The JSONL is the canonical output; the partial is just
+    # a checkpoint. Leaving it behind would confuse a future
+    # operator who deletes the JSONL to re-run from scratch.
+    if incremental_cache and partial_path.exists():
+        try:
+            partial_path.unlink()
+        except OSError:
+            pass
+
     return summary
 
 
@@ -619,6 +777,46 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    ))
     p.add_argument("--verbose", action="store_true",
                    help="One-line-per-PDF progress on stderr.")
+    # Incremental partial-cache (1.70.0). Each PDF classification
+    # is expensive (PyPDF parse + per-page image counting + maybe
+    # an OCR-layer probe); on libraries of thousands of PDFs the
+    # ThreadPoolExecutor parallelizes the work but the original
+    # write_inventory accumulated results in memory and only wrote
+    # the JSONL after every worker completed. A crash mid-run lost
+    # everything. The partial-cache flag writes a path-keyed
+    # sidecar JSON every N completions so a restart picks up where
+    # it left off.
+    p.add_argument(
+        "--no-incremental-cache", action="store_true",
+        help=(
+            "Disable the path-keyed partial-inventory cache that "
+            "accumulates as workers complete. Default behavior "
+            "(cache on) writes <output>.partial.json every "
+            "--flush-every classifications and deletes it after "
+            "the final JSONL is written. Passing this flag "
+            "reverts to the pre-1.70.0 'classify-all-then-write' "
+            "behavior — a crash loses every classification done "
+            "in the run."
+        ),
+    )
+    p.add_argument(
+        "--flush-every", type=int, default=25,
+        help=(
+            "Write the partial-inventory cache every N PDF "
+            "classifications (default 25). Lower (5-10) for very "
+            "slow per-PDF classifications with high crash exposure; "
+            "higher (50-100) when classification is fast and flush "
+            "I/O dominates. Ignored when --no-incremental-cache."
+        ),
+    )
+    p.add_argument(
+        "--refresh-partial", action="store_true",
+        help=(
+            "Discard any existing partial-inventory cache and re-"
+            "classify every PDF from scratch. Use after code "
+            "changes that should invalidate cached classifications."
+        ),
+    )
     return p
 
 
@@ -657,6 +855,9 @@ def run(args: argparse.Namespace) -> int:
         workers=max(1, args.workers),
         max_file_bytes=args.max_file_bytes,
         verbose=args.verbose,
+        incremental_cache=not args.no_incremental_cache,
+        flush_every=max(1, int(args.flush_every)),
+        refresh_partial=bool(args.refresh_partial),
     )
     sys.stderr.write(summary.render_stderr())
     sys.stderr.write(f"Inventory written to: {output}\n")
