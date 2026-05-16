@@ -18,6 +18,8 @@ lengths. It does not license a world-facing "AI" verdict.
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
+import hashlib
 import json
 import math
 import random
@@ -1217,6 +1219,438 @@ def _render_metric_table(blocks: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# ---------- Scoring loop with progress + optional checkpoint ----------
+
+
+def _vh_manifest_content_hash(manifest_path: Path) -> str:
+    """SHA-256 of the manifest file content. Used as the cache
+    invalidation key — if the user edits the manifest, the cache
+    invalidates. Mirrors ``calibrate_thresholds._manifest_content_
+    hash`` but re-implemented locally to avoid a cross-script
+    dependency (validation_harness is a sibling of, not a
+    consumer of, the calibration toolchain)."""
+    h = hashlib.sha256()
+    try:
+        with manifest_path.open("rb") as f:
+            for chunk in iter(lambda: f.read(64 * 1024), b""):
+                h.update(chunk)
+    except OSError:
+        # Manifest unreadable — return a sentinel so the cache
+        # invalidates rather than silently reusing stale entries.
+        return "sha256:unreadable"
+    return f"sha256:{h.hexdigest()}"
+
+
+def _vh_corpus_text_fingerprint(
+    entries: Sequence[dict[str, Any]],
+) -> str:
+    """SHA-256 over a canonical (resolved_path, text_sha256)
+    listing. Mirrors ``calibrate_thresholds._corpus_text_finger
+    print``: the manifest hash alone is not sufficient as a cache
+    key because the manifest JSONL can stay byte-identical while
+    the underlying text files it points to are regenerated (re-
+    OCR, re-extraction, cleanup pass, preprocessing toggle change).
+    This fingerprint hashes the actual bytes of every entry's
+    resolved-path text plus the resolved path itself, in a
+    deterministic order, so any change to any file the manifest
+    references invalidates the cache.
+
+    Codex P2 on PR #69: was missing from the validation harness's
+    cache compat check, which only compared manifest path + tier
+    flags. A complete cache could be served as authoritative even
+    after the underlying text changed."""
+    rows: list[tuple[str, str]] = []
+    for entry in entries:
+        resolved = entry.get("_resolved_path") or ""
+        if not resolved:
+            rows.append((
+                str(entry.get("id") or ""), "no-resolved-path",
+            ))
+            continue
+        try:
+            with open(resolved, "rb") as f:
+                inner = hashlib.sha256()
+                for chunk in iter(lambda: f.read(64 * 1024), b""):
+                    inner.update(chunk)
+                rows.append((str(resolved), inner.hexdigest()))
+        except OSError:
+            rows.append((str(resolved), "unreadable"))
+    rows.sort()
+    outer = hashlib.sha256()
+    for path_str, text_hash in rows:
+        outer.update(path_str.encode("utf-8"))
+        outer.update(b"\x00")
+        outer.update(text_hash.encode("utf-8"))
+        outer.update(b"\x00")
+    return f"sha256:{outer.hexdigest()}"
+
+
+def _entry_id_for_validation_record(entry: dict[str, Any]) -> str:
+    """Match the id ``score_smoothing_entry`` writes onto every
+    record. Used by ``_score_validation_entries_with_progress`` to
+    skip entries already in the partial cache on resume.
+
+    Mirrors the same helper in ``calibrate_thresholds._entry_id_for_
+    record`` and the entry-id construction in ``score_smoothing_
+    entry`` itself (~line 169). All three must produce identical IDs
+    from the same entry dict or resume silently re-scores."""
+    e_id = entry.get("id")
+    if isinstance(e_id, str):
+        return e_id
+    return f"line_{entry.get('_lineno', '?')}"
+
+
+def _save_scored_records_cache(
+    path: Path,
+    records: list[dict[str, Any]],
+    *,
+    n_entries_total: int,
+    status: str,
+    manifest_path: str,
+    manifest_sha256: str,
+    corpus_text_fingerprint: str,
+    use_filter: str,
+    do_tier2: bool,
+    do_tier3: bool,
+    mattr_window: int,
+    allow_non_prose: bool,
+    strip_rules: Any,
+    strip_aggressive: bool,
+    positive_statuses: set[str],
+    negative_statuses: set[str],
+) -> None:
+    """Atomic write of the scored-records cache. ``status`` flips
+    from ``"in_progress"`` (per-flush) to ``"complete"`` on the
+    final write after the scoring loop exits cleanly.
+
+    Compat fields (codex P2 on PR #69): every scoring arg that
+    affects ``score_smoothing_entry``'s output is recorded here
+    and checked on the next run. Without them, a cache produced
+    under different mattr_window / strip_rules / label maps would
+    be served as authoritative on a re-run, silently mixing
+    incompatible scored records."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "status": status,
+        "tool": "validation_harness",
+        "tool_version": "1.70.0",
+        "scoring_meta": {
+            # Corpus identity (P2 fix: SHA + content fingerprint).
+            "manifest_path": manifest_path,
+            "manifest_sha256": manifest_sha256,
+            "corpus_text_fingerprint": corpus_text_fingerprint,
+            # Filter + tier flags.
+            "use_filter": use_filter,
+            "do_tier2": do_tier2,
+            "do_tier3": do_tier3,
+            # Scoring args that change score_smoothing_entry output.
+            "mattr_window": mattr_window,
+            "allow_non_prose": allow_non_prose,
+            "strip_rules": strip_rules,
+            "strip_aggressive": strip_aggressive,
+            "positive_statuses": sorted(positive_statuses),
+            "negative_statuses": sorted(negative_statuses),
+            # Bookkeeping.
+            "n_entries_total": n_entries_total,
+            "n_entries_scored": len(records),
+            "scored_at": _dt.datetime.now(
+                _dt.timezone.utc,
+            ).isoformat(),
+        },
+        "records": records,
+    }
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, default=str)
+    tmp.replace(path)
+
+
+def _scored_records_compat_reason(
+    cache_meta: dict[str, Any],
+    *,
+    manifest_path: str,
+    manifest_sha256: str,
+    corpus_text_fingerprint: str,
+    use_filter: str,
+    do_tier2: bool,
+    do_tier3: bool,
+    mattr_window: int,
+    allow_non_prose: bool,
+    strip_rules: Any,
+    strip_aggressive: bool,
+    positive_statuses: set[str],
+    negative_statuses: set[str],
+) -> str | None:
+    """Return ``None`` when the cache_meta is compatible with the
+    current run, or a one-line human-readable reason string when
+    not. Codex P2 on PR #69: tolerates missing fields (older caches
+    pre-fix won't have them all), refuses on present-but-different.
+    Mirrors the pattern used by ``cache_is_compatible`` in
+    calibrate_thresholds."""
+    if cache_meta.get("manifest_path") != manifest_path:
+        return (
+            f"manifest_path differs (prior="
+            f"{cache_meta.get('manifest_path')!r}, "
+            f"current={manifest_path!r})"
+        )
+    prior_sha = cache_meta.get("manifest_sha256")
+    if prior_sha is not None and prior_sha != manifest_sha256:
+        return (
+            f"manifest_sha256 differs (prior={prior_sha[:16]}..., "
+            f"current={manifest_sha256[:16]}...)"
+        )
+    prior_fp = cache_meta.get("corpus_text_fingerprint")
+    if prior_fp is not None and prior_fp != corpus_text_fingerprint:
+        return (
+            f"corpus_text_fingerprint differs (prior="
+            f"{prior_fp[:16]}..., current="
+            f"{corpus_text_fingerprint[:16]}...). The manifest is "
+            f"unchanged but at least one referenced text file's "
+            f"content has changed."
+        )
+    if cache_meta.get("use_filter") != use_filter:
+        return f"use_filter differs"
+    if bool(cache_meta.get("do_tier2")) != do_tier2:
+        return f"do_tier2 differs"
+    if bool(cache_meta.get("do_tier3")) != do_tier3:
+        return f"do_tier3 differs"
+    prior_mattr = cache_meta.get("mattr_window")
+    if prior_mattr is not None and prior_mattr != mattr_window:
+        return f"mattr_window differs (prior={prior_mattr}, current={mattr_window})"
+    prior_allow = cache_meta.get("allow_non_prose")
+    if prior_allow is not None and bool(prior_allow) != allow_non_prose:
+        return "allow_non_prose differs"
+    prior_strip = cache_meta.get("strip_rules")
+    if prior_strip is not None and prior_strip != strip_rules:
+        return f"strip_rules differs (prior={prior_strip!r}, current={strip_rules!r})"
+    prior_aggr = cache_meta.get("strip_aggressive")
+    if prior_aggr is not None and bool(prior_aggr) != strip_aggressive:
+        return "strip_aggressive differs"
+    prior_pos = cache_meta.get("positive_statuses")
+    if (
+        prior_pos is not None
+        and sorted(prior_pos) != sorted(positive_statuses)
+    ):
+        return f"positive_statuses differs"
+    prior_neg = cache_meta.get("negative_statuses")
+    if (
+        prior_neg is not None
+        and sorted(prior_neg) != sorted(negative_statuses)
+    ):
+        return f"negative_statuses differs"
+    return None
+
+
+def _score_validation_entries_with_progress(
+    entries: Sequence[dict[str, Any]],
+    *,
+    mattr_window: int,
+    do_tier2: bool,
+    do_tier3: bool,
+    allow_non_prose: bool,
+    strip_rules: Any,
+    strip_aggressive: bool,
+    positive_statuses: set[str],
+    negative_statuses: set[str],
+    cache_path: Path | None = None,
+    flush_every: int = 100,
+    refresh_cache: bool = False,
+    manifest_path: str = "",
+    use_filter: str = "",
+) -> list[dict[str, Any]]:
+    """Score every validation manifest entry, with two operational
+    affordances the original list-comp lacked:
+
+      * **MEASURE** — log progress every ``flush_every`` entries
+        with rate (entries/s) and ETA (minutes-to-completion). For
+        an 8M-row corpus at ~100ms/row, the operator sees one line
+        per ~10s instead of silence-until-completion.
+      * **SAVE PROGRESS** — when ``cache_path`` is set, atomically
+        write the scored-records list as a partial cache with
+        ``status: "in_progress"`` every ``flush_every`` entries. A
+        crash mid-loop loses at most ``flush_every`` entries. On
+        the next run, the partial cache is loaded, scored entry IDs
+        are skipped, and scoring resumes from where it left off.
+        The final write flips status to ``"complete"``.
+
+    Without ``cache_path``, behaves like the original list-comp
+    plus the progress log — back-compat for callers that don't
+    want a cache.
+
+    ``refresh_cache`` discards any existing cache and re-scores
+    from scratch. Useful after a code change that should invalidate
+    cached records but won't be caught by the cache's compatibility
+    check (which is intentionally minimal here — see the
+    calibration_survey path for the full cache_is_compatible flow).
+    """
+    records: list[dict[str, Any]] = []
+    scored_ids: set[str] = set()
+
+    # Compute the manifest SHA + corpus text fingerprint up front
+    # — used both for the compat check on the prior cache (if any)
+    # AND for the metadata written into the new cache. Cheap
+    # relative to the scoring loop (file hashing + sorted-listing
+    # hash).
+    manifest_sha256 = _vh_manifest_content_hash(Path(manifest_path))
+    corpus_text_fingerprint = _vh_corpus_text_fingerprint(entries)
+
+    if cache_path is not None and cache_path.exists() and not refresh_cache:
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            cache_status = cached.get("status", "complete")
+            cache_meta = cached.get("scoring_meta") or {}
+            # Full compatibility check (codex P2 on PR #69): every
+            # scoring arg that affects score_smoothing_entry's
+            # output is compared. Tolerates missing fields on the
+            # prior payload (pre-fix caches won't have them all);
+            # refuses on present-but-different.
+            incompat_reason = _scored_records_compat_reason(
+                cache_meta,
+                manifest_path=manifest_path,
+                manifest_sha256=manifest_sha256,
+                corpus_text_fingerprint=corpus_text_fingerprint,
+                use_filter=use_filter,
+                do_tier2=do_tier2,
+                do_tier3=do_tier3,
+                mattr_window=mattr_window,
+                allow_non_prose=allow_non_prose,
+                strip_rules=strip_rules,
+                strip_aggressive=strip_aggressive,
+                positive_statuses=positive_statuses,
+                negative_statuses=negative_statuses,
+            )
+            if (
+                incompat_reason is None
+                and cache_status in ("in_progress", "complete")
+            ):
+                records = cached.get("records") or []
+                scored_ids = {
+                    r.get("id") for r in records
+                    if isinstance(r.get("id"), str)
+                }
+                if cache_status == "complete":
+                    sys.stderr.write(
+                        f"Scored-records cache hit ({cache_path}): "
+                        f"{len(records)} records loaded.\n"
+                    )
+                    return records
+                sys.stderr.write(
+                    f"Resuming validation scoring from partial cache "
+                    f"({cache_path}): {len(records)} of {len(entries)} "
+                    f"entries already scored.\n"
+                )
+            elif incompat_reason is not None:
+                sys.stderr.write(
+                    f"Scored-records cache at {cache_path} is "
+                    f"incompatible ({incompat_reason}); discarding "
+                    f"and re-scoring. Pass "
+                    f"--refresh-scored-records-cache to suppress "
+                    f"this check.\n"
+                )
+            else:
+                sys.stderr.write(
+                    f"Scored-records cache at {cache_path} has "
+                    f"unknown status ({cache_status!r}); discarding "
+                    f"and re-scoring.\n"
+                )
+        except (json.JSONDecodeError, OSError) as exc:
+            sys.stderr.write(
+                f"Scored-records cache at {cache_path} is unreadable "
+                f"({exc}); discarding and re-scoring.\n"
+            )
+
+    to_score = [
+        e for e in entries
+        if _entry_id_for_validation_record(e) not in scored_ids
+    ]
+    sys.stderr.write(
+        f"Scoring {len(to_score)} validation entries "
+        f"(of {len(entries)} total; {len(scored_ids)} resumed).\n"
+    )
+    score_t0 = _dt.datetime.now()
+    for i, e in enumerate(to_score):
+        if i > 0 and i % flush_every == 0:
+            elapsed = (_dt.datetime.now() - score_t0).total_seconds()
+            rate = i / max(elapsed, 1e-9)
+            remaining = len(to_score) - i
+            eta_s = remaining / max(rate, 1e-9)
+            sys.stderr.write(
+                f"  scored {i}/{len(to_score)} "
+                f"({rate:.1f}/s, ETA {eta_s/60:.1f} min)"
+            )
+            if cache_path is not None:
+                try:
+                    _save_scored_records_cache(
+                        cache_path, records,
+                        n_entries_total=len(entries),
+                        status="in_progress",
+                        manifest_path=manifest_path,
+                        manifest_sha256=manifest_sha256,
+                        corpus_text_fingerprint=corpus_text_fingerprint,
+                        use_filter=use_filter,
+                        do_tier2=do_tier2,
+                        do_tier3=do_tier3,
+                        mattr_window=mattr_window,
+                        allow_non_prose=allow_non_prose,
+                        strip_rules=strip_rules,
+                        strip_aggressive=strip_aggressive,
+                        positive_statuses=positive_statuses,
+                        negative_statuses=negative_statuses,
+                    )
+                    sys.stderr.write(" -> partial cache flushed\n")
+                except Exception as exc:  # noqa: BLE001
+                    sys.stderr.write(
+                        f" -> WARNING: partial flush failed "
+                        f"({type(exc).__name__}: {exc})\n"
+                    )
+            else:
+                sys.stderr.write("\n")
+        records.append(
+            score_smoothing_entry(
+                e,
+                mattr_window=mattr_window,
+                do_tier2=do_tier2,
+                do_tier3=do_tier3,
+                allow_non_prose=allow_non_prose,
+                strip_rules=strip_rules,
+                strip_aggressive=strip_aggressive,
+                positive_statuses=positive_statuses,
+                negative_statuses=negative_statuses,
+            )
+        )
+
+    if cache_path is not None:
+        try:
+            _save_scored_records_cache(
+                cache_path, records,
+                n_entries_total=len(entries),
+                status="complete",
+                manifest_path=manifest_path,
+                manifest_sha256=manifest_sha256,
+                corpus_text_fingerprint=corpus_text_fingerprint,
+                use_filter=use_filter,
+                do_tier2=do_tier2,
+                do_tier3=do_tier3,
+                mattr_window=mattr_window,
+                allow_non_prose=allow_non_prose,
+                strip_rules=strip_rules,
+                strip_aggressive=strip_aggressive,
+                positive_statuses=positive_statuses,
+                negative_statuses=negative_statuses,
+            )
+            sys.stderr.write(
+                f"Scored-records cache written to {cache_path} "
+                f"({len(records)} records, status=complete).\n"
+            )
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write(
+                f"WARNING: final cache write to {cache_path} failed "
+                f"({type(exc).__name__}: {exc}).\n"
+            )
+
+    return records
+
+
 # ---------- Harness driver ----------
 
 
@@ -1268,20 +1702,30 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             }
     positive_statuses = set(args.positive_status)
     negative_statuses = set(args.negative_status)
-    records = [
-        score_smoothing_entry(
-            e,
-            mattr_window=args.mattr_window,
-            do_tier2=not args.no_tier2,
-            do_tier3=not args.no_tier3,
-            allow_non_prose=args.allow_non_prose,
-            strip_rules=args.strip_rules,
-            strip_aggressive=args.strip_aggressive,
-            positive_statuses=positive_statuses,
-            negative_statuses=negative_statuses,
-        )
-        for e in entries
-    ]
+    records = _score_validation_entries_with_progress(
+        entries,
+        mattr_window=args.mattr_window,
+        do_tier2=not args.no_tier2,
+        do_tier3=not args.no_tier3,
+        allow_non_prose=args.allow_non_prose,
+        strip_rules=args.strip_rules,
+        strip_aggressive=args.strip_aggressive,
+        positive_statuses=positive_statuses,
+        negative_statuses=negative_statuses,
+        cache_path=(
+            Path(args.scored_records_cache).expanduser()
+            if getattr(args, "scored_records_cache", None)
+            else None
+        ),
+        flush_every=int(
+            getattr(args, "scored_records_flush_every", 100)
+        ),
+        refresh_cache=bool(
+            getattr(args, "refresh_scored_records_cache", False)
+        ),
+        manifest_path=str(args.manifest),
+        use_filter=args.use,
+    )
     usable = scored_records(records)
 
     operating_point: dict[str, Any]
@@ -1513,6 +1957,55 @@ def main(argv: Sequence[str] | None = None) -> int:
         help=(
             f"Maximum records shown in markdown table (default {DEFAULT_RECORDS_LIMIT}; "
             "0 means no limit). JSON always includes all records."
+        ),
+    )
+    # Scored-records cache + incremental checkpoint (1.70.0).
+    # Mirrors the pattern in calibration_survey.py / calibrate_
+    # thresholds.py (PRs #64 / #68): scoring loop writes a partial
+    # cache every N entries with status='in_progress' so a crash
+    # mid-loop doesn't lose what's been scored. Default off (no
+    # cache, original behavior) — opt-in for long runs.
+    parser.add_argument(
+        "--scored-records-cache",
+        default=None,
+        help=(
+            "Path to a JSON cache of scored records. Optional; "
+            "default behavior is no cache (original list-comp + "
+            "progress log only). When set, the scoring loop writes "
+            "the cache atomically every "
+            "--scored-records-flush-every entries with status="
+            "'in_progress', then flips to 'complete' on the final "
+            "write. On the next run with the same flag, scored "
+            "entry IDs are loaded from the cache and skipped — "
+            "scoring resumes from where it left off. The cache's "
+            "compatibility check is intentionally minimal "
+            "(manifest path + use filter + tier flags); operators "
+            "changing scoring args should pass "
+            "--refresh-scored-records-cache or a fresh path."
+        ),
+    )
+    parser.add_argument(
+        "--scored-records-flush-every",
+        type=int,
+        default=100,
+        help=(
+            "Write --scored-records-cache atomically every N "
+            "entries (default 100). Lower (10-50) for slow per-"
+            "entry tier3 runs with high crash exposure; higher "
+            "(500+) for short-per-entry tier1-only runs where "
+            "flush I/O would dominate. Ignored when "
+            "--scored-records-cache is unset."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-scored-records-cache",
+        action="store_true",
+        help=(
+            "Discard any existing --scored-records-cache and "
+            "re-score from scratch. Use when a code change should "
+            "invalidate cached records but won't be caught by the "
+            "minimal compatibility check (manifest path + use "
+            "filter + tier flags)."
         ),
     )
     args = parser.parse_args(argv)
