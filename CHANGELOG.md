@@ -6,6 +6,21 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.79.2] - 2026-05-16
+
+**Chore: pre-public-flip cleanup of test fixtures.** Audit before flipping the GitHub repo from PRIVATE to PUBLIC surfaced two test_data files that should not ship publicly:
+
+### Changed
+
+- **`scripts/test_data/capybara_article.md` removed.** The 188-line essay named a real person (Santiago Schnell) and made public-facing AI-authorship claims about a published essay. Moved out of the repo into the gitignored `internal/drafts/` tree. Nothing in the test suite read this file; it was load-bearing only for an out-of-tree primer draft.
+- **`scripts/test_data/validation_smoke_manifest.jsonl`** swapped the dangling `capybara_article.md` reference for `federalist_oracle/01_hamilton_federalist_01.txt` (Federalist #1, Hamilton, 1787 — Project Gutenberg eBook #18, public domain). The Federalist serves the same role: a pre-AI human positive control with a non-fiction policy-advocacy register. The validation harness still produces the expected `pre_ai_human` → `Lightly smoothed` band on this entry.
+- **`scripts/test_data/human_sample.txt`** replaced with a ~500-word excerpt from Willa Cather's *My Ántonia* (1918, US public domain pre-1929). The prior file was literary fiction prose of uncertain provenance; the maintainer could not confirm authorship, so it carried IP risk for a public flip. Cather's prose preserves the terse-literary-fiction register that pairs pedagogically with the AI-smoothed `ai_sample.txt`.
+- **`.claude-plugin/marketplace.json` version field synced.** The marketplace.json had been stale at 1.66.0 since the 1.67.0 bump landed; the plugin.json version field tracks releases but the marketplace.json had drifted. Synced to 1.79.2 to match plugin.json. Future bumps should touch both files.
+
+### Notes
+
+- The 9 `test_pdf_inventory_extract.py` failures on the current main (`AttributeError: 'Namespace' object has no attribute 'no_incremental_cache'` at `pdf_inventory.py:858`) are pre-existing and unrelated to this cleanup. They appear when running the test suite against main with the same args.Namespace construction the tests use. Filed for separate triage; not blocking the public flip since the failures are local to a CLI argparse contract, not a security/IP concern.
+
 ## [1.79.1] - 2026-05-16
 
 **Fix: `--refresh-cache` now actually refreshes.** Codex P2 on PR #68. The flag bypassed the *complete-cache hit* return path in `load_or_score_corpus` but did not flow through to `score_corpus`, which unconditionally read the partial cache and resumed from it. So `--refresh-cache` against an `in_progress` cache silently kept the prior partial's records and only re-scored the missing tail — the opposite of what the operator asked for.
