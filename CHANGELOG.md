@@ -6,6 +6,47 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.78.1] - 2026-05-16
+
+**Fix: streaming aggregate errors on unreadable shard caches by default.** Codex P2 on PR #66. The 1.78.0 streaming pre-extraction loop caught `Exception` on each shard's `json.load`, wrote a stderr warning, and silently `continue`d. An operator with a corrupted shard cache got calibration thresholds derived from a strict subset of the records they thought they were calibrating against — with no error signal and a misleading `n_records` count in the survey JSON.
+
+### Fixed
+
+- **`task_surfaces._aggregate_calibration_records` streaming branch** now collects unreadable shard paths into a list and, after the loop, raises `SystemExit` if any shard was dropped. The error message names the count, lists up to 5 paths, and points operators at the new `--allow-unreadable-shards` opt-in flag for the cases where partial aggregation is intentional (e.g., one shard is being re-scored asynchronously and the operator wants a preliminary survey from the rest).
+- **`shard_runner aggregate --allow-unreadable-shards`** new flag, default `False` (strict). Opts into the old skip-and-warn behavior with one important change: the dropped-shard list lands in `aggregator_perf.pair_extraction_shards_unreadable` (with per-entry `path`, `error_type`, `error_message`) so the survey JSON carries an explicit audit trail. `pair_extraction_shards_streamed` is now the count that *successfully* streamed — excludes the dropped ones — and `pair_extraction_shards_unreadable_count` records the dropped tally.
+
+### Added
+
+- **4 new regression tests** in `test_streaming_pair_extraction.py` under "UNREADABLE SHARD HANDLING":
+  - `test_streaming_errors_when_shard_unreadable` — pins the default-strict behavior: SystemExit with both "unreadable" and "--allow-unreadable-shards" in the message.
+  - `test_streaming_allow_unreadable_records_audit_trail` — pins the opt-in path: aggregation proceeds AND the dropped shards land in perf metadata with full per-entry detail.
+  - `test_streaming_clean_run_records_zero_unreadable` — regression guard that a healthy run records `unreadable_count=0` and does NOT bloat the perf block with an empty list field.
+  - `test_allow_unreadable_shards_flag_exists` — pins the CLI surface.
+
+## [1.78.0] - 2026-05-16
+
+**Streaming pre-extraction: unblocks RAID-scale calibration on consumer hardware.** Stacked on the 1.77.0 sweep-threshold-fast branch.
+
+The 1.75.0 hardened-aggregator PR moved pre-extraction into the parent process to avoid pickling the records list to every worker. That trade is correct at MAGE scale (436K records × ~5 KB ≈ 2 GB resident — fine on a 32 GB machine), but breaks at RAID scale (8.3M records ≈ 40 GB resident — OOM on any consumer machine). This PR adds an opt-in streaming mode that reads shard caches one at a time, extracts per-signal pairs incrementally, and discards the records before reading the next shard.
+
+### Added
+
+- **`--stream-pair-extraction` flag** on `shard_runner aggregate`. Default off (preserves the 1.75.0+ in-memory pre-extraction behavior). When on, `cmd_aggregate` collects validated shard cache paths instead of materializing records, and passes them to the surface via a new `shard_cache_paths` kwarg.
+- **Streaming pre-extraction in `_aggregate_calibration_records`**: iterates `shard_cache_paths`, reads each cache, extracts per-signal pairs via `validation_harness.collect_signal_records`, accumulates into per-signal pair lists, and drops the shard records before reading the next. Peak parent RSS bounded by `(largest_shard_records_bytes + sum_of_per_signal_pair_arrays)` — at RAID scale ~1-2 GB instead of ~40 GB.
+- **`shard_cache_paths` kwarg on the surface contract** (calibration + corpus_hygiene). Calibration uses it for streaming; corpus_hygiene accepts it for surface uniformity but doesn't yet stream (warns + degrades gracefully when --stream-pair-extraction is passed; supports a separate follow-up streaming PR for that task surface).
+- **`aggregator_perf.pair_extraction_mode`**: `"streaming"` or `"in_memory"`. Plus `pair_extraction_shards_streamed` count for streaming mode. Auditable from the survey JSON without re-running.
+- **Fallback handling in `cmd_aggregate`**: if a surface doesn't accept `shard_cache_paths` (older surface, third-party plugin), `cmd_aggregate` catches the TypeError, logs a clear warning, and retries without the kwarg. Operator's signal to either drop --stream-pair-extraction or upgrade the surface.
+- **7 new regression tests** in `scripts/tests/test_streaming_pair_extraction.py`: CLI flag (1), cmd_aggregate streaming dispatch passes cache paths (1), in-memory-vs-streaming per-signal parity on the same input (1), one-shard-at-a-time loading verification via spy on `json.load` (1), streaming perf-metadata in survey JSON (1), in-memory perf-metadata symmetry (1), corpus_hygiene graceful degradation (1).
+
+### Notes
+
+- The legacy records-list dispatch path is **unavailable in streaming mode** — there's no records list to fall back to. Signals whose pair extraction fails return as `no usable pairs` errors. In practice this only affects test fixtures with stub specs; production signals (real `signal_path` strings against real `per_signal_scores` columns) extract cleanly.
+- For now, **`--resume` + `--stream-pair-extraction` compose**: the partial JSON's existing `per_signal` entries are carried forward, and only the missing signals' pairs need to be streamed.
+- The streaming pass walks all shards once and discards records each time. CPython's reference-counted GC reclaims the discarded records before the next cache loads (verified empirically via process memory inspection during dev). At pathologically large per-shard sizes (e.g., one shard with 10M records out of a 100M-row corpus), the per-shard peak still bounds RSS — re-shard the source manifest if a single shard is too big.
+- corpus_hygiene streaming is a separate PR. The hygiene aggregator's per-record summary doesn't fit the per-signal-pairs model cleanly; it would need a different streaming primitive (probably a sum-reducer pattern: read shard, fold into running totals, drop shard).
+- **The four-PR stack as a whole** (1.75.0 + 1.76.0 + 1.77.0 + 1.78.0) takes the sharded calibration toolchain from "MAGE in 8h26m, RAID infeasible" to "MAGE in 6.6s, RAID feasible on a 32 GB consumer machine." Each PR is a single principle from the operations playbook applied to the aggregator: divide (1.75.0 layer 1), measure (1.76.0 per-signal logging), save progress (1.76.0 checkpoint + resume), conquer (1.77.0 O(n log n) sweep), and the corollary that follows when divide-and-conquer meets RAM limits (1.78.0 streaming).
+- Originally landed as 1.68.0; renumbered to 1.70.0 (first rebase), then to 1.78.0 (second rebase after wave 2 PRs #69–#73 landed).
+
 ## [1.77.0] - 2026-05-16
 
 **O(n log n) `sweep_threshold` dispatch: unblocks MAGE / RAID-scale calibration.** Stacked on the 1.76.0 checkpointed-aggregate branch.

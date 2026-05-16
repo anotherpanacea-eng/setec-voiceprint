@@ -1306,6 +1306,14 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
     contributing: list[str] = []
     missing_done_shards: list[tuple[str, Path]] = []
     tampered_done_shards: list[tuple[str, str, str]] = []
+    # Streaming mode: collect cache paths (already-verified) without
+    # materializing records into memory. The surface's aggregator
+    # opens them one at a time. Required for RAID-scale runs where
+    # the full records list (~40 GB) won't fit alongside the
+    # parent's other state on consumer machines.
+    streaming = bool(getattr(args, "stream_pair_extraction", False))
+    streaming_cache_paths: list[Path] = []
+    streaming_meta_done = False  # only read meta from the first shard
     for sid in sorted(shards.keys()):
         sh = shards[sid]
         if sh.get("state") != "done":
@@ -1342,11 +1350,35 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
             if actual_sha != recorded_sha:
                 tampered_done_shards.append((sid, recorded_sha, actual_sha))
                 continue
-        with cp.open("r", encoding="utf-8") as fh:
-            cache = json.load(fh)
-        all_records.extend(cache.get("records") or [])
-        if cache.get("meta"):
-            meta_list.append(cache["meta"])
+        if streaming:
+            # Defer the actual records read to the surface's
+            # streaming pre-extraction. We still need to peek the
+            # first shard for ``meta`` (e.g. scoring_meta for sub-
+            # sample provenance) — the calibration surface uses
+            # only meta_list[0], so reading once is sufficient.
+            if not streaming_meta_done:
+                try:
+                    with cp.open("r", encoding="utf-8") as fh:
+                        first_cache = json.load(fh)
+                    if first_cache.get("meta"):
+                        meta_list.append(first_cache["meta"])
+                    elif first_cache.get("scoring_meta"):
+                        meta_list.append(first_cache["scoring_meta"])
+                    streaming_meta_done = True
+                    del first_cache
+                except Exception as exc:  # noqa: BLE001
+                    sys.stderr.write(
+                        f"  streaming: could not peek meta from "
+                        f"shard {sid} ({cp}): {type(exc).__name__}: "
+                        f"{exc}. Continuing with empty meta.\n"
+                    )
+            streaming_cache_paths.append(cp)
+        else:
+            with cp.open("r", encoding="utf-8") as fh:
+                cache = json.load(fh)
+            all_records.extend(cache.get("records") or [])
+            if cache.get("meta"):
+                meta_list.append(cache["meta"])
         contributing.append(sid)
     integrity_failures = (
         len(missing_done_shards) + len(tampered_done_shards)
@@ -1382,10 +1414,16 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
             f"{len(tampered_done_shards)} tampered-cache shard(s) "
             f"skipped)\n"
         )
-    sys.stderr.write(
-        f"Aggregated {len(all_records)} records across "
-        f"{len(contributing)} shard(s).\n"
-    )
+    if streaming:
+        sys.stderr.write(
+            f"Streaming pre-extraction: {len(streaming_cache_paths)} "
+            f"shard cache(s) ready; records will not be co-resident.\n"
+        )
+    else:
+        sys.stderr.write(
+            f"Aggregated {len(all_records)} records across "
+            f"{len(contributing)} shard(s).\n"
+        )
     # Dispatch payload construction on state["task"]. Missing field
     # maps to calibration_survey for backwards compat with pre-
     # v1.45.0 state.json files.
@@ -1393,13 +1431,39 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
     sys.stderr.write(
         f"  Aggregating via task surface: {surface.name}\n"
     )
-    payload = surface.aggregate_records(
-        all_records=all_records,
-        meta_list=meta_list,
-        contributing_shards=contributing,
-        state=state,
-        args=args,
-    )
+    # Streaming mode passes the cache paths; non-streaming passes
+    # the materialized records. The surface knows about the new
+    # ``shard_cache_paths`` kwarg as of 1.68.0; older surfaces
+    # (corpus_hygiene) ignore it harmlessly.
+    surface_kwargs: dict[str, Any] = {
+        "all_records": all_records,
+        "meta_list": meta_list,
+        "contributing_shards": contributing,
+        "state": state,
+        "args": args,
+    }
+    if streaming:
+        surface_kwargs["shard_cache_paths"] = streaming_cache_paths
+    try:
+        payload = surface.aggregate_records(**surface_kwargs)
+    except TypeError as exc:
+        # Surface doesn't accept shard_cache_paths (e.g., a
+        # corpus_hygiene aggregator from before 1.68.0, or a third-
+        # party surface). Retry without it; streaming gracefully
+        # degrades to "passed an empty all_records" for the surface,
+        # which is the operator's signal to use a streaming-aware
+        # surface or drop --stream-pair-extraction.
+        if streaming and "shard_cache_paths" in str(exc):
+            sys.stderr.write(
+                f"  surface {surface.name!r} does not accept "
+                f"shard_cache_paths; retrying without streaming "
+                f"support. Drop --stream-pair-extraction or use a "
+                f"surface that supports streaming.\n"
+            )
+            surface_kwargs.pop("shard_cache_paths", None)
+            payload = surface.aggregate_records(**surface_kwargs)
+        else:
+            raise
     out_path = Path(args.out).expanduser() if args.out else None
     if out_path:
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -2564,6 +2628,41 @@ def build_arg_parser() -> argparse.ArgumentParser:
     # on tasks that ignore them (e.g. corpus_hygiene), so a single
     # operator command line works across task surfaces.
     p_agg.add_argument(
+        "--bootstrap-resamples",
+        type=int,
+        default=2000,
+        help=(
+            "number of bootstrap resamples for the per-signal "
+            "confidence intervals. Default %(default)d. Lower values "
+            "(e.g. 200-500) trade CI precision for wall-clock — "
+            "useful for exploratory runs at MAGE / RAID scale where "
+            "the bootstrap step dominates per-signal cost. The CI "
+            "width scales as O(1/sqrt(resamples)), so 200 resamples "
+            "gives ~3x wider intervals than 2000 — still useful for "
+            "ranking signals; not for shipping calibrated thresholds."
+        ),
+    )
+    p_agg.add_argument(
+        "--bootstrap-confidence",
+        type=float,
+        default=0.95,
+        help=(
+            "bootstrap CI confidence level. Default %(default).2f."
+        ),
+    )
+    p_agg.add_argument(
+        "--bootstrap-seed",
+        type=int,
+        default=42,
+        help=(
+            "seed for the bootstrap RNG. Default %(default)d. "
+            "Stable across reruns so two aggregate calls with the "
+            "same seed produce bit-identical CIs (modulo the engine "
+            "choice — loop and numpy are bit-exact only at "
+            "matching chunk_size)."
+        ),
+    )
+    p_agg.add_argument(
         "--bootstrap-engine",
         type=str,
         default="loop",
@@ -2686,6 +2785,51 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "``--out``. Use when the prior partial is from a stale "
             "registry / different task_params and you want to "
             "regenerate every signal."
+        ),
+    )
+    # ----- Streaming pre-extraction (PR feat/streaming-pair-extraction).
+    # Stacked on the 1.67.0 sweep-threshold-fast branch. The RAID-
+    # unblocker: 8.3M records × ~5KB pickled ≈ 40 GB if co-resident,
+    # OOM on any consumer machine. Streaming opens shard caches one
+    # at a time, extracts per-signal pairs, discards the records,
+    # and moves to the next shard. Peak parent RSS is bounded by
+    # (one shard's records + all per-signal pair accumulators).
+    p_agg.add_argument(
+        "--stream-pair-extraction",
+        action="store_true",
+        default=False,
+        help=(
+            "open shard caches one at a time during pre-extraction "
+            "instead of materializing the full records list in main. "
+            "Required for RAID-scale calibration on consumer "
+            "hardware (8.3M records × ~5KB ≈ 40 GB would otherwise "
+            "be co-resident). Memory bound: peak RSS = "
+            "(largest_shard_records_bytes + sum_of_per_signal_pair_"
+            "arrays) — at MAGE scale ~150 MB, at RAID scale ~1-2 GB. "
+            "The legacy records-list dispatch path is unavailable "
+            "in streaming mode; signals that can't be pre-extracted "
+            "return as ``no usable pairs`` errors. Default off "
+            "preserves the in-memory pre-extraction behavior shipped "
+            "in 1.65.0."
+        ),
+    )
+    p_agg.add_argument(
+        "--allow-unreadable-shards",
+        action="store_true",
+        default=False,
+        help=(
+            "Streaming-mode opt-in: proceed with calibration even "
+            "if some shard caches are unreadable, instead of "
+            "erroring out. Default is strict: any unreadable shard "
+            "cache aborts the aggregate run, since the calibration "
+            "thresholds would otherwise be derived from a strict "
+            "subset of the operator's requested records. When set, "
+            "the dropped shards are still recorded in "
+            "aggregator_perf.pair_extraction_shards_unreadable for "
+            "audit. Use this when you intentionally want partial "
+            "aggregation (e.g., one shard is being re-scored "
+            "asynchronously and you want a preliminary survey "
+            "from the rest)."
         ),
     )
     p_agg.set_defaults(func=cmd_aggregate)
