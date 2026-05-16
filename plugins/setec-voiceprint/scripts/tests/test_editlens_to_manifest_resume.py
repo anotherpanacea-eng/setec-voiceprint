@@ -265,3 +265,99 @@ def test_fresh_run_no_prior_out_back_compat(tmp_path: Path):
         ln for ln in out.read_text(encoding="utf-8").splitlines() if ln
     ]
     assert len(lines) == 4
+
+
+# --------------- Codex P2 on PR #72: conversion-settings sidecar ----
+
+
+def test_sidecar_written_on_first_run(tmp_path: Path):
+    """First run writes <out>.meta.json alongside --out."""
+    source = tmp_path / "src.csv"
+    _write_csv(source, _rows(3))
+    out = tmp_path / "manifest.jsonl"
+    text_dir = tmp_path / "text"
+    args = _args(source, out, text_dir)
+    rc = etm.convert(args)
+    assert rc == 0
+    meta = out.with_suffix(out.suffix + ".meta.json")
+    assert meta.exists()
+    meta_data = json.loads(meta.read_text(encoding="utf-8"))
+    assert meta_data["label_map"] == {
+        "0": "pre_ai_human", "1": "ai_generated",
+    }
+    assert meta_data["text_column"] == "text"
+
+
+def test_resume_refused_when_label_map_differs(tmp_path: Path):
+    """Codex P2: changing --label-map between runs against the
+    same --out must refuse — mixing rows with different label
+    semantics would be a silent bug."""
+    source = tmp_path / "src.csv"
+    _write_csv(source, _rows(3))
+    out = tmp_path / "manifest.jsonl"
+    text_dir = tmp_path / "text"
+    args1 = _args(source, out, text_dir)
+    rc1 = etm.convert(args1)
+    assert rc1 == 0
+    args2 = _args(source, out, text_dir)
+    args2.label_map = "0=pre_ai_human,1=ai_edited"  # mismatch
+    rc2 = etm.convert(args2)
+    assert rc2 == 1
+
+
+def test_resume_refused_when_register_differs(tmp_path: Path):
+    """Codex P2: changing --register between runs must refuse."""
+    source = tmp_path / "src.csv"
+    _write_csv(source, _rows(3))
+    out = tmp_path / "manifest.jsonl"
+    text_dir = tmp_path / "text"
+    args1 = _args(source, out, text_dir)
+    args1.register = "essay"
+    rc1 = etm.convert(args1)
+    assert rc1 == 0
+    args2 = _args(source, out, text_dir)
+    args2.register = "blog_post"
+    rc2 = etm.convert(args2)
+    assert rc2 == 1
+
+
+def test_refresh_output_bypasses_sidecar_check(tmp_path: Path):
+    """--refresh-output discards the sidecar check (the operator
+    is explicitly opting into "overwrite with the new args")."""
+    source = tmp_path / "src.csv"
+    _write_csv(source, _rows(3))
+    out = tmp_path / "manifest.jsonl"
+    text_dir = tmp_path / "text"
+    args1 = _args(source, out, text_dir)
+    args1.register = "essay"
+    etm.convert(args1)
+    args2 = _args(source, out, text_dir, refresh_output=True)
+    args2.register = "blog_post"
+    rc2 = etm.convert(args2)
+    assert rc2 == 0
+    meta = out.with_suffix(out.suffix + ".meta.json")
+    meta_data = json.loads(meta.read_text(encoding="utf-8"))
+    assert meta_data["register"] == "blog_post"
+
+
+def test_resume_accepted_when_sidecar_matches(tmp_path: Path):
+    """Happy path: a re-run with identical args reads the sidecar,
+    finds no drift, and appends/skips normally."""
+    source = tmp_path / "src.csv"
+    _write_csv(source, _rows(5))
+    out = tmp_path / "manifest.jsonl"
+    text_dir = tmp_path / "text"
+    args = _args(source, out, text_dir)
+    rc = etm.convert(args)
+    assert rc == 0
+    full = [
+        ln for ln in out.read_text(encoding="utf-8").splitlines() if ln
+    ]
+    assert len(full) == 5
+    out.write_text("\n".join(full[:3]) + "\n", encoding="utf-8")
+    rc2 = etm.convert(args)
+    assert rc2 == 0
+    final = [
+        ln for ln in out.read_text(encoding="utf-8").splitlines() if ln
+    ]
+    assert len(final) == 5

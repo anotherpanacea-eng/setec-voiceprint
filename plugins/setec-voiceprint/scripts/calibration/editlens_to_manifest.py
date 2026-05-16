@@ -377,17 +377,91 @@ def convert(args: argparse.Namespace) -> int:
     # (default), we read the existing IDs and append to the file
     # instead of overwriting — operators can re-run after a crash
     # and only the missing rows are processed (text + manifest
-    # entry). --no-resume forces overwrite (the pre-1.70.0
-    # behavior). --refresh-output is a dedicated alias for the
-    # operator who wants the explicit "I know I'm discarding
-    # prior work" phrasing.
+    # entry).
+    #
+    # Conversion-settings sidecar (codex P2 on PR #72): a
+    # <out_path>.meta.json file records the conversion args every
+    # row in the output was produced under. On resume, the sidecar
+    # is checked against the current run's args. If any
+    # conversion arg differs (label_map, text_column, preset,
+    # register, language_status, notes_columns,
+    # mixed_composite_states, use, source_label), resume is
+    # refused and the operator is told to use --refresh-output.
+    # Without this check, changing args between runs would
+    # silently mix incompatible-semantics rows in the same
+    # manifest.
     resume_mode = bool(
         getattr(args, "resume", True)
         and not getattr(args, "refresh_output", False)
     )
+    meta_path = out_path.with_suffix(out_path.suffix + ".meta.json")
+    current_meta = {
+        "label_map": label_map,
+        "text_column": text_column,
+        "label_column": label_column,
+        "preset": getattr(args, "preset", None),
+        "register": register,
+        "language_status": language_status,
+        "notes_columns": list(notes_columns),
+        "mixed_composite_states": list(mixed_composite_states)
+            if mixed_composite_states is not None else None,
+        "use_tags": use_tags,
+        "source_label": source_label,
+        "source_basename": source.name,
+    }
     already_written_ids: set[str] = set()
     open_mode = "w"
     if resume_mode and out_path.exists():
+        # Sidecar check: refuse resume on conversion-settings drift.
+        if meta_path.exists():
+            try:
+                prior_meta = json.loads(
+                    meta_path.read_text(encoding="utf-8"),
+                )
+                # Compare every field. Any mismatch refuses the
+                # resume and bails. The operator can then either
+                # pass --refresh-output to overwrite, or use a
+                # different --out path.
+                mismatches = []
+                for k, current_v in current_meta.items():
+                    prior_v = prior_meta.get(k)
+                    if prior_v != current_v:
+                        mismatches.append(
+                            f"{k}: prior={prior_v!r}, "
+                            f"current={current_v!r}"
+                        )
+                if mismatches:
+                    sys.stderr.write(
+                        f"REFUSING RESUME: conversion settings in "
+                        f"{meta_path} differ from current run "
+                        f"({len(mismatches)} mismatch(es)):\n"
+                    )
+                    for m in mismatches:
+                        sys.stderr.write(f"  - {m}\n")
+                    sys.stderr.write(
+                        f"Pass --refresh-output (or --no-resume) to "
+                        f"discard the prior output and re-convert, "
+                        f"or use a different --out path to preserve "
+                        f"both manifests.\n"
+                    )
+                    return 1
+            except (json.JSONDecodeError, OSError) as exc:
+                sys.stderr.write(
+                    f"Could not parse conversion-settings sidecar "
+                    f"at {meta_path} ({exc}); refusing resume to "
+                    f"avoid silent semantic drift. Pass "
+                    f"--refresh-output to overwrite.\n"
+                )
+                return 1
+        else:
+            sys.stderr.write(
+                f"Note: existing {out_path} has no conversion-"
+                f"settings sidecar (pre-1.70.0 output). Proceeding "
+                f"with resume but cannot verify that conversion "
+                f"args match what produced the existing rows. If "
+                f"args changed since the prior run, pass "
+                f"--refresh-output instead.\n"
+            )
         try:
             with out_path.open("r", encoding="utf-8") as fh_in:
                 for line in fh_in:
@@ -425,6 +499,23 @@ def convert(args: argparse.Namespace) -> int:
             )
             already_written_ids.clear()
             open_mode = "w"
+
+    # Write/refresh the sidecar BEFORE the conversion loop so a
+    # crash mid-loop still leaves the meta + partial JSONL paired.
+    # The conversion is idempotent under stable args, so the same
+    # meta is correct on re-write.
+    try:
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
+        with tmp_meta.open("w", encoding="utf-8") as fh:
+            json.dump(current_meta, fh, indent=2, default=str)
+        tmp_meta.replace(meta_path)
+    except OSError as exc:
+        sys.stderr.write(
+            f"Could not write conversion-settings sidecar at "
+            f"{meta_path} ({exc}); proceeding without it. Future "
+            f"resume runs will lack drift detection.\n"
+        )
 
     flush_every = max(1, int(getattr(args, "flush_every", 1000)))
     n_written = 0
