@@ -378,6 +378,12 @@ def _build_inner_args(
         # same essays across signals (deterministic per seed).
         max_entries=getattr(parent_args, "max_entries", None),
         max_entries_seed=getattr(parent_args, "max_entries_seed", None),
+        # Forward the incremental-cache flush cadence so
+        # load_or_score_corpus checkpoints at the operator-chosen
+        # frequency (1.69.0+).
+        records_cache_flush_every=getattr(
+            parent_args, "records_cache_flush_every", 100,
+        ),
     )
 
 
@@ -967,6 +973,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "exists. Use after a code change that should "
                        "invalidate cached records but didn't bump "
                        "SCORER_CACHE_VERSION."
+                   ))
+    p.add_argument("--records-cache-flush-every", type=int, default=100,
+                   help=(
+                       "Write the --records-cache atomically every N "
+                       "scored entries with status='in_progress' "
+                       "(1.69.0+). A crash mid-scoring loses at most "
+                       "N entries of work; the next run automatically "
+                       "resumes from the partial cache. Default 100. "
+                       "Set lower (10-50) for very long-per-entry "
+                       "tier3 runs; higher (500+) for short-per-entry "
+                       "tier1-only runs where flush I/O would "
+                       "dominate. Ignored when --records-cache is "
+                       "unset (no checkpoint target)."
                    ))
     p.add_argument("--max-entries", type=int, default=None,
                    help=(
