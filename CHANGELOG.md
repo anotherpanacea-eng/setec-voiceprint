@@ -6,6 +6,25 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.72.0] - 2026-05-16
+
+**pdf_inventory: partial-cache + resume.** Independent PR touching only `pdf_inventory.py`. Applies SAVE PROGRESS to a script that was already parallel (ThreadPoolExecutor with `as_completed`) but accumulated results in memory and only wrote the JSONL after every worker completed — a crash mid-run lost everything.
+
+### Added
+
+- **Partial-inventory cache** at `<output>.partial.json` (path-keyed dict of `asdict(InventoryEntry)`). Written atomically every `--flush-every` worker completions; deleted after the final JSONL lands. Default ON.
+- **`--no-incremental-cache`** to revert to pre-1.70.0 monolithic behavior.
+- **`--flush-every N`** (default 25) to tune flush cadence.
+- **`--refresh-partial`** to discard any existing partial and re-classify everything.
+- **Resume contract**: paths already in the partial cache are skipped during the next run — the expensive `classify_pdf` call doesn't fire for them. Determinism preserved (final JSONL emitted in input-path order regardless of worker completion order).
+- **8 new regression tests** in `scripts/tests/test_pdf_inventory_incremental.py`.
+
+### Notes
+
+- Compatibility check on the partial cache: `max_file_bytes` (the one knob that affects which paths are classifiable). Other knobs (workers, verbose) don't affect classification outputs; changing them mid-run is fine.
+- The partial cache stores `asdict(entry)` (preserving None fields), not the trimmed `entry.to_dict()` — the round-trip preserves enough to reconstruct InventoryEntry. The final JSONL uses the trimmed `to_dict()`.
+- Originally landed as 1.70.0 on a wave-2 branch; renumbered to 1.72.0 on rebase since #69 and #70 merged first under 1.70.0 / 1.71.0.
+
 ## [1.71.0] - 2026-05-16
 
 **Manuscript audit: per-chapter cache + resume + progress log.** Independent PR touching only `manuscript_audit.py`. Applies MEASURE + SAVE PROGRESS to the chapter-level audit loop, plus full per-chapter text-hash + preprocessing compat check (post-codex P2 fix).
