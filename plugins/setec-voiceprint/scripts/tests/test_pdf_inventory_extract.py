@@ -80,7 +80,12 @@ PDF_CORRUPTED = FIXTURE_DIR / "corrupted.pdf"
 
 
 def make_inventory_args(**overrides) -> argparse.Namespace:
-    """Default `argparse.Namespace` matching `pdf_inventory.build_arg_parser`."""
+    """Default `argparse.Namespace` matching `pdf_inventory.build_arg_parser`.
+
+    Keep in sync with the parser flags. The incremental-cache trio
+    (`no_incremental_cache`, `flush_every`, `refresh_partial`) was
+    added in 1.70.0; defaults here mirror `build_arg_parser`.
+    """
     base = dict(
         root=str(FIXTURE_DIR),
         output=None,
@@ -91,6 +96,10 @@ def make_inventory_args(**overrides) -> argparse.Namespace:
         max_file_bytes=pi.DEFAULT_MAX_FILE_BYTES,
         allow_public_output=True,
         verbose=False,
+        # 1.70.0 incremental-cache CLI surface
+        no_incremental_cache=False,
+        flush_every=25,
+        refresh_partial=False,
     )
     base.update(overrides)
     return argparse.Namespace(**base)

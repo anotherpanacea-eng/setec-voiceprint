@@ -6,6 +6,19 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.79.3] - 2026-05-16
+
+**Fix: `test_pdf_inventory_extract.py` test-helper drift.** The 1.70.0 PR added three new CLI flags to `pdf_inventory.py` (`--no-incremental-cache`, `--flush-every`, `--refresh-partial`) and the production code at line 858-860 reads `args.no_incremental_cache`, `args.flush_every`, and `args.refresh_partial`. The test helper `make_inventory_args()` was never updated to match, so all 9 tests that exercise the inventory CLI path failed with `AttributeError: 'Namespace' object has no attribute 'no_incremental_cache'`.
+
+### Fixed
+
+- **`make_inventory_args()` in `test_pdf_inventory_extract.py`** now sets the three 1.70.0 incremental-cache fields in its default base dict (`no_incremental_cache=False`, `flush_every=25`, `refresh_partial=False`), matching `pdf_inventory.build_arg_parser`'s defaults. Test suite: 9 failing → 27 passing.
+- **Helper docstring** updated to flag the parser-sync contract so the next CLI flag addition doesn't re-drift the helper silently.
+
+### Notes
+
+- The bug landed in PR #69 (1.70.0, "partial-cache + resume + crash-recovery") and went unnoticed because the failures looked like a stack-trace from production code rather than a test fixture problem — `pdf_inventory.py:858` is the first line of the trace, not the test helper. The fix is a one-line addition to a dict literal.
+
 ## [1.79.2] - 2026-05-16
 
 **Chore: pre-public-flip cleanup of test fixtures.** Audit before flipping the GitHub repo from PRIVATE to PUBLIC surfaced two test_data files that should not ship publicly:
