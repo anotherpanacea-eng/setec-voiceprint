@@ -6,11 +6,31 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.71.0] - 2026-05-16
+
+**Manuscript audit: per-chapter cache + resume + progress log.** Independent PR touching only `manuscript_audit.py`. Applies MEASURE + SAVE PROGRESS to the chapter-level audit loop, plus full per-chapter text-hash + preprocessing compat check (post-codex P2 fix).
+
+`audit_manuscript` ran `audit_text` on every chapter sequentially with no per-chapter visibility or checkpoint. On a 50-chapter manuscript with tier3 on, one chapter can take minutes (spaCy + signal computation); a crash on chapter 40 of 50 lost the first 39's audit work.
+
+### Added
+
+- **`--chapter-audit-cache PATH` CLI flag** + **`--refresh-chapter-cache`**.
+- **Per-chapter progress log** to stderr.
+- **Per-chapter text_hash** stored with each cached audit; resume keys on `(label, text_hash)` so editing a chapter under the same label invalidates the cached audit.
+- **Preprocessing-args compat check** (do_tier2, do_tier3, allow_non_prose, strip_rules, strip_aggressive): mismatch refuses the cache with a clear stderr reason.
+- **`_chapter_text_hash` + `_chapter_cache_compat_reason` helpers**.
+- **11 regression tests** in `scripts/tests/test_manuscript_audit_cache.py`: CLI flags, partial write, resume, refresh, no-cache back-compat, stderr/stdout discipline, **plus 4 from codex P2 fix**: edited chapter invalidates entry, cache refused on allow_non_prose / strip_rules / strip_aggressive mismatch.
+
+### Notes
+
+- The cache stores `extract_features`-shaped per-chapter audits; complete-cache hits re-render dashboards at different `--baseline-dir` values without re-running spaCy.
+- Originally landed as 1.70.0 on a wave-2 branch independent of the calibration stack; renumbered to 1.71.0 on rebase since #69 (validation_harness scoring checkpoint) merged to main first under 1.70.0.
+
 ## [1.70.0] - 2026-05-16
 
-**Validation harness: progress log + optional scored-records cache with resume.** Independent PR (touches `validation_harness.py` only); assumes the 1.65.0-1.69.0 calibration stack lands first (it's the version sequence, not a code dependency).
+**Validation harness: progress log + optional scored-records cache with resume.** Independent PR (touches `validation_harness.py` only).
 
-The validation harness scores every manifest entry in a single list-comprehension and only emits output at the end. At MVP-validation scale (~hundreds of entries) that's fine; at corpus-validation scale (8M-row corpora the framework now ships toolchain for) it's the same all-or-nothing failure mode the calibration stack just addressed for `calibrate_thresholds.score_corpus`. Applies the same two principles (MEASURE + SAVE PROGRESS) to the validation surface.
+The validation harness scores every manifest entry in a single list-comprehension and only emits output at the end. At MVP-validation scale (~hundreds of entries) that's fine; at corpus-validation scale (8M-row corpora the framework now ships toolchain for) it's the same all-or-nothing failure mode the calibration stack addressed for `calibrate_thresholds.score_corpus`. Applies the same two principles (MEASURE + SAVE PROGRESS) to the validation surface.
 
 ### Added
 

@@ -19,6 +19,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime as _dt
 import json
 import re
 import statistics
@@ -139,6 +140,45 @@ def aggregate_baseline_stats(baseline_audits: list[dict[str, Any]]) -> dict[str,
     return out
 
 
+def _save_chapter_audit_cache(
+    path: Path,
+    chapter_audits: list[dict[str, Any]],
+    chapter_preprocessing: dict[str, dict[str, Any]],
+    *,
+    n_chapters_total: int,
+    status: str,
+    do_tier2: bool,
+    do_tier3: bool,
+    strip_rules: Any,
+) -> None:
+    """Atomic write of the per-chapter audit cache. ``status``
+    flips from ``"in_progress"`` (per-flush) to ``"complete"`` on
+    the final write after every chapter has been audited.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "status": status,
+        "tool": "manuscript_audit",
+        "tool_version": "1.70.0",
+        "scoring_meta": {
+            "n_chapters_total": n_chapters_total,
+            "n_chapters_audited": len(chapter_audits),
+            "do_tier2": do_tier2,
+            "do_tier3": do_tier3,
+            "strip_rules": strip_rules,
+            "scored_at": _dt.datetime.now(
+                _dt.timezone.utc,
+            ).isoformat(),
+        },
+        "chapter_audits": chapter_audits,
+        "chapter_preprocessing": chapter_preprocessing,
+    }
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, default=str)
+    tmp.replace(path)
+
+
 def audit_manuscript(
     chapters: list[dict[str, Any]],
     baseline_dir: str | None,
@@ -148,11 +188,81 @@ def audit_manuscript(
     allow_non_prose: bool = False,
     strip_rules: str | list[str] | None = None,
     strip_aggressive: bool = False,
+    cache_path: Path | None = None,
+    refresh_cache: bool = False,
 ) -> dict[str, Any]:
-    """Run audit_text on each chapter; aggregate baseline; compute z-scores."""
-    chapter_audits = []
+    """Run audit_text on each chapter; aggregate baseline; compute z-scores.
+
+    MEASURE + SAVE PROGRESS (1.70.0+): logs ``[Xs] chapter N/M
+    audited: 'label' (Y words)`` to stderr after every chapter
+    completes. When ``cache_path`` is set, also writes a partial
+    cache after every chapter with ``status: "in_progress"``, so a
+    crash mid-manuscript loses at most one chapter's worth of
+    audit work (which on a long-tier3 book can be minutes per
+    chapter). On the next run with the same ``cache_path``, any
+    chapter whose ``label`` matches a cached audit is loaded from
+    cache and skipped. Final write flips status to ``"complete"``.
+    """
+    chapter_audits: list[dict[str, Any]] = []
     chapter_preprocessing: dict[str, dict[str, Any]] = {}
-    for ch in chapters:
+    cached_by_label: dict[str, dict[str, Any]] = {}
+    cached_preprocessing: dict[str, dict[str, Any]] = {}
+
+    # ----- Resume from prior partial / complete cache (1.70.0+).
+    if cache_path is not None and cache_path.exists() and not refresh_cache:
+        try:
+            cached = json.loads(cache_path.read_text(encoding="utf-8"))
+            cache_status = cached.get("status", "complete")
+            cache_meta = cached.get("scoring_meta") or {}
+            # Lightweight compatibility check: same tier flags. The
+            # operator can pass --refresh-chapter-cache to force a
+            # full re-audit when other scoring args change.
+            ok = (
+                bool(cache_meta.get("do_tier2")) == do_tier2
+                and bool(cache_meta.get("do_tier3")) == do_tier3
+            )
+            if ok and cache_status in ("in_progress", "complete"):
+                cached_by_label = {
+                    a.get("label"): a
+                    for a in (cached.get("chapter_audits") or [])
+                    if isinstance(a.get("label"), str)
+                }
+                cached_preprocessing = (
+                    cached.get("chapter_preprocessing") or {}
+                )
+                sys.stderr.write(
+                    f"Manuscript audit: cache hit at {cache_path} "
+                    f"(status={cache_status!r}); "
+                    f"{len(cached_by_label)} chapter audit(s) "
+                    f"available for reuse.\n"
+                )
+            else:
+                sys.stderr.write(
+                    f"Manuscript audit: cache at {cache_path} is "
+                    f"incompatible (tier flags differ); discarding.\n"
+                )
+        except (json.JSONDecodeError, OSError) as exc:
+            sys.stderr.write(
+                f"Manuscript audit: cache at {cache_path} is "
+                f"unreadable ({exc}); discarding.\n"
+            )
+
+    n_total = len(chapters)
+    audit_t0 = _dt.datetime.now()
+    n_fresh = 0
+    for i, ch in enumerate(chapters):
+        label = ch.get("label", f"chapter_{i}")
+        if label in cached_by_label:
+            # Resume: re-use the prior audit + preprocessing entries.
+            entry = cached_by_label[label]
+            chapter_audits.append(entry)
+            if label in cached_preprocessing:
+                chapter_preprocessing[label] = cached_preprocessing[label]
+            sys.stderr.write(
+                f"  chapter {i + 1}/{n_total}: '{label}' loaded "
+                f"from cache.\n"
+            )
+            continue
         a = audit_text(
             ch["text"],
             do_tier2=do_tier2,
@@ -169,6 +279,28 @@ def audit_manuscript(
             "audit": a,
             "compression": comp,
         })
+        n_fresh += 1
+        elapsed = (_dt.datetime.now() - audit_t0).total_seconds()
+        n_words = a.get("summary", {}).get("n_words", 0)
+        sys.stderr.write(
+            f"  [{elapsed:6.1f}s] chapter {i + 1}/{n_total}: "
+            f"'{label}' audited ({n_words} words).\n"
+        )
+        if cache_path is not None:
+            try:
+                _save_chapter_audit_cache(
+                    cache_path, chapter_audits, chapter_preprocessing,
+                    n_chapters_total=n_total,
+                    status="in_progress",
+                    do_tier2=do_tier2, do_tier3=do_tier3,
+                    strip_rules=strip_rules,
+                )
+            except Exception as exc:  # noqa: BLE001
+                sys.stderr.write(
+                    f"  WARNING: chapter-cache flush to "
+                    f"{cache_path} failed: {type(exc).__name__}: "
+                    f"{exc}. Continuing.\n"
+                )
 
     baseline_stats: dict[str, dict[str, float]] = {}
     n_baseline_files = 0
@@ -203,6 +335,32 @@ def audit_manuscript(
                 "baseline_sd": stats["sd"],
             }
         ch["z_scores"] = z
+
+    # Final cache write: status=complete + z_scores attached. The
+    # cache survives the run as a full artifact future operators
+    # can resume from (or re-use directly for re-rendering at
+    # different baseline-dirs).
+    if cache_path is not None and n_fresh > 0:
+        try:
+            _save_chapter_audit_cache(
+                cache_path, chapter_audits, chapter_preprocessing,
+                n_chapters_total=n_total,
+                status="complete",
+                do_tier2=do_tier2, do_tier3=do_tier3,
+                strip_rules=strip_rules,
+            )
+            sys.stderr.write(
+                f"Manuscript audit: cache written to {cache_path} "
+                f"({len(chapter_audits)} chapter(s), "
+                f"status=complete; {n_fresh} freshly audited, "
+                f"{len(chapter_audits) - n_fresh} reused).\n"
+            )
+        except Exception as exc:  # noqa: BLE001
+            sys.stderr.write(
+                f"WARNING: final chapter-cache write to "
+                f"{cache_path} failed ({type(exc).__name__}: "
+                f"{exc}).\n"
+            )
 
     return {
         "task_surface": TASK_SURFACE,
@@ -450,6 +608,36 @@ def main() -> int:
     )
     parser.add_argument("--json", action="store_true", help="Output JSON instead of markdown.")
     parser.add_argument("--out", help="Write output to file instead of stdout.")
+    # Chapter-level audit cache + resume (1.70.0). Each call to
+    # ``audit_text`` is expensive (spaCy + signal computation); on a
+    # 50-chapter manuscript with tier3 on, one chapter can take
+    # minutes. Caching per-chapter audits means a crash on chapter
+    # 40 of 50 doesn't lose the first 39's work, and a re-run with
+    # a different --baseline-dir doesn't re-audit any chapters
+    # whose tier flags are unchanged.
+    parser.add_argument(
+        "--chapter-audit-cache", default=None,
+        help=(
+            "Path to a JSON cache of per-chapter audits. Optional; "
+            "default is no cache (run from scratch each time). When "
+            "set, each chapter's audit is written to the cache "
+            "atomically after it completes, with status='in_progress'. "
+            "The final write flips status to 'complete'. On the next "
+            "run with the same path, chapters whose label matches a "
+            "cached audit are skipped — useful for long tier3 runs "
+            "where a crash on chapter 40 of 50 would otherwise lose "
+            "the first 39 chapters' audit work."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-chapter-cache", action="store_true",
+        help=(
+            "Discard any existing --chapter-audit-cache and re-audit "
+            "every chapter. Use after a code change that should "
+            "invalidate cached audits but won't be caught by the "
+            "minimal compatibility check (tier flags)."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -483,6 +671,12 @@ def main() -> int:
         allow_non_prose=args.allow_non_prose,
         strip_rules=args.strip_rules,
         strip_aggressive=args.strip_aggressive,
+        cache_path=(
+            Path(args.chapter_audit_cache).expanduser()
+            if args.chapter_audit_cache
+            else None
+        ),
+        refresh_cache=bool(args.refresh_chapter_cache),
     )
 
     if args.json:
