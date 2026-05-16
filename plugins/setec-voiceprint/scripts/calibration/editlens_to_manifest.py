@@ -63,6 +63,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import datetime as _dt
 import hashlib
 import json
 import re
@@ -370,8 +371,157 @@ def convert(args: argparse.Namespace) -> int:
         if repo_id else source.name
     )
 
+    # ----- Resume from existing partial output (1.70.0+).
+    # The output JSONL is naturally newline-separated entries; any
+    # complete prior run leaves a parseable file. If --resume is on
+    # (default), we read the existing IDs and append to the file
+    # instead of overwriting — operators can re-run after a crash
+    # and only the missing rows are processed (text + manifest
+    # entry).
+    #
+    # Conversion-settings sidecar (codex P2 on PR #72): a
+    # <out_path>.meta.json file records the conversion args every
+    # row in the output was produced under. On resume, the sidecar
+    # is checked against the current run's args. If any
+    # conversion arg differs (label_map, text_column, preset,
+    # register, language_status, notes_columns,
+    # mixed_composite_states, use, source_label), resume is
+    # refused and the operator is told to use --refresh-output.
+    # Without this check, changing args between runs would
+    # silently mix incompatible-semantics rows in the same
+    # manifest.
+    resume_mode = bool(
+        getattr(args, "resume", True)
+        and not getattr(args, "refresh_output", False)
+    )
+    meta_path = out_path.with_suffix(out_path.suffix + ".meta.json")
+    current_meta = {
+        "label_map": label_map,
+        "text_column": text_column,
+        "label_column": label_column,
+        "preset": getattr(args, "preset", None),
+        "register": register,
+        "language_status": language_status,
+        "notes_columns": list(notes_columns),
+        "mixed_composite_states": list(mixed_composite_states)
+            if mixed_composite_states is not None else None,
+        "use_tags": use_tags,
+        "source_label": source_label,
+        "source_basename": source.name,
+    }
+    already_written_ids: set[str] = set()
+    open_mode = "w"
+    if resume_mode and out_path.exists():
+        # Sidecar check: refuse resume on conversion-settings drift.
+        if meta_path.exists():
+            try:
+                prior_meta = json.loads(
+                    meta_path.read_text(encoding="utf-8"),
+                )
+                # Compare every field. Any mismatch refuses the
+                # resume and bails. The operator can then either
+                # pass --refresh-output to overwrite, or use a
+                # different --out path.
+                mismatches = []
+                for k, current_v in current_meta.items():
+                    prior_v = prior_meta.get(k)
+                    if prior_v != current_v:
+                        mismatches.append(
+                            f"{k}: prior={prior_v!r}, "
+                            f"current={current_v!r}"
+                        )
+                if mismatches:
+                    sys.stderr.write(
+                        f"REFUSING RESUME: conversion settings in "
+                        f"{meta_path} differ from current run "
+                        f"({len(mismatches)} mismatch(es)):\n"
+                    )
+                    for m in mismatches:
+                        sys.stderr.write(f"  - {m}\n")
+                    sys.stderr.write(
+                        f"Pass --refresh-output (or --no-resume) to "
+                        f"discard the prior output and re-convert, "
+                        f"or use a different --out path to preserve "
+                        f"both manifests.\n"
+                    )
+                    return 1
+            except (json.JSONDecodeError, OSError) as exc:
+                sys.stderr.write(
+                    f"Could not parse conversion-settings sidecar "
+                    f"at {meta_path} ({exc}); refusing resume to "
+                    f"avoid silent semantic drift. Pass "
+                    f"--refresh-output to overwrite.\n"
+                )
+                return 1
+        else:
+            sys.stderr.write(
+                f"Note: existing {out_path} has no conversion-"
+                f"settings sidecar (pre-1.70.0 output). Proceeding "
+                f"with resume but cannot verify that conversion "
+                f"args match what produced the existing rows. If "
+                f"args changed since the prior run, pass "
+                f"--refresh-output instead.\n"
+            )
+        try:
+            with out_path.open("r", encoding="utf-8") as fh_in:
+                for line in fh_in:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        prior = json.loads(line)
+                    except json.JSONDecodeError:
+                        # Bad line (mid-row crash?) — bail and re-
+                        # write from scratch to avoid mixing a
+                        # truncated prior with new lines.
+                        already_written_ids.clear()
+                        sys.stderr.write(
+                            f"Partial output at {out_path} has a "
+                            f"malformed line; discarding and "
+                            f"re-writing from scratch.\n"
+                        )
+                        break
+                    prior_id = prior.get("id")
+                    if isinstance(prior_id, str):
+                        already_written_ids.add(prior_id)
+            if already_written_ids:
+                open_mode = "a"  # append; preserve prior rows
+                sys.stderr.write(
+                    f"Resuming conversion: {len(already_written_ids)} "
+                    f"manifest entries already in {out_path}. "
+                    f"Skipping rows with matching IDs. Pass "
+                    f"--no-resume / --refresh-output to overwrite.\n"
+                )
+        except OSError as exc:
+            sys.stderr.write(
+                f"Could not read existing {out_path} for resume "
+                f"({exc}); will overwrite.\n"
+            )
+            already_written_ids.clear()
+            open_mode = "w"
+
+    # Write/refresh the sidecar BEFORE the conversion loop so a
+    # crash mid-loop still leaves the meta + partial JSONL paired.
+    # The conversion is idempotent under stable args, so the same
+    # meta is correct on re-write.
+    try:
+        meta_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
+        with tmp_meta.open("w", encoding="utf-8") as fh:
+            json.dump(current_meta, fh, indent=2, default=str)
+        tmp_meta.replace(meta_path)
+    except OSError as exc:
+        sys.stderr.write(
+            f"Could not write conversion-settings sidecar at "
+            f"{meta_path} ({exc}); proceeding without it. Future "
+            f"resume runs will lack drift detection.\n"
+        )
+
+    flush_every = max(1, int(getattr(args, "flush_every", 1000)))
     n_written = 0
-    with out_path.open("w", encoding="utf-8") as fh_out:
+    n_skipped_resume = 0
+    convert_t0 = _dt.datetime.now()
+    with out_path.open(open_mode, encoding="utf-8") as fh_out:
         for row_index, row in enumerate(row_iter):
             if args.max_rows and n_written >= args.max_rows:
                 break
@@ -392,6 +542,9 @@ def convert(args: argparse.Namespace) -> int:
                 continue
 
             entry_id = _stable_id(source.name, row_index)
+            if entry_id in already_written_ids:
+                n_skipped_resume += 1
+                continue
             text_path = text_dir / f"{entry_id}.txt"
             text_path.write_text(text, encoding="utf-8")
 
@@ -438,11 +591,33 @@ def convert(args: argparse.Namespace) -> int:
                 json.dumps(entry, ensure_ascii=False) + "\n"
             )
             n_written += 1
+            # Periodic flush + progress log. Flushing keeps the
+            # OS buffer's prior-row commitment minimal so a
+            # crash loses at most flush_every rows of work that
+            # hadn't yet hit disk. Progress goes to stderr so
+            # downstream parsers of stdout (none here today, but
+            # symmetry with the other 1.70.0 PRs) stay clean.
+            if n_written % flush_every == 0:
+                fh_out.flush()
+                elapsed = (
+                    _dt.datetime.now() - convert_t0
+                ).total_seconds()
+                rate = n_written / max(elapsed, 1e-9)
+                sys.stderr.write(
+                    f"  converted {n_written} rows "
+                    f"({rate:.0f}/s) -> flushed at row "
+                    f"{row_index + 1}.\n"
+                )
 
     sys.stdout.write(
         f"Wrote {n_written} manifest entries to {out_path}\n"
         f"  per-row text files in {text_dir}\n"
     )
+    if n_skipped_resume:
+        sys.stdout.write(
+            f"  resume: skipped {n_skipped_resume} row(s) already "
+            f"present in prior output.\n"
+        )
 
     # Validate the output manifest.
     try:
@@ -564,6 +739,47 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Allow writing the manifest and per-row text files outside "
             "ai-prose-baselines-private/. Use only for non-CC-NC corpora."
+        ),
+    )
+    # Resume + incremental flush (1.70.0). EditLens parquet sources
+    # can be 1M+ rows; the original pre-1.70.0 code opened --out in
+    # 'w' mode and only flushed at the natural OS buffer cadence —
+    # a crash at row 800K of 1M lost most of the work and the
+    # operator had no way to pick up where they left off. Resume
+    # mode reads the existing --out, builds the set of already-
+    # written entry IDs, and skips matching source rows; periodic
+    # flushes commit each batch to disk so a crash loses at most
+    # --flush-every rows of work.
+    parser.add_argument(
+        "--no-resume", dest="resume",
+        action="store_false", default=True,
+        help=(
+            "Force overwrite of --out instead of appending. Pre-"
+            "1.70.0 behavior. Default behavior (resume on) reads "
+            "any existing --out, derives already-converted entry "
+            "IDs, opens the file in append mode, and skips rows "
+            "with matching IDs. Use --no-resume when you want a "
+            "clean re-conversion regardless of any partial output."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-output", action="store_true",
+        help=(
+            "Alias for --no-resume. Discards any existing --out "
+            "and starts conversion from row 0. Use when the prior "
+            "output is from a stale --label-map / --text-column / "
+            "any other arg that would silently invalidate the "
+            "prior entries."
+        ),
+    )
+    parser.add_argument(
+        "--flush-every", type=int, default=1000,
+        help=(
+            "Flush --out and emit a progress line to stderr every "
+            "N converted rows (default 1000). Lower (100-500) on "
+            "long-tail rows where the OS buffer might lose many "
+            "rows on a crash; higher (5000+) for fast pass-"
+            "through where flush I/O would dominate."
         ),
     )
 
