@@ -350,9 +350,9 @@ def _build_signal_namespace(
         signal=sig_name,
         manifest=str(state.get("source_manifest_path") or ""),
         fpr_target=fpr_target,
-        bootstrap_seed=42,
-        bootstrap_resamples=2000,
-        bootstrap_confidence=0.95,
+        bootstrap_seed=getattr(args, "bootstrap_seed", 42),
+        bootstrap_resamples=getattr(args, "bootstrap_resamples", 2000),
+        bootstrap_confidence=getattr(args, "bootstrap_confidence", 0.95),
         bootstrap_engine=getattr(args, "bootstrap_engine", "loop"),
         bootstrap_chunk_size=getattr(args, "bootstrap_chunk_size", None),
         bootstrap_device=getattr(args, "bootstrap_device", None),
@@ -693,15 +693,18 @@ def _aggregate_calibration_records(
     contributing_shards: list[str],
     state: dict[str, Any],
     args: argparse.Namespace,
+    shard_cache_paths: list[Path] | None = None,
 ) -> dict[str, Any]:
     """Run ``calibrate_thresholds.derive_threshold_from_records``
     once per signal and emit the aggregated survey payload.
 
     Memory-hardened parallel implementation with checkpoint +
-    resume (see module-level "calibration_survey aggregator"
-    comment for the four-layer memory design). Recognized CLI args
-    (read via ``getattr`` for back-compat with callers that don't
-    set them):
+    resume + optional streaming pre-extraction. See the module-
+    level "calibration_survey aggregator" comment for the four-
+    layer memory design (belt, suspenders, buttons, zip).
+
+    Recognized CLI args (read via ``getattr`` for back-compat with
+    callers that don't set them):
 
       * ``bootstrap_engine`` / ``bootstrap_chunk_size`` /
         ``bootstrap_device`` — propagated to each per-signal
@@ -724,6 +727,23 @@ def _aggregate_calibration_records(
         a parseable prior payload, skip signals already in its
         ``per_signal`` dict. Pass ``--no-resume`` to force a fresh
         sweep regardless of any prior partial.
+      * ``stream_pair_extraction`` — when True AND
+        ``shard_cache_paths`` is provided, the aggregator opens
+        shard caches one at a time, extracts per-signal pairs
+        incrementally, and discards records after each shard.
+        The full records list never goes resident; peak parent
+        RSS is bounded by (one-shard records + all per-signal
+        pair arrays). At RAID scale (8.3M records, ~40 GB if
+        co-resident) this is the difference between OOM-on-load
+        and finishing in minutes. The fast path's legacy fallback
+        (records-list dispatch when pair extraction fails) is
+        UNAVAILABLE in streaming mode — signals that can't be
+        pre-extracted return as ``no usable pairs`` errors.
+
+    ``shard_cache_paths`` (new in 1.68.0): list of cache.json
+    paths the caller (typically ``shard_runner.cmd_aggregate``)
+    has already validated for existence + SHA. Required for
+    streaming mode; ignored otherwise.
     """
     if not getattr(args, "no_derive", False):
         try:
@@ -740,6 +760,10 @@ def _aggregate_calibration_records(
 
     per_signal: dict[str, Any] = {}
     perf_meta: dict[str, Any] = {}
+    # n_records_effective is the count used in the payload + per-
+    # signal partial saves. In streaming mode the streaming pass
+    # overwrites it; otherwise ``len(all_records)`` is the truth.
+    n_records_effective: int = len(all_records or [])
 
     # --- Resume from prior partial (if --out exists and --resume).
     # The compat check (codex P2 on PR #64) refuses to carry
@@ -795,7 +819,19 @@ def _aggregate_calibration_records(
                         len(resumed_signals)
                     )
 
-    if ct is not None and all_records:
+    # Decide whether to enter the per-signal sweep at all. The
+    # streaming path is a yes IF we have shard_cache_paths AND the
+    # streaming flag is set (regardless of whether all_records is
+    # populated — the caller may have skipped materialization on
+    # purpose). The non-streaming path requires all_records be
+    # populated.
+    streaming = bool(
+        shard_cache_paths is not None
+        and getattr(args, "stream_pair_extraction", False)
+    )
+    has_input = streaming or bool(all_records)
+
+    if ct is not None and has_input:
         merged_meta = meta_list[0] if meta_list else {}
         fpr_target = state.get("fpr_target")
         if fpr_target is None:
@@ -818,7 +854,71 @@ def _aggregate_calibration_records(
 
         signals = sorted(ct.COMPRESSION_HEURISTICS.keys())
         per_signal_pairs: dict[str, list[tuple[int, float]]] = {}
-        if collect_signal_records is not None:
+        # n_records_total: in streaming mode the caller hasn't
+        # counted records (they're never co-resident); we count
+        # here during the stream so the perf block + payload have
+        # the right number. In non-streaming mode we use
+        # ``len(all_records)`` further down — this stays None.
+        streamed_n_records: int | None = None
+
+        if streaming and collect_signal_records is not None:
+            # ----- Layer 5 (the RAID-unblocker): stream pre-
+            # extraction from shard caches. Each shard is read,
+            # extracted, and dropped before the next loads. Peak
+            # parent RSS is bounded by (one shard's records + all
+            # per-signal pair accumulators).
+            extract_t0 = _dt.datetime.now()
+            for sig_name in signals:
+                per_signal_pairs[sig_name] = []
+            streamed_n_records = 0
+            extraction_failures: set[str] = set()
+            for cp in shard_cache_paths or []:
+                try:
+                    with cp.open("r", encoding="utf-8") as fh:
+                        shard_cache = json.load(fh)
+                except Exception as exc:  # noqa: BLE001
+                    sys.stderr.write(
+                        f"  streaming: skipping unreadable shard "
+                        f"cache {cp}: {type(exc).__name__}: {exc}\n"
+                    )
+                    continue
+                shard_records = shard_cache.get("records") or []
+                streamed_n_records += len(shard_records)
+                for sig_name in signals:
+                    if sig_name in extraction_failures:
+                        continue
+                    spec = ct.COMPRESSION_HEURISTICS[sig_name]
+                    try:
+                        pairs = collect_signal_records(
+                            shard_records, spec.signal_path,
+                        )
+                    except Exception:  # noqa: BLE001
+                        # Signal can't be extracted (bad spec, etc.) —
+                        # record it as failed and skip on future shards
+                        # to avoid burning O(shards) on the same error.
+                        extraction_failures.add(sig_name)
+                        per_signal_pairs.pop(sig_name, None)
+                        continue
+                    per_signal_pairs[sig_name].extend(pairs)
+                # shard_records goes out of scope; CPython refcount
+                # reclaims it before the next iteration starts the
+                # next cache load. This is the RAM-bound we paid
+                # for.
+                del shard_records
+                del shard_cache
+            extract_s = (
+                _dt.datetime.now() - extract_t0
+            ).total_seconds()
+            perf_meta["pair_extraction_s"] = round(extract_s, 3)
+            perf_meta["pair_extraction_signals_fast_path"] = (
+                len(per_signal_pairs)
+            )
+            perf_meta["pair_extraction_signals_legacy_path"] = 0
+            perf_meta["pair_extraction_mode"] = "streaming"
+            perf_meta["pair_extraction_shards_streamed"] = (
+                len(shard_cache_paths or [])
+            )
+        elif collect_signal_records is not None:
             extract_t0 = _dt.datetime.now()
             for sig_name in signals:
                 spec = ct.COMPRESSION_HEURISTICS[sig_name]
@@ -847,6 +947,7 @@ def _aggregate_calibration_records(
             perf_meta["pair_extraction_signals_legacy_path"] = (
                 len(signals) - len(per_signal_pairs)
             )
+            perf_meta["pair_extraction_mode"] = "in_memory"
 
         # Dispatch every signal NOT already in per_signal (from
         # resume). Workers decide per-signal whether to use the fast
@@ -905,6 +1006,13 @@ def _aggregate_calibration_records(
         def _pairs_for(sig: str) -> list[tuple[int, float]] | None:
             return per_signal_pairs.get(sig) if sig in per_signal_pairs else None
 
+        # Effective record count for payload reporting. In streaming
+        # mode the full records list never goes resident, so
+        # ``len(all_records)`` is 0 and meaningless; the streaming
+        # pass counted them as it went.
+        if streamed_n_records is not None:
+            n_records_effective = streamed_n_records
+
         # Per-signal completion logger + checkpoint writer.
         # Operators running aggregates at MAGE / RAID scale (5-30
         # min wall-clock) need (a) progress visibility as signals
@@ -927,7 +1035,7 @@ def _aggregate_calibration_records(
                     partial = _build_aggregator_payload(
                         state=state, fpr_target=fpr_target,
                         contributing_shards=contributing_shards,
-                        n_records=len(all_records),
+                        n_records=n_records_effective,
                         per_signal=per_signal,
                         perf_meta=perf_meta,
                         status="in_progress",
@@ -1059,9 +1167,13 @@ def _aggregate_calibration_records(
                         state.get("source_manifest_path") or "",
                     ),
                     "fpr_target": fpr_target,
-                    "bootstrap_seed": 42,
-                    "bootstrap_resamples": 2000,
-                    "bootstrap_confidence": 0.95,
+                    "bootstrap_seed": getattr(args, "bootstrap_seed", 42),
+                    "bootstrap_resamples": getattr(
+                        args, "bootstrap_resamples", 2000,
+                    ),
+                    "bootstrap_confidence": getattr(
+                        args, "bootstrap_confidence", 0.95,
+                    ),
                     "bootstrap_engine": getattr(
                         args, "bootstrap_engine", "loop",
                     ),
@@ -1138,7 +1250,7 @@ def _aggregate_calibration_records(
     return _build_aggregator_payload(
         state=state, fpr_target=final_fpr,
         contributing_shards=contributing_shards,
-        n_records=len(all_records),
+        n_records=n_records_effective,
         per_signal=per_signal,
         perf_meta=perf_meta,
         status="complete",
@@ -1228,10 +1340,19 @@ def _aggregate_corpus_hygiene_records(
     contributing_shards: list[str],
     state: dict[str, Any],
     args: argparse.Namespace,
+    shard_cache_paths: list[Path] | None = None,
 ) -> dict[str, Any]:
     """Roll up per-file hygiene records into the aggregate shape
     ``check_corpus.check_corpus_paths`` produces for single-process
     runs.
+
+    ``shard_cache_paths`` accepted for surface-contract uniformity
+    (1.68.0+) but currently UNUSED — corpus_hygiene does not yet
+    support streaming. When the operator passes ``--stream-pair-
+    extraction`` to a corpus_hygiene aggregate, this surface emits
+    a stderr warning and proceeds with ``all_records`` (which will
+    be empty in streaming mode). Streaming support is a follow-up
+    PR.
 
     We delegate to the same ``_summarize_hygiene_records`` helper
     the single-process path uses, then layer on the cross-shard
@@ -1241,6 +1362,17 @@ def _aggregate_corpus_hygiene_records(
     """
     # Lazy import — same reasons as the scorer adapter.
     import check_corpus as cc  # type: ignore
+
+    if shard_cache_paths is not None and not all_records:
+        # Operator passed --stream-pair-extraction; corpus_hygiene
+        # doesn't yet support streaming. Warn and proceed with the
+        # empty all_records — the summary will reflect "0 records".
+        sys.stderr.write(
+            "  corpus_hygiene aggregator: streaming pre-extraction "
+            "is not yet supported for this surface. The aggregate "
+            "will report 0 records. Drop --stream-pair-extraction, "
+            "or wait for the corpus_hygiene streaming PR.\n"
+        )
 
     task_params = state.get("task_params") or {}
     warn_threshold = float(
