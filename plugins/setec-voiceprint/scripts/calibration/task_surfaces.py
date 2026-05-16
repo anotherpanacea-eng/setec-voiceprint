@@ -505,6 +505,89 @@ def _allocate_shared_pair_arrays(
     return sm_l, sm_s, sm_l.name, sm_s.name, n
 
 
+def _build_aggregator_payload(
+    *,
+    state: dict[str, Any],
+    fpr_target: float | None,
+    contributing_shards: list[str],
+    n_records: int,
+    per_signal: dict[str, Any],
+    perf_meta: dict[str, Any],
+    status: str,
+) -> dict[str, Any]:
+    """Build the aggregator's return payload. Factored out so the
+    incremental-save path (after each signal completion) can emit
+    the same shape the final return uses, with only ``status``
+    flipping from ``"in_progress"`` to ``"complete"``."""
+    return {
+        "task_surface": "calibration",
+        "tool": "shard_runner",
+        "tool_version": "1.0",
+        "run_id": state.get("run_id"),
+        "source_manifest_sha256": state.get("source_manifest_sha256"),
+        "fpr_target": (
+            state.get("fpr_target")
+            if state.get("fpr_target") is not None
+            else state.get("task_params", {}).get("fpr_target")
+        ),
+        "n_records": n_records,
+        "n_shards_contributed": len(contributing_shards),
+        "contributing_shards": contributing_shards,
+        "embedding_model": state.get("embedding_model"),
+        "embedding_revision": state.get("embedding_revision"),
+        "per_signal": per_signal,
+        "aggregator_perf": perf_meta or None,
+        "status": status,
+        "aggregated_at": _dt.datetime.now(
+            _dt.timezone.utc,
+        ).isoformat(timespec="seconds"),
+    }
+
+
+def _save_aggregator_partial(
+    payload: dict[str, Any], out_path: Path,
+) -> None:
+    """Atomic write of the aggregator payload to ``out_path``.
+
+    Used for both incremental in-progress saves and the final
+    complete save. The tmp + rename dance prevents leaving a
+    partially-written JSON on disk if the script crashes mid-write
+    (which would defeat the purpose of checkpointing).
+    """
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = out_path.with_suffix(out_path.suffix + ".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, sort_keys=True)
+    tmp.replace(out_path)
+
+
+def _load_resume_state(
+    out_path: Path,
+) -> tuple[dict[str, Any], str | None]:
+    """Load a prior aggregate's per_signal dict for resume, plus
+    the prior status. Returns ``({}, None)`` when the file doesn't
+    exist or can't be parsed.
+
+    Resume contract: a payload with ``status == "in_progress"`` is
+    a clean checkpoint — its ``per_signal`` entries are dispatch
+    results that should be skipped on restart. ``status ==
+    "complete"`` means the prior run finished; resume re-uses its
+    entries too (so a re-run with the same ``--out`` is a no-op
+    unless ``--no-resume`` is passed).
+    """
+    if not out_path.exists():
+        return {}, None
+    try:
+        existing = json.loads(out_path.read_text(encoding="utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        sys.stderr.write(
+            f"  could not parse prior --out {out_path} for resume: "
+            f"{type(exc).__name__}: {exc}. Starting fresh.\n"
+        )
+        return {}, None
+    return (existing.get("per_signal") or {}), existing.get("status")
+
+
 def _aggregate_calibration_records(
     *,
     all_records: list[dict[str, Any]],
@@ -516,10 +599,11 @@ def _aggregate_calibration_records(
     """Run ``calibrate_thresholds.derive_threshold_from_records``
     once per signal and emit the aggregated survey payload.
 
-    Memory-hardened parallel implementation (see module-level
-    "calibration_survey aggregator" comment for the four-layer
-    design). Recognized CLI args (read via ``getattr`` for back-
-    compat with callers that don't set them):
+    Memory-hardened parallel implementation with checkpoint +
+    resume (see module-level "calibration_survey aggregator"
+    comment for the four-layer memory design). Recognized CLI args
+    (read via ``getattr`` for back-compat with callers that don't
+    set them):
 
       * ``bootstrap_engine`` / ``bootstrap_chunk_size`` /
         ``bootstrap_device`` — propagated to each per-signal
@@ -532,6 +616,16 @@ def _aggregate_calibration_records(
         ``aggregate_workers`` so total ≤ this. None disables.
       * ``no_derive`` — skip per-signal derivation; emit only
         aggregated records + meta.
+      * ``out`` — destination JSON path. When set, the aggregator
+        writes a partial payload after every signal completion
+        (status="in_progress") so a crash mid-sweep doesn't lose
+        the work done so far. The final write flips status to
+        "complete". Atomic writes (tmp + rename) prevent partial-
+        file corruption.
+      * ``resume`` — when True (default), and ``--out`` exists with
+        a parseable prior payload, skip signals already in its
+        ``per_signal`` dict. Pass ``--no-resume`` to force a fresh
+        sweep regardless of any prior partial.
     """
     if not getattr(args, "no_derive", False):
         try:
@@ -548,6 +642,26 @@ def _aggregate_calibration_records(
 
     per_signal: dict[str, Any] = {}
     perf_meta: dict[str, Any] = {}
+
+    # --- Resume from prior partial (if --out exists and --resume).
+    out_path_str = getattr(args, "out", None)
+    out_path = Path(out_path_str).expanduser() if out_path_str else None
+    resume = bool(getattr(args, "resume", True))
+    resumed_signals: list[str] = []
+    if out_path is not None and resume:
+        prior_per_signal, prior_status = _load_resume_state(out_path)
+        if prior_per_signal:
+            per_signal.update(prior_per_signal)
+            resumed_signals = sorted(prior_per_signal.keys())
+            sys.stderr.write(
+                f"  resume: carried forward {len(resumed_signals)} "
+                f"signal(s) from prior --out {out_path} "
+                f"(prior status={prior_status!r}). Pass --no-resume "
+                f"to force a fresh sweep.\n"
+            )
+            perf_meta["resumed_from_partial"] = True
+            perf_meta["resumed_signal_count"] = len(resumed_signals)
+
     if ct is not None and all_records:
         merged_meta = meta_list[0] if meta_list else {}
         fpr_target = state.get("fpr_target")
@@ -601,12 +715,20 @@ def _aggregate_calibration_records(
                 len(signals) - len(per_signal_pairs)
             )
 
-        # Dispatch every signal. Workers decide per-signal whether
-        # to use the fast path (pre-extracted pairs available) or
-        # the legacy path (pass the full records list — slower, but
-        # what the existing tests cover and what the pre-PR
-        # implementation always did).
-        dispatch_signals = list(signals)
+        # Dispatch every signal NOT already in per_signal (from
+        # resume). Workers decide per-signal whether to use the fast
+        # path (pre-extracted pairs available) or the legacy path
+        # (pass the full records list — slower, but what the existing
+        # tests cover and what the pre-PR implementation always did).
+        dispatch_signals = [
+            s for s in signals if s not in per_signal
+        ]
+        if resumed_signals:
+            sys.stderr.write(
+                f"  resume: skipping {len(resumed_signals)} already-"
+                f"complete signal(s); dispatching "
+                f"{len(dispatch_signals)} remaining.\n"
+            )
 
         # --- Layer 4 (Zip) + Layer 2/3 selection: choose executor.
         requested_workers = max(1, int(getattr(
@@ -644,12 +766,13 @@ def _aggregate_calibration_records(
         def _pairs_for(sig: str) -> list[tuple[int, float]] | None:
             return per_signal_pairs.get(sig) if sig in per_signal_pairs else None
 
-        # Per-signal completion logger. Operators running aggregates
-        # at MAGE / RAID scale (5-30 min wall-clock) need to see
-        # progress as it lands, not silence followed by a single
-        # "written" line. The parallel paths populate per_signal as
-        # futures complete; this helper logs each arrival with the
-        # elapsed time and a one-word verdict.
+        # Per-signal completion logger + checkpoint writer.
+        # Operators running aggregates at MAGE / RAID scale (5-30
+        # min wall-clock) need (a) progress visibility as signals
+        # land, not silence followed by a single "written" line, and
+        # (b) a partial JSON on disk after every signal so a crash
+        # mid-sweep doesn't lose the work done so far. Both happen
+        # here, in the same per-signal-completion callback.
         def _log_signal_done(name: str, entry: dict, t_start) -> None:
             t = (_dt.datetime.now() - t_start).total_seconds()
             err = entry.get("error") if isinstance(entry, dict) else None
@@ -658,6 +781,25 @@ def _aggregate_calibration_records(
                 f"  [{t:6.1f}s] --> {name}: {tag}\n"
             )
             sys.stderr.flush()
+            # Checkpoint: snapshot the partial payload so a crash
+            # on a later signal doesn't discard this one.
+            if out_path is not None:
+                try:
+                    partial = _build_aggregator_payload(
+                        state=state, fpr_target=fpr_target,
+                        contributing_shards=contributing_shards,
+                        n_records=len(all_records),
+                        per_signal=per_signal,
+                        perf_meta=perf_meta,
+                        status="in_progress",
+                    )
+                    _save_aggregator_partial(partial, out_path)
+                except Exception as exc:  # noqa: BLE001
+                    sys.stderr.write(
+                        f"  WARNING: partial-save to {out_path} "
+                        f"failed: {type(exc).__name__}: {exc}. "
+                        f"Continuing without checkpoint.\n"
+                    )
 
         sweep_t0 = _dt.datetime.now()
         if capped_workers <= 1 or len(dispatch_signals) <= 1:
@@ -847,28 +989,21 @@ def _aggregate_calibration_records(
         perf_meta["sweep_s"] = round(sweep_s, 3)
         perf_meta["n_signals_dispatched"] = len(dispatch_signals)
 
-    return {
-        "task_surface": "calibration",
-        "tool": "shard_runner",
-        "tool_version": "1.0",
-        "run_id": state.get("run_id"),
-        "source_manifest_sha256": state.get("source_manifest_sha256"),
-        "fpr_target": (
-            state.get("fpr_target")
-            if state.get("fpr_target") is not None
-            else state.get("task_params", {}).get("fpr_target")
-        ),
-        "n_records": len(all_records),
-        "n_shards_contributed": len(contributing_shards),
-        "contributing_shards": contributing_shards,
-        "embedding_model": state.get("embedding_model"),
-        "embedding_revision": state.get("embedding_revision"),
-        "per_signal": per_signal,
-        "aggregator_perf": perf_meta or None,
-        "aggregated_at": _dt.datetime.now(
-            _dt.timezone.utc,
-        ).isoformat(timespec="seconds"),
-    }
+    # Final fpr_target lookup (for the no-records / no-derive paths
+    # where the inner block didn't compute it).
+    final_fpr = (
+        state.get("fpr_target")
+        if state.get("fpr_target") is not None
+        else (state.get("task_params") or {}).get("fpr_target")
+    )
+    return _build_aggregator_payload(
+        state=state, fpr_target=final_fpr,
+        contributing_shards=contributing_shards,
+        n_records=len(all_records),
+        per_signal=per_signal,
+        perf_meta=perf_meta,
+        status="complete",
+    )
 
 
 # --------------- corpus_hygiene scorer adapter ------------------
