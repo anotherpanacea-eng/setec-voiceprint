@@ -1268,6 +1268,7 @@ def score_corpus(
     *,
     partial_cache_path: Path | None = None,
     flush_every: int = 100,
+    refresh: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Score every (filtered, optionally sub-sampled) manifest entry.
 
@@ -1352,7 +1353,34 @@ def score_corpus(
     records: list[dict[str, Any]] = []
     scored_ids: set[str] = set()
     resumed_count = 0
-    if partial_cache_path is not None and partial_cache_path.exists():
+    if refresh and partial_cache_path is not None and partial_cache_path.exists():
+        # ``--refresh-cache`` semantics: the operator explicitly asked
+        # for a fresh score pass. Do not read the partial cache (skip
+        # resume) and unlink the on-disk file so the very next flush
+        # writes a clean cache rather than appending the new pass to
+        # the stale ``records`` array. Without the unlink we'd keep
+        # status="complete" honest only after the run finished — a
+        # crash mid-refresh would leave a partial cache mixing the
+        # discarded prior run's first N records with the new pass's
+        # first M-N. Codex P2 on PR #68.
+        try:
+            partial_cache_path.unlink()
+            sys.stdout.write(
+                f"--refresh-cache: discarded prior partial cache at "
+                f"{partial_cache_path}; re-scoring from scratch.\n"
+            )
+        except OSError as exc:
+            sys.stdout.write(
+                f"--refresh-cache: could not remove prior partial "
+                f"cache at {partial_cache_path} ({exc}); proceeding "
+                f"without resume (cache will be overwritten on the "
+                f"first flush).\n"
+            )
+    if (
+        not refresh
+        and partial_cache_path is not None
+        and partial_cache_path.exists()
+    ):
         try:
             cached = json.loads(
                 partial_cache_path.read_text(encoding="utf-8")
@@ -1630,6 +1658,7 @@ def load_or_score_corpus(
         args,
         partial_cache_path=cache_path,
         flush_every=flush_every,
+        refresh=refresh,
     )
     if cache_path:
         _save_score_cache(

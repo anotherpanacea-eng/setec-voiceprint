@@ -6,6 +6,22 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.79.1] - 2026-05-16
+
+**Fix: `--refresh-cache` now actually refreshes.** Codex P2 on PR #68. The flag bypassed the *complete-cache hit* return path in `load_or_score_corpus` but did not flow through to `score_corpus`, which unconditionally read the partial cache and resumed from it. So `--refresh-cache` against an `in_progress` cache silently kept the prior partial's records and only re-scored the missing tail — the opposite of what the operator asked for.
+
+### Fixed
+
+- **`score_corpus(refresh: bool = False)` parameter added.** When `refresh=True`, the function unlinks the existing partial cache file (if any) before the scoring loop and skips the resume-from-partial read block. Without the unlink, a crash mid-refresh would leave a partial that interleaved the discarded prior run's first N records with the new pass's first M-N — a worse state than the bug it was meant to fix.
+- **`load_or_score_corpus` now plumbs `refresh` into `score_corpus`.** Single-line change at the call site; preserves the default-False contract so all pre-existing callers (which never passed `refresh`) keep their behavior.
+
+### Added
+
+- **3 new regression tests** in `test_incremental_corpus_scoring.py` under "REFRESH-CACHE × PARTIAL-RESUME":
+  - `test_refresh_cache_discards_partial_resume` — pins the fix: refresh=True against an in_progress partial triggers a full re-score, not a 2-of-5 resume.
+  - `test_refresh_cache_unlinks_prior_partial` — pins the unlink semantics: a sentinel record planted in the partial does NOT appear in the post-refresh records.
+  - `test_refresh_cache_default_false_preserves_resume` — regression guard that the 1.79.0 resume contract still works when refresh=False (we didn't accidentally rip out the resume path).
+
 ## [1.79.0] - 2026-05-16
 
 **Incremental corpus-scoring cache + resume.** Stacked on the 1.78.0 streaming-pair-extraction branch. Closes the same all-or-nothing failure mode in `calibrate_thresholds.score_corpus` that the 1.76.0 PR closed for the aggregator: a long scoring run that crashes mid-loop loses everything because the cache is written only once at the end.

@@ -254,6 +254,134 @@ def test_pre_1_69_cache_without_status_treated_as_complete(tmp_path):
     assert counter2["calls"] == 0
 
 
+# --------------- REFRESH-CACHE × PARTIAL-RESUME (codex P2 on #68) ----------
+
+
+def test_refresh_cache_discards_partial_resume(tmp_path):
+    """When the operator passes ``--refresh-cache``, the partial-
+    cache resume path in ``score_corpus`` must NOT fire.
+
+    Bug fixed by this test: ``load_or_score_corpus(refresh=True)``
+    only bypassed the *complete-cache hit* return path. It still
+    handed ``partial_cache_path=cache_path`` to ``score_corpus``,
+    which unconditionally read the partial cache and resumed from
+    it — silently ignoring the operator's explicit refresh ask.
+    """
+    manifest = _write_real_manifest(tmp_path, n_entries=5)
+    cache = tmp_path / "cache.json"
+    args = _make_args(manifest, records_cache=str(cache))
+
+    # First: score all 5 normally, then flip the on-disk cache to
+    # status="in_progress" with only 3 records so a resume would
+    # leave 2 entries unscored.
+    counter = {"calls": 0}
+    with _patch_scoring(counter):
+        records, scoring_meta, _ = ct.load_or_score_corpus(
+            args, cache_path=cache,
+        )
+    assert counter["calls"] == 5
+    partial = {
+        "status": "in_progress",
+        "scoring_meta": scoring_meta,
+        "records": records[:3],
+    }
+    cache.write_text(json.dumps(partial, default=str))
+
+    # Now ask for a refresh. Bug behavior: only 2 entries re-scored
+    # (resume kicked in). Fixed behavior: all 5 re-scored (resume
+    # skipped because refresh=True).
+    counter2 = {"calls": 0}
+    with _patch_scoring(counter2):
+        records2, _meta2, hit = ct.load_or_score_corpus(
+            args, cache_path=cache, refresh=True,
+        )
+    assert hit is False
+    assert counter2["calls"] == 5, (
+        f"--refresh-cache must trigger a full re-score; got "
+        f"{counter2['calls']} score calls (expected 5). The "
+        f"partial-cache resume path must not fire when refresh=True."
+    )
+    assert len(records2) == 5
+
+
+def test_refresh_cache_unlinks_prior_partial(tmp_path):
+    """``--refresh-cache`` should unlink the pre-existing partial
+    cache file before scoring so a crash mid-refresh leaves a clean
+    partial — not a partial that interleaves the discarded prior
+    run's first N records with the new pass's first M-N records."""
+    manifest = _write_real_manifest(tmp_path, n_entries=4)
+    cache = tmp_path / "cache.json"
+    # Plant a partial cache that we explicitly want discarded.
+    partial = {
+        "status": "in_progress",
+        "scoring_meta": {
+            "manifest_path": str(manifest),
+            "manifest_sha256": "doesnt-matter-refresh-discards-without-check",
+            "use": "validation",
+            "do_tier2": False,
+            "do_tier3": False,
+            "scorer_version": ct.SCORER_CACHE_VERSION,
+        },
+        "records": [
+            {"id": "essay_99", "score": 0.99, "label": 1},
+        ],
+    }
+    cache.write_text(json.dumps(partial))
+    args = _make_args(manifest, records_cache=str(cache))
+
+    counter = {"calls": 0}
+    with _patch_scoring(counter):
+        records, _meta = ct.score_corpus(
+            args,
+            partial_cache_path=cache,
+            flush_every=100,
+            refresh=True,
+        )
+    # All 4 manifest entries scored fresh — no carry-forward from
+    # the discarded partial. The sentinel essay_99 id from the prior
+    # partial does NOT appear in the new records.
+    assert counter["calls"] == 4
+    ids = {r["id"] for r in records}
+    assert "essay_99" not in ids, (
+        f"refresh=True must not carry forward records from the prior "
+        f"partial cache; got ids={ids}"
+    )
+
+
+def test_refresh_cache_default_false_preserves_resume(tmp_path):
+    """Regression guard: without --refresh-cache, the partial-
+    resume path keeps working (we didn't accidentally rip out the
+    1.69.0 resume contract while fixing the refresh interaction)."""
+    manifest = _write_real_manifest(tmp_path, n_entries=5)
+    cache = tmp_path / "cache.json"
+    args = _make_args(manifest, records_cache=str(cache))
+
+    counter = {"calls": 0}
+    with _patch_scoring(counter):
+        records, scoring_meta, _ = ct.load_or_score_corpus(
+            args, cache_path=cache,
+        )
+    assert counter["calls"] == 5
+
+    partial = {
+        "status": "in_progress",
+        "scoring_meta": scoring_meta,
+        "records": records[:3],
+    }
+    cache.write_text(json.dumps(partial, default=str))
+
+    # No refresh flag: resume should fire, only 2 fresh score calls.
+    counter2 = {"calls": 0}
+    with _patch_scoring(counter2):
+        _records2, _meta2, _hit = ct.load_or_score_corpus(
+            args, cache_path=cache,
+        )
+    assert counter2["calls"] == 2, (
+        f"resume contract regressed: expected 2 fresh score calls "
+        f"with refresh=False; got {counter2['calls']}"
+    )
+
+
 # --------------- MEASURE (rate + ETA in progress log) ----------
 
 
