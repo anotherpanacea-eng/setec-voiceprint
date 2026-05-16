@@ -563,29 +563,127 @@ def _save_aggregator_partial(
 
 def _load_resume_state(
     out_path: Path,
-) -> tuple[dict[str, Any], str | None]:
-    """Load a prior aggregate's per_signal dict for resume, plus
-    the prior status. Returns ``({}, None)`` when the file doesn't
-    exist or can't be parsed.
+) -> dict[str, Any] | None:
+    """Load a prior aggregate payload from ``out_path`` for resume.
 
-    Resume contract: a payload with ``status == "in_progress"`` is
-    a clean checkpoint — its ``per_signal`` entries are dispatch
-    results that should be skipped on restart. ``status ==
-    "complete"`` means the prior run finished; resume re-uses its
-    entries too (so a re-run with the same ``--out`` is a no-op
-    unless ``--no-resume`` is passed).
+    Returns the raw parsed payload dict on success, or ``None``
+    when the file doesn't exist or can't be parsed. Callers do
+    the compatibility check against the current run's inputs
+    via :func:`_resume_compat_reason` before carrying entries
+    forward — silently inheriting per_signal entries from a
+    stale run is the bug codex flagged on PR #64.
     """
     if not out_path.exists():
-        return {}, None
+        return None
     try:
-        existing = json.loads(out_path.read_text(encoding="utf-8"))
+        return json.loads(out_path.read_text(encoding="utf-8"))
     except Exception as exc:  # noqa: BLE001
         sys.stderr.write(
             f"  could not parse prior --out {out_path} for resume: "
             f"{type(exc).__name__}: {exc}. Starting fresh.\n"
         )
-        return {}, None
-    return (existing.get("per_signal") or {}), existing.get("status")
+        return None
+
+
+def _resume_compat_reason(
+    prior_payload: dict[str, Any],
+    *,
+    state: dict[str, Any],
+    contributing_shards: list[str],
+    fpr_target: float | None,
+    args: argparse.Namespace,
+) -> str | None:
+    """Check whether ``prior_payload`` is compatible with the
+    current run's inputs. Returns ``None`` when compatible (resume
+    can proceed) or a one-line human-readable reason string when
+    NOT compatible (caller refuses resume and starts fresh).
+
+    Fields compared (codex P2 on PR #64):
+      * ``source_manifest_sha256`` — the canonical "are we
+        looking at the same corpus" hash. A missing field on the
+        prior payload (older partial cache) is tolerated; a
+        present-but-different value is the canonical staleness
+        signal.
+      * ``fpr_target`` — different FPR target shifts every
+        signal's chosen operating point; resuming would mix
+        thresholds derived under different targets into one
+        survey.
+      * ``contributing_shards`` — different shard set means the
+        record union is different, so per_signal entries from
+        the prior subset don't represent the same population.
+      * ``aggregator_perf.bootstrap_engine`` — different engine
+        means the bootstrap CIs aren't comparable.
+      * ``aggregator_perf.bootstrap_resamples`` — different N
+        for bootstrap CIs means different CI widths.
+
+    Tolerates fields missing on the prior payload (pre-fix
+    partial caches won't have all of them). Refuses when both
+    sides have the field but disagree.
+    """
+    prior_manifest_sha = prior_payload.get("source_manifest_sha256")
+    current_manifest_sha = state.get("source_manifest_sha256")
+    if (
+        prior_manifest_sha is not None
+        and current_manifest_sha is not None
+        and prior_manifest_sha != current_manifest_sha
+    ):
+        return (
+            f"source_manifest_sha256 differs: prior="
+            f"{prior_manifest_sha[:16]}..., current="
+            f"{current_manifest_sha[:16]}..."
+        )
+
+    prior_fpr = prior_payload.get("fpr_target")
+    if (
+        prior_fpr is not None
+        and fpr_target is not None
+        and prior_fpr != fpr_target
+    ):
+        return (
+            f"fpr_target differs: prior={prior_fpr}, "
+            f"current={fpr_target}"
+        )
+
+    prior_shards = prior_payload.get("contributing_shards")
+    if prior_shards is not None:
+        prior_set = sorted(prior_shards)
+        current_set = sorted(contributing_shards)
+        if prior_set != current_set:
+            return (
+                f"contributing_shards differs: prior n="
+                f"{len(prior_set)}, current n={len(current_set)} "
+                f"(missing-from-current="
+                f"{sorted(set(prior_set) - set(current_set))[:3]!r}, "
+                f"new-in-current="
+                f"{sorted(set(current_set) - set(prior_set))[:3]!r})"
+            )
+
+    prior_perf = prior_payload.get("aggregator_perf") or {}
+    prior_engine = prior_perf.get("bootstrap_engine")
+    current_engine = getattr(args, "bootstrap_engine", "loop")
+    if (
+        prior_engine is not None
+        and prior_engine != current_engine
+    ):
+        return (
+            f"bootstrap_engine differs: prior={prior_engine!r}, "
+            f"current={current_engine!r}"
+        )
+
+    prior_resamples = prior_perf.get("bootstrap_resamples")
+    current_resamples = int(
+        getattr(args, "bootstrap_resamples", 2000)
+    )
+    if (
+        prior_resamples is not None
+        and prior_resamples != current_resamples
+    ):
+        return (
+            f"bootstrap_resamples differs: prior={prior_resamples}, "
+            f"current={current_resamples}"
+        )
+
+    return None
 
 
 def _aggregate_calibration_records(
@@ -644,23 +742,58 @@ def _aggregate_calibration_records(
     perf_meta: dict[str, Any] = {}
 
     # --- Resume from prior partial (if --out exists and --resume).
+    # The compat check (codex P2 on PR #64) refuses to carry
+    # entries forward when the prior payload was produced under
+    # different inputs (different manifest hash, FPR target,
+    # contributing shards, bootstrap engine, or resamples). Silent
+    # acceptance of stale entries would mix incompatible thresholds
+    # into one survey.
     out_path_str = getattr(args, "out", None)
     out_path = Path(out_path_str).expanduser() if out_path_str else None
     resume = bool(getattr(args, "resume", True))
     resumed_signals: list[str] = []
+    # We need fpr_target / contributing_shards available now for
+    # the compat check, even though they're also computed inside
+    # the per-signal sweep block below. Compute once here.
+    _resume_fpr_target = state.get("fpr_target")
+    if _resume_fpr_target is None:
+        _resume_fpr_target = (
+            state.get("task_params") or {}
+        ).get("fpr_target", 0.01)
     if out_path is not None and resume:
-        prior_per_signal, prior_status = _load_resume_state(out_path)
-        if prior_per_signal:
-            per_signal.update(prior_per_signal)
-            resumed_signals = sorted(prior_per_signal.keys())
-            sys.stderr.write(
-                f"  resume: carried forward {len(resumed_signals)} "
-                f"signal(s) from prior --out {out_path} "
-                f"(prior status={prior_status!r}). Pass --no-resume "
-                f"to force a fresh sweep.\n"
+        prior_payload = _load_resume_state(out_path)
+        if prior_payload is not None:
+            incompat_reason = _resume_compat_reason(
+                prior_payload, state=state,
+                contributing_shards=contributing_shards,
+                fpr_target=_resume_fpr_target, args=args,
             )
-            perf_meta["resumed_from_partial"] = True
-            perf_meta["resumed_signal_count"] = len(resumed_signals)
+            if incompat_reason is not None:
+                sys.stderr.write(
+                    f"  resume: REFUSED — prior --out {out_path} "
+                    f"is incompatible with this run "
+                    f"({incompat_reason}). Pass --no-resume to "
+                    f"overwrite, or use a different --out path "
+                    f"to preserve the prior payload.\n"
+                )
+                perf_meta["resume_refused_reason"] = incompat_reason
+            else:
+                prior_per_signal = prior_payload.get("per_signal") or {}
+                prior_status = prior_payload.get("status")
+                if prior_per_signal:
+                    per_signal.update(prior_per_signal)
+                    resumed_signals = sorted(prior_per_signal.keys())
+                    sys.stderr.write(
+                        f"  resume: carried forward "
+                        f"{len(resumed_signals)} signal(s) from "
+                        f"prior --out {out_path} (prior status="
+                        f"{prior_status!r}). Pass --no-resume to "
+                        f"force a fresh sweep.\n"
+                    )
+                    perf_meta["resumed_from_partial"] = True
+                    perf_meta["resumed_signal_count"] = (
+                        len(resumed_signals)
+                    )
 
     if ct is not None and all_records:
         merged_meta = meta_list[0] if meta_list else {}
@@ -756,6 +889,12 @@ def _aggregate_calibration_records(
             "worker_cap_reason": cap_reason or None,
             "bootstrap_engine": getattr(
                 args, "bootstrap_engine", "loop",
+            ),
+            # Recorded so future resume runs can detect a change
+            # in --bootstrap-resamples via the resume compat check
+            # (codex P2 on PR #64).
+            "bootstrap_resamples": int(
+                getattr(args, "bootstrap_resamples", 2000),
             ),
         })
 

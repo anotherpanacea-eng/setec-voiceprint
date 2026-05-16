@@ -391,3 +391,217 @@ def test_aggregator_perf_records_resume(
     perf = final["aggregator_perf"]
     assert perf["resumed_from_partial"] is True
     assert perf["resumed_signal_count"] == 2
+
+
+# --------------- Compat check on resume (codex P2 on PR #64) ----------
+
+
+def _plant_partial(
+    out: Path,
+    *,
+    per_signal: dict,
+    source_manifest_sha256: str | None = None,
+    fpr_target: float | None = None,
+    contributing_shards: list[str] | None = None,
+    bootstrap_engine: str | None = None,
+    bootstrap_resamples: int | None = None,
+):
+    """Write a partial payload with the specified compat fields.
+    Fields set to None are omitted (so the test can plant partials
+    that look like pre-fix caches missing some fields)."""
+    payload: dict = {
+        "status": "in_progress",
+        "task_surface": "calibration",
+        "tool": "shard_runner",
+        "per_signal": per_signal,
+    }
+    if source_manifest_sha256 is not None:
+        payload["source_manifest_sha256"] = source_manifest_sha256
+    if fpr_target is not None:
+        payload["fpr_target"] = fpr_target
+    if contributing_shards is not None:
+        payload["contributing_shards"] = contributing_shards
+    perf: dict = {}
+    if bootstrap_engine is not None:
+        perf["bootstrap_engine"] = bootstrap_engine
+    if bootstrap_resamples is not None:
+        perf["bootstrap_resamples"] = bootstrap_resamples
+    if perf:
+        payload["aggregator_perf"] = perf
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(payload))
+
+
+def _run_aggregate(
+    base: Path, run_id: str, out: Path, *extra: str,
+) -> int:
+    return sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id, "--out", str(out), *extra,
+    ])
+
+
+def test_resume_refused_when_manifest_sha_differs(
+    hardened_run, tmp_path: Path,
+):
+    """Codex P2 on PR #64: when the prior partial's
+    source_manifest_sha256 disagrees with the current run's,
+    refuse to carry entries forward — silently inheriting them
+    would mix thresholds derived from different corpora."""
+    base = hardened_run["base"]
+    run_id = hardened_run["run_id"]
+    out = tmp_path / "agg.json"
+    _plant_partial(
+        out,
+        per_signal={
+            "burstiness_B": {"slug": "stale", "derived_value": 9.99},
+        },
+        source_manifest_sha256="deadbeef" * 8,
+        fpr_target=0.01,
+        bootstrap_engine="loop",
+    )
+    rc = _run_aggregate(base, run_id, out)
+    assert rc == 0
+    final = json.loads(out.read_text(encoding="utf-8"))
+    assert final["per_signal"]["burstiness_B"].get("slug") != "stale"
+    perf = final["aggregator_perf"]
+    assert "resume_refused_reason" in perf
+    assert "source_manifest_sha256" in perf["resume_refused_reason"]
+
+
+def test_resume_refused_when_fpr_target_differs(
+    hardened_run, tmp_path: Path,
+):
+    base = hardened_run["base"]
+    run_id = hardened_run["run_id"]
+    out = tmp_path / "agg.json"
+    _plant_partial(
+        out,
+        per_signal={"mattr": {"slug": "stale_fpr"}},
+        fpr_target=0.99,
+    )
+    rc = _run_aggregate(base, run_id, out)
+    assert rc == 0
+    final = json.loads(out.read_text(encoding="utf-8"))
+    perf = final["aggregator_perf"]
+    assert "resume_refused_reason" in perf
+    assert "fpr_target" in perf["resume_refused_reason"]
+
+
+def test_resume_refused_when_contributing_shards_differ(
+    hardened_run, tmp_path: Path,
+):
+    base = hardened_run["base"]
+    run_id = hardened_run["run_id"]
+    out = tmp_path / "agg.json"
+    _plant_partial(
+        out,
+        per_signal={"mattr": {"slug": "stale_shards"}},
+        contributing_shards=["999", "9999"],
+    )
+    rc = _run_aggregate(base, run_id, out)
+    assert rc == 0
+    final = json.loads(out.read_text(encoding="utf-8"))
+    perf = final["aggregator_perf"]
+    assert "resume_refused_reason" in perf
+    assert "contributing_shards" in perf["resume_refused_reason"]
+
+
+def test_resume_refused_when_bootstrap_engine_differs(
+    hardened_run, tmp_path: Path,
+):
+    base = hardened_run["base"]
+    run_id = hardened_run["run_id"]
+    out = tmp_path / "agg.json"
+    _plant_partial(
+        out,
+        per_signal={"mattr": {"slug": "stale_engine"}},
+        bootstrap_engine="torch",
+    )
+    # Current run uses loop (the default) — engine differs.
+    rc = _run_aggregate(base, run_id, out)
+    assert rc == 0
+    final = json.loads(out.read_text(encoding="utf-8"))
+    perf = final["aggregator_perf"]
+    assert "resume_refused_reason" in perf
+    assert "bootstrap_engine" in perf["resume_refused_reason"]
+
+
+def test_resume_refused_when_bootstrap_resamples_differs(
+    hardened_run, tmp_path: Path,
+):
+    base = hardened_run["base"]
+    run_id = hardened_run["run_id"]
+    out = tmp_path / "agg.json"
+    _plant_partial(
+        out,
+        per_signal={"mattr": {"slug": "stale_resamples"}},
+        bootstrap_resamples=42,
+    )
+    rc = _run_aggregate(base, run_id, out)
+    assert rc == 0
+    final = json.loads(out.read_text(encoding="utf-8"))
+    perf = final["aggregator_perf"]
+    assert "resume_refused_reason" in perf
+    assert "bootstrap_resamples" in perf["resume_refused_reason"]
+
+
+def test_resume_accepted_when_all_compat_fields_missing_backcompat(
+    hardened_run, tmp_path: Path,
+):
+    """Back-compat: a partial cache from before the compat check
+    landed has none of the compat fields. The check tolerates
+    them missing (returns None reason) so existing operator
+    caches keep working. Codex's failure mode is fields PRESENT
+    but DIFFERENT — see prior tests."""
+    base = hardened_run["base"]
+    run_id = hardened_run["run_id"]
+    out = tmp_path / "agg.json"
+    _plant_partial(
+        out,
+        per_signal={
+            "mattr": {"slug": "legacy_carry", "derived_value": 0.5},
+        },
+    )
+    rc = _run_aggregate(base, run_id, out)
+    assert rc == 0
+    final = json.loads(out.read_text(encoding="utf-8"))
+    assert final["per_signal"]["mattr"]["slug"] == "legacy_carry"
+    perf = final["aggregator_perf"]
+    assert "resume_refused_reason" not in perf
+    assert perf.get("resumed_from_partial") is True
+
+
+def test_resume_accepted_when_all_compat_fields_match(
+    hardened_run, tmp_path: Path,
+):
+    """Happy path: prior partial's compat fields all match the
+    current run. Resume proceeds without warning."""
+    base = hardened_run["base"]
+    run_id = hardened_run["run_id"]
+    state_path = sr.state_path(base, run_id)
+    state = json.loads(state_path.read_text(encoding="utf-8"))
+    actual_manifest_sha = state.get("source_manifest_sha256")
+    actual_shards = sorted(state.get("shards", {}).keys())
+    out = tmp_path / "agg.json"
+    _plant_partial(
+        out,
+        per_signal={
+            "mattr": {
+                "slug": "matched_carry",
+                "derived_value": 0.5,
+            },
+        },
+        source_manifest_sha256=actual_manifest_sha,
+        fpr_target=0.01,
+        contributing_shards=actual_shards,
+        bootstrap_engine="loop",
+        bootstrap_resamples=2000,
+    )
+    rc = _run_aggregate(base, run_id, out)
+    assert rc == 0
+    final = json.loads(out.read_text(encoding="utf-8"))
+    assert final["per_signal"]["mattr"]["slug"] == "matched_carry"
+    perf = final["aggregator_perf"]
+    assert "resume_refused_reason" not in perf
+    assert perf.get("resumed_from_partial") is True
