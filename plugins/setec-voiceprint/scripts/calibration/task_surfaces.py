@@ -872,14 +872,33 @@ def _aggregate_calibration_records(
                 per_signal_pairs[sig_name] = []
             streamed_n_records = 0
             extraction_failures: set[str] = set()
+            # Codex P2 on PR #66: an unreadable shard cache used to
+            # be silently skipped, leaving the operator with
+            # calibration thresholds derived from a strictly smaller
+            # set of records than they thought. Default behavior is
+            # now to error out at the end of the loop if any shard
+            # was unreadable. ``--allow-unreadable-shards`` (passed
+            # through args) opts into the old skip-and-warn
+            # behavior, in which case the dropped shard list is
+            # still surfaced in ``perf_meta`` so the survey JSON
+            # carries the audit trail.
+            unreadable_shards: list[dict[str, str]] = []
+            allow_unreadable_shards = bool(
+                getattr(args, "allow_unreadable_shards", False)
+            )
             for cp in shard_cache_paths or []:
                 try:
                     with cp.open("r", encoding="utf-8") as fh:
                         shard_cache = json.load(fh)
                 except Exception as exc:  # noqa: BLE001
+                    unreadable_shards.append({
+                        "path": str(cp),
+                        "error_type": type(exc).__name__,
+                        "error_message": str(exc),
+                    })
                     sys.stderr.write(
-                        f"  streaming: skipping unreadable shard "
-                        f"cache {cp}: {type(exc).__name__}: {exc}\n"
+                        f"  streaming: unreadable shard cache "
+                        f"{cp}: {type(exc).__name__}: {exc}\n"
                     )
                     continue
                 shard_records = shard_cache.get("records") or []
@@ -917,7 +936,44 @@ def _aggregate_calibration_records(
             perf_meta["pair_extraction_mode"] = "streaming"
             perf_meta["pair_extraction_shards_streamed"] = (
                 len(shard_cache_paths or [])
+            ) - len(unreadable_shards)
+            perf_meta["pair_extraction_shards_unreadable_count"] = (
+                len(unreadable_shards)
             )
+            if unreadable_shards:
+                # Always surface the audit trail, whether we error
+                # or proceed under --allow-unreadable-shards.
+                perf_meta["pair_extraction_shards_unreadable"] = (
+                    unreadable_shards
+                )
+                shard_paths_str = ", ".join(
+                    s["path"] for s in unreadable_shards[:5]
+                )
+                if len(unreadable_shards) > 5:
+                    shard_paths_str += (
+                        f" (and {len(unreadable_shards) - 5} more)"
+                    )
+                if not allow_unreadable_shards:
+                    raise SystemExit(
+                        f"streaming aggregate: {len(unreadable_shards)} "
+                        f"of {len(shard_cache_paths or [])} shard "
+                        f"cache(s) were unreadable; refusing to emit "
+                        f"calibration thresholds derived from a "
+                        f"truncated record set. Unreadable: "
+                        f"{shard_paths_str}. Re-run the failing "
+                        f"shard(s), or pass "
+                        f"--allow-unreadable-shards to proceed with "
+                        f"the audit trail recorded in "
+                        f"aggregator_perf.pair_extraction_shards_"
+                        f"unreadable."
+                    )
+                sys.stderr.write(
+                    f"  streaming: proceeding under --allow-"
+                    f"unreadable-shards with "
+                    f"{len(unreadable_shards)} dropped shard(s); "
+                    f"calibration is based on a strict subset of "
+                    f"the requested records.\n"
+                )
         elif collect_signal_records is not None:
             extract_t0 = _dt.datetime.now()
             for sig_name in signals:

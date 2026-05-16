@@ -280,6 +280,183 @@ def test_in_memory_path_records_perf_metadata_too():
     pass  # Covered by the streaming/in-memory parity test above.
 
 
+# --------------- UNREADABLE SHARD HANDLING (codex P2 on #66) ----------
+
+
+def _make_valid_shard_cache(path: Path, n_records: int = 5) -> None:
+    """Write a streaming-compatible shard cache with the minimal
+    shape ``_aggregate_calibration_records`` expects: a top-level
+    ``records`` list of dicts each carrying ``per_signal_scores``
+    + a ``label_meta`` block. Used by the unreadable-shard tests
+    to set up a healthy baseline that the corrupt path can be
+    contrasted with.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    records = [
+        {
+            "id": f"doc_{i}",
+            "label_meta": {
+                "label": 1 if i % 2 else 0,
+                "is_positive": bool(i % 2),
+            },
+            "per_signal_scores": {"burstiness_B": 0.5 + 0.01 * i},
+            "ai_status": "ai_assisted" if i % 2 else "human",
+            "register": "essay",
+        }
+        for i in range(n_records)
+    ]
+    payload = {
+        "scoring_meta": {
+            "manifest_path": "synth",
+            "manifest_sha256": "deadbeef" * 8,
+            "use": "validation",
+        },
+        "records": records,
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _streaming_agg_args() -> argparse.Namespace:
+    """Build the minimal args namespace ``_aggregate_calibration_
+    records`` reads in streaming mode."""
+    return argparse.Namespace(
+        stream_pair_extraction=True,
+        allow_unreadable_shards=False,
+        no_derive=False,
+        fpr_target=0.01,
+        bootstrap_engine="loop",
+        bootstrap_resamples=100,
+        bootstrap_confidence=0.95,
+        bootstrap_seed=42,
+        bootstrap_chunk_size=None,
+        bootstrap_device=None,
+        aggregate_workers=1,
+        executor="thread",
+        max_worker_rss_gb=None,
+        tier1=True, tier2=False, tier3=False,
+        signals=None,
+    )
+
+
+def test_streaming_errors_when_shard_unreadable(tmp_path: Path):
+    """An unreadable shard cache must abort the streaming aggregator
+    by default — the operator should not silently get calibration
+    thresholds derived from a strict subset of their requested
+    records. Codex P2 on PR #66.
+
+    Tested at the aggregator-function level so the upstream
+    integrity-check (which would otherwise reject a corrupted
+    cache before streaming runs) doesn't interfere — this is the
+    code path that fires when the integrity check is bypassed or
+    when streaming is invoked through a custom pipeline.
+    """
+    ok_cache = tmp_path / "shards" / "000" / "cache.json"
+    bad_cache = tmp_path / "shards" / "001" / "cache.json"
+    _make_valid_shard_cache(ok_cache, n_records=4)
+    bad_cache.parent.mkdir(parents=True, exist_ok=True)
+    bad_cache.write_text("{not valid json", encoding="utf-8")
+
+    args = _streaming_agg_args()
+    state = {
+        "task": "calibration_survey",
+        "run_id": "x",
+        "source_manifest_path": "synth",
+        "source_manifest_sha256": "deadbeef" * 8,
+    }
+    with pytest.raises(SystemExit) as excinfo:
+        ts._aggregate_calibration_records(
+            all_records=[],
+            meta_list=[{"scoring_meta": {"manifest_path": "synth"}}],
+            contributing_shards=[{"shard_id": "000"}, {"shard_id": "001"}],
+            state=state,
+            args=args,
+            shard_cache_paths=[ok_cache, bad_cache],
+        )
+    msg = str(excinfo.value)
+    assert "unreadable" in msg.lower()
+    assert "--allow-unreadable-shards" in msg
+
+
+def test_streaming_allow_unreadable_records_audit_trail(tmp_path: Path):
+    """With ``allow_unreadable_shards=True``, the streaming
+    aggregator proceeds but records the dropped shards in
+    ``aggregator_perf.pair_extraction_shards_unreadable`` so the
+    survey JSON carries the audit trail."""
+    ok_cache = tmp_path / "shards" / "000" / "cache.json"
+    bad_cache = tmp_path / "shards" / "001" / "cache.json"
+    _make_valid_shard_cache(ok_cache, n_records=6)
+    bad_cache.parent.mkdir(parents=True, exist_ok=True)
+    bad_cache.write_text("{not valid json", encoding="utf-8")
+
+    args = _streaming_agg_args()
+    args.allow_unreadable_shards = True
+    state = {
+        "task": "calibration_survey",
+        "run_id": "x",
+        "source_manifest_path": "synth",
+        "source_manifest_sha256": "deadbeef" * 8,
+    }
+    result = ts._aggregate_calibration_records(
+        all_records=[],
+        meta_list=[{"scoring_meta": {"manifest_path": "synth"}}],
+        contributing_shards=[{"shard_id": "000"}, {"shard_id": "001"}],
+        state=state,
+        args=args,
+        shard_cache_paths=[ok_cache, bad_cache],
+    )
+    perf = result.get("aggregator_perf") or {}
+    assert perf.get("pair_extraction_shards_unreadable_count") == 1
+    unreadable = perf.get("pair_extraction_shards_unreadable")
+    assert isinstance(unreadable, list) and len(unreadable) == 1
+    entry = unreadable[0]
+    assert "path" in entry
+    assert bad_cache.name in entry["path"] or str(bad_cache) in entry["path"]
+    assert "error_type" in entry and "error_message" in entry
+    # shards_streamed is the count that actually completed —
+    # excludes the unreadable ones.
+    assert perf.get("pair_extraction_shards_streamed") == 1
+
+
+def test_streaming_clean_run_records_zero_unreadable(tmp_path: Path):
+    """Regression guard: a clean streaming run records
+    ``unreadable_count == 0`` and does NOT surface an unreadable
+    list field. Keeps the survey JSON compact on healthy runs."""
+    ok_cache = tmp_path / "shards" / "000" / "cache.json"
+    _make_valid_shard_cache(ok_cache, n_records=6)
+
+    args = _streaming_agg_args()
+    state = {
+        "task": "calibration_survey",
+        "run_id": "x",
+        "source_manifest_path": "synth",
+        "source_manifest_sha256": "deadbeef" * 8,
+    }
+    result = ts._aggregate_calibration_records(
+        all_records=[],
+        meta_list=[{"scoring_meta": {"manifest_path": "synth"}}],
+        contributing_shards=[{"shard_id": "000"}],
+        state=state,
+        args=args,
+        shard_cache_paths=[ok_cache],
+    )
+    perf = result.get("aggregator_perf") or {}
+    assert perf.get("pair_extraction_shards_unreadable_count") == 0
+    assert "pair_extraction_shards_unreadable" not in perf
+
+
+def test_allow_unreadable_shards_flag_exists():
+    parser = sr.build_arg_parser()
+    args = parser.parse_args([
+        "--base-dir", "/tmp", "aggregate", "--run-id", "x",
+    ])
+    assert args.allow_unreadable_shards is False
+    args = parser.parse_args([
+        "--base-dir", "/tmp", "aggregate", "--run-id", "x",
+        "--allow-unreadable-shards",
+    ])
+    assert args.allow_unreadable_shards is True
+
+
 def test_corpus_hygiene_accepts_stream_flag_gracefully(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):

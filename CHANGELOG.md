@@ -6,6 +6,23 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.78.1] - 2026-05-16
+
+**Fix: streaming aggregate errors on unreadable shard caches by default.** Codex P2 on PR #66. The 1.78.0 streaming pre-extraction loop caught `Exception` on each shard's `json.load`, wrote a stderr warning, and silently `continue`d. An operator with a corrupted shard cache got calibration thresholds derived from a strict subset of the records they thought they were calibrating against — with no error signal and a misleading `n_records` count in the survey JSON.
+
+### Fixed
+
+- **`task_surfaces._aggregate_calibration_records` streaming branch** now collects unreadable shard paths into a list and, after the loop, raises `SystemExit` if any shard was dropped. The error message names the count, lists up to 5 paths, and points operators at the new `--allow-unreadable-shards` opt-in flag for the cases where partial aggregation is intentional (e.g., one shard is being re-scored asynchronously and the operator wants a preliminary survey from the rest).
+- **`shard_runner aggregate --allow-unreadable-shards`** new flag, default `False` (strict). Opts into the old skip-and-warn behavior with one important change: the dropped-shard list lands in `aggregator_perf.pair_extraction_shards_unreadable` (with per-entry `path`, `error_type`, `error_message`) so the survey JSON carries an explicit audit trail. `pair_extraction_shards_streamed` is now the count that *successfully* streamed — excludes the dropped ones — and `pair_extraction_shards_unreadable_count` records the dropped tally.
+
+### Added
+
+- **4 new regression tests** in `test_streaming_pair_extraction.py` under "UNREADABLE SHARD HANDLING":
+  - `test_streaming_errors_when_shard_unreadable` — pins the default-strict behavior: SystemExit with both "unreadable" and "--allow-unreadable-shards" in the message.
+  - `test_streaming_allow_unreadable_records_audit_trail` — pins the opt-in path: aggregation proceeds AND the dropped shards land in perf metadata with full per-entry detail.
+  - `test_streaming_clean_run_records_zero_unreadable` — regression guard that a healthy run records `unreadable_count=0` and does NOT bloat the perf block with an empty list field.
+  - `test_allow_unreadable_shards_flag_exists` — pins the CLI surface.
+
 ## [1.78.0] - 2026-05-16
 
 **Streaming pre-extraction: unblocks RAID-scale calibration on consumer hardware.** Stacked on the 1.77.0 sweep-threshold-fast branch.

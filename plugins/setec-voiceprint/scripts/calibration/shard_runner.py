@@ -2813,6 +2813,25 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "in 1.65.0."
         ),
     )
+    p_agg.add_argument(
+        "--allow-unreadable-shards",
+        action="store_true",
+        default=False,
+        help=(
+            "Streaming-mode opt-in: proceed with calibration even "
+            "if some shard caches are unreadable, instead of "
+            "erroring out. Default is strict: any unreadable shard "
+            "cache aborts the aggregate run, since the calibration "
+            "thresholds would otherwise be derived from a strict "
+            "subset of the operator's requested records. When set, "
+            "the dropped shards are still recorded in "
+            "aggregator_perf.pair_extraction_shards_unreadable for "
+            "audit. Use this when you intentionally want partial "
+            "aggregation (e.g., one shard is being re-scored "
+            "asynchronously and you want a preliminary survey "
+            "from the rest)."
+        ),
+    )
     p_agg.set_defaults(func=cmd_aggregate)
 
     # verify
