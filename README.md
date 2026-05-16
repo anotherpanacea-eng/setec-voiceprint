@@ -55,12 +55,15 @@ The plugin exposes skills as workflows, not just surfaces.
 
 ## Stylometric tests
 
-SETEC computes 49 stylometric measurements across 14 families. Reference inventory below.
+SETEC computes 56 stylometric measurements across 14 families. Reference inventory below; signal paths, polarity, status (calibrated / literature_anchored / empirically_oriented / heuristic / structural_only), and per-signal definitions live in [`plugins/setec-voiceprint/references/signals-glossary.md`](plugins/setec-voiceprint/references/signals-glossary.md).
 
 - **Tier 1 variance (9)** — sentence-length burstiness (B), sentence-length SD, MATTR, MTLD, Yule's K, Shannon entropy, Flesch-Kincaid grade SD, connective density, function-word ratio.
 - **Tier 2 syntax (3)** — POS-bigram entropy, POS-bigram KL divergence, mean dependency distance SD.
 - **Tier 3 trajectory (4)** — adjacent-sentence cosine mean, adjacent-sentence cosine SD, semantic trajectory cosine series, semantic trajectory slope.
 - **Tier 4 surprisal (3)** — per-token surprisal mean, per-token surprisal SD, per-token surprisal autocorrelation lag-1.
+- **AIC-7 discourse leak (4)** — correctio density, triplet density, manifesto cadence density, professional parallel stack density.
+- **AIC-8 aesthetic authority laundering (2)** — image conjunction density, prestige-metaphor scatter entropy.
+- **AIC-9 closure inflation (1)** — kicker density.
 - **Voice-distance (2)** — Burrows Delta (function-word), per-feature cosine distance.
 - **Voice-drift (2)** — voice drift (cross-period coefficient of variation), voice stability.
 - **POV-voice (2)** — POV voice-distance matrix, POV voice-collapse verdict.

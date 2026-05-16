@@ -106,14 +106,23 @@ def test_every_ledger_entry_has_required_fields() -> None:
 
 
 def test_referential_integrity_registry_to_ledger() -> None:
-    """Every COMPRESSION_HEURISTICS entry with a non-None provenance
-    slug must have a matching entry in the ledger. This is the load-
+    """Every COMPRESSION_HEURISTICS entry with `status=='calibrated'`
+    must have a matching entry in the ledger. This is the load-
     bearing integrity check: it catches stale slugs in the registry
-    that point at calibrations someone deleted from the ledger."""
+    that point at calibrations someone deleted from the ledger.
+
+    v1.66.0 retier: the check applies only to `calibrated` entries.
+    `literature_anchored` provenance cites a publication;
+    `empirically_oriented` provenance cites a local source
+    (e.g., `references/calibration-findings-*.md`); neither needs
+    to appear in `scripts/calibration/thresholds_calibrated.json`,
+    which is the calibrate_thresholds.py-managed ledger for
+    corpus-derived thresholds specifically.
+    """
     data = json.loads(LEDGER_PATH.read_text(encoding="utf-8"))
     ledger_slugs = {e["slug"] for e in data}
     for signal_key, spec in COMPRESSION_HEURISTICS.items():
-        if spec.provenance is None:
+        if spec.status != "calibrated":
             continue
         assert spec.provenance in ledger_slugs, (
             f"COMPRESSION_HEURISTICS[{signal_key!r}].provenance = "

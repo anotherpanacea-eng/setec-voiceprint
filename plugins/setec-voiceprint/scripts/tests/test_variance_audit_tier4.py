@@ -235,16 +235,22 @@ class TestCompressionHeuristicsTier4:
         ):
             assert sig in va.COMPRESSION_HEURISTICS
 
-    def test_all_three_are_provisional(self):
-        """SPEC §3.5: Tier 4 thresholds ship with provisional=True.
-        A non-provisional ThresholdSpec would require a provenance
-        slug (which we don't have — surprisal hasn't been
-        calibrated against any labeled corpus yet)."""
+    def test_all_three_are_literature_anchored(self):
+        """v1.66.0 retier: Tier 4 thresholds ship with
+        status='literature_anchored' citing DivEye (Basani & Chen,
+        TMLR 2026). The `provisional` property remains True
+        (backward-compat: not-calibrated counts as provisional);
+        provenance is the DivEye slug, not None."""
         for sig in (
             "surprisal_mean", "surprisal_sd", "surprisal_acf_lag1",
         ):
-            assert va.COMPRESSION_HEURISTICS[sig].provisional is True
-            assert va.COMPRESSION_HEURISTICS[sig].provenance is None
+            spec = va.COMPRESSION_HEURISTICS[sig]
+            assert spec.status == "literature_anchored", (
+                f"{sig}: expected literature_anchored, got {spec.status}"
+            )
+            assert spec.provenance == "diveye_basani_chen_tmlr_2026"
+            # Backward-compat: still reports as provisional (not calibrated)
+            assert spec.provisional is True
 
     def test_directions_match_spec_4_3(self):
         """SPEC §4.3 polarities:
@@ -389,6 +395,73 @@ class TestAic789Registration:
             "aesthetic_authority_laundering"
         ]
         assert set(family) == set(self.AIC8_SIGNALS)
+
+    def test_v1_66_0_retier_schema_invariants(self):
+        """v1.66.0 retier: four-tier status enum + structural_only,
+        with per-tier provenance invariants enforced in
+        __post_init__. Sanity-check the invariants from outside
+        the constructor."""
+        # Every registry entry has a valid status value
+        for sig, spec in va.COMPRESSION_HEURISTICS.items():
+            assert spec.status in va.THRESHOLD_STATUS_VALUES, (
+                f"{sig}: status={spec.status!r} not in "
+                f"{va.THRESHOLD_STATUS_VALUES}"
+            )
+            # Per-tier provenance rules
+            if spec.status == "calibrated":
+                assert spec.provenance is not None, (
+                    f"{sig}: calibrated requires provenance"
+                )
+            elif spec.status == "literature_anchored":
+                assert spec.provenance is not None, (
+                    f"{sig}: literature_anchored requires provenance"
+                )
+            elif spec.status == "empirically_oriented":
+                assert spec.provenance is not None, (
+                    f"{sig}: empirically_oriented requires provenance"
+                )
+            elif spec.status == "heuristic":
+                assert spec.provenance is None, (
+                    f"{sig}: heuristic must have provenance=None"
+                )
+
+    def test_v1_66_0_distribution(self):
+        """v1.66.0 distribution: 0 calibrated, 5 literature_anchored
+        (mattr, shannon_entropy, surprisal_*), 6 empirically_oriented
+        (burstiness_B, sentence_length_sd, adjacent_cosine_sd,
+        fkgl_sd, mdd_sd, connective_density), 10 heuristic (the rest).
+        Total 21. Pinned so a future re-tier surfaces the change."""
+        n_calibrated = len(va.calibrated_signals())
+        n_literature = len(va.literature_anchored_signals())
+        n_empirical = len(va.empirically_oriented_signals())
+        n_heuristic = len(va.heuristic_signals())
+        n_total = n_calibrated + n_literature + n_empirical + n_heuristic
+        assert n_total == len(va.COMPRESSION_HEURISTICS)
+        assert n_calibrated == 0, (
+            "Stylometry-to-the-people invariant: framework ships no "
+            "calibrated thresholds as load-bearing defaults."
+        )
+
+    def test_v1_66_0_backward_compat_provisional_property(self):
+        """The .provisional property keeps working under the new
+        schema. Semantics: True for any non-calibrated, non-
+        structural status. All 21 current entries → True."""
+        for spec in va.COMPRESSION_HEURISTICS.values():
+            assert spec.provisional is True, (
+                "All current entries are non-calibrated; "
+                ".provisional should be True for backward-compat"
+            )
+
+    def test_v1_66_0_invalid_status_raises(self):
+        """ThresholdSpec rejects unknown status values at
+        construction. Catches typos and forks of the enum."""
+        import pytest as _pt
+        with _pt.raises(ValueError, match="status must be one of"):
+            va.ThresholdSpec(
+                signal_path="test.path", value=1.0, direction="gt",
+                weight=1.0, length_floor=100,
+                status="not_a_real_status",
+            )
 
     def test_no_signal_orphaned_from_ablation(self):
         """Codex P2 invariant: every AIC-7/8/9 signal in
