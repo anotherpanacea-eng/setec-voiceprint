@@ -6,6 +6,24 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.73.0] - 2026-05-16
+
+**editlens_to_manifest: append-mode + resume + periodic flush + conversion-settings sidecar.** Independent PR. Applies SAVE PROGRESS + full settings-compat check to the EditLens parquet → JSONL manifest converter.
+
+### Added
+
+- **Resume on by default**: when `--out` exists with parseable entries, reads existing IDs, opens in `'a'`, skips matching rows. **Conversion-settings sidecar** at `<out>.meta.json` records every conversion arg (label_map, text_column, label_column, preset, register, language_status, notes_columns, mixed_composite_states, use_tags, source_label). Resume refuses if any arg differs — mixing rows under different conversion semantics in the same manifest is now impossible.
+- **`--no-resume` / `--refresh-output`**: bypass the sidecar check.
+- **`--flush-every N`** (default 1000): periodic OS-buffer flush + stderr progress with rate + row index.
+- **Corrupted-prior protection**: malformed line in existing `--out` → clean overwrite.
+- **11 regression tests** in `scripts/tests/test_editlens_to_manifest_resume.py`: original 6 (resume / no-resume / refresh / corrupted-partial / flush / fresh) + 5 from codex P2 fix (sidecar written / refused on label_map / refused on register / refresh bypasses / accepted when sidecar matches).
+
+### Notes
+
+- The `_stable_id(source_basename, row_index)` function is the resume key. If the source row order changes between runs (re-shuffled CSV), resume will silently skip rows by stale IDs — pass `--refresh-output` after any source change.
+- Default behavior is RESUME ON. Operators who want pre-1.70.0 overwrite behavior pass `--no-resume`.
+- Originally landed as 1.70.0 on a wave-2 branch; renumbered to 1.73.0 on rebase since #69 / #70 / #71 merged first.
+
 ## [1.72.0] - 2026-05-16
 
 **pdf_inventory: partial-cache + resume.** Independent PR touching only `pdf_inventory.py`. Applies SAVE PROGRESS to a script that was already parallel (ThreadPoolExecutor with `as_completed`) but accumulated results in memory and only wrote the JSONL after every worker completed — a crash mid-run lost everything.
