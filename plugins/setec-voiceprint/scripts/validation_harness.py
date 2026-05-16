@@ -167,6 +167,15 @@ def score_smoothing_entry(
     strip_aggressive: bool = False,
     positive_statuses: set[str],
     negative_statuses: set[str],
+    # 1.80.0+ pipeline-wiring params. Defaults preserve pre-1.80
+    # behavior bit-exactly (do_tier4 off; embedding_model None routes
+    # to legacy MiniLM hardcode; surprisal_model None ignored since
+    # do_tier4 is False).
+    do_tier4: bool = False,
+    embedding_model: str | None = None,
+    embedding_revision: str | None = None,
+    surprisal_model: str | None = None,
+    surprisal_revision: str | None = None,
 ) -> dict[str, Any]:
     entry_id = entry.get("id") if isinstance(entry.get("id"), str) else f"line_{entry.get('_lineno', '?')}"
     resolved_path = Path(str(entry.get("_resolved_path") or entry.get("path") or ""))
@@ -206,9 +215,14 @@ def score_smoothing_entry(
         mattr_window=mattr_window,
         do_tier2=do_tier2,
         do_tier3=do_tier3,
+        do_tier4=do_tier4,
         allow_non_prose=allow_non_prose,
         strip_rules=strip_rules,
         strip_aggressive=strip_aggressive,
+        embedding_model=embedding_model,
+        embedding_revision=embedding_revision,
+        surprisal_model=surprisal_model,
+        surprisal_revision=surprisal_revision,
     )
     n_words = int(audit.get("summary", {}).get("n_words", raw_n_words) or 0)
     compression = classify_compression(audit)

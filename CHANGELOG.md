@@ -6,6 +6,54 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.80.0] - 2026-05-16
+
+**Calibration pipeline: pluggable Tier 3 embedding model + Tier 4 surprisal wiring.** Closes two wiring gaps discovered during MAGE Tier 3+4 bake-off planning:
+
+1. **W1 — Tier 3 embedding model.** `embedding_backend.py` shipped a pluggable wrapper with 4 aliases (`mxbai`, `gemma`, `harrier`, `minilm`) on 2026-05-11 but `variance_audit.adjacent_sentence_cosine` was hardcoded to `all-MiniLM-L6-v2`. `shard_runner shard` accepted `--embedding-model` and recorded it in `state.json` since the same date but no scorer in the calibration pipeline ever read it.
+2. **W2 — Tier 4 surprisal in the calibration pipeline.** `variance_audit.py --tier4 --surprisal-model` had been operator-facing since 1.61.0, but the calibration pipeline entry points (`shard_runner shard`, `validation_harness.score_smoothing_entry`, `calibrate_thresholds.score_corpus`) didn't accept any Tier 4 toggles. MAGE / RAID Tier 4 calibration would have required a parallel ad-hoc scoring loop bypassing the new streaming + checkpointed infrastructure (1.75.0–1.79.3).
+
+This PR threads both through the full chain: `shard_runner shard` flags → `state.json["task_params"]` → `task_surfaces._score_shard_calibration_survey` → `_default_scorer` → `load_or_score_corpus` → `score_corpus` → `score_smoothing_entry` → `audit_text` → `adjacent_sentence_cosine` (Tier 3) and `_tier4_surprisal_block` (Tier 4).
+
+### Added
+
+- **`variance_audit.py --embedding-model ALIAS --embedding-revision SHA`** — alias resolves via `embedding_backend.MODEL_ALIASES` (`mxbai`, `gemma`, `harrier`, `minilm`) or accepts a full HuggingFace id. Default is `None` (preserves the legacy `all-MiniLM-L6-v2` hardcode for back-compat with pre-1.80 surveys).
+- **`adjacent_sentence_cosine(sentences, *, embedding_model, embedding_revision)`** — new kwargs. When set, routes through `_get_embedding_backend()` which constructs and caches an `EmbeddingBackend` per `(alias, revision)`. The method string in the return dict echoes the resolved model id; new fields `embedding_model`, `embedding_alias`, `embedding_revision` for downstream provenance audits. When unset, falls through to the legacy MiniLM → TF-IDF chain unchanged.
+- **`_get_embedding_backend(alias, revision)`** helper in `variance_audit.py` — module-level cache keyed on `(alias, revision)` so a scoring loop pays the backend-construction cost once across thousands of documents.
+- **`_get_surprisal_backend(alias, revision)`** helper, same shape — module-level cache for Tier 4 LM backends.
+- **`shard_runner shard --tier4 --no-tier4 --surprisal-model --surprisal-revision`** — pipeline equivalents of the standalone `variance_audit.py --tier4` flags. Default `--tier4` is off (back-compat).
+- **Threaded params on `score_smoothing_entry`** (validation_harness): `do_tier4`, `embedding_model`, `embedding_revision`, `surprisal_model`, `surprisal_revision`. All default to `None` / `False` so pre-1.80 callers keep their bit-exact behavior.
+- **Threaded params on `audit_text`** (variance_audit): `embedding_model`, `embedding_revision`, `surprisal_model`, `surprisal_revision`. The existing `do_tier4`, `tier4_score_fn`, `tier4_backend` params are unchanged; when `surprisal_model` is supplied AND no explicit `tier4_backend` was passed, `_tier4_surprisal_block` constructs one via the cached `_get_surprisal_backend`.
+- **`scoring_meta` schema extension** in `score_corpus` (both the completed final write AND the in-progress `flush_every` checkpoint after the codex P2 fix below): emits `do_tier4`, `embedding_model`, `embedding_revision`, `surprisal_model`, `surprisal_revision` so the records cache invalidates correctly when an operator changes any of these between runs.
+- **`cache_is_compatible` extension** — refuses the cache on any of the 5 new fields mismatching. Pre-1.80 caches (no `do_tier4` key, no `embedding_model` key) are still treated as compatible when the current args also use the defaults — operators upgrading without changing their CLI invocation keep their cached records.
+- **`task_params` schema extension** for `calibration_survey` in `cmd_shard`: stores all 5 new fields under `state.json["task_params"]`. Pre-1.80 partial wiring stored `embedding_model` / `embedding_revision` as top-level state.json fields; the task surface honors both via a two-arg `task_params.get(..., run_context.get(...))` fallback (task_params wins).
+- **17 new regression tests** in `scripts/tests/test_pipeline_model_wiring.py`:
+  - W1 CLI surface (1): `variance_audit.py --embedding-model` exposed.
+  - W1 leaf behavior (2): legacy path produces the pre-1.80 method string; new path delegates to `embedding_backend` and echoes the resolved model id.
+  - W1 `audit_text` threading (1): `embedding_model` kwarg reaches `adjacent_sentence_cosine`.
+  - W2 `audit_text` threading (1): `surprisal_model` kwarg reaches `_tier4_surprisal_block`.
+  - Validation_harness threading (1): `score_smoothing_entry` accepts and forwards all 5 new kwargs.
+  - Cache compat (4): invalidates on `embedding_model`, `tier4`, `surprisal_model` changes; preserves back-compat with pre-1.80 caches.
+  - `shard_runner shard` parser (2): accepts the new flags; defaults match pre-1.80 behavior.
+  - `task_surfaces` threading (3): `_score_shard_calibration_survey` forwards the new kwargs to `DEFAULT_SCORER`; honors the pre-1.80 top-level `state.json` fallback for embedding_model; task_params wins over the legacy fallback when both are set.
+  - **Codex P2 partial-cache guards (2, added in the P2 fix commit)**: in-progress flush meta carries the 5 new fields so resume works after a crash; end-to-end resume round-trip with non-default models engages the resume path (only the remaining entries re-scored).
+
+### Fixed
+
+- **Codex P2 on PR #77: `score_corpus` in-progress flush `interim_meta` now mirrors all 5 new fields.** The completed `scoring_meta` write at the end of `score_corpus` emitted `do_tier4` + 4 model fields, but the in-progress `flush_every` checkpoint inside the scoring loop only emitted `tier2`/`tier3`. A long `--tier4` / `--embedding-model` scoring run that crashed mid-loop and was resumed would have read its own partial cache, failed `cache_is_compatible` because the new keys were absent, and silently re-scored from scratch — exactly the failure mode that bites the expensive bake-off paths this PR enables. Fix mirrors the same 5 fields in `interim_meta` via the same `getattr`-with-default pattern. Two new regression tests pin the fix; the primary guard test was verified to fail without the fix.
+
+### Changed
+
+- **Existing DEFAULT_SCORER stubs in tests** (`test_hardened_aggregator.py::_stub_scorer_with_signals`, `test_shard_runner.py::_stub_scorer`, `test_sharded_smoke_pipeline.py::_stub_scorer`, `test_task_surfaces.py::_stub`): each grew `**_extra` to absorb the new 1.80 kwargs the dispatcher now passes. Stubs themselves don't act on the new fields — that behavior is tested against the real scorer in `test_pipeline_model_wiring.py`.
+
+### Notes
+
+- **Default behavior preserved.** Without any new flags, the calibration pipeline produces bit-identical Tier 1+2+3 records to 1.79.3: Tier 3 uses MiniLM, Tier 4 is off, no model aliases land in `scoring_meta`. Operators must explicitly opt in to swap models or enable Tier 4.
+- **The default embedding model is NOT being changed.** The `embedding_backend.DEFAULT_MODEL = "mxbai"` constant reflects the framework's intentional choice for new audits, but the calibration scoring path keeps MiniLM as its default until the §6.4 fixture test runs on the operator's register mix. The MAGE Tier 3 bake-off this PR unblocks is part of that fixture-test work.
+- **Pre-1.80 top-level state.json fields preserved.** `shard_runner shard` continues to write `embedding_model` / `embedding_revision` as top-level keys in `state.json` (it had been doing this since 2026-05-11). The task surface reads from both `task_params` (new) and the top-level fields (legacy) so state.json files written by pre-1.80 `shard_runner shard` invocations keep their configured embedding model when re-run under 1.80+.
+- **Test suite status**: 51 passed across `test_pipeline_model_wiring.py` + `test_incremental_corpus_scoring.py` + `test_calibration_cache.py`. Existing calibration-pipeline tests pass with 9 unrelated pre-existing failures (Windows POSIX `ps -o lstart=` PID-tracking tests).
+- **Unblocks**: MAGE Tier 3+4 model-selection bake-off (4 embedding aliases × 3 surprisal aliases on a 5K stratified subsample, then a full MAGE Tier 3+4 re-score with the winning configs).
+
 ## [1.79.3] - 2026-05-16
 
 **Fix: `test_pdf_inventory_extract.py` test-helper drift.** The 1.70.0 PR added three new CLI flags to `pdf_inventory.py` (`--no-incremental-cache`, `--flush-every`, `--refresh-partial`) and the production code at line 858-860 reads `args.no_incremental_cache`, `args.flush_every`, and `args.refresh_partial`. The test helper `make_inventory_args()` was never updated to match, so all 9 tests that exercise the inventory CLI path failed with `AttributeError: 'Namespace' object has no attribute 'no_incremental_cache'`.

@@ -185,6 +185,22 @@ def _score_shard_calibration_survey(
     # module-load time once we're registered as the default).
     import shard_runner as sr  # type: ignore
 
+    # 1.80.0+: pass Tier 4 + model aliases through to DEFAULT_SCORER.
+    # task_params carries them when the operator passed --tier4 /
+    # --embedding-model / --surprisal-model to ``shard_runner shard``;
+    # absent keys fall through to None / False so legacy state.json
+    # files (no tier4/model keys) keep producing pre-1.80 behavior.
+    # Embedding model + revision are ALSO populated from the top-level
+    # state.json fields (pre-1.80 partial wiring stored them there);
+    # task_params wins when both are present.
+    embedding_model = task_params.get(
+        "embedding_model",
+        run_context.get("embedding_model"),
+    )
+    embedding_revision = task_params.get(
+        "embedding_revision",
+        run_context.get("embedding_revision"),
+    )
     result = sr.DEFAULT_SCORER(
         shard_manifest_path,
         fpr_target=task_params.get("fpr_target", 0.01),
@@ -195,6 +211,11 @@ def _score_shard_calibration_survey(
         cache_path=cache_path,
         flush_every=flush_every,
         sigterm_event=sigterm_event,
+        tier4=bool(task_params.get("tier4", False)),
+        embedding_model=embedding_model,
+        embedding_revision=embedding_revision,
+        surprisal_model=task_params.get("surprisal_model"),
+        surprisal_revision=task_params.get("surprisal_revision"),
     )
     # The legacy scorer returns a plain dict; normalize to
     # ShardResult shape.

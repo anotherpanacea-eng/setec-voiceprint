@@ -87,6 +87,8 @@ def _stub_scorer(
     cache_path: Path,
     flush_every: int,
     sigterm_event: Any,
+    # 1.80.0+: pipeline-wiring kwargs. Stub ignores them.
+    **_extra: Any,
 ) -> dict[str, Any]:
     """Stand-in for calibration_survey's real scorer. Reads the
     shard manifest, produces one fake record per row carrying a

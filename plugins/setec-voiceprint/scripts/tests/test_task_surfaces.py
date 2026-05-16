@@ -187,10 +187,16 @@ def test_calibration_survey_score_shard_calls_default_scorer(
     captured: dict = {}
 
     def _stub(shard_manifest_path, *, fpr_target, tier1, tier2, tier3,
-              use, cache_path, flush_every, sigterm_event):
+              use, cache_path, flush_every, sigterm_event, **_extra):
         captured["fpr_target"] = fpr_target
         captured["tier1"] = tier1
         captured["use"] = use
+        # 1.80.0+ kwargs are captured for inspection but the stub
+        # doesn't act on them; the dedicated unit test for the new
+        # passthrough is below.
+        captured["tier4"] = _extra.get("tier4")
+        captured["embedding_model"] = _extra.get("embedding_model")
+        captured["surprisal_model"] = _extra.get("surprisal_model")
         return {"records": [{"text_id": "r1"}], "meta": {"x": 1},
                 "cache_hit": False}
 
