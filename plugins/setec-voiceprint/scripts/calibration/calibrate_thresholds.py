@@ -1455,6 +1455,33 @@ def score_corpus(
                     "use": args.use,
                     "do_tier2": bool(args.tier2),
                     "do_tier3": bool(args.tier3),
+                    # Codex P2 on PR #77: must match the keys emitted
+                    # by the final ``scoring_meta`` write below or
+                    # ``cache_is_compatible`` will refuse the partial
+                    # cache on resume and re-score from scratch — the
+                    # opposite of the 1.79.0 incremental-resume
+                    # contract. This bites exactly the expensive bake-
+                    # off paths this PR enables (--tier4 +
+                    # --surprisal-model + --embedding-model runs are
+                    # the longest-running scoring loops the framework
+                    # supports). Same five fields as scoring_meta;
+                    # mirrored via getattr-with-default so the partial
+                    # cache from a pre-1.80 run (no tier4/model args
+                    # on the Namespace) still serializes legal None /
+                    # False values.
+                    "do_tier4": bool(getattr(args, "tier4", False)),
+                    "embedding_model": getattr(
+                        args, "embedding_model", None,
+                    ),
+                    "embedding_revision": getattr(
+                        args, "embedding_revision", None,
+                    ),
+                    "surprisal_model": getattr(
+                        args, "surprisal_model", None,
+                    ),
+                    "surprisal_revision": getattr(
+                        args, "surprisal_revision", None,
+                    ),
                     "n_entries_full": full_entry_count,
                     "n_entries_scored": len(records),
                     "sub_sample": sub_sample_meta,

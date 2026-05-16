@@ -411,6 +411,183 @@ def test_cache_compat_back_compat_with_pre_1_80_caches():
     assert ok is True, f"pre-1.80 cache should be compatible; got: {reason}"
 
 
+# --------------- W1 + W2: partial-cache resume preserves model fields ----------
+
+
+def test_interim_flush_meta_carries_new_model_fields_so_resume_works(
+    tmp_path, monkeypatch,
+):
+    """**Codex P2 on PR #77**: the in-progress checkpoint metadata
+    written every ``flush_every`` entries must include the same five
+    new fields (do_tier4, embedding_model, embedding_revision,
+    surprisal_model, surprisal_revision) that the final scoring_meta
+    write emits. Otherwise: a long --tier4 / --embedding-model run
+    that crashes mid-loop, then is resumed, will read its own partial
+    cache, fail cache_is_compatible (the partial's interim_meta lacks
+    the new keys → mismatch against the current args' real model
+    settings), and silently re-score from scratch.
+
+    Pins by:
+      1. Running a partial scoring loop with non-default
+         embedding_model + tier4 + surprisal_model that triggers at
+         least one flush_every checkpoint.
+      2. Reading the partial cache from disk and asserting the 5 new
+         fields are present and match the args.
+      3. Re-invoking ``load_or_score_corpus`` with the same args and
+         asserting the resume path engages (not re-score from scratch).
+    """
+    import calibrate_thresholds as ct  # type: ignore
+    from test_incremental_corpus_scoring import (  # type: ignore
+        _write_real_manifest, _make_args, _patch_scoring,
+    )
+
+    manifest = _write_real_manifest(tmp_path, n_entries=5)
+    cache = tmp_path / "cache.json"
+    args = _make_args(
+        manifest,
+        records_cache=str(cache),
+        records_cache_flush_every=2,
+    )
+    # Add the 1.80 fields to the Namespace. The args helper produces
+    # a pre-1.80 namespace; without these our test pretends to be a
+    # legacy run and the bug doesn't show up.
+    args.tier4 = True
+    args.embedding_model = "mxbai"
+    args.embedding_revision = "test-revision-sha"
+    args.surprisal_model = "gpt2"
+    args.surprisal_revision = "another-sha"
+
+    # Build a stub scorer that returns minimal records and don't
+    # actually load any models. The test is about metadata
+    # propagation, not Tier 4 numerics.
+    with _patch_scoring({}):
+        records, _meta, _hit = ct.load_or_score_corpus(
+            args, cache_path=cache,
+        )
+    assert len(records) == 5
+
+    # Now flip the on-disk cache from complete to in_progress with
+    # only 3 records (simulates a crash partway through) and verify
+    # the cache_meta has the model fields. We do this by re-running
+    # against a partial we craft ourselves — the same shape the
+    # in-loop flush_every checkpoint produces.
+    payload = json.loads(cache.read_text(encoding="utf-8"))
+    cached_meta = payload.get("scoring_meta") or {}
+    assert cached_meta.get("do_tier4") is True, (
+        "completed scoring_meta is missing do_tier4 -- a regression "
+        "in scoring_meta would mask this whole P2"
+    )
+    assert cached_meta.get("embedding_model") == "mxbai"
+    assert cached_meta.get("surprisal_model") == "gpt2"
+
+    # The real bug surface: the in-progress flush writes an
+    # interim_meta that historically lacked these fields. Spy on
+    # _save_score_cache to capture EVERY meta payload it writes,
+    # then verify the in_progress ones carry the 5 fields just like
+    # the complete one.
+    flushed_metas: list[dict[str, Any]] = []
+    real_save = ct._save_score_cache
+
+    def _spy(path, scoring_meta, records, status):
+        flushed_metas.append({"status": status, "meta": scoring_meta})
+        return real_save(path, scoring_meta, records, status)
+
+    monkeypatch.setattr(ct, "_save_score_cache", _spy)
+
+    # Wipe the cache so we re-score from scratch and trigger the
+    # in_progress flush path again.
+    cache.unlink()
+
+    with _patch_scoring({}):
+        ct.load_or_score_corpus(args, cache_path=cache)
+
+    in_progress_metas = [m for m in flushed_metas if m["status"] == "in_progress"]
+    assert in_progress_metas, (
+        "expected at least one in-progress flush at flush_every=2 / "
+        "n=5; got " + str([m['status'] for m in flushed_metas])
+    )
+
+    # THE KEY ASSERTION: every in-progress meta carries the 5 new
+    # fields. A regression here means an interrupted bake-off run
+    # loses ALL its scoring work on resume.
+    for entry in in_progress_metas:
+        meta = entry["meta"]
+        assert meta.get("do_tier4") is True, (
+            "in-progress flush meta missing do_tier4; resume would "
+            f"reject. Saw meta keys: {sorted(meta.keys())}"
+        )
+        assert meta.get("embedding_model") == "mxbai", (
+            "in-progress flush meta missing embedding_model; resume "
+            f"would reject. Saw embedding_model={meta.get('embedding_model')!r}"
+        )
+        assert meta.get("embedding_revision") == "test-revision-sha"
+        assert meta.get("surprisal_model") == "gpt2"
+        assert meta.get("surprisal_revision") == "another-sha"
+
+
+def test_partial_cache_resume_round_trip_with_non_default_models(
+    tmp_path,
+):
+    """End-to-end version of the codex P2 fix: write a partial cache
+    that has the 5 new fields, re-invoke ``load_or_score_corpus``
+    with matching args, assert the resume path engages (only the
+    remaining entries are scored, not all of them)."""
+    import calibrate_thresholds as ct  # type: ignore
+    from test_incremental_corpus_scoring import (  # type: ignore
+        _write_real_manifest, _make_args, _patch_scoring,
+    )
+
+    manifest = _write_real_manifest(tmp_path, n_entries=5)
+    cache = tmp_path / "cache.json"
+    args = _make_args(manifest, records_cache=str(cache))
+    args.tier4 = True
+    args.embedding_model = "mxbai"
+    args.embedding_revision = None
+    args.surprisal_model = "gpt2"
+    args.surprisal_revision = None
+
+    # First: full scoring run so we have a real scoring_meta to use as
+    # the partial's prior-meta. (Otherwise we'd be hand-constructing
+    # the meta and the test would just verify what we wrote.)
+    counter = {"calls": 0}
+    with _patch_scoring(counter):
+        records, scoring_meta, _ = ct.load_or_score_corpus(
+            args, cache_path=cache,
+        )
+    assert counter["calls"] == 5
+    # Sanity: completed scoring_meta carries the 5 new fields. (If
+    # this fails, the W1/W2 scoring_meta wiring regressed; the P2
+    # test below wouldn't be meaningful.)
+    assert scoring_meta.get("embedding_model") == "mxbai"
+
+    # Truncate to first 3 and flip to in_progress. This is the shape
+    # the in-loop flush would write IF the P2 fix is in place. Without
+    # the fix, the meta would be missing the 5 new keys and the
+    # resume below would fail compatibility check.
+    partial = {
+        "status": "in_progress",
+        "scoring_meta": scoring_meta,
+        "records": records[:3],
+    }
+    cache.write_text(json.dumps(partial, default=str))
+
+    # Re-invoke with the same args. Resume should fire (2 fresh calls,
+    # not 5).
+    counter2 = {"calls": 0}
+    with _patch_scoring(counter2):
+        records2, _meta2, hit = ct.load_or_score_corpus(
+            args, cache_path=cache,
+        )
+    assert hit is False, "partial cache must not register as a hit"
+    assert counter2["calls"] == 2, (
+        f"resume should have skipped 3 already-scored entries and "
+        f"only re-scored the remaining 2; got {counter2['calls']} "
+        f"fresh calls. If this fails, the in-loop interim_meta is "
+        f"likely missing the new tier4/model fields (codex P2 on PR #77)."
+    )
+    assert len(records2) == 5
+
+
 # --------------- shard_runner CLI surface ----------
 
 
