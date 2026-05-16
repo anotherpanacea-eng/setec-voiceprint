@@ -338,3 +338,193 @@ def test_progress_log_goes_to_stderr_not_stdout(
     )
     # They DO appear on stderr.
     assert "Scoring" in captured.err
+
+
+# --------------- Codex P2 on PR #69: full compat check ----------
+
+
+def _plant_complete_cache_with_meta(
+    cache: Path, *, scoring_meta: dict, records: list,
+) -> None:
+    cache.write_text(json.dumps({
+        "status": "complete",
+        "scoring_meta": scoring_meta,
+        "records": records,
+    }))
+
+
+def test_cache_refused_when_manifest_sha_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: a cache with a present manifest_sha256 that
+    disagrees with the current run's must be refused."""
+    monkeypatch.setattr(vh, "score_smoothing_entry", _stub_score_entry)
+    cache = tmp_path / "cache.json"
+    entries = _make_entries(3)
+    pre_records = [_stub_score_entry(e) for e in entries]
+    _plant_complete_cache_with_meta(cache, scoring_meta={
+        "manifest_path": "dummy.jsonl",
+        "manifest_sha256": "sha256:deadbeefdeadbeef",
+        "use_filter": "validation",
+        "do_tier2": False,
+        "do_tier3": False,
+    }, records=pre_records)
+    score_count = {"n": 0}
+
+    def _counting_stub(entry, **kw):
+        score_count["n"] += 1
+        return _stub_score_entry(entry, **kw)
+
+    monkeypatch.setattr(vh, "score_smoothing_entry", _counting_stub)
+    vh._score_validation_entries_with_progress(
+        entries, mattr_window=50, do_tier2=False, do_tier3=False,
+        allow_non_prose=False, strip_rules=None,
+        strip_aggressive=False,
+        positive_statuses={"ai_generated"},
+        negative_statuses={"pre_ai_human"},
+        cache_path=cache, flush_every=10,
+        manifest_path="dummy.jsonl", use_filter="validation",
+    )
+    assert score_count["n"] == 3
+
+
+def test_cache_refused_when_corpus_text_fingerprint_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: a cache with a present corpus_text_fingerprint
+    that disagrees must be refused."""
+    monkeypatch.setattr(vh, "score_smoothing_entry", _stub_score_entry)
+    cache = tmp_path / "cache.json"
+    entries = _make_entries(3)
+    pre_records = [_stub_score_entry(e) for e in entries]
+    _plant_complete_cache_with_meta(cache, scoring_meta={
+        "manifest_path": "dummy.jsonl",
+        "corpus_text_fingerprint": "sha256:cafebabecafebabe",
+        "use_filter": "validation",
+        "do_tier2": False,
+        "do_tier3": False,
+    }, records=pre_records)
+    score_count = {"n": 0}
+
+    def _counting_stub(entry, **kw):
+        score_count["n"] += 1
+        return _stub_score_entry(entry, **kw)
+
+    monkeypatch.setattr(vh, "score_smoothing_entry", _counting_stub)
+    vh._score_validation_entries_with_progress(
+        entries, mattr_window=50, do_tier2=False, do_tier3=False,
+        allow_non_prose=False, strip_rules=None,
+        strip_aggressive=False,
+        positive_statuses={"ai_generated"},
+        negative_statuses={"pre_ai_human"},
+        cache_path=cache, flush_every=10,
+        manifest_path="dummy.jsonl", use_filter="validation",
+    )
+    assert score_count["n"] == 3
+
+
+def test_cache_refused_when_mattr_window_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: mattr_window changes score_smoothing_entry's
+    output."""
+    monkeypatch.setattr(vh, "score_smoothing_entry", _stub_score_entry)
+    cache = tmp_path / "cache.json"
+    entries = _make_entries(3)
+    pre_records = [_stub_score_entry(e) for e in entries]
+    _plant_complete_cache_with_meta(cache, scoring_meta={
+        "manifest_path": "dummy.jsonl",
+        "use_filter": "validation",
+        "do_tier2": False,
+        "do_tier3": False,
+        "mattr_window": 100,
+    }, records=pre_records)
+    score_count = {"n": 0}
+
+    def _counting_stub(entry, **kw):
+        score_count["n"] += 1
+        return _stub_score_entry(entry, **kw)
+
+    monkeypatch.setattr(vh, "score_smoothing_entry", _counting_stub)
+    vh._score_validation_entries_with_progress(
+        entries, mattr_window=50, do_tier2=False, do_tier3=False,
+        allow_non_prose=False, strip_rules=None,
+        strip_aggressive=False,
+        positive_statuses={"ai_generated"},
+        negative_statuses={"pre_ai_human"},
+        cache_path=cache, flush_every=10,
+        manifest_path="dummy.jsonl", use_filter="validation",
+    )
+    assert score_count["n"] == 3
+
+
+def test_cache_refused_when_strip_rules_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: strip_rules / strip_aggressive / allow_non_prose
+    all affect preprocessing → different output."""
+    monkeypatch.setattr(vh, "score_smoothing_entry", _stub_score_entry)
+    cache = tmp_path / "cache.json"
+    entries = _make_entries(2)
+    pre_records = [_stub_score_entry(e) for e in entries]
+    _plant_complete_cache_with_meta(cache, scoring_meta={
+        "manifest_path": "dummy.jsonl",
+        "use_filter": "validation",
+        "do_tier2": False,
+        "do_tier3": False,
+        "strip_rules": "default",
+    }, records=pre_records)
+    score_count = {"n": 0}
+
+    def _counting_stub(entry, **kw):
+        score_count["n"] += 1
+        return _stub_score_entry(entry, **kw)
+
+    monkeypatch.setattr(vh, "score_smoothing_entry", _counting_stub)
+    vh._score_validation_entries_with_progress(
+        entries, mattr_window=50, do_tier2=False, do_tier3=False,
+        allow_non_prose=False, strip_rules=None,
+        strip_aggressive=False,
+        positive_statuses={"ai_generated"},
+        negative_statuses={"pre_ai_human"},
+        cache_path=cache, flush_every=10,
+        manifest_path="dummy.jsonl", use_filter="validation",
+    )
+    assert score_count["n"] == 2
+
+
+def test_cache_refused_when_label_map_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: positive_statuses / negative_statuses set the
+    record's label field. Different label maps would silently
+    mis-label cached records if reused."""
+    monkeypatch.setattr(vh, "score_smoothing_entry", _stub_score_entry)
+    cache = tmp_path / "cache.json"
+    entries = _make_entries(3)
+    pre_records = [_stub_score_entry(e) for e in entries]
+    _plant_complete_cache_with_meta(cache, scoring_meta={
+        "manifest_path": "dummy.jsonl",
+        "use_filter": "validation",
+        "do_tier2": False,
+        "do_tier3": False,
+        "positive_statuses": ["ai_edited"],
+        "negative_statuses": ["pre_ai_human"],
+    }, records=pre_records)
+    score_count = {"n": 0}
+
+    def _counting_stub(entry, **kw):
+        score_count["n"] += 1
+        return _stub_score_entry(entry, **kw)
+
+    monkeypatch.setattr(vh, "score_smoothing_entry", _counting_stub)
+    vh._score_validation_entries_with_progress(
+        entries, mattr_window=50, do_tier2=False, do_tier3=False,
+        allow_non_prose=False, strip_rules=None,
+        strip_aggressive=False,
+        positive_statuses={"ai_generated"},
+        negative_statuses={"pre_ai_human"},
+        cache_path=cache, flush_every=10,
+        manifest_path="dummy.jsonl", use_filter="validation",
+    )
+    assert score_count["n"] == 3
