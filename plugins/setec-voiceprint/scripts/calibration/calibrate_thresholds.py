@@ -1224,8 +1224,51 @@ def _corpus_text_fingerprint(
     return f"sha256:{outer.hexdigest()}"
 
 
+def _entry_id_for_record(entry: dict[str, Any]) -> str:
+    """Match the synthesized id ``score_smoothing_entry`` writes onto
+    every record. Used by the incremental-scoring resume path to skip
+    entries whose records already exist in the partial cache.
+
+    Keep in sync with the entry-id construction in
+    ``validation_harness.score_smoothing_entry`` (~line 169 as of
+    2026-05-16). Both must produce identical IDs from the same entry
+    dict or resume will silently re-score everything.
+    """
+    e_id = entry.get("id")
+    if isinstance(e_id, str):
+        return e_id
+    return f"line_{entry.get('_lineno', '?')}"
+
+
+def _save_score_cache(
+    path: Path,
+    scoring_meta: dict[str, Any],
+    records: list[dict[str, Any]],
+    status: str,
+) -> None:
+    """Atomic write of the records cache. ``status`` is ``"in_progress"``
+    during incremental flushes and ``"complete"`` on the final write
+    after the scoring loop exits cleanly.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "scoring_meta": scoring_meta,
+        "records": records,
+        "status": status,
+    }
+    with tmp.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, default=str)
+        fh.write("\n")
+    tmp.replace(path)
+
+
 def score_corpus(
     args: argparse.Namespace,
+    *,
+    partial_cache_path: Path | None = None,
+    flush_every: int = 100,
+    refresh: bool = False,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     """Score every (filtered, optionally sub-sampled) manifest entry.
 
@@ -1234,8 +1277,19 @@ def score_corpus(
     field, so per-signal threshold sweeps later just read out the
     relevant column.
 
-    Returns ``(records, scoring_meta)``. ``scoring_meta`` carries the
-    inputs that determine cache validity:
+    Incremental cache write + resume (1.69.0+): when
+    ``partial_cache_path`` is provided, the function writes the cache
+    atomically every ``flush_every`` entries with ``status:
+    "in_progress"``, so a crash mid-scoring loses at most
+    ``flush_every`` rows of work. On entry, if the partial cache
+    exists with parseable ``status: "in_progress"`` AND compatible
+    ``scoring_meta``, the function loads the prior records, builds
+    the set of already-scored entry IDs, and skips those entries
+    during the scoring loop. The caller (``load_or_score_corpus``)
+    flips status to ``"complete"`` after the final return.
+
+    Returns ``(records, scoring_meta)``. ``scoring_meta`` carries
+    the inputs that determine cache validity:
 
       - ``manifest_path``, ``manifest_sha256`` — corpus identity.
       - ``use`` — the manifest filter.
@@ -1290,16 +1344,136 @@ def score_corpus(
             "seed": rng_seed,
         }
 
+    # ----- Resume from partial cache (1.69.0+).
+    # Pre-populate records + scored_ids from the partial cache if it
+    # exists with status="in_progress" and compatible scoring_meta.
+    # Compatibility is checked the same way load_or_score_corpus does
+    # for the complete-cache hit path — same manifest hash + same
+    # tier flags + same use filter.
+    records: list[dict[str, Any]] = []
+    scored_ids: set[str] = set()
+    resumed_count = 0
+    if refresh and partial_cache_path is not None and partial_cache_path.exists():
+        # ``--refresh-cache`` semantics: the operator explicitly asked
+        # for a fresh score pass. Do not read the partial cache (skip
+        # resume) and unlink the on-disk file so the very next flush
+        # writes a clean cache rather than appending the new pass to
+        # the stale ``records`` array. Without the unlink we'd keep
+        # status="complete" honest only after the run finished — a
+        # crash mid-refresh would leave a partial cache mixing the
+        # discarded prior run's first N records with the new pass's
+        # first M-N. Codex P2 on PR #68.
+        try:
+            partial_cache_path.unlink()
+            sys.stdout.write(
+                f"--refresh-cache: discarded prior partial cache at "
+                f"{partial_cache_path}; re-scoring from scratch.\n"
+            )
+        except OSError as exc:
+            sys.stdout.write(
+                f"--refresh-cache: could not remove prior partial "
+                f"cache at {partial_cache_path} ({exc}); proceeding "
+                f"without resume (cache will be overwritten on the "
+                f"first flush).\n"
+            )
+    if (
+        not refresh
+        and partial_cache_path is not None
+        and partial_cache_path.exists()
+    ):
+        try:
+            cached = json.loads(
+                partial_cache_path.read_text(encoding="utf-8")
+            )
+            cache_status = cached.get("status", "complete")
+            cache_meta = cached.get("scoring_meta") or {}
+            fresh_hash = _manifest_content_hash(manifest_path)
+            try:
+                fresh_text_fp: str | None = _corpus_text_fingerprint(entries)
+            except Exception:  # noqa: BLE001
+                fresh_text_fp = None
+            ok, reason = cache_is_compatible(
+                cache_meta, args,
+                manifest_sha256=fresh_hash,
+                corpus_text_fingerprint=fresh_text_fp,
+            )
+            if ok and cache_status == "in_progress":
+                records = cached.get("records") or []
+                scored_ids = {
+                    r.get("id") for r in records
+                    if isinstance(r.get("id"), str)
+                }
+                resumed_count = len(records)
+                sys.stdout.write(
+                    f"Resuming corpus scoring: {resumed_count} of "
+                    f"{len(entries)} entries already scored in "
+                    f"partial cache at {partial_cache_path}.\n"
+                )
+            elif not ok and cache_status == "in_progress":
+                sys.stdout.write(
+                    f"Partial cache at {partial_cache_path} is "
+                    f"incompatible ({reason}); discarding and re-"
+                    f"scoring from scratch.\n"
+                )
+        except (json.JSONDecodeError, OSError) as exc:
+            sys.stdout.write(
+                f"Partial cache at {partial_cache_path} is "
+                f"unreadable ({exc}); discarding and re-scoring.\n"
+            )
+
+    to_score = [
+        e for e in entries
+        if _entry_id_for_record(e) not in scored_ids
+    ]
     sys.stdout.write(
-        f"Scoring {len(entries)} entries via variance audit "
-        f"(this can take a while if Tier 2/3 are enabled)...\n"
+        f"Scoring {len(to_score)} entries via variance audit "
+        f"(of {len(entries)} total; {resumed_count} resumed). "
+        f"This can take a while if Tier 2/3 are enabled.\n"
     )
     positive_statuses = set(DEFAULT_POSITIVE_STATUSES)
     negative_statuses = set(DEFAULT_NEGATIVE_STATUSES)
-    records: list[dict[str, Any]] = []
-    for i, e in enumerate(entries):
-        if i % 50 == 0 and i > 0:
-            sys.stdout.write(f"  scored {i}/{len(entries)}...\n")
+    score_t0 = _dt.datetime.now()
+    for i, e in enumerate(to_score):
+        if i > 0 and i % flush_every == 0:
+            # Progress log + atomic partial-cache flush.
+            elapsed = (_dt.datetime.now() - score_t0).total_seconds()
+            rate = i / max(elapsed, 1e-9)
+            remaining = len(to_score) - i
+            eta_s = remaining / max(rate, 1e-9)
+            sys.stdout.write(
+                f"  scored {i}/{len(to_score)} "
+                f"({rate:.1f}/s, ETA {eta_s/60:.1f} min) "
+                f"-> flushing partial cache...\n"
+            )
+            if partial_cache_path is not None:
+                interim_meta = {
+                    "manifest_path": str(manifest_path),
+                    "manifest_sha256": _manifest_content_hash(manifest_path),
+                    "corpus_text_fingerprint": _corpus_text_fingerprint(
+                        entries,
+                    ),
+                    "use": args.use,
+                    "do_tier2": bool(args.tier2),
+                    "do_tier3": bool(args.tier3),
+                    "n_entries_full": full_entry_count,
+                    "n_entries_scored": len(records),
+                    "sub_sample": sub_sample_meta,
+                    "scored_at": _dt.datetime.now(
+                        _dt.timezone.utc,
+                    ).isoformat(),
+                    "scorer_version": SCORER_CACHE_VERSION,
+                }
+                try:
+                    _save_score_cache(
+                        partial_cache_path, interim_meta, records,
+                        status="in_progress",
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    sys.stderr.write(
+                        f"  WARNING: partial-cache flush to "
+                        f"{partial_cache_path} failed: "
+                        f"{type(exc).__name__}: {exc}. Continuing.\n"
+                    )
         records.append(
             score_smoothing_entry(
                 e,
@@ -1432,6 +1606,13 @@ def load_or_score_corpus(
             cached = None
         if cached is not None:
             cache_meta = cached.get("scoring_meta") or {}
+            # Cache status (1.69.0+): "complete" is the historical
+            # behavior — every record is present. "in_progress" is a
+            # partial cache from a crashed prior run; the caller
+            # falls through to score_corpus which resumes from it.
+            # Missing status field defaults to "complete" for
+            # backward compat with pre-1.69.0 caches.
+            cache_status = cached.get("status", "complete")
             # Compute the corpus text fingerprint up-front — costs
             # only the file-hash pass, not the variance audit pass.
             # If this matches the cached fingerprint, the cache is
@@ -1452,31 +1633,40 @@ def load_or_score_corpus(
                 manifest_sha256=fresh_hash,
                 corpus_text_fingerprint=fresh_text_fp,
             )
-            if ok:
+            if ok and cache_status == "complete":
                 records = cached.get("records") or []
                 sys.stdout.write(
                     f"Cache hit: {len(records)} records loaded from "
                     f"{cache_path} (scored at {cache_meta.get('scored_at')}).\n"
                 )
                 return records, cache_meta, True
-            sys.stdout.write(
-                f"Cache at {cache_path} is incompatible ({reason}); "
-                "re-scoring.\n"
-            )
+            if ok and cache_status == "in_progress":
+                # Fall through: score_corpus will pick up where the
+                # partial cache left off (it knows how to resume).
+                sys.stdout.write(
+                    f"Partial cache hit at {cache_path}: status="
+                    f"in_progress; resuming scoring.\n"
+                )
+            elif not ok:
+                sys.stdout.write(
+                    f"Cache at {cache_path} is incompatible "
+                    f"({reason}); re-scoring.\n"
+                )
 
-    records, scoring_meta = score_corpus(args)
+    flush_every = int(getattr(args, "records_cache_flush_every", 100))
+    records, scoring_meta = score_corpus(
+        args,
+        partial_cache_path=cache_path,
+        flush_every=flush_every,
+        refresh=refresh,
+    )
     if cache_path:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        cache_path.write_text(
-            json.dumps(
-                {"scoring_meta": scoring_meta, "records": records},
-                indent=2, default=str,
-            ) + "\n",
-            encoding="utf-8",
+        _save_score_cache(
+            cache_path, scoring_meta, records, status="complete",
         )
         sys.stdout.write(
             f"Wrote scored-records cache to {cache_path} "
-            f"({len(records)} records).\n"
+            f"({len(records)} records, status=complete).\n"
         )
     return records, scoring_meta, False
 
@@ -2112,6 +2302,16 @@ def main(argv: list[str] | None = None) -> int:
             "Force re-scoring even if a compatible cache exists. "
             "Use after a code change that should invalidate cached "
             "records but didn't bump SCORER_CACHE_VERSION."
+        ),
+    )
+    parser.add_argument(
+        "--records-cache-flush-every", type=int, default=100,
+        help=(
+            "Write --records-cache atomically every N scored entries "
+            "with status='in_progress' (1.69.0+). A crash mid-scoring "
+            "loses at most N entries; the next run resumes from the "
+            "partial cache automatically. Default 100. Ignored when "
+            "--records-cache is unset."
         ),
     )
     # Polarity-inversion gate (1.59.0+). See _check_polarity_inversion

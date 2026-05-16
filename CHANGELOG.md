@@ -6,6 +6,51 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.79.1] - 2026-05-16
+
+**Fix: `--refresh-cache` now actually refreshes.** Codex P2 on PR #68. The flag bypassed the *complete-cache hit* return path in `load_or_score_corpus` but did not flow through to `score_corpus`, which unconditionally read the partial cache and resumed from it. So `--refresh-cache` against an `in_progress` cache silently kept the prior partial's records and only re-scored the missing tail — the opposite of what the operator asked for.
+
+### Fixed
+
+- **`score_corpus(refresh: bool = False)` parameter added.** When `refresh=True`, the function unlinks the existing partial cache file (if any) before the scoring loop and skips the resume-from-partial read block. Without the unlink, a crash mid-refresh would leave a partial that interleaved the discarded prior run's first N records with the new pass's first M-N — a worse state than the bug it was meant to fix.
+- **`load_or_score_corpus` now plumbs `refresh` into `score_corpus`.** Single-line change at the call site; preserves the default-False contract so all pre-existing callers (which never passed `refresh`) keep their behavior.
+
+### Added
+
+- **3 new regression tests** in `test_incremental_corpus_scoring.py` under "REFRESH-CACHE × PARTIAL-RESUME":
+  - `test_refresh_cache_discards_partial_resume` — pins the fix: refresh=True against an in_progress partial triggers a full re-score, not a 2-of-5 resume.
+  - `test_refresh_cache_unlinks_prior_partial` — pins the unlink semantics: a sentinel record planted in the partial does NOT appear in the post-refresh records.
+  - `test_refresh_cache_default_false_preserves_resume` — regression guard that the 1.79.0 resume contract still works when refresh=False (we didn't accidentally rip out the resume path).
+
+## [1.79.0] - 2026-05-16
+
+**Incremental corpus-scoring cache + resume.** Stacked on the 1.78.0 streaming-pair-extraction branch. Closes the same all-or-nothing failure mode in `calibrate_thresholds.score_corpus` that the 1.76.0 PR closed for the aggregator: a long scoring run that crashes mid-loop loses everything because the cache is written only once at the end.
+
+This PR applies the same checkpoint + resume pattern to the scoring path that 1.76.0 applied to the aggregator path. Together with the prior four PRs, the calibration toolchain now has uniform divide / measure / save-progress / conquer affordances across every long-running step.
+
+### Added
+
+- **Atomic incremental cache writes** in `score_corpus`: every `--records-cache-flush-every N` entries (default 100), the in-flight records list is written to the `--records-cache` path with `status: "in_progress"`. Crash mid-scoring loses at most `N` entries of work. Atomic (tmp + rename) so a crash mid-write doesn't corrupt the cache.
+- **Resume from partial cache**: when `load_or_score_corpus` finds an `--records-cache` with `status: "in_progress"` and compatible `scoring_meta` (same manifest SHA, same tier flags, same use filter), it loads the prior records, builds the set of already-scored entry IDs, and passes them to `score_corpus` which skips those entries during the loop. Threshold-sweep-only re-runs continue to use the `status: "complete"` cache-hit fast path unchanged.
+- **`status` field on the cache** (`"in_progress"` or `"complete"`). Backward compat: pre-1.79.0 caches lack the field and are treated as `"complete"` (the prior behavior), so existing caches keep working as full-cache hits.
+- **Rate + ETA in progress log**: per-flush log line now includes entries-per-second and minutes-to-completion. At MAGE / RAID scoring scale (hours), the ETA is the difference between "is this hung?" and "still chewing."
+- **`--records-cache-flush-every N` CLI flag** on both `calibration_survey.py` and `calibrate_thresholds.py` standalone CLIs. Default 100. Lower (10-50) for tier3 runs where per-entry scoring is slow and crash exposure is high; higher (500+) for tier1-only runs where per-entry scoring is fast and flush I/O would dominate.
+- **10 new regression tests** in `scripts/tests/test_incremental_corpus_scoring.py`: partial-cache written every N entries (1), final cache status=complete (1), atomic-write no-tmp contract (1), resume skips already-scored entries (1), resume preserves carried-forward records unchanged (1), incompatible partial discarded (1), pre-1.79 caches without status treated as complete — back-compat (1), progress log includes rate + ETA (1), CLI flag on both standalone parsers (2). Existing 159 calibration + aggregator tests pass unchanged.
+
+### Notes
+
+- The `entry_id` used for the skip-check is constructed by a new `_entry_id_for_record` helper that mirrors the entry-id construction in `validation_harness.score_smoothing_entry` (~line 169). The two must produce identical IDs from the same entry dict; the helper's docstring flags this contract so future drift is easier to catch.
+- The incremental writes go to the SAME path as the final cache — no `.partial` suffix dance. The `status` field is the canonical "is this complete?" signal.
+- `score_corpus` accepts `partial_cache_path` + `flush_every` kwargs directly. `load_or_score_corpus` wires them from `args.records_cache_flush_every`. Programmatic callers that build their own args dict and want the new behavior should add `records_cache_flush_every` to the namespace (or accept the 100 default).
+- **The five-PR stack as a whole** (1.75.0 + 1.76.0 + 1.77.0 + 1.78.0 + 1.79.0) takes the calibration toolchain from "ship MAGE in 8h26m IF you don't crash, RAID infeasible at any speed" to "MAGE in 6.6 seconds aggregated + minutes scored, RAID scoring crash-recoverable, RAID aggregating feasible on consumer hardware." Each PR is one operational principle applied to one bottleneck:
+  - 1.75.0 — Divide (pre-extract pairs in main, dispatch via thread/process/SharedMemory)
+  - 1.76.0 — Measure + Save progress (per-signal logging, atomic partial JSON, resume) for the **aggregator path**
+  - 1.77.0 — Conquer (O(n log n) sweep_threshold dispatch)
+  - 1.78.0 — Stream (corollary of divide when RAM-bound)
+  - **1.79.0 — Save progress (atomic incremental cache, resume) for the scoring path** — this PR
+- The next-tier candidates (`manuscript_audit.py`, `validation_harness.py`, `pdf_inventory.py`, `editlens_to_manifest.py`, `voice_drift_tracker.py`) already landed as wave 2 (PRs #69–#73 at 1.70.0–1.74.0).
+- Originally landed as 1.69.0; renumbered to 1.71.0 (first rebase), then to 1.79.0 (second rebase after wave 2 PRs #69–#73 landed).
+
 ## [1.78.1] - 2026-05-16
 
 **Fix: streaming aggregate errors on unreadable shard caches by default.** Codex P2 on PR #66. The 1.78.0 streaming pre-extraction loop caught `Exception` on each shard's `json.load`, wrote a stderr warning, and silently `continue`d. An operator with a corrupted shard cache got calibration thresholds derived from a strict subset of the records they thought they were calibrating against — with no error signal and a misleading `n_records` count in the survey JSON.
