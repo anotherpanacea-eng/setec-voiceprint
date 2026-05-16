@@ -6,6 +6,26 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.81.0] - 2026-05-16
+
+**Standalone-CLI exposure of the 1.80.0 Tier 4 + pluggable-embedding flags.** Symmetry follow-up to 1.80.0. `score_corpus` reads `do_tier4`, `embedding_model`, `embedding_revision`, `surprisal_model`, `surprisal_revision` from the args Namespace via `getattr` — the sharded path (`shard_runner shard` → `state.json["task_params"]` → `_default_scorer`) populates them, but the standalone `calibration_survey.py` and `calibrate_thresholds.py` argparsers didn't expose them. Single-process bake-off runs against either standalone CLI silently fell back to defaults (legacy MiniLM Tier 3, no Tier 4) even when operators thought they were enabling them.
+
+### Added
+
+- **`calibration_survey.py --tier4 --no-tier4 --surprisal-model --surprisal-revision --embedding-model --embedding-revision`** — same flag shapes and help text as `shard_runner shard`. Default `--tier4` off; default model aliases `None` (preserves pre-1.81 bit-exact behavior).
+- **`calibrate_thresholds.py --tier4 --no-tier4 --surprisal-model --surprisal-revision --embedding-model --embedding-revision`** — parity with `calibration_survey.py`. The single-signal threshold-derivation CLI now supports the same model swaps as the full survey CLI.
+- **4 new regression tests** in `test_pipeline_model_wiring.py` under "1.81.0: standalone-CLI surface":
+  - `test_calibration_survey_cli_exposes_tier4_and_model_flags` — `--help` output contains all 6 new flags.
+  - `test_calibrate_thresholds_cli_exposes_tier4_and_model_flags` — same for the threshold-derivation CLI.
+  - `test_calibration_survey_parser_defaults_preserve_back_compat` — defaults match pre-1.81 (tier4=False, model fields None).
+  - `test_calibration_survey_parser_accepts_explicit_values` — parser correctly populates the args Namespace when all 6 flags are set.
+
+### Notes
+
+- **No new behavior; new CLI surface only.** The scoring pipeline reads these fields the same way it did in 1.80.0; only the standalone CLIs grew arguments. The flags are now symmetric across `shard_runner shard`, `calibration_survey.py`, and `calibrate_thresholds.py`.
+- **Unblocks the MAGE Tier 3+4 bake-off** via the standalone `calibration_survey.py` path. The bake-off matrix is 4 embedding aliases × 3 surprisal aliases at 5K stratified subsample; the standalone CLI is the appropriate entry point for that scale (sharded toolchain is overkill for 5K records).
+- **Test suite status**: 21 passed in `test_pipeline_model_wiring.py` (17 pre-existing 1.80.0 + 4 new), 68 passed across the four calibration scoring test files.
+
 ## [1.80.0] - 2026-05-16
 
 **Calibration pipeline: pluggable Tier 3 embedding model + Tier 4 surprisal wiring.** Closes two wiring gaps discovered during MAGE Tier 3+4 bake-off planning:

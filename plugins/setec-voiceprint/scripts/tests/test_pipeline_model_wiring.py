@@ -749,3 +749,91 @@ def test_score_shard_task_params_wins_over_run_context_for_embedding():
         )
 
     assert captured.get("embedding_model") == "mxbai"
+
+
+# --------------- 1.81.0: standalone-CLI surface ----------
+
+
+def test_calibration_survey_cli_exposes_tier4_and_model_flags():
+    """1.81.0+: ``calibration_survey.py`` must expose the same
+    ``--tier4`` / ``--surprisal-model`` / ``--embedding-model`` flags
+    as ``shard_runner shard`` so a 5K-subsample bake-off invocation
+    against the standalone CLI can exercise the 1.80.0 wiring. Before
+    1.81.0 the scoring path read these via ``getattr`` defaults; only
+    the sharded path populated them on the args Namespace, so single-
+    process bake-off runs against ``calibration_survey.py`` couldn't
+    actually swap embedding models or enable Tier 4."""
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "calibration" / "calibration_survey.py"),
+         "--help"],
+        capture_output=True, text=True, timeout=30,
+    )
+    out = result.stdout
+    assert "--tier4" in out, (
+        "calibration_survey.py must expose --tier4 (1.81.0+)"
+    )
+    assert "--no-tier4" in out
+    assert "--surprisal-model" in out
+    assert "--surprisal-revision" in out
+    assert "--embedding-model" in out
+    assert "--embedding-revision" in out
+
+
+def test_calibrate_thresholds_cli_exposes_tier4_and_model_flags():
+    """1.81.0+: same flags on ``calibrate_thresholds.py``. The
+    single-signal threshold-derivation CLI is the same shape as
+    ``calibration_survey.py`` for these flags; both call into
+    ``score_corpus`` which reads them via ``getattr``."""
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "calibration" / "calibrate_thresholds.py"),
+         "--help"],
+        capture_output=True, text=True, timeout=30,
+    )
+    out = result.stdout
+    assert "--tier4" in out, (
+        "calibrate_thresholds.py must expose --tier4 (1.81.0+)"
+    )
+    assert "--surprisal-model" in out
+    assert "--surprisal-revision" in out
+    assert "--embedding-model" in out
+    assert "--embedding-revision" in out
+
+
+def test_calibration_survey_parser_defaults_preserve_back_compat():
+    """The new flags default to off / None on calibration_survey so
+    operators who don't pass them get exactly the pre-1.81 behavior."""
+    import calibration_survey as cs  # type: ignore
+
+    parser = cs.build_arg_parser()
+    args = parser.parse_args([
+        "--manifest", "x.jsonl", "--fpr-target", "0.01",
+    ])
+    assert args.tier4 is False
+    assert args.surprisal_model is None
+    assert args.surprisal_revision is None
+    assert args.embedding_model is None
+    assert args.embedding_revision is None
+
+
+def test_calibration_survey_parser_accepts_explicit_values():
+    """Passing the new flags populates the args Namespace cleanly so
+    score_corpus's ``getattr(args, ..., default)`` calls see real
+    values, not defaults."""
+    import calibration_survey as cs  # type: ignore
+
+    parser = cs.build_arg_parser()
+    args = parser.parse_args([
+        "--manifest", "x.jsonl", "--fpr-target", "0.01",
+        "--tier4",
+        "--surprisal-model", "gpt2",
+        "--surprisal-revision", "abc123",
+        "--embedding-model", "mxbai",
+        "--embedding-revision", "def456",
+    ])
+    assert args.tier4 is True
+    assert args.surprisal_model == "gpt2"
+    assert args.surprisal_revision == "abc123"
+    assert args.embedding_model == "mxbai"
+    assert args.embedding_revision == "def456"

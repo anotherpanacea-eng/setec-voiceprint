@@ -2320,6 +2320,53 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-tier3", dest="tier3", action="store_false",
     )
+    # 1.81.0+: standalone-CLI exposure of the pipeline-wired Tier 4 +
+    # pluggable-embedding flags landed in 1.80.0. score_corpus +
+    # score_smoothing_entry read these via getattr; before 1.81.0 only
+    # shard_runner shard's CLI populated them on the args Namespace,
+    # so single-signal threshold-derivation runs from this CLI couldn't
+    # exercise Tier 4 or a non-MiniLM embedding model.
+    parser.add_argument(
+        "--tier4", action="store_true", default=False,
+        help=(
+            "Enable Tier 4 (surprisal) signals on the scoring run. "
+            "Opt-in. Requires transformers + torch; see RUNBOOK_tier4_"
+            "install.md."
+        ),
+    )
+    parser.add_argument(
+        "--no-tier4", dest="tier4", action="store_false",
+    )
+    parser.add_argument(
+        "--surprisal-model", default=None,
+        help=(
+            "Causal LM alias or HuggingFace id for Tier 4. "
+            "Default (when --tier4 is set): tinyllama. See "
+            "surprisal_backend.MODEL_ALIASES for the 9 candidates."
+        ),
+    )
+    parser.add_argument(
+        "--surprisal-revision", default=None,
+        help=(
+            "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
+            "(reproducibility). Default: revision-less."
+        ),
+    )
+    parser.add_argument(
+        "--embedding-model", default=None,
+        help=(
+            "Embedding-model alias or HuggingFace id for Tier 3 "
+            "cohesion. Default: legacy MiniLM hardcode. Aliases: "
+            "mxbai, gemma, harrier, minilm."
+        ),
+    )
+    parser.add_argument(
+        "--embedding-revision", default=None,
+        help=(
+            "Pin a HuggingFace commit SHA for the Tier 3 embedding "
+            "model (reproducibility). Default: revision-less."
+        ),
+    )
     parser.add_argument(
         "--notes",
         help=(
