@@ -1455,6 +1455,33 @@ def score_corpus(
                     "use": args.use,
                     "do_tier2": bool(args.tier2),
                     "do_tier3": bool(args.tier3),
+                    # Codex P2 on PR #77: must match the keys emitted
+                    # by the final ``scoring_meta`` write below or
+                    # ``cache_is_compatible`` will refuse the partial
+                    # cache on resume and re-score from scratch — the
+                    # opposite of the 1.79.0 incremental-resume
+                    # contract. This bites exactly the expensive bake-
+                    # off paths this PR enables (--tier4 +
+                    # --surprisal-model + --embedding-model runs are
+                    # the longest-running scoring loops the framework
+                    # supports). Same five fields as scoring_meta;
+                    # mirrored via getattr-with-default so the partial
+                    # cache from a pre-1.80 run (no tier4/model args
+                    # on the Namespace) still serializes legal None /
+                    # False values.
+                    "do_tier4": bool(getattr(args, "tier4", False)),
+                    "embedding_model": getattr(
+                        args, "embedding_model", None,
+                    ),
+                    "embedding_revision": getattr(
+                        args, "embedding_revision", None,
+                    ),
+                    "surprisal_model": getattr(
+                        args, "surprisal_model", None,
+                    ),
+                    "surprisal_revision": getattr(
+                        args, "surprisal_revision", None,
+                    ),
                     "n_entries_full": full_entry_count,
                     "n_entries_scored": len(records),
                     "sub_sample": sub_sample_meta,
@@ -1481,6 +1508,13 @@ def score_corpus(
                 negative_statuses=negative_statuses,
                 do_tier2=args.tier2,
                 do_tier3=args.tier3,
+                # 1.80.0+: optional Tier 4 + pluggable Tier 3 embedding
+                # model. Defaults preserve pre-1.80 behavior.
+                do_tier4=bool(getattr(args, "tier4", False)),
+                embedding_model=getattr(args, "embedding_model", None),
+                embedding_revision=getattr(args, "embedding_revision", None),
+                surprisal_model=getattr(args, "surprisal_model", None),
+                surprisal_revision=getattr(args, "surprisal_revision", None),
             )
         )
 
@@ -1491,6 +1525,14 @@ def score_corpus(
         "use": args.use,
         "do_tier2": bool(args.tier2),
         "do_tier3": bool(args.tier3),
+        # 1.80.0+: mirror the new fields in scoring_meta so the cache
+        # compat check refuses caches that were scored under different
+        # tier4 / model choices. See ``cache_is_compatible``.
+        "do_tier4": bool(getattr(args, "tier4", False)),
+        "embedding_model": getattr(args, "embedding_model", None),
+        "embedding_revision": getattr(args, "embedding_revision", None),
+        "surprisal_model": getattr(args, "surprisal_model", None),
+        "surprisal_revision": getattr(args, "surprisal_revision", None),
         "n_entries_full": full_entry_count,
         "n_entries_scored": len(records),
         "sub_sample": sub_sample_meta,
@@ -1551,6 +1593,30 @@ def cache_is_compatible(
         return False, "tier2 toggle changed"
     if bool(cache_meta.get("do_tier3")) != bool(args.tier3):
         return False, "tier3 toggle changed"
+    # 1.80.0+: tier4 + model-alias compat. Pre-1.80 caches lack these
+    # fields (defaulting to None / False); the check is forgiving when
+    # both sides are absent so existing caches keep working.
+    cur_tier4 = bool(getattr(args, "tier4", False))
+    if bool(cache_meta.get("do_tier4")) != cur_tier4:
+        return False, "tier4 toggle changed"
+    cur_embed = getattr(args, "embedding_model", None)
+    if cache_meta.get("embedding_model") != cur_embed:
+        return False, (
+            f"embedding_model changed "
+            f"({cache_meta.get('embedding_model')!r} → {cur_embed!r})"
+        )
+    cur_embed_rev = getattr(args, "embedding_revision", None)
+    if cache_meta.get("embedding_revision") != cur_embed_rev:
+        return False, "embedding_revision changed"
+    cur_surp = getattr(args, "surprisal_model", None)
+    if cache_meta.get("surprisal_model") != cur_surp:
+        return False, (
+            f"surprisal_model changed "
+            f"({cache_meta.get('surprisal_model')!r} → {cur_surp!r})"
+        )
+    cur_surp_rev = getattr(args, "surprisal_revision", None)
+    if cache_meta.get("surprisal_revision") != cur_surp_rev:
+        return False, "surprisal_revision changed"
     cached_sub = cache_meta.get("sub_sample")
     cur_max = getattr(args, "max_entries", None)
     cur_seed = getattr(args, "max_entries_seed", None)

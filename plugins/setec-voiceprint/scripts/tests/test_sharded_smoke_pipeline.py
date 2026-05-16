@@ -86,6 +86,8 @@ def _stub_scorer(
     cache_path: Path,
     flush_every: int,
     sigterm_event: Any,
+    # 1.80.0+: pipeline-wiring kwargs. Stub ignores them.
+    **_extra: Any,
 ) -> dict[str, Any]:
     """Same stub pattern as test_shard_runner.py: read the shard's
     manifest, produce one fake record per row, write the cache.

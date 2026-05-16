@@ -549,6 +549,53 @@ def mdd_stats(text: str) -> dict[str, Any] | None:
 
 # ---------- Tier 3 metrics (embeddings) ----------
 
+# Per-(alias, revision) cache of loaded ``EmbeddingBackend`` instances.
+# Tier 3 scoring is called once per document; without this cache, every
+# call would re-instantiate the backend (which is benign for the wrapper
+# itself — the underlying sentence-transformers model is lazy-loaded once
+# either way — but caching makes the code path easier to reason about and
+# trivially avoids re-running the alias-resolution + provenance setup).
+# Keyed by (alias_or_id, revision-or-empty) so different revisions don't
+# collide and a deliberate revision pin is preserved across calls.
+_EMBEDDING_BACKENDS_CACHE: dict[tuple[str, str], Any] = {}
+
+
+def _get_embedding_backend(
+    model_alias: str | None,
+    revision: str | None = None,
+) -> Any | None:
+    """Return a cached :class:`EmbeddingBackend` for ``model_alias`` or
+    ``None`` when the new pluggable path can't be loaded.
+
+    Returns ``None`` if either:
+      * ``model_alias`` is ``None`` (caller is opting into the legacy
+        MiniLM-only path for back-compat — see ``adjacent_sentence_cosine``)
+      * ``embedding_backend`` module is not importable (operator hasn't
+        installed the optional calibration-tier dependencies — caller
+        should fall back to legacy ``_get_st_model``)
+
+    Raises nothing on missing-dep; the typed
+    ``EmbeddingBackendError`` only fires on the eventual ``.encode``
+    call, which the caller catches and falls back from.
+    """
+    if model_alias is None:
+        return None
+    cache_key = (model_alias, revision or "")
+    cached = _EMBEDDING_BACKENDS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        import embedding_backend as eb  # type: ignore
+    except ImportError:
+        return None
+    backend = eb.EmbeddingBackend(
+        model_id=eb.resolve_model_arg(model_alias),
+        revision=revision,
+    )
+    _EMBEDDING_BACKENDS_CACHE[cache_key] = backend
+    return backend
+
+
 def _get_st_model():
     global _ST_MODEL
     if _ST_MODEL is not None:
@@ -563,10 +610,75 @@ def _get_st_model():
         return None
 
 
-def adjacent_sentence_cosine(sentences: list[str]) -> dict[str, Any] | None:
+def adjacent_sentence_cosine(
+    sentences: list[str],
+    *,
+    embedding_model: str | None = None,
+    embedding_revision: str | None = None,
+) -> dict[str, Any] | None:
+    """Compute adjacent-sentence cosine similarity statistics.
+
+    When ``embedding_model`` is provided (alias like ``"mxbai"`` or full
+    HuggingFace id), routes through ``embedding_backend.EmbeddingBackend``
+    so operators can swap embedding models per the §5.4 / §6.4 fixture
+    test. When ``embedding_model`` is ``None`` (the back-compat default
+    preserved for pre-1.80.0 callers), falls back to the legacy
+    ``all-MiniLM-L6-v2`` hardcode → TF-IDF fallback chain.
+
+    The ``method`` field in the return dict echoes which path was taken
+    so PROVENANCE consumers can verify the embedding model was the one
+    the operator intended. When the new backend path raises an
+    ``EmbeddingBackendError`` mid-encode (OOM, context-window overflow),
+    we do NOT silently fall back to MiniLM — that would obscure the
+    failure. The function returns ``None`` instead so the caller's
+    ``available: False`` gate fires cleanly.
+    """
     if len(sentences) < 2:
         return None
 
+    # New path (1.80.0+): pluggable embedding model via embedding_backend.
+    if embedding_model is not None:
+        backend = _get_embedding_backend(embedding_model, embedding_revision)
+        if backend is not None:
+            try:
+                import numpy as np  # type: ignore
+                embeddings = backend.encode(sentences)
+                sims = []
+                for i in range(len(embeddings) - 1):
+                    a = embeddings[i]
+                    b = embeddings[i + 1]
+                    denom = (np.linalg.norm(a) * np.linalg.norm(b))
+                    if denom == 0:
+                        continue
+                    sims.append(float(np.dot(a, b) / denom))
+                if not sims:
+                    return None
+                ident = backend.identifier_block()
+                method_str = (
+                    f"sentence-transformers ({ident['id']})"
+                    + (f" @ {ident['revision']}" if ident.get('revision') else "")
+                )
+                return {
+                    "method": method_str,
+                    "embedding_model": ident["id"],
+                    "embedding_alias": ident.get("alias"),
+                    "embedding_revision": ident.get("revision"),
+                    "n_pairs": len(sims),
+                    "mean": statistics.mean(sims),
+                    "sd": statistics.stdev(sims) if len(sims) > 1 else 0.0,
+                    "min": min(sims),
+                    "max": max(sims),
+                }
+            except Exception:
+                # Backend's typed errors include OOM / context overflow.
+                # Return None so the caller's "available: False" gate
+                # fires cleanly rather than silently swapping models.
+                return None
+
+    # Legacy path (pre-1.80.0): hardcoded MiniLM. Preserved for back-
+    # compat with operators who haven't migrated to --embedding-model
+    # and any prior cached survey JSON that pins the "all-MiniLM-L6-v2"
+    # method string.
     model = _get_st_model() if HAS_ST else None
     if model is not None:
         try:
@@ -627,11 +739,55 @@ def adjacent_sentence_cosine(sentences: list[str]) -> dict[str, Any] | None:
 # crash — same posture as Tier 3 when sentence_transformers / sklearn
 # are missing.
 
+# Per-(model_id, revision) cache of loaded ``SurprisalBackend`` instances.
+# Mirrors ``_EMBEDDING_BACKENDS_CACHE`` for the same reason: the in-pipeline
+# scoring path calls audit_text once per document and would otherwise re-
+# instantiate the backend on every doc. The wrapper itself is cheap to
+# construct (it lazy-loads the model on the first .score_text call), but
+# caching keeps the trace tidy and ensures only one model is held resident
+# per (model, revision) pair across a scoring run.
+_SURPRISAL_BACKENDS_CACHE: dict[tuple[str, str], Any] = {}
+
+
+def _get_surprisal_backend(
+    model_alias: str | None,
+    revision: str | None = None,
+) -> Any | None:
+    """Return a cached :class:`SurprisalBackend` for ``model_alias``.
+
+    Returns ``None`` if ``model_alias`` is ``None`` OR the
+    ``surprisal_backend`` module isn't importable. Failure to load the
+    underlying model fires as a typed ``SurprisalBackendError`` from
+    the eventual ``.score_text`` call; this helper only handles
+    construction, not loading.
+    """
+    if model_alias is None:
+        return None
+    cache_key = (model_alias, revision or "")
+    cached = _SURPRISAL_BACKENDS_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+    try:
+        from surprisal_backend import (  # type: ignore
+            SurprisalBackend, resolve_model_arg,
+        )
+    except ImportError:
+        return None
+    backend = SurprisalBackend(
+        model_id=resolve_model_arg(model_alias),
+        revision=revision,
+    )
+    _SURPRISAL_BACKENDS_CACHE[cache_key] = backend
+    return backend
+
+
 def _tier4_surprisal_block(
     text: str,
     *,
     score_fn=None,
     backend=None,
+    surprisal_model: str | None = None,
+    surprisal_revision: str | None = None,
     sliding_window: bool = False,
     window_size: int = 200,
     stride: int = 100,
@@ -683,21 +839,41 @@ def _tier4_surprisal_block(
             ),
         }
     if score_fn is None and backend is None:
-        try:
-            # Construct a default backend lazily. Same lazy-load
-            # semantics as the audit script's CLI path.
-            from surprisal_backend import (  # type: ignore
-                DEFAULT_MODEL, SurprisalBackend,
+        # 1.80.0+: prefer the caller-supplied surprisal_model alias if
+        # set (uses the per-(model, revision) cache so the scoring loop
+        # doesn't re-instantiate the backend per document). Falls back
+        # to DEFAULT_MODEL when no alias was passed so the CLI's
+        # pre-1.80 ``--tier4`` (without ``--surprisal-model``) keeps
+        # working unchanged.
+        if surprisal_model is not None:
+            backend = _get_surprisal_backend(
+                surprisal_model, surprisal_revision,
             )
-            backend = SurprisalBackend(model_id=DEFAULT_MODEL)
-        except ImportError as exc:
-            return {
-                "available": False,
-                "reason": (
-                    f"surprisal_backend unimportable: {exc}. Tier-4 "
-                    f"requires transformers + torch."
-                ),
-            }
+            if backend is None:
+                return {
+                    "available": False,
+                    "reason": (
+                        f"surprisal_backend unimportable for alias "
+                        f"{surprisal_model!r}. Tier-4 requires "
+                        f"transformers + torch."
+                    ),
+                }
+        else:
+            try:
+                # Construct a default backend lazily. Same lazy-load
+                # semantics as the audit script's CLI path.
+                from surprisal_backend import (  # type: ignore
+                    DEFAULT_MODEL, SurprisalBackend,
+                )
+                backend = SurprisalBackend(model_id=DEFAULT_MODEL)
+            except ImportError as exc:
+                return {
+                    "available": False,
+                    "reason": (
+                        f"surprisal_backend unimportable: {exc}. Tier-4 "
+                        f"requires transformers + torch."
+                    ),
+                }
     try:
         sub = audit_surprisal(
             text,
@@ -962,6 +1138,17 @@ def audit_text(
     strip_rules: str | list[str] | None = None,
     strip_aggressive: bool = False,
     collect_stripped: bool = False,
+    # 1.80.0+: pluggable embedding model for Tier 3 cohesion. None
+    # preserves the legacy MiniLM hardcode for back-compat.
+    embedding_model: str | None = None,
+    embedding_revision: str | None = None,
+    # 1.80.0+: surprisal-model passthrough for the in-pipeline Tier 4
+    # path. When set AND ``do_tier4=True`` AND no ``tier4_backend`` /
+    # ``tier4_score_fn`` was injected, the Tier 4 block constructs a
+    # ``SurprisalBackend`` from these. None preserves the existing
+    # behavior (require explicit tier4_backend or fall through to None).
+    surprisal_model: str | None = None,
+    surprisal_revision: str | None = None,
 ) -> dict[str, Any]:
     original_text = text
     text, preprocessing = strip_non_prose(
@@ -1010,7 +1197,14 @@ def audit_text(
     if do_tier3:
         out["tier3"] = {
             "available": HAS_ST or HAS_SKLEARN,
-            "adjacent_cosine": adjacent_sentence_cosine(sentences) if (HAS_ST or HAS_SKLEARN) else None,
+            "adjacent_cosine": (
+                adjacent_sentence_cosine(
+                    sentences,
+                    embedding_model=embedding_model,
+                    embedding_revision=embedding_revision,
+                )
+                if (HAS_ST or HAS_SKLEARN) else None
+            ),
         }
     if do_tier4:
         # v1.47.0+ (C.4): Tier 4 (surprisal). Opt-in; lazy import
@@ -1018,10 +1212,20 @@ def audit_text(
         # don't enable Tier 4 never pay the import cost. When
         # tier4_score_fn is supplied (the test path), no real
         # causal LM is loaded.
+        #
+        # 1.80.0+: if neither score_fn nor backend was injected and
+        # the caller passed --surprisal-model, construct a
+        # SurprisalBackend from (surprisal_model, surprisal_revision)
+        # so the in-pipeline scoring path can run Tier 4 with the
+        # operator's chosen LM. Backend is module-level cached by
+        # _tier4_surprisal_block, so repeated audit_text calls in a
+        # scoring loop don't re-load the LM weights.
         out["tier4"] = _tier4_surprisal_block(
             text,
             score_fn=tier4_score_fn,
             backend=tier4_backend,
+            surprisal_model=surprisal_model,
+            surprisal_revision=surprisal_revision,
         )
     # v1.65.0: AIC-7 / AIC-8 / AIC-9 named-pattern integration.
     # Each is opt-in via its own flag. The three families have
@@ -3172,6 +3376,31 @@ def main() -> int:
             "Default: tinyllama. See surprisal_backend.MODEL_ALIASES."
         ),
     )
+    # 1.80.0+: pluggable Tier 3 embedding model. embedding_backend.py
+    # has shipped a pluggable wrapper with 4 aliases since 2026-05-11
+    # but variance_audit.adjacent_sentence_cosine was wired to the
+    # legacy MiniLM hardcode. This flag now routes Tier 3 through the
+    # wrapper. When omitted, the legacy MiniLM path is preserved for
+    # back-compat with pre-1.80 callers and any cached Tier 3 surveys
+    # that pin the `sentence-transformers (all-MiniLM-L6-v2)` method
+    # string. Aliases: mxbai, gemma, harrier, minilm. Or pass a full
+    # HuggingFace id verbatim.
+    parser.add_argument(
+        "--embedding-model", default=None,
+        help=(
+            "Embedding-model alias or HuggingFace id for Tier 3 "
+            "cohesion. Default: legacy MiniLM hardcode (for back-compat). "
+            "Aliases: mxbai, gemma, harrier, minilm. See "
+            "embedding_backend.MODEL_ALIASES."
+        ),
+    )
+    parser.add_argument(
+        "--embedding-revision", default=None,
+        help=(
+            "Pin a HuggingFace commit SHA for the Tier 3 embedding "
+            "model (reproducibility). Default: revision-less."
+        ),
+    )
     # Reviewer P2 (2026-05-14): --surprisal-revision parity with the
     # standalone surprisal_audit.py CLI. Pinning a HuggingFace commit
     # SHA in PROVENANCE entries is the reproducibility contract for
@@ -3337,6 +3566,9 @@ def main() -> int:
             strip_rules=args.strip_rules,
             strip_aggressive=args.strip_aggressive,
             collect_stripped=args.show_stripped is not None,
+            # 1.80.0+: pluggable Tier 3 embedding (legacy MiniLM when None).
+            embedding_model=args.embedding_model,
+            embedding_revision=args.embedding_revision,
         )
         _emit_preprocessing_warning(
             audit.get("preprocessing"),

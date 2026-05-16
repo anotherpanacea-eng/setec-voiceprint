@@ -61,6 +61,12 @@ def _stub_scorer_with_signals(
     cache_path: Path,
     flush_every: int,
     sigterm_event,
+    # 1.80.0+ kwargs propagated by _score_shard_calibration_survey.
+    # The stub doesn't honor them (Tier 4 + embedding-model behavior
+    # is tested in unit tests against the real scorer); we accept the
+    # kwargs to keep the stub-injection test path compatible with the
+    # post-1.80 dispatcher signature.
+    **_extra,
 ):
     """Stub scorer that emits ``per_signal_scores`` for the signals
     in ``COMPRESSION_HEURISTICS`` so ``collect_signal_records`` can

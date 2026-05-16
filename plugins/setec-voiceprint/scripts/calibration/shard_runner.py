@@ -476,6 +476,15 @@ def _default_scorer(
     cache_path: Path,
     flush_every: int,
     sigterm_event: Any,
+    # 1.80.0+: Tier 4 + pluggable embedding / surprisal models.
+    # Defaults preserve pre-1.80 behavior so old test callers and any
+    # third-party scorer registrations that import _default_scorer
+    # without the new kwargs keep working.
+    tier4: bool = False,
+    embedding_model: str | None = None,
+    embedding_revision: str | None = None,
+    surprisal_model: str | None = None,
+    surprisal_revision: str | None = None,
 ) -> dict[str, Any]:
     """Call calibration_survey's load_or_score_corpus on the shard
     manifest.
@@ -500,6 +509,16 @@ def _default_scorer(
         fpr_target=fpr_target,
         tier2=tier2,
         tier3=tier3,
+        # 1.80.0+: Tier 4 + pluggable models on the inner Namespace
+        # so score_corpus and score_smoothing_entry pick them up via
+        # getattr. score_corpus uses these to construct backends with
+        # per-(model, revision) caching so the per-shard worker pays
+        # the model-load cost once, not once per document.
+        tier4=tier4,
+        embedding_model=embedding_model,
+        embedding_revision=embedding_revision,
+        surprisal_model=surprisal_model,
+        surprisal_revision=surprisal_revision,
         use=use,
         signal=list(ct.COMPRESSION_HEURISTICS.keys())[0],
         bootstrap_seed=42,
@@ -620,6 +639,15 @@ def cmd_shard(args: argparse.Namespace) -> int:
             "tier1": args.tier1,
             "tier2": args.tier2,
             "tier3": args.tier3,
+            # 1.80.0+: Tier 4 + pluggable model aliases. Stored in
+            # task_params so workers and the aggregator can pick
+            # them up uniformly without poking at top-level
+            # state.json keys.
+            "tier4": args.tier4,
+            "embedding_model": args.embedding_model,
+            "embedding_revision": args.embedding_revision,
+            "surprisal_model": args.surprisal_model,
+            "surprisal_revision": args.surprisal_revision,
         }
     elif task_name == "corpus_hygiene":
         # Fall back to the registered defaults for any flag the
@@ -1166,6 +1194,13 @@ def _process_shard(
             run_context={
                 "use": getattr(args, "use", "validation"),
                 "run_id": args.run_id,
+                # 1.80.0+: surface the pre-1.80 top-level state fields
+                # so the task surface can pick them up without state-
+                # schema migrations. task_params still wins via the
+                # ``task_params.get(..., run_context.get(...))`` two-
+                # arg lookup pattern in _score_shard_calibration_survey.
+                "embedding_model": state.get("embedding_model"),
+                "embedding_revision": state.get("embedding_revision"),
             },
         )
     except SigtermInterrupt as exc:
@@ -2370,6 +2405,38 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_shard.add_argument("--no-tier3", dest="tier3", action="store_false")
     p_shard.add_argument("--embedding-model", type=str, default=None)
     p_shard.add_argument("--embedding-revision", type=str, default=None)
+    # 1.80.0+: pipeline-wired Tier 4. Standalone variance_audit has
+    # had --tier4 + --surprisal-model since 1.61.0; this exposes the
+    # same toggles to the sharded calibration pipeline so MAGE / RAID
+    # Tier 4 calibration runs can use the streaming + checkpointed
+    # infrastructure (1.75.0-1.79.1) instead of single-process scoring.
+    p_shard.add_argument(
+        "--tier4", action="store_true", default=False,
+        help=(
+            "Enable Tier 4 (surprisal) signals on the calibration "
+            "scoring pipeline. Opt-in. Requires the surprisal "
+            "dependency layer (transformers + torch); see "
+            "scripts/calibration/RUNBOOK_tier4_install.md."
+        ),
+    )
+    p_shard.add_argument(
+        "--no-tier4", dest="tier4", action="store_false",
+    )
+    p_shard.add_argument(
+        "--surprisal-model", type=str, default=None,
+        help=(
+            "Causal LM alias or HuggingFace id for Tier 4. "
+            "Default (when --tier4 is set): tinyllama. See "
+            "surprisal_backend.MODEL_ALIASES for the 9 candidates."
+        ),
+    )
+    p_shard.add_argument(
+        "--surprisal-revision", type=str, default=None,
+        help=(
+            "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
+            "(reproducibility). Default: revision-less."
+        ),
+    )
     p_shard.add_argument("--force", action="store_true", default=False)
     # corpus_hygiene-specific flags (v1.45.0). Grouped on shard so
     # the threshold/strip parameters get baked into state.json at
