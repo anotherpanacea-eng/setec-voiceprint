@@ -1516,6 +1516,7 @@ def derive_threshold_from_records(
     *,
     args: argparse.Namespace,
     scoring_meta: dict[str, Any],
+    pre_extracted_pairs: list[tuple[int, float]] | None = None,
 ) -> dict[str, Any]:
     """Per-signal threshold sweep + provenance entry composition.
 
@@ -1524,6 +1525,16 @@ def derive_threshold_from_records(
     and assembles the provenance entry. Tagged with sub-sample
     metadata copied from `scoring_meta` so the PIPELINE CHECK
     notes-prefix propagates correctly.
+
+    ``pre_extracted_pairs`` is the parallel-aggregator fast-path
+    (added with the hardened-aggregator PR). When provided, the
+    function skips the per-signal ``collect_signal_records`` step and
+    uses the supplied ``[(label, score), ...]`` list directly. This
+    lets the aggregator extract pairs once in the parent process and
+    dispatch only the ~4 MB-per-signal payload to workers, instead of
+    the ~2 GB raw-records list that would otherwise be pickled or
+    re-walked per worker. Pass ``records=[]`` when supplying pre-
+    extracted pairs; the records list is unused on that path.
     """
     if args.signal not in COMPRESSION_HEURISTICS:
         raise SystemExit(
@@ -1534,7 +1545,10 @@ def derive_threshold_from_records(
     direction = spec.direction
     signal_path = spec.signal_path
     manifest_path = Path(args.manifest)
-    pairs = collect_signal_records(records, signal_path)
+    if pre_extracted_pairs is not None:
+        pairs = pre_extracted_pairs
+    else:
+        pairs = collect_signal_records(records, signal_path)
     if not pairs:
         raise SystemExit(
             f"No usable (label, score) pairs for signal {signal_path!r}. "

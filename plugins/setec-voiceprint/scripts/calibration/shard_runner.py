@@ -2555,6 +2555,103 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p_agg.add_argument("--out", type=str, default=None)
     p_agg.add_argument("--allow-partial", action="store_true", default=False)
     p_agg.add_argument("--no-derive", action="store_true", default=False)
+    # ----- Hardened parallel-aggregator knobs (PR
+    # feat/hardened-parallel-aggregator). Closes the wiring gap PRs #53
+    # / #55 / #60 left open: the calibration task surface
+    # (``task_surfaces._aggregate_calibration_records``) reads these via
+    # ``getattr`` on the args namespace, so adding them at the CLI is
+    # enough to engage the new fast path. The parser also accepts them
+    # on tasks that ignore them (e.g. corpus_hygiene), so a single
+    # operator command line works across task surfaces.
+    p_agg.add_argument(
+        "--bootstrap-engine",
+        type=str,
+        default="loop",
+        choices=["loop", "numpy", "torch"],
+        help=(
+            "bootstrap CI engine for the per-signal sweep. ``loop`` is "
+            "the bit-exact pre-1.60 implementation (single-core Python). "
+            "``numpy`` is the vectorized engine from PR #53 (50-200x "
+            "faster on CPU). ``torch`` is the optional PR #60 GPU "
+            "backend (additional 5-15x on CUDA / ROCm; requires "
+            "``pip install torch``). Default %(default)s preserves the "
+            "pre-PR behavior so existing scripts don't change "
+            "performance characteristics silently."
+        ),
+    )
+    p_agg.add_argument(
+        "--bootstrap-chunk-size",
+        type=int,
+        default=None,
+        help=(
+            "chunk size for the numpy / torch vectorized bootstrap "
+            "engines. Default auto-sizes to cap inner-loop peak at "
+            "~500 MB; pass an explicit int to override (e.g. for "
+            "memory-tight hosts or to maximize throughput when memory "
+            "is plentiful). Ignored when ``--bootstrap-engine loop``."
+        ),
+    )
+    p_agg.add_argument(
+        "--bootstrap-device",
+        type=str,
+        default=None,
+        help=(
+            "device override for ``--bootstrap-engine torch`` "
+            "(e.g. ``cuda``, ``cuda:1``, ``cpu``). Default lets torch "
+            "choose. Ignored when ``--bootstrap-engine`` is ``loop`` "
+            "or ``numpy``."
+        ),
+    )
+    p_agg.add_argument(
+        "--aggregate-workers",
+        type=int,
+        default=1,
+        help=(
+            "concurrent signals during the per-signal threshold sweep. "
+            "Default %(default)d (serial) preserves the pre-PR "
+            "behavior. Each signal is independent of every other, so "
+            "raising this gives near-linear speedup up to the per-"
+            "signal CPU bound. The actual worker count may be capped "
+            "below this value by the adaptive memory cap (Layer 4 of "
+            "the parallel-aggregator hardening) — see "
+            "``--max-worker-rss-gb`` and the run's ``aggregator_perf`` "
+            "block for what was actually used. ``0`` is treated as "
+            "``1``."
+        ),
+    )
+    p_agg.add_argument(
+        "--executor",
+        type=str,
+        default="thread",
+        choices=["thread", "process"],
+        help=(
+            "parallel executor backend. ``thread`` (default, Layer 2 / "
+            "Suspenders) shares the parent's address space — zero pair-"
+            "list copies, zero pickle round-trip. The bootstrap inner "
+            "loop releases the GIL during NumPy ops; effective "
+            "parallelism is bounded by the GIL-holding sweep / gate "
+            "work, which can be substantial. ``process`` (Layer 3 / "
+            "Buttons) uses ProcessPoolExecutor with "
+            "multiprocessing.shared_memory for the pair arrays; "
+            "tasks pickle only the SharedMemory names. Pick "
+            "``process`` when GIL contention dominates; pick "
+            "``thread`` when memory headroom is tight."
+        ),
+    )
+    p_agg.add_argument(
+        "--max-worker-rss-gb",
+        type=float,
+        default=None,
+        help=(
+            "user-imposed RSS budget (gigabytes) for the parallel "
+            "aggregator. The adaptive cap will reduce "
+            "``--aggregate-workers`` so that estimated total RSS does "
+            "not exceed this. Combined with the system-RAM cap from "
+            "``psutil`` (when installed). Default None disables the "
+            "user cap; the system cap still applies if psutil is "
+            "available."
+        ),
+    )
     p_agg.set_defaults(func=cmd_aggregate)
 
     # verify

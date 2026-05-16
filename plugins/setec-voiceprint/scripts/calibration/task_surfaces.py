@@ -206,6 +206,303 @@ def _score_shard_calibration_survey(
 
 
 # --------------- calibration_survey aggregator ------------------
+#
+# The calibration aggregator is the parallel hot path: at MAGE / RAID
+# scale it dispatches per-signal bootstrap CIs across workers. The
+# implementation layers four memory + concurrency defenses ("belt,
+# suspenders, buttons, and zip"):
+#
+#   1. **Belt — pre-extract per-signal pairs in main.** The 17-signal
+#      sweep needs only the (label, score) pairs per signal, not the
+#      full per-record dicts. Extract once in the parent (cheap, ~1
+#      pass over records); each worker receives a ~4 MB pair list
+#      instead of a ~2 GB record list at MAGE scale (>99% memory
+#      drop). Implemented via the ``pre_extracted_pairs`` fast-path
+#      added to ``derive_threshold_from_records``.
+#
+#   2. **Suspenders — ``--executor thread`` (default).** A
+#      ThreadPoolExecutor shares the parent's address space, so the
+#      pair lists never copy or pickle. The bootstrap inner loop
+#      releases the GIL during NumPy ops, so per-signal CIs overlap
+#      on multiple cores. Note: GIL contention can cap effective
+#      parallelism well below the requested worker count when a
+#      signal spends time in pure-Python sweep / polarity-gate work.
+#      ``--executor process`` is available for users who explicitly
+#      want process-isolation parallelism.
+#
+#   3. **Buttons — ``multiprocessing.shared_memory.SharedMemory``
+#      under ``--executor process``.** Even with pre-extracted pairs,
+#      ProcessPoolExecutor on Windows uses spawn, which pickles the
+#      task arguments per call. Shared memory keeps one physical copy
+#      of each signal's pair arrays across workers; tasks pickle only
+#      the SharedMemory names.
+#
+#   4. **Zip — adaptive worker cap from ``psutil``.** When
+#      ``psutil`` is available, cap the requested worker count to
+#      what fits in ``virtual_memory().available``, with conservative
+#      per-worker estimates that account for parent baseline + the
+#      auto-sized 500 MB bootstrap transient. Without ``psutil``,
+#      honor the requested count and warn. The cap protects the
+#      operator's machine from the silent OOM-and-zombie pattern
+#      where a too-greedy ``--aggregate-workers`` pegs RAM, the pool
+#      wedges, and progress goes silent for hours.
+
+# Per-worker RSS estimates (GB) used by the adaptive cap. Empirical
+# from the MAGE 436K-record corpus: thread workers add only the
+# bootstrap transient (~500 MB); process workers add the same
+# transient plus a small per-spawn baseline (~100 MB Python interp +
+# imports). The numbers don't need to be tight — the cap is a safety
+# net to prevent silent OOM, not a precision sizing tool.
+_THREAD_PER_WORKER_RSS_GB = 0.5
+_PROCESS_PER_WORKER_RSS_GB = 0.6
+
+
+def _cap_workers(
+    requested: int,
+    executor_kind: str,
+    max_rss_gb: float | None,
+) -> tuple[int, str]:
+    """Cap ``requested`` workers based on available RAM. Layer 4
+    (Zip) of the parallel-aggregator hardening.
+
+    Returns ``(capped_workers, reason_str)``. ``reason_str`` is a
+    one-line description suitable for logging — empty string when
+    the requested count is honored unchanged.
+
+    Algorithm:
+      * Base per-worker estimate: 0.5 GB (thread) / 0.6 GB (process).
+      * If ``psutil`` is importable, read available RAM and floor-
+        divide by the per-worker estimate to get the system cap.
+      * If ``max_rss_gb`` is set, also floor-divide it by the per-
+        worker estimate to get a user-imposed budget cap.
+      * Final cap = ``min(requested, system_cap, budget_cap)``,
+        floored at 1.
+      * If ``psutil`` is not importable, honor ``requested`` and
+        return a one-line warning.
+    """
+    if executor_kind == "thread":
+        per_worker_gb = _THREAD_PER_WORKER_RSS_GB
+    else:
+        per_worker_gb = _PROCESS_PER_WORKER_RSS_GB
+
+    cap = max(1, int(requested))
+    reason_parts: list[str] = []
+
+    try:
+        import psutil  # type: ignore
+        free_gb = psutil.virtual_memory().available / (1024 ** 3)
+        sys_cap = max(1, int(free_gb / per_worker_gb))
+        if sys_cap < cap:
+            reason_parts.append(
+                f"system: free={free_gb:.1f}GB, per-worker≈"
+                f"{per_worker_gb:.1f}GB → cap={sys_cap}"
+            )
+            cap = sys_cap
+    except ImportError:
+        if cap > 1:
+            reason_parts.append(
+                "psutil not installed; cannot cap workers by free "
+                "RAM. Install via `pip install psutil` to enable "
+                "the adaptive cap. Honoring --aggregate-workers as-"
+                "is; if the run goes silent, reduce manually."
+            )
+
+    if max_rss_gb is not None and max_rss_gb > 0:
+        budget_cap = max(1, int(max_rss_gb / per_worker_gb))
+        if budget_cap < cap:
+            reason_parts.append(
+                f"budget: max_rss_gb={max_rss_gb:.1f}GB → "
+                f"cap={budget_cap}"
+            )
+            cap = budget_cap
+
+    if cap < requested:
+        reason = (
+            f"capped {requested} → {cap} workers ("
+            + "; ".join(reason_parts) + ")"
+        )
+    elif reason_parts:
+        reason = "; ".join(reason_parts)
+    else:
+        reason = ""
+    return cap, reason
+
+
+def _build_signal_namespace(
+    sig_name: str,
+    *,
+    state: dict[str, Any],
+    args: argparse.Namespace,
+    contributing_shards: list[str],
+    fpr_target: float,
+    iso_date: str,
+) -> argparse.Namespace:
+    """Build the argparse.Namespace ``derive_threshold_from_records``
+    expects for one signal. Centralized so the serial, thread, and
+    process dispatch paths produce identical Namespaces.
+
+    Propagates ``bootstrap_engine``, ``bootstrap_chunk_size``, and
+    ``bootstrap_device`` from the aggregator's CLI args (the wiring
+    gap that PR #53 / #55 / #60 left unclosed in the sharded path).
+    """
+    run_id = state.get("run_id", "sharded_run")
+    return argparse.Namespace(
+        signal=sig_name,
+        manifest=str(state.get("source_manifest_path") or ""),
+        fpr_target=fpr_target,
+        bootstrap_seed=42,
+        bootstrap_resamples=2000,
+        bootstrap_confidence=0.95,
+        bootstrap_engine=getattr(args, "bootstrap_engine", "loop"),
+        bootstrap_chunk_size=getattr(args, "bootstrap_chunk_size", None),
+        bootstrap_device=getattr(args, "bootstrap_device", None),
+        slug=(
+            f"sharded_{run_id}_{sig_name}_fpr"
+            f"{fpr_target}_{iso_date}"
+        ),
+        use=getattr(args, "use", "validation"),
+        notes=(
+            f"Sharded calibration run {run_id!r}. "
+            f"Aggregated from {len(contributing_shards)} shard "
+            f"cache(s). See sharded-run state.json for shard-level "
+            f"metadata."
+        ),
+    )
+
+
+def _derive_one_from_pairs(
+    sig_name: str,
+    pairs: list[tuple[int, float]] | None,
+    ns: argparse.Namespace,
+    scoring_meta: dict[str, Any],
+    records_fallback: list[dict[str, Any]] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    """Per-signal worker body. Module-level so process pools can
+    pickle it. Returns ``(sig_name, entry_or_error_dict)``.
+
+    When ``pairs`` is provided, dispatches via the fast path
+    (``pre_extracted_pairs`` kwarg). When ``pairs`` is None,
+    dispatches via the legacy path (full ``records_fallback`` list)
+    so test fixtures and back-compat callers that built bad
+    ``signal_path`` specs still work.
+
+    Wraps the standard SystemExit / Exception paths the existing
+    aggregator catches per signal — a single bad signal must not
+    abort the whole survey.
+    """
+    import calibrate_thresholds as ct  # type: ignore
+    try:
+        if pairs is not None:
+            entry = ct.derive_threshold_from_records(
+                [],  # ignored; pairs below are the input
+                args=ns,
+                scoring_meta=scoring_meta,
+                pre_extracted_pairs=pairs,
+            )
+        else:
+            entry = ct.derive_threshold_from_records(
+                records_fallback or [],
+                args=ns,
+                scoring_meta=scoring_meta,
+            )
+        return sig_name, entry
+    except SystemExit as exc:
+        return sig_name, {"error": f"derive_threshold failed: {exc}"}
+    except Exception as exc:  # noqa: BLE001
+        return sig_name, {
+            "error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _derive_one_via_shared_memory(
+    sig_name: str,
+    labels_shm_name: str,
+    scores_shm_name: str,
+    n: int,
+    ns_kwargs: dict[str, Any],
+    scoring_meta: dict[str, Any],
+) -> tuple[str, dict[str, Any]]:
+    """ProcessPoolExecutor worker body that attaches to SharedMemory
+    instead of receiving the pair list via pickle. Layer 3 (Buttons)
+    of the parallel-aggregator hardening.
+
+    Pickle payload per task: just the two SharedMemory names + ``n`` +
+    a serializable Namespace dict — < 1 KB regardless of corpus
+    size. The pair arrays are physically allocated once in the
+    parent and mapped read-only in each worker.
+    """
+    from multiprocessing import shared_memory  # noqa: PLC0415
+    import numpy as np  # type: ignore  # noqa: PLC0415
+
+    sm_l = None
+    sm_s = None
+    try:
+        sm_l = shared_memory.SharedMemory(name=labels_shm_name)
+        sm_s = shared_memory.SharedMemory(name=scores_shm_name)
+        labels = np.ndarray((n,), dtype=np.int8, buffer=sm_l.buf)
+        scores = np.ndarray((n,), dtype=np.float64, buffer=sm_s.buf)
+        # Materialize pairs from the shared arrays. ~4 MB at MAGE
+        # scale; the cost is negligible vs. the bootstrap.
+        pairs = list(zip(labels.tolist(), scores.tolist()))
+    except Exception as exc:  # noqa: BLE001
+        if sm_l is not None:
+            sm_l.close()
+        if sm_s is not None:
+            sm_s.close()
+        return sig_name, {
+            "error": (
+                f"SharedMemory attach failed: "
+                f"{type(exc).__name__}: {exc}"
+            ),
+        }
+
+    try:
+        ns = argparse.Namespace(**ns_kwargs, signal=sig_name)
+        return _derive_one_from_pairs(sig_name, pairs, ns, scoring_meta)
+    finally:
+        sm_l.close()
+        sm_s.close()
+
+
+def _allocate_shared_pair_arrays(
+    pairs: list[tuple[int, float]],
+) -> tuple[Any, Any, str, str, int]:
+    """Allocate two SharedMemory blocks (labels int8, scores float64)
+    and copy ``pairs`` into them. Returns the two handles plus their
+    names plus ``n`` so the parent can pass names to workers and
+    ``unlink()`` after the pool finishes.
+
+    Caller is responsible for ``close()`` + ``unlink()`` on the
+    returned handles. On Windows the SharedMemory block is reference-
+    counted; the parent's handle keeps it alive for the lifetime of
+    the pool's tasks.
+    """
+    from multiprocessing import shared_memory  # noqa: PLC0415
+    import numpy as np  # type: ignore  # noqa: PLC0415
+
+    n = len(pairs)
+    if n == 0:
+        # Allocate trivial 1-byte blocks so the worker's
+        # SharedMemory(name=...) call doesn't fail; worker's n=0
+        # short-circuit returns the empty pair list.
+        sm_l = shared_memory.SharedMemory(create=True, size=1)
+        sm_s = shared_memory.SharedMemory(create=True, size=1)
+        return sm_l, sm_s, sm_l.name, sm_s.name, 0
+    labels_arr = np.fromiter(
+        (p[0] for p in pairs), dtype=np.int8, count=n,
+    )
+    scores_arr = np.fromiter(
+        (p[1] for p in pairs), dtype=np.float64, count=n,
+    )
+    sm_l = shared_memory.SharedMemory(create=True, size=labels_arr.nbytes)
+    sm_s = shared_memory.SharedMemory(create=True, size=scores_arr.nbytes)
+    np.ndarray(
+        labels_arr.shape, dtype=labels_arr.dtype, buffer=sm_l.buf,
+    )[:] = labels_arr
+    np.ndarray(
+        scores_arr.shape, dtype=scores_arr.dtype, buffer=sm_s.buf,
+    )[:] = scores_arr
+    return sm_l, sm_s, sm_l.name, sm_s.name, n
 
 
 def _aggregate_calibration_records(
@@ -219,10 +516,22 @@ def _aggregate_calibration_records(
     """Run ``calibrate_thresholds.derive_threshold_from_records``
     once per signal and emit the aggregated survey payload.
 
-    This is the body lifted out of ``shard_runner.cmd_aggregate``
-    so the calibration-survey case keeps producing the same
-    artifact it always has. The orchestrator is now task-dispatched;
-    the actual derivation logic lives here.
+    Memory-hardened parallel implementation (see module-level
+    "calibration_survey aggregator" comment for the four-layer
+    design). Recognized CLI args (read via ``getattr`` for back-
+    compat with callers that don't set them):
+
+      * ``bootstrap_engine`` / ``bootstrap_chunk_size`` /
+        ``bootstrap_device`` — propagated to each per-signal
+        ``derive_threshold_from_records`` call. PR #53 / #60.
+      * ``aggregate_workers`` — number of concurrent signals.
+        Default 1 (serial). PR #55.
+      * ``executor`` — ``"thread"`` (default, zero-copy) or
+        ``"process"`` (uses SharedMemory for pair arrays).
+      * ``max_worker_rss_gb`` — user-imposed RSS budget; cap
+        ``aggregate_workers`` so total ≤ this. None disables.
+      * ``no_derive`` — skip per-signal derivation; emit only
+        aggregated records + meta.
     """
     if not getattr(args, "no_derive", False):
         try:
@@ -236,54 +545,308 @@ def _aggregate_calibration_records(
             ct = None
     else:
         ct = None
+
     per_signal: dict[str, Any] = {}
+    perf_meta: dict[str, Any] = {}
     if ct is not None and all_records:
         merged_meta = meta_list[0] if meta_list else {}
-        run_id = state.get("run_id", "sharded_run")
         fpr_target = state.get("fpr_target")
         if fpr_target is None:
-            # task_params holds it for v1.45.0+ state files; fall
-            # back to that path before defaulting.
             fpr_target = state.get("task_params", {}).get(
                 "fpr_target", 0.01,
             )
         iso_date = _dt.date.today().isoformat()
-        for sig_name in sorted(ct.COMPRESSION_HEURISTICS.keys()):
+
+        # --- Layer 1 (Belt): pre-extract per-signal pairs once.
+        try:
+            from validation_harness import (  # type: ignore
+                collect_signal_records,
+            )
+        except ImportError as exc:
+            sys.stderr.write(
+                f"  could not import collect_signal_records: {exc}. "
+                f"Falling back to records-list dispatch (legacy path).\n"
+            )
+            collect_signal_records = None
+
+        signals = sorted(ct.COMPRESSION_HEURISTICS.keys())
+        per_signal_pairs: dict[str, list[tuple[int, float]]] = {}
+        if collect_signal_records is not None:
+            extract_t0 = _dt.datetime.now()
+            for sig_name in signals:
+                spec = ct.COMPRESSION_HEURISTICS[sig_name]
+                try:
+                    per_signal_pairs[sig_name] = collect_signal_records(
+                        all_records, spec.signal_path,
+                    )
+                except Exception:  # noqa: BLE001
+                    # Couldn't pre-extract — typically a bad spec
+                    # shape from a test fixture, or any other failure
+                    # in collect_signal_records. Don't poison
+                    # per_signal here; just skip the fast-path entry
+                    # and let the dispatcher fall back to the legacy
+                    # records-list path, which preserves the prior
+                    # behavior (and surfaces any real failure as a
+                    # normal SystemExit from derive_threshold_from_
+                    # records).
+                    pass
+            extract_s = (
+                _dt.datetime.now() - extract_t0
+            ).total_seconds()
+            perf_meta["pair_extraction_s"] = round(extract_s, 3)
+            perf_meta["pair_extraction_signals_fast_path"] = (
+                len(per_signal_pairs)
+            )
+            perf_meta["pair_extraction_signals_legacy_path"] = (
+                len(signals) - len(per_signal_pairs)
+            )
+
+        # Dispatch every signal. Workers decide per-signal whether
+        # to use the fast path (pre-extracted pairs available) or
+        # the legacy path (pass the full records list — slower, but
+        # what the existing tests cover and what the pre-PR
+        # implementation always did).
+        dispatch_signals = list(signals)
+
+        # --- Layer 4 (Zip) + Layer 2/3 selection: choose executor.
+        requested_workers = max(1, int(getattr(
+            args, "aggregate_workers", 1,
+        )))
+        executor_kind = str(getattr(
+            args, "executor", "thread",
+        )).lower()
+        if executor_kind not in ("thread", "process"):
+            sys.stderr.write(
+                f"  unknown --executor {executor_kind!r}; "
+                f"falling back to 'thread'.\n"
+            )
+            executor_kind = "thread"
+        max_rss_gb = getattr(args, "max_worker_rss_gb", None)
+        capped_workers, cap_reason = _cap_workers(
+            requested_workers, executor_kind, max_rss_gb,
+        )
+        if cap_reason:
+            sys.stderr.write(f"  worker cap: {cap_reason}\n")
+        perf_meta.update({
+            "executor": executor_kind,
+            "requested_workers": requested_workers,
+            "capped_workers": capped_workers,
+            "worker_cap_reason": cap_reason or None,
+            "bootstrap_engine": getattr(
+                args, "bootstrap_engine", "loop",
+            ),
+        })
+
+        # Per-signal: fast path if we have pre-extracted pairs,
+        # legacy path otherwise. The legacy path is what the existing
+        # tests cover and what the pre-PR implementation always did;
+        # the fast path is the >99%-memory-drop production path.
+        def _pairs_for(sig: str) -> list[tuple[int, float]] | None:
+            return per_signal_pairs.get(sig) if sig in per_signal_pairs else None
+
+        # Per-signal completion logger. Operators running aggregates
+        # at MAGE / RAID scale (5-30 min wall-clock) need to see
+        # progress as it lands, not silence followed by a single
+        # "written" line. The parallel paths populate per_signal as
+        # futures complete; this helper logs each arrival with the
+        # elapsed time and a one-word verdict.
+        def _log_signal_done(name: str, entry: dict, t_start) -> None:
+            t = (_dt.datetime.now() - t_start).total_seconds()
+            err = entry.get("error") if isinstance(entry, dict) else None
+            tag = f"ERROR: {err}" if err else "ok"
+            sys.stderr.write(
+                f"  [{t:6.1f}s] --> {name}: {tag}\n"
+            )
+            sys.stderr.flush()
+
+        sweep_t0 = _dt.datetime.now()
+        if capped_workers <= 1 or len(dispatch_signals) <= 1:
+            # Serial path.
+            for sig_name in dispatch_signals:
+                ns = _build_signal_namespace(
+                    sig_name, state=state, args=args,
+                    contributing_shards=contributing_shards,
+                    fpr_target=fpr_target, iso_date=iso_date,
+                )
+                name, entry = _derive_one_from_pairs(
+                    sig_name,
+                    _pairs_for(sig_name),
+                    ns,
+                    merged_meta,
+                    records_fallback=all_records,
+                )
+                per_signal[name] = entry
+                _log_signal_done(name, entry, sweep_t0)
+        elif executor_kind == "thread":
+            # --- Layer 2 (Suspenders): ThreadPoolExecutor.
+            from concurrent.futures import (  # noqa: PLC0415
+                ThreadPoolExecutor, as_completed,
+            )
+            with ThreadPoolExecutor(
+                max_workers=capped_workers,
+            ) as pool:
+                future_to_sig = {
+                    pool.submit(
+                        _derive_one_from_pairs,
+                        sig_name,
+                        _pairs_for(sig_name),
+                        _build_signal_namespace(
+                            sig_name, state=state, args=args,
+                            contributing_shards=contributing_shards,
+                            fpr_target=fpr_target, iso_date=iso_date,
+                        ),
+                        merged_meta,
+                        all_records,
+                    ): sig_name
+                    for sig_name in dispatch_signals
+                }
+                for fut in as_completed(future_to_sig):
+                    name, entry = fut.result()
+                    per_signal[name] = entry
+                    _log_signal_done(name, entry, sweep_t0)
+        else:
+            # --- Layer 3 (Buttons): ProcessPoolExecutor + SharedMemory.
+            from concurrent.futures import (  # noqa: PLC0415
+                ProcessPoolExecutor, as_completed,
+            )
+            #
+            # Split dispatch_signals into two cohorts (codex P2 on
+            # PR #63):
+            #   * pre_extracted: signals with pairs in
+            #     per_signal_pairs → run via the process pool with
+            #     SharedMemory dispatch (the fast path).
+            #   * legacy_fallback: signals whose pair extraction
+            #     failed (bad spec shape, etc.) → run via the
+            #     parent's serial loop with records_fallback=
+            #     all_records, exactly like the thread/serial paths
+            #     handle them. Without this split the process
+            #     executor would silently drop them as "no usable
+            #     pairs" errors — a feature-availability regression
+            #     vs the other executors.
+            pre_extracted = [
+                s for s in dispatch_signals
+                if s in per_signal_pairs
+            ]
+            legacy_fallback = [
+                s for s in dispatch_signals
+                if s not in per_signal_pairs
+            ]
+            if legacy_fallback:
+                sys.stderr.write(
+                    f"  process executor: {len(legacy_fallback)} "
+                    f"signal(s) lack pre-extracted pairs and will "
+                    f"run via the parent's legacy records-list "
+                    f"path serially before the process pool starts "
+                    f"(no silent drop). Pre-extracted via process "
+                    f"pool: {len(pre_extracted)} signal(s).\n"
+                )
+                for sig_name in legacy_fallback:
+                    ns = _build_signal_namespace(
+                        sig_name, state=state, args=args,
+                        contributing_shards=contributing_shards,
+                        fpr_target=fpr_target, iso_date=iso_date,
+                    )
+                    name, entry = _derive_one_from_pairs(
+                        sig_name,
+                        None,  # no pairs → legacy path
+                        ns,
+                        merged_meta,
+                        records_fallback=all_records,
+                    )
+                    per_signal[name] = entry
+                    _log_signal_done(name, entry, sweep_t0)
+
+            shm_handles: list[Any] = []
             try:
-                # `derive_threshold_from_records` reads `args.slug`,
-                # `args.use`, and `args.notes` in addition to the
-                # signal / manifest / fpr / bootstrap fields.
-                ns = argparse.Namespace(
-                    signal=sig_name,
-                    manifest=str(state.get("source_manifest_path") or ""),
-                    fpr_target=fpr_target,
-                    bootstrap_seed=42,
-                    bootstrap_resamples=2000,
-                    bootstrap_confidence=0.95,
-                    slug=(
-                        f"sharded_{run_id}_{sig_name}_fpr"
-                        f"{fpr_target}_{iso_date}"
+                # Pre-allocate SharedMemory pair arrays per signal
+                # in the pre-extracted cohort.
+                shm_per_sig: dict[
+                    str, tuple[str, str, int]
+                ] = {}
+                for sig_name in pre_extracted:
+                    pairs = per_signal_pairs.get(sig_name, [])
+                    sm_l, sm_s, l_name, s_name, n = (
+                        _allocate_shared_pair_arrays(pairs)
+                    )
+                    shm_handles.extend([sm_l, sm_s])
+                    shm_per_sig[sig_name] = (l_name, s_name, n)
+                # Build per-signal Namespace as a dict (Namespace
+                # itself isn't pickle-friendly across all Python
+                # versions for nested attributes, but a dict is).
+                ns_kwargs_template = {
+                    "manifest": str(
+                        state.get("source_manifest_path") or "",
                     ),
-                    use=getattr(args, "use", "validation"),
-                    notes=(
-                        f"Sharded calibration run {run_id!r}. "
-                        f"Aggregated from {len(contributing_shards)} shard "
-                        f"cache(s). See sharded-run state.json for "
-                        f"shard-level metadata."
+                    "fpr_target": fpr_target,
+                    "bootstrap_seed": 42,
+                    "bootstrap_resamples": 2000,
+                    "bootstrap_confidence": 0.95,
+                    "bootstrap_engine": getattr(
+                        args, "bootstrap_engine", "loop",
                     ),
-                )
-                entry = ct.derive_threshold_from_records(
-                    all_records, args=ns, scoring_meta=merged_meta,
-                )
-                per_signal[sig_name] = entry
-            except SystemExit as exc:
-                per_signal[sig_name] = {
-                    "error": f"derive_threshold failed: {exc}",
+                    "bootstrap_chunk_size": getattr(
+                        args, "bootstrap_chunk_size", None,
+                    ),
+                    "bootstrap_device": getattr(
+                        args, "bootstrap_device", None,
+                    ),
+                    "use": getattr(args, "use", "validation"),
+                    "notes": (
+                        f"Sharded calibration run "
+                        f"{state.get('run_id', 'sharded_run')!r}. "
+                        f"Aggregated from {len(contributing_shards)} "
+                        f"shard cache(s) via SharedMemory pair-array "
+                        f"dispatch."
+                    ),
                 }
-            except Exception as exc:  # noqa: BLE001
-                per_signal[sig_name] = {
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
+                if pre_extracted:
+                    # Per-signal slug carried in kwargs at submit time.
+                    with ProcessPoolExecutor(
+                        max_workers=capped_workers,
+                    ) as pool:
+                        future_to_sig = {}
+                        for sig_name in pre_extracted:
+                            l_name, s_name, n = shm_per_sig[sig_name]
+                            ns_kwargs = dict(ns_kwargs_template)
+                            ns_kwargs["slug"] = (
+                                f"sharded_{state.get('run_id', 'sharded_run')}"
+                                f"_{sig_name}_fpr{fpr_target}_{iso_date}"
+                            )
+                            fut = pool.submit(
+                                _derive_one_via_shared_memory,
+                                sig_name, l_name, s_name, n,
+                                ns_kwargs, merged_meta,
+                            )
+                            future_to_sig[fut] = sig_name
+                        for fut in as_completed(future_to_sig):
+                            name, entry = fut.result()
+                            per_signal[name] = entry
+                            _log_signal_done(name, entry, sweep_t0)
+            finally:
+                # Close + unlink all SharedMemory blocks. Skipping
+                # unlink leaks /dev/shm entries on POSIX or named
+                # objects on Windows.
+                for sm in shm_handles:
+                    try:
+                        sm.close()
+                    except Exception:  # noqa: BLE001
+                        pass
+                    try:
+                        sm.unlink()
+                    except Exception:  # noqa: BLE001
+                        pass
+            # Record perf metadata about the split so post-hoc
+            # audits can see which cohort each signal landed in.
+            perf_meta["process_signals_pre_extracted"] = (
+                len(pre_extracted)
+            )
+            perf_meta["process_signals_legacy_fallback"] = (
+                len(legacy_fallback)
+            )
+        sweep_s = (_dt.datetime.now() - sweep_t0).total_seconds()
+        perf_meta["sweep_s"] = round(sweep_s, 3)
+        perf_meta["n_signals_dispatched"] = len(dispatch_signals)
+
     return {
         "task_surface": "calibration",
         "tool": "shard_runner",
@@ -301,6 +864,7 @@ def _aggregate_calibration_records(
         "embedding_model": state.get("embedding_model"),
         "embedding_revision": state.get("embedding_revision"),
         "per_signal": per_signal,
+        "aggregator_perf": perf_meta or None,
         "aggregated_at": _dt.datetime.now(
             _dt.timezone.utc,
         ).isoformat(timespec="seconds"),

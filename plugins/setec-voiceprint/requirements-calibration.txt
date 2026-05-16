@@ -24,3 +24,14 @@ huggingface_hub>=0.23,<1
 # dependency and the HF datasets ecosystem already uses it under the
 # hood.
 pyarrow>=14
+
+# Optional: cross-platform free-RAM probing for the parallel
+# aggregator's adaptive worker cap (``shard_runner aggregate
+# --aggregate-workers --max-worker-rss-gb``). Without psutil, the
+# adaptive cap silently falls back to honoring the user's requested
+# worker count and prints a one-line warning on each invocation.
+# Highly recommended for any aggregate run that uses
+# ``--aggregate-workers > 1``: the cap is what prevents the silent
+# OOM-and-zombie pattern where a too-greedy worker count pegs RAM,
+# the pool wedges, and progress goes silent for hours.
+psutil>=5.9
