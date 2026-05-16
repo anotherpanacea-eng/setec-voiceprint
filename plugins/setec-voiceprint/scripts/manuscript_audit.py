@@ -20,12 +20,21 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import re
 import statistics
 import sys
 from pathlib import Path
 from typing import Any
+
+
+def _chapter_text_hash(text: str) -> str:
+    """SHA-256 of the chapter text. Used as part of the resume key
+    so editing a chapter under the same label invalidates the
+    cached audit (codex P2 on PR #70: label-only key meant edits
+    were served from stale cache silently)."""
+    return f"sha256:{hashlib.sha256(text.encode('utf-8', errors='ignore')).hexdigest()}"
 
 # Import variance_audit machinery from the same directory.
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -149,11 +158,21 @@ def _save_chapter_audit_cache(
     status: str,
     do_tier2: bool,
     do_tier3: bool,
+    allow_non_prose: bool,
     strip_rules: Any,
+    strip_aggressive: bool,
 ) -> None:
     """Atomic write of the per-chapter audit cache. ``status``
     flips from ``"in_progress"`` (per-flush) to ``"complete"`` on
     the final write after every chapter has been audited.
+
+    Compat fields (codex P2 on PR #70): scoring_meta now records
+    every preprocessing arg that affects ``audit_text``'s output,
+    and each chapter_audit entry carries its own ``text_hash``.
+    On resume, the loader matches cached entries by
+    ``(label, text_hash)`` AND verifies preprocessing args
+    match — silent stale-cache reuse after a chapter edit or a
+    strip-rules change is now impossible.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
@@ -164,9 +183,14 @@ def _save_chapter_audit_cache(
         "scoring_meta": {
             "n_chapters_total": n_chapters_total,
             "n_chapters_audited": len(chapter_audits),
+            # Tier flags + preprocessing args (P2 fix: was just
+            # tier flags + strip_rules; now allow_non_prose and
+            # strip_aggressive are checked too).
             "do_tier2": do_tier2,
             "do_tier3": do_tier3,
+            "allow_non_prose": allow_non_prose,
             "strip_rules": strip_rules,
+            "strip_aggressive": strip_aggressive,
             "scored_at": _dt.datetime.now(
                 _dt.timezone.utc,
             ).isoformat(),
@@ -177,6 +201,35 @@ def _save_chapter_audit_cache(
     with tmp.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, default=str)
     tmp.replace(path)
+
+
+def _chapter_cache_compat_reason(
+    cache_meta: dict[str, Any],
+    *,
+    do_tier2: bool,
+    do_tier3: bool,
+    allow_non_prose: bool,
+    strip_rules: Any,
+    strip_aggressive: bool,
+) -> str | None:
+    """Return ``None`` when scoring_meta is compatible with the
+    current run, or a one-line reason string otherwise. Tolerates
+    missing fields (back-compat with caches written before this
+    fix); refuses on present-but-different."""
+    if bool(cache_meta.get("do_tier2")) != do_tier2:
+        return "do_tier2 differs"
+    if bool(cache_meta.get("do_tier3")) != do_tier3:
+        return "do_tier3 differs"
+    prior_allow = cache_meta.get("allow_non_prose")
+    if prior_allow is not None and bool(prior_allow) != allow_non_prose:
+        return "allow_non_prose differs"
+    prior_strip = cache_meta.get("strip_rules")
+    if prior_strip is not None and prior_strip != strip_rules:
+        return f"strip_rules differs (prior={prior_strip!r}, current={strip_rules!r})"
+    prior_aggr = cache_meta.get("strip_aggressive")
+    if prior_aggr is not None and bool(prior_aggr) != strip_aggressive:
+        return "strip_aggressive differs"
+    return None
 
 
 def audit_manuscript(
@@ -205,7 +258,10 @@ def audit_manuscript(
     """
     chapter_audits: list[dict[str, Any]] = []
     chapter_preprocessing: dict[str, dict[str, Any]] = {}
-    cached_by_label: dict[str, dict[str, Any]] = {}
+    # Resume keyed by (label, text_hash) — codex P2 on PR #70:
+    # label-only key meant editing a chapter's text under the
+    # same label silently reused the stale audit.
+    cached_by_key: dict[tuple[str, str], dict[str, Any]] = {}
     cached_preprocessing: dict[str, dict[str, Any]] = {}
 
     # ----- Resume from prior partial / complete cache (1.70.0+).
@@ -214,32 +270,53 @@ def audit_manuscript(
             cached = json.loads(cache_path.read_text(encoding="utf-8"))
             cache_status = cached.get("status", "complete")
             cache_meta = cached.get("scoring_meta") or {}
-            # Lightweight compatibility check: same tier flags. The
-            # operator can pass --refresh-chapter-cache to force a
-            # full re-audit when other scoring args change.
-            ok = (
-                bool(cache_meta.get("do_tier2")) == do_tier2
-                and bool(cache_meta.get("do_tier3")) == do_tier3
+            incompat_reason = _chapter_cache_compat_reason(
+                cache_meta,
+                do_tier2=do_tier2, do_tier3=do_tier3,
+                allow_non_prose=allow_non_prose,
+                strip_rules=strip_rules,
+                strip_aggressive=strip_aggressive,
             )
-            if ok and cache_status in ("in_progress", "complete"):
-                cached_by_label = {
-                    a.get("label"): a
-                    for a in (cached.get("chapter_audits") or [])
-                    if isinstance(a.get("label"), str)
-                }
+            if (
+                incompat_reason is None
+                and cache_status in ("in_progress", "complete")
+            ):
+                # Index cached entries by (label, text_hash). If a
+                # prior entry was written without a text_hash field
+                # (pre-fix cache), accept it under a wildcard hash
+                # so back-compat holds — the operator opts into
+                # stricter checking by re-running once to regenerate
+                # the cache with text hashes embedded.
+                for a in (cached.get("chapter_audits") or []):
+                    if not isinstance(a.get("label"), str):
+                        continue
+                    text_hash = a.get("text_hash")
+                    key = (
+                        a["label"],
+                        text_hash if isinstance(text_hash, str)
+                        else "__legacy_no_hash__",
+                    )
+                    cached_by_key[key] = a
                 cached_preprocessing = (
                     cached.get("chapter_preprocessing") or {}
                 )
                 sys.stderr.write(
                     f"Manuscript audit: cache hit at {cache_path} "
                     f"(status={cache_status!r}); "
-                    f"{len(cached_by_label)} chapter audit(s) "
-                    f"available for reuse.\n"
+                    f"{len(cached_by_key)} chapter audit(s) "
+                    f"available for reuse (matched by label + "
+                    f"text_hash).\n"
+                )
+            elif incompat_reason is not None:
+                sys.stderr.write(
+                    f"Manuscript audit: cache at {cache_path} is "
+                    f"incompatible ({incompat_reason}); discarding. "
+                    f"Pass --refresh-chapter-cache to suppress.\n"
                 )
             else:
                 sys.stderr.write(
-                    f"Manuscript audit: cache at {cache_path} is "
-                    f"incompatible (tier flags differ); discarding.\n"
+                    f"Manuscript audit: cache at {cache_path} has "
+                    f"unknown status ({cache_status!r}); discarding.\n"
                 )
         except (json.JSONDecodeError, OSError) as exc:
             sys.stderr.write(
@@ -252,10 +329,18 @@ def audit_manuscript(
     n_fresh = 0
     for i, ch in enumerate(chapters):
         label = ch.get("label", f"chapter_{i}")
-        if label in cached_by_label:
+        text_hash = _chapter_text_hash(ch.get("text", ""))
+        # First try the strict (label, text_hash) match. Fall back
+        # to the legacy-no-hash key only if strict miss AND a
+        # legacy entry exists — same compat tolerance as elsewhere.
+        cache_key = (label, text_hash)
+        legacy_key = (label, "__legacy_no_hash__")
+        cached_entry = cached_by_key.get(cache_key)
+        if cached_entry is None:
+            cached_entry = cached_by_key.get(legacy_key)
+        if cached_entry is not None:
             # Resume: re-use the prior audit + preprocessing entries.
-            entry = cached_by_label[label]
-            chapter_audits.append(entry)
+            chapter_audits.append(cached_entry)
             if label in cached_preprocessing:
                 chapter_preprocessing[label] = cached_preprocessing[label]
             sys.stderr.write(
@@ -275,6 +360,7 @@ def audit_manuscript(
         comp = classify_compression(a)
         chapter_audits.append({
             "label": ch["label"],
+            "text_hash": text_hash,  # P2 fix: persisted for resume
             "n_words": a.get("summary", {}).get("n_words", 0),
             "audit": a,
             "compression": comp,
@@ -293,7 +379,9 @@ def audit_manuscript(
                     n_chapters_total=n_total,
                     status="in_progress",
                     do_tier2=do_tier2, do_tier3=do_tier3,
+                    allow_non_prose=allow_non_prose,
                     strip_rules=strip_rules,
+                    strip_aggressive=strip_aggressive,
                 )
             except Exception as exc:  # noqa: BLE001
                 sys.stderr.write(
@@ -347,7 +435,9 @@ def audit_manuscript(
                 n_chapters_total=n_total,
                 status="complete",
                 do_tier2=do_tier2, do_tier3=do_tier3,
+                allow_non_prose=allow_non_prose,
                 strip_rules=strip_rules,
+                strip_aggressive=strip_aggressive,
             )
             sys.stderr.write(
                 f"Manuscript audit: cache written to {cache_path} "

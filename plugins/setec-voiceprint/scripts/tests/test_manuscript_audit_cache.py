@@ -334,3 +334,169 @@ def test_per_chapter_progress_log_to_stderr(
     assert "chapter" not in captured.out.lower(), (
         f"stdout polluted: {captured.out!r}"
     )
+
+
+# --------------- Codex P2 on PR #70: text-hash + preprocessing compat ----
+
+
+def test_edited_chapter_text_invalidates_cache_entry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: editing a chapter's text under the same label
+    must invalidate the cached audit for that chapter. Pre-fix,
+    the cache was keyed by label only → edit served the stale
+    audit silently."""
+    monkeypatch.setattr(ma, "audit_text", _stub_audit_text)
+    monkeypatch.setattr(
+        ma, "classify_compression", _stub_classify_compression,
+    )
+    cache = tmp_path / "chapters.json"
+    chapters = _chapters(3)
+    ma.audit_manuscript(
+        chapters, baseline_dir=None,
+        do_tier2=False, do_tier3=False,
+        cache_path=cache,
+    )
+    # Edit Chapter 2's text. Same label, different content.
+    chapters[1] = {
+        "label": "Chapter 2",
+        "text": "completely revised text " * 100,
+    }
+    audit_count = {"n": 0}
+
+    def _counting_audit(text, **kw):
+        audit_count["n"] += 1
+        return _stub_audit_text(text, **kw)
+
+    monkeypatch.setattr(ma, "audit_text", _counting_audit)
+    ma.audit_manuscript(
+        chapters, baseline_dir=None,
+        do_tier2=False, do_tier3=False,
+        cache_path=cache,
+    )
+    # Exactly one chapter (Chapter 2) was re-audited because its
+    # text_hash changed. The other two carried forward.
+    assert audit_count["n"] == 1, (
+        f"expected exactly 1 fresh audit for the edited chapter; "
+        f"got {audit_count['n']}"
+    )
+
+
+def test_cache_refused_when_allow_non_prose_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: allow_non_prose changes audit_text's output;
+    a cache produced under one value must be refused under
+    another."""
+    monkeypatch.setattr(ma, "audit_text", _stub_audit_text)
+    monkeypatch.setattr(
+        ma, "classify_compression", _stub_classify_compression,
+    )
+    cache = tmp_path / "chapters.json"
+    cache.write_text(json.dumps({
+        "status": "complete",
+        "scoring_meta": {
+            "do_tier2": False,
+            "do_tier3": False,
+            "allow_non_prose": True,
+        },
+        "chapter_audits": [{
+            "label": "Chapter 1", "n_words": 100,
+            "audit": {"summary": {"n_words": 100}},
+            "compression": {"band": "cached"},
+        }],
+        "chapter_preprocessing": {},
+    }))
+    audit_count = {"n": 0}
+
+    def _counting_audit(text, **kw):
+        audit_count["n"] += 1
+        return _stub_audit_text(text, **kw)
+
+    monkeypatch.setattr(ma, "audit_text", _counting_audit)
+    ma.audit_manuscript(
+        _chapters(2), baseline_dir=None,
+        do_tier2=False, do_tier3=False,
+        allow_non_prose=False,
+        cache_path=cache,
+    )
+    assert audit_count["n"] == 2
+
+
+def test_cache_refused_when_strip_rules_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: strip_rules changes preprocessing → different
+    audit output. Mismatch refuses the cache."""
+    monkeypatch.setattr(ma, "audit_text", _stub_audit_text)
+    monkeypatch.setattr(
+        ma, "classify_compression", _stub_classify_compression,
+    )
+    cache = tmp_path / "chapters.json"
+    cache.write_text(json.dumps({
+        "status": "complete",
+        "scoring_meta": {
+            "do_tier2": False,
+            "do_tier3": False,
+            "strip_rules": "css_rule_block",
+        },
+        "chapter_audits": [{
+            "label": "Chapter 1", "n_words": 100,
+            "audit": {"summary": {"n_words": 100}},
+            "compression": {"band": "cached"},
+        }],
+        "chapter_preprocessing": {},
+    }))
+    audit_count = {"n": 0}
+
+    def _counting_audit(text, **kw):
+        audit_count["n"] += 1
+        return _stub_audit_text(text, **kw)
+
+    monkeypatch.setattr(ma, "audit_text", _counting_audit)
+    ma.audit_manuscript(
+        _chapters(2), baseline_dir=None,
+        do_tier2=False, do_tier3=False,
+        strip_rules=None,
+        cache_path=cache,
+    )
+    assert audit_count["n"] == 2
+
+
+def test_cache_refused_when_strip_aggressive_differs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    """Codex P2: strip_aggressive changes preprocessing."""
+    monkeypatch.setattr(ma, "audit_text", _stub_audit_text)
+    monkeypatch.setattr(
+        ma, "classify_compression", _stub_classify_compression,
+    )
+    cache = tmp_path / "chapters.json"
+    cache.write_text(json.dumps({
+        "status": "complete",
+        "scoring_meta": {
+            "do_tier2": False,
+            "do_tier3": False,
+            "strip_aggressive": True,
+        },
+        "chapter_audits": [{
+            "label": "Chapter 1", "n_words": 100,
+            "audit": {"summary": {"n_words": 100}},
+            "compression": {"band": "cached"},
+        }],
+        "chapter_preprocessing": {},
+    }))
+    audit_count = {"n": 0}
+
+    def _counting_audit(text, **kw):
+        audit_count["n"] += 1
+        return _stub_audit_text(text, **kw)
+
+    monkeypatch.setattr(ma, "audit_text", _counting_audit)
+    ma.audit_manuscript(
+        _chapters(2), baseline_dir=None,
+        do_tier2=False, do_tier3=False,
+        strip_aggressive=False,
+        cache_path=cache,
+    )
+    assert audit_count["n"] == 2
