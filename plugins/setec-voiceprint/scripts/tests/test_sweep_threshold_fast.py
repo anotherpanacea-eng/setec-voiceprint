@@ -210,6 +210,82 @@ def test_unreachable_fpr_in_loop_path_emits_candidate_log():
 # --------------- Wall-clock guarantee (MAGE-unblocker) ----------
 
 
+# --------------- Round-trip contract (codex P2 on PR #65) --------
+
+
+@pytest.mark.parametrize("direction", ["gt", "lt"])
+@pytest.mark.parametrize("n", [6000, 15_000])
+def test_fast_path_threshold_reproduces_operating_point(direction, n):
+    """The returned ``threshold``, when fed back through
+    ``_confusion`` (strict ``>`` / ``<``), MUST reproduce the
+    same TP / FP / TPR / FPR the fast path reported. Without
+    this contract the downstream bootstrap CI (which calls
+    ``_confusion(pairs, threshold, direction)`` per resample)
+    evaluates a different operating point than the one the
+    threshold-sweep selected, and the persisted threshold
+    fails to reproduce its calibration row.
+
+    Codex P2 finding on PR #65, 2026-05-16: the post-consumption
+    snapshot was treating ``score >= cur_score`` as positive,
+    but ``_confusion`` uses strict ``>``. Fixed by snapshotting
+    BEFORE consuming the tied-score group.
+    """
+    pairs = _separable_pairs(n, direction=direction)
+    n_pos = sum(1 for y, _ in pairs if y == 1)
+    n_neg = sum(1 for y, _ in pairs if y == 0)
+    fpr_resolution = 1.0 / n_neg
+    result = ct._sweep_threshold_fast(
+        pairs, direction, fpr_target=0.05,
+        n_pos=n_pos, n_neg=n_neg, fpr_resolution=fpr_resolution,
+    )
+    assert result["available"] is True
+    threshold = result["threshold"]
+    tp, fp, tn, fn = ct._confusion(pairs, threshold, direction)
+    rates = ct._rates(tp, fp, tn, fn)
+    assert tp == result["tp"], (
+        f"TP mismatch: fast={result['tp']}, "
+        f"_confusion(threshold={threshold})={tp}"
+    )
+    assert fp == result["fp"], (
+        f"FP mismatch: fast={result['fp']}, "
+        f"_confusion(threshold={threshold})={fp}"
+    )
+    assert abs(rates["tpr"] - result["tpr"]) < 1e-12
+    assert abs(rates["fpr"] - result["fpr"]) < 1e-12
+
+
+@pytest.mark.parametrize("direction", ["gt", "lt"])
+def test_fast_path_threshold_reproduces_under_tied_scores(direction):
+    """Tied-score corpora are the case the pre-fix code got wrong
+    (post-consumption snapshot diverged from strict-inequality
+    semantics by the entire equality-block size). Pin the round-
+    trip contract on a corpus with intentional ties — the place
+    where the bug was largest."""
+    pairs = _tied_score_pairs(2000, direction=direction)
+    n_pos = sum(1 for y, _ in pairs if y == 1)
+    n_neg = sum(1 for y, _ in pairs if y == 0)
+    if n_pos == 0 or n_neg == 0:
+        pytest.skip("single-class fixture; no operating point")
+    fpr_resolution = 1.0 / n_neg
+    result = ct._sweep_threshold_fast(
+        pairs, direction, fpr_target=0.1,
+        n_pos=n_pos, n_neg=n_neg, fpr_resolution=fpr_resolution,
+    )
+    if not result["available"]:
+        pytest.skip("no threshold satisfies FPR target")
+    threshold = result["threshold"]
+    tp, fp, tn, fn = ct._confusion(pairs, threshold, direction)
+    rates = ct._rates(tp, fp, tn, fn)
+    # On tied scores the threshold value picked may be the
+    # ``cur_score`` of a block; strict ``_confusion`` excludes
+    # the entire block. The pre-snapshot semantics in the fix
+    # match that exactly.
+    assert tp == result["tp"]
+    assert fp == result["fp"]
+    assert abs(rates["tpr"] - result["tpr"]) < 1e-12
+    assert abs(rates["fpr"] - result["fpr"]) < 1e-12
+
+
 @pytest.mark.parametrize("direction", ["gt", "lt"])
 def test_fast_path_under_1_second_at_50k_pairs(direction):
     """The bound that unblocks MAGE: at 50K pairs (~1/7 of MAGE

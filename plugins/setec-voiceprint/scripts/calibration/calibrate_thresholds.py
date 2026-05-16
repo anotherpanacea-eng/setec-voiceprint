@@ -217,22 +217,25 @@ def _sweep_threshold_fast(
     fpr_resolution: float,
 ) -> dict[str, Any]:
     """O(n log n) sort-and-scan implementation. Mathematically
-    equivalent to the loop version at the chosen operating point —
-    same TPR / FPR / precision within float epsilon. Threshold
-    value may differ in the last-decimal-place because the fast
-    path picks the observed score whose cumulative crosses the
-    boundary, while the loop path picks the same score's value
-    from the sorted-unique-scores list (the two coincide for
-    distinct scores; for tied scores at the boundary, both are
-    legitimate operating-point representatives).
+    equivalent to the loop version at the chosen operating point AND
+    at the returned threshold: feeding the returned ``threshold``
+    back through ``_confusion`` (strict ``>`` for ``gt``, strict
+    ``<`` for ``lt``) reproduces the same TP / FP / TPR / FPR the
+    fast path reported. This is the contract the downstream
+    bootstrap CI + persisted-threshold consumers rely on; without
+    it a calibration entry's threshold and rates disagree.
 
     Algorithm:
       1. Sort pairs by score in the direction-relevant order
          (descending for ``gt``, ascending for ``lt``).
-      2. Walk the sorted pairs, maintaining cumulative TP / FP
-         counters. At each unique score, snapshot the post-
-         consumption cumulative as the operating point for that
-         score-as-threshold.
+      2. Walk the sorted pairs, advancing cumulative TP / FP
+         counters at each new unique score. **Snapshot the
+         cumulative BEFORE consuming the tied-score group** at
+         ``cur_score`` — this is the operating point at
+         ``threshold = cur_score`` under strict-inequality
+         semantics: pairs strictly past ``cur_score`` (the ones
+         consumed in prior iterations) are predicted positive,
+         pairs at ``cur_score`` (this group) are NOT.
       3. Track the row with maximal TPR subject to FPR ≤ target.
 
     Total: one O(n log n) sort plus one O(n) walk. At MAGE scale
@@ -273,30 +276,19 @@ def _sweep_threshold_fast(
     cumul_fp = 0
     i = 0
     while i < n:
-        # Consume all pairs at the same score as one group so the
-        # operating point we record corresponds to a single
-        # threshold value, not a split inside a tied-score block.
         cur_score = sorted_pairs[i][1]
-        while i < n and sorted_pairs[i][1] == cur_score:
-            y, _ = sorted_pairs[i]
-            if y == 1:
-                cumul_tp += 1
-            else:
-                cumul_fp += 1
-            i += 1
-
-        # Operating point AT this score: cumulative counters
-        # post-consumption represent "all pairs with score >=
-        # cur_score predicted positive" (for ``gt``) or "all pairs
-        # with score <= cur_score predicted positive" (for ``lt``).
-        # The loop path's threshold = cur_score with strict-
-        # inequality _confusion would predict the SAME pairs
-        # positive iff the tied-group is empty (no ties at this
-        # score). For continuous data — the MAGE / RAID case —
-        # ties are rare and the two paths agree pair-for-pair. For
-        # truly tied scores they pick adjacent operating points;
-        # we record the post-consumption version as the canonical
-        # "threshold at this score" form.
+        # SNAPSHOT BEFORE consuming the tied-score group. The
+        # operating point at ``threshold = cur_score`` under
+        # ``_confusion``'s strict ``>`` / ``<`` semantics is
+        # "pairs whose score is strictly past cur_score" — i.e.
+        # the pairs consumed in PRIOR iterations, not the current
+        # group. Post-consumption cumulative would include the
+        # current group (==cur_score) and disagree with
+        # ``_confusion(pairs, cur_score, direction)`` whenever
+        # there's a tied-score group of size > 0 at the boundary.
+        # For continuous data the difference is one pair per
+        # candidate; for tied scores the entire equality block
+        # shifts the operating point.
         tp, fp = cumul_tp, cumul_fp
         tn, fn = n_neg - fp, n_pos - tp
         fpr = fp / n_neg
@@ -311,6 +303,16 @@ def _sweep_threshold_fast(
                 "precision": precision,
                 "tp": tp, "fp": fp, "tn": tn, "fn": fn,
             }
+
+        # Consume all pairs at cur_score, advancing the cumulative
+        # for the NEXT candidate's snapshot.
+        while i < n and sorted_pairs[i][1] == cur_score:
+            y, _ = sorted_pairs[i]
+            if y == 1:
+                cumul_tp += 1
+            else:
+                cumul_fp += 1
+            i += 1
 
     return {
         "available": True,
