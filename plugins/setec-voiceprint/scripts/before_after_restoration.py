@@ -70,11 +70,14 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from claim_license import ClaimLicense, from_legacy  # type: ignore
+from output_schema import build_output  # type: ignore
 from variance_audit import COMPRESSION_HEURISTICS  # type: ignore
 
 
 TASK_SURFACE = "craft_restoration"
 TOOL_NAME = "before_after_restoration"
+SCRIPT_VERSION = "1.0"
 
 
 # Per-signal noise thresholds. A delta within ± threshold counts as
@@ -685,11 +688,8 @@ def render_json(
     packet_summary: dict[str, Any] | None,
 ) -> str:
     summary = _summarize_verdicts(verdicts)
-    out = {
-        "task_surface": TASK_SURFACE,
-        "tool": TOOL_NAME,
+    results = {
         "inputs": inputs,
-        "claim_license": CLAIM_LICENSE,
         "packet_summary": packet_summary,
         "verdict_summary": summary,
         "verdicts": [v.to_dict() for v in verdicts],
@@ -697,7 +697,18 @@ def render_json(
         "preservation_check": preservation_check,
         "diff_only": diff_only,
     }
-    return json.dumps(out, indent=2, ensure_ascii=False)
+    structured = from_legacy(CLAIM_LICENSE, task_surface=TASK_SURFACE)
+    envelope = build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=(inputs or {}).get("revised") or (inputs or {}).get("packet"),
+        target_words=0,
+        baseline=None,
+        results=results,
+        claim_license=structured,
+    )
+    return json.dumps(envelope, indent=2, ensure_ascii=False)
 
 
 def _summarize_verdicts(verdicts: Sequence[TargetVerdict]) -> dict[str, int]:
