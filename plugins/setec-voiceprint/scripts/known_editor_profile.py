@@ -82,6 +82,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
 
 try:
     from variance_audit import audit_text  # type: ignore
@@ -412,14 +413,14 @@ def match_pair(
     }
 
 
-def _claim_license_dict(
+def _claim_license(
     *,
     profile: dict[str, Any],
     verdict: str,
     n_outside: int,
-) -> dict[str, Any]:
+) -> ClaimLicense:
     n_pairs = profile.get("n_pairs", 0)
-    lic = ClaimLicense(
+    return ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
             "An editorial-transformation match report. For each "
@@ -469,7 +470,65 @@ def _claim_license_dict(
             "transformation corpora.",
         ],
     )
-    return {"rendered": lic.render_block().rstrip()}
+
+
+def _claim_license_dict(
+    *,
+    profile: dict[str, Any],
+    verdict: str,
+    n_outside: int,
+) -> dict[str, Any]:
+    """Legacy rendered-only shape preserved on match_pair's return for
+    render_match_report's consumption.
+    """
+    return {
+        "rendered": _claim_license(
+            profile=profile, verdict=verdict, n_outside=n_outside,
+        ).render_block().rstrip(),
+    }
+
+
+def build_audit_payload(
+    report: dict[str, Any],
+    *,
+    before_path: Any,
+    after_path: Any = None,
+) -> dict[str, Any]:
+    """Wrap match_pair's report in the schema_version 1.0 envelope
+    per ``internal/SPEC_output_schema_unification.md``. The "learn"
+    mode emits a profile JSON (consumed by --profile on later runs)
+    and intentionally bypasses the envelope.
+    """
+    results_payload: dict[str, Any] = {}
+    for k in (
+        "profile_label", "profile_n_pairs", "z_threshold",
+        "per_signal", "n_signals_inside", "n_signals_outside",
+        "n_signals_ambiguous", "verdict",
+    ):
+        if k in report:
+            results_payload[k] = report[k]
+
+    target_extra: dict[str, Any] = {}
+    if after_path is not None:
+        target_extra["after_path"] = str(after_path)
+
+    lic = _claim_license(
+        profile={"n_pairs": report.get("profile_n_pairs")},
+        verdict=report.get("verdict", "unknown"),
+        n_outside=int(report.get("n_signals_outside", 0) or 0),
+    )
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=before_path,
+        target_words=0,
+        baseline=None,
+        results=results_payload,
+        claim_license=lic,
+        target_extra=target_extra or None,
+    )
 
 
 # ---------- Markdown rendering ----------
@@ -710,10 +769,15 @@ def main(argv: list[str] | None = None) -> int:
             sys.stderr.write(f"match: {exc}\n")
             return 2
 
-        out = (
-            json.dumps(report, indent=2, default=str)
-            if args.json else render_match_report(report)
-        )
+        if args.json:
+            payload = build_audit_payload(
+                report,
+                before_path=Path(args.before).expanduser(),
+                after_path=Path(args.after).expanduser(),
+            )
+            out = json.dumps(payload, indent=2, default=str)
+        else:
+            out = render_match_report(report)
         if args.out:
             Path(args.out).write_text(out, encoding="utf-8")
             sys.stderr.write(f"Wrote match report to {args.out}\n")
