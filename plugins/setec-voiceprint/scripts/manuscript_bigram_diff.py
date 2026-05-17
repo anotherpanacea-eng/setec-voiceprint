@@ -46,6 +46,8 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 from variance_audit import (  # type: ignore
     HAS_SPACY,
     normalize_pos_bigram_counts,
@@ -59,6 +61,8 @@ from bigram_diff import (  # type: ignore
 )
 
 TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "manuscript_bigram_diff"
+SCRIPT_VERSION = "1.0"
 
 
 # ---------- comparison ----------
@@ -217,29 +221,90 @@ def render_json(
     alpha: float,
     min_count: int,
 ) -> str:
-    out: dict[str, Any] = {
-        "task_surface": TASK_SURFACE,
-        "label_a": a_label,
-        "label_b": b_label,
-        "corpus_a_files_loaded": [str(p) for p in a_loaded],
-        "corpus_b_files_loaded": [str(p) for p in b_loaded],
-        "corpus_a_files_skipped": [str(p) for p in a_skipped],
-        "corpus_b_files_skipped": [str(p) for p in b_skipped],
-        "smoothing_alpha": alpha,
-        "min_count": min_count,
-        "diffs": {},
-    }
+    """Build the schema_version 1.0 envelope. By convention corpus A
+    serves as the envelope's target and corpus B as the baseline
+    (manuscript_bigram_diff compares two equal-status corpora; the
+    A→target / B→baseline mapping is arbitrary but stable).
+    """
+    diffs: dict[str, Any] = {}
     if pooled_diff is not None:
-        out["diffs"]["pooled"] = {
+        diffs["pooled"] = {
             "kl_total": sum(r["kl_contrib"] for r in pooled_diff),
             "rows": pooled_diff[:top * 2],
         }
     if mean_diff is not None:
-        out["diffs"]["mean"] = {
+        diffs["mean"] = {
             "kl_total": sum(r["kl_contrib"] for r in mean_diff),
             "rows": mean_diff[:top * 2],
         }
-    return json.dumps(out, indent=2, default=float)
+    baseline_meta = build_baseline_metadata(
+        n_files=len(b_loaded),
+        words=0,
+        files_loaded=[str(p) for p in b_loaded],
+        files_skipped=[str(p) for p in b_skipped] or None,
+        extra={"label": b_label},
+    )
+    warnings: list[str] = []
+    if a_skipped:
+        warnings.append(
+            f"{len(a_skipped)} corpus-A file(s) skipped."
+        )
+    if b_skipped:
+        warnings.append(
+            f"{len(b_skipped)} corpus-B file(s) skipped."
+        )
+    envelope = build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=None,
+        target_words=0,
+        baseline=baseline_meta,
+        results={
+            "label_a": a_label,
+            "label_b": b_label,
+            "smoothing_alpha": alpha,
+            "min_count": min_count,
+            "diffs": diffs,
+        },
+        claim_license=ClaimLicense(
+            task_surface=TASK_SURFACE,
+            licenses=(
+                "Per-POS-bigram diff between two corpora "
+                f"({a_label!r} vs {b_label!r}). Reports the top "
+                "diverging bigrams plus KL totals per aggregation "
+                "strategy."
+            ),
+            does_not_license=(
+                "An authorship verdict. POS-bigram divergence "
+                "between corpora reflects register, genre "
+                "conventions, syntactic style, and corpus "
+                "composition as much as authorship or AI drift."
+            ),
+            comparison_set={
+                "label_a": a_label,
+                "label_b": b_label,
+                "n_corpus_a_files": len(a_loaded),
+                "n_corpus_b_files": len(b_loaded),
+                "smoothing_alpha": alpha,
+                "min_count": min_count,
+            },
+            additional_caveats=[
+                "Requires spaCy + en_core_web_sm.",
+                "Corpus A is reported as envelope.target and corpus "
+                "B as envelope.baseline by convention; the audit "
+                "treats both corpora symmetrically.",
+            ],
+        ),
+        warnings=warnings,
+        target_extra={
+            "label": a_label,
+            "files_loaded": [str(p) for p in a_loaded],
+            "files_skipped": [str(p) for p in a_skipped] or None,
+            "n_files": len(a_loaded),
+        },
+    )
+    return json.dumps(envelope, indent=2, default=float)
 
 
 # ---------- main ----------
