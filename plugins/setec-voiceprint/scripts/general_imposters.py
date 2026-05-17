@@ -86,6 +86,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import acquisition_core as ac  # noqa: E402
+from output_schema import build_output  # noqa: E402
 from claim_license import (  # noqa: E402
     ClaimLicense,
     from_legacy,
@@ -356,6 +357,38 @@ class GIResult:
         if self.target_ai_status is not None:
             out["ai_status"] = self.target_ai_status
         return out
+
+
+def _build_envelope(result) -> dict[str, Any]:
+    """Wrap the GIResult in the schema_version 1.0 envelope. The
+    GIResult.to_dict() return shape is preserved under
+    ``envelope.results`` for any internal/legacy consumer that
+    reads it back via to_dict()."""
+    legacy = result.to_dict()
+    # Strip metadata keys that move to envelope top level.
+    metadata_keys = {"task_surface", "tool", "version", "ai_status"}
+    results_payload = {
+        k: v for k, v in legacy.items() if k not in metadata_keys
+    }
+    # claim_license inside the results payload is the legacy 3-key
+    # form; the envelope's structured claim_license is built from it.
+    legacy_cl = results_payload.get("claim_license", {})
+    structured = from_legacy(legacy_cl, task_surface=TASK_SURFACE)
+    if result.target_ai_status:
+        structured = with_state_caveats(
+            structured, target_ai_status=result.target_ai_status,
+        )
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=result.target_id,
+        target_words=0,
+        baseline=None,
+        results=results_payload,
+        claim_license=structured,
+        ai_status=result.target_ai_status,
+    )
 
 
 def _claim_license() -> dict[str, str]:
@@ -857,7 +890,8 @@ def run(args: argparse.Namespace) -> int:
         result.target_ai_status = ai_status
 
     md = render_markdown(result)
-    js = json.dumps(result.to_dict(), indent=2, sort_keys=True) + "\n"
+    envelope = _build_envelope(result)
+    js = json.dumps(envelope, indent=2, sort_keys=True) + "\n"
 
     paths_to_check: list[Path] = []
     if args.out:

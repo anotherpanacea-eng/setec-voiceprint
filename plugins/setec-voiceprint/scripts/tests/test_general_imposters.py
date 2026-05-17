@@ -393,10 +393,15 @@ def test_run_end_to_end_with_real_manifest(tmp_path):
     assert out_md.is_file()
     assert out_json.is_file()
     data = json.loads(out_json.read_text(encoding="utf-8"))
-    assert data["candidate_persona"] == "alice"
-    assert data["n_impostors"] == 6
-    assert data["proportion"] >= 0.9
-    assert data["decision"] == "consistent_with_candidate"
+    # schema_version 1.0 envelope: per-script payload under results.
+    # GIResult.to_dict() is preserved unchanged for internal/legacy
+    # consumers; the envelope wraps it for CLI JSON consumers.
+    assert data["schema_version"] == "1.0"
+    inner = data["results"]
+    assert inner["candidate_persona"] == "alice"
+    assert inner["n_impostors"] == 6
+    assert inner["proportion"] >= 0.9
+    assert inner["decision"] == "consistent_with_candidate"
 
 
 def test_privacy_guard_refuses_non_private(tmp_path):
