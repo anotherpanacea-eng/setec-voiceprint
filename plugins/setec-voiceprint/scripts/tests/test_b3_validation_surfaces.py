@@ -151,9 +151,10 @@ class TestConfounderAuditB3Routing:
         )
         payload = json.loads(out.read_text())
         assert payload.get("ai_status") == "ai_assisted"
-        # Core report shape unchanged.
-        assert "ranked_confounders" in payload
-        assert "task_surface" in payload
+        # Envelope shape: task_surface at top level, report payload
+        # under results.
+        assert payload.get("task_surface") == "validation"
+        assert "ranked_confounders" in payload["results"]
 
 
 # ---------- surface_disagreement_resolver ----------
@@ -302,12 +303,15 @@ class TestAdversarialRobustnessCardB3Routing:
 
 
 class TestB3JsonOutputUnaffected:
-    """The B.3 change is rendering-layer. JSON output for all three
-    scripts must not include the rendered caveats; downstream
-    consumers see the same JSON shape as v1.49.0 plus an
-    ``ai_status`` field when ``--ai-status`` was supplied."""
+    """After schema_version 1.0 migration (wave 8), B.3 state-routed
+    caveats are intentionally surfaced in BOTH
+    ``claim_license.additional_caveats`` AND
+    ``claim_license_rendered`` per SPEC §4 — same contract as the
+    wave 3 / 5 / 7 voice + craft surfaces. The report payload itself
+    (under ``results``) must still not carry rendered caveat text.
+    """
 
-    def test_confounder_audit_json_has_no_caveat_blob(
+    def test_confounder_audit_report_payload_has_no_caveat_blob(
         self, tmp_path: Path,
     ):
         import confounder_audit  # type: ignore
@@ -324,9 +328,16 @@ class TestB3JsonOutputUnaffected:
         ])
         assert rc == 0
         payload = json.loads(out_path.read_text())
-        # No rendered caveats embedded in JSON payload.
-        assert "outline-seeded" not in json.dumps(payload).lower()
-        assert "human seed" not in json.dumps(payload).lower()
+        # Caveats must NOT bleed into the report payload (results).
+        results_blob = json.dumps(payload["results"]).lower()
+        assert "outline-seeded" not in results_blob
+        assert "human seed" not in results_blob
+        # But they ARE expected in claim_license per SPEC §4.
+        caveats = payload["claim_license"]["additional_caveats"]
+        assert any(
+            "outline" in c.lower() or "seed" in c.lower()
+            for c in caveats
+        )
 
 
 if __name__ == "__main__":
