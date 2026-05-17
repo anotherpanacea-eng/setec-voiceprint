@@ -383,8 +383,11 @@ class TestCli:
         ])
         assert rc == 0
         report = json.loads(out_path.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: recommendation/condition_flags
+        # live under results.
+        assert report["schema_version"] == "1.0"
         assert (
-            report["recommendation"]["overall"]
+            report["results"]["recommendation"]["overall"]
             == "no_conditions_flagged"
         )
 
@@ -397,9 +400,9 @@ class TestCli:
         ])
         assert rc == 0
         report = json.loads(out_path.read_text(encoding="utf-8"))
-        assert "nonnative_english" in report["condition_flags"]
+        assert "nonnative_english" in report["results"]["condition_flags"]
         assert (
-            report["recommendation"]["refuses_evaluative_use"]
+            report["results"]["recommendation"]["refuses_evaluative_use"]
             is True
         )
 
@@ -420,7 +423,7 @@ class TestCli:
         assert rc == 0
         report = json.loads(out_path.read_text(encoding="utf-8"))
         assert (
-            report["recommendation"]["refuses_evaluative_use"]
+            report["results"]["recommendation"]["refuses_evaluative_use"]
             is False
         )
 
@@ -440,7 +443,7 @@ class TestCli:
         ])
         assert rc == 0
         report = json.loads(out_path.read_text(encoding="utf-8"))
-        assert "code_switching" in report["condition_flags"]
+        assert "code_switching" in report["results"]["condition_flags"]
 
     def test_cli_missing_target_returns_2(self, tmp_path):
         rc = fdg.main([

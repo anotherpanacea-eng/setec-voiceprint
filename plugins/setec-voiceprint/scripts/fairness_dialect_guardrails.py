@@ -98,6 +98,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
 
 
 TASK_SURFACE = "validation"
@@ -821,16 +822,69 @@ def main(argv: list[str] | None = None) -> int:
         declared_use_case=args.declared_use_case,
     )
 
-    out = (
-        json.dumps(report, indent=2, default=str)
-        if args.json else render_report(report)
-    )
+    if args.json:
+        payload = build_audit_payload(report, target_path=None)
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(report)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")
     else:
         sys.stdout.write(out)
     return 0
+
+
+def build_audit_payload(
+    report: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap fairness_dialect_guardrails report in the schema_version
+    1.0 envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    structured = ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Fairness and dialect-condition guardrails: flags "
+            "conditions (ESL / dialect / register / declared use "
+            "case) that affect how SETEC's stylometric outputs "
+            "should be interpreted, and the recommendations that "
+            "follow from those conditions."
+        ),
+        does_not_license=(
+            "A verdict on whether the conditions are correctly "
+            "declared, or whether the framework's outputs are "
+            "appropriate for the declared use case. The "
+            "recommendations are conservative defaults; user "
+            "judgment about the local context remains load-bearing."
+        ),
+        comparison_set={
+            "declared_conditions": report.get("declared_conditions"),
+            "declared_use_case": report.get("declared_use_case"),
+            "n_flags": len(report.get("condition_flags") or {}),
+        },
+        additional_caveats=[
+            "Condition flags are heuristic. The interaction matrix "
+            "between conditions (e.g., ESL × dialect × forensic-"
+            "adjacent use case) is conservative; treat the "
+            "overall recommendation as a discipline cue.",
+        ],
+    )
+    metadata_keys = {"task_surface", "tool", "version"}
+    results_payload = {
+        k: v for k, v in report.items() if k not in metadata_keys
+    }
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=0,
+        baseline=None,
+        results=results_payload,
+        claim_license=structured,
+    )
 
 
 if __name__ == "__main__":
