@@ -393,8 +393,11 @@ class TestCli:
         rc = pa.main(["--json", "--out", str(out_path), str(in_path)])
         assert rc == 0
         payload = json.loads(out_path.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: compression lives under results.
+        assert payload["schema_version"] == "1.0"
         assert payload["task_surface"] == "smoothing_diagnosis"
-        assert "compression" in payload
+        assert payload["tool"] == "paragraph_audit"
+        assert "compression" in payload["results"]
 
     def test_cli_handles_missing_input(self, tmp_path):
         rc = pa.main([str(tmp_path / "missing.txt")])

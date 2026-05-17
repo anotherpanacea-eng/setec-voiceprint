@@ -91,6 +91,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
 from embedding_backend import (  # type: ignore
     DEFAULT_MODEL,
     EmbeddingBackend,
@@ -540,8 +541,8 @@ def compare_to_baseline(
 # --------------- Output assembly ---------------------------------
 
 
-def _claim_license_block() -> dict[str, Any]:
-    cl = ClaimLicense(
+def _claim_license() -> ClaimLicense:
+    return ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
             "Reports paragraph-level semantic-trajectory statistics "
@@ -582,7 +583,62 @@ def _claim_license_block() -> dict[str, Any]:
             "thresholds.",
         ],
     )
-    return cl.to_dict()
+
+
+def _claim_license_block() -> dict[str, Any]:
+    """Legacy alias preserved for any internal caller; returns the
+    structured to_dict() shape.
+    """
+    return _claim_license().to_dict()
+
+
+def build_audit_payload(audit: dict[str, Any]) -> dict[str, Any]:
+    """Wrap assemble_output's return in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``. The
+    legacy `tool_version` field renames to `version`; per-script
+    payload lives under results.
+    """
+    available = audit.get("trajectory") is not None
+    windowing = audit.get("windowing") or {}
+    target_words = 0
+    token_stats = windowing.get("window_token_stats") or {}
+    if isinstance(token_stats, dict) and token_stats.get("n"):
+        # Approximate target_words as n_windows × mean tokens-per-window.
+        mean_tokens = token_stats.get("mean") or 0
+        target_words = int(windowing.get("n_windows", 0) * mean_tokens)
+
+    target_path = audit.get("source")
+    target_extra: dict[str, Any] = {}
+    if windowing:
+        target_extra["windowing"] = windowing
+
+    warnings: list[str] = []
+    if "warning" in audit:
+        warnings.append(audit["warning"])
+
+    results: dict[str, Any] = {}
+    if audit.get("model") is not None:
+        results["model"] = audit["model"]
+    if audit.get("trajectory") is not None:
+        results["trajectory"] = audit["trajectory"]
+    if audit.get("provisional_banding") is not None:
+        results["provisional_banding"] = audit["provisional_banding"]
+    if audit.get("baseline_comparison") is not None:
+        results["baseline_comparison"] = audit["baseline_comparison"]
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results=results,
+        claim_license=_claim_license() if available else None,
+        available=available,
+        warnings=warnings,
+        target_extra=target_extra or None,
+    )
 
 
 def assemble_output(
@@ -1013,7 +1069,8 @@ def main(argv: list[str] | None = None) -> int:
     except EmbeddingBackendError as exc:
         sys.stderr.write(f"Embedding backend error: {exc}\n")
         return 3
-    rendered_json = json.dumps(payload, indent=2, sort_keys=True)
+    envelope = build_audit_payload(payload)
+    rendered_json = json.dumps(envelope, indent=2, sort_keys=True)
     if args.out:
         Path(args.out).expanduser().write_text(rendered_json + "\n", encoding="utf-8")
     if args.markdown_out:

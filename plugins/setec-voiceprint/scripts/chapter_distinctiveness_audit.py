@@ -51,9 +51,14 @@ from manuscript_audit import (  # type: ignore
     split_manuscript,
 )
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
+
 
 # See variance_audit.TASK_SURFACE for the contract.
 TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "chapter_distinctiveness_audit"
+SCRIPT_VERSION = "1.0"
 
 
 def precompute_chapter_counts(
@@ -353,7 +358,11 @@ def main() -> int:
     )
 
     if args.json:
-        output = json.dumps(result, indent=2, default=str)
+        payload = build_audit_payload(
+            result,
+            target_path=args.manuscript or args.chapter_dir,
+        )
+        output = json.dumps(payload, indent=2, default=str)
     else:
         output = render_report(result, top_per_chapter=args.top_per_chapter)
 
@@ -363,6 +372,71 @@ def main() -> int:
     else:
         print(output)
     return 0
+
+
+def _claim_license(result: dict[str, Any]) -> ClaimLicense:
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Per-chapter distinctive-vocabulary report. For each "
+            "chapter, names the words over-represented relative to "
+            "the rest of the manuscript (leave-one-out internal "
+            "baseline). Surfaces thematic anchors, setting props, "
+            "and POV-specific vocabulary — words that distinguish "
+            "one chapter from the rest."
+        ),
+        does_not_license=(
+            "An authorship verdict. The audit is descriptive of "
+            "vocabulary distribution within a manuscript and does "
+            "not license claims about who wrote the manuscript or "
+            "whether AI is involved. Words can be distinctive for "
+            "many reasons (close-third POV, scene location, "
+            "deliberate craft choice); the audit's job is to make "
+            "them visible, not to judge them."
+        ),
+        comparison_set={
+            "n_chapters": result.get("n_chapters"),
+            "total_target_words": result.get("total_target_words"),
+        },
+        additional_caveats=[
+            "Manuscript-wide habit-vocabulary will not surface here "
+            "because the rest-of-manuscript baseline already "
+            "contains it. Pair with `manuscript_repetition_audit` "
+            "(external-baseline) to see both patterns.",
+            "Chapters with very short word counts produce noisy "
+            "ratios; the per-chapter `n_target_words` field "
+            "documents this.",
+        ],
+    )
+
+
+def build_audit_payload(
+    result: dict[str, Any],
+    *,
+    target_path: Path | str | None,
+) -> dict[str, Any]:
+    """Wrap the chapter-distinctiveness audit in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    target_words = int(result.get("total_target_words", 0) or 0)
+    n_chapters = result.get("n_chapters")
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results={
+            "n_chapters": n_chapters,
+            "chapters": result.get("chapters", []),
+        },
+        claim_license=_claim_license(result),
+        target_extra=(
+            {"n_chapters": n_chapters}
+            if n_chapters is not None else None
+        ),
+    )
 
 
 if __name__ == "__main__":

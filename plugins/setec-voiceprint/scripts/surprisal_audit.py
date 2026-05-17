@@ -71,6 +71,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
 from surprisal_backend import (  # type: ignore
     DEFAULT_MODEL,
     MODEL_ALIASES,
@@ -474,12 +475,12 @@ def audit_surprisal(
 # --------------- Claim-license block ------------------------
 
 
-def _claim_license_block(audit: dict[str, Any]) -> str:
-    """Render the ClaimLicense block. PROVISIONAL bands are named
+def _claim_license(audit: dict[str, Any]) -> ClaimLicense:
+    """Build the ClaimLicense. PROVISIONAL bands are named
     explicitly via ``calibration_anchor: user-baseline-required``."""
     summary = audit.get("summary", {})
     band = audit.get("band", {})
-    lic = ClaimLicense(
+    return ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
             "Per-token surprisal series of the input against a "
@@ -521,7 +522,55 @@ def _claim_license_block(audit: dict[str, Any]) -> str:
             "the trade-off via --model.",
         ],
     )
-    return lic.render_block().rstrip()
+
+
+def _claim_license_block(audit: dict[str, Any]) -> str:
+    return _claim_license(audit).render_block().rstrip()
+
+
+_RESULTS_KEYS = (
+    "n_tokens_scored", "series_length", "summary",
+    "top_k_tokens", "sliding_window", "band", "backend",
+)
+
+
+def build_audit_payload(
+    audit: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap the surprisal audit dict in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    available = bool(audit.get("available", True))
+    target_words = int(audit.get("n_tokens_scored", 0) or 0)
+    target_extra: dict[str, Any] = {}
+    if "preprocessing" in audit:
+        target_extra["preprocessing"] = audit["preprocessing"]
+
+    results: dict[str, Any] = {}
+    if available:
+        for k in _RESULTS_KEYS:
+            if k in audit:
+                results[k] = audit[k]
+
+    warnings: list[str] = []
+    if not available and "reason" in audit:
+        warnings.append(audit["reason"])
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results=results,
+        claim_license=_claim_license(audit) if available else None,
+        available=available,
+        warnings=warnings,
+        target_extra=target_extra or None,
+    )
 
 
 # --------------- Markdown renderer --------------------------
@@ -743,10 +792,11 @@ def main(argv: list[str] | None = None) -> int:
     # Attach the backend identifier block so PROVENANCE is captured
     # in the audit's JSON output and surfaced in the ClaimLicense.
     audit["backend"] = backend.identifier_block()
-    out = (
-        json.dumps(audit, indent=2, default=str, sort_keys=True)
-        if args.json else render_markdown(audit)
-    )
+    if args.json:
+        payload = build_audit_payload(audit, target_path=target_path)
+        out = json.dumps(payload, indent=2, default=str, sort_keys=True)
+    else:
+        out = render_markdown(audit)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")

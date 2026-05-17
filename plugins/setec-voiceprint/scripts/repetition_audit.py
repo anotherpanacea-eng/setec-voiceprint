@@ -23,6 +23,14 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 
 # Common English function words (excluded by default; not vocabulary-restoration targets)
 DEFAULT_FUNCTION_WORDS = {
@@ -72,6 +80,8 @@ WORD_RE = re.compile(r"[A-Za-z']+")
 # repetition is a lexical-compression diagnostic; its findings feed the
 # craft-restoration pass but the audit itself is diagnosis, not advice.
 TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "repetition_audit"
+SCRIPT_VERSION = "1.0"
 
 
 def tokenize(text: str) -> list[str]:
@@ -383,15 +393,15 @@ def main() -> int:
     )
 
     if args.json:
-        output = json.dumps({
-            "task_surface": TASK_SURFACE,
-            "target": str(target_path),
-            "target_words": target_words,
-            "baseline_files_loaded": [str(p) for p in loaded],
-            "baseline_files_skipped": [str(p) for p in skipped],
-            "baseline_tokens": base_n,
-            "candidates": candidates,
-        }, indent=2)
+        envelope = build_audit_payload(
+            target_path=target_path,
+            target_words=target_words,
+            candidates=candidates,
+            baseline_files_loaded=loaded,
+            baseline_files_skipped=skipped,
+            baseline_tokens=base_n,
+        )
+        output = json.dumps(envelope, indent=2)
     else:
         output = render_report(candidates, target_path.name, target_words, args.top)
 
@@ -401,6 +411,85 @@ def main() -> int:
     else:
         print(output)
     return 0
+
+
+def _claim_license(
+    *,
+    target_words: int,
+    baseline_tokens: int,
+    n_candidates: int,
+) -> ClaimLicense:
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Vocabulary over-representation report against an "
+            "external baseline corpus. Names words whose density in "
+            "the target exceeds the baseline by the configured ratio, "
+            "filtered for minimum count and cluster-window evidence."
+        ),
+        does_not_license=(
+            "An authorship verdict. Habit-vocabulary and over-"
+            "representation can come from topic, register, genre "
+            "convention, character names, setting props, or "
+            "deliberate craft choice. The audit makes habit-words "
+            "visible; the writer decides whether each is earned."
+        ),
+        comparison_set={
+            "target_words": target_words,
+            "baseline_tokens": baseline_tokens,
+            "n_candidates": n_candidates,
+        },
+        additional_caveats=[
+            "Baseline coverage matters. A small or topic-mismatched "
+            "baseline inflates the target's ratios; a "
+            "register-matched baseline is the right comparison set.",
+            "Skipped baseline files mean their tokens are absent — "
+            "inflates ratios. The script logs skipped files to "
+            "stderr; the warnings field carries the count.",
+        ],
+    )
+
+
+def build_audit_payload(
+    *,
+    target_path: Path | str,
+    target_words: int,
+    candidates: list,
+    baseline_files_loaded: list,
+    baseline_files_skipped: list,
+    baseline_tokens: int,
+) -> dict[str, Any]:
+    """Wrap the repetition-audit output in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    baseline_meta = build_baseline_metadata(
+        n_files=len(baseline_files_loaded),
+        words=int(baseline_tokens),
+        files_loaded=[str(p) for p in baseline_files_loaded],
+        files_skipped=[str(p) for p in baseline_files_skipped],
+    )
+    warnings: list[str] = []
+    if baseline_files_skipped:
+        warnings.append(
+            f"{len(baseline_files_skipped)} baseline file(s) skipped; "
+            "their tokens are absent from the baseline (ratios may be "
+            "inflated)."
+        )
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=int(target_words),
+        baseline=baseline_meta,
+        results={"candidates": candidates},
+        claim_license=_claim_license(
+            target_words=target_words,
+            baseline_tokens=baseline_tokens,
+            n_candidates=len(candidates),
+        ),
+        warnings=warnings,
+    )
 
 
 if __name__ == "__main__":

@@ -48,6 +48,8 @@ from repetition_audit import (  # type: ignore
     load_baseline_counts,
     score_against_baseline_counts,
 )
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 from manuscript_audit import (  # type: ignore
     load_chapter_dir,
     split_manuscript,
@@ -56,6 +58,8 @@ from manuscript_audit import (  # type: ignore
 
 # See variance_audit.TASK_SURFACE for the contract.
 TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "manuscript_repetition_audit"
+SCRIPT_VERSION = "1.0"
 
 
 def aggregate_across_chapters(
@@ -476,7 +480,11 @@ def main() -> int:
         return 1
 
     if args.json:
-        output = json.dumps(result, indent=2, default=str)
+        envelope = build_audit_payload(
+            result,
+            target_path=args.manuscript or args.chapter_dir,
+        )
+        output = json.dumps(envelope, indent=2, default=str)
     else:
         output = render_report(
             result,
@@ -492,6 +500,87 @@ def main() -> int:
     else:
         print(output)
     return 0
+
+
+def _claim_license(result: dict[str, Any]) -> ClaimLicense:
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Manuscript-aggregate vocabulary over-representation "
+            "report. Names habit-words elevated against an external "
+            "baseline (dispersed across many chapters at moderate "
+            "ratio) and concentrated spikes (high ratio in a few "
+            "chapters). Pairs with `chapter_distinctiveness_audit` "
+            "(internal leave-one-out baseline) for the complementary "
+            "diagnostic."
+        ),
+        does_not_license=(
+            "An authorship verdict. Habit-vocabulary at the manuscript "
+            "level reflects topic, register, genre conventions, and "
+            "deliberate craft choice as much as drift. The audit's "
+            "job is to make habit-words visible; the writer "
+            "adjudicates whether each is earned."
+        ),
+        comparison_set={
+            "n_chapters": result.get("n_chapters"),
+            "n_baseline_files": result.get("n_baseline_files"),
+            "baseline_words": result.get("baseline_words"),
+            "total_target_words": result.get("total_target_words"),
+        },
+        additional_caveats=[
+            "Skipped baseline files inflate ratios; the warnings "
+            "field carries the count.",
+            "Dispersed-habit ranking uses n_chapters × median_ratio "
+            "(not mean), so a single large spike does not dominate "
+            "the dispersed list; concentrated spikes have their own "
+            "section.",
+        ],
+    )
+
+
+def build_audit_payload(
+    result: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap manuscript_repetition_audit in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    target_words = int(result.get("total_target_words", 0) or 0)
+    n_chapters = result.get("n_chapters")
+    baseline_loaded = result.get("baseline_files_loaded", []) or []
+    baseline_skipped = result.get("baseline_files_skipped", []) or []
+    baseline_meta = build_baseline_metadata(
+        n_files=int(result.get("n_baseline_files", 0) or 0),
+        words=int(result.get("baseline_words", 0) or 0),
+        files_loaded=[str(p) for p in baseline_loaded] or None,
+        files_skipped=[str(p) for p in baseline_skipped] or None,
+    )
+    warnings: list[str] = []
+    if baseline_skipped:
+        warnings.append(
+            f"{len(baseline_skipped)} baseline file(s) skipped; "
+            "their tokens are absent (ratios may be inflated)."
+        )
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results={
+            "n_chapters": n_chapters,
+            "chapters": result.get("chapters", []),
+            "aggregated": result.get("aggregated", []),
+        },
+        claim_license=_claim_license(result),
+        warnings=warnings,
+        target_extra=(
+            {"n_chapters": n_chapters}
+            if n_chapters is not None else None
+        ),
+    )
 
 
 if __name__ == "__main__":

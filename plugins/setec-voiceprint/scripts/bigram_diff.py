@@ -51,6 +51,8 @@ from pathlib import Path
 from typing import Any
 
 # The math, smoothing, and POS tagger live in variance_audit.
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 from variance_audit import (  # type: ignore
     HAS_SPACY,
     normalize_pos_bigram_counts,
@@ -59,6 +61,8 @@ from variance_audit import (  # type: ignore
 )
 
 TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "bigram_diff"
+SCRIPT_VERSION = "1.0"
 
 
 # ---------- I/O helpers ----------
@@ -368,28 +372,115 @@ def render_json(
     alpha: float,
     min_count: int,
 ) -> str:
-    out: dict[str, Any] = {
-        "task_surface": TASK_SURFACE,
-        "target": str(target_path),
-        "target_bigrams": sum(target_counts.values()),
-        "target_unique": len(target_counts),
-        "cluster_files_loaded": [str(p) for p in cluster_loaded],
-        "cluster_files_skipped": [str(p) for p in cluster_skipped],
-        "smoothing_alpha": alpha,
-        "min_count": min_count,
-        "diffs": {},
-    }
+    envelope = build_audit_payload(
+        target_path=target_path,
+        target_counts=target_counts,
+        cluster_loaded=cluster_loaded,
+        cluster_skipped=cluster_skipped,
+        pooled_diff=pooled_diff,
+        mean_diff=mean_diff,
+        top=top, alpha=alpha, min_count=min_count,
+    )
+    return json.dumps(envelope, indent=2, default=float)
+
+
+def _claim_license(
+    *,
+    target_bigrams: int,
+    n_cluster: int,
+    alpha: float,
+    min_count: int,
+) -> ClaimLicense:
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Per-POS-bigram diff between a target text and a "
+            "comparison cluster. Reports the top diverging bigrams "
+            "(both directions) plus a KL total per aggregation "
+            "strategy (pooled counts, per-file mean, or both)."
+        ),
+        does_not_license=(
+            "An authorship verdict. POS-bigram divergence reflects "
+            "register, genre conventions, syntactic style, and "
+            "deliberate craft choice as much as drift. The audit "
+            "surfaces structural patterns; the writer adjudicates "
+            "whether each is symptomatic."
+        ),
+        comparison_set={
+            "target_bigrams": target_bigrams,
+            "n_cluster_files": n_cluster,
+            "smoothing_alpha": alpha,
+            "min_count": min_count,
+        },
+        additional_caveats=[
+            "Requires spaCy + en_core_web_sm for POS tagging.",
+            "Laplace smoothing affects pooled-counts mode; per-file "
+            "mean does not smooth. Compare both before drawing "
+            "conclusions about KL magnitude.",
+        ],
+    )
+
+
+def build_audit_payload(
+    *,
+    target_path: Path | str,
+    target_counts: dict[str, int],
+    cluster_loaded: list[Path],
+    cluster_skipped: list[Path],
+    pooled_diff: list[dict[str, Any]] | None,
+    mean_diff: list[dict[str, Any]] | None,
+    top: int,
+    alpha: float,
+    min_count: int,
+) -> dict[str, Any]:
+    """Wrap the bigram-diff output in the schema_version 1.0 envelope
+    per ``internal/SPEC_output_schema_unification.md``.
+    """
+    target_bigrams = sum(target_counts.values())
+    diffs: dict[str, Any] = {}
     if pooled_diff is not None:
-        out["diffs"]["pooled"] = {
+        diffs["pooled"] = {
             "kl_total": sum(r["kl_contrib"] for r in pooled_diff),
-            "rows": pooled_diff[:top * 2],  # both directions
+            "rows": pooled_diff[:top * 2],
         }
     if mean_diff is not None:
-        out["diffs"]["mean"] = {
+        diffs["mean"] = {
             "kl_total": sum(r["kl_contrib"] for r in mean_diff),
             "rows": mean_diff[:top * 2],
         }
-    return json.dumps(out, indent=2, default=float)
+    baseline_meta = build_baseline_metadata(
+        n_files=len(cluster_loaded),
+        words=0,  # bigram_diff counts bigrams, not words
+        files_loaded=[str(p) for p in cluster_loaded],
+        files_skipped=[str(p) for p in cluster_skipped] or None,
+    )
+    warnings: list[str] = []
+    if cluster_skipped:
+        warnings.append(
+            f"{len(cluster_skipped)} cluster file(s) skipped; "
+            "their bigrams are absent from the comparison set."
+        )
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_bigrams,
+        baseline=baseline_meta,
+        results={
+            "target_bigrams": target_bigrams,
+            "target_unique": len(target_counts),
+            "smoothing_alpha": alpha,
+            "min_count": min_count,
+            "diffs": diffs,
+        },
+        claim_license=_claim_license(
+            target_bigrams=target_bigrams,
+            n_cluster=len(cluster_loaded),
+            alpha=alpha, min_count=min_count,
+        ),
+        warnings=warnings,
+    )
 
 
 # ---------- main ----------

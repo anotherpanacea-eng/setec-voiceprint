@@ -28,6 +28,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
+
 
 def _chapter_text_hash(text: str) -> str:
     """SHA-256 of the chapter text. Used as part of the resume key
@@ -52,6 +59,8 @@ from preprocessing import aggregate_preprocessing_metadata, available_rule_names
 # Layer A diagnostic across every chapter of a manuscript; the output is
 # the same prose-quality diagnosis at a different scope.
 TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "manuscript_audit"
+SCRIPT_VERSION = "1.0"
 
 
 def split_manuscript(text: str, pattern: str) -> list[dict[str, Any]]:
@@ -773,7 +782,11 @@ def main() -> int:
         # Strip large nested audit fields for cleaner JSON output
         for ch in result["chapters"]:
             ch.pop("audit", None)
-        output = json.dumps(result, indent=2, default=str)
+        envelope = build_audit_payload(
+            result,
+            target_path=args.manuscript or args.chapter_dir,
+        )
+        output = json.dumps(envelope, indent=2, default=str)
     else:
         output = render_dashboard(result)
 
@@ -783,6 +796,89 @@ def main() -> int:
     else:
         print(output)
     return 0
+
+
+def _claim_license(result: dict[str, Any]) -> ClaimLicense:
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Cross-chapter manuscript-level Layer A dashboard. Per "
+            "chapter, runs variance_audit signals against an optional "
+            "external baseline; aggregates into a manuscript-wide "
+            "view with per-signal medians, per-chapter band labels, "
+            "and outlier flagging."
+        ),
+        does_not_license=(
+            "An authorship verdict. The dashboard surfaces chapter-"
+            "level distributional patterns within a manuscript; "
+            "explaining the patterns (genre conventions, deliberate "
+            "craft choices, register drift, AI involvement) is the "
+            "writer's call. Pair with the confounder audit and "
+            "Layer C source triage before drawing conclusions."
+        ),
+        comparison_set={
+            "n_chapters": result.get("n_chapters"),
+            "n_baseline_files": result.get("n_baseline_files"),
+        },
+        additional_caveats=[
+            "Inherits variance_audit's heuristic-tier calibration. "
+            "Band labels are operator cues, not load-bearing "
+            "verdicts.",
+            "Cross-chapter aggregation uses medians (not means) so "
+            "a single outlier chapter does not dominate the "
+            "dashboard summary; the chapters list preserves per-"
+            "chapter detail for drill-down.",
+        ],
+    )
+
+
+def build_audit_payload(
+    result: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap manuscript_audit in the schema_version 1.0 envelope per
+    ``internal/SPEC_output_schema_unification.md``.
+    """
+    chapters = result.get("chapters", []) or []
+    target_words = sum(
+        int(ch.get("n_words", 0) or 0) for ch in chapters
+    )
+    target_extra: dict[str, Any] = {}
+    preprocessing = result.get("preprocessing", {}) or {}
+    if preprocessing.get("chapters"):
+        target_extra["preprocessing"] = preprocessing["chapters"]
+    n_chapters = result.get("n_chapters")
+    if n_chapters is not None:
+        target_extra["n_chapters"] = n_chapters
+
+    baseline_meta: dict[str, Any] | None = None
+    if result.get("n_baseline_files"):
+        baseline_meta = build_baseline_metadata(
+            n_files=int(result.get("n_baseline_files", 0) or 0),
+            words=0,
+            extra=(
+                {"preprocessing": preprocessing["baseline"]}
+                if preprocessing.get("baseline") else None
+            ),
+        )
+
+    results = {
+        "chapters": chapters,
+        "baseline_stats": result.get("baseline_stats"),
+    }
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=_claim_license(result),
+        target_extra=target_extra or None,
+    )
 
 
 if __name__ == "__main__":

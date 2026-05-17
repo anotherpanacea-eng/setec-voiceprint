@@ -385,16 +385,24 @@ class TestRenderJson:
                          band="Lightly smoothed", fraction=0.12),
         ]
         out = swh.render_json(_make_windows_block(windows))
+        # schema_version 1.0 envelope: top-level carries envelope keys;
+        # per-script payload lives under results.
         for key in (
-            "task_surface", "tool", "version", "n_windows",
-            "window_size", "stride", "bands", "compression_fractions",
-            "band_distribution", "sparkline", "band_tape",
-            "hot_zones", "signal_grid",
+            "schema_version", "task_surface", "tool", "version",
+            "available", "target", "baseline", "results",
+            "claim_license", "claim_license_rendered",
+            "warnings", "ai_status",
         ):
-            assert key in out, f"missing key: {key}"
+            assert key in out, f"missing envelope key: {key}"
         assert out["task_surface"] == "smoothing_diagnosis"
-        assert out["n_windows"] == 2
-        assert out["bands"][0] == "Heavily smoothed"
+        for key in (
+            "n_windows", "window_size", "stride", "bands",
+            "compression_fractions", "band_distribution",
+            "sparkline", "band_tape", "hot_zones", "signal_grid",
+        ):
+            assert key in out["results"], f"missing results key: {key}"
+        assert out["results"]["n_windows"] == 2
+        assert out["results"]["bands"][0] == "Heavily smoothed"
 
     def test_json_hot_zone_fields(self):
         windows = [
@@ -403,8 +411,8 @@ class TestRenderJson:
                          flagged=["burstiness_B"]),
         ]
         out = swh.render_json(_make_windows_block(windows))
-        assert len(out["hot_zones"]) == 1
-        z = out["hot_zones"][0]
+        assert len(out["results"]["hot_zones"]) == 1
+        z = out["results"]["hot_zones"][0]
         for key in (
             "start_window", "end_window", "start_word", "end_word",
             "band", "n_windows", "fraction_min", "fraction_max",
@@ -457,7 +465,9 @@ class TestCli:
         body = out_md.read_text(encoding="utf-8")
         assert "# Sliding-window compression heatmap" in body
         payload = json.loads(out_json.read_text(encoding="utf-8"))
-        assert payload["n_windows"] == 2
+        # schema_version 1.0 envelope: n_windows lives under results.
+        assert payload["schema_version"] == "1.0"
+        assert payload["results"]["n_windows"] == 2
 
     def test_cli_refuses_public_output_without_flag(self, tmp_path):
         windows = [
@@ -637,8 +647,9 @@ class TestPhenomenonClassification:
             "n_windows": 1, "results": windows,
         }
         out = swh.render_json(block)
-        assert "hot_zones" in out
-        zone = out["hot_zones"][0]
+        # schema_version 1.0 envelope: hot_zones lives under results.
+        assert "hot_zones" in out["results"]
+        zone = out["results"]["hot_zones"][0]
         assert zone["phenomenon"] == "over_cohesion"
         assert zone["phenomenon_evidence"]
 

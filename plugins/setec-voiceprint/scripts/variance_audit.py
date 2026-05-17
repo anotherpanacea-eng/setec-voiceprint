@@ -47,10 +47,14 @@ from dataclasses import dataclass
 # which question they answer. See ROADMAP.md "Phase 1 -> Phase 2
 # operational sequence" for the contract.
 TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "variance_audit"
+SCRIPT_VERSION = "1.0"
 from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 from preprocessing import (
     aggregate_preprocessing_metadata,
     available_rule_names,
@@ -3659,7 +3663,16 @@ def main() -> int:
         }
 
     if args.json:
-        print(json.dumps(output, indent=2, default=str))
+        # Codex P2: precompute the baseline word total from the full
+        # baseline_block (which carries the `audits` list) before the
+        # trim main() does at line 3615-ish into output["baseline"].
+        baseline_n_words = _sum_baseline_n_words(baseline_block)
+        envelope = build_audit_payload(
+            output,
+            target_path=args.input,
+            baseline_n_words=baseline_n_words,
+        )
+        print(json.dumps(envelope, indent=2, default=str))
         return 0
 
     if not args.quiet:
@@ -3676,6 +3689,166 @@ def main() -> int:
         if "windows" in output:
             print(format_windows_dashboard(output["windows"]["results"]))
     return 0
+
+
+def _claim_license(output: dict[str, Any]) -> ClaimLicense:
+    audit = output.get("audit", {}) or {}
+    compression = output.get("compression", {}) or {}
+    has_baseline = output.get("baseline") is not None
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Layer A distributional diagnostic. Reports per-tier "
+            "stylometric signals (Tier 1 variance: sentence-length "
+            "SD / MATTR / MTLD / Yule's K / Shannon entropy / FKGL "
+            "SD / connective density / function-word ratio; Tier 2 "
+            "syntax: POS-bigram entropy + KL / MDD SD; Tier 3 "
+            "trajectory: adjacent-sentence cosine mean and SD; "
+            "Tier 4 surprisal when --tier4 is supplied) plus a "
+            "compression-band classification. When --baseline-dir "
+            "is supplied, also reports per-signal z-scores and "
+            "distributional divergences. Sliding-window mode "
+            "(--window-size) localizes compression within a long "
+            "document."
+        ),
+        does_not_license=(
+            "An authorship verdict. Distributional smoothing has "
+            "many causes — RLHF mode collapse is ONE of them, but "
+            "so are genre conventions, professional copyediting, "
+            "register shift, ESL writing, translation cleanup, "
+            "intentional voice imitation, time drift, and POV "
+            "collapse. Bands are heuristic-tier with empirically-"
+            "oriented anchors on six Tier 1 signals (2026-05-10 "
+            "EditLens findings); thresholds do not generalize "
+            "across corpora (see ROADMAP.md cross-corpus polarity "
+            "inversion). The audit does NOT license a claim that a "
+            "draft is AI-generated based on compression alone."
+        ),
+        comparison_set={
+            # audit_text() stores word/sentence counts under
+            # audit["summary"] — not at the top level. Codex P2 on
+            # PR #84 caught the original code reading audit["n_words"]
+            # (which was always None on real runs).
+            "n_words": audit.get("summary", {}).get("n_words"),
+            "n_sentences": audit.get("summary", {}).get("n_sentences"),
+            "band": compression.get("band"),
+            "has_baseline": has_baseline,
+            "windowed": "windows" in output,
+        },
+        additional_caveats=[
+            "Tier 1-3 signals carry mixed calibration status; see "
+            "references/signals-glossary.md for per-signal status "
+            "(heuristic / literature_anchored / empirically_oriented). "
+            "Calibrated thresholds are not shipped as load-bearing "
+            "defaults per the Stylometry-to-the-people policy.",
+            "Without a personal baseline, signals fire against "
+            "general-prose heuristic thresholds that may not "
+            "generalize to the writer's register. Always run with "
+            "--baseline-dir when a register-matched baseline is "
+            "available.",
+            "Sliding-window mode localizes compression but inherits "
+            "the same heuristic-tier thresholds at the window level; "
+            "interpret window bands as cues, not verdicts.",
+        ],
+    )
+
+
+def build_audit_payload(
+    output: dict[str, Any],
+    *,
+    target_path: Any,
+    baseline_n_words: int | None = None,
+) -> dict[str, Any]:
+    """Wrap variance_audit's main() output dict in the schema_version
+    1.0 envelope per ``internal/SPEC_output_schema_unification.md``.
+
+    The audit function (``audit_text``) is unchanged; this function
+    re-shapes only the CLI's main() output dict (the legacy
+    top-level layout: task_surface, preprocessing, audit, compression,
+    ablation, baseline, baseline_comparison, baseline_divergences,
+    baseline_bootstrap, windows) into the envelope.
+
+    Codex P2 on PR #84: audit_text() stores word counts at
+    ``audit["summary"]["n_words"]`` (not at the top level), and
+    ``output["baseline"]`` does not carry a baseline word total —
+    the per-file totals live under ``baseline_block["audits"]`` in
+    ``main()`` scope, which this function does not see. Callers
+    that have the full baseline_block in scope (main() does) should
+    pre-compute the total and pass ``baseline_n_words=...``;
+    otherwise ``baseline.words`` will be 0 (still surfaces n_files
+    correctly).
+    """
+    audit = output.get("audit") or {}
+    summary = audit.get("summary") or {}
+    target_words = int(summary.get("n_words", 0) or 0)
+    target_extra: dict[str, Any] = {}
+    if output.get("preprocessing"):
+        target_extra["preprocessing"] = output["preprocessing"]
+
+    baseline_meta: dict[str, Any] | None = None
+    baseline_block = output.get("baseline")
+    if baseline_block is not None:
+        extras = {
+            k: v for k, v in baseline_block.items()
+            if k not in {"n_files", "n_words", "aggregate", "preprocessing"}
+        }
+        if baseline_block.get("aggregate") is not None:
+            extras["aggregate"] = baseline_block["aggregate"]
+        if baseline_block.get("preprocessing"):
+            extras["preprocessing"] = baseline_block["preprocessing"]
+        # baseline_block in output["baseline"] only carries
+        # n_files / aggregate / preprocessing (main() trims here);
+        # baseline word total comes from the caller via
+        # baseline_n_words when available.
+        words = baseline_n_words if baseline_n_words is not None else 0
+        baseline_meta = build_baseline_metadata(
+            n_files=int(baseline_block.get("n_files", 0) or 0),
+            words=int(words or 0),
+            extra=extras or None,
+        )
+
+    results: dict[str, Any] = {}
+    for k in (
+        "audit", "compression", "ablation",
+        "baseline_comparison", "baseline_divergences",
+        "baseline_bootstrap", "windows",
+    ):
+        if k in output:
+            results[k] = output[k]
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=_claim_license(output),
+        target_extra=target_extra or None,
+    )
+
+
+def _sum_baseline_n_words(baseline_block: dict[str, Any] | None) -> int:
+    """Sum per-file `n_words` across the audits in a baseline_block.
+
+    Codex P2 helper: audit_baseline() returns a dict with `audits`
+    (list of per-file audit dicts). Each entry stores its own word
+    count at `audit["summary"]["n_words"]`. The baseline_block that
+    flows into output["baseline"] in main() is trimmed and does not
+    carry the audits list, so the sum has to happen before the trim.
+    main() computes this in scope and passes to build_audit_payload.
+    """
+    if not baseline_block:
+        return 0
+    total = 0
+    for entry in baseline_block.get("audits", []) or []:
+        audit = entry.get("audit") if isinstance(entry, dict) else None
+        if isinstance(audit, dict):
+            total += int(
+                (audit.get("summary") or {}).get("n_words", 0) or 0
+            )
+    return total
 
 
 if __name__ == "__main__":

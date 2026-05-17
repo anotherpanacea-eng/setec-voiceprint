@@ -6,6 +6,42 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.86.0] - 2026-05-17
+
+**Output schema unification wave 5: eleven smoothing-surface scripts migrate to the schema_version 1.0 envelope.** The largest wave by far: 11 scripts including `variance_audit` (3682 LOC — the central Layer A diagnostic and the biggest single file in the repo). After this wave **28 of ~30** user-facing scripts are on the envelope. Waves 6 (validation) and 7 (craft restoration) remain.
+
+Migrated:
+
+- `chapter_distinctiveness_audit` — leave-one-out internal-baseline chapter diagnostic; baseline=null per design.
+- `repetition_audit` — vocabulary over-representation against external baseline.
+- `manuscript_repetition_audit` — cross-chapter habit-vocabulary; per-chapter + aggregated.
+- `bigram_diff` — POS-bigram diff against a comparison cluster.
+- `manuscript_bigram_diff` — POS-bigram diff between two corpora; by convention corpus A → envelope.target, corpus B → envelope.baseline.
+- `paragraph_audit` — paragraph-rhythm distributional signals.
+- `surprisal_audit` — Tier 4 per-token surprisal; `backend` identifier block moves under results.
+- `sliding_window_heatmap` — variance_audit windows → heatmap rendering; consumes envelope outputs and now emits them.
+- `semantic_trajectory_audit` — Tier 3 paragraph trajectory; `tool_version` → envelope.version, `windowing` → target_extra.
+- `manuscript_audit` — cross-chapter Layer A dashboard.
+- **`variance_audit`** — the central Layer A diagnostic. `audit_text()` (the function used by ~10 other scripts including validation_harness and calibration_survey) keeps its return shape unchanged; only main()'s CLI JSON output is migrated. `build_audit_payload(output, target_path)` re-shapes the legacy main() dict into the envelope.
+
+### Added
+
+- **95 new tests** across 11 schema-test files: `test_chapter_distinctiveness_audit_schema.py` (10), `test_repetition_audit_schema.py` (13), `test_manuscript_repetition_audit_schema.py` (11), `test_bigram_diff_schema.py` (9), `test_manuscript_bigram_diff_schema.py` (9), `test_paragraph_audit_schema.py` (8), `test_surprisal_audit_schema.py` (8), `test_semantic_trajectory_audit_schema.py` (n/a; covered inline in test_semantic_trajectory_audit.py), `test_manuscript_audit_schema.py` (10), `test_variance_audit_schema.py` (16). Plus updates to ~5 existing CLI tests to navigate envelope shape. The variance_audit suite includes `TestFunctionContractStaysLegacy` which pins that `audit_text()` continues to return the legacy mixed-shape dict so internal function-call consumers (validation_harness, calibration_survey, sliding_window_heatmap, manuscript_audit, paragraph_audit, etc.) stay green.
+
+### Changed
+
+- **All 11 smoothing-surface scripts' CLI JSON output shape is a BREAKING CHANGE.** Per-script pre/post details in commit messages. Common pattern: top-level metadata → envelope; per-script payload → `results`; baseline → `baseline` via `build_baseline_metadata`; preprocessing / windowing → `target_extra`.
+- **`variance_audit.audit_text()` function-level return shape is unchanged.** This is the load-bearing contract: callers in validation_harness, calibration_survey, sliding_window_heatmap, manuscript_audit, paragraph_audit, chapter_distinctiveness_audit, repetition_audit, bigram_diff, and manuscript_bigram_diff read top-level `tier1` / `tier2` / `tier3` / `n_words` keys directly from the function return. Wave 5 was carefully structured to preserve this contract; the envelope is added only at the main() CLI boundary.
+- **5 existing CLI tests updated** to navigate envelope shape: `test_paragraph_audit.py::test_cli_json_mode`, `test_surprisal_audit.py` CLI assertions, `test_sliding_window_heatmap.py` render_json + CLI tests (3), `test_semantic_trajectory_audit.py::test_cli_writes_json_to_out`. Each commit message documents the per-test rationale.
+
+### Notes
+
+- **Wave 5 of 7.** After this wave 28 of ~30 user-facing scripts are on the envelope. Remaining: wave 6 (validation surfaces — `validation_harness`, `voice_validation_harness`, `general_imposters`, `manifest_validator`, `check_corpus`) and wave 7 (craft restoration — `restoration_packet`, `before_after_restoration`, `semantic_preservation_check`, `known_editor_profile`).
+- **Function-call contracts preserved across the wave.** `audit_text` (variance_audit), `assemble_output` (semantic_trajectory_audit), `audit_surprisal` (surprisal_audit), `render_json` (sliding_window_heatmap — note: this one's return shape DID change because render_json is the CLI's entry point, not a function-call API; the change is documented in the commit), and all other audit functions retain their legacy shapes.
+- **No signal definitions, threshold values, computation, or markdown rendering change.** This is rendering-layer plumbing only.
+- **Test suite status**: 2721 passed, 16 skipped, 0 failures (95 net new tests; 16 skips are pre-existing).
+- **APODICTIC integration: unblocked.** With waves 1-5 complete, APODICTIC can pin against `schema_version: "1.0"` on every script in its planned integration list (`variance_audit`, `aic_pattern_audit`, `stance_modality_audit`, `phraseological_signature_audit`, `chapter_distinctiveness_audit`, `voice_distance`, `pov_voice_profile`, `idiolect_detector`, `punctuation_cadence_audit`, `sliding_window_heatmap`).
+
 ## [1.85.0] - 2026-05-17
 
 **Output schema unification wave 4: six voice-coherence surfaces migrate to the schema_version 1.0 envelope.** After this wave 17 of ~30 user-facing scripts are on the envelope (wave 1 + 2 + 3 + 4). The wave-4 bucket is more varied than waves 2 and 3 — three scripts had no claim_license at all, two had the legacy 2-key `{licenses, does_not_license}` dict (different from phraseological/construction's `{"rendered": "..."}` form), one was already fully B.3-migrated. All converge on the same envelope shape.
