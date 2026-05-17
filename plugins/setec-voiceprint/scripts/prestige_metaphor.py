@@ -91,6 +91,13 @@ if str(_SCRIPTS_DIR) not in sys.path:
 import embeddings  # type: ignore
 import image_conjunction  # type: ignore
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
+
+TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "prestige_metaphor"
+SCRIPT_VERSION = "1.0"
+
 
 # Spec defaults. T3 = 0.7 normalized Shannon entropy.
 DEFAULT_T3_DOMAIN_SCATTER_ENTROPY = 0.7
@@ -532,12 +539,71 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    output = json.dumps(block, indent=2)
+    envelope = build_audit_payload(block, target_path=str(args.input))
+    output = json.dumps(envelope, indent=2)
     if args.out is None:
         print(output)
     else:
         args.out.write_text(output + "\n", encoding="utf-8")
     return 0
+
+
+def build_audit_payload(
+    block: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap the prestige_metaphor block in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``. The
+    function `prestige_metaphor_density()` is called as a function by
+    aesthetic_authority_audit; its return shape is unchanged. Only
+    the CLI path emits the envelope.
+    """
+    diagnostics = block.get("diagnostics") or {}
+    structured = ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "AIC-8 prestige-metaphor density: image-conjunction "
+            "density restricted to scaffolding words classified into "
+            "prestige domains (hardcoded list + optional WordNet "
+            "fallback). Reports density per 1k tokens, domain-scatter "
+            "entropy, and per-conjunction classification."
+        ),
+        does_not_license=(
+            "An authorship verdict. Prestige-metaphor density "
+            "elevates evidence for AIC-8 aesthetic-authority "
+            "laundering; it does not certify AI authorship. The "
+            "domain classification is heuristic (hardcoded + WordNet "
+            "hypernym); long-tail classifications carry less weight."
+        ),
+        comparison_set={
+            "total_tokens": diagnostics.get("total_tokens"),
+            "total_paragraphs": diagnostics.get("total_paragraphs"),
+            "conjunction_count": diagnostics.get("conjunction_count"),
+            "classified_count": diagnostics.get("classified_count"),
+            "n_distinct_domains": diagnostics.get("n_distinct_domains"),
+        },
+        additional_caveats=[
+            "Density thresholds are heuristic (T1 concreteness gap, "
+            "T2 embedding similarity, T3 scatter entropy). "
+            "Calibration-pending against labeled corpora.",
+            "WordNet fallback expands recall but widens the long "
+            "tail of low-confidence classifications. Per-conjunction "
+            "domain labels distinguish hardcoded vs. fallback "
+            "matches.",
+        ],
+    )
+    target_words = int(diagnostics.get("total_tokens", 0) or 0)
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results=block,
+        claim_license=structured,
+    )
 
 
 if __name__ == "__main__":
