@@ -64,6 +64,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # noqa: E402
+from output_schema import build_output  # noqa: E402
 
 TASK_SURFACE = "smoothing_diagnosis"
 TOOL_NAME = "sliding_window_heatmap"
@@ -679,14 +680,17 @@ def render_report(
 # ---------- JSON output ----------
 
 
-def render_json(windows_block: dict[str, Any]) -> dict[str, Any]:
-    """Structured representation suitable for downstream tooling.
+def render_json(
+    windows_block: dict[str, Any],
+    *,
+    target_path: Any = None,
+) -> dict[str, Any]:
+    """Schema_version 1.0 envelope representation of the heatmap.
 
     Carries the same content as the markdown report but in machine-
-    readable form. Useful for the validation harness and any future
-    cross-document aggregation surface (e.g., manuscript-scale
-    heatmap composition that stitches per-chapter heatmaps into one
-    book-level view).
+    readable form (under ``results``). The optional ``target_path``
+    populates ``envelope.target.path``; callers from the CLI pass
+    the original variance_audit input path.
     """
     windows: list[dict[str, Any]] = list(windows_block.get("results") or [])
     bands = [
@@ -702,10 +706,8 @@ def render_json(windows_block: dict[str, Any]) -> dict[str, Any]:
     band_dist: dict[str, int] = {}
     for b in bands:
         band_dist[b] = band_dist.get(b, 0) + 1
-    return {
-        "task_surface": TASK_SURFACE,
-        "tool": TOOL_NAME,
-        "version": SCRIPT_VERSION,
+
+    results = {
         "n_windows": len(windows),
         "window_size": windows_block.get("window_size"),
         "stride": windows_block.get("stride"),
@@ -735,6 +737,45 @@ def render_json(windows_block: dict[str, Any]) -> dict[str, Any]:
             "fired": grid,
         },
     }
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=0,
+        baseline=None,
+        results=results,
+        claim_license=ClaimLicense(
+            task_surface=TASK_SURFACE,
+            licenses=(
+                "Sliding-window heatmap representation of "
+                "variance_audit output. Reports per-window "
+                "compression-band labels, fraction series, hot-zone "
+                "boundaries with dominant signals, and a signal-grid "
+                "matrix (which signals fired in which windows)."
+            ),
+            does_not_license=(
+                "An authorship verdict. The heatmap reports where "
+                "compression signals fire across a document; it does "
+                "not license claims about who wrote the document or "
+                "whether AI was involved. Hot-zone localization is "
+                "evidence for further investigation, not a per-zone "
+                "AI-vs-human determination."
+            ),
+            comparison_set={
+                "n_windows": len(windows),
+                "window_size": windows_block.get("window_size"),
+                "stride": windows_block.get("stride"),
+                "n_hot_zones": len(hot_zones),
+            },
+            additional_caveats=[
+                "Heatmap is a visualization of variance_audit "
+                "sliding-window output; it inherits variance_audit's "
+                "heuristic-tier calibration. Treat band labels as "
+                "operator cues, not load-bearing verdicts.",
+            ],
+        ),
+    )
 
 
 # ---------- Privacy guard ----------
@@ -843,7 +884,13 @@ def main(argv: list[str] | None = None) -> int:
             return 3
         jpath.parent.mkdir(parents=True, exist_ok=True)
         jpath.write_text(
-            json.dumps(render_json(windows_block), indent=2),
+            json.dumps(
+                render_json(
+                    windows_block,
+                    target_path=args.input_path,
+                ),
+                indent=2,
+            ),
             encoding="utf-8",
         )
         sys.stderr.write(f"  wrote heatmap JSON → {jpath}\n")
