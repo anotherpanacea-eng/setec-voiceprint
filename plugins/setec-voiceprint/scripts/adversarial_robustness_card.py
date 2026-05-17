@@ -71,6 +71,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from output_schema import build_output  # type: ignore
 from claim_license import (  # type: ignore
     ClaimLicense,
     with_state_caveats,
@@ -330,7 +331,7 @@ def build_robustness_card(
 # --- Markdown rendering ----------------------------------------
 
 
-def _claim_license_block(card: dict[str, Any]) -> str:
+def _claim_license(card: dict[str, Any]) -> ClaimLicense:
     n_signals = card.get("n_signals_with_data", 0)
     n_fixtures = card.get("n_fixtures", 0)
     lic = ClaimLicense(
@@ -390,12 +391,39 @@ def _claim_license_block(card: dict[str, Any]) -> str:
         ],
     )
     # B.3: append state-routed caveats when the operator supplied
-    # --ai-status. No-op when ai_status is absent — pre-B.3 callers
-    # keep their previous behavior.
-    lic = with_state_caveats(
+    # --ai-status. No-op when ai_status is absent.
+    return with_state_caveats(
         lic, target_ai_status=card.get("ai_status"),
     )
-    return lic.render_block().rstrip()
+
+
+def _claim_license_block(card: dict[str, Any]) -> str:
+    return _claim_license(card).render_block().rstrip()
+
+
+def build_audit_payload(
+    card: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap adversarial_robustness_card in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    metadata_keys = {"task_surface", "tool", "version"}
+    results_payload = {
+        k: v for k, v in card.items() if k not in metadata_keys
+    }
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=0,
+        baseline=None,
+        results=results_payload,
+        claim_license=_claim_license(card),
+        ai_status=card.get("ai_status"),
+    )
 
 
 _LABEL_GLYPH = {
@@ -634,10 +662,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.ai_status:
         card["ai_status"] = args.ai_status
 
-    out = (
-        json.dumps(card, indent=2, default=str)
-        if args.json else render_report(card)
-    )
+    if args.json:
+        payload = build_audit_payload(card, target_path=None)
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(card)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")
