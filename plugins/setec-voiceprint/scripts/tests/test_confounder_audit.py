@@ -362,8 +362,11 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out_path.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: ranked_confounders under results.
+        assert payload["schema_version"] == "1.0"
         assert payload["task_surface"] == "validation"
-        assert "ranked_confounders" in payload
+        assert payload["tool"] == "confounder_audit"
+        assert "ranked_confounders" in payload["results"]
 
 
 # ---------- Confounder matrix integrity ----------
