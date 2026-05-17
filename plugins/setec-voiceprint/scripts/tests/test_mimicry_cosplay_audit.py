@@ -433,9 +433,13 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out_path.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: per-script payload lives under
+        # results, per SPEC_output_schema_unification.md.
+        assert payload["schema_version"] == "1.0"
         assert payload["task_surface"] == "voice_coherence"
-        assert "verdict" in payload
-        assert payload["idiolect_survival"]["n_matched"] == 2
+        assert payload["tool"] == "mimicry_cosplay_audit"
+        assert "verdict" in payload["results"]
+        assert payload["results"]["idiolect_survival"]["n_matched"] == 2
 
     def test_cli_missing_target_returns_2(self, tmp_path):
         rc = mca.main([
