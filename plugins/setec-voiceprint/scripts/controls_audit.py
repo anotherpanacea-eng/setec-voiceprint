@@ -60,6 +60,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 from preprocessing import strip_non_prose  # type: ignore
 from stylometry_core import (  # type: ignore
     FUNCTION_WORDS,
@@ -292,8 +293,8 @@ def run_controls_audit(
 # --- Markdown rendering ----------------------------------------
 
 
-def _claim_license_block(report: dict[str, Any]) -> str:
-    lic = ClaimLicense(
+def _claim_license(report: dict[str, Any]) -> ClaimLicense:
+    return ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
             "A side-by-side comparison of function-word distance "
@@ -338,7 +339,65 @@ def _claim_license_block(report: dict[str, Any]) -> str:
             "a both-poles comparison.",
         ],
     )
-    return lic.render_block().rstrip()
+
+
+def _claim_license_block(report: dict[str, Any]) -> str:
+    return _claim_license(report).render_block().rstrip()
+
+
+_RESULTS_KEYS = (
+    "questioned", "negative_control",
+    "positive_control", "classification",
+)
+
+
+def build_audit_payload(
+    report: dict[str, Any],
+    *,
+    target_path: Path | str,
+) -> dict[str, Any]:
+    """Wrap the controls audit report in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``. The
+    questioned text is the envelope's target; the baseline corpus
+    flows under ``baseline`` (n_files only; baseline words are not
+    surfaced by run_controls_audit).
+    """
+    available = bool(report.get("available", True))
+    questioned = report.get("questioned", {}) or {}
+    target_words = int(questioned.get("n_words", 0) or 0)
+
+    results: dict[str, Any] = {}
+    if available:
+        for k in _RESULTS_KEYS:
+            if k in report:
+                results[k] = report[k]
+
+    baseline_meta: dict[str, Any] | None = None
+    n_baseline_files = report.get("n_baseline_files")
+    if n_baseline_files is not None:
+        baseline_meta = build_baseline_metadata(
+            n_files=int(n_baseline_files or 0),
+            words=0,
+        )
+
+    warnings: list[str] = []
+    if not available and "reason" in report:
+        warnings.append(report["reason"])
+
+    lic = _claim_license(report) if available else None
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=lic,
+        available=available,
+        warnings=warnings,
+    )
 
 
 def render_report(report: dict[str, Any]) -> str:
@@ -588,10 +647,13 @@ def main(argv: list[str] | None = None) -> int:
         strip_masking=args.strip_masking,
     )
 
-    out = (
-        json.dumps(report, indent=2, default=str)
-        if args.json else render_report(report)
-    )
+    if args.json:
+        payload = build_audit_payload(
+            report, target_path=questioned_path,
+        )
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(report)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")
