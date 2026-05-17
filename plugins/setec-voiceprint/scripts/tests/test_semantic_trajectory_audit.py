@@ -505,8 +505,12 @@ def test_cli_writes_json_to_out(
     rc = sta.main([str(src), "--json", "--out", str(out_path)])
     assert rc == 0
     payload = json.loads(out_path.read_text(encoding="utf-8"))
+    # schema_version 1.0 envelope: task_surface stays top-level,
+    # windowing rides under envelope.target (target_extra).
+    assert payload["schema_version"] == "1.0"
     assert payload["task_surface"] == "voice_coherence"
-    assert payload["windowing"]["strategy"] == "paragraph"
+    assert payload["tool"] == "semantic_trajectory_audit"
+    assert payload["target"]["windowing"]["strategy"] == "paragraph"
 
 
 def test_cli_missing_source_returns_2(
