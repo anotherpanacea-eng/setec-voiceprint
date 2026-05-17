@@ -312,7 +312,11 @@ def test_cli_runs_on_fixture():
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
-    assert data["signal_path"] == "aic_8_9.prestige_metaphor_density"
+    # schema_version 1.0 envelope: signal_path lives in the legacy
+    # block under results.
+    assert data["schema_version"] == "1.0"
+    assert data["tool"] == "prestige_metaphor"
+    assert data["results"]["signal_path"] == "aic_8_9.prestige_metaphor_density"
 
 
 def test_cli_no_wordnet_flag():
