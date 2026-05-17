@@ -73,6 +73,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 from claim_license import (  # type: ignore
     ClaimLicense,
     with_state_caveats,
@@ -771,13 +772,13 @@ def build_audit(
     return out
 
 
-def _claim_license_dict(
+def _claim_license(
     *,
     target_words: int,
     baseline_loaded: int,
     n_constructions_available: int,
     target_ai_status: str | None = None,
-) -> dict[str, Any]:
+) -> ClaimLicense:
     lic = ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
@@ -824,9 +825,103 @@ def _claim_license_dict(
     # B.3: append state-routed caveats when the operator supplied
     # --ai-status. No-op when target_ai_status is None — pre-B.3
     # callers keep their previous behavior.
-    lic = with_state_caveats(lic, target_ai_status=target_ai_status)
-    block = lic.render_block().rstrip()
-    return {"rendered": block}
+    return with_state_caveats(lic, target_ai_status=target_ai_status)
+
+
+def _claim_license_dict(
+    *,
+    target_words: int,
+    baseline_loaded: int,
+    n_constructions_available: int,
+    target_ai_status: str | None = None,
+) -> dict[str, Any]:
+    """Legacy rendered-only shape preserved for the audit dict that
+    render_report and the build_audit return value carry.
+    """
+    return {
+        "rendered": _claim_license(
+            target_words=target_words,
+            baseline_loaded=baseline_loaded,
+            n_constructions_available=n_constructions_available,
+            target_ai_status=target_ai_status,
+        ).render_block().rstrip(),
+    }
+
+
+def build_audit_payload(
+    audit: dict[str, Any],
+) -> dict[str, Any]:
+    """Wrap the build_audit() return dict in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+
+    The legacy build_audit() return is preserved (internal tests pin
+    its top-level shape); this function consumes that output and
+    re-routes it into the canonical envelope. The structured
+    ClaimLicense replaces the legacy ``{"rendered": "..."}`` form;
+    ``spacy_available`` rides under ``target.spacy_available``.
+    """
+    target_path = audit.get("target")
+    target_words = int(audit.get("target_words", 0) or 0)
+    spacy_available = bool(audit.get("spacy_available", False))
+    constructions = audit.get("constructions", {}) or {}
+
+    target_extra: dict[str, Any] = {"spacy_available": spacy_available}
+
+    results: dict[str, Any] = {"constructions": constructions}
+
+    baseline_meta: dict[str, Any] | None = None
+    baseline_words = audit.get("baseline_words")
+    if baseline_words is not None:
+        files_loaded = audit.get("baseline_files_loaded")
+        files_skipped = audit.get("baseline_files_skipped")
+        if files_loaded is not None:
+            n_files = len(files_loaded)
+        else:
+            n_files = int(audit.get("baseline_files_loaded_count", 0) or 0)
+        if files_skipped is None:
+            files_skipped = []
+        n_skipped = (
+            len(files_skipped) if files_skipped
+            else int(audit.get("baseline_files_skipped_count", 0) or 0)
+        )
+        extras: dict[str, Any] = {}
+        if files_loaded is not None:
+            extras["files_loaded"] = [str(p) for p in files_loaded]
+        if files_skipped:
+            extras["files_skipped"] = [str(p) for p in files_skipped]
+        elif n_skipped:
+            extras["files_skipped_count"] = n_skipped
+        baseline_meta = build_baseline_metadata(
+            n_files=n_files,
+            words=int(baseline_words or 0),
+            extra=extras or None,
+        )
+
+    n_constructions_available = sum(
+        1 for c in constructions.values() if c.get("available", True)
+    )
+    baseline_loaded_count = (
+        baseline_meta["n_files"] if baseline_meta else 0
+    )
+    lic = _claim_license(
+        target_words=target_words,
+        baseline_loaded=baseline_loaded_count,
+        n_constructions_available=n_constructions_available,
+        target_ai_status=audit.get("ai_status"),
+    )
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=lic,
+        ai_status=audit.get("ai_status"),
+        target_extra=target_extra,
+    )
 
 
 # ---------- Markdown rendering ----------
@@ -1056,10 +1151,11 @@ def main(argv: list[str] | None = None) -> int:
         target_ai_status=args.ai_status,
     )
 
-    out = (
-        json.dumps(audit, indent=2, default=str)
-        if args.json else render_report(audit)
-    )
+    if args.json:
+        payload = build_audit_payload(audit)
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(audit)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")

@@ -458,8 +458,12 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: constructions live under
+        # results, per SPEC_output_schema_unification.md.
+        assert payload["schema_version"] == "1.0"
         assert payload["task_surface"] == "voice_coherence"
-        assert "constructions" in payload
+        assert payload["tool"] == "construction_signature_audit"
+        assert "constructions" in payload["results"]
 
     def test_cli_missing_target_returns_2(self, tmp_path):
         rc = csa.main([str(tmp_path / "missing.md")])
@@ -514,11 +518,13 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
-        # Baseline data should be present.
-        assert "baseline_words" in payload
-        assert "baseline_files_loaded_count" in payload
-        # Per-construction blocks should carry the delta.
-        ex_block = payload["constructions"]["existential_there"]
+        # Baseline data lives under envelope.baseline post-1.84.
+        assert payload["baseline"] is not None
+        assert "words" in payload["baseline"]
+        # files_skipped_count is preserved as a baseline-extra key when
+        # privacy-by-default suppresses raw filenames.
+        # Per-construction blocks should carry the delta under results.
+        ex_block = payload["results"]["constructions"]["existential_there"]
         assert "baseline_density_per_1k" in ex_block
 
     def test_cli_baseline_dir_self_overlap_filtered(self, tmp_path):
@@ -548,8 +554,9 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
-        # Only the OTHER file should have been counted.
-        assert payload["baseline_files_loaded_count"] == 1
+        # Only the OTHER file should have been counted; baseline lives
+        # under the envelope's baseline block post-1.84.
+        assert payload["baseline"]["n_files"] == 1
 
     def test_cli_baseline_dir_self_overlap_only_returns_2(
         self, tmp_path,
@@ -603,7 +610,7 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
-        assert list(payload["constructions"].keys()) == [
+        assert list(payload["results"]["constructions"].keys()) == [
             "existential_there",
         ]
 
