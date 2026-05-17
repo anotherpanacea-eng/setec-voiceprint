@@ -274,9 +274,13 @@ class TestCli:
         ])
         assert rc == 0
         report = json.loads(out.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: n_versions and trajectories
+        # live under results.
+        assert report["schema_version"] == "1.0"
         assert report["task_surface"] == "validation"
-        assert report["n_versions"] == 4
-        assert "trajectories" in report
+        assert report["tool"] == "draft_history_analysis"
+        assert report["results"]["n_versions"] == 4
+        assert "trajectories" in report["results"]
 
     def test_cli_two_versions_minimum(self, tmp_path):
         manifest, _ = _write_versions(tmp_path, n=2)
