@@ -68,6 +68,13 @@ if str(_SCRIPTS_DIR) not in sys.path:
 
 import paragraph_parser  # type: ignore
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
+
+TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "kicker_density"
+SCRIPT_VERSION = "1.0"
+
 
 # Defaults per spec §4 (configurable via CLI / function args).
 DEFAULT_WORD_LIMIT = 15
@@ -494,12 +501,102 @@ def main(argv: Optional[list[str]] = None) -> int:
         baseline_source=args.baseline_source if args.baseline else None,
     )
 
-    output = json.dumps(block, indent=2)
+    payload = build_audit_payload(
+        block,
+        target_path=args.input,
+        text=text,
+    )
+    output = json.dumps(payload, indent=2, default=str)
     if args.out is None:
         print(output)
     else:
         args.out.write_text(output + "\n", encoding="utf-8")
     return 0
+
+
+def _claim_license(block: dict[str, Any]) -> ClaimLicense:
+    """Structured ClaimLicense block for AIC-9 closure inflation.
+
+    Per ``internal/SPEC_output_schema_unification.md`` §11. The
+    inner block keeps its legacy ``"claim_license":
+    "voice_diagnostic"`` tag for function-call consumers
+    (variance_audit and aesthetic_authority_audit).
+    """
+    diagnostics = block.get("diagnostics", {}) or {}
+    baseline_comparison = block.get("baseline_comparison")
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "AIC-9 closure-inflation signal: the proportion of "
+            "paragraphs whose final sentence is kicker-shaped — "
+            "short, declarative, generalizable, period-final. "
+            "Reports the density value, inter-kicker spacing "
+            "variance, per-paragraph diagnostics naming which "
+            "endings triggered the call, and (when supplied) an "
+            "elevation factor against a register-typical baseline."
+        ),
+        does_not_license=(
+            "An AI-provenance verdict. Aphoristic essayists "
+            "(Borges, Bacon, La Rochefoucauld) and contemporary "
+            "literary fiction use kicker shape as genre signature, "
+            "not as a tell. The detector reports density relative "
+            "to a register-typical baseline (when supplied); "
+            "elevation is evidence, not certainty. The shipped "
+            "band thresholds are heuristic pending corpus "
+            "calibration."
+        ),
+        comparison_set={
+            "total_paragraphs": diagnostics.get("total_paragraphs"),
+            "kicker_count": diagnostics.get("kicker_count"),
+            "word_limit": diagnostics.get("word_limit"),
+            "proper_noun_detection": diagnostics.get(
+                "proper_noun_detection",
+            ),
+            "baseline_source": (
+                baseline_comparison.get("baseline_source")
+                if baseline_comparison else None
+            ),
+        },
+        additional_caveats=[
+            "Sentence boundaries come from `paragraph_parser`'s "
+            "regex split. Abbreviation-heavy prose may produce "
+            "spurious or missed boundaries; pre-tokenizing via "
+            "spaCy and using `classify_with_pretokenized` "
+            "tightens the call.",
+            "Proper-noun detection prefers spaCy POS tagging; "
+            "regex fallback flags title-cased common nouns and "
+            "may mistag rare proper nouns. The reported "
+            "`proper_noun_detection` field names which path ran.",
+            "Closure-inflation is a discourse habit, not a content "
+            "verdict. Source triage (earned vs. unearned) is the "
+            "writer's call per instance.",
+        ],
+    )
+
+
+def build_audit_payload(
+    block: dict[str, Any],
+    *,
+    target_path: Path | str,
+    text: str,
+) -> dict[str, Any]:
+    """Wrap the kicker-density block in the schema_version 1.0
+    envelope. The full legacy block flows under ``results``; the
+    envelope adds the canonical top-level metadata + structured
+    claim_license per
+    ``internal/SPEC_output_schema_unification.md``.
+    """
+    target_words = sum(1 for w in text.split() if w.strip())
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results=block,
+        claim_license=_claim_license(block),
+    )
 
 
 if __name__ == "__main__":
