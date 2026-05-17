@@ -210,8 +210,14 @@ def test_cli_runs_on_fixture():
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
-    assert data["signal_path"] == "aic_8_9.aesthetic_authority_audit"
-    assert data["family"] == "aic-8-9-compound"
+    # schema_version 1.0 envelope: legacy block lives under results,
+    # per SPEC_output_schema_unification.md.
+    assert data["schema_version"] == "1.0"
+    assert data["tool"] == "aesthetic_authority_audit"
+    assert data["task_surface"] == "smoothing_diagnosis"
+    inner = data["results"]
+    assert inner["signal_path"] == "aic_8_9.aesthetic_authority_audit"
+    assert inner["family"] == "aic-8-9-compound"
 
 
 def test_cli_help_runs():
