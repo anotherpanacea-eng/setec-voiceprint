@@ -49,9 +49,17 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from claim_license import ClaimLicense, from_legacy  # type: ignore
+from output_schema import build_output  # type: ignore
+
 
 TASK_SURFACE = "craft_restoration"
 TOOL_NAME = "restoration_packet"
+SCRIPT_VERSION = "1.0"
 
 
 # --------------- Targetability constants ---------------------
@@ -1078,19 +1086,27 @@ def render_json(
     genre: str | None,
     private: bool,
 ) -> str:
-    out = {
-        "task_surface": TASK_SURFACE,
-        "tool": TOOL_NAME,
+    results = {
         "inputs": inputs,
         "target_scope": target_scope,
         "genre": genre,
         "private": private,
-        "claim_license": CLAIM_LICENSE,
         "n_packets": len(packets),
         "packets": [p.to_dict() for p in packets],
         "prompt": prompt_block,
     }
-    return json.dumps(out, indent=2, ensure_ascii=False)
+    envelope = build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=(inputs or {}).get("variance_json")
+                    or (inputs or {}).get("voice_distance_json"),
+        target_words=0,
+        baseline=None,
+        results=results,
+        claim_license=from_legacy(CLAIM_LICENSE, task_surface=TASK_SURFACE),
+    )
+    return json.dumps(envelope, indent=2, ensure_ascii=False)
 
 
 def render_markdown(

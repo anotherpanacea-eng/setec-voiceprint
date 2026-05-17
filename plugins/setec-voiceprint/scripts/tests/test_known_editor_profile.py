@@ -402,8 +402,11 @@ class TestCli:
         ])
         assert rc == 0
         report = json.loads(report_path.read_text(encoding="utf-8"))
-        assert "verdict" in report
-        assert "per_signal" in report
+        # schema_version 1.0 envelope: verdict + per_signal under
+        # results.
+        assert report["schema_version"] == "1.0"
+        assert "verdict" in report["results"]
+        assert "per_signal" in report["results"]
 
     def test_cli_missing_pairs_json_returns_2(self, tmp_path):
         rc = kep.main([

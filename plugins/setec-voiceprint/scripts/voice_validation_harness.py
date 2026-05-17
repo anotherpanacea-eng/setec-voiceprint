@@ -73,6 +73,7 @@ from validation_harness import (  # type: ignore
     fallback_roc_auc,
 )
 from claim_license import ClaimLicense, from_legacy  # type: ignore  # noqa: E402
+from output_schema import build_output  # type: ignore  # noqa: E402
 
 try:
     from sklearn.metrics import (  # type: ignore
@@ -86,6 +87,7 @@ except ImportError:  # pragma: no cover - exercised on minimal installs
 
 TASK_SURFACE = "voice_coherence"
 TOOL_NAME = "voice_validation_harness"
+SCRIPT_VERSION = "1.0"
 
 # Families to score. These match `stylometry_core.extract_features`'s
 # top-level keys when spaCy is available. Families that come up empty
@@ -682,6 +684,57 @@ def claim_license_block(operating_point: dict[str, Any] | None) -> dict[str, str
 # ---- Main runner ---------------------------------------------------
 
 
+def build_audit_payload(
+    result: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap voice_validation_harness's run_harness result in the
+    schema_version 1.0 envelope per
+    ``internal/SPEC_output_schema_unification.md``. The legacy
+    claim_license dict (when present) is upgraded to structured via
+    from_legacy.
+    """
+    available = not result.get("failed", False)
+    metadata_keys = {"task_surface", "tool", "version"}
+    results_payload = {
+        k: v for k, v in result.items() if k not in metadata_keys
+    }
+    warnings: list[str] = []
+    if result.get("failed"):
+        warnings.append(result.get("reason", "harness failed"))
+    legacy_cl = result.get("claim_license", {})
+    if isinstance(legacy_cl, dict) and legacy_cl:
+        structured = from_legacy(legacy_cl, task_surface=TASK_SURFACE)
+    else:
+        structured = ClaimLicense(
+            task_surface=TASK_SURFACE,
+            licenses=(
+                "Voice-coherence validation: same-author vs. "
+                "different-author pair discrimination via ROC AUC "
+                "per feature family on labeled manifest entries."
+            ),
+            does_not_license=(
+                "Generalization beyond the labeled corpus. The "
+                "harness reports performance on the supplied "
+                "manifest; per-register or per-domain performance "
+                "outside that slice is not licensed."
+            ),
+        ) if available else None
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=0,
+        baseline=None,
+        results=results_payload if available else {},
+        claim_license=structured,
+        available=available,
+        warnings=warnings,
+    )
+
+
 def run_harness(args: argparse.Namespace) -> dict[str, Any]:
     manifest_path = Path(args.manifest)
 
@@ -970,8 +1023,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     md = render_report(result)
 
     if args.json_path:
+        envelope = build_audit_payload(
+            result, target_path=args.manifest,
+        )
         Path(args.json_path).write_text(
-            json.dumps(result, indent=2, default=str), encoding="utf-8"
+            json.dumps(envelope, indent=2, default=str), encoding="utf-8"
         )
     if args.md_path:
         Path(args.md_path).write_text(md, encoding="utf-8")
