@@ -322,8 +322,12 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: categories live under results,
+        # per SPEC_output_schema_unification.md.
+        assert payload["schema_version"] == "1.0"
         assert payload["task_surface"] == "voice_coherence"
-        assert "categories" in payload
+        assert payload["tool"] == "phraseological_signature_audit"
+        assert "categories" in payload["results"]
 
     def test_cli_with_baseline(self, tmp_path):
         target = tmp_path / "target.md"
@@ -346,7 +350,9 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
-        assert payload["baseline_words"] > 0
+        # baseline metadata lives under the envelope's baseline block.
+        assert payload["baseline"] is not None
+        assert payload["baseline"]["words"] > 0
 
     def test_cli_missing_target_returns_2(self, tmp_path):
         rc = psa.main([str(tmp_path / "missing.md")])
@@ -427,7 +433,7 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
-        assert list(payload["categories"].keys()) == ["idioms"]
+        assert list(payload["results"]["categories"].keys()) == ["idioms"]
 
 
 if __name__ == "__main__":
