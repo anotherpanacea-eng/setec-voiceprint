@@ -435,7 +435,10 @@ class TestCli:
         assert rc == 0
         import json
         payload = json.loads(out_path.read_text(encoding="utf-8"))
-        assert "matched_interpretations" in payload
+        # schema_version 1.0 envelope: matched_interpretations under
+        # results.
+        assert payload["schema_version"] == "1.0"
+        assert "matched_interpretations" in payload["results"]
 
     def test_cli_missing_input_returns_2(self, tmp_path):
         rc = sdr.main([
