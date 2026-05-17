@@ -82,6 +82,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+from output_schema import build_output  # type: ignore
 from claim_license import (  # type: ignore
     ClaimLicense,
     with_state_caveats,
@@ -751,12 +752,12 @@ def _overall_verdict(
     return "mixed"
 
 
-def _claim_license_dict(
+def _claim_license(
     *,
-    categories: dict[str, CategoryResult],
+    categories: dict,
     overall: str,
     target_ai_status: str | None = None,
-) -> dict[str, Any]:
+) -> ClaimLicense:
     n_categories = len(categories)
     n_shifted = sum(
         1 for c in categories.values()
@@ -814,10 +815,70 @@ def _claim_license_dict(
         ],
     )
     # B.3: append state-routed caveats when the operator supplied
-    # --ai-status. No-op when target_ai_status is None — pre-B.3
-    # callers keep their previous behavior.
-    lic = with_state_caveats(lic, target_ai_status=target_ai_status)
-    return {"rendered": lic.render_block().rstrip()}
+    # --ai-status. No-op when target_ai_status is None.
+    return with_state_caveats(lic, target_ai_status=target_ai_status)
+
+
+def _claim_license_dict(
+    *,
+    categories: dict,
+    overall: str,
+    target_ai_status: str | None = None,
+) -> dict[str, Any]:
+    """Legacy rendered-only shape preserved for the report dict."""
+    return {
+        "rendered": _claim_license(
+            categories=categories,
+            overall=overall,
+            target_ai_status=target_ai_status,
+        ).render_block().rstrip(),
+    }
+
+
+def build_audit_payload(
+    report: dict[str, Any],
+    *,
+    before_path: Any,
+    after_path: Any = None,
+) -> dict[str, Any]:
+    """Wrap the semantic-preservation report in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    results_payload: dict[str, Any] = {}
+    for k in (
+        "spacy_available", "categories",
+        "overall_verdict", "n_dropped", "n_added", "n_shared",
+    ):
+        if k in report:
+            results_payload[k] = report[k]
+    # Reconstruct a structured ClaimLicense from the categories.
+    categories = report.get("categories", {}) or {}
+    overall = report.get("overall_verdict", "unknown")
+    # Categories is a dict of dicts (not CategoryResult instances)
+    # when consumed from the report dict; emulate the .verdict access.
+    class _C:
+        def __init__(self, d): self.verdict = d.get("verdict", "unknown")
+    cat_objs = {k: _C(v) for k, v in categories.items()}
+    lic = _claim_license(
+        categories=cat_objs,
+        overall=overall,
+        target_ai_status=report.get("ai_status"),
+    )
+    target_extra: dict[str, Any] = {}
+    if after_path is not None:
+        target_extra["after_path"] = str(after_path)
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=before_path,
+        target_words=0,
+        baseline=None,
+        results=results_payload,
+        claim_license=lic,
+        ai_status=report.get("ai_status"),
+        target_extra=target_extra or None,
+    )
 
 
 # ---------- Markdown rendering ----------
@@ -1000,10 +1061,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"--category: {exc}\n")
         return 2
 
-    out = (
-        json.dumps(report, indent=2, default=str)
-        if args.json else render_report(report)
-    )
+    if args.json:
+        payload = build_audit_payload(
+            report,
+            before_path=args.before,
+            after_path=args.after,
+        )
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(report)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")
