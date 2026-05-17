@@ -34,9 +34,18 @@ from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Any
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
+
 # Task-surface tag. The validator is a validation-spine tool, distinct
 # from the smoothing-diagnosis and voice-coherence scripts.
 TASK_SURFACE = "validation"
+TOOL_NAME = "manifest_validator"
+SCRIPT_VERSION = "1.0"
 
 
 # ---------- Schema ----------
@@ -923,7 +932,8 @@ def main() -> int:
     result = validate_manifest(args.manifest)
 
     if args.json:
-        output = json.dumps(result, indent=2, default=str)
+        envelope = build_audit_payload(result, target_path=args.manifest)
+        output = json.dumps(envelope, indent=2, default=str)
     else:
         output = render_report(result)
 
@@ -938,6 +948,81 @@ def main() -> int:
     if args.strict and result["n_warnings"] > 0:
         return 1
     return 0
+
+
+def _claim_license(result: dict[str, Any]) -> ClaimLicense:
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Manifest validation report. Walks every line of the "
+            "JSONL manifest, enforces schema rules (required fields, "
+            "ID uniqueness, persona/register consistency, path "
+            "resolvability, impostor-corpus invariants, privacy "
+            "ratchet on voice-cloning-grade entries), and emits a "
+            "per-issue inventory with severity classification."
+        ),
+        does_not_license=(
+            "A guarantee that the corpus files themselves are "
+            "well-formed or appropriate for the audit downstream "
+            "of the manifest. Schema-valid does not mean "
+            "content-appropriate; pair with `check_corpus` for "
+            "preprocessing-level hygiene and with the audit's own "
+            "input checks for analysis-specific validity."
+        ),
+        comparison_set={
+            "manifest_path": result.get("manifest_path"),
+            "n_entries": result.get("n_entries"),
+            "n_errors": result.get("n_errors"),
+            "n_warnings": result.get("n_warnings"),
+        },
+        additional_caveats=[
+            "Required-field rules and ID uniqueness are schema-"
+            "level invariants; their violation blocks downstream "
+            "audits. Optional-field warnings are advisory; treat as "
+            "cues, not blockers, unless --strict is supplied.",
+            "Privacy-ratchet enforcement on voice-cloning-grade "
+            "entries (voice_profile / idiolect use tags) is "
+            "load-bearing — a manifest declaring voice_profile use "
+            "with a missing privacy=private field raises a warning "
+            "that should not be ignored.",
+        ],
+    )
+
+
+def build_audit_payload(
+    result: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap validate_manifest's result dict in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    results_payload: dict[str, Any] = {}
+    for k in (
+        "manifest_path", "n_entries", "n_errors", "n_warnings",
+        "issues", "summary",
+    ):
+        if k in result:
+            results_payload[k] = result[k]
+
+    warnings: list[str] = []
+    if result.get("n_errors", 0):
+        warnings.append(
+            f"{result.get('n_errors')} manifest error(s); see "
+            "results.issues."
+        )
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=0,
+        baseline=None,
+        results=results_payload,
+        claim_license=_claim_license(result),
+        warnings=warnings,
+    )
 
 
 if __name__ == "__main__":
