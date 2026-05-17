@@ -63,6 +63,7 @@ if str(SCRIPT_DIR) not in sys.path:
 from claim_license import (  # type: ignore
     ClaimLicense, with_state_caveats,
 )
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 from preprocessing import strip_non_prose  # type: ignore
 
 TASK_SURFACE = "voice_coherence"
@@ -481,7 +482,7 @@ def compare_to_baseline(
 # --- Markdown rendering ----------------------------------------
 
 
-def _claim_license_block(audit: dict[str, Any]) -> str:
+def _claim_license(audit: dict[str, Any]) -> ClaimLicense:
     lic = ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
@@ -521,10 +522,77 @@ def _claim_license_block(audit: dict[str, Any]) -> str:
     # B.3: append state-routed caveats when the operator supplied
     # --ai-status. No-op when ai_status is absent — pre-B.3 callers
     # keep their previous behavior.
-    lic = with_state_caveats(
+    return with_state_caveats(
         lic, target_ai_status=audit.get("ai_status"),
     )
-    return lic.render_block().rstrip()
+
+
+def _claim_license_block(audit: dict[str, Any]) -> str:
+    return _claim_license(audit).render_block().rstrip()
+
+
+_RESULTS_KEYS = (
+    "category_counts", "category_densities_per_1k",
+    "total_marker_density_per_1k", "stance_entropy_bits",
+    "hedge_booster_ratio", "compression",
+)
+
+
+def build_audit_payload(
+    audit: dict[str, Any],
+    *,
+    target_path: Path | str,
+    baseline_block: dict[str, Any] | None,
+    baseline_comparison: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Wrap the stance/modality audit dict in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    available = bool(audit.get("available", True))
+    n_words = int(audit.get("n_words", 0) or 0)
+    target_extra: dict[str, Any] = {}
+    if "preprocessing" in audit:
+        target_extra["preprocessing"] = audit["preprocessing"]
+
+    results: dict[str, Any] = {}
+    if available:
+        for k in _RESULTS_KEYS:
+            if k in audit:
+                results[k] = audit[k]
+        if baseline_comparison is not None:
+            results["baseline_comparison"] = baseline_comparison
+
+    baseline_meta: dict[str, Any] | None = None
+    if baseline_block is not None:
+        baseline_meta = build_baseline_metadata(
+            n_files=int(baseline_block.get("n_files", 0) or 0),
+            words=int(baseline_block.get("n_words", 0) or 0),
+            extra={
+                k: v for k, v in baseline_block.items()
+                if k not in {"n_files", "n_words"}
+            } or None,
+        )
+
+    warnings: list[str] = []
+    if not available and "reason" in audit:
+        warnings.append(audit["reason"])
+
+    lic = _claim_license(audit) if available else None
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=n_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=lic,
+        available=available,
+        warnings=warnings,
+        ai_status=audit.get("ai_status"),
+        target_extra=target_extra or None,
+    )
 
 
 def render_report(
@@ -697,10 +765,16 @@ def main(argv: list[str] | None = None) -> int:
         baseline_comparison = compare_to_baseline(audit, block)
         audit["baseline_comparison"] = baseline_comparison
 
-    out = (
-        json.dumps(audit, indent=2, default=str)
-        if args.json else render_report(audit, baseline_comparison)
-    )
+    if args.json:
+        payload = build_audit_payload(
+            audit,
+            target_path=target_path,
+            baseline_block=audit.get("baseline_block"),
+            baseline_comparison=baseline_comparison,
+        )
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(audit, baseline_comparison)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")
