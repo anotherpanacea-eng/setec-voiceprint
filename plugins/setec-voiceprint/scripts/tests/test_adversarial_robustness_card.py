@@ -309,8 +309,10 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out_path.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: per_signal under results.
+        assert payload["schema_version"] == "1.0"
         assert payload["task_surface"] == "validation"
-        assert "per_signal" in payload
+        assert "per_signal" in payload["results"]
 
     def test_cli_missing_base_returns_2(self, tmp_path):
         rc = arc.main([
