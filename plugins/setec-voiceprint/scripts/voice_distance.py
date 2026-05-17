@@ -25,6 +25,9 @@ from stylometry_core import (
     word_tokens,
 )
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
+
 
 # Task-surface tag. See variance_audit.TASK_SURFACE for the framework
 # contract. Voice-coherence comparison answers "does this draft match
@@ -32,6 +35,8 @@ from stylometry_core import (
 # diagnosis. A future validation harness must refuse to mix scores
 # across surfaces because they answer different questions.
 TASK_SURFACE = "voice_coherence"
+TOOL_NAME = "voice_distance"
+SCRIPT_VERSION = "1.0"
 
 
 def fmt(value: Any, digits: int = 4) -> str:
@@ -796,7 +801,8 @@ def main() -> int:
         )
 
     if args.json:
-        output = json.dumps(result, indent=2, default=str)
+        payload = build_audit_payload(result, target_path=target_path)
+        output = json.dumps(payload, indent=2, default=str)
     else:
         output = render_report(
             result, target_path, args.top, cluster_top=args.cluster_top
@@ -808,6 +814,123 @@ def main() -> int:
     else:
         print(output)
     return 0
+
+
+def _claim_license(result: dict[str, Any]) -> ClaimLicense:
+    """Structured ClaimLicense for the voice-distance comparison.
+
+    Per ``internal/SPEC_output_schema_unification.md`` §11, scripts
+    that lacked a claim_license gain a basic block as part of
+    migration.
+    """
+    target = result.get("target_summary", {}) or {}
+    baseline = result.get("baseline_summary", {}) or {}
+    overall = result.get("overall", {}) or {}
+    register_match = result.get("register_match") or {}
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Stylometric distance from a target text to a writer / "
+            "register baseline. Reports per-family distances "
+            "(function words, character n-grams, POS trigrams, "
+            "dependency n-grams) plus a weighted overall distance "
+            "and a verbal drift band. The point of the audit is "
+            "voice-coherence comparison: does this draft look like "
+            "prior work from the same writer or the same register?"
+        ),
+        does_not_license=(
+            "An AI-provenance verdict. High distance can come from "
+            "register shift, audience shift, time drift, deliberate "
+            "stylistic experiment, AI editing, or any combination. "
+            "Bands are heuristic; the literature reference values "
+            "for Burrows Delta and per-feature cosine apply to "
+            "specific corpora and may not generalize to the user's "
+            "comparison. The differential diagnosis of cause is the "
+            "confounder audit's job."
+        ),
+        comparison_set={
+            "n_baseline_files": baseline.get("n_files"),
+            "baseline_words": baseline.get("total_words"),
+            "target_words": target.get("n_words"),
+            "band": overall.get("band"),
+            "weighted_delta": overall.get("weighted_delta"),
+            "register_match": (
+                register_match.get("match", {}).get("verdict")
+                if register_match else None
+            ),
+        },
+        additional_caveats=[
+            "Voice distance is sensitive to baseline size. Below "
+            "~20K baseline words the variance bands widen and the "
+            "comparison becomes less stable; pair small-baseline "
+            "runs with `--bootstrap` to surface the uncertainty.",
+            "Register match is a heuristic indicator, not a "
+            "validation. The register classifier is itself a "
+            "heuristic; a register mismatch warning means the "
+            "comparison is suspect, not that the score is wrong.",
+            "Per-family distances can disagree. When the function-"
+            "word and character-n-gram families point opposite "
+            "directions, the differential diagnosis matters more "
+            "than the weighted overall.",
+        ],
+    )
+
+
+def build_audit_payload(
+    result: dict[str, Any],
+    *,
+    target_path: Path | str,
+) -> dict[str, Any]:
+    """Wrap the voice-distance result in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    target = result.get("target_summary", {}) or {}
+    baseline = result.get("baseline_summary", {}) or {}
+    target_words = int(target.get("n_words", 0) or 0)
+
+    target_extra: dict[str, Any] = {}
+    if "preprocessing" in result and result["preprocessing"]:
+        target_extra["preprocessing"] = result["preprocessing"]
+    # Surface target-summary extras (n_sentences, etc.) under target.
+    for k, v in target.items():
+        if k != "n_words":
+            target_extra[k] = v
+
+    baseline_meta: dict[str, Any] | None = None
+    if baseline:
+        extras = {
+            k: v for k, v in baseline.items()
+            if k not in {"n_files", "total_words"}
+        }
+        baseline_meta = build_baseline_metadata(
+            n_files=int(baseline.get("n_files", 0) or 0),
+            words=int(baseline.get("total_words", 0) or 0),
+            extra=extras or None,
+        )
+
+    # Results: everything except metadata + target_summary +
+    # baseline_summary + preprocessing.
+    excluded = {
+        "task_surface", "target_summary", "baseline_summary",
+        "preprocessing", "warnings",
+    }
+    results = {
+        k: v for k, v in result.items()
+        if k not in excluded
+    }
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=_claim_license(result),
+        warnings=list(result.get("warnings") or []),
+        target_extra=target_extra or None,
+    )
 
 
 if __name__ == "__main__":
