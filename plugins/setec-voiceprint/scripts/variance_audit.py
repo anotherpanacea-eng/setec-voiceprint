@@ -3663,8 +3663,14 @@ def main() -> int:
         }
 
     if args.json:
+        # Codex P2: precompute the baseline word total from the full
+        # baseline_block (which carries the `audits` list) before the
+        # trim main() does at line 3615-ish into output["baseline"].
+        baseline_n_words = _sum_baseline_n_words(baseline_block)
         envelope = build_audit_payload(
-            output, target_path=args.input,
+            output,
+            target_path=args.input,
+            baseline_n_words=baseline_n_words,
         )
         print(json.dumps(envelope, indent=2, default=str))
         return 0
@@ -3719,8 +3725,12 @@ def _claim_license(output: dict[str, Any]) -> ClaimLicense:
             "draft is AI-generated based on compression alone."
         ),
         comparison_set={
-            "n_words": audit.get("n_words"),
-            "n_sentences": audit.get("n_sentences"),
+            # audit_text() stores word/sentence counts under
+            # audit["summary"] — not at the top level. Codex P2 on
+            # PR #84 caught the original code reading audit["n_words"]
+            # (which was always None on real runs).
+            "n_words": audit.get("summary", {}).get("n_words"),
+            "n_sentences": audit.get("summary", {}).get("n_sentences"),
             "band": compression.get("band"),
             "has_baseline": has_baseline,
             "windowed": "windows" in output,
@@ -3747,6 +3757,7 @@ def build_audit_payload(
     output: dict[str, Any],
     *,
     target_path: Any,
+    baseline_n_words: int | None = None,
 ) -> dict[str, Any]:
     """Wrap variance_audit's main() output dict in the schema_version
     1.0 envelope per ``internal/SPEC_output_schema_unification.md``.
@@ -3756,9 +3767,20 @@ def build_audit_payload(
     top-level layout: task_surface, preprocessing, audit, compression,
     ablation, baseline, baseline_comparison, baseline_divergences,
     baseline_bootstrap, windows) into the envelope.
+
+    Codex P2 on PR #84: audit_text() stores word counts at
+    ``audit["summary"]["n_words"]`` (not at the top level), and
+    ``output["baseline"]`` does not carry a baseline word total —
+    the per-file totals live under ``baseline_block["audits"]`` in
+    ``main()`` scope, which this function does not see. Callers
+    that have the full baseline_block in scope (main() does) should
+    pre-compute the total and pass ``baseline_n_words=...``;
+    otherwise ``baseline.words`` will be 0 (still surfaces n_files
+    correctly).
     """
     audit = output.get("audit") or {}
-    target_words = int(audit.get("n_words", 0) or 0)
+    summary = audit.get("summary") or {}
+    target_words = int(summary.get("n_words", 0) or 0)
     target_extra: dict[str, Any] = {}
     if output.get("preprocessing"):
         target_extra["preprocessing"] = output["preprocessing"]
@@ -3774,9 +3796,14 @@ def build_audit_payload(
             extras["aggregate"] = baseline_block["aggregate"]
         if baseline_block.get("preprocessing"):
             extras["preprocessing"] = baseline_block["preprocessing"]
+        # baseline_block in output["baseline"] only carries
+        # n_files / aggregate / preprocessing (main() trims here);
+        # baseline word total comes from the caller via
+        # baseline_n_words when available.
+        words = baseline_n_words if baseline_n_words is not None else 0
         baseline_meta = build_baseline_metadata(
             n_files=int(baseline_block.get("n_files", 0) or 0),
-            words=int(baseline_block.get("n_words", 0) or 0),
+            words=int(words or 0),
             extra=extras or None,
         )
 
@@ -3800,6 +3827,28 @@ def build_audit_payload(
         claim_license=_claim_license(output),
         target_extra=target_extra or None,
     )
+
+
+def _sum_baseline_n_words(baseline_block: dict[str, Any] | None) -> int:
+    """Sum per-file `n_words` across the audits in a baseline_block.
+
+    Codex P2 helper: audit_baseline() returns a dict with `audits`
+    (list of per-file audit dicts). Each entry stores its own word
+    count at `audit["summary"]["n_words"]`. The baseline_block that
+    flows into output["baseline"] in main() is trimmed and does not
+    carry the audits list, so the sum has to happen before the trim.
+    main() computes this in scope and passes to build_audit_payload.
+    """
+    if not baseline_block:
+        return 0
+    total = 0
+    for entry in baseline_block.get("audits", []) or []:
+        audit = entry.get("audit") if isinstance(entry, dict) else None
+        if isinstance(audit, dict):
+            total += int(
+                (audit.get("summary") or {}).get("n_words", 0) or 0
+            )
+    return total
 
 
 if __name__ == "__main__":

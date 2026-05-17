@@ -23,12 +23,21 @@ REQUIRED_TOP_LEVEL_KEYS = frozenset({
 
 
 def _fake_output(with_baseline=False, with_windows=False):
+    """Mirror audit_text()'s real return shape: word/sentence counts
+    live under `audit["summary"]`, not at the audit top level. Codex
+    P2 on PR #84 caught the original fake fixture using a non-real
+    flat shape — fixed here to match audit_text() exactly.
+    """
     base = {
         "task_surface": "smoothing_diagnosis",
         "preprocessing": {"opt_out": False, "tokens_stripped": 0},
         "audit": {
-            "n_words": 3500,
-            "n_sentences": 220,
+            "summary": {
+                "n_words": 3500,
+                "n_sentences": 220,
+                "n_words_original": 3500,
+                "reliable": True,
+            },
             "tier1": {"sentence_length": {"sd": 8.2, "burstiness_B": -0.15}},
             "tier2": {"pos_bigrams": {"entropy_bits": 7.8}},
             "tier3": {"adjacent_cosine": {"mean": 0.55, "sd": 0.10}},
@@ -42,7 +51,6 @@ def _fake_output(with_baseline=False, with_windows=False):
     if with_baseline:
         base["baseline"] = {
             "n_files": 8,
-            "n_words": 25000,
             "aggregate": {"tier1": {"sentence_length": {"sd": {"mean": 9.0, "sd": 1.5}}}},
             "preprocessing": {"opt_out": False},
         }
@@ -90,12 +98,30 @@ class TestTargetAndBaseline:
         assert envelope["baseline"] is None
 
     def test_baseline_populated_when_supplied(self):
+        # baseline_n_words is computed from baseline_block["audits"]
+        # in main() and passed explicitly; the synthetic
+        # output["baseline"] no longer carries an n_words field
+        # (matches the real main() trim).
         env = va.build_audit_payload(
-            _fake_output(with_baseline=True), target_path=Path("d.md"),
+            _fake_output(with_baseline=True),
+            target_path=Path("d.md"),
+            baseline_n_words=25000,
         )
         assert env["baseline"]["n_files"] == 8
         assert env["baseline"]["words"] == 25000
         assert "aggregate" in env["baseline"]
+
+    def test_baseline_words_defaults_to_zero_when_not_supplied(self):
+        """Codex P2 contract: callers that have the full
+        baseline_block in scope must pre-compute and pass
+        baseline_n_words. Without it, baseline.words is 0 (n_files
+        still surfaces correctly).
+        """
+        env = va.build_audit_payload(
+            _fake_output(with_baseline=True), target_path=Path("d.md"),
+        )
+        assert env["baseline"]["n_files"] == 8
+        assert env["baseline"]["words"] == 0
 
 
 class TestResultsPayload:
@@ -103,7 +129,8 @@ class TestResultsPayload:
         r = envelope["results"]
         assert "audit" in r
         assert "compression" in r
-        assert r["audit"]["n_words"] == 3500
+        # Real audit_text() shape: word count under audit.summary.
+        assert r["audit"]["summary"]["n_words"] == 3500
         assert r["compression"]["band"] == "Lightly smoothed"
 
     def test_baseline_comparison_under_results(self):
@@ -145,6 +172,90 @@ class TestClaimLicense:
         assert envelope["claim_license_rendered"].startswith(
             "## What this result licenses"
         )
+
+
+class TestRealAuditShape:
+    """Reviewer-reproduced regression (Codex P2 on PR #84).
+
+    Pre-fix: `build_audit_payload()` read `audit["n_words"]`, but
+    `audit_text()` stores the count at `audit["summary"]["n_words"]`.
+    CLI runs reported `target.words: 0` while the actual word count
+    was non-zero. The fake fixture above only passed because it used
+    the wrong shape; this test exercises the real audit_text() path
+    end-to-end and asserts non-zero target / baseline counts.
+
+    Pinned at the build_audit_payload() boundary so any future
+    refactor that breaks the audit→envelope path fails here.
+    """
+
+    def test_real_audit_text_produces_nonzero_target_words(self):
+        """A real audit_text() call produces audit["summary"]
+        ["n_words"] > 0; the envelope should surface that value at
+        envelope.target.words, NOT zero."""
+        text = (
+            "The committee deliberated through the afternoon. "
+            "The proposal landed on Tuesday. The budget contracted. "
+            "Daria signed off after lunch. The dashboard reflected "
+            "regional activity. Stakeholders requested further "
+            "analysis. The agency coordination role was delegated. "
+        ) * 10
+        try:
+            audit = va.audit_text(text)
+        except Exception:
+            pytest.skip("audit_text dependencies unavailable in env")
+            return
+        # Real audit_text return shape: summary.n_words.
+        assert audit["summary"]["n_words"] > 0
+        # Build the envelope from a main()-shaped output dict.
+        output = {
+            "task_surface": va.TASK_SURFACE,
+            "audit": audit,
+            "compression": {"band": "Lightly smoothed",
+                            "compression_fraction": 0.1,
+                            "flagged_signals": []},
+        }
+        envelope = va.build_audit_payload(
+            output, target_path=Path("draft.md"),
+        )
+        assert envelope["target"]["words"] == audit["summary"]["n_words"]
+        assert envelope["target"]["words"] > 0
+        # Comparison_set should also surface the real word count.
+        cs = envelope["claim_license"]["comparison_set"]
+        assert cs["n_words"] == audit["summary"]["n_words"]
+
+    def test_sum_baseline_n_words_aggregates_audits_list(self):
+        """_sum_baseline_n_words walks the baseline_block.audits list
+        and sums per-file summary.n_words. Without this helper, the
+        envelope's baseline.words would always be 0 (because
+        output['baseline'] is trimmed in main() and loses the
+        audits list)."""
+        baseline_block = {
+            "n_files": 3,
+            "audits": [
+                {"file": "a.md", "audit": {"summary": {"n_words": 800}}},
+                {"file": "b.md", "audit": {"summary": {"n_words": 1200}}},
+                {"file": "c.md", "audit": {"summary": {"n_words": 600}}},
+            ],
+        }
+        assert va._sum_baseline_n_words(baseline_block) == 2600
+
+    def test_sum_baseline_n_words_handles_failed_entries(self):
+        """Per the audit_baseline contract, baseline entries that
+        failed to parse have an 'error' key instead of 'audit'.
+        The summer should skip them without raising."""
+        baseline_block = {
+            "n_files": 2,
+            "audits": [
+                {"file": "a.md", "audit": {"summary": {"n_words": 500}}},
+                {"file": "b.md", "error": "could not read"},
+            ],
+        }
+        assert va._sum_baseline_n_words(baseline_block) == 500
+
+    def test_sum_baseline_n_words_handles_none(self):
+        assert va._sum_baseline_n_words(None) == 0
+        assert va._sum_baseline_n_words({}) == 0
+        assert va._sum_baseline_n_words({"audits": []}) == 0
 
 
 class TestFunctionContractStaysLegacy:
