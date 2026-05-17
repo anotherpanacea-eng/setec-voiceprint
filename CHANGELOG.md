@@ -6,6 +6,34 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.81.0] - 2026-05-16
+
+**Standalone-CLI exposure of the 1.80.0 Tier 4 + pluggable-embedding flags + the inner-Namespace pipe.** Symmetry follow-up to 1.80.0. `score_corpus` reads `do_tier4`, `embedding_model`, `embedding_revision`, `surprisal_model`, `surprisal_revision` from the args Namespace via `getattr` — the sharded path (`shard_runner shard` → `state.json["task_params"]` → `_default_scorer`) populates them, but the standalone `calibration_survey.py` and `calibrate_thresholds.py` argparsers didn't expose them. AND, in `calibration_survey.py`, even after the parser accepted the flags, `_build_inner_args` constructed a fresh Namespace for the score-once path that dropped the new fields — so parsed values landed on `parent_args` but never reached `score_corpus`.
+
+### Added
+
+- **`calibration_survey.py --tier4 --no-tier4 --surprisal-model --surprisal-revision --embedding-model --embedding-revision`** — same flag shapes and help text as `shard_runner shard`. Default `--tier4` off; default model aliases `None` (preserves pre-1.81 bit-exact behavior).
+- **`calibrate_thresholds.py --tier4 --no-tier4 --surprisal-model --surprisal-revision --embedding-model --embedding-revision`** — parity with `calibration_survey.py`. The single-signal threshold-derivation CLI now supports the same model swaps as the full survey CLI.
+- **`calibration_survey.run_survey` output dict** now surfaces `tier4`, `embedding_model`, `embedding_revision`, `surprisal_model`, `surprisal_revision` in the provenance block alongside the existing `tier2`/`tier3` fields so downstream consumers (band classifier, bake-off comparator, ledger writer) can tell which embedding / surprisal model a survey was scored under. Without these fields the JSON was ambiguous between a default MiniLM run and a swap to a different embedding model.
+- **7 new regression tests** in `test_pipeline_model_wiring.py` under "1.81.0: standalone-CLI surface":
+  - `test_calibration_survey_cli_exposes_tier4_and_model_flags` — `--help` output contains all 6 new flags.
+  - `test_calibrate_thresholds_cli_exposes_tier4_and_model_flags` — same for the threshold-derivation CLI.
+  - `test_calibration_survey_parser_defaults_preserve_back_compat` — defaults match pre-1.81 (tier4=False, model fields None).
+  - `test_calibration_survey_parser_accepts_explicit_values` — parser correctly populates the args Namespace when all 6 flags are set.
+  - **`test_calibration_survey_build_inner_args_forwards_new_fields`** (codex P2 guard) — `_build_inner_args` carries the 5 new fields from parent_args onto the inner Namespace; verified to fail without the fix.
+  - **`test_calibration_survey_build_inner_args_defaults_when_parent_lacks_fields`** — back-compat: a pre-1.81 parent_args without the new flags still produces a working inner Namespace (no AttributeError) with safe defaults.
+  - **`test_calibration_survey_inner_args_reach_score_corpus`** (codex P2 guard, end-to-end) — parses CLI args, builds inner args, calls `load_or_score_corpus`, spies on `score_smoothing_entry` to confirm `do_tier4` / `embedding_model` / `surprisal_model` actually flowed all the way through to the leaf scorer call. This is the assertion codex pointed at: parser tests prove the flags PARSE; this test proves the parsed values REACH the score-once path.
+
+### Fixed
+
+- **Codex P2 on PR #78: `calibration_survey._build_inner_args` now forwards the 5 new 1.80.0 fields.** Before the fix, the inner Namespace dropped `tier4` / `embedding_model` / `embedding_revision` / `surprisal_model` / `surprisal_revision` even when the parser had captured them on `parent_args`. `score_corpus`'s `getattr` defaults then silently fell back to off / None, so a standalone `calibration_survey.py --tier4 --embedding-model mxbai` run was indistinguishable from the legacy MiniLM Tier 1+2+3 default. Fix uses the `getattr`-with-default pattern so any pre-1.81 fixture that hand-constructs a parent_args without these flags still works.
+
+### Notes
+
+- **No new behavior; new CLI surface + inner-Namespace plumbing.** The scoring pipeline reads these fields the same way it did in 1.80.0; only the standalone CLIs grew arguments and the inner-Namespace builder grew forwarders. The flags are now symmetric across `shard_runner shard`, `calibration_survey.py`, and `calibrate_thresholds.py`.
+- **Unblocks the MAGE Tier 3+4 bake-off** via the standalone `calibration_survey.py` path. The bake-off matrix is 4 embedding aliases × 3 surprisal aliases at 5K stratified subsample; the standalone CLI is the appropriate entry point for that scale (sharded toolchain is overkill for 5K records).
+- **Test suite status**: 24 passed in `test_pipeline_model_wiring.py` (17 pre-existing 1.80.0 + 7 new in 1.81.0).
+
 ## [1.80.0] - 2026-05-16
 
 **Calibration pipeline: pluggable Tier 3 embedding model + Tier 4 surprisal wiring.** Closes two wiring gaps discovered during MAGE Tier 3+4 bake-off planning:

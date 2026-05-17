@@ -749,3 +749,242 @@ def test_score_shard_task_params_wins_over_run_context_for_embedding():
         )
 
     assert captured.get("embedding_model") == "mxbai"
+
+
+# --------------- 1.81.0: standalone-CLI surface ----------
+
+
+def test_calibration_survey_cli_exposes_tier4_and_model_flags():
+    """1.81.0+: ``calibration_survey.py`` must expose the same
+    ``--tier4`` / ``--surprisal-model`` / ``--embedding-model`` flags
+    as ``shard_runner shard`` so a 5K-subsample bake-off invocation
+    against the standalone CLI can exercise the 1.80.0 wiring. Before
+    1.81.0 the scoring path read these via ``getattr`` defaults; only
+    the sharded path populated them on the args Namespace, so single-
+    process bake-off runs against ``calibration_survey.py`` couldn't
+    actually swap embedding models or enable Tier 4."""
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "calibration" / "calibration_survey.py"),
+         "--help"],
+        capture_output=True, text=True, timeout=30,
+    )
+    out = result.stdout
+    assert "--tier4" in out, (
+        "calibration_survey.py must expose --tier4 (1.81.0+)"
+    )
+    assert "--no-tier4" in out
+    assert "--surprisal-model" in out
+    assert "--surprisal-revision" in out
+    assert "--embedding-model" in out
+    assert "--embedding-revision" in out
+
+
+def test_calibrate_thresholds_cli_exposes_tier4_and_model_flags():
+    """1.81.0+: same flags on ``calibrate_thresholds.py``. The
+    single-signal threshold-derivation CLI is the same shape as
+    ``calibration_survey.py`` for these flags; both call into
+    ``score_corpus`` which reads them via ``getattr``."""
+    import subprocess
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "calibration" / "calibrate_thresholds.py"),
+         "--help"],
+        capture_output=True, text=True, timeout=30,
+    )
+    out = result.stdout
+    assert "--tier4" in out, (
+        "calibrate_thresholds.py must expose --tier4 (1.81.0+)"
+    )
+    assert "--surprisal-model" in out
+    assert "--surprisal-revision" in out
+    assert "--embedding-model" in out
+    assert "--embedding-revision" in out
+
+
+def test_calibration_survey_parser_defaults_preserve_back_compat():
+    """The new flags default to off / None on calibration_survey so
+    operators who don't pass them get exactly the pre-1.81 behavior."""
+    import calibration_survey as cs  # type: ignore
+
+    parser = cs.build_arg_parser()
+    args = parser.parse_args([
+        "--manifest", "x.jsonl", "--fpr-target", "0.01",
+    ])
+    assert args.tier4 is False
+    assert args.surprisal_model is None
+    assert args.surprisal_revision is None
+    assert args.embedding_model is None
+    assert args.embedding_revision is None
+
+
+def test_calibration_survey_parser_accepts_explicit_values():
+    """Passing the new flags populates the args Namespace cleanly so
+    score_corpus's ``getattr(args, ..., default)`` calls see real
+    values, not defaults."""
+    import calibration_survey as cs  # type: ignore
+
+    parser = cs.build_arg_parser()
+    args = parser.parse_args([
+        "--manifest", "x.jsonl", "--fpr-target", "0.01",
+        "--tier4",
+        "--surprisal-model", "gpt2",
+        "--surprisal-revision", "abc123",
+        "--embedding-model", "mxbai",
+        "--embedding-revision", "def456",
+    ])
+    assert args.tier4 is True
+    assert args.surprisal_model == "gpt2"
+    assert args.surprisal_revision == "abc123"
+    assert args.embedding_model == "mxbai"
+    assert args.embedding_revision == "def456"
+
+
+def test_calibration_survey_build_inner_args_forwards_new_fields():
+    """**Codex P2 on PR #78**: calibration_survey's parser accepts
+    the new flags, but ``_build_inner_args`` constructs a fresh
+    Namespace for the scoring path. Before the fix, that inner
+    Namespace dropped the 5 new fields (no ``tier4``, no
+    ``embedding_model``, no ``surprisal_model`` / etc.) so
+    ``score_corpus`` saw ``None`` / ``False`` defaults via its own
+    ``getattr`` fallbacks -- the standalone CLI silently fell back
+    to Tier 1+2+3 with legacy MiniLM regardless of what flags the
+    operator passed.
+
+    Pins by parsing args with explicit non-default values, building
+    the inner Namespace, and asserting each new field landed on it.
+    Direct regression guard for the wiring gap.
+    """
+    import calibration_survey as cs  # type: ignore
+
+    parser = cs.build_arg_parser()
+    parent_args = parser.parse_args([
+        "--manifest", "x.jsonl", "--fpr-target", "0.01",
+        "--tier4",
+        "--surprisal-model", "gpt2",
+        "--surprisal-revision", "abc123",
+        "--embedding-model", "mxbai",
+        "--embedding-revision", "def456",
+    ])
+    inner = cs._build_inner_args(parent_args, "burstiness_B")
+
+    assert inner.tier4 is True, (
+        "inner Namespace must carry tier4 from parent_args; otherwise "
+        "score_corpus's getattr falls back to False and the standalone "
+        "CLI silently scores Tier 1+2+3 only"
+    )
+    assert inner.embedding_model == "mxbai", (
+        "inner Namespace must carry embedding_model from parent_args; "
+        "otherwise score_corpus's getattr falls back to None and the "
+        "standalone CLI silently uses legacy MiniLM"
+    )
+    assert inner.embedding_revision == "def456"
+    assert inner.surprisal_model == "gpt2"
+    assert inner.surprisal_revision == "abc123"
+
+
+def test_calibration_survey_build_inner_args_defaults_when_parent_lacks_fields():
+    """Back-compat: any pre-1.81 test fixture or programmatic caller
+    that hand-constructs a parent_args without the new flags must
+    still produce a working inner Namespace (no AttributeError) with
+    the same default values score_corpus would have used."""
+    import calibration_survey as cs  # type: ignore
+
+    # Hand-construct a pre-1.81 parent_args -- no tier4, no model
+    # fields. The fix uses getattr with safe defaults, so this should
+    # not raise.
+    parent_args = argparse.Namespace(
+        manifest="x.jsonl",
+        use="validation",
+        fpr_target=0.01,
+        bootstrap_resamples=2000,
+        bootstrap_confidence=0.95,
+        bootstrap_seed=42,
+        tier2=True,
+        tier3=True,
+        # No tier4 / embedding_model / etc.
+    )
+    inner = cs._build_inner_args(parent_args, "burstiness_B")
+    assert inner.tier4 is False
+    assert inner.embedding_model is None
+    assert inner.embedding_revision is None
+    assert inner.surprisal_model is None
+    assert inner.surprisal_revision is None
+
+
+def test_calibration_survey_inner_args_reach_score_corpus(monkeypatch, tmp_path):
+    """End-to-end: parse the standalone CLI's flags, run the same
+    code path the CLI invokes (build inner args + call
+    load_or_score_corpus), and assert the score_smoothing_entry the
+    pipeline calls actually sees the operator-specified model values.
+
+    This is the assertion codex pointed at: the parser tests prove
+    the flags PARSE, but only this test proves the parsed values
+    REACH THE SCORE-ONCE PATH. Spies on score_smoothing_entry to
+    capture what kwargs it receives across the full args→inner→
+    score_corpus→score_smoothing_entry chain."""
+    import calibration_survey as cs  # type: ignore
+    import calibrate_thresholds as ct  # type: ignore
+    import validation_harness as vh  # type: ignore
+
+    # Build a tiny synthetic manifest with one entry pointing at a
+    # real text file (load_or_score_corpus needs to be able to read
+    # the entry, even if the scorer is stubbed).
+    txt = tmp_path / "essay.txt"
+    txt.write_text("word " * 200, encoding="utf-8")
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps({
+        "id": "essay_0", "path": str(txt),
+        "register": "essay", "ai_status": "human",
+        "language_status": "en", "word_count": 200,
+        "use": ["validation"],
+    }) + "\n", encoding="utf-8")
+
+    parser = cs.build_arg_parser()
+    parent_args = parser.parse_args([
+        "--manifest", str(manifest),
+        "--fpr-target", "0.01",
+        "--tier4",
+        "--surprisal-model", "gpt2",
+        "--embedding-model", "mxbai",
+    ])
+
+    # Spy on score_smoothing_entry (the leaf the chain reaches) to
+    # capture per-entry kwargs. Patch where calibrate_thresholds
+    # imported it so the call site uses our spy.
+    captured: dict[str, Any] = {}
+
+    def _spy_score(entry, **kwargs):
+        captured.update(kwargs)
+        return {
+            "id": entry.get("id"), "score": 0.5, "label": 0,
+            "score_name": "compression_fraction",
+            "usable_for_metrics": True,
+            "per_signal_scores": {"burstiness_B": 0.5},
+            "raw_word_count": 200, "observed_word_count": 200,
+            "length_bucket": "short",
+        }
+
+    monkeypatch.setattr(ct, "score_smoothing_entry", _spy_score)
+
+    inner = cs._build_inner_args(parent_args, "burstiness_B")
+    # load_or_score_corpus is the exact entry point calibration_
+    # survey.py main() uses. Call it the same way.
+    cache_path = tmp_path / "cache.json"
+    ct.load_or_score_corpus(inner, cache_path=cache_path, refresh=False)
+
+    # The captured kwargs from score_smoothing_entry confirm the
+    # values flowed parent_args → inner → score_corpus → score_
+    # smoothing_entry. If _build_inner_args drops them, these
+    # assertions fail.
+    assert captured.get("do_tier4") is True, (
+        f"do_tier4 didn't reach score_smoothing_entry; got "
+        f"{captured.get('do_tier4')!r}. The wiring gap codex caught "
+        f"on PR #78 has regressed."
+    )
+    assert captured.get("embedding_model") == "mxbai", (
+        f"embedding_model didn't reach score_smoothing_entry; got "
+        f"{captured.get('embedding_model')!r}"
+    )
+    assert captured.get("surprisal_model") == "gpt2"
+
+

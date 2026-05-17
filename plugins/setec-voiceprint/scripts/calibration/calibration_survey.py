@@ -373,6 +373,22 @@ def _build_inner_args(
         ),
         tier2=parent_args.tier2,
         tier3=parent_args.tier3,
+        # Codex P2 on PR #78: must forward the 1.80.0 / 1.81.0 fields
+        # to the inner Namespace or ``load_or_score_corpus`` /
+        # ``score_corpus`` will see ``None`` / ``False`` defaults via
+        # their own ``getattr`` fallbacks -- the parent_args parser
+        # accepted the flags but the inner Namespace dropped them,
+        # so the standalone calibration_survey CLI silently fell back
+        # to Tier 1+2+3 (legacy MiniLM) regardless of what
+        # ``--tier4`` / ``--surprisal-model`` / ``--embedding-model``
+        # the operator passed. ``getattr`` with back-compat defaults
+        # so any pre-1.81 test fixture that hand-constructs a
+        # parent_args without these flags still works.
+        tier4=getattr(parent_args, "tier4", False),
+        embedding_model=getattr(parent_args, "embedding_model", None),
+        embedding_revision=getattr(parent_args, "embedding_revision", None),
+        surprisal_model=getattr(parent_args, "surprisal_model", None),
+        surprisal_revision=getattr(parent_args, "surprisal_revision", None),
         notes=None,
         # Forward the sub-sample knob so partial surveys hit the
         # same essays across signals (deterministic per seed).
@@ -709,6 +725,18 @@ def run_survey(
         "use": parent_args.use,
         "tier2": parent_args.tier2,
         "tier3": parent_args.tier3,
+        # 1.81.0+: surface the Tier 4 + model selections in the
+        # output JSON's provenance block so downstream consumers
+        # (band classifier, ledger writer, side-by-side bake-off
+        # comparators) can tell which embedding / surprisal model
+        # the survey was scored under. Without these fields the
+        # output JSON's provenance is ambiguous between a default
+        # MiniLM run and a swap to mxbai/gemma/harrier.
+        "tier4": getattr(parent_args, "tier4", False),
+        "embedding_model": getattr(parent_args, "embedding_model", None),
+        "embedding_revision": getattr(parent_args, "embedding_revision", None),
+        "surprisal_model": getattr(parent_args, "surprisal_model", None),
+        "surprisal_revision": getattr(parent_args, "surprisal_revision", None),
         "tpr_floor": tpr_floor,
         "aggressiveness_tolerance": aggressiveness_tolerance,
         "max_entries": max_entries,
@@ -877,6 +905,57 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Run Tier 3 features (cohesion).")
     p.add_argument("--no-tier3", dest="tier3", action="store_false",
                    help="Skip Tier 3 features (faster).")
+    # 1.81.0+: standalone-CLI exposure of the pipeline-wired Tier 4 +
+    # pluggable-embedding flags landed in 1.80.0. The scoring path
+    # (score_corpus -> score_smoothing_entry -> audit_text) reads
+    # these via getattr; before 1.81.0 only shard_runner shard's CLI
+    # populated them on the args Namespace, which made bake-off
+    # subsample runs against the standalone calibration_survey
+    # impossible without writing an ad-hoc Python driver.
+    p.add_argument(
+        "--tier4", action="store_true", default=False,
+        help=(
+            "Enable Tier 4 (surprisal) signals on the scoring run. "
+            "Opt-in. Requires the surprisal dependency layer "
+            "(transformers + torch); see scripts/calibration/"
+            "RUNBOOK_tier4_install.md."
+        ),
+    )
+    p.add_argument(
+        "--no-tier4", dest="tier4", action="store_false",
+        help="Explicitly disable Tier 4 (default is off; no-op when not paired with prior --tier4).",
+    )
+    p.add_argument(
+        "--surprisal-model", default=None,
+        help=(
+            "Causal LM alias or HuggingFace id for Tier 4. "
+            "Default (when --tier4 is set): tinyllama. See "
+            "surprisal_backend.MODEL_ALIASES for the 9 candidates."
+        ),
+    )
+    p.add_argument(
+        "--surprisal-revision", default=None,
+        help=(
+            "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
+            "(reproducibility). Default: revision-less."
+        ),
+    )
+    p.add_argument(
+        "--embedding-model", default=None,
+        help=(
+            "Embedding-model alias or HuggingFace id for Tier 3 "
+            "cohesion. Default: legacy MiniLM hardcode (for back-"
+            "compat with pre-1.80 surveys). Aliases: mxbai, gemma, "
+            "harrier, minilm. See embedding_backend.MODEL_ALIASES."
+        ),
+    )
+    p.add_argument(
+        "--embedding-revision", default=None,
+        help=(
+            "Pin a HuggingFace commit SHA for the Tier 3 embedding "
+            "model (reproducibility). Default: revision-less."
+        ),
+    )
     p.add_argument("--bootstrap-resamples", type=int, default=2000)
     p.add_argument("--bootstrap-confidence", type=float, default=0.95)
     p.add_argument("--bootstrap-seed", type=int, default=42)
