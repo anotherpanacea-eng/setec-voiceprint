@@ -74,7 +74,9 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from claim_license import ClaimLicense  # type: ignore
 from manifest_validator import resolve_path, validate_manifest  # type: ignore
+from output_schema import build_output  # type: ignore
 from stylometry_core import (  # type: ignore
     DEFAULT_LIMITS,
     FAMILY_WEIGHTS,
@@ -89,6 +91,7 @@ from stylometry_core import (  # type: ignore
 
 TASK_SURFACE = "voice_coherence"
 TOOL_NAME = "voice_drift_tracker"
+SCRIPT_VERSION = "1.0"
 
 DEFAULT_GRANULARITY = "year"
 DEFAULT_MIN_DOCS_PER_PERIOD = 2
@@ -891,6 +894,54 @@ CLAIM_LICENSE = {
 }
 
 
+def _claim_license(
+    *,
+    period_summary: list[dict[str, Any]],
+    granularity: str,
+    inputs: dict[str, Any],
+) -> ClaimLicense:
+    """Structured ClaimLicense for the voice-drift output. Per SPEC
+    §4, the legacy 2-key ``CLAIM_LICENSE = {...}`` shape is replaced
+    by the full 11-key ``ClaimLicense.to_dict()``. CLAIM_LICENSE is
+    kept as a constant for the markdown render path that reads its
+    `licenses` / `does_not_license` fields directly.
+    """
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=CLAIM_LICENSE["licenses"],
+        does_not_license=CLAIM_LICENSE["does_not_license"],
+        comparison_set={
+            "granularity": granularity,
+            "n_periods": len(period_summary),
+            "period_labels": [p["label"] for p in period_summary],
+            "n_docs_per_period": {
+                p["label"]: p["n_docs"] for p in period_summary
+            },
+            "n_words_per_period": {
+                p["label"]: p["n_words"] for p in period_summary
+            },
+            "manifest_path": inputs.get("manifest"),
+        },
+        additional_caveats=[
+            "Drift is measured against the writer's own corpus, "
+            "not against an external population. A high drift "
+            "score means the writer's voice has changed between "
+            "periods; it does not imply the change is symptomatic "
+            "or driven by external factors.",
+            "The voice profile is voice-cloning-grade input. The "
+            "script enforces a privacy ratchet by refusing public "
+            "output paths unless `--allow-public-output` is set, "
+            "and the output should be kept under "
+            "ai-prose-baselines-private/.",
+            "Period granularity is operator-supplied (year, month, "
+            "etc.). A too-fine granularity with sparse documents "
+            "per period inflates drift; the script's "
+            "--min-docs-per-period gate is the right place to "
+            "tune this.",
+        ],
+    )
+
+
 def render_json(
     *,
     profiles: dict[str, PeriodProfile],
@@ -928,20 +979,33 @@ def render_json(
         }
         for (pa, pb), row in sorted(weighted_distances.items())
     ]
-    out = {
-        "task_surface": TASK_SURFACE,
-        "tool": TOOL_NAME,
-        "inputs": inputs,
-        "granularity": granularity,
-        "claim_license": CLAIM_LICENSE,
+    target_words = sum(p["n_words"] for p in period_summary)
+    results = {
         "n_periods": len(period_labels),
         "periods": period_summary,
+        "granularity": granularity,
+        "inputs": inputs,
         "dropped_periods": dropped_periods,
         "cross_period_distances_per_family": family_distance_serialized,
         "cross_period_distances_weighted": weighted_serialized,
         "drift_scores": drift,
     }
-    return json.dumps(out, indent=2, ensure_ascii=False)
+    envelope = build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=inputs.get("manifest") or inputs.get("baseline_dir"),
+        target_words=target_words,
+        baseline=None,
+        results=results,
+        claim_license=_claim_license(
+            period_summary=period_summary,
+            granularity=granularity,
+            inputs=inputs,
+        ),
+        target_extra={"granularity": granularity},
+    )
+    return json.dumps(envelope, indent=2, ensure_ascii=False)
 
 
 def render_markdown(
