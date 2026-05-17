@@ -84,7 +84,12 @@ except ImportError:
         # Fallback if running without the framework on path
         return re.split(r"(?<=[.!?])\s+", text.strip())
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
+
 TASK_SURFACE = "craft_restoration"
+TOOL_NAME = "aic_pattern_audit"
+SCRIPT_VERSION = "1.0"
 
 
 # ---------- pattern detectors ----------
@@ -640,7 +645,71 @@ def render_report(
     return "\n".join(lines)
 
 
-def render_json(
+def _claim_license(
+    *,
+    target_words: int,
+    baseline_words: int,
+    n_patterns_reported: int,
+    has_baseline: bool,
+) -> ClaimLicense:
+    """Build the structured ClaimLicense block for this audit.
+
+    The license describes what an AIC pattern density report entitles
+    a reader to claim, what comparison set produced it, and what it
+    explicitly does NOT license. Per ``internal/SPEC_output_schema_
+    unification.md`` §11, scripts that lacked a claim_license gain
+    one as part of their schema migration; the content here matches
+    the framework's existing claim-license discipline.
+    """
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "A density report for named rhetorical patterns "
+            "(Disguised Correctio, Manifesto Cadence, Triplet, "
+            "Pseudo-Aphorism, and the nonfiction parallel set: "
+            "False-Balance, Hedge-and-Affirm, Recommendation "
+            "Template, Authority Laundering). For each pattern "
+            "the report names per-1000-word density in the target "
+            "and (when a baseline is supplied) the density in the "
+            "baseline plus the per-1000-word delta. Per-instance "
+            "hits are surfaced for source triage."
+        ),
+        does_not_license=(
+            "An authorship verdict. Pattern density is voice-"
+            "coherence evidence and Layer B/C source-triage input, "
+            "not authorship certification. Each detector is a "
+            "regex / structural heuristic with known false-positive "
+            "modes (the script's docstring lists the v1 "
+            "limitations); 'earned vs. unearned' per instance is "
+            "the writer's call. Heuristic thresholds are anchored "
+            "to single-author case studies, not corpus calibration."
+        ),
+        comparison_set={
+            "target_words": target_words,
+            "baseline_words": baseline_words if has_baseline else 0,
+            "has_baseline": has_baseline,
+            "n_patterns_reported": n_patterns_reported,
+        },
+        additional_caveats=[
+            "Markdown blockquotes are stripped by default to keep "
+            "quoted passages from inflating density. Pass "
+            "`--keep-quotes` to disable. Plain-text quoted "
+            "material still requires manual handling.",
+            "The correctio detector matches the explicit `not X, "
+            "but Y` inline form and the `It is not X. It is Y` "
+            "two-sentence frame. Subtler multi-sentence correctios "
+            "are not yet captured.",
+            "Abstraction Shielding and Indefinite-Pronoun Gesture "
+            "are deferred to v2 (need NER / contextual analysis).",
+        ],
+        references=[
+            "references/aic-flags.md",
+            "references/source-triage.md",
+        ],
+    )
+
+
+def build_audit_payload(
     target_path: Path,
     target_words: int,
     target_results: dict[str, PatternResult],
@@ -651,20 +720,18 @@ def render_json(
     *,
     top: int,
     pattern_filter: list[str] | None,
-) -> str:
+) -> dict[str, Any]:
+    """Produce the schema_version 1.0 envelope as a dict.
+
+    Returns the envelope (caller serializes). Per
+    ``internal/SPEC_output_schema_unification.md`` §3.2 the
+    script-specific payload lives under ``results.patterns``.
+    """
     keys = list(target_results.keys())
     if pattern_filter:
         keys = [k for k in keys if k in pattern_filter]
-    out: dict[str, Any] = {
-        "task_surface": TASK_SURFACE,
-        "target": str(target_path),
-        "target_words": target_words,
-        "patterns": {},
-    }
-    if baseline_density_per_1k is not None:
-        out["baseline_files_loaded"] = [str(p) for p in baseline_loaded]
-        out["baseline_files_skipped"] = [str(p) for p in baseline_skipped]
-        out["baseline_words"] = baseline_words
+
+    patterns_block: dict[str, dict[str, Any]] = {}
     for k in keys:
         r = target_results[k]
         target_density = r.count / target_words * 1000 if target_words else 0
@@ -687,8 +754,58 @@ def render_json(
             base_d = baseline_density_per_1k.get(k, 0.0)
             block["baseline_density_per_1k"] = base_d
             block["delta_per_1k"] = target_density - base_d
-        out["patterns"][k] = block
-    return json.dumps(out, indent=2, default=float)
+        patterns_block[k] = block
+
+    has_baseline = baseline_density_per_1k is not None
+    baseline_meta = (
+        build_baseline_metadata(
+            n_files=len(baseline_loaded),
+            words=baseline_words,
+            files_loaded=baseline_loaded,
+            files_skipped=baseline_skipped,
+        )
+        if has_baseline
+        else None
+    )
+
+    lic = _claim_license(
+        target_words=target_words,
+        baseline_words=baseline_words,
+        n_patterns_reported=len(patterns_block),
+        has_baseline=has_baseline,
+    )
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results={"patterns": patterns_block},
+        claim_license=lic,
+    )
+
+
+def render_json(
+    target_path: Path,
+    target_words: int,
+    target_results: dict[str, PatternResult],
+    baseline_density_per_1k: dict[str, float] | None,
+    baseline_loaded: list[Path],
+    baseline_skipped: list[Path],
+    baseline_words: int,
+    *,
+    top: int,
+    pattern_filter: list[str] | None,
+) -> str:
+    payload = build_audit_payload(
+        target_path, target_words, target_results,
+        baseline_density_per_1k, baseline_loaded,
+        baseline_skipped, baseline_words,
+        top=top, pattern_filter=pattern_filter,
+    )
+    return json.dumps(payload, indent=2, default=float)
 
 
 # ---------- main ----------
