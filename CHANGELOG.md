@@ -6,6 +6,41 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.87.0] - 2026-05-17
+
+**Output schema unification waves 6 + 7 — final batch. 9 scripts (5 validation + 4 craft-restoration) migrate to schema_version 1.0.** With this wave the migration completes: **every user-facing audit / diagnostic script in SETEC's CLI surface ships the unified envelope.**
+
+Migrated:
+
+- `check_corpus` (validation) — corpus-hygiene gate; new claim_license per SPEC §11; envelope.warnings populated when status is warning/fail.
+- `manifest_validator` (validation) — manifest schema/integrity report; results carry issues/summary/n_errors/n_warnings.
+- `known_editor_profile` (validation) — `match` mode wrapped in envelope; `learn` mode emits the profile JSON intentionally bypassing the envelope (the profile is consumed by --profile on later runs).
+- `semantic_preservation_check` (craft_restoration) — before/after category-preservation report; B.3 state caveats routed through structured claim_license.
+- `general_imposters` (voice_coherence) — GIResult.to_dict() return shape preserved unchanged for internal/legacy consumers; CLI output now wraps to_dict() under envelope.results, upgrading the 3-key legacy claim_license via from_legacy.
+- `voice_validation_harness` (voice_coherence) — run_harness function-level return preserved; CLI JSON output wrapped in envelope.
+- `before_after_restoration` (craft_restoration) — legacy CLAIM_LICENSE dict upgraded to structured 11-key via from_legacy; per-script payload (verdicts, aggregate_deltas, preservation_check, diff_only, etc.) flows under results.
+- `restoration_packet` (craft_restoration) — same shape as before_after_restoration; packets + prompt block flow under results.
+- `validation_harness` (validation) — the biggest script in wave 6 (2068 LOC); legacy result keys (failed / reason / corpus_hygiene) flow through under results even on failure (available=False), so consumers can diagnose why the harness exited non-zero without losing the diagnostic payload.
+
+### Added
+
+- Schema tests for `check_corpus`, `manifest_validator`, `known_editor_profile` (match mode). Other scripts in this wave rely on schema-verification via updated existing tests (CLI integration tests navigating envelope.results).
+- Total ~30 new tests + ~10 updated existing CLI tests across waves 6+7.
+
+### Changed
+
+- **All 9 CLI JSON output shapes are a BREAKING CHANGE.** Per-script details in commit messages. Common pattern: metadata → envelope; per-script payload → `results`; legacy `CLAIM_LICENSE = {...}` dicts → structured 11-key via `from_legacy()`.
+- **Function-level return shapes preserved** on `run_harness` (validation_harness), `run_harness` (voice_validation_harness), `GIResult.to_dict` (general_imposters), `match_pair` (known_editor_profile), `audit_semantic_preservation` (semantic_preservation_check), and others. The envelope is added only at the CLI / JSON boundary.
+- **4 B.3 voice-surface tests updated** (`test_b3_voice_surfaces.py`) to pin the schema_version 1.0 contract: state-routed caveats intentionally surface in BOTH `claim_license.additional_caveats` AND `claim_license_rendered` per SPEC §4. Same rationale as the wave-3 and wave-5 B.3 craft-surface updates. The pre-migration back-compat invariant (no `ai_status` key in JSON when --ai-status is omitted) is intentionally retired — `ai_status` is now an envelope key (None when not supplied).
+
+### Notes
+
+- **All 7 waves complete.** 30+/30+ user-facing scripts on schema_version 1.0. The migration track is done.
+- **APODICTIC integration is fully unblocked** across every surface in its consumer list, plus extras.
+- **No signal definitions, threshold values, computation, or markdown rendering change.** This is rendering-layer plumbing only.
+- **Test suite status**: 2746 passed, 16 skipped, 0 failures (+25 net new tests across waves 6+7; 16 skips are pre-existing).
+- **2.0.0 reservation.** Per the CHANGELOG preamble, major version bumps are reserved for breaking JSON contract changes. With waves 1-7 shipped, the JSON contract is now stable across the SETEC surface. A future 2.0.0 release can roll up the cumulative changes from waves 1-7 once the contract has been exercised in production by downstream consumers (APODICTIC primarily) for a verification window.
+
 ## [1.86.0] - 2026-05-17
 
 **Output schema unification wave 5: eleven smoothing-surface scripts migrate to the schema_version 1.0 envelope.** The largest wave by far: 11 scripts including `variance_audit` (3682 LOC — the central Layer A diagnostic and the biggest single file in the repo). After this wave **28 of ~30** user-facing scripts are on the envelope. Waves 6 (validation) and 7 (craft restoration) remain.
