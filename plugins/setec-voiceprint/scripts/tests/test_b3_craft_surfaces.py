@@ -292,9 +292,11 @@ class TestMimicryCosplayB3Routing:
         )
         payload = json.loads(out.read_text())
         assert payload.get("ai_status") == "ai_generated_from_outline"
-        # Core audit shape unchanged.
-        assert "verdict" in payload
-        assert "shapes" in payload
+        # schema_version 1.0 envelope: per-script payload lives under
+        # results, per SPEC_output_schema_unification.md.
+        assert payload.get("schema_version") == "1.0"
+        assert "verdict" in payload["results"]
+        assert "shapes" in payload["results"]
 
 
 # ---------- JSON-shape contract: caveats live in markdown only ----
