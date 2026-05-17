@@ -524,9 +524,12 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
+        # schema_version 1.0 envelope: categories + overall_verdict
+        # live under results.
+        assert payload["schema_version"] == "1.0"
         assert payload["task_surface"] == "craft_restoration"
-        assert "categories" in payload
-        assert "overall_verdict" in payload
+        assert "categories" in payload["results"]
+        assert "overall_verdict" in payload["results"]
 
     def test_cli_missing_before_returns_2(self, tmp_path):
         after_path = tmp_path / "after.md"
@@ -590,7 +593,7 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
-        assert list(payload["categories"].keys()) == ["modal_verbs"]
+        assert list(payload["results"]["categories"].keys()) == ["modal_verbs"]
 
 
 if __name__ == "__main__":
