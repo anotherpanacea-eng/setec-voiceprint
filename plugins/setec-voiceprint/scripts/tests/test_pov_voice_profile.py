@@ -376,14 +376,16 @@ def test_json_output_includes_required_fields() -> None:
         inputs=result["inputs"],
     )
     parsed = json.loads(json_str)
+    # schema_version 1.0 envelope: per-POV payload lives under results.
+    assert parsed["schema_version"] == "1.0"
     assert parsed["task_surface"] == "voice_coherence"
     assert parsed["tool"] == "pov_voice_profile"
-    assert parsed["n_povs"] == 2
+    assert parsed["results"]["n_povs"] == 2
     assert "claim_license" in parsed
-    assert "cross_pov_distances_weighted" in parsed
-    assert "distinguishing_features" in parsed
-    assert "voice_collapse_verdict" in parsed
-    assert "pov_vs_corpus_mean" in parsed
+    assert "cross_pov_distances_weighted" in parsed["results"]
+    assert "distinguishing_features" in parsed["results"]
+    assert "voice_collapse_verdict" in parsed["results"]
+    assert "pov_vs_corpus_mean" in parsed["results"]
 
 
 def test_markdown_output_includes_distance_table() -> None:
@@ -449,7 +451,7 @@ def test_cli_main_runs_end_to_end(tmp_path) -> None:
     assert out_json.is_file()
     parsed = json.loads(out_json.read_text(encoding="utf-8"))
     assert parsed["task_surface"] == "voice_coherence"
-    assert parsed["n_povs"] == 2
+    assert parsed["results"]["n_povs"] == 2
 
 
 def test_cli_refuses_public_output_without_allow_flag(tmp_path) -> None:

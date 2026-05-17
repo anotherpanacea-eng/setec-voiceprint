@@ -58,7 +58,9 @@ ROOT = Path(__file__).resolve().parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from claim_license import ClaimLicense  # type: ignore
 from manifest_validator import resolve_path, validate_manifest  # type: ignore
+from output_schema import build_output  # type: ignore
 from stylometry_core import (  # type: ignore
     DEFAULT_LIMITS,
     FAMILY_WEIGHTS,
@@ -73,6 +75,7 @@ from stylometry_core import (  # type: ignore
 
 TASK_SURFACE = "voice_coherence"
 TOOL_NAME = "pov_voice_profile"
+SCRIPT_VERSION = "1.0"
 
 DEFAULT_MIN_DOCS_PER_POV = 2
 DEFAULT_TOP_DISTINGUISHING = 15
@@ -585,6 +588,53 @@ CLAIM_LICENSE = {
 }
 
 
+def _claim_license(
+    *,
+    pov_summary: list[dict[str, Any]],
+    collapse_verdict: list[dict[str, Any]],
+    inputs: dict[str, Any],
+) -> ClaimLicense:
+    """Structured ClaimLicense for the per-POV voiceprint output. Per
+    SPEC §4 the legacy 2-key dict shape is replaced by the full
+    structured ClaimLicense.to_dict(); CLAIM_LICENSE stays as a
+    constant for the markdown render path.
+    """
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=CLAIM_LICENSE["licenses"],
+        does_not_license=CLAIM_LICENSE["does_not_license"],
+        comparison_set={
+            "n_povs": len(pov_summary),
+            "pov_labels": [p["label"] for p in pov_summary],
+            "n_docs_per_pov": {
+                p["label"]: p["n_docs"] for p in pov_summary
+            },
+            "n_words_per_pov": {
+                p["label"]: p["n_words"] for p in pov_summary
+            },
+            "n_collapse_flags": sum(
+                1 for v in collapse_verdict
+                if v.get("verdict") in {"potentially_collapsed", "collapsed"}
+            ),
+            "manifest_path": inputs.get("manifest"),
+        },
+        additional_caveats=[
+            "POV voice-collapse is a heuristic flag, not a craft "
+            "verdict. Close-third narration with deliberately "
+            "limited POV differentiation will register as "
+            "collapsed; the writer's intent matters more than the "
+            "score.",
+            "Per-POV voiceprints are voice-cloning-grade input. The "
+            "script enforces a privacy ratchet by refusing public "
+            "output paths unless `--allow-public-output` is set.",
+            "Burrows Delta between POVs is sensitive to per-POV "
+            "corpus size. Below ~5K words per POV the comparison "
+            "becomes noisy; the `--min-words-per-pov` gate is the "
+            "right place to tune this.",
+        ],
+    )
+
+
 def render_json(
     *,
     profiles: dict[str, POVProfile],
@@ -623,13 +673,11 @@ def render_json(
         }
         for (pa, pb), row in sorted(weighted_distances.items())
     ]
-    out = {
-        "task_surface": TASK_SURFACE,
-        "tool": TOOL_NAME,
-        "inputs": inputs,
-        "claim_license": CLAIM_LICENSE,
+    target_words = sum(p["n_words"] for p in pov_summary)
+    results = {
         "n_povs": len(pov_labels),
         "povs": pov_summary,
+        "inputs": inputs,
         "dropped_povs": dropped_povs,
         "cross_pov_distances_per_family": family_distance_serialized,
         "cross_pov_distances_weighted": weighted_serialized,
@@ -637,7 +685,21 @@ def render_json(
         "distinguishing_features": distinguishing,
         "voice_collapse_verdict": collapse_verdict,
     }
-    return json.dumps(out, indent=2, ensure_ascii=False)
+    envelope = build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=inputs.get("manifest") or inputs.get("baseline_dir"),
+        target_words=target_words,
+        baseline=None,
+        results=results,
+        claim_license=_claim_license(
+            pov_summary=pov_summary,
+            collapse_verdict=collapse_verdict,
+            inputs=inputs,
+        ),
+    )
+    return json.dumps(envelope, indent=2, ensure_ascii=False)
 
 
 def render_markdown(
