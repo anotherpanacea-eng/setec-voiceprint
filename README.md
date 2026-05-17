@@ -1,16 +1,18 @@
 # setec-voiceprint
 
-SETEC Voiceprint is a stylometric framework for measuring how prose changes.
+**Text-only stylometry for authorial voice in prose. Not audio.**
 
-It can diagnose smoothing, compare a draft against a writer's own baseline, build private voice profiles, surface idiolect features worth preserving, validate signals against labeled corpora, and generate revision-safe restoration packets. It is built for writers, editors, researchers, and toolmakers who need evidence about prose transformation without collapsing that evidence into an overconfident verdict.
+SETEC Voiceprint is a stylometric framework for measuring **authorial voice in prose** — the writer-level patterns visible in a manuscript's text. It is text-only. It has nothing to do with audio voice identification, speaker recognition, or vocal spectography. "Voiceprint" here is the term-of-art borrowed from authorship-attribution stylometry (Burrows Delta, function-word fingerprints, the "voice" essayists and developmental editors talk about), not the audio-processing sense. Anyone arriving from an audio-AI search will not find what they came for.
 
-SETEC is not an AI detector.
+What it does: diagnose smoothing in prose, compare a draft against a writer's own prior corpus, build private authorial-voice profiles, surface idiolect features worth preserving, validate stylometric signals against labeled corpora, and generate revision-safe restoration packets. It is built for writers, editors, researchers, and toolmakers who need evidence about prose transformation without collapsing that evidence into an overconfident verdict.
 
-AI-assisted writing is one important use case because LLM collaboration often leaves smoothing, compression, syntactic drift, and phrase-preservation artifacts. But the same signals can also come from genre, education, dialect, translation, institutional templates, human editing, time drift, POV collapse, or a writer consciously imitating themselves. SETEC's core discipline is to measure the signal, name the comparison set, and refuse claims the evidence does not license.
+SETEC is not an AI detector. It also is not an audio voice ID tool. The "voice" it measures is the *authorial voice* a writer's prose carries, not a speaker's vocal signature.
 
-The name tips its hat to *Sneakers* (1992): SETEC ASTRONOMY, "too many secrets." Voice profiles are voice-cloning inputs. The framework's outputs are useful to the writer who runs them; they are also leverage to anyone else who gets hold of them. The "setec" in the name is a reminder, not a flourish.
+AI-assisted writing is one important use case because LLM collaboration often leaves smoothing, compression, syntactic drift, and phrase-preservation artifacts in prose. But the same signals can also come from genre, education, dialect, translation, institutional templates, human editing, time drift, POV collapse, or a writer consciously imitating themselves. SETEC's core discipline is to measure the signal, name the comparison set, and refuse claims the evidence does not license.
 
-The framework distinguishes four task surfaces, three diagnostic layers, and a vocabulary of named patterns. The Python tooling supports distributional diagnostics, voice-coherence comparison, vocabulary-repetition audits, corpus acquisition, manifest validation, empirical calibration, and craft restoration.
+The "SETEC" in the name tips its hat to *Sneakers* (1992): SETEC ASTRONOMY, "too many secrets." Authorial-voice profiles are voice-cloning inputs at the prose level — a profile built from a writer's corpus can be used to impersonate that writer's prose voice, the same way a real voiceprint can be used for audio impersonation. The framework's outputs are useful to the writer who runs them; they are also leverage to anyone else who gets hold of them. The "setec" in the name is a reminder, not a flourish.
+
+The framework distinguishes four task surfaces, three diagnostic layers, and a vocabulary of named prose patterns. The Python tooling supports distributional diagnostics on prose, authorial-voice-coherence comparison, vocabulary-repetition audits, corpus acquisition, manifest validation, empirical calibration, and craft restoration of prose.
 
 ## Choose the question
 
