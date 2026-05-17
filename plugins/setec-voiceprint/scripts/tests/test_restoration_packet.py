@@ -278,11 +278,13 @@ def test_render_json_includes_required_fields() -> None:
         target_scope=None, genre="essay", private=False,
     )
     parsed = json.loads(out)
+    # schema_version 1.0 envelope.
+    assert parsed["schema_version"] == "1.0"
     assert parsed["task_surface"] == "craft_restoration"
     assert parsed["tool"] == "restoration_packet"
     assert "claim_license" in parsed
-    assert "packets" in parsed
-    assert "prompt" in parsed
+    assert "packets" in parsed["results"]
+    assert "prompt" in parsed["results"]
 
 
 def test_render_markdown_does_not_expose_raw_pos_labels_alone() -> None:
@@ -335,10 +337,11 @@ def test_cli_main_runs_with_bigram_input(tmp_path) -> None:
     assert out_md.is_file()
     assert out_json.is_file()
     parsed = json.loads(out_json.read_text(encoding="utf-8"))
+    assert parsed["schema_version"] == "1.0"
     assert parsed["task_surface"] == "craft_restoration"
-    assert parsed["n_packets"] >= 1
+    assert parsed["results"]["n_packets"] >= 1
     # At least one translated packet should land.
-    classes = {p["targetability"] for p in parsed["packets"]}
+    classes = {p["targetability"] for p in parsed["results"]["packets"]}
     assert "translated" in classes
 
 
