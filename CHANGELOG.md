@@ -6,6 +6,36 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.85.0] - 2026-05-17
+
+**Output schema unification wave 4: six voice-coherence surfaces migrate to the schema_version 1.0 envelope.** After this wave 17 of ~30 user-facing scripts are on the envelope (wave 1 + 2 + 3 + 4). The wave-4 bucket is more varied than waves 2 and 3 — three scripts had no claim_license at all, two had the legacy 2-key `{licenses, does_not_license}` dict (different from phraseological/construction's `{"rendered": "..."}` form), one was already fully B.3-migrated. All converge on the same envelope shape.
+
+Migrated:
+
+- `voice_profile` — profiles a corpus (the corpus IS the target; baseline=None). New `_claim_license` per SPEC §11. Per-family feature data under `results`; privacy/preprocessing/n_files ride under `target_extra`. The CRITICAL `does_not_license` text flags the voice-cloning-grade nature of the output explicitly.
+- `mimicry_cosplay_audit` — already had TASK_SURFACE/TOOL_NAME/SCRIPT_VERSION/ClaimLicense/with_state_caveats. Migration splits `_claim_license_dict` into structured + legacy markdown wrappers; 6 results keys (idiolect_survival, voice_distance, pos_bigram_kl, verdict, shapes, thresholds_used) flow under `results`.
+- `voice_distance` — target vs. baseline comparison. New `_claim_license` per SPEC §11. `target_summary` → envelope.target; `baseline_summary` → envelope.baseline (via build_baseline_metadata); overall/families/register_match/length_matched_bootstrap under `results`. `compare_to_baseline()` function return unchanged for internal callers.
+- `idiolect_detector` — target corpus vs. reference corpus keyness. New `_claim_license` per SPEC §11. Reference corpus serves as envelope.baseline. The `does_not_license` text flags the preservation list as voice-cloning-grade input. `target_summary` → envelope.target (privacy lifted to target_extra); `reference_summary` → envelope.baseline; method/rankings/preservation_list → envelope.results.
+- `voice_drift_tracker` — date-tagged corpus drift analysis. Pre-1.85 emitted `claim_license` as the legacy 2-key dict. Migration replaces with structured 11-key form via `_claim_license()`; `CLAIM_LICENSE` constant kept alive for the markdown render path that reads its `licenses`/`does_not_license` fields. Comparison set surfaces granularity / per-period docs and words / manifest path.
+- `pov_voice_profile` — per-POV voiceprint cross-comparison. Same legacy 2-key dict as voice_drift_tracker; same migration pattern. Comparison set surfaces n_povs / per-POV docs and words / n_collapse_flags.
+
+### Added
+
+- **89 new tests** across `test_voice_profile_schema.py` (16), `test_mimicry_cosplay_audit_schema.py` (12), `test_voice_distance_schema.py` (16), `test_idiolect_detector_schema.py` (17), `test_voice_drift_tracker_schema.py` (18), `test_pov_voice_profile_schema.py` (16). Each pins envelope keys, the no-legacy-top-keys invariant, the 11-key structured claim_license, and (for voice_profile + idiolect_detector) the voice-cloning-grade `does_not_license` text.
+
+### Changed
+
+- **All 6 voice-coherence scripts' CLI JSON output shape is a BREAKING CHANGE.** Per-script pre/post details in the commit messages; the common pattern is: metadata moves to envelope top level, per-script payload moves to `results`, baseline metadata moves to `baseline`, structured `claim_license` replaces the legacy `{licenses, does_not_license}` or absent forms. Markdown rendering paths are unchanged.
+- **Pre-existing tests updated to envelope shape** in `test_voice_drift_tracker.py`, `test_pov_voice_profile.py`, `test_mimicry_cosplay_audit.py`. One additional B.3 craft-surface test (`TestMimicryCosplayB3Routing::test_json_output_carries_ai_status_field`) updated for the envelope contract — same rationale as the three updates in PR #81.
+- **The two legacy 2-key `CLAIM_LICENSE = {...}` constants stay alive** on `voice_drift_tracker` and `pov_voice_profile` (their `render_markdown` functions read the legacy `licenses` and `does_not_license` fields directly). The structured 11-key shape ships alongside in the envelope; downstream consumers reading JSON see the structured form, markdown consumers see the same paragraphs they did pre-1.85.
+
+### Notes
+
+- **Function-call contracts preserved.** `compare_to_baseline()` (voice_distance), `audit_cosplay()` (mimicry), `run_controls_audit()`-style audit functions all retain their pre-1.85 return shapes. The envelope wraps the audit output at the CLI / JSON boundary only.
+- **No signal definitions, threshold values, computation, or markdown rendering change.** Rendering-layer plumbing only.
+- **Test suite status**: 2624 passed, 16 skipped, 0 failures (89 net new tests; 16 skips are pre-existing).
+- **Wave 5 next**: smoothing surfaces — `variance_audit`, `manuscript_audit`, `chapter_distinctiveness_audit`, `repetition_audit`, `manuscript_repetition_audit`, `bigram_diff`, `manuscript_bigram_diff`, `paragraph_audit`, `surprisal_audit`, `semantic_trajectory_audit`, `sliding_window_heatmap`. variance_audit is the largest single file in the repo (2400+ LOC); wave 5 may go on a fresh PR.
+
 ## [1.84.0] - 2026-05-17
 
 **Output schema unification wave 3: six per-category audits migrate to the schema_version 1.0 envelope.** Bundled into the wave-2 PR for a single CODEX review pass. After this wave the per-category audit bucket is fully on schema_version 1.0, joining wave 1's `aic_pattern_audit` and wave 2's four per-pattern audits.
