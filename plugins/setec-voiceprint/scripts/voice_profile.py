@@ -20,9 +20,14 @@ from typing import Any
 from preprocessing import available_rule_names, strip_non_prose
 from stylometry_core import build_profile, load_entries
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
+
 
 # See variance_audit.TASK_SURFACE for the contract.
 TASK_SURFACE = "voice_coherence"
+TOOL_NAME = "voice_profile"
+SCRIPT_VERSION = "1.0"
 
 
 def fmt(value: Any, digits: int = 6) -> str:
@@ -125,6 +130,109 @@ def render_report(profile: dict[str, Any], top_n: int) -> str:
     return "\n".join(lines)
 
 
+def _claim_license(profile: dict[str, Any]) -> ClaimLicense:
+    """Structured ClaimLicense for the voice-profile output. Per
+    ``internal/SPEC_output_schema_unification.md`` §11, scripts that
+    lacked a claim_license gain a basic block as part of migration.
+
+    The voice profile output is voice-cloning-grade input by design.
+    The license names the privacy constraint as load-bearing.
+    """
+    baseline = profile.get("baseline_summary", {}) or {}
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "A private stylometric profile of the supplied baseline "
+            "corpus: per-family feature inventory (function words, "
+            "character n-grams, POS trigrams, dependency n-grams), "
+            "with each feature's baseline mean, standard deviation, "
+            "and coefficient of variation. The profile is intended "
+            "as a within-author reference for downstream voice-"
+            "coherence work (voice_distance, idiolect_detector, "
+            "mimicry_cosplay_audit)."
+        ),
+        does_not_license=(
+            "An authorship verdict. The profile is descriptive, not "
+            "diagnostic. CRITICAL: the profile is voice-cloning-"
+            "grade input. Treat it as private to the author / "
+            "workspace; do not share outside the author's control. "
+            "The script enforces this by refusing public output "
+            "paths unless `--allow-public-output` is explicitly "
+            "passed (see is_private_output_path)."
+        ),
+        comparison_set={
+            "n_files": baseline.get("n_files"),
+            "total_words": baseline.get("total_words"),
+            "mean_words": baseline.get("mean_words"),
+            "features_retained": dict(
+                profile.get("selected_features", {})
+            ),
+        },
+        additional_caveats=[
+            "Voice profiles are durable inputs for impersonation. "
+            "If the profile is shared, the author's voiceprint is "
+            "shared — the same way a fingerprint database is "
+            "shared. Default policy: keep under "
+            "ai-prose-baselines-private/, sibling to the SETEC "
+            "repo, not inside it.",
+            "Feature stability (CV) varies sharply across families. "
+            "Function-word ratios are usually the most stable; "
+            "character-n-gram inventories the least. Read most-"
+            "stable feature lists alongside topic-and-register "
+            "consistency in the corpus.",
+            "POS and dependency families require spaCy + "
+            "en_core_web_sm. Profile built with `--no-spacy` "
+            "carries fewer feature families.",
+        ],
+    )
+
+
+def build_audit_payload(
+    profile: dict[str, Any],
+    *,
+    target_path: Path | str | None,
+) -> dict[str, Any]:
+    """Wrap the voice-profile dict in the schema_version 1.0
+    envelope. The profiled corpus IS the target — voice_profile
+    profiles a baseline rather than comparing a target against one.
+    ``envelope.baseline`` is therefore None.
+    """
+    baseline = profile.get("baseline_summary", {}) or {}
+    target_words = int(baseline.get("total_words", 0) or 0)
+    target_extra: dict[str, Any] = {
+        "privacy": profile.get("privacy"),
+        "n_files": baseline.get("n_files"),
+    }
+    if "preprocessing" in profile and profile["preprocessing"]:
+        target_extra["preprocessing"] = profile["preprocessing"]
+
+    # Pull metadata-ish keys off the profile dict so they don't
+    # collide with the envelope.
+    profile_payload = {
+        k: v for k, v in profile.items()
+        if k not in {
+            "task_surface", "preprocessing", "privacy",
+        }
+    }
+
+    warnings = profile.get("warnings") or []
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results=profile_payload,
+        claim_license=_claim_license(profile),
+        warnings=list(warnings),
+        target_extra={
+            k: v for k, v in target_extra.items() if v is not None
+        } or None,
+    )
+
+
 def is_private_output_path(path: str | None) -> bool:
     if not path:
         return True
@@ -215,7 +323,11 @@ def main() -> int:
     profile["task_surface"] = TASK_SURFACE
 
     if args.json:
-        output = json.dumps(profile, indent=2, default=str)
+        payload = build_audit_payload(
+            profile,
+            target_path=args.baseline_dir or args.manifest,
+        )
+        output = json.dumps(payload, indent=2, default=str)
     else:
         output = render_report(profile, args.top)
 
@@ -231,6 +343,24 @@ def main() -> int:
         Path(args.out).write_text(output, encoding="utf-8")
         print(f"Written to {args.out}", file=sys.stderr)
     else:
+        # No --out path means the profile goes to stdout, which the
+        # is_private_output_path() guard above cannot see (stdout has
+        # no path). Without this gate, a `voice_profile.py --json`
+        # call would dump a voice-cloning-grade input to stdout with
+        # exit 0 — Codex P2 finding on PR #82. Mirrors the same
+        # default-private posture voice_drift_tracker and
+        # pov_voice_profile enforce.
+        if not args.allow_public_output:
+            print(
+                "Refusing to write a voice profile to stdout without "
+                "--allow-public-output. Voice profile output is a "
+                "voice-cloning input; default-private posture requires "
+                "either --out into ai-prose-baselines-private/, or "
+                "--allow-public-output for non-personal corpora "
+                "(e.g., Federalist).",
+                file=sys.stderr,
+            )
+            return 2
         print(output)
     return 0
 

@@ -100,6 +100,7 @@ from claim_license import (  # type: ignore
     ClaimLicense,
     with_state_caveats,
 )
+from output_schema import build_output  # type: ignore
 
 
 TASK_SURFACE = "voice_coherence"
@@ -406,13 +407,13 @@ def audit_cosplay(
     return out
 
 
-def _claim_license_dict(
+def _claim_license(
     *,
     verdict: str,
     shapes: dict[str, Any],
     survival: dict[str, Any],
     target_ai_status: str | None = None,
-) -> dict[str, Any]:
+) -> ClaimLicense:
     lic = ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
@@ -479,8 +480,70 @@ def _claim_license_dict(
     # B.3: append state-routed caveats when the operator supplied
     # --ai-status. No-op when target_ai_status is None — pre-B.3
     # callers keep their previous behavior.
-    lic = with_state_caveats(lic, target_ai_status=target_ai_status)
-    return {"rendered": lic.render_block().rstrip()}
+    return with_state_caveats(lic, target_ai_status=target_ai_status)
+
+
+def _claim_license_dict(
+    *,
+    verdict: str,
+    shapes: dict[str, Any],
+    survival: dict[str, Any],
+    target_ai_status: str | None = None,
+) -> dict[str, Any]:
+    """Legacy rendered-only shape preserved for audit_cosplay's
+    return dict (render_report consumes the rendered markdown).
+    """
+    return {
+        "rendered": _claim_license(
+            verdict=verdict, shapes=shapes, survival=survival,
+            target_ai_status=target_ai_status,
+        ).render_block().rstrip(),
+    }
+
+
+_RESULTS_KEYS = (
+    "idiolect_survival", "voice_distance", "pos_bigram_kl",
+    "verdict", "shapes", "thresholds_used",
+)
+
+
+def build_audit_payload(
+    audit: dict[str, Any],
+    *,
+    target_path: Path | str,
+    target_text: str | None = None,
+) -> dict[str, Any]:
+    """Wrap the mimicry-cosplay audit dict in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    survival = audit.get("idiolect_survival", {}) or {}
+    target_words = int(survival.get("target_words", 0) or 0)
+    if target_words == 0 and target_text:
+        target_words = sum(1 for w in target_text.split() if w.strip())
+
+    results: dict[str, Any] = {}
+    for k in _RESULTS_KEYS:
+        if k in audit:
+            results[k] = audit[k]
+
+    lic = _claim_license(
+        verdict=audit.get("verdict", "unknown"),
+        shapes=audit.get("shapes", {}) or {},
+        survival=survival,
+        target_ai_status=audit.get("ai_status"),
+    )
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results=results,
+        claim_license=lic,
+        ai_status=audit.get("ai_status"),
+    )
 
 
 # ---------- Markdown rendering ----------
@@ -706,10 +769,13 @@ def main(argv: list[str] | None = None) -> int:
         target_ai_status=args.ai_status,
     )
 
-    out = (
-        json.dumps(audit, indent=2, default=str)
-        if args.json else render_report(audit)
-    )
+    if args.json:
+        payload = build_audit_payload(
+            audit, target_path=target_path, target_text=target_text,
+        )
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(audit)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")

@@ -30,8 +30,13 @@ from preprocessing import (
 )
 from stylometry_core import FUNCTION_WORDS, WORD_RE, word_tokens
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
+
 
 TASK_SURFACE = "voice_coherence"
+TOOL_NAME = "idiolect_detector"
+SCRIPT_VERSION = "1.0"
 PRIVACY_WARNING = (
     "PRIVATE - DO NOT SHARE. Idiolect output is a voice-cloning input."
 )
@@ -1067,11 +1072,15 @@ def main() -> int:
         return 1
 
     warn_preprocessing(result)
-    output = (
-        json.dumps(result, indent=2, default=str)
-        if args.json
-        else render_report(result, top=args.top)
-    )
+    if args.json:
+        payload = build_audit_payload(
+            result,
+            target_path=(args.target_dir or args.target_manifest),
+            reference_path=(args.reference_dir or args.reference_manifest),
+        )
+        output = json.dumps(payload, indent=2, default=str)
+    else:
+        output = render_report(result, top=args.top)
     if args.out:
         Path(args.out).write_text(output, encoding="utf-8")
         print(f"Written to {args.out}", file=sys.stderr)
@@ -1083,6 +1092,131 @@ def main() -> int:
         Path(args.preservation_output).write_text("\n".join(lines) + "\n", encoding="utf-8")
         print(f"Preservation list written to {args.preservation_output}", file=sys.stderr)
     return 0
+
+
+def _claim_license(result: dict[str, Any]) -> ClaimLicense:
+    """Structured ClaimLicense for the idiolect-detector output.
+
+    Per ``internal/SPEC_output_schema_unification.md`` §11, scripts
+    that lacked a claim_license gain one as part of migration. The
+    preservation list is voice-coherence preservation guidance — its
+    purpose is to flag phrases a writer should preserve through
+    revision, not to certify authorship.
+    """
+    target = result.get("target_summary", {}) or {}
+    reference = result.get("reference_summary", {}) or {}
+    method = result.get("method", {}) or {}
+    preservation = result.get("preservation_list", []) or []
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "A ranked keyness list and a preservation list of "
+            "phrases unusually characteristic of the target corpus "
+            "against the reference corpus. Output names the phrases "
+            "a writer should consider preserving through revision so "
+            "their voice survives the editing pass."
+        ),
+        does_not_license=(
+            "An authorship verdict. The output is a corpus-relative "
+            "keyness ranking, not provenance certification. Highly "
+            "characteristic phrases may simply be the writer's "
+            "personal lexicon, topic vocabulary, register markers, "
+            "or domain terminology. CRITICAL: the preservation list "
+            "is voice-cloning-grade input by design. Treat the "
+            "rendered list as private to the writer and workspace."
+        ),
+        comparison_set={
+            "target_n_files": target.get("n_files"),
+            "target_n_tokens": target.get("n_tokens"),
+            "reference_n_files": reference.get("n_files"),
+            "reference_n_tokens": reference.get("n_tokens"),
+            "keyness_method": method.get("keyness"),
+            "n_values": method.get("n_values"),
+            "n_preservation_entries": len(preservation),
+        },
+        additional_caveats=[
+            "Keyness is sensitive to the choice of reference corpus. "
+            "A reference corpus that under-represents the target's "
+            "register / topic / writer-baseline-influence will "
+            "produce inflated keyness scores; a tightly register-"
+            "matched reference will produce conservative scores. "
+            "Read keyness alongside the reference-corpus provenance.",
+            "Collocation filters (LR / PMI) drop phrases that fail "
+            "the chosen association measure, including some that "
+            "are real idiolect tokens with low marginal counts. "
+            "The default thresholds favor precision over recall.",
+            "Preservation quotas are heuristic. The default split "
+            "across n-values may over-favor unigrams when the "
+            "writer's actual idiolect lives in 2- and 3-grams; "
+            "review the per-n rankings, not just the merged "
+            "preservation list.",
+        ],
+    )
+
+
+def build_audit_payload(
+    result: dict[str, Any],
+    *,
+    target_path: Path | str | None,
+    reference_path: Path | str | None,
+) -> dict[str, Any]:
+    """Wrap the idiolect-detector result in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``. The
+    reference corpus serves as the envelope's baseline (it's what the
+    target is compared against).
+    """
+    target = result.get("target_summary", {}) or {}
+    reference = result.get("reference_summary", {}) or {}
+
+    target_words = int(target.get("n_tokens", 0) or 0)
+    target_extra: dict[str, Any] = {
+        "privacy": result.get("privacy"),
+        "n_files": target.get("n_files"),
+    }
+    if "label" in target:
+        target_extra["label"] = target["label"]
+    if "files" in target:
+        target_extra["files"] = target["files"]
+    preprocessing = result.get("preprocessing", {}) or {}
+    if preprocessing.get("target"):
+        target_extra["preprocessing"] = preprocessing["target"]
+
+    baseline_meta: dict[str, Any] | None = None
+    if reference:
+        baseline_extras: dict[str, Any] = {}
+        if "label" in reference:
+            baseline_extras["label"] = reference["label"]
+        if "files" in reference:
+            baseline_extras["files"] = reference["files"]
+        if preprocessing.get("reference"):
+            baseline_extras["preprocessing"] = preprocessing["reference"]
+        if reference_path is not None:
+            baseline_extras["path"] = str(reference_path)
+        baseline_meta = build_baseline_metadata(
+            n_files=int(reference.get("n_files", 0) or 0),
+            words=int(reference.get("n_tokens", 0) or 0),
+            extra=baseline_extras or None,
+        )
+
+    results = {
+        "method": result.get("method", {}),
+        "rankings": result.get("rankings", {}),
+        "preservation_list": result.get("preservation_list", []),
+    }
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=_claim_license(result),
+        target_extra={
+            k: v for k, v in target_extra.items() if v is not None
+        } or None,
+    )
 
 
 if __name__ == "__main__":

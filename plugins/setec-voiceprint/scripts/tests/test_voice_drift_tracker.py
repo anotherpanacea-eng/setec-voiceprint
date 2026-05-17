@@ -327,12 +327,14 @@ def test_json_output_includes_required_fields() -> None:
         granularity=result["granularity"],
     )
     parsed = json.loads(json_str)
+    # schema_version 1.0 envelope: drift report lives under results.
+    assert parsed["schema_version"] == "1.0"
     assert parsed["task_surface"] == "voice_coherence"
     assert parsed["tool"] == "voice_drift_tracker"
-    assert parsed["n_periods"] == 2
+    assert parsed["results"]["n_periods"] == 2
     assert "claim_license" in parsed
-    assert "cross_period_distances_weighted" in parsed
-    assert "drift_scores" in parsed
+    assert "cross_period_distances_weighted" in parsed["results"]
+    assert "drift_scores" in parsed["results"]
 
 
 def test_markdown_output_includes_distance_table() -> None:
@@ -381,7 +383,7 @@ def test_cli_main_runs_end_to_end(tmp_path) -> None:
     assert out_json.is_file()
     parsed = json.loads(out_json.read_text(encoding="utf-8"))
     assert parsed["task_surface"] == "voice_coherence"
-    assert parsed["n_periods"] == 2
+    assert parsed["results"]["n_periods"] == 2
 
 
 def test_cli_refuses_zero_inputs() -> None:
