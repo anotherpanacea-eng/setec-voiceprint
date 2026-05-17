@@ -53,7 +53,15 @@ def _chapters():
 
 @pytest.fixture
 def envelope():
-    result = cda.audit_chapter_distinctiveness(_chapters())
+    result = cda.audit_chapter_distinctiveness(
+        _chapters(),
+        function_words=set(),
+        anchor_words=set(),
+        min_count=2,
+        min_word_len=4,
+        cluster_window=300,
+        min_ratio=1.0,
+    )
     return cda.build_audit_payload(
         result, target_path=Path("manuscript.md"),
     )
