@@ -74,6 +74,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 from preprocessing import strip_non_prose  # type: ignore
 
 TASK_SURFACE = "smoothing_diagnosis"
@@ -673,8 +674,8 @@ def compare_to_baseline(
 # --- Markdown rendering ----------------------------------------
 
 
-def _claim_license_block(audit: dict[str, Any]) -> str:
-    lic = ClaimLicense(
+def _claim_license(audit: dict[str, Any]) -> ClaimLicense:
+    return ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
             "Paragraph-level rhythm characterization of the input "
@@ -706,7 +707,70 @@ def _claim_license_block(audit: dict[str, Any]) -> str:
             "noisier results.",
         ],
     )
-    return lic.render_block().rstrip()
+
+
+def _claim_license_block(audit: dict[str, Any]) -> str:
+    return _claim_license(audit).render_block().rstrip()
+
+
+_RESULTS_KEYS = (
+    "n_paragraphs", "paragraph_word_counts", "length_summary",
+    "rhythm_signals", "compression",
+)
+
+
+def build_audit_payload(
+    audit: dict[str, Any],
+    *,
+    target_path: Any,
+    baseline_block: dict[str, Any] | None,
+    baseline_comparison: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Wrap the paragraph audit dict in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    available = bool(audit.get("available", True))
+    target_words = int(audit.get("n_words", 0) or 0)
+    target_extra: dict[str, Any] = {}
+    if "preprocessing" in audit:
+        target_extra["preprocessing"] = audit["preprocessing"]
+
+    results: dict[str, Any] = {}
+    if available:
+        for k in _RESULTS_KEYS:
+            if k in audit:
+                results[k] = audit[k]
+        if baseline_comparison is not None:
+            results["baseline_comparison"] = baseline_comparison
+
+    baseline_meta: dict[str, Any] | None = None
+    if baseline_block is not None:
+        baseline_meta = build_baseline_metadata(
+            n_files=int(baseline_block.get("n_files", 0) or 0),
+            words=int(baseline_block.get("n_words", 0) or 0),
+            extra={
+                k: v for k, v in baseline_block.items()
+                if k not in {"n_files", "n_words"}
+            } or None,
+        )
+
+    warnings: list[str] = []
+    if not available and "reason" in audit:
+        warnings.append(audit["reason"])
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=_claim_license(audit) if available else None,
+        available=available,
+        warnings=warnings,
+        target_extra=target_extra or None,
+    )
 
 
 def render_report(
@@ -930,7 +994,13 @@ def main(argv: list[str] | None = None) -> int:
         audit["baseline_comparison"] = baseline_comparison
 
     if args.json:
-        text_out = json.dumps(audit, indent=2, default=str)
+        payload = build_audit_payload(
+            audit,
+            target_path=target_path,
+            baseline_block=audit.get("baseline_block"),
+            baseline_comparison=baseline_comparison,
+        )
+        text_out = json.dumps(payload, indent=2, default=str)
     else:
         text_out = render_report(audit, baseline_comparison)
 
