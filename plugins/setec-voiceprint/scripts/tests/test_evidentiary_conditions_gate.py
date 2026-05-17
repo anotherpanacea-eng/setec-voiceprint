@@ -257,7 +257,10 @@ class TestCli:
         assert rc == 0
         import json
         payload = json.loads(out_path.read_text(encoding="utf-8"))
-        assert payload["posture"] == "revision_only"
+        # schema_version 1.0 envelope: posture lives under results.
+        assert payload["schema_version"] == "1.0"
+        assert payload["tool"] == "evidentiary_conditions_gate"
+        assert payload["results"]["posture"] == "revision_only"
 
     def test_cli_missing_input_path_returns_2(self, tmp_path):
         rc = ecg.main([
