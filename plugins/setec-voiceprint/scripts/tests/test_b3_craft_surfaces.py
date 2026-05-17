@@ -146,10 +146,11 @@ class TestConstructionSignatureB3Routing:
         )
         payload = json.loads(out.read_text())
         assert payload.get("ai_status") == "ai_edited"
-        # Core report shape unchanged. construction_signature_audit
-        # is tagged voice_coherence per its TASK_SURFACE constant.
-        assert "constructions" in payload
+        # schema_version 1.0 envelope: per-script payload lives under
+        # results; task_surface stays at the top level.
+        assert payload.get("schema_version") == "1.0"
         assert payload.get("task_surface") == "voice_coherence"
+        assert "constructions" in payload["results"]
 
 
 # ---------- punctuation_cadence_audit ----------
@@ -205,8 +206,10 @@ class TestPunctuationCadenceB3Routing:
         )
         payload = json.loads(out.read_text())
         assert payload.get("ai_status") == "ai_assisted"
-        # Core audit shape unchanged.
-        assert "preprocessing" in payload
+        # schema_version 1.0 envelope: preprocessing lives under
+        # envelope.target.preprocessing per SPEC §2.1.
+        assert payload.get("schema_version") == "1.0"
+        assert "preprocessing" in payload["target"]
 
 
 # ---------- mimicry_cosplay_audit ----------
@@ -298,11 +301,27 @@ class TestMimicryCosplayB3Routing:
 
 
 class TestB3CraftJsonOutputUnaffected:
-    """JSON output for all three craft scripts must not include the
-    rendered caveats; downstream consumers see the same JSON shape
-    as v1.56.0 plus an ``ai_status`` field when supplied."""
+    """JSON-output shape contract for the three B.3 craft scripts.
 
-    def test_punctuation_cadence_json_has_no_caveat_blob(
+    Pre-schema_version-1.0 invariant (v1.56.0–1.83.x): the legacy
+    JSON output did NOT carry the rendered claim_license markdown,
+    and state-routed caveat text appeared only in the markdown
+    render path.
+
+    Post-schema_version-1.0 (v1.84.0+; SPEC_output_schema_unification.md
+    §4): the envelope intentionally surfaces BOTH ``claim_license``
+    (the structured 11-key dict, including state-routed caveats in
+    ``additional_caveats``) and ``claim_license_rendered`` (markdown).
+    Downstream consumers parse one or the other; never both. State-
+    routed caveat text is therefore expected to appear in JSON
+    output under the schema_version 1.0 contract.
+
+    This test now pins the new contract: state-routed caveats land
+    inside ``claim_license.additional_caveats`` AND inside
+    ``claim_license_rendered``, both per design.
+    """
+
+    def test_punctuation_cadence_json_routes_caveats_into_envelope(
         self, tmp_path: Path,
     ):
         import punctuation_cadence_audit  # type: ignore
@@ -315,10 +334,14 @@ class TestB3CraftJsonOutputUnaffected:
         ])
         assert rc == 0
         payload = json.loads(out_path.read_text())
-        text = json.dumps(payload).lower()
-        # No rendered caveats embedded in JSON payload.
-        assert "outline-seeded" not in text
-        assert "human seed" not in text
+        # Structured additional_caveats carries the outline-seeded
+        # state caveat.
+        caveats = payload["claim_license"]["additional_caveats"]
+        assert any("outline" in c.lower() for c in caveats)
+        # And the rendered block carries the same text for human
+        # consumers who paste it into editorial letters.
+        rendered = payload["claim_license_rendered"].lower()
+        assert "outline" in rendered
 
 
 if __name__ == "__main__":
