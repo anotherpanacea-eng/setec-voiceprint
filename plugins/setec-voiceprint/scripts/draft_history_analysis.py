@@ -83,6 +83,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
 
 try:
     from variance_audit import audit_text  # type: ignore
@@ -736,16 +737,83 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"build_trajectory: {exc}\n")
         return 2
 
-    out = (
-        json.dumps(report, indent=2, default=str)
-        if args.json else render_report(report)
-    )
+    if args.json:
+        payload = build_audit_payload(report, target_path=None)
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(report)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")
     else:
         sys.stdout.write(out)
     return 0
+
+
+def build_audit_payload(
+    report: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap draft_history_analysis report in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+
+    The legacy claim_license stays as a rendered-only dict inside
+    the report dict (consumed by render_report). The envelope's
+    top-level claim_license is built from the same content as a
+    structured ClaimLicense.
+    """
+    # Reconstruct structured claim_license. The legacy dict in
+    # report["claim_license"] is `{"rendered": "..."}` markdown;
+    # we want the structured 11-key form at envelope.claim_license.
+    n_versions = int(report.get("n_versions", 0) or 0)
+    summary = report.get("summary") or {}
+    structured = ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Multi-version draft trajectory analysis: per-version "
+            "stylometric signals plus across-version trajectory "
+            "summary (drift direction, monotonicity, signal "
+            "stability)."
+        ),
+        does_not_license=(
+            "An authorship verdict on any version. Drift between "
+            "versions can come from voice maturation, register "
+            "shift, AI assistance, professional editing, or "
+            "intentional rewriting. The audit reports the "
+            "trajectory; the writer adjudicates."
+        ),
+        comparison_set={
+            "n_versions": n_versions,
+            "pair_labels": report.get("pair_labels"),
+            "summary_keys": list(summary.keys()) if isinstance(summary, dict) else [],
+        },
+        additional_caveats=[
+            "Per-version signal extraction uses variance_audit's "
+            "audit_text() shape. Versions below the 200-word floor "
+            "produce noisier readings; the per-version block "
+            "preserves the original word counts so consumers can "
+            "filter.",
+            "Trajectory summary is conservative — it reports drift "
+            "direction and monotonicity, not magnitude calibrated "
+            "against a labeled corpus.",
+        ],
+    )
+
+    metadata_keys = {"task_surface", "tool", "version"}
+    results_payload = {
+        k: v for k, v in report.items() if k not in metadata_keys
+    }
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=0,
+        baseline=None,
+        results=results_payload,
+        claim_license=structured,
+    )
 
 
 if __name__ == "__main__":
