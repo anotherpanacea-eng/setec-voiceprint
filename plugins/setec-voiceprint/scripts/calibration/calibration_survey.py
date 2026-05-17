@@ -373,6 +373,22 @@ def _build_inner_args(
         ),
         tier2=parent_args.tier2,
         tier3=parent_args.tier3,
+        # Codex P2 on PR #78: must forward the 1.80.0 / 1.81.0 fields
+        # to the inner Namespace or ``load_or_score_corpus`` /
+        # ``score_corpus`` will see ``None`` / ``False`` defaults via
+        # their own ``getattr`` fallbacks -- the parent_args parser
+        # accepted the flags but the inner Namespace dropped them,
+        # so the standalone calibration_survey CLI silently fell back
+        # to Tier 1+2+3 (legacy MiniLM) regardless of what
+        # ``--tier4`` / ``--surprisal-model`` / ``--embedding-model``
+        # the operator passed. ``getattr`` with back-compat defaults
+        # so any pre-1.81 test fixture that hand-constructs a
+        # parent_args without these flags still works.
+        tier4=getattr(parent_args, "tier4", False),
+        embedding_model=getattr(parent_args, "embedding_model", None),
+        embedding_revision=getattr(parent_args, "embedding_revision", None),
+        surprisal_model=getattr(parent_args, "surprisal_model", None),
+        surprisal_revision=getattr(parent_args, "surprisal_revision", None),
         notes=None,
         # Forward the sub-sample knob so partial surveys hit the
         # same essays across signals (deterministic per seed).
@@ -709,6 +725,18 @@ def run_survey(
         "use": parent_args.use,
         "tier2": parent_args.tier2,
         "tier3": parent_args.tier3,
+        # 1.81.0+: surface the Tier 4 + model selections in the
+        # output JSON's provenance block so downstream consumers
+        # (band classifier, ledger writer, side-by-side bake-off
+        # comparators) can tell which embedding / surprisal model
+        # the survey was scored under. Without these fields the
+        # output JSON's provenance is ambiguous between a default
+        # MiniLM run and a swap to mxbai/gemma/harrier.
+        "tier4": getattr(parent_args, "tier4", False),
+        "embedding_model": getattr(parent_args, "embedding_model", None),
+        "embedding_revision": getattr(parent_args, "embedding_revision", None),
+        "surprisal_model": getattr(parent_args, "surprisal_model", None),
+        "surprisal_revision": getattr(parent_args, "surprisal_revision", None),
         "tpr_floor": tpr_floor,
         "aggressiveness_tolerance": aggressiveness_tolerance,
         "max_entries": max_entries,
