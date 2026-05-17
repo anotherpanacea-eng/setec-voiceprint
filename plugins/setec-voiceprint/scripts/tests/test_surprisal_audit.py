@@ -542,10 +542,14 @@ class TestCli:
         ])
         assert rc == 0
         payload = json.loads(out.read_text())
+        # schema_version 1.0 envelope: per-script payload under
+        # results; top-level keys stay envelope-canonical.
+        assert payload["schema_version"] == "1.0"
         assert payload["available"] is True
         assert payload["task_surface"] == "smoothing_diagnosis"
-        # Backend identifier block attached.
-        assert payload["backend"]["id"]  # full HF id resolved
+        assert payload["tool"] == "surprisal_audit"
+        # Backend identifier block lives under results.
+        assert payload["results"]["backend"]["id"]  # full HF id resolved
 
     def test_cli_markdown_default(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
