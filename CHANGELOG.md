@@ -6,6 +6,33 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.88.0] - 2026-05-17
+
+**Output schema unification wave 8 — close the loop. 7 remaining CLI scripts migrate to schema_version 1.0.** After this wave **every user-facing audit / diagnostic script in SETEC's CLI surface ships the unified envelope** — including the validation-surface scripts (confounder_audit, evidentiary_conditions_gate, surface_disagreement_resolver, adversarial_robustness_card) and the editorial-craft surfaces (draft_history_analysis, fairness_dialect_guardrails, prestige_metaphor). The JSON schema unification issue is closed across the SETEC audit surface.
+
+Migrated:
+
+- `confounder_audit` (validation) — differential-diagnosis report for variance-audit signals; results carry `ranked_confounders`, `observations`, `distinguishing_evidence`, `missing_evidence`, `n_observations`, `inputs_used`.
+- `evidentiary_conditions_gate` (validation) — posture-routing gate that consumes `confounder_audit` JSON via `--confounder-json`. Spread-report payload (`**posture_result`) now lives under results. The cross-script chain (confounder_audit → evidentiary_conditions_gate) is now fully on the same envelope contract.
+- `draft_history_analysis` (validation) — fresh structured ClaimLicense composed for the surface; results carry the analysis payload.
+- `fairness_dialect_guardrails` (validation) — fresh structured ClaimLicense; 4 CLI tests updated for envelope navigation.
+- `surface_disagreement_resolver` (validation) — split `_claim_license_block`; results carry resolver payload.
+- `adversarial_robustness_card` (validation) — split `_claim_license_block`; results carry robustness-card payload.
+- `prestige_metaphor` (smoothing_diagnosis) — added `TASK_SURFACE` / `TOOL_NAME` / `SCRIPT_VERSION` (script previously had none); function-level return shape preserved for `aesthetic_authority_audit` which calls `prestige_metaphor_density()` directly.
+
+### Changed
+
+- **All 7 CLI JSON output shapes are a BREAKING CHANGE.** Per-script details in commit messages. Common pattern: metadata → envelope; per-script payload → `results`; legacy `CLAIM_LICENSE = {...}` dicts → structured 11-key via `from_legacy()`.
+- **Function-level return shapes preserved** on `prestige_metaphor_density()` (called by aesthetic_authority_audit) and on `confounder_audit`'s report-builder (consumed by evidentiary_conditions_gate). The envelope is added only at the CLI / JSON boundary.
+- **2 B.3 validation-surface tests updated** (`test_b3_validation_surfaces.py`) to pin the schema_version 1.0 contract: state-routed caveats intentionally surface in BOTH `claim_license.additional_caveats` AND `claim_license_rendered` per SPEC §4. Same rationale as the wave-3 / 5 / 7 craft + voice updates. The pre-migration back-compat invariant ("no caveat blob in JSON") is intentionally retired — caveats now live in the structured claim_license, and the report payload (under `results`) is still free of them.
+
+### Notes
+
+- **`baseline_discovery` skipped.** Its `TASK_SURFACE = "setup"` is NOT in the canonical `VALID_TASK_SURFACES = {smoothing_diagnosis, voice_coherence, voice_coherence_acquisition, validation, calibration, craft_restoration, metric_targeted_restoration}`. Migrating it requires either adding "setup" as an eighth canonical surface to the envelope spec or re-tagging the script to one of the existing surfaces — both are a SPEC change, deferred. `baseline_discovery` is a corpus-acquisition utility (not an audit / diagnostic) and its CLI JSON is rarely consumed downstream, so the envelope omission has the smallest blast radius among the candidate scripts.
+- **The JSON schema unification issue is closed.** All audit + diagnostic CLI surfaces ship `schema_version: "1.0"`. `baseline_discovery` is the only remaining non-envelope script, with a documented design reason.
+- **APODICTIC integration is fully unblocked.** Every consumer-list surface — variance_audit, voice profiles, validation_harness, confounder_audit, evidentiary_conditions_gate, before/after_restoration, semantic_preservation_check, restoration_packet, general_imposters, voice_validation_harness, and the dialect/fairness/drift gates — is on the envelope.
+- **No signal definitions, threshold values, computation, or markdown rendering change.** This is rendering-layer plumbing only.
+
 ## [1.87.0] - 2026-05-17
 
 **Output schema unification waves 6 + 7 — final batch. 9 scripts (5 validation + 4 craft-restoration) migrate to schema_version 1.0.** With this wave the migration completes: **every user-facing audit / diagnostic script in SETEC's CLI surface ships the unified envelope.**
