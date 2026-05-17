@@ -19,11 +19,15 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from claim_license import ClaimLicense  # type: ignore
 from manifest_validator import resolve_path, validate_manifest
+from output_schema import build_output  # type: ignore
 from preprocessing import available_rule_names, strip_non_prose
 
 
 TASK_SURFACE = "validation"
+TOOL_NAME = "check_corpus"
+SCRIPT_VERSION = "1.0"
 DEFAULT_WARN_THRESHOLD = 0.01
 DEFAULT_FAIL_THRESHOLD = 0.05
 
@@ -592,13 +596,100 @@ def main() -> int:
         print(f"CorpusCheckError: {exc}", file=sys.stderr)
         return 1
 
-    output = json.dumps(result, indent=2, default=str) if args.json else render_report(result)
+    if args.json:
+        envelope = build_audit_payload(
+            result, target_path=args.manifest or (args.dir or [None])[0],
+        )
+        output = json.dumps(envelope, indent=2, default=str)
+    else:
+        output = render_report(result)
     if args.out:
         Path(args.out).write_text(output, encoding="utf-8")
         print(f"Written to {args.out}", file=sys.stderr)
     else:
         print(output)
     return 1 if result["status"] == "fail" else 0
+
+
+def _claim_license(result: dict[str, Any]) -> ClaimLicense:
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Corpus-hygiene gate report. For each file in the input "
+            "set, classifies the file as clean / warning / fail / "
+            "error based on how much of the text gets stripped by "
+            "the configured preprocessing rules. Reports aggregate "
+            "counts, the dominant stripping rule, and the overall "
+            "strip ratio."
+        ),
+        does_not_license=(
+            "An authorship verdict or a stylometric reading. The "
+            "gate measures preprocessing impact (how much of the "
+            "corpus survives strip rules), not the prose itself. "
+            "A high strip ratio means the corpus has substantial "
+            "non-prose contamination; it does not say whether the "
+            "surviving prose is AI-written, human, or anything else."
+        ),
+        comparison_set={
+            "n_files": result.get("n_files"),
+            "status": result.get("status"),
+            "thresholds": result.get("thresholds"),
+            "strip_ratio": result.get("strip_ratio"),
+            "dominant_rule": result.get("dominant_rule"),
+        },
+        additional_caveats=[
+            "Strip rules are register-aware but not domain-specific. "
+            "Code-heavy or markup-heavy corpora that are legitimate "
+            "research material will register as high-strip; use "
+            "--allow-non-prose at downstream audits when this is "
+            "the intended workflow.",
+            "The gate operates pre-audit: a clean file here is a "
+            "necessary but not sufficient condition for downstream "
+            "stylometric validity.",
+        ],
+    )
+
+
+def build_audit_payload(
+    result: dict[str, Any],
+    *,
+    target_path: Any,
+) -> dict[str, Any]:
+    """Wrap check_corpus's result dict in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+    """
+    results_payload: dict[str, Any] = {}
+    for k in (
+        "status", "thresholds", "n_files",
+        "n_clean", "n_warning", "n_fail", "n_error",
+        "input_tokens_before", "input_tokens_after",
+        "tokens_stripped", "strip_ratio",
+        "tokens_stripped_by_rule", "dominant_rule",
+        "files",
+    ):
+        if k in result:
+            results_payload[k] = result[k]
+
+    warnings: list[str] = []
+    if result.get("status") in {"warning", "fail"}:
+        warnings.append(
+            f"Corpus gate status: {result.get('status')!r} "
+            f"({result.get('n_warning', 0)} warning(s), "
+            f"{result.get('n_fail', 0)} fail(s), "
+            f"{result.get('n_error', 0)} error(s))."
+        )
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=int(result.get("input_tokens_before", 0) or 0),
+        baseline=None,
+        results=results_payload,
+        claim_license=_claim_license(result),
+        warnings=warnings,
+    )
 
 
 if __name__ == "__main__":
