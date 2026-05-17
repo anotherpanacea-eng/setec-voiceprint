@@ -381,9 +381,14 @@ def test_cli_runs_on_fixture_and_emits_json():
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
-    assert data["signal_path"] == "aic_8_9.kicker_density"
-    assert data["family"] == "aic-9-closure-inflation"
-    assert "value" in data
+    # schema_version 1.0 envelope: legacy block lives under results,
+    # per SPEC_output_schema_unification.md.
+    assert data["schema_version"] == "1.0"
+    assert data["tool"] == "kicker_density"
+    inner = data["results"]
+    assert inner["signal_path"] == "aic_8_9.kicker_density"
+    assert inner["family"] == "aic-9-closure-inflation"
+    assert "value" in inner
 
 
 def test_cli_baseline_flag_emits_comparison(tmp_path: Path):
@@ -404,9 +409,10 @@ def test_cli_baseline_flag_emits_comparison(tmp_path: Path):
     )
     assert result.returncode == 0, result.stderr
     data = json.loads(out.read_text())
-    assert "baseline_comparison" in data
-    assert data["baseline_comparison"]["baseline_source"] == "test_cli_baseline"
-    assert data["baseline_comparison"]["elevation_factor"] > 1.0
+    inner = data["results"]
+    assert "baseline_comparison" in inner
+    assert inner["baseline_comparison"]["baseline_source"] == "test_cli_baseline"
+    assert inner["baseline_comparison"]["elevation_factor"] > 1.0
 
 
 def test_cli_missing_file_returns_error():

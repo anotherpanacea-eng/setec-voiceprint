@@ -6,6 +6,68 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.84.0] - 2026-05-17
+
+**Output schema unification wave 3: six per-category audits migrate to the schema_version 1.0 envelope.** Bundled into the wave-2 PR for a single CODEX review pass. After this wave the per-category audit bucket is fully on schema_version 1.0, joining wave 1's `aic_pattern_audit` and wave 2's four per-pattern audits.
+
+Migrated:
+
+- `stance_modality_audit` (voice_coherence) — 6 results keys (`category_counts`, `category_densities_per_1k`, `total_marker_density_per_1k`, `stance_entropy_bits`, `hedge_booster_ratio`, `compression`). B.3 state-routed caveats preserved via `with_state_caveats`.
+- `punctuation_cadence_audit` (voice_coherence) — 8 results keys (`n_sentence_final`, `raw_counts`, `densities_per_1k`, `sentence_final_distribution`, `interruption_grammar`, `punctuation_bigrams`, `comma_period_share`, `compression`). B.3 state-routed caveats preserved.
+- `phraseological_signature_audit` (voice_coherence) — pre-migration emitted `claim_license: {"rendered": "..."}` (markdown-only). Migration replaces with the structured 11-key `ClaimLicense.to_dict()` via the envelope; markdown rendering moves to `claim_license_rendered`. `categories` payload flows under `results`.
+- `construction_signature_audit` (voice_coherence) — same legacy `{"rendered": ...}` shape as phraseological. `build_audit()` keeps its pre-migration return signature (internal tests pin it); `build_audit_payload(audit)` wraps it in the envelope on the CLI path. `spacy_available` rides under `target.spacy_available`. Privacy-default baseline (count-only, no filenames) is preserved through `build_baseline_metadata`.
+- `function_word_grammar_audit` (voice_coherence) — 14 results keys covering function-word counts, n-gram inventories and entropies, preposition/demonstrative/relative-pronoun/complementizer/subordinator counts, auxiliary chains, pronoun transitions, and compression band.
+- `controls_audit` (voice_coherence) — questioned-vs-controls comparator. The questioned text is the envelope's target; `questioned` / `negative_control` / `positive_control` / `classification` flow under `results`. `baseline.n_files` is populated from `n_baseline_files`; `baseline.words` is `0` because `run_controls_audit` does not surface baseline word totals.
+
+After this wave: wave 1 (1.82.0) + wave 2 (1.83.0) + wave 3 (1.84.0) = 11 scripts on the envelope.
+
+### Added
+
+- **71 new tests** across `test_stance_modality_audit_schema.py` (11), `test_punctuation_cadence_audit_schema.py` (11), `test_phraseological_signature_audit_schema.py` (12), `test_construction_signature_audit_schema.py` (14), `test_function_word_grammar_audit_schema.py` (11), `test_controls_audit_schema.py` (12). Each pins envelope keys, no-legacy-top-keys invariant, the 11-key structured `claim_license`, and where relevant the state-routing, unavailable, and baseline-supplied paths.
+
+### Changed
+
+- **All 6 per-category audits' CLI JSON output shape is a BREAKING CHANGE.** Pre-1.84 outputs had metadata + signals + (sometimes) `claim_license: {"rendered": "..."}` at the top level. Post-1.84 outputs carry the schema_version 1.0 envelope: signals under `results`, baseline under `baseline`, structured `claim_license` (11-key dict) at top level, markdown render at `claim_license_rendered`. Markdown rendering is unchanged.
+- **`phraseological_signature_audit.audit_phraseology` return shape changes inside the audit dict's `claim_license` key.** Previously the audit dict carried `claim_license: {"rendered": "...markdown..."}`. The CLI path now bypasses this via `build_audit_payload` and produces the structured envelope; `audit_phraseology` itself still emits the legacy `{"rendered": ...}` for `render_report` consumption. No legacy-format consumers were identified in the codebase.
+- **Existing CLI integration tests updated to navigate envelope shape** in `test_agency_abstraction_audit.py`, `test_aesthetic_authority_audit.py`, `test_kicker_density.py`, `test_construction_signature_audit.py`, `test_phraseological_signature_audit.py`. Three B.3 craft-surface tests (`test_b3_craft_surfaces.py`) updated to pin the new contract: state-routed caveats intentionally land in both `claim_license.additional_caveats` and `claim_license_rendered`.
+
+### Notes
+
+- **Bundled review with wave 2.** Wave 3 commits accumulated on the wave-2 branch so CODEX could review the per-pattern and per-category buckets in a single pass.
+- **After this wave the migration is roughly half complete.** Remaining: voice surfaces (wave 4: `voice_distance`, `voice_profile`, `voice_drift_tracker`, `pov_voice_profile`, `mimicry_cosplay_audit`, `idiolect_detector`), smoothing surfaces (wave 5: `variance_audit`, `manuscript_audit`, etc.), validation surfaces (wave 6), craft restoration (wave 7).
+- **No signal definitions, threshold values, computation, or markdown rendering change.** This is rendering-layer plumbing only.
+- **Test suite status**: 2534 passed, 16 skipped, 0 failures (68 net new tests for wave 3 after accounting for 3 modified B.3 tests; 16 skips are pre-existing).
+
+## [1.83.0] - 2026-05-17
+
+**Output schema unification wave 2: four per-pattern audits migrate to the schema_version 1.0 envelope.** Builds on the wave-1 scaffolding (`build_output()` helper + first proof on `aic_pattern_audit`, shipped in 1.82.0). Wave 2 migrates the four per-pattern audits flagged in the SPEC's wave-2 bucket: `agency_abstraction_audit`, `discourse_move_signature`, `aesthetic_authority_audit`, `kicker_density`. All four now emit the canonical envelope on `--json` output; the four scripts have markedly different starting points but share the same destination shape.
+
+Two of the four (`aesthetic_authority_audit`, `kicker_density`) are called as Python functions by other scripts (`variance_audit`, the aesthetic_authority compound itself). The migration preserves their function-level return shape unchanged so function-call consumers stay green; the envelope is added only on the CLI path via `build_audit_payload()`. The legacy `"claim_license": "voice_diagnostic"` tag string on the inner blocks stays in place for variance_audit and aesthetic_authority's function-level consumption; the envelope's top-level `claim_license` is the new structured 11-key dict.
+
+### Added
+
+- **`agency_abstraction_audit` migrated** (smoothing_diagnosis). Split `_claim_license_block` into `_claim_license` (ClaimLicense) + markdown wrapper; new `build_audit_payload` lifts signals (`raw_counts`, `densities_per_1k`, `entity_to_action_ratio`, `compression`, `baseline_comparison`) under `results`; `preprocessing` rides under `target.preprocessing`; baseline metadata routes through `build_baseline_metadata`.
+- **`discourse_move_signature` migrated** (smoothing_diagnosis). Same shape as agency_abstraction; B.3 state-routed caveats via `with_state_caveats(...)` preserved. The 8 results keys (`category_counts`, `category_densities_per_1k`, `total_marker_density_per_1k`, `move_sequence`, `move_sequence_bigrams`, `move_sequence_entropy_bits`, `marked_only_entropy_bits`, `compression`) flow under `results`; `n_sentences` rides under `target_extra`; `ai_status` propagates to envelope top-level.
+- **`aesthetic_authority_audit` migrated** (smoothing_diagnosis). Compound AIC-8 + AIC-9 audit; the full legacy block — including the three per-detector blocks (`aic_9_kicker_density`, `aic_8_image_conjunction`, `aic_8_prestige_metaphor`) and the `compound` co-occurrence metrics — lives under `results`. New `_claim_license` per the SPEC §11 carve-out. `target_words` pulls from the inner image-conjunction `diagnostics.total_tokens` with a text-split fallback. Register lifts into `target_extra` when set.
+- **`kicker_density` migrated** (smoothing_diagnosis). The audit function `kicker_density()` keeps its existing return shape because `variance_audit.compute_aic_9_kicker` and `aesthetic_authority_audit.aesthetic_authority_audit` call it as a function and read top-level keys. The envelope is added on the CLI path only via `build_audit_payload(block, target_path, text)`. New `_claim_license` surfaces comparison_set fields from the diagnostics block.
+- **58 new tests** across four files: `test_agency_abstraction_audit_schema.py` (15), `test_discourse_move_signature_schema.py` (16), `test_aesthetic_authority_audit_schema.py` (16), `test_kicker_density_schema.py` (11). Each pins envelope keys, the no-legacy-keys invariant on the envelope's top level, results-carries-script-payload, the 11-key structured claim_license, and the unavailable / baseline / register paths where relevant. The kicker_density and aesthetic_authority tests additionally guard the function-call contract (`signal_path` / `family` / `value` at the function-return top level) so cross-script consumers are pinned against future regressions.
+
+### Changed
+
+- **`agency_abstraction_audit` JSON output shape is a BREAKING CHANGE.** The pre-1.83 CLI output had `task_surface` / `tool` / `version` / `available` / `n_words` / `raw_counts` / `densities_per_1k` / `entity_to_action_ratio` / `compression` / `preprocessing` / `baseline_block` / `baseline_comparison` at the top level. Post-1.83 carries the schema_version 1.0 envelope: signals under `results`, preprocessing under `target`, baseline metadata under `baseline`.
+- **`discourse_move_signature` JSON output shape is a BREAKING CHANGE.** Same shape of change as agency_abstraction; the 8 results keys move under `results`.
+- **`aesthetic_authority_audit` CLI JSON output shape is a BREAKING CHANGE.** Pre-1.83 emitted the legacy block at the top level (`signal_path`, `family`, `status`, `aic_9_kicker_density`, etc.). Post-1.83 carries the envelope with the legacy block nested under `results`. Function-call consumers calling `aesthetic_authority_audit(text, nlp=...)` see no change.
+- **`kicker_density` CLI JSON output shape is a BREAKING CHANGE.** Pre-1.83 emitted the legacy block at the top level. Post-1.83 carries the envelope with the legacy block nested under `results`. Function-call consumers calling `kicker_density(text, ...)` see no change — `variance_audit.compute_aic_9_kicker` and `aesthetic_authority_audit` continue to read `signal_path` / `family` / `value` from the function's return dict.
+- **Existing CLI integration tests** for agency_abstraction, aesthetic_authority, and kicker_density updated to navigate into `data["results"]` for the legacy fields. `discourse_move_signature` had no CLI integration test pinning the legacy shape; only the new schema test was added.
+- **Markdown rendering is unchanged.** All four scripts' `render_report` / inner block markdown remain bit-for-bit identical. Editorial-letter consumers see no change.
+
+### Notes
+
+- **Wave 2 of 7.** Subsequent waves: per-category audits (wave 3: `stance_modality_audit`, `punctuation_cadence_audit`, `phraseological_signature_audit`, `construction_signature_audit`, `function_word_grammar_audit`, `controls_audit`), voice surfaces (wave 4), smoothing surfaces (wave 5), validation surfaces (wave 6), craft restoration (wave 7). One PR per wave.
+- **Function-call contracts preserved on the cross-script consumers.** Both `kicker_density` (called by `variance_audit` and `aesthetic_authority_audit`) and the per-detector helpers inside `aesthetic_authority_audit` retain their pre-1.83 function-return shapes. Only the CLI / `--json` path emits the new envelope. This means waves can land without touching variance_audit (which is wave 5).
+- **No signal definitions, threshold values, computation, or markdown rendering change.** This is rendering-layer plumbing only.
+- **Test suite status**: 2466 passed, 16 skipped, 0 failures (58 new tests for wave 2; 16 skips are pre-existing).
+
 ## [1.82.0] - 2026-05-17
 
 **Output schema unification wave 1: `build_output()` helper + `aic_pattern_audit` proof migration.** First of seven waves landing a unified `schema_version` 1.0 JSON envelope across SETEC's ~30 audit/diagnostic scripts. Today every script rolls its own top-level keys, three incompatible `claim_license` serializations coexist (`pov_voice_profile`'s legacy 2-key dict, `phraseological_signature_audit`'s `{"rendered": ...}` markdown, the canonical `ClaimLicense.to_dict()` 11-key shape), baseline metadata lives in three different places (top-level `baseline_files_loaded` triplet vs. nested `baseline_comparison` vs. `baseline_stats`), and a handful of scripts lack `tool` / `version` / `available` entirely. This wave ships the helper that fixes that, plus one proof migration so downstream consumers can pin against the contract.

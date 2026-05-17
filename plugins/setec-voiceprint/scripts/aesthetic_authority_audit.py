@@ -57,6 +57,13 @@ import kicker_density  # type: ignore
 import prestige_metaphor  # type: ignore
 import register_typical_baselines  # type: ignore
 
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_output  # type: ignore
+
+TASK_SURFACE = "smoothing_diagnosis"
+TOOL_NAME = "aesthetic_authority_audit"
+SCRIPT_VERSION = "1.0"
+
 
 def _paragraphs_with_image_conjunctions(
     ic_block: dict[str, Any],
@@ -395,12 +402,114 @@ def main(argv: Optional[list[str]] = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 2
 
-    output = json.dumps(block, indent=2)
+    payload = build_audit_payload(
+        block,
+        target_path=args.input,
+        text=text,
+    )
+    output = json.dumps(payload, indent=2, default=str)
     if args.out is None:
         print(output)
     else:
         args.out.write_text(output + "\n", encoding="utf-8")
     return 0
+
+
+def _claim_license(audit_block: dict[str, Any]) -> ClaimLicense:
+    """Structured ClaimLicense block for the AIC-8/9 compound audit.
+
+    Per ``internal/SPEC_output_schema_unification.md`` §11, scripts
+    that lacked a structured claim_license gain one as part of their
+    migration. The legacy tag-string ``"claim_license":
+    "voice_diagnostic"`` on the inner blocks stays as-is for
+    function-call consumers (variance_audit and others).
+    """
+    compound = audit_block.get("compound", {}) or {}
+    diagnostics = audit_block.get("diagnostics", {}) or {}
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=(
+            "Compound AIC-8 / AIC-9 audit: simultaneous detection of "
+            "kicker-shaped paragraph closings, image conjunctions "
+            "with cross-domain concreteness gaps, and prestige-"
+            "metaphor scatter. Reports per-detector blocks plus the "
+            "joint co-occurrence metrics that the individual "
+            "detectors cannot see — including the canonical 'all "
+            "three together at the paragraph level' rate that is "
+            "the strongest single AIC-8/9 evidence pattern."
+        ),
+        does_not_license=(
+            "An AI-provenance verdict. Aesthetic-authority patterns "
+            "appear in human prose under deadline, in well-edited "
+            "journalism, and in deliberate stylistic performance "
+            "alike. The compound rate elevates evidence, not "
+            "certainty; pair with the per-detector source-triage "
+            "calls before acting. The three thresholds (t1 "
+            "concreteness gap, t2 embedding similarity, t3 scatter "
+            "entropy) are heuristic and pending corpus calibration."
+        ),
+        comparison_set={
+            "register": diagnostics.get("register"),
+            "kicker_paragraph_count": compound.get(
+                "kicker_paragraph_count",
+            ),
+            "thresholds": diagnostics.get("thresholds"),
+        },
+        additional_caveats=[
+            "Image-conjunction detection relies on spaCy parsing "
+            "plus Brysbaert concreteness norms and embedding "
+            "similarity; the recall floor depends on vector "
+            "coverage of the input vocabulary.",
+            "Prestige-metaphor classification combines a curated "
+            "domain list with an optional WordNet hypernym "
+            "fallback. The hardcoded-only intersection (used by "
+            "`all_three_co_occurrence_count`) is the most "
+            "stringent path.",
+            "Kicker detection counts paragraph-final sentences with "
+            "≤ word_limit words and a kicker-shaped declarative "
+            "form. Fiction or dialogue paragraphs may register as "
+            "kickers; the source-triage layer adjudicates.",
+        ],
+    )
+
+
+def build_audit_payload(
+    audit_block: dict[str, Any],
+    *,
+    target_path: Path | str,
+    text: str,
+) -> dict[str, Any]:
+    """Wrap the compound audit block in the schema_version 1.0
+    envelope. The full legacy block flows under ``results``; the
+    envelope adds the canonical top-level metadata + structured
+    claim_license per
+    ``internal/SPEC_output_schema_unification.md``.
+    """
+    diagnostics = audit_block.get("diagnostics", {}) or {}
+    target_words = (
+        audit_block
+        .get("aic_8_image_conjunction", {})
+        .get("diagnostics", {})
+        .get("total_tokens")
+    )
+    if target_words is None:
+        # Fallback: count words from the source text.
+        target_words = sum(1 for w in text.split() if w.strip())
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=int(target_words or 0),
+        baseline=None,
+        results=audit_block,
+        claim_license=_claim_license(audit_block),
+        target_extra=(
+            {"register": diagnostics["register"]}
+            if diagnostics.get("register") else None
+        ),
+    )
 
 
 if __name__ == "__main__":

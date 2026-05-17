@@ -85,6 +85,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_baseline_metadata, build_output  # type: ignore
 
 
 TASK_SURFACE = "voice_coherence"
@@ -797,13 +798,13 @@ def _category_to_dict(cat: CategoryReport) -> dict[str, Any]:
     }
 
 
-def _claim_license_dict(
+def _claim_license(
     *,
     target_words: int,
     baseline_words: int,
     n_categories: int,
-) -> dict[str, Any]:
-    lic = ClaimLicense(
+) -> ClaimLicense:
+    return ClaimLicense(
         task_surface=TASK_SURFACE,
         licenses=(
             "A phrase-frame mining report over the writer's "
@@ -852,7 +853,77 @@ def _claim_license_dict(
             "metric loses discriminative value.",
         ],
     )
-    return {"rendered": lic.render_block().rstrip()}
+
+
+def _claim_license_dict(
+    *,
+    target_words: int,
+    baseline_words: int,
+    n_categories: int,
+) -> dict[str, Any]:
+    """Legacy rendered-only shape preserved for the audit dict that
+    render_report consumes. The CLI envelope path now uses the
+    structured ``_claim_license`` directly.
+    """
+    return {
+        "rendered": _claim_license(
+            target_words=target_words,
+            baseline_words=baseline_words,
+            n_categories=n_categories,
+        ).render_block().rstrip(),
+    }
+
+
+def build_audit_payload(
+    audit: dict[str, Any],
+    *,
+    target_path: Path | str,
+    baseline_dir: Path | str | None = None,
+) -> dict[str, Any]:
+    """Wrap the phraseology audit dict in the schema_version 1.0
+    envelope per ``internal/SPEC_output_schema_unification.md``.
+
+    Per §4 the legacy ``claim_license: {"rendered": "..."}`` shape on
+    the audit dict is replaced by the structured 11-key
+    ``ClaimLicense.to_dict()`` form via the envelope's
+    ``claim_license`` slot; the markdown rendering moves to
+    ``claim_license_rendered``. The audit's ``categories`` payload
+    flows under ``results``.
+    """
+    target_words = int(audit.get("target_words", 0) or 0)
+    baseline_words = int(audit.get("baseline_words", 0) or 0)
+    n_baseline_files = int(audit.get("n_baseline_files", 0) or 0)
+    categories = audit.get("categories", {}) or {}
+
+    results: dict[str, Any] = {"categories": categories}
+
+    baseline_meta: dict[str, Any] | None = None
+    if baseline_dir is not None or n_baseline_files > 0:
+        baseline_meta = build_baseline_metadata(
+            n_files=n_baseline_files,
+            words=baseline_words,
+            extra=(
+                {"path": str(baseline_dir)}
+                if baseline_dir is not None else None
+            ),
+        )
+
+    lic = _claim_license(
+        target_words=target_words,
+        baseline_words=baseline_words,
+        n_categories=len(categories),
+    )
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=baseline_meta,
+        results=results,
+        claim_license=lic,
+    )
 
 
 # ---------- Markdown rendering ----------
@@ -1125,10 +1196,15 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"--category: {exc}\n")
         return 2
 
-    out = (
-        json.dumps(audit, indent=2, default=str)
-        if args.json else render_report(audit)
-    )
+    if args.json:
+        payload = build_audit_payload(
+            audit,
+            target_path=target_path,
+            baseline_dir=args.baseline_dir,
+        )
+        out = json.dumps(payload, indent=2, default=str)
+    else:
+        out = render_report(audit)
     if args.out:
         Path(args.out).write_text(out, encoding="utf-8")
         sys.stderr.write(f"Wrote report to {args.out}\n")
