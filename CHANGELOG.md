@@ -6,6 +6,21 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.82.0] - 2026-05-17
+
+**MAGE Tier 3+4 model-selection bake-off scripts.** Two new utilities under `scripts/calibration/` that drive the 1.81.0 standalone CLI across the candidate embedding + surprisal models on a single shared 5K MAGE subsample. Closes out the "which embedding / surprisal model do we ship as the default" question that motivated PRs #77 + #78.
+
+### Added
+
+- **`scripts/calibration/bakeoff_mage_tier34.sh`** — bash driver for the bake-off matrix. Phase A invokes `calibration_survey.py --tier3 --no-tier4 --embedding-model {mxbai, gemma, harrier, minilm}` across the four embedding aliases (one config per invocation; shared `--max-entries 5000 --max-entries-seed 42` so all configs see the identical stratified subsample). Phase B invokes `--no-tier3 --tier4 --surprisal-model {gpt2, tinyllama, llama32_1b}` across three surprisal aliases. Each config gets its own per-config `--records-cache` so the 1.80.0 `cache_is_compatible` doesn't refuse cross-config sharing. Driver supports `phase_a` / `phase_b` / `all` modes; a single model can be passed as a second argument for one-off invocations (`bash bakeoff_mage_tier34.sh phase_a mxbai`).
+- **`scripts/calibration/bakeoff_mage_tier34_compare.py`** — companion reader. Walks every `survey_phaseA_*.json` and `survey_phaseB_*.json` under `--surveys-dir`, extracts `per_signal[sig].calibration.direction_aware_auc` for the Tier 3 / Tier 4 signals, and prints two markdown comparison tables (one per phase) plus a "recommended winner" line per phase. Polarity-inverted configs (da_AUC < 0.5) are flagged with `!`; clear-separation configs (da_AUC ≥ 0.55) are flagged with `*`. The maintainer reads the tables and picks Phase C winners (judgment call combines cost, reproducibility, deployment fit beyond raw da_AUC).
+
+### Notes
+
+- **Smoke-test verification of the wiring (2026-05-17)**: Phase A / mxbai ran end-to-end through the standalone `calibration_survey.py` at 5K, scored 5000/5000 records in ~7 min on CPU, and emitted a survey JSON with the expected provenance fields (`embedding_model: mxbai` in the top-level block; `do_tier4: false`; correct `per_signal` entries for `adjacent_cosine_mean` / `adjacent_cosine_sd`). The Tier 3 cosine values came back None in the smoke env because `sentence-transformers` wasn't installed — expected behavior from the 1.80.0 fix (typed-error fall-through returns None rather than silently swapping to MiniLM), confirmed by the `"No usable (label, score) pairs"` survey row. With the dependency installed, the same invocation produces real cosines.
+- **Dependency reminder**: Phase A requires `sentence-transformers>=2.7` (opt-in per `requirements.txt`). Phase B requires the `requirements-surprisal.txt` stack (transformers + torch). For GPU acceleration on AMD Radeon, the WSL2 + ROCm-on-WSL setup (Adrenalin Edition for WSL2 on the Windows side + `amdgpu-install --usecase=wsl,rocm` inside WSL) is the supported AMD path; CUDA users follow the standard NVIDIA torch wheel; CPU works universally but slowly (~hours per surprisal config at 5K).
+- **Phase C (full re-score)** is intentionally NOT in this script. After Phase A + B complete and the maintainer reads the comparison tables to pick winners, the Phase C invocation drops `--max-entries` and adds the winning aliases — a single full-MAGE run with the chosen Tier 3 embedding + Tier 4 surprisal model that produces the canonical 1.x MAGE survey JSON.
+
 ## [1.81.0] - 2026-05-16
 
 **Standalone-CLI exposure of the 1.80.0 Tier 4 + pluggable-embedding flags + the inner-Namespace pipe.** Symmetry follow-up to 1.80.0. `score_corpus` reads `do_tier4`, `embedding_model`, `embedding_revision`, `surprisal_model`, `surprisal_revision` from the args Namespace via `getattr` — the sharded path (`shard_runner shard` → `state.json["task_params"]` → `_default_scorer`) populates them, but the standalone `calibration_survey.py` and `calibrate_thresholds.py` argparsers didn't expose them. AND, in `calibration_survey.py`, even after the parser accepted the flags, `_build_inner_args` constructed a fresh Namespace for the score-once path that dropped the new fields — so parsed values landed on `parent_args` but never reached `score_corpus`.
