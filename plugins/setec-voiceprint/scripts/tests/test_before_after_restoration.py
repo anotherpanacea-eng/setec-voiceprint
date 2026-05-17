@@ -273,11 +273,13 @@ def test_summary_counts_match_verdicts() -> None:
         packet_summary=result["packet_summary"],
     )
     parsed = json.loads(json_str)
+    # schema_version 1.0 envelope: verdict_summary + verdicts under results.
+    assert parsed["schema_version"] == "1.0"
     assert parsed["task_surface"] == "craft_restoration"
     assert parsed["tool"] == "before_after_restoration"
-    summary = parsed["verdict_summary"]
+    summary = parsed["results"]["verdict_summary"]
     assert summary["improved"] >= 2  # burstiness, connective, ADJ-NOUN
-    assert summary["improved"] + summary["no_change"] + summary["degraded"] + summary["gamed"] + summary["not_measurable"] == len(parsed["verdicts"])
+    assert summary["improved"] + summary["no_change"] + summary["degraded"] + summary["gamed"] + summary["not_measurable"] == len(parsed["results"]["verdicts"])
 
 
 def test_markdown_renders_verdict_table() -> None:
@@ -317,6 +319,7 @@ def test_cli_main_runs_end_to_end(tmp_path) -> None:
     assert out_md.is_file()
     assert out_json.is_file()
     parsed = json.loads(out_json.read_text(encoding="utf-8"))
+    assert parsed["schema_version"] == "1.0"
     assert parsed["task_surface"] == "craft_restoration"
 
 
@@ -334,5 +337,5 @@ def test_cli_diff_only_works_without_packet(tmp_path) -> None:
     ])
     assert rc == 0
     parsed = json.loads(out_json.read_text(encoding="utf-8"))
-    assert parsed["diff_only"] is not None
-    assert "variance" in parsed["diff_only"]
+    assert parsed["results"]["diff_only"] is not None
+    assert "variance" in parsed["results"]["diff_only"]
