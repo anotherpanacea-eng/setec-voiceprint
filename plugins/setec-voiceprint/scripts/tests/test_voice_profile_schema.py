@@ -167,3 +167,82 @@ class TestWarningsForwarded:
             profile, target_path=Path("baselines/personal/"),
         )
         assert envelope["warnings"] == ["Baseline corpus is small."]
+
+
+class TestStdoutPrivacyGate:
+    """Reviewer-reproduced regression (Codex P2 on PR #82).
+
+    Pre-fix: `voice_profile.py --json` with no --out dumped a
+    voice-cloning-grade profile to stdout with exit 0, bypassing
+    the ai-prose-baselines-private/ path check (stdout has no
+    path, so the path-based guard never fired). Post-fix: stdout
+    is refused unless `--allow-public-output` is passed, mirroring
+    the same default-private posture voice_drift_tracker and
+    pov_voice_profile enforce.
+    """
+
+    def test_cli_refuses_stdout_without_allow_flag(self, tmp_path, capsys):
+        """No --out, no --allow-public-output → exit 2 + stderr,
+        nothing on stdout."""
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        (baseline_dir / "a.md").write_text(
+            "The committee deliberated through the afternoon. " * 20,
+            encoding="utf-8",
+        )
+        (baseline_dir / "b.md").write_text(
+            "Members reviewed the budget on Tuesday. " * 20,
+            encoding="utf-8",
+        )
+        # voice_profile.main() reads sys.argv directly via
+        # parser.parse_args() without an argv kwarg, so patch argv.
+        import sys as _sys
+        orig_argv = _sys.argv
+        _sys.argv = [
+            "voice_profile.py",
+            "--baseline-dir", str(baseline_dir),
+            "--json",
+        ]
+        try:
+            rc = vp.main()
+        finally:
+            _sys.argv = orig_argv
+        assert rc == 2
+        captured = capsys.readouterr()
+        # The refusal message lands on stderr; stdout MUST be empty
+        # (no profile leak).
+        assert "stdout" in captured.err.lower()
+        assert "allow-public-output" in captured.err
+        assert captured.out == ""
+
+    def test_cli_allows_stdout_with_allow_flag(self, tmp_path, capsys):
+        """No --out, but --allow-public-output → exit 0; envelope on
+        stdout."""
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        (baseline_dir / "a.md").write_text(
+            "The committee deliberated through the afternoon. " * 20,
+            encoding="utf-8",
+        )
+        (baseline_dir / "b.md").write_text(
+            "Members reviewed the budget on Tuesday. " * 20,
+            encoding="utf-8",
+        )
+        import sys as _sys
+        orig_argv = _sys.argv
+        _sys.argv = [
+            "voice_profile.py",
+            "--baseline-dir", str(baseline_dir),
+            "--json", "--allow-public-output",
+        ]
+        try:
+            rc = vp.main()
+        finally:
+            _sys.argv = orig_argv
+        assert rc == 0
+        captured = capsys.readouterr()
+        # Profile envelope appears on stdout.
+        import json as _json
+        payload = _json.loads(captured.out)
+        assert payload["schema_version"] == "1.0"
+        assert payload["tool"] == "voice_profile"

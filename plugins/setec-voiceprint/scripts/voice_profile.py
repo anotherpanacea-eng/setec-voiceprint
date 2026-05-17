@@ -343,6 +343,24 @@ def main() -> int:
         Path(args.out).write_text(output, encoding="utf-8")
         print(f"Written to {args.out}", file=sys.stderr)
     else:
+        # No --out path means the profile goes to stdout, which the
+        # is_private_output_path() guard above cannot see (stdout has
+        # no path). Without this gate, a `voice_profile.py --json`
+        # call would dump a voice-cloning-grade input to stdout with
+        # exit 0 — Codex P2 finding on PR #82. Mirrors the same
+        # default-private posture voice_drift_tracker and
+        # pov_voice_profile enforce.
+        if not args.allow_public_output:
+            print(
+                "Refusing to write a voice profile to stdout without "
+                "--allow-public-output. Voice profile output is a "
+                "voice-cloning input; default-private posture requires "
+                "either --out into ai-prose-baselines-private/, or "
+                "--allow-public-output for non-personal corpora "
+                "(e.g., Federalist).",
+                file=sys.stderr,
+            )
+            return 2
         print(output)
     return 0
 
