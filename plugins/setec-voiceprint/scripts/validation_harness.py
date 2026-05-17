@@ -31,6 +31,7 @@ from typing import Any, Callable, Sequence
 
 from check_corpus import check_corpus_paths
 from claim_license import ClaimLicense, from_legacy
+from output_schema import build_output
 from manifest_validator import resolve_path, validate_manifest
 from preprocessing import available_rule_names, strip_non_prose
 from variance_audit import (
@@ -60,6 +61,8 @@ def _expected_polarity_direction(signal_name: str) -> str | None:
 
 
 TASK_SURFACE = "validation"
+TOOL_NAME = "validation_harness"
+SCRIPT_VERSION = "1.0"
 EVALUATED_SURFACE = "smoothing_diagnosis"
 
 DEFAULT_POSITIVE_STATUSES = (
@@ -2051,7 +2054,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.negative_status = list(DEFAULT_NEGATIVE_STATUSES)
 
     result = run_harness(args)
-    output = json.dumps(result, indent=2, default=str) if args.json else render_report(result)
+    if args.json:
+        envelope = build_audit_payload(result, target_path=args.manifest)
+        output = json.dumps(envelope, indent=2, default=str)
+    else:
+        output = render_report(result)
 
     if args.out:
         Path(args.out).write_text(output, encoding="utf-8")
@@ -2062,6 +2069,65 @@ def main(argv: Sequence[str] | None = None) -> int:
     if result.get("failed"):
         return 1
     return 0
+
+
+def build_audit_payload(
+    result: dict,
+    *,
+    target_path,
+) -> dict:
+    """Wrap validation_harness's run_harness result in the
+    schema_version 1.0 envelope per
+    ``internal/SPEC_output_schema_unification.md``. Preserves the
+    legacy claim_license dict shape (validation_harness has been
+    using from_legacy()-rendered claim_license for some time;
+    we upgrade it to the structured 11-key form via from_legacy
+    here at the envelope boundary).
+    """
+    available = not result.get("failed", False)
+    metadata_keys = {"task_surface", "tool", "version"}
+    results_payload = {
+        k: v for k, v in result.items() if k not in metadata_keys
+    }
+    warnings = []
+    if result.get("failed"):
+        warnings.append(result.get("reason", "harness failed"))
+    legacy_cl = result.get("claim_license", {})
+    if isinstance(legacy_cl, dict) and legacy_cl:
+        structured = from_legacy(legacy_cl, task_surface=TASK_SURFACE)
+    else:
+        structured = ClaimLicense(
+            task_surface=TASK_SURFACE,
+            licenses=(
+                "Empirical performance of smoothing-diagnosis "
+                "signals over a labeled manifest: ROC AUC, "
+                "FPR/TPR at a chosen threshold, bootstrap "
+                "confidence intervals per signal."
+            ),
+            does_not_license=(
+                "Generalization beyond the labeled corpus. The "
+                "harness reports performance on the supplied "
+                "manifest; per-register / per-domain performance "
+                "outside that slice is not licensed."
+            ),
+        ) if available else None
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=0,
+        baseline=None,
+        # Always expose the legacy result keys under results, even on
+        # failure — downstream consumers read `results.failed` /
+        # `results.reason` / `results.corpus_hygiene` to diagnose why
+        # the harness exited non-zero. `available` flags failure
+        # separately at the envelope level.
+        results=results_payload,
+        claim_license=structured,
+        available=available,
+        warnings=warnings,
+    )
 
 
 if __name__ == "__main__":

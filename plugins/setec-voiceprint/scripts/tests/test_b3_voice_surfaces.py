@@ -160,23 +160,25 @@ class TestGeneralImpostersB3Routing:
     def test_json_output_carries_ai_status_field(self, tmp_path: Path):
         _, json_path = self._run(tmp_path, ai_status="ai_assisted")
         payload = json.loads(json_path.read_text())
+        # schema_version 1.0 envelope: ai_status at top level;
+        # decision/proportion under envelope.results.
+        assert payload["schema_version"] == "1.0"
         assert payload.get("ai_status") == "ai_assisted"
-        # Core report shape unchanged.
-        assert "decision" in payload
-        assert "proportion" in payload
+        assert "decision" in payload["results"]
+        assert "proportion" in payload["results"]
 
     def test_omitting_ai_status_keeps_json_shape(self, tmp_path: Path):
-        """Backwards-compat for JSON consumers: when --ai-status is
-        not supplied, the new ai_status key does NOT appear in the
-        payload (to_dict only emits it when set). Legacy parsers
-        that don't know about the field see the v1.49.0–1.57.0
-        shape."""
+        """schema_version 1.0 envelope: ai_status is ALWAYS a
+        top-level envelope key (per SPEC §1.1) — None when no
+        --ai-status was supplied. The pre-migration back-compat
+        invariant (no ai_status key at all when omitted) no longer
+        holds; consumers see the canonical envelope shape.
+        """
         _, json_path = self._run(tmp_path, ai_status=None)
         payload = json.loads(json_path.read_text())
-        assert "ai_status" not in payload, (
-            "When --ai-status is omitted, the JSON payload must "
-            "not gain an ai_status key (back-compat)."
-        )
+        # ai_status is an envelope key; None when --ai-status was
+        # not passed.
+        assert payload.get("ai_status") is None
 
 
 # ---------- semantic_preservation_check ----------
@@ -251,10 +253,12 @@ class TestSemanticPreservationB3Routing:
             json_out=True,
         )
         payload = json.loads(out.read_text())
+        # schema_version 1.0 envelope: ai_status at top level;
+        # overall_verdict/categories under envelope.results.
+        assert payload["schema_version"] == "1.0"
         assert payload.get("ai_status") == "ai_generated_from_outline"
-        # Core report shape unchanged.
-        assert "overall_verdict" in payload
-        assert "categories" in payload
+        assert "overall_verdict" in payload["results"]
+        assert "categories" in payload["results"]
 
 
 # ---------- JSON-shape contract: caveats live in markdown only ----
@@ -288,29 +292,22 @@ class TestB3VoiceJsonOutputUnaffected:
         ])
         assert rc == 0
         payload = json.loads(out_path.read_text())
-        # ai_status is at top-level; the rendered caveat text lives
-        # only inside claim_license.rendered (the structured block).
-        # The top-level fields should NOT contain outline-seeded
-        # language outside that block.
-        cl = payload.get("claim_license", {})
-        rendered = (cl.get("rendered") or "").lower()
-        # The rendered block IS allowed to contain the caveat (it's
-        # the rendered markdown after all). What we're checking is
-        # that the rest of the JSON doesn't accidentally contain
-        # it.
-        payload_no_rendered = dict(payload)
-        if "claim_license" in payload_no_rendered:
-            payload_no_rendered["claim_license"] = {
-                k: v for k, v in cl.items() if k != "rendered"
-            }
-        text_no_rendered = json.dumps(payload_no_rendered).lower()
-        assert "outline-seeded" not in text_no_rendered, (
-            "Rendered caveats should live ONLY inside "
-            "claim_license.rendered, not leak into the structured "
-            "JSON payload."
-        )
-        # Sanity: rendered block does carry the caveat.
-        assert "outline" in rendered or "human seed" in rendered
+        # schema_version 1.0 envelope intentionally carries BOTH
+        # the structured claim_license (11 keys, including
+        # additional_caveats[]) AND claim_license_rendered (the
+        # markdown). The pre-migration "caveats live in markdown
+        # only" invariant no longer holds — state-routed caveats
+        # surface in additional_caveats by design per SPEC §4. Same
+        # contract update as PR #82's TestB3CraftJsonOutputUnaffected
+        # fixup.
+        assert payload["schema_version"] == "1.0"
+        cl = payload["claim_license"]
+        rendered = payload["claim_license_rendered"].lower()
+        # Structured caveats carry the outline-seeded state caveat.
+        caveats = cl["additional_caveats"]
+        assert any("outline" in c.lower() for c in caveats)
+        # Rendered block carries the same text.
+        assert "outline" in rendered
 
 
 if __name__ == "__main__":

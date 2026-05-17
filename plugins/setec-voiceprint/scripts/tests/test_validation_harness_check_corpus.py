@@ -57,9 +57,14 @@ def test_validation_harness_check_corpus_fails_contaminated_entry(tmp_path: Path
     write_manifest(manifest, CONTAMINATED)
 
     proc = run_harness(manifest)
-    result = json.loads(proc.stdout)
+    payload = json.loads(proc.stdout)
 
+    # schema_version 1.0 envelope: failed/reason/corpus_hygiene live
+    # under results (with available=False when the harness failed).
     assert proc.returncode == 1
+    assert payload["schema_version"] == "1.0"
+    assert payload["available"] is False
+    result = payload["results"]
     assert result["failed"] is True
     assert result["reason"] == "corpus hygiene check failed"
     assert result["corpus_hygiene"]["status"] == "fail"
@@ -71,9 +76,11 @@ def test_validation_harness_check_corpus_allows_clean_entry(tmp_path: Path) -> N
     write_manifest(manifest, CLEAN)
 
     proc = run_harness(manifest)
-    result = json.loads(proc.stdout)
+    payload = json.loads(proc.stdout)
 
     assert proc.returncode == 0
+    assert payload["schema_version"] == "1.0"
+    result = payload["results"]
     assert result["corpus_hygiene"]["checked"] is True
     assert result["corpus_hygiene"]["status"] == "clean"
     assert result["n_validation_entries"] == 1
