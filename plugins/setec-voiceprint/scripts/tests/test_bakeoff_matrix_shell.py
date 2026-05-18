@@ -281,3 +281,136 @@ def test_dry_run_prints_matrix_plan(tmp_path: Path):
     # The signals show up beside each model.
     assert "adjacent_cosine_mean" in cp.stdout
     assert "surprisal_acf_lag1" in cp.stdout
+
+
+@_skip_no_bash
+def test_default_roster_uses_framework_aliases_not_raw_hf_ids(tmp_path: Path):
+    """Reviewer P1 on PR #100: the original default Phase B roster
+    baked in raw HF ids (TinyLlama-1.1B-Chat-v1.0 instead of the
+    canonical intermediate id, Qwen3-1.7B without the ``-Base``
+    suffix) that diverged from ``surprisal_backend.MODEL_ALIASES``.
+    The fix puts framework alias strings in the default JSON so
+    the canonical alias tables stay the single source of truth.
+    Pin both rosters against the alias-table values."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "manifest.jsonl").write_text("{}\n")
+    log_dir = tmp_path / "log"
+    cp = _run_script({
+        "SETEC_CORPUS_DIR": str(corpus),
+        "SETEC_BAKEOFF_DIR": str(tmp_path / "bake"),
+        "SETEC_CALIBRATION_RUNS_DIR": str(tmp_path / "runs"),
+        "SETEC_LOG_DIR": str(log_dir),
+        "SETEC_DRY_RUN": "1",
+    })
+    assert cp.returncode == 0
+    prov = json.loads(
+        next(log_dir.glob("bakeoff_matrix_*_provenance.json")).read_text()
+    )
+    # Every Phase B value should be the alias itself (not a raw
+    # HF id). The framework's calibration_survey resolves the
+    # alias against the canonical table at run time.
+    for alias, value in prov["phases"]["B"]["paths"].items():
+        assert "/" not in value, (
+            f"Phase B alias {alias!r} maps to raw HF id {value!r}; "
+            f"should pass through the alias string itself so "
+            f"surprisal_backend.MODEL_ALIASES resolves it canonically."
+        )
+        assert value == alias, (
+            f"Phase B alias {alias!r} maps to {value!r}; expected "
+            f"the alias string itself"
+        )
+    # Same contract on Phase A.
+    for alias, value in prov["phases"]["A"]["paths"].items():
+        assert "/" not in value, (
+            f"Phase A alias {alias!r} maps to raw HF id {value!r}"
+        )
+        assert value == alias
+
+
+@_skip_no_bash
+def test_no_failed_cells_means_exit_zero(tmp_path: Path):
+    """Sanity: dry-run completes with no cells run, so
+    ``FAILED_CELLS`` stays empty and exit is 0. This is the
+    happy-path baseline for the failure-tracking contract."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "manifest.jsonl").write_text("{}\n")
+    cp = _run_script({
+        "SETEC_CORPUS_DIR": str(corpus),
+        "SETEC_BAKEOFF_DIR": str(tmp_path / "bake"),
+        "SETEC_CALIBRATION_RUNS_DIR": str(tmp_path / "runs"),
+        "SETEC_LOG_DIR": str(tmp_path / "log"),
+        "SETEC_DRY_RUN": "1",
+    })
+    assert cp.returncode == 0
+    # The failure-block stderr/stdout messages don't appear in
+    # dry-run because nothing ran.
+    assert "WARNING:" not in cp.stdout
+    assert "failed:" not in cp.stdout
+
+
+@_skip_no_bash
+def test_failed_cells_exit_nonzero_unless_allow_partial(tmp_path: Path):
+    """Reviewer P1 on PR #100: failed cells were silently masked
+    because per-cell return codes were ignored in the run loops.
+    A 5-of-7-failed Phase B run produced rc=0 and printed
+    'Matrix run complete', which is a silent false-success path
+    for an operator watching only the exit code.
+
+    Inject a Phase A cell pointing at a nonsense alias; the real
+    ``calibration_survey.py`` fails at model-load. Phase B is
+    empty so the test doesn't depend on heavy deps. The exit code
+    must propagate the failure."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "manifest.jsonl").write_text(
+        '{"path":"/dev/null","ai_status":0}\n'
+    )
+    cp = _run_script({
+        "SETEC_CORPUS_DIR": str(corpus),
+        "SETEC_BAKEOFF_DIR": str(tmp_path / "bake"),
+        "SETEC_CALIBRATION_RUNS_DIR": str(tmp_path / "runs"),
+        "SETEC_LOG_DIR": str(tmp_path / "log"),
+        "SETEC_PHASE_A_PATHS": '{"nonsense_alias_that_wont_load": '
+                               '"definitely-not-a-real-model"}',
+        "SETEC_PHASE_B_PATHS": '{}',
+        "SETEC_COOLDOWN_SEC": "0",
+    }, timeout_s=60.0)
+    assert cp.returncode != 0, (
+        f"expected non-zero exit on cell failure; got rc={cp.returncode}\n"
+        f"stdout:\n{cp.stdout[-800:]}"
+    )
+    assert "failed:" in cp.stdout or "WARNING" in cp.stdout
+    assert "nonsense_alias_that_wont_load" in cp.stdout
+
+
+@_skip_no_bash
+def test_allow_partial_lets_failed_cells_succeed_overall(tmp_path: Path):
+    """``SETEC_ALLOW_PARTIAL=1`` opts back into exit 0 even with
+    failed cells. Use case: known-flaky model in a long overnight
+    run where the operator wants the partial data anyway. The
+    failure list still surfaces in stdout so the operator can see
+    which cells didn't complete."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "manifest.jsonl").write_text(
+        '{"path":"/dev/null","ai_status":0}\n'
+    )
+    cp = _run_script({
+        "SETEC_CORPUS_DIR": str(corpus),
+        "SETEC_BAKEOFF_DIR": str(tmp_path / "bake"),
+        "SETEC_CALIBRATION_RUNS_DIR": str(tmp_path / "runs"),
+        "SETEC_LOG_DIR": str(tmp_path / "log"),
+        "SETEC_PHASE_A_PATHS": '{"nonsense_alias_that_wont_load": '
+                               '"definitely-not-a-real-model"}',
+        "SETEC_PHASE_B_PATHS": '{}',
+        "SETEC_COOLDOWN_SEC": "0",
+        "SETEC_ALLOW_PARTIAL": "1",
+    }, timeout_s=60.0)
+    assert cp.returncode == 0, (
+        f"SETEC_ALLOW_PARTIAL=1 should override failure exit; "
+        f"got rc={cp.returncode}\nstdout:\n{cp.stdout[-800:]}"
+    )
+    assert "nonsense_alias_that_wont_load" in cp.stdout
+    assert "treating partial completion as success" in cp.stdout

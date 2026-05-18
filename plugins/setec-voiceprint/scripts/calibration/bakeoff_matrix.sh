@@ -43,6 +43,14 @@
 #                                 (default $SETEC_BAKEOFF_DIR)
 #   SETEC_DRY_RUN=1            -- print the matrix plan, exit without
 #                                 running any calibration cell
+#   SETEC_ALLOW_PARTIAL=1      -- exit 0 even if some cells failed.
+#                                 Default is to exit 1 with a list of
+#                                 failed cells so an operator
+#                                 watching only the return code doesn't
+#                                 mistake a 5-of-7-failed Phase B run
+#                                 for success. Use this when partial
+#                                 data is acceptable (known-flaky model,
+#                                 best-effort overnight run).
 #
 # === CUDA_VISIBLE_DEVICES ===
 # Honored end-to-end. For multi-GPU hosts, run two copies of this
@@ -101,20 +109,29 @@ PROVENANCE_PY="$SCRIPT_DIR/_bakeoff_provenance.py"
 # alias table; paths default to HF Hub identifiers (download on
 # demand) — operators with pre-staged models override via
 # SETEC_PHASE_{A,B}_PATHS.
+# Values are framework aliases (NOT raw HF ids) so the canonical
+# alias tables in ``embedding_backend.MODEL_ALIASES`` /
+# ``surprisal_backend.MODEL_ALIASES`` stay the single source of
+# truth. Hardcoding HF ids here would silently bypass alias drift
+# — the original 2026-05-18 draft of this script did exactly that
+# and shipped a non-canonical TinyLlama Chat tune + a Qwen3 missing
+# its ``-Base`` suffix into the default Phase B roster. Operators
+# wanting a non-aliased HF id pass it through
+# ``SETEC_PHASE_{A,B}_PATHS`` as a full HF identifier explicitly.
 DEFAULT_PHASE_A_PATHS='{
-    "mxbai":   "mixedbread-ai/mxbai-embed-large-v1",
-    "gemma":   "google/embeddinggemma-300m",
-    "harrier": "BAAI/bge-large-en-v1.5",
-    "minilm":  "sentence-transformers/all-MiniLM-L6-v2"
+    "mxbai":   "mxbai",
+    "gemma":   "gemma",
+    "harrier": "harrier",
+    "minilm":  "minilm"
 }'
 DEFAULT_PHASE_B_PATHS='{
     "gpt2":         "gpt2",
-    "tinyllama":    "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
-    "llama32_1b":   "meta-llama/Llama-3.2-1B",
-    "olmo2_1b":     "allenai/OLMo-2-0425-1B",
-    "qwen25_1_5b":  "Qwen/Qwen2.5-1.5B",
-    "qwen3_1_7b":   "Qwen/Qwen3-1.7B",
-    "smollm2_1_7b": "HuggingFaceTB/SmolLM2-1.7B"
+    "tinyllama":    "tinyllama",
+    "llama32_1b":   "llama32_1b",
+    "olmo2_1b":     "olmo2_1b",
+    "qwen25_1_5b":  "qwen25_1_5b",
+    "qwen3_1_7b":   "qwen3_1_7b",
+    "smollm2_1_7b": "smollm2_1_7b"
 }'
 
 PHASE_A_PATHS_JSON="${SETEC_PHASE_A_PATHS:-$DEFAULT_PHASE_A_PATHS}"
@@ -340,15 +357,32 @@ run_phase_b() {
 }
 
 # ----------------------------------------------------------------- Run loops
+#
+# Accumulate failed cells across both phases. The script DOES NOT
+# use ``set -e`` because we want every cell to run even if a
+# previous one failed — partial bake-off data is still valuable
+# (the slicer handles missing rows). But we MUST surface failures
+# in the final exit code; otherwise an operator watching only the
+# return code sees ``rc=0`` from a run where five out of seven
+# Phase B cells crashed. ``SETEC_ALLOW_PARTIAL=1`` opts back into
+# silent partial completion when the operator explicitly accepts
+# missing cells (e.g., a known-flaky model that crashes once an
+# hour and the operator wants the rest of the matrix anyway).
+
+FAILED_CELLS=()
 
 for ALIAS in "${PHASE_A_ALIASES[@]}"; do
-    run_phase_a "$ALIAS"
+    if ! run_phase_a "$ALIAS"; then
+        FAILED_CELLS+=("Phase A/${ALIAS}")
+    fi
     echo "  cooldown ${COOLDOWN_SEC}s..."
     sleep "$COOLDOWN_SEC"
 done
 
 for ALIAS in "${PHASE_B_ALIASES[@]}"; do
-    run_phase_b "$ALIAS"
+    if ! run_phase_b "$ALIAS"; then
+        FAILED_CELLS+=("Phase B/${ALIAS}")
+    fi
     echo "  cooldown ${COOLDOWN_SEC}s..."
     sleep "$COOLDOWN_SEC"
 done
@@ -365,4 +399,20 @@ python3 "$PROVENANCE_PY" summarize "$RUNS_DIR" "$ARGS_TMP" "$SUMMARY" && \
 
 rm -f "$ARGS_TMP"
 echo
+if [ ${#FAILED_CELLS[@]} -gt 0 ]; then
+    echo "============================================================"
+    echo "WARNING: ${#FAILED_CELLS[@]} cell(s) failed:"
+    for cell in "${FAILED_CELLS[@]}"; do
+        echo "  - $cell"
+    done
+    echo "============================================================"
+    if [ "${SETEC_ALLOW_PARTIAL:-0}" = "1" ]; then
+        echo "SETEC_ALLOW_PARTIAL=1 -- treating partial completion as success."
+        echo "=== Matrix run complete (partial). Surveys at $RUNS_DIR/, summary at $SUMMARY, provenance at $PROVENANCE ==="
+        exit 0
+    fi
+    echo "Exiting non-zero. Pass SETEC_ALLOW_PARTIAL=1 to opt in to partial completion."
+    echo "(Surveys + summary + provenance are still written: $RUNS_DIR/, $SUMMARY, $PROVENANCE)"
+    exit 1
+fi
 echo "=== Matrix run complete. Surveys at $RUNS_DIR/, summary at $SUMMARY, provenance at $PROVENANCE ==="
