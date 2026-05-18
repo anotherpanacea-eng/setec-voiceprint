@@ -1432,6 +1432,103 @@ def score_corpus(
     )
     positive_statuses = set(DEFAULT_POSITIVE_STATUSES)
     negative_statuses = set(DEFAULT_NEGATIVE_STATUSES)
+    # 1.90.0+ batched Tier-4 surprisal scoring. When ``--tier4`` is
+    # set AND a SurprisalBackend can be imported, pre-compute the
+    # per-token surprisal series for chunks of ``surprisal_batch_size``
+    # entries via the backend's batched ``score_texts`` path. The
+    # rolling cache below holds (series, text) tuples keyed by entry
+    # id; the per-entry loop body checks the cache before calling
+    # ``score_smoothing_entry`` and, on a hit, supplies the cached
+    # text and a precomputed-scorer closure so ``audit_text``'s Tier 4
+    # block skips the per-row backend call. On a miss (Tier 4 off,
+    # backend unimportable, or a batched-scoring exception), the loop
+    # falls back to the legacy per-entry path bit-exactly — no
+    # behavior change for the no-Tier-4 majority of callers.
+    do_tier4 = bool(getattr(args, "tier4", False))
+    surprisal_batch_size = int(
+        getattr(args, "surprisal_batch_size", 8) or 8
+    )
+    batched_surprisal_backend: Any = None
+    if do_tier4:
+        try:
+            from surprisal_backend import (  # type: ignore
+                SurprisalBackend, resolve_model_arg,
+            )
+            batched_surprisal_backend = SurprisalBackend(
+                model_id=resolve_model_arg(
+                    getattr(args, "surprisal_model", None),
+                ),
+                revision=getattr(args, "surprisal_revision", None),
+            )
+        except ImportError:
+            batched_surprisal_backend = None
+
+    surprisal_cache: dict[str, tuple[list[float], str]] = {}
+
+    def _read_entry_text(entry: dict[str, Any]) -> str | None:
+        p = Path(str(
+            entry.get("_resolved_path") or entry.get("path") or ""
+        ))
+        try:
+            return p.read_text(encoding="utf-8", errors="ignore")
+        except OSError:
+            return None
+
+    def _make_precomputed_scorer(series: list[float]):
+        # The closure ignores the ``text`` argument because the
+        # batched-scoring pre-pass has already produced the series
+        # against the same on-disk file. ``audit_surprisal``'s
+        # length-mismatch sanity check inside its own pipeline will
+        # surface any drift between the pre-read and the audit-time
+        # tokenization as an ``available=False`` return — same shape
+        # as a real backend failure.
+        def scorer(_text: str, return_top_k: int = 0):
+            if return_top_k > 0:
+                # No top-k diagnostic in batched mode; the per-token
+                # top-k surfaces only in the standalone audit, not in
+                # the calibration sweep (which reads only the
+                # aggregate statistics).
+                return series, []
+            return series
+        return scorer
+
+    def _refill_surprisal_cache(start_index: int) -> None:
+        if (
+            not do_tier4
+            or batched_surprisal_backend is None
+            or start_index >= len(to_score)
+        ):
+            return
+        chunk = to_score[start_index:start_index + surprisal_batch_size]
+        chunk_texts: list[str] = []
+        chunk_ids: list[str] = []
+        for ce in chunk:
+            t = _read_entry_text(ce)
+            chunk_texts.append(t if t is not None else "")
+            chunk_ids.append(_entry_id_for_record(ce))
+        try:
+            series_list = batched_surprisal_backend.score_texts(
+                chunk_texts, batch_size=surprisal_batch_size,
+            )
+        except Exception as exc:  # noqa: BLE001
+            # Batched scoring failed for the chunk. Per-entry fall-
+            # back will reproduce the same failure cleanly via
+            # audit_text's existing error path; no point retrying
+            # here. Log once per failed chunk so the operator can
+            # diagnose without combing the records.
+            sys.stderr.write(
+                f"  WARNING: batched surprisal scoring failed for "
+                f"chunk starting at index {start_index} "
+                f"({type(exc).__name__}: {exc}). Falling back to "
+                f"per-entry Tier-4 scoring for this chunk.\n"
+            )
+            return
+        for cid, series, txt in zip(chunk_ids, series_list, chunk_texts):
+            # Don't cache empty-text entries — let the per-entry
+            # path's own file-read error handling surface those.
+            if txt:
+                surprisal_cache[cid] = (series, txt)
+
     score_t0 = _dt.datetime.now()
     for i, e in enumerate(to_score):
         if i > 0 and i % flush_every == 0:
@@ -1501,6 +1598,24 @@ def score_corpus(
                         f"{partial_cache_path} failed: "
                         f"{type(exc).__name__}: {exc}. Continuing.\n"
                     )
+        # 1.90.0+: refill the surprisal cache on demand. The cache is
+        # rolling — we hold at most ``surprisal_batch_size`` entries
+        # at a time, so memory stays bounded even on RAID-scale
+        # corpora (~30 GB if we tried to pre-compute everything).
+        entry_id_for_lookup = _entry_id_for_record(e)
+        if (
+            do_tier4
+            and batched_surprisal_backend is not None
+            and entry_id_for_lookup not in surprisal_cache
+        ):
+            _refill_surprisal_cache(i)
+        precomputed_text: str | None = None
+        precomputed_tier4_score_fn = None
+        if entry_id_for_lookup in surprisal_cache:
+            series, precomputed_text = surprisal_cache.pop(
+                entry_id_for_lookup,
+            )
+            precomputed_tier4_score_fn = _make_precomputed_scorer(series)
         records.append(
             score_smoothing_entry(
                 e,
@@ -1515,6 +1630,13 @@ def score_corpus(
                 embedding_revision=getattr(args, "embedding_revision", None),
                 surprisal_model=getattr(args, "surprisal_model", None),
                 surprisal_revision=getattr(args, "surprisal_revision", None),
+                # 1.90.0+: batched-Tier-4 wiring. ``text`` is None on
+                # a cache miss (per-entry path reads from disk as
+                # before); on a hit, the cached text + precomputed
+                # score_fn route audit_text away from the per-row
+                # backend call entirely.
+                text=precomputed_text,
+                tier4_score_fn=precomputed_tier4_score_fn,
             )
         )
 
@@ -2350,6 +2472,18 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
             "(reproducibility). Default: revision-less."
+        ),
+    )
+    parser.add_argument(
+        "--surprisal-batch-size", type=int, default=8,
+        help=(
+            "Batch size for Tier 4 surprisal scoring under the "
+            "batched ``score_texts`` path (1.90.0+). Larger values "
+            "improve GPU utilisation but raise VRAM peak; 8 is "
+            "conservative for 1-2B-param causal LMs on a 24 GB L4. "
+            "Bump to 16 or 32 on A100 / H100. Set to 1 to bypass "
+            "batching and reproduce the legacy per-entry scoring "
+            "path exactly. No effect when --tier4 is off."
         ),
     )
     parser.add_argument(

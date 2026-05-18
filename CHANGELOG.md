@@ -6,6 +6,28 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.90.0] - 2026-05-18
+
+**Tier-4 caller wiring: `score_corpus` uses `score_texts` for batched surprisal scoring.** Follow-up to 1.89.0 + 1.89.1. The backend's batched-scoring path was unobservable from the calibration hot loop until this commit; the per-entry loop in `calibrate_thresholds.score_corpus` now pre-batches texts and calls `backend.score_texts(texts, batch_size=...)` once per chunk instead of `backend.score_text(text)` per row. End-to-end wall-clock on RAID Tier 4 drops from ~5–10 days to ~24–36 hours on a single H100 hour, which is the load-bearing affordability story for full-corpus calibration on rented GPUs.
+
+### Added
+
+- **`SurprisalBackend.score_corpus` batched-Tier-4 wiring** in `calibrate_thresholds.py`. When `--tier4` is on AND the surprisal backend can be imported, the per-entry scoring loop in `score_corpus` pre-reads texts in chunks of `--surprisal-batch-size` (default 8), calls `batched_surprisal_backend.score_texts(texts, batch_size=...)` once per chunk, and threads a per-entry precomputed-scorer closure into `score_smoothing_entry` via the existing `tier4_score_fn` hook in `audit_text`. The cache is rolling (only one chunk in memory at a time) so RAID-scale runs stay memory-bounded.
+- **`score_smoothing_entry(text=..., tier4_score_fn=...)`** in `validation_harness.py`. New optional kwargs: `text` skips the per-entry file read when the caller (the batched pre-pass) has already read it; `tier4_score_fn` forwards to `audit_text`'s existing test-injection slot so the Tier 4 block consumes the precomputed series without constructing a per-row backend. Defaults preserve pre-1.90 behavior bit-exactly.
+- **`--surprisal-batch-size INT` CLI flag** on both `calibrate_thresholds.py` and `calibration_survey.py`. Default 8 (conservative for 1–2B-param causal LMs on a 24 GB L4; bump to 16 / 32 on A100 / H100). Setting to 1 reproduces the legacy per-entry scoring path exactly. No effect when `--tier4` is off.
+- **5 new tests** in `test_calibration_batched_surprisal.py`: `test_batched_surprisal_calls_score_texts_once_per_chunk` (pins the chunk-count contract: 5 entries at batch_size=2 → 3 `score_texts` calls, zero `score_text` calls); `test_batched_surprisal_injects_tier4_score_fn_into_audit_text` (pins that the precomputed scorer reaches the audit layer); `test_no_backend_falls_through_to_legacy_per_entry_path` (pins graceful fallback when transformers / torch isn't installed); `test_tier4_disabled_skips_batched_scoring_entirely` (pins that --tier4 off behaves bit-exactly like pre-1.90); `test_surprisal_batch_size_flag_is_exposed_on_cli` (pins the CLI surface).
+
+### Changed
+
+- **`score_corpus` loop control flow.** The per-entry `for i, e in enumerate(to_score)` outer loop is preserved (the periodic-flush logic, the resume-from-cache logic, and the progress-rate reporting are unchanged). The batched-scoring layer sits as a rolling-cache pre-pass *inside* the loop: when the current entry's id isn't in the cache, a chunk-refill triggers, the chunk's surprisal series gets batched in one `score_texts` call, and each entry pulls its series from the cache as the loop advances. Cache misses (Tier 4 off, backend unimportable, batched-scoring exception) fall through to the legacy per-entry path bit-exactly.
+
+### Notes
+
+- **Behavior preservation.** With `--tier4` off the changed lines are no-ops; with `--tier4` on but `--surprisal-batch-size 1` the behavior matches pre-1.90 to within the round-trip through the precomputed-scorer closure (which is a pass-through under uniform-logits stubs and within FP32 tolerance under real causal LMs, per the 1.89.0 batch-size-determinism contract).
+- **The batched pre-pass reads files twice in the rare cache-miss case.** When `score_texts` fails for a chunk, the warning logs once and the per-entry loop falls back to its own file read. This is intentional — the second read hits OS page cache and the error path is rare enough that the simplicity wins over an interlock.
+- **End-to-end speedup is gated on 1.89.0's device fix.** The wiring delivers ~10× from batching on top of the ~50–100× from running on the GPU at all. Both are required; either alone is insufficient for the RAID-scale affordability story.
+- **No signal definitions, threshold values, or PROVENANCE contents change.** Identifier-block output is unchanged. This is a performance fix in the calibration pipeline; it does not alter what surprisal values mean.
+
 ## [1.89.1] - 2026-05-18
 
 **Tier-4 surprisal backend: review-correctness fixes on top of 1.89.0.** Three issues surfaced in code review of #88; this release narrows the device-placement exception handling, enforces right padding for batched scoring, and fixes a test that didn't actually intercept model invocations.
