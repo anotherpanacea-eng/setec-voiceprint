@@ -6,6 +6,34 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.92.0] - 2026-05-18
+
+**Cloud-portable polarity audit + slicer v2.** Two new modules in `scripts/calibration/` adapted from the desktop-session bundle (2026-05-18). The polarity audit can run against existing slice CSVs (v1 or v2 format) and produce per `(model × signal)` verdict + recommended registry direction without any GPU work — the laptop-friendly hypothesis-testing layer for the MAGE 5K bundle the framework's developer captured before the desktop became unavailable.
+
+### Added
+
+- **`scripts/calibration/polarity_audit.py`** — standalone analyzer that reads slicer CSV output (v1 lacking CIs or v2 with CIs), computes Hanley-McNeil CIs on the fly when missing, classifies cells as `consistent` / `inverted` / `chance`, and emits a per `(model × signal)` JSON verdict + recommended registry direction per `SPEC_polarity_audit.md`. Verdicts: `globally_consistent`, `globally_inverted`, `comparator_dependent`, `chance`, `mixed_noisy`. Recommendations name the flip direction when the verdict is `globally_inverted` and propose `direction_by_comparator` when the verdict is `comparator_dependent`. Pure-Python; no GPU; runs on any laptop. Includes a markdown summary renderer and registry-direction override CLI flag.
+
+  The classifier operates on *direction-aware* AUC bounds, not raw AUC bounds: a small helper ``to_direction_aware(raw_lo, raw_hi, direction)`` converts raw CI bounds to direction-aware bounds (identity for ``gt``, ``(1 - raw_hi, 1 - raw_lo)`` for ``lt`` — the swap keeps the CI's ``lo < hi`` ordering invariant under complementation). With direction-aware bounds in hand, the classification rule "da > 0.5 → registry matches, da < 0.5 → registry opposite" applies uniformly across both registry directions. ``SPEC_polarity_audit.md``'s natural-language descriptions ("registry direction matches" / "is wrong") follow this direction-aware reading; the spec's worked example only used ``gt`` signals, which makes the direction-aware step easy to miss when reading the criteria as a literal raw-AUC formula.
+- **`scripts/calibration/slice_bakeoff_v2.py`** — successor to the laptop-vintage `slice_bakeoff.py` v1. Cloud-portable: paths come from CLI (no hardcoded `/home/joshua/...` or `/mnt/c/...`). Adds Hanley-McNeil 95% CIs to every cell in the CSV. Supports multi-key cross-tabs (`--crosstab length_bucket,notes.original_source`, repeatable). Integrated `--audit polarity` mode delegates to `polarity_audit.build_audit()` so the standalone tool and the integrated mode produce byte-identical verdicts. Output structure: `slice_analysis.csv` (v1 column set + new CI columns), `slice_analysis.md` (aggregate + per-univariate tables + "real signal" subset where the |sig| lower-CI bound clears 0.05), optional `polarity_audit.json`, and `provenance.json`.
+- **54 new tests** across two test files: `test_polarity_audit.py` (35 tests including Hanley-McNeil SE math, the direction-aware transform for both ``gt`` and ``lt``, cell classification, verdict logic for all five cases, CSV loading for v1 and v2 formats, registry-override parsing, end-to-end against synthetic rows for both ``lt``-consistent and ``lt``-inverted cases, and integration against the bundled MAGE 5K data) and `test_slice_bakeoff_v2.py` (19 tests including MWU AUC tie handling, CI clamping, cross-tab grouping, CSV column contract for v1/v2 superset, end-to-end with synthetic caches, and a single-source-of-truth check that the slicer's integrated polarity mode and the standalone tool produce identical verdicts).
+
+### Findings from running polarity_audit against the 2026-05-18 MAGE 5K bundle
+
+The audit surfaced findings beyond what the 2026-05-18 desktop draft documented. 26 `(model × signal)` verdicts from the existing data, no GPU touched. **22 of 26** verdicts are `globally_inverted` with a registry-flip recommendation:
+
+- **Tier-3 sign-flip confirmed.** All four Phase A embeddings (`mxbai`, `minilm`, `harrier`, `gemma`) for `adjacent_cosine_mean`: `globally_inverted`. Aggregates 0.41–0.45 raw AUC, every CI excludes 0.5 from above. Registry's `gt` should be `lt` against MAGE's curated-human comparator. (4 flips.)
+- **The framework's entire Tier-4 surprisal registry is wrong-pointed against MAGE.** All three surprisal signals (`surprisal_mean`, `surprisal_sd`, `surprisal_acf_lag1`) are `globally_inverted` on every Phase B model (tinyllama, llama32_1b, olmo2_1b, qwen25_1_5b, qwen3_1_7b, smollm2_1_7b — six available; gpt2 sentinel skipped). **The draft missed this entirely** — it surfaced acf_lag1 as a candidate but reported mean/sd as polarity-consistent. (18 flips: 6 Phase B models × 3 surprisal signals.)
+- **`adjacent_cosine_sd` is comparator-dependent / mixed-noisy** across the four Phase A models — less stable polarity than `adjacent_cosine_mean`. (Harrier is borderline `globally_consistent` with the ``lt`` registry direction; the other three sit in the chance / mixed-noisy band.)
+
+Audit output preserved in `internal/polarity_audit_results/` (gitignored): `polarity_audit.json`, `polarity_audit.md`, plus the source CSV `mage_5k_slice_analysis.csv` from the bundle.
+
+### Notes
+
+- **No GPU work for either tool.** This is the lever that lets the framework's developer keep producing analysis on a laptop without a GPU, after the desktop session that produced the 5K bundle ended. The slicer reads pre-existing cache JSONs; the polarity audit reads pre-existing slicer CSVs.
+- **Bundle source.** Desktop session 2026-05-18, packaged in `setec-session-export-2026-05-18.tar.gz`. The slicer v1 (`scripts/slice_bakeoff.py` from the bundle) was the basis for v2; the SPEC documents (`SPEC_slice_bakeoff_v2.md`, `SPEC_polarity_audit.md`, `SPEC_cloud_bakeoff_matrix.md`) drove the v2 implementation. The cloud bake-off matrix shell script porting is deferred to a separate PR.
+- **No `variance_audit.py` registry changes in this PR.** The audit produces evidence; the framework owner decides whether to flip directions on the basis of the 22 flip recommendations. Encoding the flips into the registry is a follow-up PR informed by full-corpus validation, not by the 5K subset.
+
 ## [1.91.0] - 2026-05-18
 
 **Tier-4 surprisal backend: length-sorted batching.** Third in the Tier-4 performance fix sequence (1.89.0 device-placement, 1.90.0 caller wiring, this one). `score_texts` now processes texts in ascending length order so length-similar texts batch together and padding waste collapses on heterogeneous-length corpora. Expected throughput improvement: 20–40% on MAGE / RAID rows, which have a long length tail. Output order is preserved — `results[i]` always corresponds to `texts[i]`.
