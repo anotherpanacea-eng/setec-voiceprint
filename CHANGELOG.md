@@ -6,6 +6,28 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.97.1] - 2026-05-18
+
+**Empirical benchmark of sentence-transformers' internal length-sort claim.** Drops a small standalone script + tests that put numbers behind PR #101's pivot framing (*"`sentence_transformers.encode()` already length-sorts internally, so a wrapper-level pre-sort would be redundant"*). Informational artifact — exits 0 regardless of outcome, no production code path change.
+
+### Why
+
+PR #101 pivoted Chunk C from "mirror PR #91's length-sorted batching to `embedding_backend`" to "dtype + device awareness" because the original chunk's premise (ST doesn't length-sort) appeared false. That pivot was based on knowledge of ST's `encode()` source from v2.2+ — but operator-facing documentation should rest on empirical evidence, not a claim someone has to take on faith. This script lets operators verify the claim against whatever ST version they have installed.
+
+### Added
+
+- **`scripts/calibration/_benchmark_embedding_length_sort.py`** — standalone benchmark. Feeds a synthetic heterogeneous-length corpus (interleaved 80-char / 1200-char texts) to `EmbeddingBackend.encode()` in three orderings (shuffled, pre-sorted ascending, pre-sorted descending) and reports wall-clock per ordering plus a Markdown interpretation section. If the three orderings produce times within ~3-5% of each other, ST is length-sorting internally and a wrapper-level pre-sort would be redundant. If pre-sorted is >10% faster than shuffled, ST is NOT length-sorting and the original Chunk C scope would have delivered a real perf win.
+  - CLI: `--model` (alias or HF id; default `minilm`), `--n` (corpus size; default 100), `--batch-size` (default 32, ST's own default), `--repeats` (default 5), `--short-len` / `--long-len` (target char counts; defaults 80 / 1200).
+  - **Bias-aware timing loop** (reviewer P2 follow-up): per-ordering full-corpus warmup before any timed runs (pays first-batch allocator / cache costs once per ordering so the timed loop measures steady-state behavior), plus per-repeat randomized ordering of the three orderings (seeded for reproducibility) so thermal drift over the repeat sequence averages out across orderings. Fixes the original fixed-order pattern that could let first-batch effects masquerade as ordering effects — the benchmark would then "answer its own question incorrectly".
+  - Operators run on a host with sentence-transformers + torch installed — the slim test harness exercises the script's plumbing against a stubbed backend.
+- **`scripts/tests/test_benchmark_embedding_length_sort.py`** — 15 tests pinning the corpus-generator shape, ordering helpers, percent-diff math, run-loop call count, Markdown summary output, summary-dict shape, `--help` behavior under slim install, per-ordering full-corpus warmup contract, and per-repeat randomized ordering contract. No sentence-transformers required for the test suite (uses a stub backend).
+
+### Notes
+
+- **Not a production code path.** Script is informational; nothing in the framework consumes its output. Operators read the numbers, decide whether the documentation in PR #101 is supported by their installed ST version, and move on.
+- **Future-proofing.** If a future ST release drops the internal length-sort optimization (unlikely but possible), this benchmark would surface the regression — first-class signal that the framework's `embedding_backend` would now benefit from a wrapper-level pre-sort.
+- **No effect on PR #101 / #100.** The dtype + device contract (1.96.0) and the cloud bake-off matrix (1.97.0) lands independently of this benchmark's verdict — both are real perf wins regardless of how ST handles batch ordering.
+
 ## [1.97.0] - 2026-05-18
 
 **Cloud-portable Tier-3 / Tier-4 bake-off matrix runner.** `scripts/calibration/bakeoff_matrix.sh` — a parameterized shell driver adapted from the 2026-05-18 laptop session's `bakeoff_matrix_v2.sh` (WSL+ROCm host) to run unchanged on any cloud GPU host. Per `SPEC_cloud_bakeoff_matrix.md` from the 2026-05-18 session export. Closes Chunk B of the post-inventory sequence.
