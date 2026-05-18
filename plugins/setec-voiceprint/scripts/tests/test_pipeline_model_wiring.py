@@ -248,10 +248,12 @@ def test_audit_text_threads_surprisal_model_through():
 
     def _spy_tier4(text, *, score_fn=None, backend=None,
                    surprisal_model=None, surprisal_revision=None,
+                   surprisal_dtype="auto",
                    sliding_window=False, window_size=200, stride=100,
                    top_k=20):
         captured["surprisal_model"] = surprisal_model
         captured["surprisal_revision"] = surprisal_revision
+        captured["surprisal_dtype"] = surprisal_dtype
         return {"available": True, "surprisal": {"mean": 0.0, "sd": 0.0}}
 
     with mock.patch.object(va, "_tier4_surprisal_block", _spy_tier4):
@@ -266,6 +268,89 @@ def test_audit_text_threads_surprisal_model_through():
 
     assert captured["surprisal_model"] == "gpt2"
     assert captured["surprisal_revision"] == "def456"
+
+
+def test_audit_text_threads_surprisal_dtype_through():
+    """``audit_text(..., do_tier4=True, surprisal_dtype="bf16")``
+    forwards the dtype into _tier4_surprisal_block. Pins the per-
+    entry fallback path: when the batched backend has latched off
+    and the loop falls back to per-row audit_text calls, the
+    operator's --surprisal-dtype is honored, not silently dropped
+    to the SurprisalBackend default of "auto"."""
+    import variance_audit as va  # type: ignore
+
+    captured: dict[str, Any] = {}
+
+    def _spy_tier4(text, *, score_fn=None, backend=None,
+                   surprisal_model=None, surprisal_revision=None,
+                   surprisal_dtype="auto",
+                   sliding_window=False, window_size=200, stride=100,
+                   top_k=20):
+        captured["surprisal_dtype"] = surprisal_dtype
+        return {"available": True, "surprisal": {"mean": 0.0, "sd": 0.0}}
+
+    with mock.patch.object(va, "_tier4_surprisal_block", _spy_tier4):
+        va.audit_text(
+            "Sentence one. " * 60,
+            do_tier2=False,
+            do_tier3=False,
+            do_tier4=True,
+            surprisal_model="gpt2",
+            surprisal_dtype="bf16",
+        )
+
+    assert captured["surprisal_dtype"] == "bf16"
+
+
+def test_get_surprisal_backend_caches_by_dtype():
+    """``_get_surprisal_backend`` returns separate instances for
+    different dtypes on the same (model, revision). Without this,
+    a per-entry fallback that asked for bf16 could silently get
+    back an fp32 backend cached from an earlier call. The cache
+    key explicitly includes dtype so the two coexist."""
+    import variance_audit as va  # type: ignore
+
+    captured_constructions: list[dict] = []
+
+    class _FakeSurprisalBackend:
+        def __init__(self, model_id, revision=None, dtype="auto"):
+            self.model_id = model_id
+            self.revision = revision
+            self.dtype = dtype
+            captured_constructions.append({
+                "model_id": model_id,
+                "revision": revision,
+                "dtype": dtype,
+            })
+
+    def _fake_resolve(arg):
+        return arg if arg else "tinyllama"
+
+    # Reset cache for hermetic per-test state.
+    va._SURPRISAL_BACKENDS_CACHE.clear()
+
+    fake_module = mock.MagicMock()
+    fake_module.SurprisalBackend = _FakeSurprisalBackend
+    fake_module.resolve_model_arg = _fake_resolve
+
+    with mock.patch.dict(
+        sys.modules, {"surprisal_backend": fake_module},
+    ):
+        b_fp32_a = va._get_surprisal_backend("tinyllama", None, "fp32")
+        b_fp32_b = va._get_surprisal_backend("tinyllama", None, "fp32")
+        b_bf16 = va._get_surprisal_backend("tinyllama", None, "bf16")
+        b_auto = va._get_surprisal_backend("tinyllama", None, "auto")
+
+    # Same dtype → same instance (cached).
+    assert b_fp32_a is b_fp32_b
+    # Different dtypes → different instances.
+    assert b_fp32_a is not b_bf16
+    assert b_fp32_a is not b_auto
+    assert b_bf16 is not b_auto
+    # Three constructions total (fp32 once, bf16 once, auto once).
+    assert len(captured_constructions) == 3
+    constructed_dtypes = sorted(c["dtype"] for c in captured_constructions)
+    assert constructed_dtypes == ["auto", "bf16", "fp32"]
 
 
 # --------------- W1 + W2: validation_harness threading ----------
@@ -311,6 +396,75 @@ def test_score_smoothing_entry_accepts_new_kwargs():
     assert captured.get("embedding_revision") == "abc"
     assert captured.get("surprisal_model") == "gpt2"
     assert captured.get("surprisal_revision") == "def"
+
+
+def test_score_smoothing_entry_threads_surprisal_dtype_through():
+    """``score_smoothing_entry(..., surprisal_dtype="bf16")`` forwards
+    the dtype to ``audit_text``. Pins the per-entry path: when
+    score_corpus has fallen back from the batched-Tier-4 path to per-
+    row scoring, the dtype the operator chose still reaches the
+    underlying SurprisalBackend construction."""
+    import validation_harness as vh  # type: ignore
+
+    captured: dict[str, Any] = {}
+
+    def _spy_audit(text, **kwargs):
+        captured.update(kwargs)
+        return {
+            "summary": {"n_words": 100, "n_words_original": 100,
+                        "n_sentences": 5, "reliable": True,
+                        "preprocessing_applied": False},
+            "preprocessing": {"applied": False},
+            "tier1": {},
+        }
+
+    with mock.patch.object(vh, "audit_text", _spy_audit), \
+         mock.patch("pathlib.Path.read_text", return_value="word " * 200):
+        vh.score_smoothing_entry(
+            {"id": "x", "path": "/tmp/x.txt", "_resolved_path": "/tmp/x.txt",
+             "ai_status": "human"},
+            positive_statuses={"ai_generated"},
+            negative_statuses={"human"},
+            do_tier2=False,
+            do_tier3=False,
+            do_tier4=True,
+            surprisal_model="gpt2",
+            surprisal_dtype="bf16",
+        )
+
+    assert captured.get("surprisal_dtype") == "bf16"
+
+
+def test_score_smoothing_entry_default_surprisal_dtype_is_auto():
+    """Default kwarg preserves pre-1.93 caller behavior: callers
+    that don't pass surprisal_dtype get the "auto" default routed
+    through to audit_text."""
+    import validation_harness as vh  # type: ignore
+
+    captured: dict[str, Any] = {}
+
+    def _spy_audit(text, **kwargs):
+        captured.update(kwargs)
+        return {
+            "summary": {"n_words": 100, "n_words_original": 100,
+                        "n_sentences": 5, "reliable": True,
+                        "preprocessing_applied": False},
+            "preprocessing": {"applied": False},
+            "tier1": {},
+        }
+
+    with mock.patch.object(vh, "audit_text", _spy_audit), \
+         mock.patch("pathlib.Path.read_text", return_value="word " * 200):
+        vh.score_smoothing_entry(
+            {"id": "x", "path": "/tmp/x.txt", "_resolved_path": "/tmp/x.txt",
+             "ai_status": "human"},
+            positive_statuses={"ai_generated"},
+            negative_statuses={"human"},
+            do_tier4=True,
+            surprisal_model="gpt2",
+        )
+
+    assert captured.get("surprisal_dtype") == "auto"
 
 
 # --------------- W1 + W2: calibrate_thresholds cache compat ----------
@@ -389,6 +543,7 @@ def test_cache_compat_invalidates_on_surprisal_model_change():
         "do_tier2": True, "do_tier3": False, "do_tier4": True,
         "embedding_model": None, "embedding_revision": None,
         "surprisal_model": "tinyllama", "surprisal_revision": None,
+        "surprisal_dtype": "auto",
         "scorer_version": ct.SCORER_CACHE_VERSION,
     }
     args = argparse.Namespace(
@@ -397,6 +552,7 @@ def test_cache_compat_invalidates_on_surprisal_model_change():
         embedding_model=None, embedding_revision=None,
         surprisal_model="gpt2",  # different
         surprisal_revision=None,
+        surprisal_dtype="auto",
         max_entries=None,
     )
     ok, reason = ct.cache_is_compatible(
@@ -405,6 +561,107 @@ def test_cache_compat_invalidates_on_surprisal_model_change():
     )
     assert ok is False
     assert "surprisal_model" in reason
+
+
+def test_cache_compat_invalidates_on_surprisal_dtype_change():
+    """Changing surprisal_dtype invalidates a Tier-4 cache. Without
+    this check, a cache scored at fp32 would silently reuse on a
+    later bf16 bake-off run — the per-token surprisal series differs
+    at the ~0.1 bit/token level under different dtypes, which leaks
+    into the framework's signal-level statistics."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": False, "do_tier4": True,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": "tinyllama", "surprisal_revision": None,
+        "surprisal_dtype": "fp32",
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=False,
+        tier4=True,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model="tinyllama", surprisal_revision=None,
+        surprisal_dtype="bf16",  # different
+        max_entries=None,
+    )
+    ok, reason = ct.cache_is_compatible(
+        cache_meta, args, manifest_sha256="abc",
+        corpus_text_fingerprint="def",
+    )
+    assert ok is False
+    assert "surprisal_dtype" in reason
+
+
+def test_cache_compat_invalidates_on_missing_dtype_for_tier4_cache():
+    """A Tier-4 cache that predates 1.93.0 dtype tracking lacks the
+    ``surprisal_dtype`` field. Prefer re-scoring over treating the
+    missing field as "auto" — the operator might have been on fp32-
+    only CPU when the cache was scored but is now on a bf16 cuda
+    host, and reusing the old series would silently mix dtypes."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": False, "do_tier4": True,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": "tinyllama", "surprisal_revision": None,
+        # No "surprisal_dtype" key — pre-1.93 Tier-4 cache.
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=False,
+        tier4=True,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model="tinyllama", surprisal_revision=None,
+        surprisal_dtype="auto",
+        max_entries=None,
+    )
+    ok, reason = ct.cache_is_compatible(
+        cache_meta, args, manifest_sha256="abc",
+        corpus_text_fingerprint="def",
+    )
+    assert ok is False
+    assert "surprisal_dtype" in reason
+    assert "pre-1.93" in reason
+
+
+def test_cache_compat_missing_dtype_is_ok_when_tier4_off():
+    """When Tier 4 is off no surprisal scoring happened, so the
+    missing ``surprisal_dtype`` field on a pre-1.93 cache is
+    irrelevant. The cache stays compatible for the non-Tier-4
+    bake-off / threshold-fitting paths."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": True, "do_tier4": False,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": None, "surprisal_revision": None,
+        # No surprisal_dtype, no Tier 4 — fine.
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=True,
+        tier4=False,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model=None, surprisal_revision=None,
+        surprisal_dtype="auto",
+        max_entries=None,
+    )
+    ok, reason = ct.cache_is_compatible(
+        cache_meta, args, manifest_sha256="abc",
+        corpus_text_fingerprint="def",
+    )
+    assert ok is True, f"Expected compatible cache; got reason: {reason!r}"
 
 
 def test_cache_compat_back_compat_with_pre_1_80_caches():

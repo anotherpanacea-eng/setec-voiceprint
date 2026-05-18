@@ -1604,6 +1604,16 @@ def score_corpus(
                     "surprisal_revision": getattr(
                         args, "surprisal_revision", None,
                     ),
+                    # 1.93.0+: dtype is part of the cache identity for
+                    # Tier-4 scoring. Surprisal values produced under
+                    # bf16 / fp16 / fp32 differ at the ~0.1 bit/token
+                    # level (within signal-stat noise but visible in
+                    # the per-token series). Without recording dtype
+                    # here, a Tier-4 cache scored at fp32 silently
+                    # reuses on a later bf16 bake-off invocation.
+                    "surprisal_dtype": getattr(
+                        args, "surprisal_dtype", "auto",
+                    ),
                     "n_entries_full": full_entry_count,
                     "n_entries_scored": len(records),
                     "sub_sample": sub_sample_meta,
@@ -1656,6 +1666,12 @@ def score_corpus(
                 embedding_revision=getattr(args, "embedding_revision", None),
                 surprisal_model=getattr(args, "surprisal_model", None),
                 surprisal_revision=getattr(args, "surprisal_revision", None),
+                # 1.93.0+: dtype passthrough for the per-entry Tier-4
+                # fallback path (when the batched backend is None or
+                # the failure-latch has tripped). Without this, falls
+                # back to the SurprisalBackend default of ``auto``
+                # regardless of operator intent.
+                surprisal_dtype=getattr(args, "surprisal_dtype", "auto"),
                 # 1.90.0+: batched-Tier-4 wiring. ``text`` is None on
                 # a cache miss (per-entry path reads from disk as
                 # before); on a hit, the cached text + precomputed
@@ -1681,6 +1697,9 @@ def score_corpus(
         "embedding_revision": getattr(args, "embedding_revision", None),
         "surprisal_model": getattr(args, "surprisal_model", None),
         "surprisal_revision": getattr(args, "surprisal_revision", None),
+        # 1.93.0+: dtype identity for Tier-4 cache reuse. See the
+        # matching field in ``interim_meta`` above for rationale.
+        "surprisal_dtype": getattr(args, "surprisal_dtype", "auto"),
         "n_entries_full": full_entry_count,
         "n_entries_scored": len(records),
         "sub_sample": sub_sample_meta,
@@ -1765,6 +1784,26 @@ def cache_is_compatible(
     cur_surp_rev = getattr(args, "surprisal_revision", None)
     if cache_meta.get("surprisal_revision") != cur_surp_rev:
         return False, "surprisal_revision changed"
+    # 1.93.0+: dtype is part of cache identity for Tier-4 runs. When
+    # tier4 is off the field is meaningless (no surprisal scoring
+    # happened); when tier4 is on, a missing field on the cache side
+    # means the cache predates 1.93.0 dtype tracking — prefer re-
+    # score over treating it as "auto", since the operator might have
+    # been running on fp32-only CPU back then but is now on a bf16
+    # cuda host and a stale fp32 series would silently leak in.
+    if cur_tier4:
+        cur_surp_dtype = getattr(args, "surprisal_dtype", "auto")
+        if "surprisal_dtype" not in cache_meta:
+            return False, (
+                "surprisal_dtype absent on cache (pre-1.93.0 Tier-4 "
+                "cache); re-scoring to record the resolved dtype"
+            )
+        if cache_meta.get("surprisal_dtype") != cur_surp_dtype:
+            return False, (
+                f"surprisal_dtype changed "
+                f"({cache_meta.get('surprisal_dtype')!r} → "
+                f"{cur_surp_dtype!r})"
+            )
     cached_sub = cache_meta.get("sub_sample")
     cur_max = getattr(args, "max_entries", None)
     cur_seed = getattr(args, "max_entries_seed", None)

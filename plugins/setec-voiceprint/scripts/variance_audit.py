@@ -756,6 +756,7 @@ _SURPRISAL_BACKENDS_CACHE: dict[tuple[str, str], Any] = {}
 def _get_surprisal_backend(
     model_alias: str | None,
     revision: str | None = None,
+    dtype: str = "auto",
 ) -> Any | None:
     """Return a cached :class:`SurprisalBackend` for ``model_alias``.
 
@@ -764,10 +765,16 @@ def _get_surprisal_backend(
     underlying model fires as a typed ``SurprisalBackendError`` from
     the eventual ``.score_text`` call; this helper only handles
     construction, not loading.
+
+    ``dtype`` (1.93.0+) is part of the cache key — a run that asked
+    for ``auto`` and a run that asked for ``fp32`` get separate
+    backend instances. Without this, a per-entry-fallback path could
+    silently reuse a backend that loaded at a different precision
+    than what the operator requested on this invocation.
     """
     if model_alias is None:
         return None
-    cache_key = (model_alias, revision or "")
+    cache_key = (model_alias, revision or "", dtype)
     cached = _SURPRISAL_BACKENDS_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -780,6 +787,7 @@ def _get_surprisal_backend(
     backend = SurprisalBackend(
         model_id=resolve_model_arg(model_alias),
         revision=revision,
+        dtype=dtype,
     )
     _SURPRISAL_BACKENDS_CACHE[cache_key] = backend
     return backend
@@ -792,6 +800,7 @@ def _tier4_surprisal_block(
     backend=None,
     surprisal_model: str | None = None,
     surprisal_revision: str | None = None,
+    surprisal_dtype: str = "auto",
     sliding_window: bool = False,
     window_size: int = 200,
     stride: int = 100,
@@ -851,7 +860,7 @@ def _tier4_surprisal_block(
         # working unchanged.
         if surprisal_model is not None:
             backend = _get_surprisal_backend(
-                surprisal_model, surprisal_revision,
+                surprisal_model, surprisal_revision, surprisal_dtype,
             )
             if backend is None:
                 return {
@@ -1153,6 +1162,12 @@ def audit_text(
     # behavior (require explicit tier4_backend or fall through to None).
     surprisal_model: str | None = None,
     surprisal_revision: str | None = None,
+    # 1.93.0+: dtype passthrough so the per-entry Tier-4 fallback path
+    # (when score_corpus's batched backend is None or has latched off)
+    # honors --surprisal-dtype. Without this, falling back from the
+    # batched path silently drops to the SurprisalBackend default of
+    # "auto" regardless of operator intent.
+    surprisal_dtype: str = "auto",
 ) -> dict[str, Any]:
     original_text = text
     text, preprocessing = strip_non_prose(
@@ -1230,6 +1245,7 @@ def audit_text(
             backend=tier4_backend,
             surprisal_model=surprisal_model,
             surprisal_revision=surprisal_revision,
+            surprisal_dtype=surprisal_dtype,
         )
     # v1.65.0: AIC-7 / AIC-8 / AIC-9 named-pattern integration.
     # Each is opt-in via its own flag. The three families have
