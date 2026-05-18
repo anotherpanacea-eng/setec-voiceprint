@@ -109,6 +109,61 @@ DEFAULT_REGISTRY_DIRECTIONS: dict[str, str] = {
 }
 
 
+# 1.98.0: per-comparator direction overrides on top of
+# DEFAULT_REGISTRY_DIRECTIONS. Mirror of ``ThresholdSpec.direction_
+# by_comparator`` in ``variance_audit``. ``resolve_registry_direction
+# (signal, comparator_class)`` returns the per-comparator direction
+# when set + class present, falling back to the default.
+#
+# Only ``surprisal_sd`` carries a RAID override in the initial
+# release: the 2026-05-18 RAID 5K bake-off returned 4
+# ``globally_inverted`` verdicts under the MAGE-correct directions,
+# all 4 on surprisal_sd. The other RAID divergences are
+# ``comparator_dependent`` at the (judge × generator) level and
+# deferred to a per-(signal × judge × generator) follow-up.
+DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR: dict[
+    str, dict[str, str]
+] = {
+    "surprisal_sd": {"raid": "lt"},
+}
+
+
+def resolve_registry_direction(
+    signal: str,
+    comparator_class: str | None = None,
+    *,
+    defaults: dict[str, str] | None = None,
+    overrides: dict[str, dict[str, str]] | None = None,
+) -> str | None:
+    """Module-level resolver for the polarity-audit pair of tables.
+
+    Returns the direction for ``signal`` given an optional
+    ``comparator_class``. Falls back through:
+
+      1. ``overrides[signal][comparator_class]`` when all three of
+         comparator_class set, overrides set, and the pair is
+         present.
+      2. ``defaults[signal]`` otherwise.
+      3. ``None`` if signal isn't in defaults at all.
+
+    ``defaults`` and ``overrides`` default to the module tables so
+    most callers can just pass ``signal`` + optional
+    ``comparator_class``. Tests can pass synthetic tables to pin
+    the dispatch without mutating module state.
+    """
+    if defaults is None:
+        defaults = DEFAULT_REGISTRY_DIRECTIONS
+    if overrides is None:
+        overrides = DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR
+    if (
+        comparator_class is not None
+        and signal in overrides
+        and comparator_class in overrides[signal]
+    ):
+        return overrides[signal][comparator_class]
+    return defaults.get(signal)
+
+
 # ----------------------------------------------------------------- CI math
 
 

@@ -99,6 +99,44 @@ SIGNAL_SPECS: dict[str, tuple[str, str]] = {
     "surprisal_acf_lag1": ("tier4.surprisal.autocorrelation.lag_1", "lt"),
 }
 
+# 1.98.0: per-comparator direction overrides on top of SIGNAL_SPECS.
+# Mirror of variance_audit.ThresholdSpec.direction_by_comparator
+# and polarity_audit.DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR.
+# When the slicer is invoked with a comparator class, signals with
+# an override here get the per-class direction; others fall back to
+# the SIGNAL_SPECS default.
+SIGNAL_SPECS_BY_COMPARATOR: dict[str, dict[str, str]] = {
+    "surprisal_sd": {"raid": "lt"},
+}
+
+
+def resolve_signal_direction(
+    signal: str,
+    comparator_class: str | None = None,
+    *,
+    specs: dict[str, tuple[str, str]] | None = None,
+    overrides: dict[str, dict[str, str]] | None = None,
+) -> str | None:
+    """Slicer-side direction resolver. Same fallback shape as
+    polarity_audit.resolve_registry_direction; uses SIGNAL_SPECS
+    (signal -> (path, direction) tuples) as the default table.
+    Returns the direction string or None if signal isn't known.
+    """
+    if specs is None:
+        specs = SIGNAL_SPECS
+    if overrides is None:
+        overrides = SIGNAL_SPECS_BY_COMPARATOR
+    if (
+        comparator_class is not None
+        and signal in overrides
+        and comparator_class in overrides[signal]
+    ):
+        return overrides[signal][comparator_class]
+    if signal in specs:
+        return specs[signal][1]
+    return None
+
+
 PHASE_A_SIGNALS = ("adjacent_cosine_mean", "adjacent_cosine_sd")
 PHASE_B_SIGNALS = ("surprisal_mean", "surprisal_sd", "surprisal_acf_lag1")
 
