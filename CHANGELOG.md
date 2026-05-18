@@ -6,6 +6,24 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.94.0] - 2026-05-18
+
+**`surprisal_audit.py` standalone path is now dtype-aware.** Follow-up to 1.93.0 — the standalone audit tool was the last per-text scoring path still using the SurprisalBackend's default `"auto"` regardless of operator intent. Now the CLI exposes `--surprisal-dtype` and threads it into the `SurprisalBackend(...)` construction in `main()`, so an operator running `surprisal_audit.py essay.txt --surprisal-dtype bf16` (or relying on the auto default) gets the precision they asked for.
+
+### Note on the original "batched" framing
+
+The chunk-2 inventory item was originally framed as "make `surprisal_audit.py` batched (mirror the `score_texts` pre-batch loop)." Re-inspecting the module surfaced that `surprisal_audit` is **single-document** — one CLI invocation scores one text via `backend.score_text(...)`, and the sliding-window mode operates on the already-computed surprisal series rather than running separate forward passes per window. There is no corpus-scoring loop here to batch. The actual remaining gap was dtype awareness in the single-document path, which is what this PR closes.
+
+### Added
+
+- **`--surprisal-dtype {auto,fp32,fp16,bf16}` CLI flag** on `surprisal_audit.py`. Mirrors the same flag on `calibrate_thresholds.py` and `calibration_survey.py` (1.93.0). Default `auto`. Help text documents the auto-resolution rule and notes the log_softmax-in-fp32 numerical contract from 1.93.0.
+- **`main()` passes `dtype=args.surprisal_dtype` to the `SurprisalBackend(...)` constructor.** The identifier block (which `main()` already attaches to the audit JSON under `audit["backend"]`) now carries the resolved precision into the PROVENANCE block of every standalone-audit output, matching the calibration-pipeline shape.
+- **3 new tests** in `test_surprisal_audit.py` (49 total, was 46): `test_cli_exposes_surprisal_dtype_flag` pins the four documented choices and the auto default; `test_cli_threads_dtype_to_surprisal_backend` spies on `SurprisalBackend.__init__` to confirm `--surprisal-dtype bf16` reaches the constructor; `test_cli_dtype_default_is_auto_to_backend` mirror-pins the default case.
+
+### Notes
+
+- **No effect on the audit's numerical output.** The dtype affects which precision the LM weights load at and which precision the forward pass runs at, but `log_softmax` is computed in fp32 (1.93.0's upcast) so the per-token surprisal values stay within < 0.1 bits of the fp32 baseline. Operators reproducing a pre-1.94 audit bit-exactly can pass `--surprisal-dtype fp32`.
+
 ## [1.93.0] - 2026-05-18
 
 **Tier-4 surprisal backend: bf16 / fp16 inference.** Fourth in the Tier-4 performance-fix sequence (1.89.0 device-placement, 1.90.0 caller wiring, 1.91.0 length-sorted batching, this one). The 1.89.0 fix put the model on the accelerator; this fix puts it on the accelerator *at the right precision*. On Ampere+ / Hopper / Ada cuda (A100 / H100 / L4 / L40S) the model now loads in bf16 — typically a 1.7–2× throughput improvement on top of the prior batched-scoring win. The auto-resolution default means operators get the perf gain without remembering a flag.
