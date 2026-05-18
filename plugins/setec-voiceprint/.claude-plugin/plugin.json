@@ -1,6 +1,6 @@
 {
   "name": "setec-voiceprint",
-  "version": "1.89.1",
+  "version": "1.90.1",
   "description": "Text-only stylometry for authorial voice in prose — not audio voice identification. Stylometric tools for AI-prose smoothing diagnosis and authorial-voice coherence comparison. Four task surfaces: smoothing diagnosis, authorial-voice coherence, validation, and craft restoration. Python tooling spans variance audits, length-matched bootstrap percentiles, sliding-window localization, authorial-voice profiling, idiolect preservation lists, authorial-voice drift tracking, per-POV authorial-voiceprints, manifest validation, corpus-hygiene checks, per-bigram KL decomposition, named-pattern density audit, R stylo oracle, voice-validation harness, calibration toolchain, metric-targeted restoration packets, before/after restoration verdicts with metric-gaming detection, MVP empirical validation harness, impostor-corpus acquisition from live blogs / Blogger Takeout / online magazines / PDF libraries with optional OCR, and author-facing voice insights report generation. The 'voice' here is authorial voice in prose (the writer-level patterns essayists and developmental editors talk about), borrowed from authorship-attribution stylometry; it is not vocal spectography or speaker recognition.",
   "author": {
     "name": "anotherpanacea-eng",

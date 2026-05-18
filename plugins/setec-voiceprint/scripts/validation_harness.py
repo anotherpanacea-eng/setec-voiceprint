@@ -179,6 +179,17 @@ def score_smoothing_entry(
     embedding_revision: str | None = None,
     surprisal_model: str | None = None,
     surprisal_revision: str | None = None,
+    # 1.90.0+ batched-Tier-4 wiring. When ``text`` is supplied, the
+    # caller has pre-read the file (typically inside the batched-
+    # scoring pre-pass in ``score_corpus``) and we skip the read here
+    # to avoid the double-I/O and the rare case where a file changes
+    # between reads. When ``tier4_score_fn`` is supplied, the Tier 4
+    # block bypasses backend construction entirely and consumes the
+    # precomputed surprisal series via the test-injection path that
+    # already exists in ``audit_text``. Defaults preserve the legacy
+    # behavior (read text from disk, construct a per-entry backend).
+    text: str | None = None,
+    tier4_score_fn=None,
 ) -> dict[str, Any]:
     entry_id = entry.get("id") if isinstance(entry.get("id"), str) else f"line_{entry.get('_lineno', '?')}"
     resolved_path = Path(str(entry.get("_resolved_path") or entry.get("path") or ""))
@@ -202,15 +213,16 @@ def score_smoothing_entry(
         "usable_for_metrics": False,
     }
 
-    try:
-        text = resolved_path.read_text(encoding="utf-8", errors="ignore")
-    except OSError as exc:
-        base_record.update({
-            "error": f"Could not read target: {exc}",
-            "length_bucket": "unknown",
-            "observed_word_count": None,
-        })
-        return base_record
+    if text is None:
+        try:
+            text = resolved_path.read_text(encoding="utf-8", errors="ignore")
+        except OSError as exc:
+            base_record.update({
+                "error": f"Could not read target: {exc}",
+                "length_bucket": "unknown",
+                "observed_word_count": None,
+            })
+            return base_record
 
     raw_n_words = len(split_words(text))
     audit = audit_text(
@@ -219,6 +231,7 @@ def score_smoothing_entry(
         do_tier2=do_tier2,
         do_tier3=do_tier3,
         do_tier4=do_tier4,
+        tier4_score_fn=tier4_score_fn,
         allow_non_prose=allow_non_prose,
         strip_rules=strip_rules,
         strip_aggressive=strip_aggressive,

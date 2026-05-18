@@ -389,6 +389,12 @@ def _build_inner_args(
         embedding_revision=getattr(parent_args, "embedding_revision", None),
         surprisal_model=getattr(parent_args, "surprisal_model", None),
         surprisal_revision=getattr(parent_args, "surprisal_revision", None),
+        # 1.90.0+: forward the batched-Tier-4 batch size so
+        # calibration_survey runs honor the operator-chosen value
+        # rather than falling back to score_corpus's default of 8.
+        surprisal_batch_size=getattr(
+            parent_args, "surprisal_batch_size", 8,
+        ),
         notes=None,
         # Forward the sub-sample knob so partial surveys hit the
         # same essays across signals (deterministic per seed).
@@ -938,6 +944,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
             "(reproducibility). Default: revision-less."
+        ),
+    )
+    p.add_argument(
+        "--surprisal-batch-size", type=int, default=8,
+        help=(
+            "Batch size for Tier 4 surprisal scoring under the "
+            "batched ``score_texts`` path (1.90.0+). Larger values "
+            "improve GPU utilisation but raise VRAM peak; 8 is "
+            "conservative for 1-2B-param causal LMs on a 24 GB L4. "
+            "Bump to 16 or 32 on A100 / H100. Set to 1 to bypass "
+            "batching and reproduce the legacy per-entry scoring "
+            "path exactly. No effect when --tier4 is off."
         ),
     )
     p.add_argument(
