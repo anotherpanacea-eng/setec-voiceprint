@@ -345,11 +345,13 @@ def test_build_cross_audit_single_slice_value_mage_shape():
     assert len(cross) == 1
     r = cross[0]
     assert r["robust_across_slices"] is True
-    # surprisal_mean is registered `lt`; raw 0.62 means AI > human →
-    # registry direction is wrong → flip to gt. Same direction as the
-    # MAGE 5K finding pinned in polarity_audit's integration test.
-    assert "flip" in r["registry_recommendation"]
-    assert "'lt' → 'gt'" in r["registry_recommendation"]
+    # surprisal_mean is registered `gt` post-1.95 (the registry was
+    # flipped from `lt` based on the same MAGE 5K audit that this
+    # tool was built to surface). Raw 0.62 on gt → consistent → keep
+    # direction. Same finding as polarity_audit's integration test
+    # against MAGE 5K: 'globally_consistent' + "keep" recommendation.
+    assert "keep" in r["registry_recommendation"]
+    assert "gt" in r["registry_recommendation"]
 
 
 def test_build_cross_audit_direction_by_comparator_case():
@@ -357,23 +359,37 @@ def test_build_cross_audit_direction_by_comparator_case():
     verdicts for the same (model, signal). The headline finding the
     tool exists to surface — a registry flip recommendation that
     holds on one attack class but not on another."""
+    # Use a generic test signal name with an explicit
+    # ``registry_directions`` override so this test pins the
+    # classification logic ("does cross_polarity_audit synthesise a
+    # direction_by_comparator recommendation when verdicts disagree
+    # across slices?") without depending on the framework's current
+    # registry encoding. The polarity-flips work (1.95.1) flipped
+    # several signal directions in the live registry; the synthetic
+    # scenario here would otherwise need to be re-authored every
+    # time the registry changes. Generic-signal-with-override is
+    # the same pattern test_polarity_audit's classification-logic
+    # guards use.
     rows = [
         # Aggregate (informational; not used by the per-slice classifier).
-        _row("m1", "surprisal_mean", "ALL", "all", 2000, 2000, 0.55),
+        _row("m1", "test_signal_lt", "ALL", "all", 2000, 2000, 0.55),
         # Attack class A: raw AUC 0.65 (lt registry) → inverted in this slice.
-        _row("m1", "surprisal_mean", "adversarial_class", "none",
+        _row("m1", "test_signal_lt", "adversarial_class", "none",
              1000, 1000, 0.65),
         # Attack class B: raw AUC 0.40 (lt registry) → consistent in this slice.
-        _row("m1", "surprisal_mean", "adversarial_class", "paraphrase",
+        _row("m1", "test_signal_lt", "adversarial_class", "paraphrase",
              1000, 1000, 0.40),
     ]
-    cross_audit = cpa.build_cross_audit(rows, slice_by="adversarial_class")
+    cross_audit = cpa.build_cross_audit(
+        rows, slice_by="adversarial_class",
+        registry_directions={"test_signal_lt": "lt"},
+    )
     assert sorted(cross_audit["slice_values"]) == ["none", "paraphrase"]
     cross = cross_audit["cross_summary"]
     assert len(cross) == 1
     r = cross[0]
     assert r["model"] == "m1"
-    assert r["signal"] == "surprisal_mean"
+    assert r["signal"] == "test_signal_lt"
     # Verdicts differ across slices → non-robust.
     assert r["robust_across_slices"] is False
     # Under direction-aware classification: raw 0.65 on lt is

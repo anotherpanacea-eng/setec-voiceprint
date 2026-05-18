@@ -6,6 +6,63 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.95.1] - 2026-05-18
+
+**Encode the 22 polarity flips from the 2026-05-18 MAGE 5K audit into `variance_audit.COMPRESSION_HEURISTICS`. Scope: MAGE-style curated-human comparators.** PRs #92 and #96 surfaced the recommendations; this PR ships them. Four signal directions flip in lockstep across `variance_audit`, `polarity_audit`, and `slice_bakeoff_v2`:
+
+| Signal | Pre-1.95 | Post-1.95 | Phase B models supporting the flip |
+|---|---|---|---|
+| `adjacent_cosine_mean` | `gt` | **`lt`** | 4 Phase A embeddings (mxbai, minilm, harrier, gemma) |
+| `surprisal_mean` | `lt` | **`gt`** | All 6 (tinyllama, llama32_1b, olmo2_1b, qwen25_1_5b, qwen3_1_7b, smollm2_1_7b) |
+| `surprisal_sd` | `lt` | **`gt`** | All 6 |
+| `surprisal_acf_lag1` | `gt` | **`lt`** | All 6 |
+
+`adjacent_cosine_sd` direction stays as `lt` (the 2026-05-18 audit returned `chance` / `mixed_noisy` for that signal across all four Phase A models — no flip recommendation).
+
+### Why this is `fix:` not `feat:`
+
+The pre-1.95 directions were inherited from the literature framing for DivEye's LM-vs-unscreened-web-text comparator, not from a curated-human comparator like MAGE. Against MAGE's curated-human comparator (essays / stories / editorial-grade non-fiction — the framework's primary target), the relationship inverts for all four affected signals. The registry was empirically wrong against the comparator the framework actually targets; encoding the flips brings the registry into agreement with the data.
+
+### RAID validation: directions do NOT generalise to mixed-humans corpora
+
+Running `polarity_audit` against the 2026-05-18 RAID 5K bake-off bundle under the *post-1.95* registry directions produces:
+
+| Verdict | Count | What it means |
+|---|---|---|
+| `globally_consistent` | **0** | No signal holds uniformly under the post-flip directions on RAID. |
+| `comparator_dependent` | **13** | Direction holds for some `(LM-judge × generator-family)` slices and inverts on others — the cross-slice finding the per-generator analysis predicted. |
+| `mixed_noisy` | 12 | Signal too weak on RAID to determine a direction. |
+| `globally_inverted` | **4** | Post-flip direction is *still wrong* on RAID for these cells. All 4 are `surprisal_sd` rows. |
+
+The MAGE flips are correct against MAGE-style curated-human comparators (the framework's headline target). They do **not** generalise to RAID-style mixed-humans corpora that include casual web prose, social-media-flavoured text, and otherwise-noisy human sources. The desktop session's per-generator analysis (`PER_GENERATOR_AUC.md` in the 2026-05-18 export) calls this out directly: *"the right structure is direction per `(signal × comparator class)`."*
+
+**Why land this PR anyway:** the framework's primary deployment target is curated-human comparison (variance audit on essays, stories, editorial-grade non-fiction). Pre-flip directions were empirically wrong on that target. Post-flip directions are empirically right on that target. Operators running variance audits against MAGE-style corpora get correct verdicts after this PR; that's the load-bearing improvement. Operators running against RAID-style corpora can pass explicit `registry_directions=` to `polarity_audit` / `slice_bakeoff_v2` (already supported) until per-comparator routing lands.
+
+**Next chunk:** encode `direction_by_comparator` routing in `variance_audit.COMPRESSION_HEURISTICS` — extend `ThresholdSpec.direction` from a single string to `dict[comparator_class, str]` with a default fallback. That's a structural change to the registry, deferred to a follow-up PR informed by the now-complete RAID 5K data plus eventual full-RAID + full-MAGE runs.
+
+### Changed
+
+- **`variance_audit.COMPRESSION_HEURISTICS`** — four `ThresholdSpec` entries get their `direction` field flipped. Status field on all four moves from `literature_anchored` to `empirically_oriented` and provenance from `diveye_basani_chen_tmlr_2026` to `mage_5k_polarity_audit_2026-05-18` so audit-consumer code reading these fields sees the corrected lineage.
+- **`polarity_audit.DEFAULT_REGISTRY_DIRECTIONS`** — sync with the new registry directions. Pre-1.95 directions documented in the module comment for context.
+- **`slice_bakeoff_v2.SIGNAL_SPECS`** — same lockstep sync; the slicer's direction-aware AUC computation now uses the corrected directions when no per-signal override is passed.
+- **Operator-facing audit output.** Running `polarity_audit` against `mage_5k_slice_analysis.csv` under the post-flip registry now produces 23 `globally_consistent` verdicts (the 22 flipped cells + harrier's already-borderline `adjacent_cosine_sd`) and 3 mixed/chance verdicts (the other three `adjacent_cosine_sd` cells, unchanged). Replaces the pre-flip output that showed 22 `globally_inverted` verdicts. Running the same tool against `raid_5k_slice_analysis.csv` produces 0 `globally_consistent` / 13 `comparator_dependent` / 12 `mixed_noisy` / 4 `globally_inverted` verdicts — the divergence that motivates the next chunk's `direction_by_comparator` routing.
+
+### Tests
+
+- **`test_polarity_audit.py::test_integration_mage_5k_polarity_audit_findings`** — updated to assert `globally_consistent` (was `globally_inverted`) for the 22 flipped cells AND that the recommendation is to *keep* the registry direction rather than flip it. This is the live regression guard: if a future patch reverts a direction in `COMPRESSION_HEURISTICS`, the polarity audit's verdict against MAGE 5K flips back to `globally_inverted` and the test trips with a clear message naming the registry as the likely cause.
+- **`test_polarity_audit.py::test_build_audit_globally_*_for_lt_signal_*`** — refactored to use generic test signal names (`test_signal_lt` / `test_signal_gt`) with explicit `registry_directions={...}` overrides, decoupling the classification-logic regression guards from the specific registry encoding. The tests now pin the classifier's behaviour under arbitrary registry directions, which is the actual contract under test.
+- **`test_polarity_audit.py::test_registry_override_*`** — updated to reflect the new defaults; overrides are tested by inverting the new directions rather than the pre-1.95 ones.
+- **`test_variance_audit_tier4.py::test_all_three_are_empirically_oriented_post_1_95`** (renamed from `test_all_three_are_literature_anchored`) — pins the new status + provenance fields on the three surprisal entries.
+- **`test_variance_audit_tier4.py::test_directions_post_1_95_match_polarity_audit_findings`** (renamed from `test_directions_match_spec_4_3`) — pins the new directions and documents the pre-vs-post mapping in the docstring.
+- **`test_variance_audit_tier4.py::test_tier4_only_call_drops_under_family_ablation`** — synthetic Tier-4 surprisal values flipped to the opposite side of each threshold so all three signals still fire under the new directions. Comments document the flip-aware threshold math.
+
+### Notes
+
+- **Downstream caches are implicitly invalidated.** The cache-identity system added in 1.93.0 tracks dtype + model + revision but not registry direction; existing calibration caches (thresholds, fpr curves) computed under pre-1.95 directions will produce different verdicts under the new directions. Operators with cached calibration outputs should re-score after upgrading. This is the framework's general contract: when `variance_audit.COMPRESSION_HEURISTICS` changes, downstream calibrations re-run.
+- **The polarity audit tool itself is unchanged in code; only the data it produces against the saved bundle changes.** Re-running `polarity_audit` after the registry flip is the validation step: it now confirms the registry directions are correct (23 `globally_consistent` verdicts) rather than wrong (22 `globally_inverted`).
+- **22-vs-23 consistent count: 22 cells flipped + 1 already-consistent (harrier's `adjacent_cosine_sd`, which was borderline consistent on the existing `lt` direction).** The four remaining cells are `adjacent_cosine_sd` on gemma / minilm / mxbai, which stay mixed/chance because the signal doesn't discriminate cleanly on those embeddings at the available `n` regardless of direction.
+- **RAID 5K data is now in hand; per-comparator routing is the next chunk.** The 2026-05-18 desktop bake-off completed the RAID 5K Phase A + Phase B matrix and produced the slice CSV under the pre-flip registry. Running `polarity_audit` on RAID under the *post*-flip registry (this PR's directions) returns 13 `comparator_dependent` and 4 `globally_inverted` verdicts — the empirical case for extending `ThresholdSpec.direction` to a per-comparator dict has now landed. That extension is a structural change (registry shape, audit-pipeline interpreter, slicer direction wiring) and is deferred to its own PR. This PR's scope stays *"MAGE-target directions, encoded uniformly"*; the per-comparator chunk takes them as the default branch of the routing table.
+
 ## [1.95.0] - 2026-05-18
 
 **`cross_polarity_audit.py` — per-slice polarity verdicts + cross-slice synthesis.** New analyser that pivots `polarity_audit`'s joint-evidence verdict into one verdict per slice value of a chosen slicing dimension (default `adversarial_class`). Answers the **direction_by_comparator** question that PR #92 surfaced but couldn't decide on the MAGE 5K data alone: "does the registry's 22-flip recommendation hold uniformly across attack classes / comparator splits / length buckets, or do some slices need their own direction?"

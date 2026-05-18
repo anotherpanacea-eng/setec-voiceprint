@@ -86,11 +86,17 @@ TOOL_NAME = "slice_bakeoff_v2"
 # audit. If the registry directions change in variance_audit.py, this table
 # moves in lockstep.
 SIGNAL_SPECS: dict[str, tuple[str, str]] = {
-    "adjacent_cosine_mean": ("tier3.adjacent_cosine.mean", "gt"),
+    # 1.95.0: directions match the post-MAGE-5K-flip registry in
+    # variance_audit.COMPRESSION_HEURISTICS. Pre-1.95 four of the five
+    # were inverted relative to the empirical sign against the MAGE
+    # curated-human comparator. See internal/polarity_audit_results/
+    # polarity_audit.md for the 22 (model × signal) verdicts that
+    # motivated the flip.
+    "adjacent_cosine_mean": ("tier3.adjacent_cosine.mean", "lt"),
     "adjacent_cosine_sd": ("tier3.adjacent_cosine.sd", "lt"),
-    "surprisal_mean": ("tier4.surprisal.mean", "lt"),
-    "surprisal_sd": ("tier4.surprisal.sd", "lt"),
-    "surprisal_acf_lag1": ("tier4.surprisal.autocorrelation.lag_1", "gt"),
+    "surprisal_mean": ("tier4.surprisal.mean", "gt"),
+    "surprisal_sd": ("tier4.surprisal.sd", "gt"),
+    "surprisal_acf_lag1": ("tier4.surprisal.autocorrelation.lag_1", "lt"),
 }
 
 PHASE_A_SIGNALS = ("adjacent_cosine_mean", "adjacent_cosine_sd")

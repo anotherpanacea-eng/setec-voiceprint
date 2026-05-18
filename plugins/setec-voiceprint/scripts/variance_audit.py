@@ -2089,10 +2089,21 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
         signal_path="tier1.sentence_length.sd",
         value=5.0, direction="lt", weight=0.5, length_floor=5000,
     ),
-    # Adjacent-sentence cosine: tight cohesion is the LLM tell.
+    # Adjacent-sentence cosine: pre-1.95 direction was ``gt`` (tight
+    # cohesion = AI tell). The 2026-05-18 MAGE 5K polarity audit
+    # (PR #92 + corrected reading per the 1.92.0 direction-aware fix)
+    # found this was empirically inverted: all four Phase A
+    # embeddings (mxbai, minilm, harrier, gemma) produced raw AUC
+    # 0.41-0.45 — i.e., AI prose has LOWER adjacent-sentence cosine
+    # against the MAGE curated-human comparator. Direction flipped to
+    # ``lt`` to match the empirical sign. See
+    # internal/polarity_audit_results/polarity_audit.md for the
+    # per-(model, signal) verdicts that motivated the flip.
     "adjacent_cosine_mean": ThresholdSpec(
         signal_path="tier3.adjacent_cosine.mean",
-        value=0.60, direction="gt", weight=1.5, length_floor=200,
+        value=0.60, direction="lt", weight=1.5, length_floor=200,
+        status="empirically_oriented",
+        provenance="mage_5k_polarity_audit_2026-05-18",
     ),
     "adjacent_cosine_sd": ThresholdSpec(
         status="empirically_oriented",
@@ -2120,30 +2131,41 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     # ClaimLicense block downstream surfaces
     # calibration_anchor: user-baseline-required.
     #
-    # Direction semantics:
-    #   surprisal_mean (lt): AI prose tends LOWER (LM samples near
-    #     its own mode → more predictable).
-    #   surprisal_sd (lt): AI prose tends LOWER (more uniform
-    #     surprise). DivEye's load-bearing signal.
-    #   surprisal_acf_lag1 (gt): AI prose tends HIGHER (smooth
-    #     local predictability).
+    # Direction semantics (post 1.95 — corrected against the 2026-05-18
+    # MAGE 5K polarity audit, see internal/polarity_audit_results/
+    # polarity_audit.md):
+    #   surprisal_mean (gt): AI prose tends HIGHER against the MAGE
+    #     curated-human comparator. The pre-1.95 ``lt`` direction was
+    #     inherited from DivEye's framing of LM-sampled prose vs
+    #     unscreened web text; against curated humans (essays /
+    #     stories / editorial-grade non-fiction), the relationship
+    #     inverts — AI prose carries HIGHER per-token surprisal than
+    #     the human comparator. Verified on all 6 Phase B models.
+    #   surprisal_sd (gt): Same flip as mean. AI prose has HIGHER
+    #     surprisal SD against curated humans, not lower. Verified
+    #     on all 6 Phase B models.
+    #   surprisal_acf_lag1 (lt): AI prose has LOWER lag-1 ACF.
+    #     Verified on all 6 Phase B models. The pre-1.95 ``gt``
+    #     reading (smooth local predictability ↑ in AI) was likewise
+    #     literature-anchored against a different comparator class
+    #     than MAGE provides.
     "surprisal_mean": ThresholdSpec(
         signal_path="tier4.surprisal.mean",
-        value=3.5, direction="lt", weight=1.5, length_floor=300,
-        status="literature_anchored",
-        provenance="diveye_basani_chen_tmlr_2026",
+        value=3.5, direction="gt", weight=1.5, length_floor=300,
+        status="empirically_oriented",
+        provenance="mage_5k_polarity_audit_2026-05-18",
     ),
     "surprisal_sd": ThresholdSpec(
         signal_path="tier4.surprisal.sd",
-        value=1.5, direction="lt", weight=2.0, length_floor=300,
-        status="literature_anchored",
-        provenance="diveye_basani_chen_tmlr_2026",
+        value=1.5, direction="gt", weight=2.0, length_floor=300,
+        status="empirically_oriented",
+        provenance="mage_5k_polarity_audit_2026-05-18",
     ),
     "surprisal_acf_lag1": ThresholdSpec(
         signal_path="tier4.surprisal.autocorrelation.lag_1",
-        value=0.30, direction="gt", weight=1.0, length_floor=500,
-        status="literature_anchored",
-        provenance="diveye_basani_chen_tmlr_2026",
+        value=0.30, direction="lt", weight=1.0, length_floor=500,
+        status="empirically_oriented",
+        provenance="mage_5k_polarity_audit_2026-05-18",
     ),
     # AIC-7 named-pattern density (v1.65.0). Per
     # `internal/SPEC_aic_8_9_implementation.md` Step 10 part 2.
