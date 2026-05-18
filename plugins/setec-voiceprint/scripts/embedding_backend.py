@@ -75,6 +75,77 @@ MODEL_ALIASES: dict[str, str] = {
 DEFAULT_MODEL: str = "mxbai"
 
 
+# Dtype contract mirrors ``surprisal_backend.VALID_DTYPES`` (added
+# in PR #93). Embedding models benefit from bf16/fp16 inference on
+# Ampere+ / Hopper / Ada cuda just as much as causal LMs do — the
+# embedding forward pass is the same matmul-heavy workload, only
+# the output projection differs. Keeping the dtype string vocabulary
+# symmetric between the two backends means operators set
+# ``--surprisal-dtype`` and ``--embedding-dtype`` with one mental
+# model instead of two.
+VALID_DTYPES: tuple[str, ...] = ("auto", "fp32", "fp16", "bf16")
+
+
+def _resolve_dtype(
+    requested: str,
+    *,
+    cuda_available: bool | None = None,
+    bf16_supported: bool | None = None,
+) -> tuple[Any, str]:
+    """Resolve a user-facing dtype string to a (torch.dtype, label).
+
+    Embedding-side mirror of ``surprisal_backend._resolve_dtype``.
+    Same auto-resolution semantics: ``auto`` picks bf16 on cuda
+    devices that support it (Ampere / Hopper / Ada), fp16 on older
+    cuda where bf16 forward passes fall back to slow kernels (V100
+    / T4), and fp32 elsewhere (CPU / MPS; bf16/fp16 inference is
+    not a throughput win on those backends).
+
+    The probe defaults to live ``torch.cuda`` queries but accepts
+    overrides for testability — the resolution logic is pure-Python
+    and can be exercised without a GPU by passing the two booleans
+    directly.
+
+    Returns ``(torch_dtype, canonical_label)``. The label is one of
+    ``"fp32" / "fp16" / "bf16"`` — never ``"auto"`` (the auto
+    sentinel is consumed at resolution time so the provenance block
+    records what the backend actually loaded, not the user's
+    request).
+    """
+    if requested not in VALID_DTYPES:
+        raise EmbeddingBackendError(
+            f"Invalid embedding-backend dtype {requested!r}; "
+            f"must be one of {VALID_DTYPES}."
+        )
+    try:
+        import torch  # type: ignore
+    except ImportError as exc:
+        raise EmbeddingBackendError(
+            "torch not installed; cannot resolve embedding-backend "
+            "dtype. Install with: pip install -r "
+            "requirements-calibration.txt"
+        ) from exc
+    if cuda_available is None:
+        cuda_available = bool(torch.cuda.is_available())
+    if bf16_supported is None:
+        bf16_supported = bool(
+            cuda_available
+            and hasattr(torch.cuda, "is_bf16_supported")
+            and torch.cuda.is_bf16_supported()
+        )
+    if requested == "auto":
+        if cuda_available and bf16_supported:
+            return torch.bfloat16, "bf16"
+        if cuda_available:
+            return torch.float16, "fp16"
+        return torch.float32, "fp32"
+    if requested == "bf16":
+        return torch.bfloat16, "bf16"
+    if requested == "fp16":
+        return torch.float16, "fp16"
+    return torch.float32, "fp32"
+
+
 class EmbeddingBackendError(RuntimeError):
     """Raised when the embedding backend cannot be loaded or used.
 
@@ -107,8 +178,34 @@ class EmbeddingBackend:
     model_id: str
     revision: str | None = None
     deterministic: bool = True
+    # Dtype contract added to align with PR #93's surprisal-side
+    # work. ``auto`` picks bf16 on Ampere+ / Hopper / Ada cuda, fp16
+    # on pre-Ampere cuda, fp32 on CPU / MPS. Explicit dtypes
+    # override the resolution. Validated in ``__post_init__`` so a
+    # typo fails at construction rather than at first-encode.
+    dtype: str = "auto"
+    # Explicit device override. When ``None``, sentence-transformers'
+    # built-in auto-device logic picks cuda > mps > cpu. Operators on
+    # multi-GPU hosts pin a specific device by passing
+    # ``"cuda:0"`` / ``"cuda:1"`` so concurrent calibration jobs
+    # (e.g., the cloud bake-off matrix's parallel-pair-of-processes
+    # pattern from PR #100) don't fight for the same device. The
+    # surprisal-side equivalent of this came in PR #88; this is the
+    # embedding-side mirror.
+    device: str | None = None
     _model: Any = field(default=None, repr=False, init=False, compare=False)
     _alias: str | None = field(default=None, repr=False, init=False, compare=False)
+    # Populated by ``_load`` after dtype + device resolution. Surfaced
+    # via ``identifier_block`` so audit consumers can distinguish
+    # operator intent (``dtype: auto`` / ``device: None``) from the
+    # actual loaded state (``dtype_loaded: bf16`` / ``device_loaded:
+    # cuda:0``).
+    _resolved_dtype_label: str | None = field(
+        default=None, repr=False, init=False, compare=False,
+    )
+    _resolved_device: str | None = field(
+        default=None, repr=False, init=False, compare=False,
+    )
 
     def __post_init__(self) -> None:
         # Resolve alias → full id once at construction.
@@ -125,6 +222,15 @@ class EmbeddingBackend:
                 (alias for alias, full in MODEL_ALIASES.items()
                  if full == self.model_id),
                 None,
+            )
+        # Validate dtype at construction so a typo fails fast — the
+        # surprisal-side contract does the same. Refusing an invalid
+        # value here also keeps ``_load`` simpler (it can assume
+        # ``self.dtype`` is one of ``VALID_DTYPES``).
+        if self.dtype not in VALID_DTYPES:
+            raise EmbeddingBackendError(
+                f"Invalid embedding-backend dtype {self.dtype!r}; "
+                f"must be one of {VALID_DTYPES}."
             )
 
     def _load(self) -> Any:
@@ -149,17 +255,73 @@ class EmbeddingBackend:
                 "(part of the optional calibration / R12 tier; see "
                 "the setup skill for tier-by-tier install guidance)."
             ) from exc
+        # Resolve dtype before constructing the model. ``auto``
+        # consumes here so the loaded model carries the actual
+        # precision (bf16 on H100, fp16 on T4, fp32 on CPU) rather
+        # than the ``auto`` sentinel.
+        #
+        # Torch is a hard dependency of sentence-transformers in
+        # production, so in a real install ``_resolve_dtype`` will
+        # always succeed. Test fakes that stub ``sys.modules
+        # ["sentence_transformers"]`` without installing torch are
+        # supported by silently skipping the dtype resolution +
+        # ``model_kwargs`` injection — the resolved label stays
+        # ``None`` so ``identifier_block`` truthfully reflects "no
+        # dtype was resolved on this run", and the SentenceTransformer
+        # constructor receives the same kwargs it would have under
+        # the pre-1.96 path.
+        torch_dtype: Any = None
+        try:
+            torch_dtype, self._resolved_dtype_label = _resolve_dtype(
+                self.dtype,
+            )
+        except EmbeddingBackendError:
+            # Torch not installed (or other resolution failure). In
+            # production this is unreachable because ST itself
+            # depends on torch; in test stubs it's expected.
+            torch_dtype = None
         try:
             kwargs: dict[str, Any] = {}
             if self.revision:
                 kwargs["revision"] = self.revision
+            if torch_dtype is not None:
+                # ``model_kwargs`` flows into ``AutoModel.from_pretrained``
+                # inside sentence-transformers, so ``torch_dtype``
+                # lands on the underlying HF model the same way PR
+                # #93's surprisal load does. fp32 is the ST default;
+                # we pass it explicitly for symmetry with bf16/fp16
+                # and so the provenance block records the dtype
+                # unconditionally.
+                kwargs["model_kwargs"] = {"torch_dtype": torch_dtype}
+            if self.device is not None:
+                # Sentence-transformers honors ``device=`` in the
+                # constructor by moving the model on load. ``None``
+                # (the default) defers to ST's auto-device logic,
+                # which picks cuda > mps > cpu.
+                kwargs["device"] = self.device
             self._model = SentenceTransformer(self.model_id, **kwargs)
         except Exception as exc:
             raise EmbeddingBackendError(
                 f"Failed to load embedding model {self.model_id!r}"
                 + (f" at revision {self.revision!r}" if self.revision else "")
-                + f": {type(exc).__name__}: {exc}"
+                + f" (dtype={self._resolved_dtype_label!r}"
+                + (f", device={self.device!r}" if self.device else "")
+                + f"): {type(exc).__name__}: {exc}"
             ) from exc
+        # Record the device the model actually landed on. Pulling
+        # this from the loaded model rather than ``self.device``
+        # captures ST's auto-pick when the caller didn't specify —
+        # the provenance block then shows e.g. ``device_loaded:
+        # cuda:0`` even on an operator who never set ``--embedding-
+        # device``.
+        try:
+            self._resolved_device = str(
+                next(self._model.parameters()).device
+            )
+        except (StopIteration, AttributeError):
+            # Some stub models in tests have no parameters; fall back
+            # to whatever the caller declared.
+            self._resolved_device = self.device
         if self.deterministic:
             # Best-effort. Failures here don't block — the wrapper
             # surfaces them in the identifier block instead.
@@ -248,6 +410,16 @@ class EmbeddingBackend:
             "alias": self._alias,
             "deterministic_mode": self.deterministic,
             "method": "sentence-transformers",
+            # Dtype + device pair: ``_requested`` captures operator
+            # intent (might be ``"auto"`` / ``None``), ``_loaded``
+            # captures the resolved state after ``_load`` has run.
+            # Both are recorded so an audit consumer can tell the
+            # difference between "operator picked bf16 explicitly"
+            # and "auto resolved to bf16 on this host".
+            "dtype_requested": self.dtype,
+            "dtype_loaded": self._resolved_dtype_label,
+            "device_requested": self.device,
+            "device_loaded": self._resolved_device,
         }
 
 

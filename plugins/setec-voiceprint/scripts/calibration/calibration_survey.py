@@ -387,6 +387,8 @@ def _build_inner_args(
         tier4=getattr(parent_args, "tier4", False),
         embedding_model=getattr(parent_args, "embedding_model", None),
         embedding_revision=getattr(parent_args, "embedding_revision", None),
+        embedding_dtype=getattr(parent_args, "embedding_dtype", "auto"),
+        embedding_device=getattr(parent_args, "embedding_device", None),
         surprisal_model=getattr(parent_args, "surprisal_model", None),
         surprisal_revision=getattr(parent_args, "surprisal_revision", None),
         surprisal_dtype=getattr(
@@ -988,6 +990,31 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Pin a HuggingFace commit SHA for the Tier 3 embedding "
             "model (reproducibility). Default: revision-less."
+        ),
+    )
+    p.add_argument(
+        "--embedding-dtype",
+        choices=("auto", "fp32", "fp16", "bf16"),
+        default="auto",
+        help=(
+            "Precision for Tier 3 embedding-model inference. ``auto`` "
+            "picks bf16 on supporting cuda (Ampere+ / Hopper / Ada), "
+            "fp16 on older cuda (V100 / T4) where bf16 falls back to "
+            "slow kernels, fp32 on CPU / MPS. Explicit values override "
+            "the auto resolution. Mirror of --surprisal-dtype on the "
+            "embedding side (added 1.96.0). No effect when --tier3 is "
+            "off, or when running through the legacy MiniLM fallback "
+            "(no --embedding-model)."
+        ),
+    )
+    p.add_argument(
+        "--embedding-device", default=None,
+        help=(
+            "Explicit device for the Tier 3 embedding model "
+            "(e.g., ``cuda:1``). Default: defer to sentence-"
+            "transformers' auto-device pick (cuda > mps > cpu). "
+            "Use to pin per-process device on multi-GPU hosts "
+            "running concurrent calibration jobs."
         ),
     )
     p.add_argument("--bootstrap-resamples", type=int, default=2000)

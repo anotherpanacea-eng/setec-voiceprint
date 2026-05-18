@@ -213,9 +213,15 @@ def test_audit_text_threads_embedding_model_through(monkeypatch):
     captured: dict[str, Any] = {}
     real_fn = va.adjacent_sentence_cosine
 
-    def _spy(sentences, *, embedding_model=None, embedding_revision=None):
+    def _spy(
+        sentences, *,
+        embedding_model=None, embedding_revision=None,
+        embedding_dtype="auto", embedding_device=None,
+    ):
         captured["embedding_model"] = embedding_model
         captured["embedding_revision"] = embedding_revision
+        captured["embedding_dtype"] = embedding_dtype
+        captured["embedding_device"] = embedding_device
         # Return a minimal valid dict so the rest of audit_text proceeds.
         return {
             "method": "stub", "n_pairs": 1, "mean": 0.5, "sd": 0.0,

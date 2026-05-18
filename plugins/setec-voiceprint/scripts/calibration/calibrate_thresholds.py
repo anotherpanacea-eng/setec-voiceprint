@@ -1701,6 +1701,11 @@ def score_corpus(
                 do_tier4=bool(getattr(args, "tier4", False)),
                 embedding_model=getattr(args, "embedding_model", None),
                 embedding_revision=getattr(args, "embedding_revision", None),
+                # 1.96.0+: dtype + device passthrough on the
+                # embedding side. Mirrors the surprisal-side
+                # passthrough below.
+                embedding_dtype=getattr(args, "embedding_dtype", "auto"),
+                embedding_device=getattr(args, "embedding_device", None),
                 surprisal_model=getattr(args, "surprisal_model", None),
                 surprisal_revision=getattr(args, "surprisal_revision", None),
                 # 1.93.0+: dtype passthrough for the per-entry Tier-4
@@ -2633,6 +2638,27 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Pin a HuggingFace commit SHA for the Tier 3 embedding "
             "model (reproducibility). Default: revision-less."
+        ),
+    )
+    parser.add_argument(
+        "--embedding-dtype",
+        choices=("auto", "fp32", "fp16", "bf16"),
+        default="auto",
+        help=(
+            "Precision for Tier 3 embedding-model inference. ``auto`` "
+            "picks bf16 on supporting cuda (Ampere+ / Hopper / Ada), "
+            "fp16 on older cuda, fp32 on CPU / MPS. Mirror of "
+            "--surprisal-dtype on the embedding side (added 1.96.0). "
+            "No effect when --tier3 is off, or when running through "
+            "the legacy MiniLM fallback (no --embedding-model)."
+        ),
+    )
+    parser.add_argument(
+        "--embedding-device", default=None,
+        help=(
+            "Explicit device for the Tier 3 embedding model "
+            "(e.g., ``cuda:1``). Default: defer to sentence-"
+            "transformers' auto-device pick."
         ),
     )
     parser.add_argument(
