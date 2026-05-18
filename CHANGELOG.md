@@ -6,6 +6,40 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.95.0] - 2026-05-18
+
+**`cross_polarity_audit.py` — per-slice polarity verdicts + cross-slice synthesis.** New analyser that pivots `polarity_audit`'s joint-evidence verdict into one verdict per slice value of a chosen slicing dimension (default `adversarial_class`). Answers the **direction_by_comparator** question that PR #92 surfaced but couldn't decide on the MAGE 5K data alone: "does the registry's 22-flip recommendation hold uniformly across attack classes / comparator splits / length buckets, or do some slices need their own direction?"
+
+### Motivation
+
+`polarity_audit` (PR #92) treats every non-aggregate cell in a slicer CSV as joint evidence for **one** verdict per `(model, signal)`. That answered "does the registry point the wrong way overall?" — for the MAGE 5K bundle, the answer was yes for 22 of 26 cells. The follow-up question is whether the 22 flip recommendations are **robust under adversarial conditions**: does the registry-correction direction hold the same way on paraphrase rows as it does on un-attacked rows? Joint-evidence verdicts can't answer that.
+
+`cross_polarity_audit` pivots the analysis: for each distinct value of the slicing dimension (e.g., `adversarial_class={none, paraphrase, humanizer, backtranslation}`), it produces a per-`(model, signal)` verdict from the slice's header cell, then synthesises across slices to flag the cases where the registry-flip recommendation depends on the comparator class.
+
+### Added
+
+- **`scripts/calibration/cross_polarity_audit.py`** — pure-Python tool (~440 lines). Reuses `polarity_audit.to_direction_aware()` for the bounds transform and `polarity_audit.load_slicer_csv()` for input parsing.
+  - `classify_slice_cell(cell, registry_direction)` — direct per-slice verdict from a single header cell. Uses direction-aware AUC bounds; doesn't go through `polarity_audit.build_audit` because that function's verdict logic requires multi-cell evidence (`n_consistent + n_inverted >= 2`) or an aggregate CI excluding 0.5, which single-cell slices typically can't satisfy. The within-slice classifier makes the slice cell's CI the unit of evidence.
+  - `build_cross_audit(rows, *, slice_by, ...)` — for each distinct slice value, runs `classify_slice_cell` on every `(model, signal)` header cell. Returns `per_slice` (the raw verdicts + raw AUC / CI / n per slice) and `cross_summary` (per-`(model, signal)` synthesis: verdicts across all slices, robustness flag, registry recommendation).
+  - `summarise_cross_slice(per_slice)` — synthesises across slices. Five recommendation buckets: `keep registry direction X` (robust + consistent everywhere), `flip registry: X → Y` (robust + inverted everywhere), `direction_by_comparator: keep X on [slices]; flip to Y on [slices]` (non-robust + mixed signed verdicts), `inconclusive` (all chance/mixed_noisy), `partially robust` (some real-signal slices alongside chance — human review required).
+  - `render_cross_audit_markdown(cross_audit)` — pretty-prints a cross-slice verdict table + a "non-robust signals" call-out section.
+  - CLI: `python3 cross_polarity_audit.py --input-csv slice.csv --slice-by adversarial_class --out-json out.json [--out-markdown out.md]`. Accepts any slicing dimension the slicer wrote into the CSV (`adversarial_class`, `length_bucket`, `register`, `notes.original_source`, etc.) — not hardcoded to attack classes. Errors cleanly (`rc=3`) when the requested slicing dimension is absent from the input, listing the available `slice_key` values.
+- **20 tests** in `test_cross_polarity_audit.py`: filtering, distinct-slice-value enumeration, per-slice classifier behaviour on gt/lt signals (inverted/consistent/chance cases), the five cross-slice recommendation buckets (robust-consistent, robust-inverted, direction_by_comparator, inconclusive, partially robust), markdown rendering (including the "no routing needed" positive case), and CLI smoke (missing-input, unknown-slice-by, end-to-end JSON + markdown emission).
+
+### Smoke-tested against the 2026-05-18 MAGE 5K bundle
+
+The MAGE 5K bundle has zero adversarial-class diversity — every row carries `adversarial_class=none`. Running `cross_polarity_audit` against it produces a single-slice cross-audit with 26 (model × signal) rows; the 22 flip recommendations match `polarity_audit`'s findings exactly (the same direction-aware classification logic is in play). The closing line declares: _"All signals were robust across all observed slice values (verdicts uniform). The single-slice polarity_audit result holds; no comparator-class routing needed."_ This is the correct degenerate output for a slice with one observed value; the tool comes into its own when RAID-style data with diverse `attack` labels lands.
+
+### When to use
+
+- **Use `polarity_audit`** for the headline finding ("does the registry point the right way overall?"). Faster, single verdict per `(model, signal)`.
+- **Use `cross_polarity_audit`** when you have a slicer CSV with diverse values of a slicing dimension AND want to know whether `polarity_audit`'s recommendations are robust to the slicing dimension (or whether some signals need `direction_by_comparator`-style routing per slice).
+
+### Notes
+
+- **No GPU work.** Pure-Python; reads pre-existing slicer CSV. Mirrors the laptop-portable posture established by `polarity_audit.py` and `slice_bakeoff_v2.py`.
+- **`variance_audit.py` registry untouched.** This tool produces evidence, same as `polarity_audit`. Encoding `direction_by_comparator` per-slice routing into `variance_audit.COMPRESSION_HEURISTICS` is a follow-up PR informed by full-corpus (RAID) data, not by the 5K subset.
+
 ## [1.94.1] - 2026-05-18
 
 **`surprisal_backend`: chunk over-context inputs; `variance_audit`: wire Tier-4 signal paths.** Ported from PR #97 (the user's original branch targeted the now-stale `feat/mage-tier34-bakeoff-scripts`; this PR is the rebase onto current main with reviewer-P2 device handling preserved). Two bug fixes that the 2026-05-18 RAID 5K bake-off surfaced before the dtype/length-sort/cross-polarity work landed.
