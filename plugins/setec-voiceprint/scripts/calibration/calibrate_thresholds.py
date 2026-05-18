@@ -1459,6 +1459,7 @@ def score_corpus(
                     getattr(args, "surprisal_model", None),
                 ),
                 revision=getattr(args, "surprisal_revision", None),
+                dtype=getattr(args, "surprisal_dtype", "auto"),
             )
         except ImportError:
             batched_surprisal_backend = None
@@ -2497,6 +2498,21 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
             "(reproducibility). Default: revision-less."
+        ),
+    )
+    parser.add_argument(
+        "--surprisal-dtype",
+        choices=("auto", "fp32", "fp16", "bf16"),
+        default="auto",
+        help=(
+            "Precision for Tier 4 causal-LM inference. ``auto`` picks "
+            "bf16 on supporting cuda (Ampere+ / Hopper / Ada), fp16 on "
+            "older cuda (V100 / T4) where bf16 falls back to slow "
+            "kernels, fp32 on CPU / MPS. Explicit values override the "
+            "auto resolution. The log_softmax step is always computed "
+            "in fp32 so the surprisal-series numerical contract is "
+            "stable across dtype choices. No effect when --tier4 is "
+            "off."
         ),
     )
     parser.add_argument(

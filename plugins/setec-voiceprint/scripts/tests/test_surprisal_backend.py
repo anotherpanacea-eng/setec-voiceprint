@@ -232,6 +232,179 @@ def test_score_text_raises_when_model_load_fails(
     assert "simulated load failure" in str(exc.value)
 
 
+# --------------- Dtype resolution (1.93.0) ----------------------
+
+
+def test_dtype_default_is_auto():
+    """Constructing without an explicit dtype yields ``"auto"``, the
+    sentinel that resolves to bf16/fp16/fp32 at load time based on
+    hardware. Pins the default so operators get the perf win without
+    needing to pass --surprisal-dtype on every invocation."""
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    assert b.dtype == "auto"
+
+
+def test_dtype_invalid_raises_at_construction():
+    """``__post_init__`` validates dtype against VALID_DTYPES so the
+    typed failure happens at construction (cheap) rather than after
+    the model finishes downloading (expensive)."""
+    with pytest.raises(sb.SurprisalBackendError) as exc:
+        sb.SurprisalBackend(model_id="tinyllama", dtype="float32")
+    assert "Invalid surprisal-backend dtype" in str(exc.value)
+    assert "'float32'" in str(exc.value)
+
+
+def test_identifier_block_records_dtype_request_pre_load():
+    """Before the model loads, identifier_block surfaces the dtype the
+    operator requested (``dtype_requested``) but ``dtype_loaded`` is
+    None — the resolved label is unknown until _resolve_dtype runs
+    against actual hardware."""
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="bf16")
+    block = b.identifier_block()
+    assert block["dtype_requested"] == "bf16"
+    assert block["dtype_loaded"] is None
+
+
+@_skip_no_torch
+def test_resolve_dtype_auto_on_no_cuda_is_fp32():
+    """Auto resolution on a CPU-only host returns fp32 — bf16/fp16
+    inference is slower than fp32 on CPU, so the auto path defaults
+    to the fast option for the available hardware."""
+    import torch  # type: ignore
+    dtype, label = sb._resolve_dtype(
+        "auto", cuda_available=False, bf16_supported=False,
+    )
+    assert dtype == torch.float32
+    assert label == "fp32"
+
+
+@_skip_no_torch
+def test_resolve_dtype_auto_on_bf16_cuda_is_bf16():
+    """Auto on Ampere+/Hopper/Ada (bf16-supported cuda) returns bf16
+    — the load-bearing perf path. Pins that a properly equipped host
+    gets the ~1.7-2x throughput win without operator action."""
+    import torch  # type: ignore
+    dtype, label = sb._resolve_dtype(
+        "auto", cuda_available=True, bf16_supported=True,
+    )
+    assert dtype == torch.bfloat16
+    assert label == "bf16"
+
+
+@_skip_no_torch
+def test_resolve_dtype_auto_on_pre_ampere_cuda_is_fp16():
+    """Auto on a cuda device that does NOT support bf16 (V100, T4)
+    falls back to fp16 rather than fp32. bf16 on these devices
+    triggers slow kernels; fp16 is the correct fast path. The
+    log_softmax upcast in score_text / score_texts keeps numerical
+    safety regardless of dtype."""
+    import torch  # type: ignore
+    dtype, label = sb._resolve_dtype(
+        "auto", cuda_available=True, bf16_supported=False,
+    )
+    assert dtype == torch.float16
+    assert label == "fp16"
+
+
+@_skip_no_torch
+def test_resolve_dtype_explicit_overrides_auto():
+    """Explicit dtype strings always win over auto resolution. An
+    operator can force fp32 on a bf16-capable host (e.g., to
+    reproduce a pre-1.93 calibration bit-exactly) or force bf16 on
+    no-cuda (e.g., to test serialization roundtrips)."""
+    import torch  # type: ignore
+    # fp32 forced on bf16-capable cuda.
+    dtype, label = sb._resolve_dtype(
+        "fp32", cuda_available=True, bf16_supported=True,
+    )
+    assert dtype == torch.float32 and label == "fp32"
+    # bf16 forced with no cuda.
+    dtype, label = sb._resolve_dtype(
+        "bf16", cuda_available=False, bf16_supported=False,
+    )
+    assert dtype == torch.bfloat16 and label == "bf16"
+    # fp16 forced.
+    dtype, label = sb._resolve_dtype(
+        "fp16", cuda_available=True, bf16_supported=True,
+    )
+    assert dtype == torch.float16 and label == "fp16"
+
+
+@_skip_no_torch
+def test_resolve_dtype_invalid_raises():
+    """``_resolve_dtype`` rejects unknown strings even though the
+    dataclass already validates at construction — defensive double-
+    check for direct callers (tests, ad-hoc scripts) bypassing the
+    SurprisalBackend constructor."""
+    with pytest.raises(sb.SurprisalBackendError) as exc:
+        sb._resolve_dtype("float16")  # wrong spelling
+    assert "Invalid" in str(exc.value)
+
+
+@_skip_no_torch
+def test_load_passes_torch_dtype_to_from_pretrained(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The model load path forwards the resolved torch dtype to
+    AutoModelForCausalLM.from_pretrained. Pins the wiring so a
+    refactor that drops the kwarg silently regressing to fp32 will
+    trip this test."""
+    import torch  # type: ignore
+    captured: dict = {}
+    fake_transformers = mock.MagicMock()
+    fake_model = mock.MagicMock()
+    fake_model.to.return_value = fake_model
+    fake_tokenizer = mock.MagicMock()
+    fake_tokenizer.pad_token = None
+    fake_tokenizer.eos_token = "<eos>"
+
+    def _capture_model_call(model_id, **kwargs):
+        captured["model_id"] = model_id
+        captured["kwargs"] = kwargs
+        return fake_model
+
+    fake_transformers.AutoTokenizer.from_pretrained.return_value = (
+        fake_tokenizer
+    )
+    fake_transformers.AutoModelForCausalLM.from_pretrained.side_effect = (
+        _capture_model_call
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    # Force the dtype path explicitly so the test doesn't depend on
+    # the host machine's cuda availability.
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="bf16")
+    b._load()
+    assert captured["kwargs"].get("torch_dtype") == torch.bfloat16
+    assert b._resolved_dtype_label == "bf16"
+
+
+@_skip_no_torch
+def test_identifier_block_records_resolved_dtype_after_load(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """After ``_load`` resolves dtype, identifier_block surfaces the
+    resolved label in ``dtype_loaded``. Audit consumers reading the
+    PROVENANCE block see ``"bf16"`` / ``"fp16"`` / ``"fp32"`` —
+    never ``"auto"`` (the sentinel is consumed at load time)."""
+    fake_transformers = mock.MagicMock()
+    fake_transformers.AutoTokenizer.from_pretrained.return_value = (
+        mock.MagicMock(pad_token=None, eos_token="<eos>")
+    )
+    fake_model = mock.MagicMock()
+    fake_model.to.return_value = fake_model
+    fake_transformers.AutoModelForCausalLM.from_pretrained.return_value = (
+        fake_model
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake_transformers)
+
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="fp32")
+    b._load()
+    block = b.identifier_block()
+    assert block["dtype_requested"] == "fp32"
+    assert block["dtype_loaded"] == "fp32"
+
+
 # --------------- Empty / single-token input ---------------------
 
 
