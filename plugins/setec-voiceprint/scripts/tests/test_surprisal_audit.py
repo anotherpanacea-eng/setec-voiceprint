@@ -516,6 +516,89 @@ class TestCli:
         rc = sa.main([str(tmp_path / "nope.txt")])
         assert rc == 2
 
+    def test_cli_exposes_surprisal_dtype_flag(self):
+        """``--surprisal-dtype`` is wired on the CLI with the four
+        documented choices and ``auto`` default. Pins 1.94.0
+        contract: an operator passing the flag gets it accepted by
+        the parser without error, and omitting it gets the auto
+        default forwarded to the backend (so default-host runs pick
+        up the perf win without explicit operator action)."""
+        parser = sa.build_arg_parser()
+        args = parser.parse_args(["dummy.txt"])
+        assert args.surprisal_dtype == "auto"
+        # All four documented choices are accepted.
+        for choice in ("auto", "fp32", "fp16", "bf16"):
+            parsed = parser.parse_args(
+                ["dummy.txt", "--surprisal-dtype", choice],
+            )
+            assert parsed.surprisal_dtype == choice
+        # Unknown values are rejected by argparse's choices=.
+        with pytest.raises(SystemExit):
+            parser.parse_args([
+                "dummy.txt", "--surprisal-dtype", "float32",
+            ])
+
+    def test_cli_threads_dtype_to_surprisal_backend(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """End-to-end through ``main()``: ``--surprisal-dtype bf16``
+        results in ``SurprisalBackend(..., dtype="bf16")``. Without
+        this wiring the standalone audit silently runs at the
+        backend's default ``auto`` regardless of operator intent —
+        the same per-entry-fallback bug class that PR #93 fixed for
+        the calibration loop, applied here to the standalone audit
+        tool."""
+        target = tmp_path / "essay.txt"
+        target.write_text("Some prose text.", encoding="utf-8")
+
+        captured: dict = {}
+        real_init = SurprisalBackend.__init__
+
+        def _spy_init(self_, *args, **kwargs):
+            captured["dtype"] = kwargs.get("dtype")
+            captured["model_id"] = kwargs.get("model_id")
+            return real_init(self_, *args, **kwargs)
+
+        def _stub_score(self_, text, *, return_top_k=0):
+            return _flat_stub(text, return_top_k=return_top_k)
+
+        monkeypatch.setattr(SurprisalBackend, "__init__", _spy_init)
+        monkeypatch.setattr(SurprisalBackend, "score_text", _stub_score)
+
+        rc = sa.main([
+            str(target), "--json",
+            "--model", "tinyllama",
+            "--surprisal-dtype", "bf16",
+        ])
+        assert rc == 0
+        assert captured["dtype"] == "bf16"
+
+    def test_cli_dtype_default_is_auto_to_backend(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ):
+        """Omitting ``--surprisal-dtype`` routes ``"auto"`` through
+        to the SurprisalBackend constructor — pinning the default-
+        path behaviour for the common case."""
+        target = tmp_path / "essay.txt"
+        target.write_text("Some prose text.", encoding="utf-8")
+
+        captured: dict = {}
+        real_init = SurprisalBackend.__init__
+
+        def _spy_init(self_, *args, **kwargs):
+            captured["dtype"] = kwargs.get("dtype")
+            return real_init(self_, *args, **kwargs)
+
+        def _stub_score(self_, text, *, return_top_k=0):
+            return _flat_stub(text, return_top_k=return_top_k)
+
+        monkeypatch.setattr(SurprisalBackend, "__init__", _spy_init)
+        monkeypatch.setattr(SurprisalBackend, "score_text", _stub_score)
+
+        rc = sa.main([str(target), "--json", "--model", "tinyllama"])
+        assert rc == 0
+        assert captured["dtype"] == "auto"
+
     def test_cli_end_to_end_with_monkeypatched_backend(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     ):

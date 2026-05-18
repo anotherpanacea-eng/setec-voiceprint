@@ -720,6 +720,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Pin a HuggingFace commit SHA for reproducibility.",
     )
     p.add_argument(
+        "--surprisal-dtype",
+        choices=("auto", "fp32", "fp16", "bf16"),
+        default="auto",
+        help=(
+            "Precision for causal-LM inference. ``auto`` picks bf16 "
+            "on supporting cuda (Ampere+ / Hopper / Ada), fp16 on "
+            "older cuda (V100 / T4), fp32 on CPU / MPS. Explicit "
+            "values override the auto resolution. The log_softmax "
+            "step is always computed in fp32 so the surprisal-"
+            "series numerical contract is stable across dtype "
+            "choices (1.93.0+)."
+        ),
+    )
+    p.add_argument(
         "--sliding-window", action="store_true",
         help=(
             "Compute per-window stats (mean, sd, lag-1 ACF) over a "
@@ -765,6 +779,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         backend = SurprisalBackend(
             model_id=model_id, revision=args.revision,
+            dtype=args.surprisal_dtype,
         )
     except SurprisalBackendError as exc:
         sys.stderr.write(f"Backend construction failed: {exc}\n")
