@@ -149,9 +149,15 @@ def test_run_benchmark_calls_backend_three_times_per_repeat(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """One ``encode`` per ordering, repeated ``repeats`` times.
-    With ``repeats=2``, expect 6 timed calls (plus a 1-call
-    warm-up = 7 total). Pins the loop structure so a refactor
-    that accidentally drops an ordering surfaces here."""
+    With ``repeats=2``: 3 per-ordering warmups + 3 orderings * 2
+    repeats = 9 total calls. Pins the loop structure so a refactor
+    that accidentally drops an ordering surfaces here.
+
+    Pre-PR-#102-followup, warmup was a single 8-text call (7
+    total). The reviewer P2 fix replaced it with per-ordering
+    full-corpus warmup so first-batch allocator effects don't
+    bias the first ordering of the first repeat -- the steady-
+    state behavior the benchmark cares about gets measured."""
     stub = _StubBackend()
 
     class _FakeBackendModule:
@@ -168,8 +174,8 @@ def test_run_benchmark_calls_backend_three_times_per_repeat(
         short_len=80, long_len=400,
         out_stream=sink,
     )
-    # 1 warm-up + 3 orderings * 2 repeats = 7.
-    assert len(stub.calls) == 7
+    # 3 per-ordering warmups + 3 orderings * 2 repeats = 9.
+    assert len(stub.calls) == 9
 
 
 def test_run_benchmark_writes_markdown_summary(
@@ -228,6 +234,104 @@ def test_run_benchmark_returns_summary_dict(
         assert {"mean", "stdev", "median"} <= set(stats.keys()), (
             f"summary[{label!r}] missing keys"
         )
+
+
+def test_warmup_runs_each_ordering_with_full_corpus(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Reviewer P2 on PR #102: warmup must hit every ordering with
+    the full corpus before the timed loop, so first-batch allocator
+    / cache / thermal effects don't bias whichever ordering happens
+    to run first. Pin the warmup contract: the first three encode
+    calls (the warmups) each carry the full corpus length, not a
+    truncated 8-text sample like the pre-fix single warmup did."""
+    stub = _StubBackend()
+
+    class _FakeBackendModule:
+        EmbeddingBackend = lambda self=None, **kw: stub  # noqa: E731
+
+    monkeypatch.setitem(
+        sys.modules, "embedding_backend", _FakeBackendModule(),
+    )
+    sink = io.StringIO()
+    bench.run_benchmark(
+        model_alias="minilm",
+        n=12, batch_size=4, repeats=1,
+        short_len=80, long_len=400,
+        out_stream=sink,
+    )
+    # First 3 calls are the per-ordering warmups. Each must hit
+    # exactly n=12 texts (full corpus). The post-fix warmup runs
+    # the full corpus through each ordering; the pre-fix warmup
+    # ran an 8-text slice through only ``texts[:8]``.
+    warmup_calls = stub.calls[:3]
+    for call in warmup_calls:
+        assert len(call["lengths"]) == 12, (
+            f"warmup call had {len(call['lengths'])} texts; expected "
+            f"full corpus of 12"
+        )
+
+
+def test_per_repeat_ordering_is_randomized(monkeypatch: pytest.MonkeyPatch):
+    """Reviewer P2 on PR #102: per-repeat ordering of the three
+    orderings must be randomized so thermal drift over the repeat
+    sequence affects each ordering equally on average. With
+    ``repeats=4`` and a seeded shuffler, at least one repeat must
+    pick a non-default order -- otherwise the script is back to
+    the bias-prone fixed sequence the reviewer flagged.
+
+    The stub records the corpus length signature of each call (12
+    chars across the four lengths in the synthetic corpus); we
+    use the *exact lengths list* to identify which ordering each
+    call was."""
+    stub = _StubBackend()
+
+    class _FakeBackendModule:
+        EmbeddingBackend = lambda self=None, **kw: stub  # noqa: E731
+
+    monkeypatch.setitem(
+        sys.modules, "embedding_backend", _FakeBackendModule(),
+    )
+    sink = io.StringIO()
+    bench.run_benchmark(
+        model_alias="minilm",
+        n=20, batch_size=8, repeats=4,
+        short_len=80, long_len=400,
+        out_stream=sink,
+    )
+
+    # The three orderings produce distinct lengths-sequences:
+    # - pre_sorted: ascending
+    # - adversarial: descending
+    # - shuffled: neither (random)
+    def classify(lengths):
+        if lengths == sorted(lengths):
+            return "pre_sorted"
+        if lengths == sorted(lengths, reverse=True):
+            return "adversarial"
+        return "shuffled"
+
+    # Drop the 3 warmups; group the timed calls into per-repeat
+    # triplets in arrival order.
+    timed_calls = stub.calls[3:]
+    assert len(timed_calls) == 12  # 3 orderings * 4 repeats
+
+    per_repeat_orderings = []
+    for i in range(4):
+        triplet = timed_calls[i * 3:(i + 1) * 3]
+        per_repeat_orderings.append(
+            tuple(classify(call["lengths"]) for call in triplet)
+        )
+
+    # At least two distinct orderings across the 4 repeats -- if
+    # all four matched the same fixed sequence, randomization
+    # isn't happening and the reviewer's bias concern stands.
+    distinct = set(per_repeat_orderings)
+    assert len(distinct) >= 2, (
+        f"per-repeat ordering didn't vary across 4 repeats; got "
+        f"{per_repeat_orderings} -- randomization broken, "
+        f"benchmark may bias toward the first ordering"
+    )
 
 
 # ---------- CLI entry point ----------

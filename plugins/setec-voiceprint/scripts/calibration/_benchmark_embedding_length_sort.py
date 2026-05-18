@@ -156,17 +156,42 @@ def run_benchmark(
     texts = _build_corpus(n=n, short_len=short_len, long_len=long_len)
     orderings = _orderings(texts)
 
-    # Warm-up call to pay weight-load cost outside the timed loop.
-    out_stream.write("warming up... ")
+    # Warm-up that pays *every* ordering's allocator / cache cost
+    # before the timed loop. Reviewer P2 on PR #102 flagged that a
+    # fixed ``shuffled -> pre_sorted -> adversarial`` order could
+    # make first-full-batch allocator warmup, tokenizer / model
+    # cache effects, or thermal drift masquerade as an ordering
+    # effect -- the benchmark would then "answer its own question
+    # incorrectly". Two mitigations:
+    #
+    #   1. A per-ordering full-corpus warmup before any timing runs.
+    #      Pays the first-call cost for each ordering ONCE so the
+    #      timed loop measures steady-state behavior.
+    #
+    #   2. Per-repeat randomized ordering of the three orderings
+    #      (seeded for reproducibility) so thermal drift over the
+    #      repeat sequence affects each ordering equally on average.
+    out_stream.write("warming up (per-ordering, full corpus)...\n")
     out_stream.flush()
-    _time_encode(backend, texts[:min(8, len(texts))], batch_size=batch_size)
-    out_stream.write("done.\n\n")
+    for label, t_list in orderings.items():
+        _time_encode(backend, t_list, batch_size=batch_size)
+        out_stream.write(f"  warmed {label}\n")
+    out_stream.write("\n")
 
     timings: dict[str, list[float]] = {k: [] for k in orderings}
+    # Seeded for reproducibility -- two runs with the same arguments
+    # produce the same per-repeat ordering sequence, so an operator
+    # rerunning the benchmark sees comparable per-repeat numbers.
+    order_rng = random.Random(0xBEEF)
+    ordering_keys = list(orderings.keys())
     for r in range(repeats):
+        order_this_repeat = list(ordering_keys)
+        order_rng.shuffle(order_this_repeat)
         out_stream.write(f"  repeat {r + 1}/{repeats}:")
-        for label, t_list in orderings.items():
-            dt = _time_encode(backend, t_list, batch_size=batch_size)
+        for label in order_this_repeat:
+            dt = _time_encode(
+                backend, orderings[label], batch_size=batch_size,
+            )
             timings[label].append(dt)
             out_stream.write(f"  {label}={dt:.3f}s")
         out_stream.write("\n")
