@@ -147,14 +147,28 @@ PHASE_B_SIGNALS=(surprisal_mean surprisal_sd surprisal_acf_lag1)
 # order can override SETEC_PHASE_{A,B}_PATHS with an OrderedDict-like
 # JSON if a future Python version drops dict insertion order
 # (currently 3.7+ guarantees it for parsed JSON).
-PHASE_A_ALIASES=($(python3 -c "
-import json,sys
-print(' '.join(json.loads('''$PHASE_A_PATHS_JSON''').keys()))
-"))
-PHASE_B_ALIASES=($(python3 -c "
-import json,sys
-print(' '.join(json.loads('''$PHASE_B_PATHS_JSON''').keys()))
-"))
+#
+# Pre-declared as empty arrays + populated one key per line so empty
+# rosters (e.g., one-phase bake-offs via SETEC_PHASE_A_PATHS='{}' or
+# SETEC_PHASE_B_PATHS='{}') don't trip nounset on the legacy bash
+# 3.2 / 4.3 word-splitting path that would otherwise treat
+# ``$()``-of-empty-string as an unbound array.
+PHASE_A_ALIASES=()
+while IFS= read -r line; do
+    [ -n "$line" ] && PHASE_A_ALIASES+=("$line")
+done < <(python3 -c "
+import json
+for k in json.loads('''$PHASE_A_PATHS_JSON''').keys():
+    print(k)
+")
+PHASE_B_ALIASES=()
+while IFS= read -r line; do
+    [ -n "$line" ] && PHASE_B_ALIASES+=("$line")
+done < <(python3 -c "
+import json
+for k in json.loads('''$PHASE_B_PATHS_JSON''').keys():
+    print(k)
+")
 
 resolve_path() {
     # Look up the path for an alias in one of the phase JSON maps.
@@ -179,8 +193,8 @@ echo "  cuda_visible_devices: ${CUDA_VISIBLE_DEVICES:-(unset)}"
 echo "  max_entries: ${MAX_ENTRIES:-(full)}"
 echo "  bootstrap: engine=$BOOTSTRAP_ENGINE resamples=$BOOTSTRAP_RESAMPLES"
 echo "  fpr_target: $FPR_TARGET   cooldown: ${COOLDOWN_SEC}s"
-echo "  phase_a_aliases: ${PHASE_A_ALIASES[*]}"
-echo "  phase_b_aliases: ${PHASE_B_ALIASES[*]}"
+echo "  phase_a_aliases: ${PHASE_A_ALIASES[*]:-(none)}"
+echo "  phase_b_aliases: ${PHASE_B_ALIASES[*]:-(none)}"
 echo "============================================================"
 
 if [ "${SETEC_RESET_SENTINELS:-0}" = "1" ]; then
@@ -245,13 +259,17 @@ if [ "$DRY_RUN" = "1" ]; then
     echo
     echo "SETEC_DRY_RUN=1 -- printing matrix plan and exiting without running cells."
     echo
+    # The ``${ARR[@]+"${ARR[@]}"}`` idiom expands to nothing when
+    # ARR is empty / unset, safely on bash 3.2+ (macOS default) under
+    # ``set -u``. A bare ``"${ARR[@]}"`` would trip nounset on empty
+    # arrays in bash 4.3 and earlier.
     echo "Phase A cells:"
-    for ALIAS in "${PHASE_A_ALIASES[@]}"; do
+    for ALIAS in ${PHASE_A_ALIASES[@]+"${PHASE_A_ALIASES[@]}"}; do
         path=$(resolve_path "$PHASE_A_PATHS_JSON" "$ALIAS")
         echo "  $ALIAS  ($path)  signals: ${PHASE_A_SIGNALS[*]}"
     done
     echo "Phase B cells:"
-    for ALIAS in "${PHASE_B_ALIASES[@]}"; do
+    for ALIAS in ${PHASE_B_ALIASES[@]+"${PHASE_B_ALIASES[@]}"}; do
         path=$(resolve_path "$PHASE_B_PATHS_JSON" "$ALIAS")
         echo "  $ALIAS  ($path)  signals: ${PHASE_B_SIGNALS[*]}"
     done
@@ -371,7 +389,12 @@ run_phase_b() {
 
 FAILED_CELLS=()
 
-for ALIAS in "${PHASE_A_ALIASES[@]}"; do
+# The ``${ARR[@]+"${ARR[@]}"}`` idiom expands to nothing when ARR is
+# empty / unset, safely on bash 3.2+ (macOS default) under ``set -u``.
+# Operators run one-phase bake-offs by passing
+# ``SETEC_PHASE_{A,B}_PATHS='{}'`` -- the empty array would otherwise
+# trip nounset before the failure-summary block ran.
+for ALIAS in ${PHASE_A_ALIASES[@]+"${PHASE_A_ALIASES[@]}"}; do
     if ! run_phase_a "$ALIAS"; then
         FAILED_CELLS+=("Phase A/${ALIAS}")
     fi
@@ -379,7 +402,7 @@ for ALIAS in "${PHASE_A_ALIASES[@]}"; do
     sleep "$COOLDOWN_SEC"
 done
 
-for ALIAS in "${PHASE_B_ALIASES[@]}"; do
+for ALIAS in ${PHASE_B_ALIASES[@]+"${PHASE_B_ALIASES[@]}"}; do
     if ! run_phase_b "$ALIAS"; then
         FAILED_CELLS+=("Phase B/${ALIAS}")
     fi

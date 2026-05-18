@@ -414,3 +414,37 @@ def test_allow_partial_lets_failed_cells_succeed_overall(tmp_path: Path):
     )
     assert "nonsense_alias_that_wont_load" in cp.stdout
     assert "treating partial completion as success" in cp.stdout
+
+
+@_skip_no_bash
+def test_empty_phase_a_does_not_trip_nounset(tmp_path: Path):
+    """Reviewer P1 follow-up: an empty Phase A roster
+    (``SETEC_PHASE_A_PATHS='{}'``) must not abort the script via
+    nounset before the failure-summary or Phase B loop runs. Pins
+    the symmetric case to the empty-Phase-B regression tests above
+    -- one-phase bake-offs (operator wants only embedding OR only
+    surprisal cells) shouldn't pay a portability cost."""
+    corpus = tmp_path / "corpus"
+    corpus.mkdir()
+    (corpus / "manifest.jsonl").write_text("{}\n")
+    cp = _run_script({
+        "SETEC_CORPUS_DIR": str(corpus),
+        "SETEC_BAKEOFF_DIR": str(tmp_path / "bake"),
+        "SETEC_CALIBRATION_RUNS_DIR": str(tmp_path / "runs"),
+        "SETEC_LOG_DIR": str(tmp_path / "log"),
+        "SETEC_PHASE_A_PATHS": '{}',
+        "SETEC_PHASE_B_PATHS": '{}',  # both empty
+        "SETEC_DRY_RUN": "1",
+    })
+    # With both rosters empty + dry-run, the script should complete
+    # cleanly (banner + plan + provenance write) and exit 0.
+    assert cp.returncode == 0, (
+        f"empty rosters tripped script; rc={cp.returncode}\n"
+        f"stdout:\n{cp.stdout[-800:]}\n\nstderr:\n{cp.stderr[-400:]}"
+    )
+    # Banner survives with the (none) sentinel for both phases.
+    assert "phase_a_aliases: (none)" in cp.stdout
+    assert "phase_b_aliases: (none)" in cp.stdout
+    # Plan section renders the headers even with zero cells.
+    assert "Phase A cells:" in cp.stdout
+    assert "Phase B cells:" in cp.stdout
