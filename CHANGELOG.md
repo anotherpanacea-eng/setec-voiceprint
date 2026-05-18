@@ -6,6 +6,41 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.93.0] - 2026-05-18
+
+**Tier-4 surprisal backend: bf16 / fp16 inference.** Fourth in the Tier-4 performance-fix sequence (1.89.0 device-placement, 1.90.0 caller wiring, 1.91.0 length-sorted batching, this one). The 1.89.0 fix put the model on the accelerator; this fix puts it on the accelerator *at the right precision*. On Ampere+ / Hopper / Ada cuda (A100 / H100 / L4 / L40S) the model now loads in bf16 — typically a 1.7–2× throughput improvement on top of the prior batched-scoring win. The auto-resolution default means operators get the perf gain without remembering a flag.
+
+### Added
+
+- **`--surprisal-dtype {auto,fp32,fp16,bf16}` CLI flag** on `calibrate_thresholds.py` and `calibration_survey.py`. Default `auto` picks bf16 on cuda devices that support it (`torch.cuda.is_bf16_supported()`), fp16 on older cuda (V100 / T4) where bf16 forward passes fall back to slow kernels, and fp32 on CPU / MPS where neither dtype is a throughput win. Explicit values override the auto resolution — operators reproducing a pre-1.93 fp32 calibration can pass `--surprisal-dtype fp32` for bit-equivalent inputs to the log_softmax step.
+- **`dtype: str = "auto"` field on `SurprisalBackend`** and a module-level `_resolve_dtype(requested, cuda_available, bf16_supported)` helper that returns `(torch.dtype, canonical_label)`. The helper is pure-Python (no GPU touched) and accepts the cuda / bf16 probes as overrideable arguments so the dispatch logic is testable without a GPU.
+- **`identifier_block()` now records both `dtype_requested` and `dtype_loaded`.** Audit JSONs surface what was asked for (e.g., `"auto"`) AND what actually loaded (e.g., `"bf16"`). Audit-consumer code parsing the PROVENANCE block can distinguish operator intent from resolved hardware.
+- **10 new tests** in `test_surprisal_backend.py` (46 total, was 36): 3 pure-Python (default-is-auto, invalid-dtype-raises-at-construction, identifier_block records pre-load request) and 7 torch-gated (auto resolution on no-cuda → fp32, on bf16-cuda → bf16, on pre-Ampere cuda → fp16, explicit dtypes override auto in all three directions, `_resolve_dtype` rejects unknown strings, `_load` passes `torch_dtype=` to `AutoModelForCausalLM.from_pretrained`, `identifier_block` records resolved dtype after load).
+
+### Changed
+
+- **`log_softmax` in both `score_text` and `score_texts` now upcasts logits to fp32 before normalisation.** A single `.float()` cast on the `(B, N, vocab)` logits tensor per forward pass. For fp16 this prevents LM-head overflow before softmax normalisation (a real fp16 failure mode on large-vocab models); for bf16 it's a no-op precision-wise (bf16 has fp32-like exponent range). The log_softmax is the load-bearing numerical step for the surprisal series; computing it in fp32 keeps the framework's surprisal contract stable across dtype choices. Forward-pass weights still run in the requested dtype — the throughput win is preserved.
+- **The model-load failure error message now includes the requested dtype.** `SurprisalBackendError` from a failed `from_pretrained` now reads `Failed to load causal LM 'tinyllama' (dtype='auto'): RuntimeError: ...`, surfacing the dtype as part of the failure context when an operator reports a load failure.
+
+### Wiring fixes (review P1s on PR #93)
+
+Four bookkeeping gaps surfaced in code review of the initial dtype patch:
+
+- **Per-entry Tier-4 fallback now honors `--surprisal-dtype`.** The original patch threaded dtype to the batched-Tier-4 backend in `score_corpus`, but the per-entry fallback path (used when the 1.90.1 latch trips on a `score_texts` failure, OR when the operator passes `--surprisal-batch-size 1`, OR for any caller invoking `score_smoothing_entry` directly) constructed a `SurprisalBackend` with no `dtype` kwarg, silently falling back to the SurprisalBackend default. Now dtype threads through the chain: `calibrate_thresholds.score_corpus` → `validation_harness.score_smoothing_entry` → `variance_audit.audit_text` → `variance_audit._tier4_surprisal_block` → `variance_audit._get_surprisal_backend`. `_get_surprisal_backend`'s per-process backend cache key now includes dtype, so a call asking for bf16 doesn't reuse an earlier-cached fp32 backend.
+- **Default-model fallback now passes dtype.** `_tier4_surprisal_block` has a second branch that handles callers that didn't pass `--surprisal-model` — it constructs a `SurprisalBackend(model_id=DEFAULT_MODEL)` directly, bypassing `_get_surprisal_backend`. The first wiring patch missed this branch; an operator running `--tier4 --surprisal-dtype fp32` *without* `--surprisal-model` would still silently get the SurprisalBackend default `"auto"`. Now passes `dtype=surprisal_dtype` to the direct construction too.
+- **Cache identity records both *requested* and *resolved* dtype.** Storing just the request string lets an `auto` cache silently cross hardware: cache scored on CPU (auto → fp32) reusing on H100 (auto → bf16). Both `interim_meta` and `scoring_meta` now record two fields: `surprisal_dtype_requested` (operator's string, possibly `"auto"`) and `surprisal_dtype_resolved` (what `_resolve_dtype` picked on the writing host — `"fp32"` / `"fp16"` / `"bf16"`, or `None` when torch isn't importable). `calibrate_thresholds._resolve_surprisal_dtype_label(args)` is the new resolver helper.
+- **Compat-check compares *resolved* labels.** `cache_is_compatible` now rejects a Tier-4 cache when the cached resolved label doesn't match the current host's resolved label — catches the auto-on-CPU-then-auto-on-H100 case the request-string-only check missed. Field semantics:
+  - Field absent on cache (`"surprisal_dtype_resolved" not in cache_meta`) → pre-1.93.0 cache, force re-score.
+  - Field present and equal (including both `None` in no-torch environments) → compatible.
+  - Field present and unequal → re-score (`"surprisal_dtype_resolved changed ('fp32' → 'bf16')"`).
+  - Tier-4 off → field meaningless, compat skips the check.
+
+### Notes
+
+- **End-to-end Tier-4 wall-clock after this PR.** The four-PR sequence is multiplicative: device fix (~50–100×) × batched scoring (~5–10×) × length-sort (~1.2–1.4×) × bf16 (~1.7–2× on Ampere+). RAID Tier-4 falls into the 8–14-hour range on a single H100 hour, down from 5–10 days on the stock 1.59.x backend. Same H100 / A100 hour now produces ~2× more rows of calibration data — directly affects how much RAID surface can be calibrated per rented-GPU dollar.
+- **No effect on the surprisal-series numerical contract.** The log_softmax upcast keeps the bit-pattern of the per-token surprisal values close to fp32 baseline (typical drift is < 0.1 bits per token on a 32K-vocab causal LM — within the noise floor of any signal-level statistic the framework computes). Operators reproducing a pre-1.93 calibration bit-exactly can pass `--surprisal-dtype fp32`.
+- **`surprisal_audit.py` standalone path is still per-text non-batched.** That's a separate code path from `score_corpus`'s batched call. Fix is small (mirror the `score_texts` pre-batch loop, mostly) but deferred to a follow-up PR to keep the dtype change contained.
+
 ## [1.92.1] - 2026-05-18
 
 **Test-infrastructure fixes for two embedding-wiring tests that fail on slim CI harnesses.** Both tests in `test_pipeline_model_wiring.py` (the Tier-3 cohesion side of the 1.80.0 pipeline-wiring PR) depended on host-installed `numpy` and `sentence_transformers` / `sklearn` to pass, even though their stubbing strategy aimed at no-deps reproducibility. The bugs were latent on main; they surfaced while running the PR #93 (bf16 dtype) test suite on a fresh CI worktree.

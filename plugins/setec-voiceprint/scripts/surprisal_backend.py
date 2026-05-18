@@ -164,6 +164,68 @@ class SurprisalBackendError(RuntimeError):
     """
 
 
+# ----------------------------------------------------------------- Dtype
+
+VALID_DTYPES: tuple[str, ...] = ("auto", "fp32", "fp16", "bf16")
+
+
+def _resolve_dtype(
+    requested: str,
+    *,
+    cuda_available: bool | None = None,
+    bf16_supported: bool | None = None,
+) -> tuple[Any, str]:
+    """Resolve a user-facing dtype string to a (torch.dtype, label).
+
+    ``auto`` picks bf16 on cuda devices that support it (Ampere /
+    Hopper / Ada), fp16 on older cuda where bf16 forward passes fall
+    back to slow kernels (V100 / T4), and fp32 elsewhere (CPU / MPS;
+    bf16/fp16 inference is not a throughput win on those backends).
+
+    The probe defaults to live ``torch.cuda`` queries but accepts
+    overrides for testability — the resolution logic is pure-Python
+    and can be exercised without torch installed by passing the two
+    booleans directly.
+
+    Returns ``(torch_dtype, canonical_label)``. The label is one of
+    ``"fp32" / "fp16" / "bf16"`` — never ``"auto"`` (the auto sentinel
+    is consumed at resolution time so the provenance block records
+    what the backend actually loaded, not the user's request).
+    """
+    if requested not in VALID_DTYPES:
+        raise SurprisalBackendError(
+            f"Invalid surprisal-backend dtype {requested!r}; "
+            f"must be one of {VALID_DTYPES}."
+        )
+    try:
+        import torch  # type: ignore
+    except ImportError as exc:
+        raise SurprisalBackendError(
+            "torch not installed; cannot resolve surprisal-backend "
+            "dtype. Install with: pip install -r "
+            "requirements-surprisal.txt"
+        ) from exc
+    if cuda_available is None:
+        cuda_available = bool(torch.cuda.is_available())
+    if bf16_supported is None:
+        bf16_supported = bool(
+            cuda_available
+            and hasattr(torch.cuda, "is_bf16_supported")
+            and torch.cuda.is_bf16_supported()
+        )
+    if requested == "auto":
+        if cuda_available and bf16_supported:
+            return torch.bfloat16, "bf16"
+        if cuda_available:
+            return torch.float16, "fp16"
+        return torch.float32, "fp32"
+    if requested == "bf16":
+        return torch.bfloat16, "bf16"
+    if requested == "fp16":
+        return torch.float16, "fp16"
+    return torch.float32, "fp32"
+
+
 @dataclass
 class SurprisalBackend:
     """Pluggable wrapper around a transformers causal language model.
@@ -183,10 +245,14 @@ class SurprisalBackend:
     model_id: str
     revision: str | None = None
     deterministic: bool = True
+    dtype: str = "auto"
     _model: Any = field(default=None, repr=False, init=False, compare=False)
     _tokenizer: Any = field(default=None, repr=False, init=False, compare=False)
     _alias: str | None = field(default=None, repr=False, init=False, compare=False)
     _device: Any = field(default=None, repr=False, init=False, compare=False)
+    _resolved_dtype_label: str | None = field(
+        default=None, repr=False, init=False, compare=False,
+    )
 
     def __post_init__(self) -> None:
         # Deprecation gate (added 2026-05-15). Operators who pinned a
@@ -199,6 +265,11 @@ class SurprisalBackend:
             raise SurprisalBackendError(
                 f"Alias {self.model_id!r} was removed in 2026-05-15. "
                 + DEPRECATED_ALIASES[self.model_id]
+            )
+        if self.dtype not in VALID_DTYPES:
+            raise SurprisalBackendError(
+                f"Invalid surprisal-backend dtype {self.dtype!r}; "
+                f"must be one of {VALID_DTYPES}."
             )
         # Resolve alias → full id once at construction.
         if self.model_id in MODEL_ALIASES:
@@ -245,17 +316,31 @@ class SurprisalBackend:
             self._tokenizer = AutoTokenizer.from_pretrained(
                 self.model_id, **kwargs,
             )
+            # Resolve dtype + load model in the resolved precision. ``auto``
+            # picks bf16 on supporting cuda (Ampere+), fp16 on older cuda
+            # (V100/T4), fp32 on CPU/MPS. The resolved label is recorded
+            # so identifier_block surfaces the loaded precision rather
+            # than the user's request — operators reading audit JSON see
+            # ``dtype: bf16`` not ``dtype: auto``.
+            resolved_torch_dtype, self._resolved_dtype_label = _resolve_dtype(
+                self.dtype,
+            )
+            model_kwargs = dict(kwargs)
+            model_kwargs["torch_dtype"] = resolved_torch_dtype
             self._model = AutoModelForCausalLM.from_pretrained(
-                self.model_id, **kwargs,
+                self.model_id, **model_kwargs,
             )
             # Causal LMs in eval mode — no dropout, no gradient
             # accumulation. Surprisal scoring is inference-only.
             self._model.eval()
+        except SurprisalBackendError:
+            raise
         except Exception as exc:
             raise SurprisalBackendError(
                 f"Failed to load causal LM {self.model_id!r}"
                 + (f" at revision {self.revision!r}" if self.revision else "")
-                + f": {type(exc).__name__}: {exc}"
+                + f" (dtype={self.dtype!r}): "
+                + f"{type(exc).__name__}: {exc}"
             ) from exc
         # Device placement. The prior v1.59.x backend called
         # ``model(input_ids)`` without moving the model or inputs to
@@ -387,9 +472,18 @@ class SurprisalBackend:
         # from nats (natural log) to bits (log base 2). Position i's
         # logits predict token i+1; gather surprisal of the actual
         # next token at each position.
+        #
+        # Upcast logits to fp32 before log_softmax. For bf16 this is a
+        # no-op precision-wise (bf16 has fp32-like exponent range, so
+        # log_softmax is well-behaved in bf16 too). For fp16 the LM
+        # head can produce logits that overflow softmax normalisation
+        # — upcasting prevents that. The cost is a single dtype cast
+        # per forward pass; the surprisal series is the load-bearing
+        # output and computing it in fp32 keeps the framework's
+        # numerical contract stable across dtype choices.
         import math
         log2e = 1.0 / math.log(2.0)
-        log_probs_nats = torch.log_softmax(logits[0, :-1, :], dim=-1)
+        log_probs_nats = torch.log_softmax(logits[0, :-1, :].float(), dim=-1)
         # next_tokens[i] = the actual token at position i+1 in input_ids
         next_tokens = input_ids[0, 1:]
         surprisals_nats = -log_probs_nats.gather(
@@ -521,7 +615,11 @@ class SurprisalBackend:
             # Predicted-next-token surprisal: position i's logits
             # predict token i+1. Slice off the last position from
             # logits and the first position from input_ids to align.
-            log_probs_nats = torch.log_softmax(logits[:, :-1, :], dim=-1)
+            # Upcast logits to fp32 before log_softmax (see score_text
+            # for the rationale: fp16 overflow safety + bf16 no-op).
+            log_probs_nats = torch.log_softmax(
+                logits[:, :-1, :].float(), dim=-1,
+            )
             next_tokens = input_ids[:, 1:]  # (B, N-1)
             surprisals_nats = -log_probs_nats.gather(
                 -1, next_tokens.unsqueeze(-1),
@@ -565,6 +663,8 @@ class SurprisalBackend:
             "alias": self._alias,
             "deterministic_mode": self.deterministic,
             "method": "transformers-causal-lm",
+            "dtype_requested": self.dtype,
+            "dtype_loaded": self._resolved_dtype_label,
         }
 
 

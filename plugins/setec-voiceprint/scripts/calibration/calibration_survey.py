@@ -389,6 +389,9 @@ def _build_inner_args(
         embedding_revision=getattr(parent_args, "embedding_revision", None),
         surprisal_model=getattr(parent_args, "surprisal_model", None),
         surprisal_revision=getattr(parent_args, "surprisal_revision", None),
+        surprisal_dtype=getattr(
+            parent_args, "surprisal_dtype", "auto",
+        ),
         # 1.90.0+: forward the batched-Tier-4 batch size so
         # calibration_survey runs honor the operator-chosen value
         # rather than falling back to score_corpus's default of 8.
@@ -944,6 +947,19 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help=(
             "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
             "(reproducibility). Default: revision-less."
+        ),
+    )
+    p.add_argument(
+        "--surprisal-dtype",
+        choices=("auto", "fp32", "fp16", "bf16"),
+        default="auto",
+        help=(
+            "Precision for Tier 4 causal-LM inference. ``auto`` picks "
+            "bf16 on supporting cuda (Ampere+ / Hopper / Ada), fp16 on "
+            "older cuda (V100 / T4) where bf16 falls back to slow "
+            "kernels, fp32 on CPU / MPS. Explicit values override the "
+            "auto resolution. Forwarded to ``calibrate_thresholds``. "
+            "No effect when --tier4 is off."
         ),
     )
     p.add_argument(

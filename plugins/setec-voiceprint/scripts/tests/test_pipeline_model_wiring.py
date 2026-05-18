@@ -248,10 +248,12 @@ def test_audit_text_threads_surprisal_model_through():
 
     def _spy_tier4(text, *, score_fn=None, backend=None,
                    surprisal_model=None, surprisal_revision=None,
+                   surprisal_dtype="auto",
                    sliding_window=False, window_size=200, stride=100,
                    top_k=20):
         captured["surprisal_model"] = surprisal_model
         captured["surprisal_revision"] = surprisal_revision
+        captured["surprisal_dtype"] = surprisal_dtype
         return {"available": True, "surprisal": {"mean": 0.0, "sd": 0.0}}
 
     with mock.patch.object(va, "_tier4_surprisal_block", _spy_tier4):
@@ -266,6 +268,125 @@ def test_audit_text_threads_surprisal_model_through():
 
     assert captured["surprisal_model"] == "gpt2"
     assert captured["surprisal_revision"] == "def456"
+
+
+def test_audit_text_threads_surprisal_dtype_through():
+    """``audit_text(..., do_tier4=True, surprisal_dtype="bf16")``
+    forwards the dtype into _tier4_surprisal_block. Pins the per-
+    entry fallback path: when the batched backend has latched off
+    and the loop falls back to per-row audit_text calls, the
+    operator's --surprisal-dtype is honored, not silently dropped
+    to the SurprisalBackend default of "auto"."""
+    import variance_audit as va  # type: ignore
+
+    captured: dict[str, Any] = {}
+
+    def _spy_tier4(text, *, score_fn=None, backend=None,
+                   surprisal_model=None, surprisal_revision=None,
+                   surprisal_dtype="auto",
+                   sliding_window=False, window_size=200, stride=100,
+                   top_k=20):
+        captured["surprisal_dtype"] = surprisal_dtype
+        return {"available": True, "surprisal": {"mean": 0.0, "sd": 0.0}}
+
+    with mock.patch.object(va, "_tier4_surprisal_block", _spy_tier4):
+        va.audit_text(
+            "Sentence one. " * 60,
+            do_tier2=False,
+            do_tier3=False,
+            do_tier4=True,
+            surprisal_model="gpt2",
+            surprisal_dtype="bf16",
+        )
+
+    assert captured["surprisal_dtype"] == "bf16"
+
+
+def test_get_surprisal_backend_caches_by_dtype():
+    """``_get_surprisal_backend`` returns separate instances for
+    different dtypes on the same (model, revision). Without this,
+    a per-entry fallback that asked for bf16 could silently get
+    back an fp32 backend cached from an earlier call. The cache
+    key explicitly includes dtype so the two coexist."""
+    import variance_audit as va  # type: ignore
+
+    captured_constructions: list[dict] = []
+
+    class _FakeSurprisalBackend:
+        def __init__(self, model_id, revision=None, dtype="auto"):
+            self.model_id = model_id
+            self.revision = revision
+            self.dtype = dtype
+            captured_constructions.append({
+                "model_id": model_id,
+                "revision": revision,
+                "dtype": dtype,
+            })
+
+    def _fake_resolve(arg):
+        return arg if arg else "tinyllama"
+
+    # Reset cache for hermetic per-test state.
+    va._SURPRISAL_BACKENDS_CACHE.clear()
+
+    fake_module = mock.MagicMock()
+    fake_module.SurprisalBackend = _FakeSurprisalBackend
+    fake_module.resolve_model_arg = _fake_resolve
+
+    with mock.patch.dict(
+        sys.modules, {"surprisal_backend": fake_module},
+    ):
+        b_fp32_a = va._get_surprisal_backend("tinyllama", None, "fp32")
+        b_fp32_b = va._get_surprisal_backend("tinyllama", None, "fp32")
+        b_bf16 = va._get_surprisal_backend("tinyllama", None, "bf16")
+        b_auto = va._get_surprisal_backend("tinyllama", None, "auto")
+
+    # Same dtype → same instance (cached).
+    assert b_fp32_a is b_fp32_b
+    # Different dtypes → different instances.
+    assert b_fp32_a is not b_bf16
+    assert b_fp32_a is not b_auto
+    assert b_bf16 is not b_auto
+    # Three constructions total (fp32 once, bf16 once, auto once).
+    assert len(captured_constructions) == 3
+    constructed_dtypes = sorted(c["dtype"] for c in captured_constructions)
+    assert constructed_dtypes == ["auto", "bf16", "fp32"]
+
+
+def test_tier4_default_model_fallback_passes_dtype():
+    """When ``--surprisal-model`` is not set, ``_tier4_surprisal_block``
+    falls through to a direct ``SurprisalBackend(DEFAULT_MODEL)``
+    construction. The dtype must propagate to that fallback path too
+    — otherwise an operator passing ``--tier4 --surprisal-dtype fp32``
+    without ``--surprisal-model`` silently gets the SurprisalBackend
+    default ``"auto"`` regardless of intent."""
+    import variance_audit as va  # type: ignore
+
+    captured: dict = {}
+
+    class _FakeBackend:
+        def __init__(self, model_id, dtype="auto", **kwargs):
+            captured["model_id"] = model_id
+            captured["dtype"] = dtype
+
+        def score_text(self, text, return_top_k=0):
+            return [1.0] * len(text.split())
+
+    fake_module = mock.MagicMock()
+    fake_module.DEFAULT_MODEL = "tinyllama-default"
+    fake_module.SurprisalBackend = _FakeBackend
+
+    with mock.patch.dict(
+        sys.modules, {"surprisal_backend": fake_module},
+    ):
+        va._tier4_surprisal_block(
+            "Sentence one. " * 60,
+            surprisal_model=None,  # exercises the default-model branch
+            surprisal_dtype="fp32",
+        )
+
+    assert captured["model_id"] == "tinyllama-default"
+    assert captured["dtype"] == "fp32"
 
 
 # --------------- W1 + W2: validation_harness threading ----------
@@ -311,6 +432,75 @@ def test_score_smoothing_entry_accepts_new_kwargs():
     assert captured.get("embedding_revision") == "abc"
     assert captured.get("surprisal_model") == "gpt2"
     assert captured.get("surprisal_revision") == "def"
+
+
+def test_score_smoothing_entry_threads_surprisal_dtype_through():
+    """``score_smoothing_entry(..., surprisal_dtype="bf16")`` forwards
+    the dtype to ``audit_text``. Pins the per-entry path: when
+    score_corpus has fallen back from the batched-Tier-4 path to per-
+    row scoring, the dtype the operator chose still reaches the
+    underlying SurprisalBackend construction."""
+    import validation_harness as vh  # type: ignore
+
+    captured: dict[str, Any] = {}
+
+    def _spy_audit(text, **kwargs):
+        captured.update(kwargs)
+        return {
+            "summary": {"n_words": 100, "n_words_original": 100,
+                        "n_sentences": 5, "reliable": True,
+                        "preprocessing_applied": False},
+            "preprocessing": {"applied": False},
+            "tier1": {},
+        }
+
+    with mock.patch.object(vh, "audit_text", _spy_audit), \
+         mock.patch("pathlib.Path.read_text", return_value="word " * 200):
+        vh.score_smoothing_entry(
+            {"id": "x", "path": "/tmp/x.txt", "_resolved_path": "/tmp/x.txt",
+             "ai_status": "human"},
+            positive_statuses={"ai_generated"},
+            negative_statuses={"human"},
+            do_tier2=False,
+            do_tier3=False,
+            do_tier4=True,
+            surprisal_model="gpt2",
+            surprisal_dtype="bf16",
+        )
+
+    assert captured.get("surprisal_dtype") == "bf16"
+
+
+def test_score_smoothing_entry_default_surprisal_dtype_is_auto():
+    """Default kwarg preserves pre-1.93 caller behavior: callers
+    that don't pass surprisal_dtype get the "auto" default routed
+    through to audit_text."""
+    import validation_harness as vh  # type: ignore
+
+    captured: dict[str, Any] = {}
+
+    def _spy_audit(text, **kwargs):
+        captured.update(kwargs)
+        return {
+            "summary": {"n_words": 100, "n_words_original": 100,
+                        "n_sentences": 5, "reliable": True,
+                        "preprocessing_applied": False},
+            "preprocessing": {"applied": False},
+            "tier1": {},
+        }
+
+    with mock.patch.object(vh, "audit_text", _spy_audit), \
+         mock.patch("pathlib.Path.read_text", return_value="word " * 200):
+        vh.score_smoothing_entry(
+            {"id": "x", "path": "/tmp/x.txt", "_resolved_path": "/tmp/x.txt",
+             "ai_status": "human"},
+            positive_statuses={"ai_generated"},
+            negative_statuses={"human"},
+            do_tier4=True,
+            surprisal_model="gpt2",
+        )
+
+    assert captured.get("surprisal_dtype") == "auto"
 
 
 # --------------- W1 + W2: calibrate_thresholds cache compat ----------
@@ -389,6 +579,8 @@ def test_cache_compat_invalidates_on_surprisal_model_change():
         "do_tier2": True, "do_tier3": False, "do_tier4": True,
         "embedding_model": None, "embedding_revision": None,
         "surprisal_model": "tinyllama", "surprisal_revision": None,
+        "surprisal_dtype_requested": "auto",
+        "surprisal_dtype_resolved": "fp32",
         "scorer_version": ct.SCORER_CACHE_VERSION,
     }
     args = argparse.Namespace(
@@ -397,14 +589,245 @@ def test_cache_compat_invalidates_on_surprisal_model_change():
         embedding_model=None, embedding_revision=None,
         surprisal_model="gpt2",  # different
         surprisal_revision=None,
+        surprisal_dtype="auto",
+        max_entries=None,
+    )
+    with mock.patch.object(
+        ct, "_resolve_surprisal_dtype_label", return_value="fp32",
+    ):
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args, manifest_sha256="abc",
+            corpus_text_fingerprint="def",
+        )
+    assert ok is False
+    assert "surprisal_model" in reason
+
+
+def test_cache_compat_invalidates_on_resolved_dtype_change():
+    """Changing the *resolved* dtype invalidates a Tier-4 cache.
+    The request string alone is not enough: ``auto`` resolves to
+    different actual precisions on different hardware, so the
+    compat check must compare resolved labels."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": False, "do_tier4": True,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": "tinyllama", "surprisal_revision": None,
+        "surprisal_dtype_requested": "fp32",
+        "surprisal_dtype_resolved": "fp32",
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=False,
+        tier4=True,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model="tinyllama", surprisal_revision=None,
+        surprisal_dtype="bf16",  # different
+        max_entries=None,
+    )
+    with mock.patch.object(
+        ct, "_resolve_surprisal_dtype_label", return_value="bf16",
+    ):
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args, manifest_sha256="abc",
+            corpus_text_fingerprint="def",
+        )
+    assert ok is False
+    assert "surprisal_dtype_resolved" in reason
+
+
+def test_cache_compat_invalidates_on_auto_crossing_hardware():
+    """Both cache and current args use ``--surprisal-dtype auto``,
+    but the cache was scored on CPU (auto → fp32) and the current
+    host is bf16-capable cuda (auto → bf16). The compat check
+    catches the mismatch by comparing *resolved* labels, not the
+    request string ``"auto" == "auto"``. Without this, an auto
+    cache silently reuses across hardware with different actual
+    precision — exactly the case most operators will hit by
+    default."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": False, "do_tier4": True,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": "tinyllama", "surprisal_revision": None,
+        # Cache scored on CPU: both requested and resolved differ.
+        "surprisal_dtype_requested": "auto",
+        "surprisal_dtype_resolved": "fp32",
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=False,
+        tier4=True,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model="tinyllama", surprisal_revision=None,
+        # Same request string as cache.
+        surprisal_dtype="auto",
+        max_entries=None,
+    )
+    # Current host resolves auto → bf16 (bf16-capable cuda).
+    with mock.patch.object(
+        ct, "_resolve_surprisal_dtype_label", return_value="bf16",
+    ):
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args, manifest_sha256="abc",
+            corpus_text_fingerprint="def",
+        )
+    assert ok is False, (
+        "Auto-on-CPU cache should NOT reuse on auto-on-bf16-cuda; "
+        f"got reason: {reason!r}"
+    )
+    assert "fp32" in reason and "bf16" in reason
+
+
+def test_cache_compat_auto_same_resolved_dtype_reuses():
+    """Mirror case: both cache and current args use ``auto`` AND
+    both resolve to the same label on this host (bf16-capable cuda
+    both times). Cache is compatible — the resolved-dtype match
+    means the surprisal-series bit patterns are equivalent."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": False, "do_tier4": True,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": "tinyllama", "surprisal_revision": None,
+        "surprisal_dtype_requested": "auto",
+        "surprisal_dtype_resolved": "bf16",
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=False,
+        tier4=True,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model="tinyllama", surprisal_revision=None,
+        surprisal_dtype="auto",
+        max_entries=None,
+    )
+    with mock.patch.object(
+        ct, "_resolve_surprisal_dtype_label", return_value="bf16",
+    ):
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args, manifest_sha256="abc",
+            corpus_text_fingerprint="def",
+        )
+    assert ok is True, f"Expected compatible; got reason: {reason!r}"
+
+
+def test_cache_compat_invalidates_on_missing_resolved_dtype_for_tier4_cache():
+    """A Tier-4 cache that predates 1.93.0 resolved-dtype tracking
+    lacks the ``surprisal_dtype_resolved`` field. Prefer re-score
+    over guessing what dtype the old run actually loaded."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": False, "do_tier4": True,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": "tinyllama", "surprisal_revision": None,
+        # No surprisal_dtype_resolved key.
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=False,
+        tier4=True,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model="tinyllama", surprisal_revision=None,
+        surprisal_dtype="auto",
+        max_entries=None,
+    )
+    with mock.patch.object(
+        ct, "_resolve_surprisal_dtype_label", return_value="bf16",
+    ):
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args, manifest_sha256="abc",
+            corpus_text_fingerprint="def",
+        )
+    assert ok is False
+    assert "surprisal_dtype_resolved" in reason
+    assert "pre-1.93" in reason
+
+
+def test_cache_compat_both_resolved_none_no_torch_is_compatible():
+    """No-torch environments: ``_resolve_surprisal_dtype_label``
+    returns None on both write and check. The compat path treats
+    both-None as equivalent (no actual surprisal scoring happened
+    either way under torch's absence, but the Tier-4 toggle was on
+    so this is a no-torch test or mock scenario). Pins the
+    pre-1.93-vs-no-torch distinction: the field is *present and
+    None*, not *absent*, so it's compatible."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": False, "do_tier4": True,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": "tinyllama", "surprisal_revision": None,
+        "surprisal_dtype_requested": "auto",
+        "surprisal_dtype_resolved": None,  # present, but no-torch
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=False,
+        tier4=True,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model="tinyllama", surprisal_revision=None,
+        surprisal_dtype="auto",
+        max_entries=None,
+    )
+    with mock.patch.object(
+        ct, "_resolve_surprisal_dtype_label", return_value=None,
+    ):
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args, manifest_sha256="abc",
+            corpus_text_fingerprint="def",
+        )
+    assert ok is True, (
+        f"Both-None should be compatible; got reason: {reason!r}"
+    )
+
+
+def test_cache_compat_missing_resolved_dtype_is_ok_when_tier4_off():
+    """When Tier 4 is off, surprisal didn't run; the resolved-dtype
+    field is irrelevant. Pre-1.93 caches for the non-Tier-4 path
+    stay compatible."""
+    import calibrate_thresholds as ct  # type: ignore
+
+    cache_meta = {
+        "manifest_sha256": "abc",
+        "corpus_text_fingerprint": "def",
+        "use": "validation",
+        "do_tier2": True, "do_tier3": True, "do_tier4": False,
+        "embedding_model": None, "embedding_revision": None,
+        "surprisal_model": None, "surprisal_revision": None,
+        "scorer_version": ct.SCORER_CACHE_VERSION,
+    }
+    args = argparse.Namespace(
+        manifest="x", use="validation", tier2=True, tier3=True,
+        tier4=False,
+        embedding_model=None, embedding_revision=None,
+        surprisal_model=None, surprisal_revision=None,
+        surprisal_dtype="auto",
         max_entries=None,
     )
     ok, reason = ct.cache_is_compatible(
         cache_meta, args, manifest_sha256="abc",
         corpus_text_fingerprint="def",
     )
-    assert ok is False
-    assert "surprisal_model" in reason
+    assert ok is True, f"Expected compatible; got reason: {reason!r}"
 
 
 def test_cache_compat_back_compat_with_pre_1_80_caches():

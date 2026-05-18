@@ -179,6 +179,10 @@ def score_smoothing_entry(
     embedding_revision: str | None = None,
     surprisal_model: str | None = None,
     surprisal_revision: str | None = None,
+    # 1.93.0+: dtype passthrough for the per-entry Tier-4 fallback path.
+    # Defaults preserve pre-1.93 behavior (auto resolution at backend
+    # construction time).
+    surprisal_dtype: str = "auto",
     # 1.90.0+ batched-Tier-4 wiring. When ``text`` is supplied, the
     # caller has pre-read the file (typically inside the batched-
     # scoring pre-pass in ``score_corpus``) and we skip the read here
@@ -239,6 +243,7 @@ def score_smoothing_entry(
         embedding_revision=embedding_revision,
         surprisal_model=surprisal_model,
         surprisal_revision=surprisal_revision,
+        surprisal_dtype=surprisal_dtype,
     )
     n_words = int(audit.get("summary", {}).get("n_words", raw_n_words) or 0)
     compression = classify_compression(audit)

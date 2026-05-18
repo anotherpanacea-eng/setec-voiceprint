@@ -1224,6 +1224,33 @@ def _corpus_text_fingerprint(
     return f"sha256:{outer.hexdigest()}"
 
 
+def _resolve_surprisal_dtype_label(args: argparse.Namespace) -> str | None:
+    """Resolve ``--surprisal-dtype`` to the canonical loaded label.
+
+    Returns ``"fp32"`` / ``"fp16"`` / ``"bf16"`` based on the
+    current host's hardware probe. Returns ``None`` when torch isn't
+    importable or when resolution otherwise fails — callers should
+    only consult the result when Tier 4 is on (and therefore
+    surprisal_backend must be importable for scoring to work at all).
+
+    Used for cache identity: ``"auto"`` resolves to bf16 on H100 and
+    fp32 on CPU, so storing the literal request string in cache_meta
+    lets caches silently cross hardware with different actual
+    precision. Recording the resolved label closes that gap.
+    """
+    try:
+        from surprisal_backend import _resolve_dtype  # type: ignore
+    except ImportError:
+        return None
+    try:
+        _, label = _resolve_dtype(
+            getattr(args, "surprisal_dtype", "auto"),
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    return label
+
+
 def _entry_id_for_record(entry: dict[str, Any]) -> str:
     """Match the synthesized id ``score_smoothing_entry`` writes onto
     every record. Used by the incremental-scoring resume path to skip
@@ -1459,6 +1486,7 @@ def score_corpus(
                     getattr(args, "surprisal_model", None),
                 ),
                 revision=getattr(args, "surprisal_revision", None),
+                dtype=getattr(args, "surprisal_dtype", "auto"),
             )
         except ImportError:
             batched_surprisal_backend = None
@@ -1603,6 +1631,26 @@ def score_corpus(
                     "surprisal_revision": getattr(
                         args, "surprisal_revision", None,
                     ),
+                    # 1.93.0+: dtype is part of the cache identity for
+                    # Tier-4 scoring. Surprisal values produced under
+                    # bf16 / fp16 / fp32 differ at the ~0.1 bit/token
+                    # level (within signal-stat noise but visible in
+                    # the per-token series). Two fields: ``_requested``
+                    # is what the operator passed (possibly ``"auto"``)
+                    # and ``_resolved`` is what _resolve_dtype on this
+                    # host actually picked (``"fp32"`` / ``"fp16"`` /
+                    # ``"bf16"`` — never ``"auto"``). Compat-check
+                    # compares the resolved label so an ``auto`` cache
+                    # scored on CPU (fp32) doesn't silently reuse on a
+                    # later H100 invocation (bf16).
+                    "surprisal_dtype_requested": getattr(
+                        args, "surprisal_dtype", "auto",
+                    ),
+                    "surprisal_dtype_resolved": (
+                        _resolve_surprisal_dtype_label(args)
+                        if bool(getattr(args, "tier4", False))
+                        else None
+                    ),
                     "n_entries_full": full_entry_count,
                     "n_entries_scored": len(records),
                     "sub_sample": sub_sample_meta,
@@ -1655,6 +1703,12 @@ def score_corpus(
                 embedding_revision=getattr(args, "embedding_revision", None),
                 surprisal_model=getattr(args, "surprisal_model", None),
                 surprisal_revision=getattr(args, "surprisal_revision", None),
+                # 1.93.0+: dtype passthrough for the per-entry Tier-4
+                # fallback path (when the batched backend is None or
+                # the failure-latch has tripped). Without this, falls
+                # back to the SurprisalBackend default of ``auto``
+                # regardless of operator intent.
+                surprisal_dtype=getattr(args, "surprisal_dtype", "auto"),
                 # 1.90.0+: batched-Tier-4 wiring. ``text`` is None on
                 # a cache miss (per-entry path reads from disk as
                 # before); on a hit, the cached text + precomputed
@@ -1680,6 +1734,16 @@ def score_corpus(
         "embedding_revision": getattr(args, "embedding_revision", None),
         "surprisal_model": getattr(args, "surprisal_model", None),
         "surprisal_revision": getattr(args, "surprisal_revision", None),
+        # 1.93.0+: dtype identity for Tier-4 cache reuse. See the
+        # matching fields in ``interim_meta`` above for rationale.
+        "surprisal_dtype_requested": getattr(
+            args, "surprisal_dtype", "auto",
+        ),
+        "surprisal_dtype_resolved": (
+            _resolve_surprisal_dtype_label(args)
+            if bool(getattr(args, "tier4", False))
+            else None
+        ),
         "n_entries_full": full_entry_count,
         "n_entries_scored": len(records),
         "sub_sample": sub_sample_meta,
@@ -1764,6 +1828,36 @@ def cache_is_compatible(
     cur_surp_rev = getattr(args, "surprisal_revision", None)
     if cache_meta.get("surprisal_revision") != cur_surp_rev:
         return False, "surprisal_revision changed"
+    # 1.93.0+: dtype is part of cache identity for Tier-4 runs. The
+    # ``_resolved`` label (``"fp32"`` / ``"fp16"`` / ``"bf16"``) is
+    # the load-bearing field — it's host-dependent for ``auto`` runs,
+    # so comparing the request string alone would let an ``auto``
+    # cache scored on CPU (resolved fp32) silently reuse on H100
+    # (resolves bf16). Compat-check requires the resolved labels to
+    # match (or both to be None, which means torch is unavailable on
+    # both sides and surprisal scoring isn't really happening). When
+    # tier4 is off, surprisal scoring didn't happen and the dtype
+    # field is meaningless.
+    #
+    # Field-missing vs field-None: we distinguish on key presence.
+    # "surprisal_dtype_resolved" not in cache_meta means pre-1.93.0
+    # cache (force re-score). cache_meta["..."] == None means the
+    # cache was written without torch (no resolution possible); fine
+    # iff the current host also can't resolve.
+    if cur_tier4:
+        if "surprisal_dtype_resolved" not in cache_meta:
+            return False, (
+                "surprisal_dtype_resolved absent on cache (pre-1.93.0 "
+                "Tier-4 cache); re-scoring to record the resolved "
+                "dtype on this host"
+            )
+        cached_resolved = cache_meta["surprisal_dtype_resolved"]
+        current_resolved = _resolve_surprisal_dtype_label(args)
+        if cached_resolved != current_resolved:
+            return False, (
+                f"surprisal_dtype_resolved changed "
+                f"({cached_resolved!r} → {current_resolved!r})"
+            )
     cached_sub = cache_meta.get("sub_sample")
     cur_max = getattr(args, "max_entries", None)
     cur_seed = getattr(args, "max_entries_seed", None)
@@ -2497,6 +2591,21 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Pin a HuggingFace commit SHA for the Tier 4 causal LM "
             "(reproducibility). Default: revision-less."
+        ),
+    )
+    parser.add_argument(
+        "--surprisal-dtype",
+        choices=("auto", "fp32", "fp16", "bf16"),
+        default="auto",
+        help=(
+            "Precision for Tier 4 causal-LM inference. ``auto`` picks "
+            "bf16 on supporting cuda (Ampere+ / Hopper / Ada), fp16 on "
+            "older cuda (V100 / T4) where bf16 falls back to slow "
+            "kernels, fp32 on CPU / MPS. Explicit values override the "
+            "auto resolution. The log_softmax step is always computed "
+            "in fp32 so the surprisal-series numerical contract is "
+            "stable across dtype choices. No effect when --tier4 is "
+            "off."
         ),
     )
     parser.add_argument(
