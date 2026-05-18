@@ -6,6 +6,20 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.92.1] - 2026-05-18
+
+**Test-infrastructure fixes for two embedding-wiring tests that fail on slim CI harnesses.** Both tests in `test_pipeline_model_wiring.py` (the Tier-3 cohesion side of the 1.80.0 pipeline-wiring PR) depended on host-installed `numpy` and `sentence_transformers` / `sklearn` to pass, even though their stubbing strategy aimed at no-deps reproducibility. The bugs were latent on main; they surfaced while running the PR #93 (bf16 dtype) test suite on a fresh CI worktree.
+
+### Fixed
+
+- **`test_adjacent_sentence_cosine_new_path_uses_embedding_backend`** now skips cleanly when `numpy` isn't importable. The test stubs `_get_embedding_backend` to bypass real model loading, but `adjacent_sentence_cosine`'s post-encode dot-product math does `import numpy` inside a `try`/`except Exception` block — without numpy the import raises, the except catches it, and the function returns `None`. The test would then fail on `assert result is not None` with no signal that numpy was the missing piece. New `_skip_no_numpy` marker (mirroring the existing `_skip_no_torch` pattern in `test_surprisal_backend.py`) makes the dependency explicit.
+- **`test_audit_text_threads_embedding_model_through`** now patches `va.HAS_ST = True` so the Tier-3 path inside `audit_text` is actually entered. The function gates `adjacent_sentence_cosine` calls on `HAS_ST or HAS_SKLEARN` (both False without those libs), so the spy never ran and `captured["embedding_model"]` was never set — the test failed on `KeyError: 'embedding_model'` rather than catching a wiring regression. The spy is a complete replacement for `adjacent_sentence_cosine`, so it never reaches the real function's internal numpy import; just opening the gate is enough.
+
+### Notes
+
+- **No framework behavior change.** Both fixes are in test code. The underlying `audit_text` / `adjacent_sentence_cosine` wiring is unchanged; the tests now correctly exercise it on a slim harness without spuriously failing.
+- **Test count after this patch: 24 tests in `test_pipeline_model_wiring.py`, 1 skipped (numpy-gated).** Was 23 passing + 2 failing pre-patch; now 23 passing + 1 skipped (the skip is gated behavior, not regression).
+
 ## [1.92.0] - 2026-05-18
 
 **Cloud-portable polarity audit + slicer v2.** Two new modules in `scripts/calibration/` adapted from the desktop-session bundle (2026-05-18). The polarity audit can run against existing slice CSVs (v1 or v2 format) and produce per `(model × signal)` verdict + recommended registry direction without any GPU work — the laptop-friendly hypothesis-testing layer for the MAGE 5K bundle the framework's developer captured before the desktop became unavailable.
