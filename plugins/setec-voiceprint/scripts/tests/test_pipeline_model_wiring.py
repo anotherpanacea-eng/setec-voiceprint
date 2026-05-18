@@ -107,6 +107,23 @@ def test_adjacent_sentence_cosine_legacy_path_unchanged():
     assert "MiniLM" in method or "tfidf" in method
 
 
+try:
+    import numpy as _np  # type: ignore  # noqa: F401
+    _HAS_NUMPY = True
+except ImportError:
+    _HAS_NUMPY = False
+
+_skip_no_numpy = pytest.mark.skipif(
+    not _HAS_NUMPY,
+    reason=(
+        "numpy not installed; adjacent_sentence_cosine's new-path "
+        "and audit_text Tier-3 spy tests need numpy for the per-pair "
+        "dot-product math the function does after the spy/stub returns"
+    ),
+)
+
+
+@_skip_no_numpy
 def test_adjacent_sentence_cosine_new_path_uses_embedding_backend(monkeypatch):
     """When ``embedding_model="mxbai"`` is passed, the new path
     delegates to ``embedding_backend.EmbeddingBackend``. We stub
@@ -181,9 +198,16 @@ def test_adjacent_sentence_cosine_new_path_uses_embedding_backend(monkeypatch):
     assert len(va._EMBEDDING_BACKENDS_CACHE) == 1
 
 
-def test_audit_text_threads_embedding_model_through():
+def test_audit_text_threads_embedding_model_through(monkeypatch):
     """``audit_text(..., embedding_model="X")`` propagates ``X``
-    into the adjacent_cosine call. We spy via monkeypatch."""
+    into the adjacent_cosine call. We spy via monkeypatch.
+
+    The Tier-3 path inside ``audit_text`` is gated on
+    ``HAS_ST or HAS_SKLEARN``; we patch ``HAS_ST=True`` so the gate
+    opens regardless of host deps. The spy is a complete replacement
+    for ``adjacent_sentence_cosine``, so it never reaches the real
+    function's internal ``import numpy``; the gate-patch is enough.
+    """
     import variance_audit as va  # type: ignore
 
     captured: dict[str, Any] = {}
@@ -198,6 +222,7 @@ def test_audit_text_threads_embedding_model_through():
             "min": 0.5, "max": 0.5,
         }
 
+    monkeypatch.setattr(va, "HAS_ST", True)
     with mock.patch.object(va, "adjacent_sentence_cosine", _spy):
         va.audit_text(
             "Sentence one. " * 60,  # enough words to pass the 50-word floor
