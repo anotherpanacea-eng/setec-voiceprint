@@ -606,18 +606,19 @@ Audit output preserved in `internal/polarity_audit_results/` (gitignored): `pola
 - **Why now.** The RUNBOOK_tier4_install §8 throughput table puts a stock-backend L4 at ~2500 tok/s. At MAGE scale (~218M tokens) that's ~24 GPU-hours. With the device fix and `score_texts(batch_size=16)` on an H100, MAGE Tier-4 lands in ~1.5–2 hours. The bug was a load-bearing cost driver for any operator renting GPU time to run Tier-4 calibration.
 ## [1.88.1] - 2026-05-18
 
-**Manifest-validator tripwire planted for Issue #6 (jsonschema migration).** Closes the issue with a tripwire rather than the migration itself, because Issue #6's own gate ("when the manifest becomes nested, versioned, or broad enough") hasn't fired — the manifest is still flat.
+**Manifest-validator tripwire planted as groundwork for Issue #6 (jsonschema migration).** Refs #6 — does not close it. The manifest already uses one documented nesting path (`notes.composite_states` for the `ai_status: mixed` case), so "is it nested?" alone is no longer a clean trigger. This tripwire fires on *unfamiliar* shape — unrecognized nested fields, explicit versioning, or broad field counts — and is deferred-with-tripwire, not completed.
 
 ### Added
 
-- `validate_manifest()` now records advisory entries under a new `tripwires` key in the result dict whenever any entry has (a) a nested-object field, (b) a `schema_version` / `manifest_version` field, or (c) more than `TRIPWIRE_BROAD_FIELD_THRESHOLD = 45` total fields. One trigger per category per manifest; entirely non-blocking.
+- `validate_manifest()` now records advisory entries under a new `tripwires` key in the result dict whenever any entry has (a) an **unfamiliar** nested-object field — `notes` is whitelisted via `TRIPWIRE_KNOWN_NESTED_FIELDS`, (b) a `schema_version` / `manifest_version` field, or (c) more than `TRIPWIRE_BROAD_FIELD_THRESHOLD = 45` total fields. One trigger per category per manifest; entirely non-blocking.
+- `build_audit_payload()` carries `tripwires` into `results.tripwires` (per CODEX P2 on PR #89 — JSON-envelope consumers must see what fired) and adds a top-level envelope warning listing fired categories when at least one tripwire is present.
 - New markdown section in `render_report()`: "Schema-migration tripwire (Issue #6)" appears only when at least one tripwire fired.
-- 9 new tests in `test_manifest_validator_tripwire.py` covering dormant state, each trigger category, non-blocking interaction with normal validation, and markdown rendering.
+- 12 new tests in `test_manifest_validator_tripwire.py`: dormant state, each trigger category, `notes` whitelist behavior, non-blocking interaction with normal validation, envelope round-trip, and markdown rendering.
 
 ### Notes
 
-- The handcrafted manifest validator stays in place. When a tripwire fires in the wild, that's the cue to reopen Issue #6 and consider migrating structural checks to the `jsonschema` library per the original issue body's acceptance criteria.
-- No CLI behavior changes for current manifests. Existing dirty-manifest fixtures and tests are unaffected (184 manifest-touching tests pass unchanged).
+- The handcrafted manifest validator stays in place. When a tripwire fires in the wild on a production manifest, that's the cue to migrate structural checks to the `jsonschema` library per Issue #6's acceptance criteria.
+- No CLI behavior changes for current manifests. The 36 entries the calibration pipeline emits with `notes.composite_states` are not flagged (whitelist). 224 manifest + editlens + impostor pipeline tests pass unchanged.
 
 ## [1.88.0] - 2026-05-17
 

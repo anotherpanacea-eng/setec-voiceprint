@@ -127,14 +127,21 @@ ALLOWED_LANGUAGE_STATUS = {
 REQUIRED_FIELDS = ("id", "path", "ai_status", "use")
 
 # Schema-migration tripwire (Issue #6). The handcrafted validator stays
-# in place until the manifest shape outgrows it: nested per-entry
-# objects, an explicit schema/manifest version field, or substantially
-# more fields than today's flat KNOWN_FIELDS set. When any of these
-# fire, validate_manifest() records a tripwire entry pointing back to
-# Issue #6 so the next reader knows to consider migrating structural
-# checks to the jsonschema library.
+# in place until the manifest shape outgrows it: *unfamiliar* nested
+# per-entry objects, an explicit schema/manifest version field, or
+# substantially more fields than today's flat KNOWN_FIELDS set. When
+# any of these fire, validate_manifest() records a tripwire entry
+# pointing back to Issue #6 so the next reader knows to consider
+# migrating structural checks to the jsonschema library.
+#
+# Already-documented nested fields (the `ai_status: mixed` path uses
+# ``notes.composite_states``; see references/manifest-schema.md §16
+# and editlens_to_manifest.py) do NOT fire the nested-trigger — the
+# handcrafted validator already covers them. The trigger is for
+# *unfamiliar* nested shape that would warrant moving to jsonschema.
 TRIPWIRE_BROAD_FIELD_THRESHOLD = 45
 TRIPWIRE_VERSION_FIELDS = ("schema_version", "manifest_version")
+TRIPWIRE_KNOWN_NESTED_FIELDS = frozenset({"notes"})
 
 # All recognized field names. Unknown fields generate warnings.
 KNOWN_FIELDS = {
@@ -709,7 +716,10 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
         )
         if "nested" not in tripwires_seen:
             for fname, fvalue in entry.items():
-                if isinstance(fvalue, dict):
+                if (
+                    isinstance(fvalue, dict)
+                    and fname not in TRIPWIRE_KNOWN_NESTED_FIELDS
+                ):
                     tripwires_seen.add("nested")
                     tripwires.append({
                         "category": "nested",
@@ -717,11 +727,13 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
                         "id": entry_id_for_tripwire,
                         "field": fname,
                         "message": (
-                            f"Entry on line {lineno} has a nested-object "
-                            f"field '{fname}'. The handcrafted validator "
-                            "handles flat entries cleanly; nested shape "
-                            "is the trigger Issue #6 named for "
-                            "considering a jsonschema-library migration."
+                            f"Entry on line {lineno} has an unfamiliar "
+                            f"nested-object field '{fname}'. The "
+                            "handcrafted validator handles documented "
+                            "nesting (e.g. `notes.composite_states`); "
+                            "an unfamiliar nested field is the trigger "
+                            "Issue #6 named for considering a "
+                            "jsonschema-library migration."
                         ),
                     })
                     break
@@ -1092,7 +1104,7 @@ def build_audit_payload(
     results_payload: dict[str, Any] = {}
     for k in (
         "manifest_path", "n_entries", "n_errors", "n_warnings",
-        "issues", "summary",
+        "issues", "tripwires", "summary",
     ):
         if k in result:
             results_payload[k] = result[k]
@@ -1102,6 +1114,13 @@ def build_audit_payload(
         warnings.append(
             f"{result.get('n_errors')} manifest error(s); see "
             "results.issues."
+        )
+    tripwires_list = result.get("tripwires") or []
+    if tripwires_list:
+        categories = sorted({t.get("category") for t in tripwires_list if t.get("category")})
+        warnings.append(
+            "Schema-migration tripwire fired (Issue #6): "
+            f"{', '.join(categories)}. See results.tripwires."
         )
 
     return build_output(

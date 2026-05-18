@@ -53,7 +53,7 @@ class TestTripwireDormant:
 
 
 class TestNestedTripwire:
-    def test_nested_dict_field_fires(self, tmp_path: Path):
+    def test_unfamiliar_nested_dict_field_fires(self, tmp_path: Path):
         entry = _flat_entry(0)
         entry["provenance"] = {"source": "test", "collected_at": "2026-05-18"}
         manifest = _write_manifest(tmp_path, [entry])
@@ -71,6 +71,19 @@ class TestNestedTripwire:
         result = mv.validate_manifest(manifest)
         nested = [t for t in result["tripwires"] if t["category"] == "nested"]
         assert len(nested) == 1
+
+    def test_documented_notes_nesting_does_not_fire(self, tmp_path: Path):
+        """`notes.composite_states` is the documented nesting path for
+        the `ai_status: mixed` case (references/manifest-schema.md
+        §16). The handcrafted validator already covers it, so the
+        nested-trigger must whitelist `notes`."""
+        entry = _flat_entry(0)
+        entry["ai_status"] = "mixed"
+        entry["notes"] = {"composite_states": ["ai_edited", "pre_ai_human"]}
+        manifest = _write_manifest(tmp_path, [entry])
+        result = mv.validate_manifest(manifest)
+        nested = [t for t in result["tripwires"] if t["category"] == "nested"]
+        assert nested == []
 
 
 class TestVersionedTripwire:
@@ -114,6 +127,53 @@ class TestTripwireDoesNotBlockValidation:
         result = mv.validate_manifest(manifest)
         assert result["n_errors"] >= 1
         assert any(t["category"] == "nested" for t in result["tripwires"])
+
+
+class TestEnvelopeCarriesTripwires:
+    """``--json`` consumers (the schema_version 1.0 envelope) must
+    surface tripwires under ``results.tripwires`` and add a
+    top-level warning when at least one fires. Otherwise the
+    advisory is silently dropped at the CLI/JSON boundary."""
+
+    def test_envelope_carries_tripwires(self, tmp_path: Path):
+        entry = _flat_entry(0)
+        entry["provenance"] = {"source": "test"}
+        manifest = _write_manifest(tmp_path, [entry])
+        result = mv.validate_manifest(manifest)
+        envelope = mv.build_audit_payload(
+            result, target_path=str(manifest),
+        )
+        assert "tripwires" in envelope["results"]
+        assert len(envelope["results"]["tripwires"]) == 1
+        assert envelope["results"]["tripwires"][0]["category"] == "nested"
+
+    def test_envelope_warning_surfaces_tripwire_categories(
+        self, tmp_path: Path,
+    ):
+        entry = _flat_entry(0)
+        entry["provenance"] = {"source": "test"}
+        entry["schema_version"] = "2.0"
+        manifest = _write_manifest(tmp_path, [entry])
+        result = mv.validate_manifest(manifest)
+        envelope = mv.build_audit_payload(
+            result, target_path=str(manifest),
+        )
+        warnings_text = " ".join(envelope["warnings"]).lower()
+        assert "tripwire" in warnings_text
+        assert "issue #6" in warnings_text
+        assert "nested" in warnings_text
+        assert "versioned" in warnings_text
+
+    def test_envelope_has_no_tripwire_warning_when_dormant(
+        self, tmp_path: Path,
+    ):
+        manifest = _write_manifest(tmp_path, [_flat_entry(0)])
+        result = mv.validate_manifest(manifest)
+        envelope = mv.build_audit_payload(
+            result, target_path=str(manifest),
+        )
+        warnings_text = " ".join(envelope["warnings"]).lower()
+        assert "tripwire" not in warnings_text
 
 
 class TestMarkdownRendersTripwireSection:
