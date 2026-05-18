@@ -513,34 +513,197 @@ def test_score_texts_matches_score_text_for_each_input(
         assert abs(s_batched - s_serial) < 1e-5
 
 
+class _CountingFakeCausalLM(_FakeCausalLM):
+    """Variant of ``_FakeCausalLM`` that counts ``__call__``
+    invocations at the class level. Necessary because Python
+    resolves special methods on the class, not the instance —
+    a per-instance ``fake_model.__call__ = wrapper`` assignment
+    does NOT intercept ``fake_model(...)`` invocations."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.call_count = 0
+
+    def __call__(self, input_ids, attention_mask=None):
+        self.call_count += 1
+        return super().__call__(input_ids, attention_mask=attention_mask)
+
+
 @_skip_no_torch
 def test_score_texts_respects_batch_size(
     monkeypatch: pytest.MonkeyPatch,
 ):
     """Asking for batch_size=2 across 5 inputs produces 3 forward
-    passes (2 + 2 + 1). The fake model counts calls so we can
-    pin the contract that batching actually batches."""
+    passes (2 + 2 + 1). Uses a counting subclass with a class-level
+    ``__call__`` override (per-instance assignment doesn't intercept
+    invocation because Python resolves special methods on the class)
+    so the assertion really pins the number of forward passes."""
     fake = mock.MagicMock()
     fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
         [0, 1, 2, 3, 4]
     )
-    fake_model = _FakeCausalLM(n_positions=5, vocab_size=8)
-    # Wrap __call__ to count invocations.
-    original_call = fake_model.__call__
-    call_count = [0]
-
-    def counting_call(input_ids, attention_mask=None):
-        call_count[0] += 1
-        return original_call(input_ids, attention_mask=attention_mask)
-
-    fake_model.__call__ = counting_call  # type: ignore[method-assign]
+    fake_model = _CountingFakeCausalLM(n_positions=5, vocab_size=8)
     fake.AutoModelForCausalLM.from_pretrained.return_value = fake_model
     monkeypatch.setitem(sys.modules, "transformers", fake)
     b = sb.SurprisalBackend(model_id="tinyllama")
     results = b.score_texts(["a", "b", "c", "d", "e"], batch_size=2)
     assert len(results) == 5
     # Five non-empty inputs at batch_size=2 → ceil(5/2) = 3 batches.
-    assert call_count[0] == 3
+    assert fake_model.call_count == 3
+
+
+class _LeftPaddingFakeTokenizer(_FakeTokenizer):
+    """Variant of ``_FakeTokenizer`` that pads on the LEFT side
+    (the HF default for some causal-LM tokenizers in generation
+    contexts). Pins the regression that batched scoring must not
+    leak pad-position context into the surprisal of the first
+    real token of a shorter row.
+
+    The fake also exposes a writable ``padding_side`` attribute
+    so ``_load()`` can flip it back to ``'right'``; subsequent
+    calls observe the override."""
+
+    padding_side: str = "left"
+
+    def __call__(
+        self,
+        text,
+        return_tensors=None,  # noqa: ARG002
+        padding=False,  # noqa: ARG002
+        truncation=False,  # noqa: ARG002
+    ):
+        import torch
+        if isinstance(text, str):
+            return {
+                "input_ids": torch.tensor([self.token_ids]),
+                "attention_mask": torch.ones((1, len(self.token_ids)), dtype=torch.long),
+            }
+        per_text = [self.token_ids for _ in text]
+        max_len = max(len(ids) for ids in per_text)
+        if self.padding_side == "left":
+            padded = [
+                [self.pad_id] * (max_len - len(ids)) + ids
+                for ids in per_text
+            ]
+            attention = [
+                [0] * (max_len - len(ids)) + [1] * len(ids)
+                for ids in per_text
+            ]
+        else:  # 'right'
+            padded = [
+                ids + [self.pad_id] * (max_len - len(ids))
+                for ids in per_text
+            ]
+            attention = [
+                [1] * len(ids) + [0] * (max_len - len(ids))
+                for ids in per_text
+            ]
+        return {
+            "input_ids": torch.tensor(padded),
+            "attention_mask": torch.tensor(attention, dtype=torch.long),
+        }
+
+
+@_skip_no_torch
+def test_load_forces_right_padding_when_tokenizer_defaults_left(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Some HF causal-LM tokenizers default to ``padding_side =
+    'left'`` for generation. The batched-scoring path assumes pad
+    tokens live on the right edge of each row (so the valid-mask
+    convention filters target-side pads cleanly). ``_load()``
+    must flip the override before any batched tokenization."""
+    fake = mock.MagicMock()
+    tokenizer = _LeftPaddingFakeTokenizer([0, 1, 2, 3, 4])
+    assert tokenizer.padding_side == "left"  # precondition
+    fake.AutoTokenizer.from_pretrained.return_value = tokenizer
+    fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
+        n_positions=5, vocab_size=8,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    b.score_text("hello")  # drives lazy-load
+    assert tokenizer.padding_side == "right"
+
+
+@_skip_no_torch
+def test_score_texts_correct_under_left_padding_tokenizer(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Even if a hypothetical tokenizer somehow ignored
+    ``padding_side = 'right'`` and produced left-padded batches,
+    the valid-mask convention
+    ``attention_mask[:, :-1] & attention_mask[:, 1:]`` must still
+    keep the per-text series equivalent to the single-text path.
+    Defense in depth — covers the case where a custom tokenizer
+    or a HF revision quietly re-pins left padding after load."""
+    import math
+    vocab_size = 8
+
+    # A tokenizer whose ``padding_side`` is locked to 'left' and
+    # ignores the ``_load`` override. Models the worst-case
+    # custom-tokenizer regression.
+    class _StubbornLeftPaddingFakeTokenizer(_LeftPaddingFakeTokenizer):
+        @property
+        def padding_side(self):
+            return "left"
+
+        @padding_side.setter
+        def padding_side(self, value):  # noqa: ARG002
+            pass  # Silently refuse to flip.
+
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = (
+        _StubbornLeftPaddingFakeTokenizer([0, 1, 2, 3, 4])
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
+        n_positions=5, vocab_size=vocab_size,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    results = b.score_texts(["one", "two", "three"], batch_size=3)
+    expected = math.log2(vocab_size)
+    # Each input tokenises to 5 tokens; series length should be 4
+    # (len(tokens) - 1) regardless of padding side, and every
+    # value should equal log2(vocab_size) since the fake produces
+    # uniform logits independent of context.
+    for series in results:
+        assert len(series) == 4
+        for s in series:
+            assert abs(s - expected) < 1e-5
+
+
+@_skip_no_torch
+def test_load_raises_on_real_device_placement_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Narrow-down regression for the silent-CPU-fallback issue.
+    A model whose ``.to()`` raises something other than
+    ``AttributeError`` (the stub-model signal) must surface as
+    ``SurprisalBackendError`` rather than silently leaving the
+    backend on CPU. Models the OOM / driver-mismatch /
+    unsupported-dtype-on-MPS path that previously got swallowed
+    by the broad ``except Exception``."""
+
+    class _RaisingFakeCausalLM(_FakeCausalLM):
+        def to(self, device):  # noqa: ARG002
+            raise RuntimeError("CUDA out of memory (simulated)")
+
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        [0, 1, 2, 3, 4]
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = (
+        _RaisingFakeCausalLM(n_positions=5, vocab_size=8)
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    with pytest.raises(sb.SurprisalBackendError) as excinfo:
+        b.score_text("hello")
+    # Error message must name the original RuntimeError so the
+    # operator can diagnose without re-running with debug flags.
+    assert "CUDA out of memory" in str(excinfo.value)
+    assert "RuntimeError" in str(excinfo.value)
 
 
 @_skip_no_torch

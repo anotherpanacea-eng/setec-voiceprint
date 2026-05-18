@@ -6,6 +6,26 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.89.1] - 2026-05-18
+
+**Tier-4 surprisal backend: review-correctness fixes on top of 1.89.0.** Three issues surfaced in code review of #88; this release narrows the device-placement exception handling, enforces right padding for batched scoring, and fixes a test that didn't actually intercept model invocations.
+
+### Fixed
+
+- **Device placement failures no longer silently fall back to CPU.** The 1.89.0 `_load()` wrapped the model-to-device move in a catch-all `except Exception` that turned real placement failures (OOM, driver mismatch, unsupported-dtype-on-MPS, etc.) into `_device = None` and a silent CPU fallback — exactly the multi-day-rented-GPU bug auto-placement was meant to prevent. Narrowed to: `ImportError` → leave `_device = None` (no torch installed); `AttributeError` on `.to()` → leave `_device = None` (test fake / stub); any other exception → raise `SurprisalBackendError` with the underlying error name and message preserved, so operators can diagnose OOM / driver issues from the error rather than from a wall-clock anomaly.
+- **Batched scoring under left-padded tokenizers.** The 1.89.0 `valid_mask = attention_mask[:, 1:]` only filtered target-side padding. For a left-padded row like `[PAD, PAD, A, B, C, D, E]` the position predicting `A` reads pad-position context, leaking pad logits into the surprisal of the first real token of shorter rows. Two-line fix: (1) `_load()` now forces `tokenizer.padding_side = 'right'` before any batched tokenization, overriding HF defaults that pin left padding for generation; (2) `valid_mask` is now the paired AND `attention_mask[:, :-1] & attention_mask[:, 1:]`, which is correct for either padding side and provides defense in depth if a custom tokenizer somehow re-pins left padding after load. The fix preserves the `len(tokens) - 1` series-length contract under both padding conventions.
+- **`test_score_texts_respects_batch_size` actually intercepts model invocations.** The 1.89.0 test assigned `fake_model.__call__ = counting_call` on the instance, but Python resolves special methods on the class, so `fake_model(...)` bypassed the wrapper and the call count stayed at zero. The test passed only because torch is skipped in the no-torch CI environment; on a torch-enabled host it would have failed the assertion. Replaced with a `_CountingFakeCausalLM` subclass that overrides `__call__` at the class level.
+
+### Added
+
+- **3 new tests** (33 total in `test_surprisal_backend.py`, was 30): `test_load_forces_right_padding_when_tokenizer_defaults_left` (regression pin for the padding-side override); `test_score_texts_correct_under_left_padding_tokenizer` (defense-in-depth pin: even if a custom tokenizer ignores the `_load` override, the paired-AND mask keeps the series correct); `test_load_raises_on_real_device_placement_failure` (narrow-down for the silent-fallback issue — a simulated CUDA-OOM exception must surface as `SurprisalBackendError`, not get swallowed).
+
+### Notes
+
+- **No behavior change on CPU-only / no-torch hosts.** The `ImportError` path leaves `_device = None` exactly as 1.89.0 did, and the test stubs that don't implement `.to()` continue to work via the `AttributeError` branch.
+- **The padding-side override is idempotent.** Tokenizers that already default to right padding stay there; the override is a no-op in that case. Custom tokenizers that lock the property (via `@property` without a setter) won't be flipped, but the paired-AND mask still produces correct results — that's the defense-in-depth shape.
+- **No signal definitions or PROVENANCE contents change.** Like 1.89.0, this is a correctness + performance fix; identifier_block output is unchanged.
+
 ## [1.89.0] - 2026-05-18
 
 **Tier-4 surprisal backend: GPU device auto-detection + batched scoring.** Two changes to `surprisal_backend.py` that move RAID-scale Tier-4 calibration from "multi-day on rented GPUs" to "single-digit hours on a single H100 hour."

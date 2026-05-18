@@ -269,8 +269,22 @@ class SurprisalBackend:
         # assigning ``backend._device`` after construction; the
         # batched-scoring path reads ``self._device`` rather than
         # re-detecting.
+        #
+        # Failure-mode discipline: a missing torch install or a
+        # stub model that doesn't implement ``.to()`` is a soft
+        # case (test fakes, CI hosts without the Tier-4 dependency
+        # layer) — leave ``_device = None`` and let the scoring path
+        # skip the device move. But a real placement error (OOM,
+        # driver mismatch, unsupported-dtype-on-MPS, etc.) is the
+        # exact thing this patch exists to surface, because the
+        # silent CPU fallback that those errors used to produce is
+        # the multi-day-rented-GPU bug. Surface real placement
+        # failures as ``SurprisalBackendError``.
         try:
             import torch  # type: ignore
+        except ImportError:
+            self._device = None
+        else:
             if torch.cuda.is_available():
                 self._device = torch.device("cuda")
             elif (
@@ -280,25 +294,47 @@ class SurprisalBackend:
                 self._device = torch.device("mps")
             else:
                 self._device = torch.device("cpu")
-            self._model = self._model.to(self._device)
-        except Exception:  # noqa: BLE001
-            # Stub-model fakes used in tests don't implement ``.to()``;
-            # leave ``_device`` as None and let the scoring path skip
-            # the device move. Real torch errors here are exceedingly
-            # rare and surface clearly via the forward-pass call.
-            self._device = None
+            try:
+                self._model = self._model.to(self._device)
+            except AttributeError:
+                # Stub model (test fake) without ``.to()``. The
+                # scoring path will skip the device move and the
+                # forward pass runs on whatever device the stub
+                # implements internally.
+                self._device = None
+            except Exception as exc:  # noqa: BLE001
+                raise SurprisalBackendError(
+                    f"Failed to move model {self.model_id!r} to "
+                    f"{self._device}: {type(exc).__name__}: {exc}. "
+                    "This usually indicates an OOM, driver mismatch, "
+                    "or unsupported-op placement error. The backend "
+                    "refuses to silently fall back to CPU here — a "
+                    "CPU-only Tier-4 run on RAID-scale data is a "
+                    "multi-day operation on rented GPU hours, which "
+                    "is the exact failure mode auto-device-placement "
+                    "is meant to prevent."
+                ) from exc
         # Pad token. Many causal LMs (GPT-2, OLMo, OpenELM, etc.) ship
         # without a pad_token set, which breaks batched tokenization
         # with ``padding=True``. Standard practice is to alias
         # ``pad_token`` to ``eos_token``; the attention_mask the
         # tokenizer emits keeps the forward pass numerically
         # equivalent to the unpadded case for every non-pad position.
+        # Also force right padding: ``score_texts`` assumes pad tokens
+        # live on the right edge of each row so the valid-mask
+        # convention (``attention_mask[:, :-1] & attention_mask[:, 1:]``)
+        # filters out positions predicted from pad-context. Some HF
+        # causal-LM tokenizers default to left padding for generation;
+        # we override defensively here so the batched-scoring contract
+        # holds regardless of the tokenizer's preset.
         try:
             if (
                 getattr(self._tokenizer, "pad_token", None) is None
                 and getattr(self._tokenizer, "eos_token", None) is not None
             ):
                 self._tokenizer.pad_token = self._tokenizer.eos_token
+            if hasattr(self._tokenizer, "padding_side"):
+                self._tokenizer.padding_side = "right"
         except Exception:  # noqa: BLE001
             pass
         if self.deterministic:
@@ -467,10 +503,20 @@ class SurprisalBackend:
                 -1, next_tokens.unsqueeze(-1),
             ).squeeze(-1)  # (B, N-1)
             surprisals_bits = (surprisals_nats * log2e).cpu()
-            # Valid positions are where attention_mask[:, 1:] == 1
-            # (the next-token position is a real token, not a pad).
-            # Trim each series to its un-padded length.
-            valid_mask = attention_mask[:, 1:].bool().cpu()
+            # Valid positions require BOTH the context position
+            # (i, predicting i+1) AND the target position (i+1) to
+            # be real tokens. The naive ``attention_mask[:, 1:]``
+            # mask filters target-side pads but admits the case
+            # where the target is real but the left context is a
+            # pad — which happens under left-padded tokenizers
+            # (where shorter rows look like ``[PAD, PAD, A, B, C]``
+            # and the position predicting ``A`` reads pad-context).
+            # The paired AND is correct for both padding sides; we
+            # also force ``padding_side = 'right'`` in ``_load`` for
+            # defense in depth.
+            valid_mask = (
+                attention_mask[:, :-1].bool() & attention_mask[:, 1:].bool()
+            ).cpu()
             for k, original_idx in enumerate(chunk_indices):
                 if input_ids.shape[1] < 2:
                     # Single-token (or empty) row after tokenisation;
