@@ -220,7 +220,18 @@ def summarise_cross_slice(
     Input shape: ``per_slice`` is a list of ``{"slice_value": str,
     "results": [{"model": ..., "signal": ..., "registry_direction":
     ..., "verdict": ...}, ...]}`` dicts (the per-slice audit output).
+
+    Sparse-slice handling: if a ``(model, signal)`` row is present
+    for some slice values and absent for others, the synthesis
+    marks the missing slices with the sentinel verdict ``"missing"``
+    and sets ``robust_across_slices: False``. Pinning this matters
+    when the slicer didn't produce cells for every (slice_value,
+    model, signal) combination — without the missing-aware check,
+    a signal that's measurable on attack-class ``none`` but absent
+    on ``paraphrase`` would falsely report as robust on the one
+    slice that has data.
     """
+    observed_slice_values = [block["slice_value"] for block in per_slice]
     by_ms: dict[tuple[str, str], dict[str, str]] = defaultdict(dict)
     direction_by_ms: dict[tuple[str, str], str] = {}
     auc_by_ms: dict[tuple[str, str], dict[str, dict[str, Any]]] = defaultdict(dict)
@@ -239,17 +250,29 @@ def summarise_cross_slice(
 
     cross: list[dict[str, Any]] = []
     for (model, signal), per_slice_verdicts in sorted(by_ms.items()):
-        verdict_set = set(per_slice_verdicts.values())
-        robust = len(verdict_set) == 1
+        # Fill in "missing" for slice values where the (model, signal)
+        # has no row at all. Without this, a (model, signal) present
+        # in only one slice would falsely report as robust_across_slices.
+        full_verdicts = dict(per_slice_verdicts)
+        missing_slices = [
+            sv for sv in observed_slice_values if sv not in full_verdicts
+        ]
+        for sv in missing_slices:
+            full_verdicts[sv] = "missing"
+        verdict_set = set(full_verdicts.values())
+        # Robustness requires uniform real verdicts across every
+        # observed slice. Any "missing" cell or any verdict
+        # disagreement collapses robustness to False.
+        robust = len(verdict_set) == 1 and "missing" not in verdict_set
         registry_dir = direction_by_ms.get((model, signal), "gt")
         rec = _synthesise_recommendation(
-            per_slice_verdicts, registry_dir,
+            full_verdicts, registry_dir,
         )
         cross.append({
             "model": model,
             "signal": signal,
             "registry_direction": registry_dir,
-            "verdicts_per_slice": dict(per_slice_verdicts),
+            "verdicts_per_slice": full_verdicts,
             "auc_per_slice": dict(auc_by_ms[(model, signal)]),
             "robust_across_slices": robust,
             "registry_recommendation": rec,
@@ -265,10 +288,24 @@ def _synthesise_recommendation(
     Pure-Python; no GPU. Mirrors the natural-language buckets of
     ``polarity_audit.polarity_recommendation`` but operates on the
     cross-slice view rather than a single verdict.
+
+    ``"missing"`` verdict values (the sentinel for slice cells where
+    no row was emitted) short-circuit to ``"data missing"``: a
+    cell that's absent in some slices but present in others can't
+    motivate a registry change either way without re-running the
+    slicer with the missing slices populated.
     """
-    verdicts = list(per_slice_verdicts.values())
-    distinct = set(verdicts)
+    distinct = set(per_slice_verdicts.values())
     flipped = "lt" if registry_dir == "gt" else "gt"
+    if "missing" in distinct:
+        missing_slices = sorted(
+            k for k, v in per_slice_verdicts.items() if v == "missing"
+        )
+        return (
+            f"data missing for slice values {missing_slices!r}; re-run "
+            "the slicer with the missing slices populated before "
+            "recommending a registry change"
+        )
     if distinct == {"globally_consistent"}:
         return f"keep registry direction {registry_dir!r}"
     if distinct == {"globally_inverted"}:

@@ -268,6 +268,61 @@ def test_summarise_cross_slice_partially_robust():
     assert "Human review" in r["registry_recommendation"]
 
 
+def test_summarise_cross_slice_missing_in_one_slice_is_not_robust():
+    """Reviewer P1 on PR #96: a ``(model, signal)`` present in one
+    slice but absent in another previously reported as
+    ``robust_across_slices: True`` because ``verdict_set`` only had
+    one entry. Real bug — the slice with no row had no verdict but
+    contributed nothing to the robustness check.
+
+    Fix: every observed slice value must have a verdict (or be marked
+    ``"missing"``) for robustness to be True. A missing-in-one-slice
+    cell is now reported as non-robust with a data-missing
+    recommendation rather than a false flip/keep recommendation."""
+    # Slice "none" has the (m1, x) row; slice "paraphrase" does not.
+    per_slice = [
+        _make_slice_block("none", "m1", "x", "gt", "globally_inverted"),
+        {"slice_value": "paraphrase", "results": []},
+    ]
+    cross = cpa.summarise_cross_slice(per_slice)
+    assert len(cross) == 1
+    r = cross[0]
+    assert r["robust_across_slices"] is False, (
+        "A signal missing from a slice cannot be 'robust across "
+        "slices'; the missing slice contributes no evidence."
+    )
+    # The missing slice is recorded explicitly so consumers can see
+    # which slices need re-running.
+    assert r["verdicts_per_slice"]["paraphrase"] == "missing"
+    assert r["verdicts_per_slice"]["none"] == "globally_inverted"
+    # The recommendation steers the operator toward re-running the
+    # slicer rather than acting on an incomplete picture.
+    assert "data missing" in r["registry_recommendation"]
+    assert "paraphrase" in r["registry_recommendation"]
+
+
+def test_summarise_cross_slice_missing_in_multiple_slices_reported():
+    """When multiple slices are missing the (model, signal), all of
+    them get listed in the recommendation so the operator knows the
+    full re-run scope."""
+    per_slice = [
+        _make_slice_block(
+            "none", "m1", "x", "lt", "globally_consistent",
+        ),
+        {"slice_value": "paraphrase", "results": []},
+        {"slice_value": "humanizer", "results": []},
+    ]
+    cross = cpa.summarise_cross_slice(per_slice)
+    r = cross[0]
+    assert r["robust_across_slices"] is False
+    assert r["verdicts_per_slice"]["paraphrase"] == "missing"
+    assert r["verdicts_per_slice"]["humanizer"] == "missing"
+    assert "data missing" in r["registry_recommendation"]
+    # Both missing slices listed.
+    assert "paraphrase" in r["registry_recommendation"]
+    assert "humanizer" in r["registry_recommendation"]
+
+
 # --------------- End-to-end build_cross_audit -------------------
 
 
