@@ -611,6 +611,152 @@ class TestCorpusTextFingerprint:
         assert "fingerprint" in reason.lower() or "1.29.1" in reason
 
 
+class TestEmbeddingDtypeCacheIdentity:
+    """Reviewer P1 on PR #101: embedding_dtype + embedding_device are
+    part of the Tier-3 cache identity from 1.96.0 onward. A cached
+    Phase A run scored under ``--embedding-dtype fp32`` cannot be
+    reused under ``--embedding-dtype bf16`` (or vice versa) without
+    silently mixing precision regimes. Same bug class as the surprisal-
+    side fix in PR #93.
+
+    These tests pin the contract on ``cache_is_compatible``:
+
+    - When Tier-3 is on and the cache lacks ``embedding_dtype_resolved``
+      (pre-1.96 cache), force a re-score so the resolved label gets
+      recorded on this host.
+    - When the cache HAS the resolved label and it differs from what
+      the current host would resolve to, invalidate.
+    - When ``--embedding-device`` requests differ, invalidate.
+    - When Tier-3 is OFF, the dtype fields are ignored (no Tier-3
+      cache identity to defend).
+    """
+
+    def test_tier3_off_dtype_fields_are_ignored(self, tmp_path):
+        """When Tier-3 is off, embedding-dtype identity doesn't gate
+        cache reuse — there's no Tier-3 scoring to defend."""
+        manifest = _write_real_manifest(tmp_path)
+        cache_meta = {
+            "manifest_sha256": "sha256:abc",
+            "corpus_text_fingerprint": "sha256:def",
+            "use": "validation",
+            "do_tier2": False,
+            "do_tier3": False,  # off
+            # No embedding_dtype_resolved field; if Tier-3 were on,
+            # this would force a re-score.
+            "scorer_version": ct.SCORER_CACHE_VERSION,
+            "sub_sample": None,
+        }
+        args = _make_args(manifest)
+        args.tier3 = False
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args,
+            manifest_sha256="sha256:abc",
+            corpus_text_fingerprint="sha256:def",
+        )
+        # The cache might still invalidate for other reasons but
+        # NOT for missing embedding_dtype_resolved.
+        assert "embedding_dtype" not in reason
+
+    def test_tier3_on_missing_embedding_dtype_resolved_invalidates(
+        self, tmp_path,
+    ):
+        """Pre-1.96 caches on the pluggable-embedding path don't carry
+        ``embedding_dtype_resolved``. When Tier-3 is on AND
+        ``embedding_model`` is set on both sides, force a re-score so
+        the resolved label gets recorded on this host. Mirror of the
+        surprisal-side pre-1.93 contract in PR #93.
+
+        The check is gated on ``embedding_model is not None`` on both
+        sides — legacy MiniLM caches (``embedding_model=None``) predate
+        the dtype contract entirely and stay compatible without it.
+        """
+        manifest = _write_real_manifest(tmp_path)
+        cache_meta = {
+            "manifest_sha256": "sha256:abc",
+            "corpus_text_fingerprint": "sha256:def",
+            "use": "validation",
+            "do_tier2": False,
+            "do_tier3": True,
+            "embedding_model": "mxbai",  # pluggable path on the cache
+            # No embedding_dtype_resolved.
+            "scorer_version": ct.SCORER_CACHE_VERSION,
+            "sub_sample": None,
+        }
+        args = _make_args(manifest)
+        args.tier3 = True
+        args.embedding_model = "mxbai"  # pluggable path on the args too
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args,
+            manifest_sha256="sha256:abc",
+            corpus_text_fingerprint="sha256:def",
+        )
+        assert ok is False
+        assert "embedding_dtype_resolved" in reason
+        assert "pre-1.96" in reason
+
+    def test_tier3_on_legacy_minilm_path_skips_dtype_check(self, tmp_path):
+        """When ``embedding_model`` is ``None`` on either side, the
+        run uses the legacy MiniLM hardcode which predates the dtype
+        contract. The dtype identity check is skipped — back-compat
+        with pre-1.80 caches stays intact."""
+        manifest = _write_real_manifest(tmp_path)
+        cache_meta = {
+            "manifest_sha256": "sha256:abc",
+            "corpus_text_fingerprint": "sha256:def",
+            "use": "validation",
+            "do_tier2": False,
+            "do_tier3": True,
+            "embedding_model": None,  # legacy MiniLM path
+            # No embedding_dtype_resolved — and shouldn't be checked.
+            "scorer_version": ct.SCORER_CACHE_VERSION,
+            "sub_sample": None,
+        }
+        args = _make_args(manifest)
+        args.tier3 = True
+        # args.embedding_model defaults to None via _make_args.
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args,
+            manifest_sha256="sha256:abc",
+            corpus_text_fingerprint="sha256:def",
+        )
+        # The cache might still invalidate for other reasons but
+        # NOT for missing embedding_dtype_resolved.
+        assert "embedding_dtype" not in reason
+
+    def test_tier3_on_embedding_device_requested_change_invalidates(
+        self, tmp_path,
+    ):
+        """A cache scored with ``--embedding-device cuda:0`` shouldn't
+        reuse on a later ``--embedding-device cuda:1`` run. Device
+        pinning is operator intent for parallelism / isolation; mixing
+        them silently would defeat the per-process cache isolation the
+        cloud bake-off matrix's multi-GPU pattern depends on."""
+        manifest = _write_real_manifest(tmp_path)
+        cache_meta = {
+            "manifest_sha256": "sha256:abc",
+            "corpus_text_fingerprint": "sha256:def",
+            "use": "validation",
+            "do_tier2": False,
+            "do_tier3": True,
+            "embedding_model": "mxbai",  # pluggable path on both sides
+            "embedding_dtype_resolved": None,  # present, just None
+            "embedding_device_requested": "cuda:0",
+            "scorer_version": ct.SCORER_CACHE_VERSION,
+            "sub_sample": None,
+        }
+        args = _make_args(manifest)
+        args.tier3 = True
+        args.embedding_model = "mxbai"
+        args.embedding_device = "cuda:1"
+        ok, reason = ct.cache_is_compatible(
+            cache_meta, args,
+            manifest_sha256="sha256:abc",
+            corpus_text_fingerprint="sha256:def",
+        )
+        assert ok is False
+        assert "embedding_device_requested" in reason
+
+
 # ---------- Direction-aware AP (1.29.1) ----------------------------
 
 

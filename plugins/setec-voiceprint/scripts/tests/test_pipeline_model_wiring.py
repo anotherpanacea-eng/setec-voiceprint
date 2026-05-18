@@ -164,10 +164,14 @@ def test_adjacent_sentence_cosine_new_path_uses_embedding_backend(monkeypatch):
     # whether embedding_backend is actually importable on this machine.
     real_get = va._get_embedding_backend
 
-    def _stub_get(model_alias, revision=None):
+    # 1.96.0+: _get_embedding_backend now takes dtype + device
+    # kwargs (PR #101 / embedding-dtype). The stub mirrors the new
+    # signature; the cache key now includes those values so dtype
+    # changes get distinct backend instances.
+    def _stub_get(model_alias, revision=None, *, dtype="auto", device=None):
         if model_alias is None:
             return None
-        key = (model_alias, revision or "")
+        key = (model_alias, revision or "", dtype, device or "")
         cached = va._EMBEDDING_BACKENDS_CACHE.get(key)
         if cached is not None:
             return cached
