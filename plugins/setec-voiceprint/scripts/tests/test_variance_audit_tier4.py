@@ -265,32 +265,37 @@ class TestCompressionHeuristicsTier4:
         ):
             assert sig in va.COMPRESSION_HEURISTICS
 
-    def test_all_three_are_literature_anchored(self):
-        """v1.66.0 retier: Tier 4 thresholds ship with
-        status='literature_anchored' citing DivEye (Basani & Chen,
-        TMLR 2026). The `provisional` property remains True
-        (backward-compat: not-calibrated counts as provisional);
-        provenance is the DivEye slug, not None."""
+    def test_all_three_are_empirically_oriented_post_1_95(self):
+        """v1.66.0 originally shipped these Tier 4 thresholds as
+        ``status='literature_anchored'`` citing DivEye (Basani & Chen,
+        TMLR 2026). v1.95.0 retiered to ``empirically_oriented`` after
+        the 2026-05-18 MAGE 5K polarity audit showed all three
+        directions were inverted relative to the empirical sign
+        against MAGE's curated-human comparator. The provenance slug
+        updates accordingly. Backward-compat: still reports as
+        ``provisional=True`` (not calibrated against a labeled corpus
+        beyond the polarity flip)."""
         for sig in (
             "surprisal_mean", "surprisal_sd", "surprisal_acf_lag1",
         ):
             spec = va.COMPRESSION_HEURISTICS[sig]
-            assert spec.status == "literature_anchored", (
-                f"{sig}: expected literature_anchored, got {spec.status}"
+            assert spec.status == "empirically_oriented", (
+                f"{sig}: expected empirically_oriented, got {spec.status}"
             )
-            assert spec.provenance == "diveye_basani_chen_tmlr_2026"
+            assert spec.provenance == "mage_5k_polarity_audit_2026-05-18"
             # Backward-compat: still reports as provisional (not calibrated)
             assert spec.provisional is True
 
-    def test_directions_match_spec_4_3(self):
-        """SPEC §4.3 polarities:
-          surprisal_mean: lt (AI < human)
-          surprisal_sd:   lt
-          surprisal_acf_lag1: gt
+    def test_directions_post_1_95_match_polarity_audit_findings(self):
+        """v1.95.0 directions encode the 2026-05-18 MAGE 5K polarity
+        audit's four flip recommendations. Pre-1.95 SPEC §4.3 had:
+          surprisal_mean: lt; surprisal_sd: lt; surprisal_acf_lag1: gt
+        Post-1.95 (corrected against the curated-human comparator):
+          surprisal_mean: gt; surprisal_sd: gt; surprisal_acf_lag1: lt
         """
-        assert va.COMPRESSION_HEURISTICS["surprisal_mean"].direction == "lt"
-        assert va.COMPRESSION_HEURISTICS["surprisal_sd"].direction == "lt"
-        assert va.COMPRESSION_HEURISTICS["surprisal_acf_lag1"].direction == "gt"
+        assert va.COMPRESSION_HEURISTICS["surprisal_mean"].direction == "gt"
+        assert va.COMPRESSION_HEURISTICS["surprisal_sd"].direction == "gt"
+        assert va.COMPRESSION_HEURISTICS["surprisal_acf_lag1"].direction == "lt"
 
     def test_weights_match_spec_4_3(self):
         """SPEC §4.3 weights: mean=1.5, sd=2.0 (heaviest Tier 4
@@ -887,11 +892,15 @@ class TestTier4AblationFamily:
             of the bands so all three Tier 4 signals fire
         """
         # COMPRESSION_HEURISTICS thresholds (read at runtime so the
-        # test stays in sync if the registry changes).
+        # test stays in sync if the registry changes). Post-1.95.0
+        # directions per the MAGE 5K polarity audit:
+        #   surprisal_mean: gt — AI tends HIGHER (was lt pre-1.95)
+        #   surprisal_sd:   gt — AI tends HIGHER (was lt pre-1.95)
+        #   surprisal_acf_lag1: lt — AI tends LOWER (was gt pre-1.95)
         h = va.COMPRESSION_HEURISTICS
-        sm = h["surprisal_mean"].value   # lt: AI tends LOWER
-        ssd = h["surprisal_sd"].value    # lt: AI tends LOWER
-        sacf = h["surprisal_acf_lag1"].value  # gt: AI tends HIGHER
+        sm = h["surprisal_mean"].value
+        ssd = h["surprisal_sd"].value
+        sacf = h["surprisal_acf_lag1"].value
 
         synthetic = {
             "summary": {"n_words": 800},
@@ -915,10 +924,13 @@ class TestTier4AblationFamily:
                 "available": True,
                 "surprisal": {
                     "available": True,
-                    "mean": sm - 0.5,         # below threshold (fires)
-                    "sd": ssd - 0.3,          # below threshold (fires)
+                    # Post-1.95: mean/sd are gt, so fire by being ABOVE
+                    # threshold. acf_lag1 is lt, so fires by being
+                    # BELOW threshold.
+                    "mean": sm + 0.5,         # above threshold (fires under gt)
+                    "sd": ssd + 0.3,          # above threshold (fires under gt)
                     "autocorrelation": {
-                        "lag_1": sacf + 0.2,  # above threshold (fires)
+                        "lag_1": sacf - 0.2,  # below threshold (fires under lt)
                     },
                     "provisional": True,
                     "calibration_anchor": "user-baseline-required",

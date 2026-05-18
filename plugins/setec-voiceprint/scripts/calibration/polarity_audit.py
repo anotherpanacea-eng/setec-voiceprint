@@ -94,12 +94,18 @@ TOOL_VERSION = "v1.0.0"
 # Hardcoded here for self-containment; if the registry directions
 # change in variance_audit.py, this table moves in lockstep. Keep
 # in sync with ``slice_bakeoff_v2.SIGNAL_SPECS``.
+#
+# 1.95.0: four directions flipped against the pre-1.95 registry per
+# the 2026-05-18 MAGE 5K polarity audit's 22 (model × signal) verdicts.
+# Pre-1.95: adjacent_cosine_mean=gt, surprisal_mean=lt,
+#           surprisal_sd=lt, surprisal_acf_lag1=gt.
+# adjacent_cosine_sd unchanged (mixed/chance — no recommendation).
 DEFAULT_REGISTRY_DIRECTIONS: dict[str, str] = {
-    "adjacent_cosine_mean": "gt",
+    "adjacent_cosine_mean": "lt",
     "adjacent_cosine_sd": "lt",
-    "surprisal_mean": "lt",
-    "surprisal_sd": "lt",
-    "surprisal_acf_lag1": "gt",
+    "surprisal_mean": "gt",
+    "surprisal_sd": "gt",
+    "surprisal_acf_lag1": "lt",
 }
 
 

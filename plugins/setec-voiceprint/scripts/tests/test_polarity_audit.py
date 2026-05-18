@@ -362,14 +362,21 @@ def test_load_csv_skips_malformed_rows(tmp_path: Path):
 
 
 def test_registry_override_parses_signal_equals_direction():
+    """Overriding a registry direction works for any signal; pinning
+    a few specific override targets demonstrates the parser. The
+    1.95.0 registry has all surprisal signals as ``gt`` and
+    cosine signals as ``lt``; passing explicit overrides flips them
+    individually while non-overridden signals keep their 1.95.0
+    defaults."""
     overrides = pa.parse_registry_overrides([
-        "adjacent_cosine_mean=lt",
-        "surprisal_acf_lag1=lt",
+        "adjacent_cosine_mean=gt",  # override the 1.95.0 lt
+        "surprisal_acf_lag1=gt",    # override the 1.95.0 lt
     ])
-    assert overrides["adjacent_cosine_mean"] == "lt"
-    assert overrides["surprisal_acf_lag1"] == "lt"
-    # Non-overridden signals retain their defaults.
-    assert overrides["surprisal_mean"] == "lt"
+    assert overrides["adjacent_cosine_mean"] == "gt"
+    assert overrides["surprisal_acf_lag1"] == "gt"
+    # Non-overridden signals retain their 1.95.0 defaults.
+    assert overrides["surprisal_mean"] == "gt"
+    assert overrides["adjacent_cosine_sd"] == "lt"
 
 
 def test_registry_override_rejects_invalid_direction(capsys):
@@ -380,8 +387,9 @@ def test_registry_override_rejects_invalid_direction(capsys):
     ])
     captured = capsys.readouterr()
     assert "bogus" in captured.err
-    # The default for adjacent_cosine_mean is still gt.
-    assert overrides["adjacent_cosine_mean"] == "gt"
+    # The 1.95.0 default for adjacent_cosine_mean is `lt`; an invalid
+    # override leaves the default in place.
+    assert overrides["adjacent_cosine_mean"] == "lt"
 
 
 def test_registry_override_rejects_malformed_item(capsys):
@@ -410,42 +418,45 @@ def _row(
 
 
 def test_build_audit_globally_consistent_for_lt_signal_with_low_raw_auc():
-    """End-to-end: synthetic rows for a registry-``lt`` signal where
-    AI scores LOWER than humans (raw AUC < 0.5) produce a
-    globally_consistent verdict — the registry direction matches.
-    Regression-guards the direction-aware classification: a
-    classifier comparing raw bounds against 0.5 (without the
-    to_direction_aware transform) would call this inverted."""
+    """End-to-end: rows for a signal whose passed-in registry
+    direction is ``lt``, with raw AUC < 0.5 (AI scoring lower than
+    humans). Produces ``globally_consistent`` — the passed-in
+    direction matches the empirical sign. Pins the direction-aware
+    classification on an arbitrary signal name to decouple the test
+    from the current registry encoding."""
     rows = [
-        _row("m1", "surprisal_mean", "ALL", "all", 1000, 1000, 0.38),
-        _row("m1", "surprisal_mean", "length_bucket", "lt_200", 300, 300, 0.40),
-        _row("m1", "surprisal_mean", "length_bucket", "200_499", 400, 400, 0.35),
-        _row("m1", "surprisal_mean", "length_bucket", "500_999", 200, 200, 0.39),
+        _row("m1", "test_signal_lt", "ALL", "all", 1000, 1000, 0.38),
+        _row("m1", "test_signal_lt", "length_bucket", "lt_200", 300, 300, 0.40),
+        _row("m1", "test_signal_lt", "length_bucket", "200_499", 400, 400, 0.35),
+        _row("m1", "test_signal_lt", "length_bucket", "500_999", 200, 200, 0.39),
     ]
-    audit = pa.build_audit(rows)
+    audit = pa.build_audit(
+        rows, registry_directions={"test_signal_lt": "lt"},
+    )
     assert len(audit["results"]) == 1
     r = audit["results"][0]
     assert r["model"] == "m1"
-    assert r["signal"] == "surprisal_mean"
+    assert r["signal"] == "test_signal_lt"
     assert r["verdict"] == "globally_consistent"
     assert r["recommended_direction"]["default"] == "lt"  # registry kept
     assert r["aggregate_raw_auc"] == 0.38
 
 
 def test_build_audit_globally_inverted_for_lt_signal_with_high_raw_auc():
-    """Mirror of the above: ``lt`` signal where AI scores HIGHER than
-    humans (raw AUC > 0.5) is globally_inverted. This is the MAGE
-    5K bundle's surprisal_mean / surprisal_sd finding shape:
-    registry says `lt`, the data shows AI scoring higher (raw AUC >
-    0.5), so the registry direction is wrong and the recommendation
-    flips to ``gt``."""
+    """Mirror of the above: passed-in ``lt`` registry direction with
+    AI scoring HIGHER (raw AUC > 0.5) → ``globally_inverted``. Pins
+    that direction-aware classification flips for an ``lt`` signal
+    when the data contradicts the direction, regardless of which
+    specific signal name we use."""
     rows = [
-        _row("m1", "surprisal_mean", "ALL", "all", 1000, 1000, 0.62),
-        _row("m1", "surprisal_mean", "length_bucket", "lt_200", 300, 300, 0.60),
-        _row("m1", "surprisal_mean", "length_bucket", "200_499", 400, 400, 0.65),
-        _row("m1", "surprisal_mean", "length_bucket", "500_999", 200, 200, 0.61),
+        _row("m1", "test_signal_lt", "ALL", "all", 1000, 1000, 0.62),
+        _row("m1", "test_signal_lt", "length_bucket", "lt_200", 300, 300, 0.60),
+        _row("m1", "test_signal_lt", "length_bucket", "200_499", 400, 400, 0.65),
+        _row("m1", "test_signal_lt", "length_bucket", "500_999", 200, 200, 0.61),
     ]
-    audit = pa.build_audit(rows)
+    audit = pa.build_audit(
+        rows, registry_directions={"test_signal_lt": "lt"},
+    )
     assert len(audit["results"]) == 1
     r = audit["results"][0]
     assert r["verdict"] == "globally_inverted"
@@ -456,12 +467,14 @@ def test_build_audit_globally_inverted_recommends_flip():
     """Inverted aggregate + uniformly inverted cells → flip
     recommendation."""
     rows = [
-        _row("m1", "adjacent_cosine_mean", "ALL", "all", 1000, 1500, 0.41),
-        _row("m1", "adjacent_cosine_mean", "length_bucket", "lt_200", 400, 500, 0.42),
-        _row("m1", "adjacent_cosine_mean", "length_bucket", "200_499", 300, 500, 0.40),
-        _row("m1", "adjacent_cosine_mean", "length_bucket", "500_999", 300, 500, 0.39),
+        _row("m1", "test_signal_gt", "ALL", "all", 1000, 1500, 0.41),
+        _row("m1", "test_signal_gt", "length_bucket", "lt_200", 400, 500, 0.42),
+        _row("m1", "test_signal_gt", "length_bucket", "200_499", 300, 500, 0.40),
+        _row("m1", "test_signal_gt", "length_bucket", "500_999", 300, 500, 0.39),
     ]
-    audit = pa.build_audit(rows)
+    audit = pa.build_audit(
+        rows, registry_directions={"test_signal_gt": "gt"},
+    )
     r = audit["results"][0]
     assert r["verdict"] == "globally_inverted"
     assert r["recommended_direction"]["default"] == "lt"  # gt → lt
@@ -518,23 +531,31 @@ def test_integration_mage_5k_polarity_audit_findings():
         (r["model"], r["signal"]): r for r in audit["results"]
     }
 
-    # Tier-3 sign-flip: all four Phase A models on adjacent_cosine_mean
-    # are globally_inverted (registry `gt` + raw AUC well below 0.5).
+    # Post-1.95.0: the framework's COMPRESSION_HEURISTICS now encodes
+    # the four direction flips the 2026-05-18 MAGE 5K audit recommended
+    # (adjacent_cosine_mean lt, surprisal_mean gt, surprisal_sd gt,
+    # surprisal_acf_lag1 lt). Re-running the audit against the same
+    # bundle data produces ``globally_consistent`` for those 22 cells
+    # — the empirical sign now matches the registered direction.
+    # adjacent_cosine_sd is unchanged (it was mixed/chance and not
+    # part of the flip recommendation).
+
+    # Tier-3: all four Phase A models on adjacent_cosine_mean are
+    # globally_consistent with the post-flip ``lt`` registry direction.
     for model in ("mxbai", "minilm", "harrier", "gemma"):
         verdict = by_ms[(model, "adjacent_cosine_mean")]["verdict"]
-        assert verdict == "globally_inverted", (
+        assert verdict == "globally_consistent", (
             f"Expected adjacent_cosine_mean on {model} to be "
-            f"globally_inverted; got {verdict}"
+            f"globally_consistent against the post-1.95.0 registry "
+            f"(direction `lt`); got {verdict}. If this regresses to "
+            f"`globally_inverted`, either the registry was reverted "
+            f"in COMPRESSION_HEURISTICS or the direction-aware "
+            f"classification is bypassing the registry direction."
         )
 
-    # Tier-4 registry-mismatch finding: ALL three surprisal signals
-    # (mean, sd, acf_lag1) are globally_inverted on EVERY Phase B
-    # model. The framework's entire Tier-4 surprisal registry is
-    # wrong-pointed against MAGE's curated-human comparator. The
-    # mean/sd signals are particularly load-bearing here — they are
-    # lt-registered, so the direction-aware transform is the only way
-    # to surface the inversion. A regression that bypassed the
-    # transform would flip these back to globally_consistent.
+    # Tier-4: all three surprisal signals on all six Phase B models
+    # are globally_consistent with the post-flip directions
+    # (surprisal_mean → gt, surprisal_sd → gt, surprisal_acf_lag1 → lt).
     PHASE_B_MODELS = (
         "tinyllama", "llama32_1b", "olmo2_1b",
         "qwen25_1_5b", "qwen3_1_7b", "smollm2_1_7b",
@@ -545,27 +566,27 @@ def test_integration_mage_5k_polarity_audit_findings():
     for model in PHASE_B_MODELS:
         for signal in TIER4_SIGNALS:
             verdict = by_ms[(model, signal)]["verdict"]
-            assert verdict == "globally_inverted", (
+            assert verdict == "globally_consistent", (
                 f"Expected {signal} on {model} to be "
-                f"globally_inverted on MAGE 5K; got {verdict}. "
-                "If surprisal_mean / surprisal_sd regress to "
-                "globally_consistent, the direction-aware "
-                "classification has been bypassed for lt signals."
+                f"globally_consistent on MAGE 5K against the post-"
+                f"1.95.0 registry; got {verdict}. The registry "
+                f"correction (PR encoding the 22 flip recommendations) "
+                f"may have been reverted."
             )
 
-    # Recommendation symmetry: lt-registered surprisal_mean /
-    # surprisal_sd flip to gt; gt-registered surprisal_acf_lag1 flips
-    # to lt. Pins the symmetric flip behaviour across both registry
-    # directions.
+    # Recommendation: with the registry now matching empirical
+    # direction, the recommendation is to keep the registry direction
+    # rather than flip it.
+    expected_directions = {
+        "surprisal_mean": "gt",
+        "surprisal_sd": "gt",
+        "surprisal_acf_lag1": "lt",
+    }
     for model in PHASE_B_MODELS:
-        for signal in ("surprisal_mean", "surprisal_sd"):
+        for signal, expected_dir in expected_directions.items():
             rec = by_ms[(model, signal)]["recommended_direction"]
-            assert rec["default"] == "gt", (
-                f"Expected {signal} on {model} to recommend flip to "
-                f"'gt' (from registry 'lt'); got {rec['default']!r}"
+            assert rec["default"] == expected_dir, (
+                f"Expected {signal} on {model} to recommend keeping "
+                f"the post-1.95.0 registry direction "
+                f"{expected_dir!r}; got {rec['default']!r}"
             )
-        rec = by_ms[(model, "surprisal_acf_lag1")]["recommended_direction"]
-        assert rec["default"] == "lt", (
-            f"Expected surprisal_acf_lag1 on {model} to recommend flip "
-            f"to 'lt' (from registry 'gt'); got {rec['default']!r}"
-        )
