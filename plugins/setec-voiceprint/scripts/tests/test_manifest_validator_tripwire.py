@@ -2,11 +2,12 @@
 """Tripwire for Issue #6 (jsonschema migration for the manifest).
 
 The handcrafted validator stays in place until the manifest shape
-outgrows it. Three triggers — nested per-entry objects, an explicit
-schema/manifest version field, or per-entry breadth above
-TRIPWIRE_BROAD_FIELD_THRESHOLD — record an advisory entry under the
-``tripwires`` key of the result dict. Closing Issue #6 left this
-tripwire planted so future readers know when to reconsider.
+outgrows it. Three triggers — unfamiliar nested per-entry objects,
+an explicit schema/manifest version field, or per-entry breadth
+above TRIPWIRE_BROAD_FIELD_THRESHOLD — record an advisory entry
+under the ``tripwires`` key of the result dict. Issue #6 remains
+open as the eventual migration tracker; this tripwire is the
+groundwork that signals when the migration should actually happen.
 """
 
 from __future__ import annotations
