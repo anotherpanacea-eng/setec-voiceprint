@@ -401,38 +401,117 @@ def test_tier4_disabled_skips_batched_scoring_entirely(
         assert call_kwargs.get("do_tier4") is False
 
 
-def test_surprisal_batch_size_flag_is_exposed_on_cli():
-    """The --surprisal-batch-size flag must be parseable by the
-    calibrate_thresholds CLI parser. Pinning the surface so a
-    rename or removal trips this test."""
-    import io
-    sys.argv_backup = sys.argv
-    try:
-        sys.argv = ["calibrate_thresholds.py", "--help"]
-        try:
-            ct.main()
-        except SystemExit:
-            pass
-        # The help text should mention the flag.
-        # We can't easily capture stdout from ct.main() without
-        # additional plumbing, so instead inspect the parser
-        # construction by calling it indirectly: the regression
-        # value is that the flag isn't silently dropped. A simpler
-        # check: parse_known_args on the parser the CLI builds.
-    finally:
-        sys.argv = sys.argv_backup
-
-    # Direct parser inspection: argparse stores known flags in
-    # _option_string_actions. Build the parser the way main() does
-    # and confirm the flag is registered.
-    parser = argparse.ArgumentParser()
-    # Re-add the relevant flags. We can't reach main()'s parser
-    # without running it, so the simplest pin is: import the
-    # calibration_survey p builder and check there too.
+def test_surprisal_batch_size_flag_is_exposed_on_calibration_survey_cli():
+    """The --surprisal-batch-size flag must be a real option on
+    calibration_survey's parser. Direct introspection via
+    build_arg_parser() — no help-text capture, no None-guards that
+    silently skip the assertion."""
     import calibration_survey as cs  # type: ignore
-    cs_parser = cs._build_parser() if hasattr(cs, "_build_parser") else None
-    if cs_parser is not None:
-        assert "--surprisal-batch-size" in {
-            action.option_strings[0] if action.option_strings else ""
-            for action in cs_parser._actions
-        }
+    parser = cs.build_arg_parser()
+    option_strings = {
+        s
+        for action in parser._actions
+        for s in (action.option_strings or [])
+    }
+    assert "--surprisal-batch-size" in option_strings, (
+        "calibration_survey.build_arg_parser() must register "
+        "--surprisal-batch-size; flag not found in option_strings: "
+        f"{sorted(option_strings)}"
+    )
+
+
+def test_surprisal_batch_size_flag_is_exposed_on_calibrate_thresholds_cli(
+    capsys,
+):
+    """The --surprisal-batch-size flag must also be exposed on
+    calibrate_thresholds' CLI. The parser is built inline inside
+    main() so we exercise it via ``main(['--help'])`` and capture
+    the stdout to assert the flag string appears there.
+
+    main() raises SystemExit(0) on --help; the test catches and
+    inspects capsys.readouterr().out."""
+    try:
+        ct.main(["--help"])
+    except SystemExit as exc:
+        # --help exits with 0; anything else is a real failure.
+        assert exc.code == 0, f"Unexpected exit code: {exc.code}"
+    captured = capsys.readouterr()
+    assert "--surprisal-batch-size" in captured.out, (
+        "calibrate_thresholds --help output must mention "
+        "--surprisal-batch-size; not found. Captured help text "
+        "(truncated to 500 chars): "
+        f"{captured.out[:500]!r}"
+    )
+
+
+def test_batched_surprisal_disables_after_first_chunk_failure(
+    tmp_path: Path,
+):
+    """Reviewer P2 on #90: a single batched ``score_texts`` failure
+    used to retry overlapping batches per remaining row, producing
+    O(N) failed forward passes and matching log spam. The latch
+    flips on the first failure; subsequent rows skip batched mode
+    entirely and fall through to the legacy per-entry path.
+
+    Set up: 6 entries at batch_size=2, with a backend whose
+    ``score_texts`` raises unconditionally. Without the latch we'd
+    see 5 batched calls (one per i in 0..5 since the cache stays
+    empty); with the latch, exactly 1."""
+    entries = _fake_entries_with_files(tmp_path, n_pos=3, n_neg=3)
+    args = _make_args(tier4=True, surprisal_batch_size=2)
+
+    class _FailingBatchedBackend(_RecordingFakeBackend):
+        def score_texts(self, texts, *, batch_size=8):
+            self.score_texts_calls.append((list(texts), batch_size))
+            raise RuntimeError("CUDA out of memory (simulated)")
+
+    fake_backend_instance = _FailingBatchedBackend()
+    fake_module = mock.MagicMock()
+    fake_module.SurprisalBackend = mock.MagicMock(
+        return_value=fake_backend_instance,
+    )
+    fake_module.resolve_model_arg = lambda x: x or "tinyllama"
+    _stub_audit_text.calls.clear()
+
+    with mock.patch.dict(sys.modules, {"surprisal_backend": fake_module}):
+        with mock.patch.object(
+            ct, "validate_manifest",
+            return_value={"n_errors": 0},
+        ):
+            with mock.patch.object(
+                ct, "load_manifest_entries", return_value=entries,
+            ):
+                with mock.patch.object(
+                    ct, "_manifest_content_hash",
+                    return_value="sha256:test",
+                ):
+                    with mock.patch.object(
+                        ct, "_corpus_text_fingerprint",
+                        return_value="fp:test",
+                    ):
+                        with mock.patch(
+                            "validation_harness.audit_text",
+                            side_effect=_stub_audit_text,
+                        ):
+                            records, _meta = ct.score_corpus(args)
+
+    assert len(records) == 6
+    # The critical assertion: exactly one batched call, not one
+    # per remaining row.
+    assert len(fake_backend_instance.score_texts_calls) == 1, (
+        f"Expected 1 batched call after the latch fires; got "
+        f"{len(fake_backend_instance.score_texts_calls)}. "
+        "The disable-on-first-failure latch is not engaging — "
+        "operators on rented GPU hours would see O(N) wasted "
+        "forward passes plus matching log spam."
+    )
+    # After the latch fires, every subsequent row runs the legacy
+    # per-entry path (tier4_score_fn=None).
+    assert all(
+        c.get("tier4_score_fn") is None
+        for c in _stub_audit_text.calls
+    ), (
+        "Once batched mode is disabled, every row should see "
+        "tier4_score_fn=None and fall through to the per-entry "
+        "Tier-4 path."
+    )

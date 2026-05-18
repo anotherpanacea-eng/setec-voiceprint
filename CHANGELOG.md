@@ -6,6 +6,25 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.90.1] - 2026-05-18
+
+**Tier-4 caller wiring: review-correctness fixes on top of 1.90.0.** Two issues surfaced in code review of #90; this release adds a disable-on-first-failure latch to the batched-Tier-4 cache refill and replaces a structurally bogus CLI-flag test with one that actually asserts the flag's presence on both parsers.
+
+### Fixed
+
+- **Batched-Tier-4 retry storm.** The 1.90.0 `_refill_surprisal_cache()` logged on a `score_texts` exception and returned without disabling batched mode or marking the chunk as handled. The loop's `entry_id not in surprisal_cache` guard then triggered another overlapping batch starting at `i + 1`, then again at `i + 2`, etc. — turning a single OOM / driver / model crash into O(N) failed forward passes plus matching log spam, on exactly the rented GPU hours this PR exists to make affordable. New `batched_surprisal_disabled` latch in `score_corpus` flips to True on the first batch-level failure; the per-entry loop's batched-path guard short-circuits for the remainder of the run and rows fall through to the legacy per-entry Tier-4 path cleanly. The warning message now also tells the operator how to recover (re-run with `--surprisal-batch-size 1` or a smaller value).
+- **CLI-flag test that didn't actually test the flag.** The 1.90.0 `test_surprisal_batch_size_flag_is_exposed_on_cli` (a) called `ct.main()` with `--help` but never captured the help output and never asserted the flag string was present, and (b) called `cs._build_parser()` (which doesn't exist), so the only real assertion was guarded by `if cs_parser is not None:` and silently skipped. The test passed regardless of whether the flag existed. Replaced with two tests: one that calls `calibration_survey.build_arg_parser()` (the real function) and asserts `--surprisal-batch-size` is in the parser's option strings; one that calls `ct.main(["--help"])` with capsys and asserts the flag appears in the captured stdout.
+
+### Added
+
+- **1 new test** (8 total in `test_calibration_batched_surprisal.py`): `test_batched_surprisal_disables_after_first_chunk_failure` pins the latch contract. Six entries at `--surprisal-batch-size 2` with a backend whose `score_texts` raises unconditionally: exactly one batched call (the failure trigger), every subsequent row sees `tier4_score_fn=None` and falls through to the per-entry path.
+
+### Notes
+
+- **No behavior change for the success path.** When `score_texts` succeeds the latch stays False and batched mode runs as it did in 1.90.0. The latch only matters when the operator's first batched chunk fails — the case 1.90.0 handled badly.
+- **The latch is run-scoped, not process-scoped.** A subsequent `score_corpus` invocation in the same process starts with `batched_surprisal_disabled = False`. This is the right scope: a different run might have different inputs, a different batch size, or a different backend.
+- **Resume-from-partial-cache is unaffected.** The latch isn't serialized, so a resumed run after a crash starts fresh and re-attempts batched mode. Operators who hit the OOM the first time should either reduce `--surprisal-batch-size` on resume or pass `--surprisal-batch-size 1` to bypass batching for the rest of the run.
+
 ## [1.90.0] - 2026-05-18
 
 **Tier-4 caller wiring: `score_corpus` uses `score_texts` for batched surprisal scoring.** Follow-up to 1.89.0 + 1.89.1. The backend's batched-scoring path was unobservable from the calibration hot loop until this commit; the per-entry loop in `calibrate_thresholds.score_corpus` now pre-batches texts and calls `backend.score_texts(texts, batch_size=...)` once per chunk instead of `backend.score_text(text)` per row. End-to-end wall-clock on RAID Tier 4 drops from ~5–10 days to ~24–36 hours on a single H100 hour, which is the load-bearing affordability story for full-corpus calibration on rented GPUs.

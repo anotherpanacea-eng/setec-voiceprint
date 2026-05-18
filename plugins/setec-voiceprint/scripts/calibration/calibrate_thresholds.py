@@ -1464,6 +1464,18 @@ def score_corpus(
             batched_surprisal_backend = None
 
     surprisal_cache: dict[str, tuple[list[float], str]] = {}
+    # 1.90.0+ batched-Tier-4 failure latch: a single batched
+    # forward-pass failure (OOM, driver mismatch, model crash on a
+    # pathological input) used to retry one batch per remaining row
+    # with overlapping windows, producing O(N) failed forward passes
+    # and matching log-spam for the rest of the run. The latch flips
+    # to True on the first batch-level failure and disables batched
+    # mode wholesale; the per-entry loop falls through to the legacy
+    # path bit-exactly. Operators who hit this can re-run with
+    # ``--surprisal-batch-size 1`` (which already routes around the
+    # batched path) or with a smaller batch size after the bad chunk
+    # is identified from the warning message.
+    batched_surprisal_disabled = False
 
     def _read_entry_text(entry: dict[str, Any]) -> str | None:
         p = Path(str(
@@ -1493,9 +1505,11 @@ def score_corpus(
         return scorer
 
     def _refill_surprisal_cache(start_index: int) -> None:
+        nonlocal batched_surprisal_disabled
         if (
             not do_tier4
             or batched_surprisal_backend is None
+            or batched_surprisal_disabled
             or start_index >= len(to_score)
         ):
             return
@@ -1511,16 +1525,26 @@ def score_corpus(
                 chunk_texts, batch_size=surprisal_batch_size,
             )
         except Exception as exc:  # noqa: BLE001
-            # Batched scoring failed for the chunk. Per-entry fall-
-            # back will reproduce the same failure cleanly via
-            # audit_text's existing error path; no point retrying
-            # here. Log once per failed chunk so the operator can
-            # diagnose without combing the records.
+            # Batched scoring failed for this chunk. Disable
+            # batched mode wholesale rather than retrying overlap-
+            # ping batches per row; one OOM / driver / model crash
+            # is enough evidence that the batched path won't
+            # recover during this run. The remaining rows go
+            # through the legacy per-entry Tier-4 path (which
+            # constructs a per-row backend), and audit_text's own
+            # error handling surfaces the failure cleanly per row.
+            # Operators who hit this should re-run with a smaller
+            # ``--surprisal-batch-size`` (or 1 to bypass batching
+            # entirely).
+            batched_surprisal_disabled = True
             sys.stderr.write(
                 f"  WARNING: batched surprisal scoring failed for "
                 f"chunk starting at index {start_index} "
-                f"({type(exc).__name__}: {exc}). Falling back to "
-                f"per-entry Tier-4 scoring for this chunk.\n"
+                f"({type(exc).__name__}: {exc}). Disabling batched "
+                f"Tier-4 for the remainder of this run; the "
+                f"per-entry scoring path will handle remaining "
+                f"rows. Re-run with a smaller --surprisal-batch-"
+                f"size (or 1) if you need the batched throughput.\n"
             )
             return
         for cid, series, txt in zip(chunk_ids, series_list, chunk_texts):
@@ -1606,6 +1630,7 @@ def score_corpus(
         if (
             do_tier4
             and batched_surprisal_backend is not None
+            and not batched_surprisal_disabled
             and entry_id_for_lookup not in surprisal_cache
         ):
             _refill_surprisal_cache(i)
