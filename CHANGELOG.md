@@ -604,6 +604,20 @@ Audit output preserved in `internal/polarity_audit_results/` (gitignored): `pola
 - **No signal definitions, threshold values, or PROVENANCE block contents change.** The `identifier_block` output is unchanged. The patch is a performance fix and a new optional API surface; it does not alter what surprisal values mean.
 - **`score_text(text)` signature and behavior are preserved.** Existing callers (`surprisal_audit.audit_surprisal`, `variance_audit.audit_text` via the tier4 path, the `calibration_survey` per-row loop) continue to work without modification. Wiring those callers to use the new batched method is a separate follow-up; the survey-loop opt-in is the next natural patch.
 - **Why now.** The RUNBOOK_tier4_install §8 throughput table puts a stock-backend L4 at ~2500 tok/s. At MAGE scale (~218M tokens) that's ~24 GPU-hours. With the device fix and `score_texts(batch_size=16)` on an H100, MAGE Tier-4 lands in ~1.5–2 hours. The bug was a load-bearing cost driver for any operator renting GPU time to run Tier-4 calibration.
+## [1.88.1] - 2026-05-18
+
+**Manifest-validator tripwire planted for Issue #6 (jsonschema migration).** Closes the issue with a tripwire rather than the migration itself, because Issue #6's own gate ("when the manifest becomes nested, versioned, or broad enough") hasn't fired — the manifest is still flat.
+
+### Added
+
+- `validate_manifest()` now records advisory entries under a new `tripwires` key in the result dict whenever any entry has (a) a nested-object field, (b) a `schema_version` / `manifest_version` field, or (c) more than `TRIPWIRE_BROAD_FIELD_THRESHOLD = 45` total fields. One trigger per category per manifest; entirely non-blocking.
+- New markdown section in `render_report()`: "Schema-migration tripwire (Issue #6)" appears only when at least one tripwire fired.
+- 9 new tests in `test_manifest_validator_tripwire.py` covering dormant state, each trigger category, non-blocking interaction with normal validation, and markdown rendering.
+
+### Notes
+
+- The handcrafted manifest validator stays in place. When a tripwire fires in the wild, that's the cue to reopen Issue #6 and consider migrating structural checks to the `jsonschema` library per the original issue body's acceptance criteria.
+- No CLI behavior changes for current manifests. Existing dirty-manifest fixtures and tests are unaffected (184 manifest-touching tests pass unchanged).
 
 ## [1.88.0] - 2026-05-17
 
