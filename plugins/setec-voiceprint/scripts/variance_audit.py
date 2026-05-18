@@ -874,11 +874,17 @@ def _tier4_surprisal_block(
         else:
             try:
                 # Construct a default backend lazily. Same lazy-load
-                # semantics as the audit script's CLI path.
+                # semantics as the audit script's CLI path. Pass dtype
+                # explicitly — without this the per-entry fallback with
+                # no --surprisal-model would silently load the default
+                # at the SurprisalBackend "auto" default regardless of
+                # operator intent (reviewer P1 follow-up on PR #93).
                 from surprisal_backend import (  # type: ignore
                     DEFAULT_MODEL, SurprisalBackend,
                 )
-                backend = SurprisalBackend(model_id=DEFAULT_MODEL)
+                backend = SurprisalBackend(
+                    model_id=DEFAULT_MODEL, dtype=surprisal_dtype,
+                )
             except ImportError as exc:
                 return {
                     "available": False,

@@ -24,13 +24,16 @@ _(Empty. Future work lands here, gets versioned on commit.)_
 
 ### Wiring fixes (review P1s on PR #93)
 
-Two bookkeeping gaps surfaced in code review of the initial dtype patch:
+Four bookkeeping gaps surfaced in code review of the initial dtype patch:
 
 - **Per-entry Tier-4 fallback now honors `--surprisal-dtype`.** The original patch threaded dtype to the batched-Tier-4 backend in `score_corpus`, but the per-entry fallback path (used when the 1.90.1 latch trips on a `score_texts` failure, OR when the operator passes `--surprisal-batch-size 1`, OR for any caller invoking `score_smoothing_entry` directly) constructed a `SurprisalBackend` with no `dtype` kwarg, silently falling back to the SurprisalBackend default. Now dtype threads through the chain: `calibrate_thresholds.score_corpus` → `validation_harness.score_smoothing_entry` → `variance_audit.audit_text` → `variance_audit._tier4_surprisal_block` → `variance_audit._get_surprisal_backend`. `_get_surprisal_backend`'s per-process backend cache key now includes dtype, so a call asking for bf16 doesn't reuse an earlier-cached fp32 backend.
-- **Cache identity includes dtype.** Both `interim_meta` (partial-cache write during scoring) and `scoring_meta` (final-cache write at the end of `score_corpus`) record `surprisal_dtype`. `cache_is_compatible` rejects a cache when:
-  - Tier-4 is on AND the cached dtype differs from the current dtype (`"surprisal_dtype changed ('fp32' → 'bf16')"`).
-  - Tier-4 is on AND the cache lacks a `surprisal_dtype` field entirely (pre-1.93.0 Tier-4 cache). The reason string says `"surprisal_dtype absent on cache (pre-1.93.0 Tier-4 cache); re-scoring to record the resolved dtype"`. Prefer re-score over treating missing as `"auto"`: an operator may have scored the cache on fp32-only CPU and now be on a bf16 cuda host, and silently mixing dtype-mismatched series leaks ~0.1 bit/token into signal-level statistics.
-  - When Tier-4 is off, dtype is meaningless (no surprisal scoring happened) and a missing-dtype cache is still compatible.
+- **Default-model fallback now passes dtype.** `_tier4_surprisal_block` has a second branch that handles callers that didn't pass `--surprisal-model` — it constructs a `SurprisalBackend(model_id=DEFAULT_MODEL)` directly, bypassing `_get_surprisal_backend`. The first wiring patch missed this branch; an operator running `--tier4 --surprisal-dtype fp32` *without* `--surprisal-model` would still silently get the SurprisalBackend default `"auto"`. Now passes `dtype=surprisal_dtype` to the direct construction too.
+- **Cache identity records both *requested* and *resolved* dtype.** Storing just the request string lets an `auto` cache silently cross hardware: cache scored on CPU (auto → fp32) reusing on H100 (auto → bf16). Both `interim_meta` and `scoring_meta` now record two fields: `surprisal_dtype_requested` (operator's string, possibly `"auto"`) and `surprisal_dtype_resolved` (what `_resolve_dtype` picked on the writing host — `"fp32"` / `"fp16"` / `"bf16"`, or `None` when torch isn't importable). `calibrate_thresholds._resolve_surprisal_dtype_label(args)` is the new resolver helper.
+- **Compat-check compares *resolved* labels.** `cache_is_compatible` now rejects a Tier-4 cache when the cached resolved label doesn't match the current host's resolved label — catches the auto-on-CPU-then-auto-on-H100 case the request-string-only check missed. Field semantics:
+  - Field absent on cache (`"surprisal_dtype_resolved" not in cache_meta`) → pre-1.93.0 cache, force re-score.
+  - Field present and equal (including both `None` in no-torch environments) → compatible.
+  - Field present and unequal → re-score (`"surprisal_dtype_resolved changed ('fp32' → 'bf16')"`).
+  - Tier-4 off → field meaningless, compat skips the check.
 
 ### Notes
 
