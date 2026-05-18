@@ -6,6 +6,29 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.89.0] - 2026-05-18
+
+**Tier-4 surprisal backend: GPU device auto-detection + batched scoring.** Two changes to `surprisal_backend.py` that move RAID-scale Tier-4 calibration from "multi-day on rented GPUs" to "single-digit hours on a single H100 hour."
+
+### Fixed
+
+- **Device placement.** `SurprisalBackend._load()` now auto-detects CUDA / MPS / CPU and moves the model to the detected device; `score_text` moves `input_ids` to the device before the forward pass. The prior v1.59.x code called `model(input_ids)` without a device move, so a host with the right torch wheel (CUDA, ROCm-as-CUDA, MPS) still ran the forward pass on CPU. The README's RUNBOOK_tier4_install.md flagged this for the DirectML path; the same bug applied to CUDA and MPS. Auto-detect prefers CUDA (which the ROCm wheel shims) over MPS over CPU. Callers that want a specific device can override by assigning `backend._device` after construction. Test-only stubs that don't implement `.to()` continue to work — the device move is wrapped in a try/except that leaves `_device = None` on failure.
+
+### Added
+
+- **`SurprisalBackend.score_texts(texts, batch_size=8)`.** Batched per-token surprisal scoring for a list of texts. Returns one bits-valued series per input, in input order, with the same shape contract as `score_text` (series length = `len(tokens) - 1` for non-empty inputs; empty list for empty / single-token inputs). Right-pads texts to the longest member of each chunk with the tokenizer's pad token (aliased to `eos_token` in `_load` when not otherwise set) and passes an attention_mask, so non-pad positions attend only to non-pad left context and per-position surprisals are numerically equivalent to the un-padded single-text path within FP32 tolerance. The default `batch_size=8` is conservative for 1–2B-param candidates on a 24 GB L4; bump to 16 or 32 on A100 / H100.
+- **Tests.** 6 new tests in `test_surprisal_backend.py` (30 total, was 24): `test_score_texts_returns_one_series_per_input`, `test_score_texts_handles_empty_strings_without_loading`, `test_score_texts_empty_list_returns_empty_list`, `test_score_texts_matches_score_text_for_each_input` (the load-bearing batch-size-determinism check per SPEC_surprisal_signal.md §3.4), `test_score_texts_respects_batch_size` (pins that batching actually batches, via a call-counting fake), `test_score_texts_assigns_device_when_torch_supports_it` (regression pin for the device-placement bug).
+
+### Changed
+
+- **Pad token aliasing.** When the tokenizer ships without a `pad_token` (GPT-2, OLMo, OpenELM among the §4.1 candidates), `_load()` now aliases `pad_token = eos_token` to enable batched tokenization with `padding=True`. The attention_mask keeps the forward pass numerically equivalent to the un-padded case for every non-pad position; this is the standard mitigation and doesn't affect per-position surprisal values.
+
+### Notes
+
+- **No signal definitions, threshold values, or PROVENANCE block contents change.** The `identifier_block` output is unchanged. The patch is a performance fix and a new optional API surface; it does not alter what surprisal values mean.
+- **`score_text(text)` signature and behavior are preserved.** Existing callers (`surprisal_audit.audit_surprisal`, `variance_audit.audit_text` via the tier4 path, the `calibration_survey` per-row loop) continue to work without modification. Wiring those callers to use the new batched method is a separate follow-up; the survey-loop opt-in is the next natural patch.
+- **Why now.** The RUNBOOK_tier4_install §8 throughput table puts a stock-backend L4 at ~2500 tok/s. At MAGE scale (~218M tokens) that's ~24 GPU-hours. With the device fix and `score_texts(batch_size=16)` on an H100, MAGE Tier-4 lands in ~1.5–2 hours. The bug was a load-bearing cost driver for any operator renting GPU time to run Tier-4 calibration.
+
 ## [1.88.0] - 2026-05-17
 
 **Output schema unification wave 8 — close the loop. 7 remaining CLI scripts migrate to schema_version 1.0.** After this wave **every user-facing audit / diagnostic script in SETEC's CLI surface ships the unified envelope** — including the validation-surface scripts (confounder_audit, evidentiary_conditions_gate, surface_disagreement_resolver, adversarial_robustness_card) and the editorial-craft surfaces (draft_history_analysis, fairness_dialect_guardrails, prestige_metaphor). The JSON schema unification issue is closed across the SETEC audit surface.

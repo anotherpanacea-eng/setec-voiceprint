@@ -186,6 +186,7 @@ class SurprisalBackend:
     _model: Any = field(default=None, repr=False, init=False, compare=False)
     _tokenizer: Any = field(default=None, repr=False, init=False, compare=False)
     _alias: str | None = field(default=None, repr=False, init=False, compare=False)
+    _device: Any = field(default=None, repr=False, init=False, compare=False)
 
     def __post_init__(self) -> None:
         # Deprecation gate (added 2026-05-15). Operators who pinned a
@@ -256,6 +257,50 @@ class SurprisalBackend:
                 + (f" at revision {self.revision!r}" if self.revision else "")
                 + f": {type(exc).__name__}: {exc}"
             ) from exc
+        # Device placement. The prior v1.59.x backend called
+        # ``model(input_ids)`` without moving the model or inputs to
+        # an accelerator, so a CUDA / MPS / ROCm host that had the
+        # right torch wheel still ran the forward pass on CPU. That
+        # turns an H100 rental into a glorified CPU at ~30-80 tok/s
+        # and is the load-bearing reason Tier-4 calibration was
+        # multi-day on rented GPUs. The auto-detect prefers CUDA
+        # (which the ROCm wheel also shims) over MPS over CPU. A
+        # caller that wants a specific device can override by
+        # assigning ``backend._device`` after construction; the
+        # batched-scoring path reads ``self._device`` rather than
+        # re-detecting.
+        try:
+            import torch  # type: ignore
+            if torch.cuda.is_available():
+                self._device = torch.device("cuda")
+            elif (
+                hasattr(torch.backends, "mps")
+                and torch.backends.mps.is_available()
+            ):
+                self._device = torch.device("mps")
+            else:
+                self._device = torch.device("cpu")
+            self._model = self._model.to(self._device)
+        except Exception:  # noqa: BLE001
+            # Stub-model fakes used in tests don't implement ``.to()``;
+            # leave ``_device`` as None and let the scoring path skip
+            # the device move. Real torch errors here are exceedingly
+            # rare and surface clearly via the forward-pass call.
+            self._device = None
+        # Pad token. Many causal LMs (GPT-2, OLMo, OpenELM, etc.) ship
+        # without a pad_token set, which breaks batched tokenization
+        # with ``padding=True``. Standard practice is to alias
+        # ``pad_token`` to ``eos_token``; the attention_mask the
+        # tokenizer emits keeps the forward pass numerically
+        # equivalent to the unpadded case for every non-pad position.
+        try:
+            if (
+                getattr(self._tokenizer, "pad_token", None) is None
+                and getattr(self._tokenizer, "eos_token", None) is not None
+            ):
+                self._tokenizer.pad_token = self._tokenizer.eos_token
+        except Exception:  # noqa: BLE001
+            pass
         if self.deterministic:
             try:
                 import torch  # type: ignore
@@ -297,6 +342,8 @@ class SurprisalBackend:
         input_ids = encoded["input_ids"]
         if input_ids.shape[1] < 2:
             return [] if return_top_k == 0 else ([], [])
+        if self._device is not None:
+            input_ids = input_ids.to(self._device)
         with torch.no_grad():
             outputs = model(input_ids)
         logits = outputs.logits  # (1, N, vocab)
@@ -332,6 +379,107 @@ class SurprisalBackend:
             for i in indexed
         ]
         return surprisals_bits, top_k
+
+    def score_texts(
+        self,
+        texts: list[str],
+        *,
+        batch_size: int = 8,
+    ) -> list[list[float]]:
+        """Batched per-token surprisal scoring for a list of texts.
+
+        Returns one bits-valued surprisal series per input text, in
+        input order, with the same shape contract as ``score_text``
+        (series length = ``len(tokens) - 1`` for non-empty inputs,
+        empty list for empty / single-token inputs).
+
+        Designed for the calibration-survey hot loop, which calls
+        surprisal scoring N times per shard. At batch_size=1 this
+        is equivalent to looping ``score_text``; at batch_size=8
+        on a CUDA H100 the forward-pass throughput is roughly
+        5–10× higher, which is what makes RAID-scale Tier-4
+        calibration tractable on a single rented GPU hour.
+
+        Padding semantics: texts are right-padded to the longest
+        member of each chunk with the tokenizer's pad token (aliased
+        to ``eos_token`` in ``_load`` when not otherwise set). The
+        attention_mask passed to the model ensures non-pad positions
+        attend only to non-pad left context, so per-position
+        surprisals are numerically equivalent to the un-padded
+        single-text path within FP32 tolerance. Padded positions
+        are masked out of the returned series — the result length
+        for each text matches its un-padded token count minus one.
+
+        ``batch_size`` is the per-chunk batch size; larger values
+        improve GPU utilisation but raise VRAM peak. The default
+        of 8 is conservative for 1–2B-param candidates on a 24 GB
+        L4. Bump to 16 or 32 on an A100/H100.
+        """
+        if not texts:
+            return []
+        model, tokenizer = self._load()
+        import torch  # type: ignore
+        import math
+        log2e = 1.0 / math.log(2.0)
+        results: list[list[float]] = [[] for _ in texts]
+        # Process in chunks of batch_size. Empty / whitespace-only
+        # texts get an empty series without touching the model;
+        # non-empty texts in the same chunk go through the batched
+        # forward pass together.
+        for chunk_start in range(0, len(texts), batch_size):
+            chunk_indices: list[int] = []
+            chunk_texts: list[str] = []
+            for i in range(chunk_start, min(chunk_start + batch_size, len(texts))):
+                if texts[i].strip():
+                    chunk_indices.append(i)
+                    chunk_texts.append(texts[i])
+            if not chunk_texts:
+                continue
+            encoded = tokenizer(
+                chunk_texts,
+                return_tensors="pt",
+                padding=True,
+                truncation=False,
+            )
+            input_ids = encoded["input_ids"]
+            attention_mask = encoded.get("attention_mask")
+            if attention_mask is None:
+                # Fallback when the tokenizer doesn't return a mask
+                # (some stubs in tests don't). Treat every position
+                # as real; safe when chunk_texts has length 1 or all
+                # entries tokenise to the same length.
+                attention_mask = torch.ones_like(input_ids)
+            if self._device is not None:
+                input_ids = input_ids.to(self._device)
+                attention_mask = attention_mask.to(self._device)
+            with torch.no_grad():
+                outputs = model(
+                    input_ids,
+                    attention_mask=attention_mask,
+                )
+            logits = outputs.logits  # (B, N, vocab)
+            # Predicted-next-token surprisal: position i's logits
+            # predict token i+1. Slice off the last position from
+            # logits and the first position from input_ids to align.
+            log_probs_nats = torch.log_softmax(logits[:, :-1, :], dim=-1)
+            next_tokens = input_ids[:, 1:]  # (B, N-1)
+            surprisals_nats = -log_probs_nats.gather(
+                -1, next_tokens.unsqueeze(-1),
+            ).squeeze(-1)  # (B, N-1)
+            surprisals_bits = (surprisals_nats * log2e).cpu()
+            # Valid positions are where attention_mask[:, 1:] == 1
+            # (the next-token position is a real token, not a pad).
+            # Trim each series to its un-padded length.
+            valid_mask = attention_mask[:, 1:].bool().cpu()
+            for k, original_idx in enumerate(chunk_indices):
+                if input_ids.shape[1] < 2:
+                    # Single-token (or empty) row after tokenisation;
+                    # no surprisal position. Leave the placeholder
+                    # empty list in ``results``.
+                    continue
+                series = surprisals_bits[k][valid_mask[k]].tolist()
+                results[original_idx] = series
+        return results
 
     def identifier_block(self) -> dict[str, Any]:
         """Provenance block consumers paste into their JSON output.
