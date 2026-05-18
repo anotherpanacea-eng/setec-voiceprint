@@ -6,6 +6,39 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.94.1] - 2026-05-18
+
+**`surprisal_backend`: chunk over-context inputs; `variance_audit`: wire Tier-4 signal paths.** Ported from PR #97 (the user's original branch targeted the now-stale `feat/mage-tier34-bakeoff-scripts`; this PR is the rebase onto current main with reviewer-P2 device handling preserved). Two bug fixes that the 2026-05-18 RAID 5K bake-off surfaced before the dtype/length-sort/cross-polarity work landed.
+
+### Fixed
+
+- **Over-context inputs no longer hang.** When `input_ids.shape[1] > model.config.max_position_embeddings`, the model indexes into the positional embedding table out of range. On native-CUDA Linux this throws a clean `IndexError`. On WSL+ROCm the GPU kernel spins indefinitely with no Python exception, no progress, 100% utilization — and after a few minutes a Windows host event reaps the WSL VM. Four reproducible WSL host bounces traced to this exact path on 2026-05-18:
+
+  | Attempt | Time | Model | Time-to-crash | Records scored |
+  |---|---|---|---|---|
+  | 1 | 06:32 | olmo2_1b | ~3 min | 0 |
+  | 2 | 06:52 | olmo2_1b | ~3 min | 0 |
+  | 3 | 14:38 | gpt2 | 3.5 min | 0 |
+  | 4 (gpt2-only) | 15:03 | gpt2 | 6 min | 0 |
+
+  Fix: `SurprisalBackend.score_text` now slices `input_ids` into non-overlapping chunks of `max_len = max_position_embeddings or n_positions or n_ctx or 1024` tokens, scores each chunk independently, and concatenates the per-token surprisal series. Each chunk forfeits its first position (no left context), so a fully chunked sequence loses `num_chunks` positions out of N — a negligible artifact at MAGE/RAID scale for distributional signals (mean, sd, acf). A future refinement could prepend a warm-up window from the prior chunk's tail and discard those positions from the scored series; deferred unless a downstream gate measurably moves on the boundary bias.
+
+- **Tier-4 surprisal paths wired into `variance_audit._SIGNAL_PATHS`.** `audit_text` correctly builds `out["tier4"]["surprisal"]` via `_tier4_surprisal_block`, but the `_SIGNAL_PATHS` list — which the threshold-sweep / per-signal extractor iterates over — previously lacked entries for the three Tier-4 keys (`tier4.surprisal.{mean,sd,autocorrelation.lag_1}`). Consequence: the downstream threshold sweep reported "no usable (label, score) pairs" for every Tier-4 signal even though the audit dict contained the right values. Three entries added; the polarity audit + post-1.95 registry flip work produces correct directions but the threshold-sweep / band-call paths can now actually read Tier-4 scores back out.
+
+### Notes on the rebase from PR #97 onto current main
+
+PR #97 was opened against `feat/mage-tier34-bakeoff-scripts` (a now-stale base branch from before the 1.93.0 dtype work merged). The rebase onto current main preserves the over-context chunking core while keeping the newer backend features:
+
+- **Device placement with narrow error handling** (`AttributeError` for stub models, anything else raises typed `SurprisalBackendError` with explicit no-silent-CPU-fallback message). PR #97's broader `except Exception` around `model.to(self._device)` would have recreated the silent-CPU-fallback failure mode #88 was specifically designed to prevent — the reviewer's P2 flag.
+- **dtype handling** (#93). The chunking loop's `log_softmax` step keeps the fp32 upcast that fp16 needs to avoid LM-head overflow; bf16 still runs through the dtype-aware path unchanged.
+- **`score_texts` batched path** (#90). Untouched by this PR. Batched-Tier-4 callers pre-batch on the calibration side; if an individual text in a batch is over-context, the operator gets a clean failure (CUDA `IndexError`) rather than the WSL hang the chunked single-text path now handles. Adding chunking to the batched path is a larger refactor (padding semantics interact awkwardly with within-row chunking) and is deferred.
+
+### Added
+
+- **4 new tests** in `test_surprisal_backend.py` (50 total, was 46): `test_score_text_chunks_over_context_input` (10-token input on a 4-position model produces a 7-element concatenated series across 3 chunks), `test_score_text_short_input_unchanged_under_chunking` (single-chunk fast path), `test_score_text_chunking_falls_back_to_1024_when_config_lacks_max_position` (fallback chain), `test_score_text_top_k_positions_index_into_concatenated_series` (top-k positions are 1-indexed into the concatenated series, not the original input_ids).
+- **1 new test** in `test_variance_audit_tier4.py`: `test_tier4_paths_wired_into_signal_paths_list` pins all three Tier-4 paths in `_SIGNAL_PATHS` by both string-form and tuple-path.
+- **`_FakeCausalLM` gains a `config` attribute** with `max_position_embeddings` so chunking-specific tests can exercise the multi-chunk path with small fake models. Existing tests are unaffected (default `max_position_embeddings == n_positions` is large enough that single-chunk is taken).
+
 ## [1.94.0] - 2026-05-18
 
 **`surprisal_audit.py` standalone path is now dtype-aware.** Follow-up to 1.93.0 — the standalone audit tool was the last per-text scoring path still using the SurprisalBackend's default `"auto"` regardless of operator intent. Now the CLI exposes `--surprisal-dtype` and threads it into the `SurprisalBackend(...)` construction in `main()`, so an operator running `surprisal_audit.py essay.txt --surprisal-dtype bf16` (or relying on the auto default) gets the precision they asked for.
