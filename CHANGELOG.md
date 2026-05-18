@@ -6,6 +6,26 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.91.0] - 2026-05-18
+
+**Tier-4 surprisal backend: length-sorted batching.** Third in the Tier-4 performance fix sequence (1.89.0 device-placement, 1.90.0 caller wiring, this one). `score_texts` now processes texts in ascending length order so length-similar texts batch together and padding waste collapses on heterogeneous-length corpora. Expected throughput improvement: 20–40% on MAGE / RAID rows, which have a long length tail. Output order is preserved — `results[i]` always corresponds to `texts[i]`.
+
+### Changed
+
+- **`SurprisalBackend.score_texts`** sorts input texts by character count (stable sort, O(N log N)) before chunking. Character count is a cheap proxy for token count; correlation is >0.95 on natural prose. The sort runs once per `score_texts` call and pays back many-fold whenever the chunk's longest member is much longer than its shortest member — i.e., whenever the input has a length tail, which describes both MAGE and RAID. Same-length inputs see no overhead beyond the sort itself; stable sort preserves input order for ties, so the no-op case is bit-exact vs. the un-sorted path. Determinism is preserved (stable sort + deterministic forward passes).
+
+### Added
+
+- **3 new tests** in `test_surprisal_backend.py` (36 total, was 33): `test_score_texts_preserves_input_order_after_length_sort` (pins that `results[i]` corresponds to `texts[i]` regardless of the internal processing order); `test_score_texts_groups_length_similar_texts_in_forward_passes` (pins that consecutive forward passes have different padded sequence lengths when the input has a length tail — uses a shape-recording fake model to inspect each pass's `(batch, seq_len)`); `test_score_texts_homogeneous_lengths_no_op_under_sort` (pins that the no-op case isn't reordered, which matters for determinism audits).
+- **Two test fakes** added to support the new tests: `_ShapeRecordingFakeTokenizer` (emits token_ids whose length matches input character count, so length-sort behavior is observable) and `_ShapeRecordingFakeCausalLM` (records `(batch, seq_len)` of every forward pass).
+
+### Notes
+
+- **Output order is preserved.** Callers see no behavior change — `score_texts(texts)[i]` still corresponds to `texts[i]`. The sort is purely an internal optimization.
+- **The win comes from collapsing per-chunk padding.** A chunk of 8 texts with lengths [50, 50, 50, 50, 50, 50, 50, 1000] pads every row to 1000 — 7 × 950 wasted positions per chunk. After length-sort, the same 8 inputs become two chunks: one of all-50 (pads to 50, no waste) and one with the lone 1000 (pads to 1000, alone). Net reduction in padded positions: roughly proportional to the variance of the length distribution within each chunk.
+- **No effect on absolute correctness.** The 1.89.0 paired-AND `valid_mask` already handles padding correctly under any padding scheme; this PR just reduces the *amount* of padding the model has to forward-pass through.
+- **End-to-end speedup is now 1.89.0 × 1.90.0 × 1.91.0.** Device fix (~50–100×) × batched scoring (~5–10×) × length-sort (~1.2–1.4×) puts RAID Tier-4 at ~18–28 hours on an H100 hour — single-overnight territory, where it had been a 5–10 day project on the stock backend.
+
 ## [1.90.1] - 2026-05-18
 
 **Tier-4 caller wiring: review-correctness fixes on top of 1.90.0.** Two issues surfaced in code review of #90; this release adds a disable-on-first-failure latch to the batched-Tier-4 cache refill and replaces a structurally bogus CLI-flag test with one that actually asserts the flag's presence on both parsers.

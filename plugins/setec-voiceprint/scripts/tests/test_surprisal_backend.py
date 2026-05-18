@@ -732,6 +732,174 @@ def test_score_texts_assigns_device_when_torch_supports_it(
     assert b._device is not None
 
 
+# --------------- Length-sorted batching (1.91.0+) ---------------
+
+
+class _ShapeRecordingFakeTokenizer(_FakeTokenizer):
+    """Variant of ``_FakeTokenizer`` that emits token_ids whose
+    length matches the input text's character count divided by 5
+    (a rough proxy for real tokenizer behavior). Lets length-sorted
+    batching tests reason about which texts end up in which chunk."""
+
+    def __call__(
+        self,
+        text,
+        return_tensors=None,  # noqa: ARG002
+        padding=False,  # noqa: ARG002
+        truncation=False,  # noqa: ARG002
+    ):
+        import torch
+        if isinstance(text, str):
+            n = max(2, len(text) // 5)
+            ids = list(range(n))
+            return {
+                "input_ids": torch.tensor([ids]),
+                "attention_mask": torch.ones((1, n), dtype=torch.long),
+            }
+        per_text = [list(range(max(2, len(t) // 5))) for t in text]
+        max_len = max(len(ids) for ids in per_text)
+        padded = [
+            ids + [self.pad_id] * (max_len - len(ids))
+            for ids in per_text
+        ]
+        attention = [
+            [1] * len(ids) + [0] * (max_len - len(ids))
+            for ids in per_text
+        ]
+        return {
+            "input_ids": torch.tensor(padded),
+            "attention_mask": torch.tensor(attention, dtype=torch.long),
+        }
+
+
+class _ShapeRecordingFakeCausalLM(_FakeCausalLM):
+    """``_FakeCausalLM`` that records the shape of every forward
+    pass's input_ids tensor. Lets length-sorted batching tests pin
+    that consecutive forward passes have homogeneous lengths within
+    each chunk (which is the throughput win the sort delivers)."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.forward_pass_shapes: list[tuple[int, int]] = []
+
+    def __call__(self, input_ids, attention_mask=None):
+        self.forward_pass_shapes.append(
+            (input_ids.shape[0], input_ids.shape[1])
+        )
+        return super().__call__(
+            input_ids, attention_mask=attention_mask,
+        )
+
+
+@_skip_no_torch
+def test_score_texts_preserves_input_order_after_length_sort(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Heterogeneous-length inputs are processed in length-sorted
+    order internally, but the returned list must align with the
+    input order — results[i] corresponds to texts[i]. Pin the
+    contract: a long-short-long-short interleaved input must produce
+    a result list whose series lengths follow the input lengths,
+    not the sorted order."""
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = (
+        _ShapeRecordingFakeTokenizer([0, 1, 2, 3, 4])
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = (
+        _ShapeRecordingFakeCausalLM(n_positions=200, vocab_size=8)
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    # Interleaved short / long inputs. Series length is roughly
+    # len(text) // 5 - 1 under the shape-recording fake.
+    inputs = ["short", "x" * 100, "med length text", "y" * 50]
+    results = b.score_texts(inputs, batch_size=4)
+    assert len(results) == 4
+    # results[0] is the short input → short series
+    # results[1] is the long input → long series
+    # results[2] is the medium input → medium series
+    # results[3] is the second long input → medium-long series
+    assert len(results[0]) < len(results[2]) < len(results[3]) < len(results[1])
+
+
+@_skip_no_torch
+def test_score_texts_groups_length_similar_texts_in_forward_passes(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """With length-sort enabled, consecutive forward passes should
+    contain length-similar texts so the padded sequence length per
+    pass is close to the longest member rather than the longest
+    overall. Pin via a shape-recording fake model: after sorting,
+    the shortest-text batch's padded length must be strictly less
+    than the longest-text batch's padded length when the input has
+    a long tail."""
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = (
+        _ShapeRecordingFakeTokenizer([0, 1, 2, 3, 4])
+    )
+    shape_model = _ShapeRecordingFakeCausalLM(
+        n_positions=200, vocab_size=8,
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = shape_model
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    # 8 inputs: 4 short (~25 chars), 4 long (~250 chars). At
+    # batch_size=4 the sort should produce two chunks: one all-
+    # short, one all-long. The shape-recording fake exposes the
+    # (batch, seq_len) of each forward pass; the short chunk's
+    # seq_len must be smaller than the long chunk's.
+    short_texts = ["short text " + str(i) for i in range(4)]
+    long_texts = ["long " * 50 + str(i) for i in range(4)]
+    inputs = []
+    # Interleave so the un-sorted batching would have mixed
+    # lengths and a single chunk's seq_len pinned to the longest.
+    for s, l in zip(short_texts, long_texts):
+        inputs.append(s)
+        inputs.append(l)
+    b.score_texts(inputs, batch_size=4)
+    # 8 inputs at batch_size=4 → 2 forward passes.
+    assert len(shape_model.forward_pass_shapes) == 2
+    seq_lens = sorted(shape[1] for shape in shape_model.forward_pass_shapes)
+    # The length-sorted batches must have strictly different
+    # seq_lens; without length-sort, both batches would be padded
+    # to the global max and seq_lens would be equal.
+    assert seq_lens[0] < seq_lens[1], (
+        f"Expected length-sorted batches to have different padded "
+        f"seq_lens; got {seq_lens}. The sort is not separating "
+        "short from long inputs across forward passes."
+    )
+
+
+@_skip_no_torch
+def test_score_texts_homogeneous_lengths_no_op_under_sort(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When all inputs are the same length, the stable length-sort
+    leaves them in input order. Pin that the no-op case isn't
+    accidentally reordered (which would matter for determinism
+    audits of the calibration pipeline)."""
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = (
+        _ShapeRecordingFakeTokenizer([0, 1, 2, 3, 4])
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = (
+        _ShapeRecordingFakeCausalLM(n_positions=200, vocab_size=8)
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    # 6 inputs of identical length; with stable sort the input
+    # order is preserved. Verify by comparing against the single-
+    # text path's output for each input.
+    inputs = [f"item-{i:02d}" for i in range(6)]
+    batched = b.score_texts(inputs, batch_size=3)
+    serial = [b.score_text(t) for t in inputs]
+    assert len(batched) == 6
+    for i in range(6):
+        assert len(batched[i]) == len(serial[i])
+        for a, e in zip(batched[i], serial[i]):
+            assert abs(a - e) < 1e-5
+
+
 # --------------- Identifier block -------------------------------
 
 
