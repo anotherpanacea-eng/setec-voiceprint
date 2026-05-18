@@ -6,6 +6,53 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.96.0] - 2026-05-18
+
+**`EmbeddingBackend` gains the dtype + device contract from PR #93 / #88's surprisal side.** Closes Chunk C of the post-inventory sequence (pivoted from "length-sorted batching" after discovering `sentence_transformers.encode()` already length-sorts internally on v2.2+ — the framework declares `>=2.7`). Per-operator-survey perf win on Phase A Tier-3 embedding runs: 1.5-2x throughput on Ampere+ / Hopper / Ada cuda hosts from bf16/fp16 inference, plus explicit per-process device pinning for the cloud bake-off matrix's parallel-pair-of-processes pattern (#100).
+
+### Why "Chunk C-prime" instead of length-sorted batching
+
+The original C scope was "mirror PR #91's length-sorted batching pattern to the Tier-3 path." Investigation surfaced that `SentenceTransformer.encode()` already does the length-sort internally — has since v2.2 (2022). Wrapping a length-sort at the `EmbeddingBackend.encode()` level would be a no-op (ST resorts the already-sorted input). #91's pattern worked because `SurprisalBackend.score_texts` calls raw HuggingFace `model(input_ids, attention_mask)` which has no internal length-sort; the embedding path is fundamentally different. Pivoting to dtype + device awareness — the actual remaining perf gap — delivers the 1.5-2x throughput the original chunk targeted, plus better cloud-orchestration ergonomics.
+
+### Backend
+
+- **`EmbeddingBackend` gains `dtype: str = "auto"` and `device: str | None = None` fields.** `dtype` is validated against `VALID_DTYPES = ("auto", "fp32", "fp16", "bf16")` at construction so a typo fails fast. `device` is `None` by default (defers to sentence-transformers' built-in `cuda > mps > cpu` pick) or a device string operators pass explicitly for per-process pinning.
+- **`_resolve_dtype(requested, *, cuda_available=None, bf16_supported=None) -> (torch.dtype, label)`** module-level function. Same contract + same resolution table as `surprisal_backend._resolve_dtype` (PR #93): `auto` picks bf16 on bf16-supporting cuda, fp16 on older cuda (V100 / T4 where bf16 falls back to slow kernels), fp32 elsewhere. The cuda / bf16 probes are overrideable so the dispatch is testable without a GPU.
+- **`_load` threads dtype + device into `SentenceTransformer(...)`.** Passes `model_kwargs={"torch_dtype": resolved}` (lands on the underlying HF `AutoModel.from_pretrained` the same way PR #93's surprisal load does) and `device=device` when set. Records `_resolved_dtype_label` and `_resolved_device` (pulled from `next(model.parameters()).device` post-load) for the identifier block. Gracefully skips dtype resolution when torch isn't importable (test-stub use case — production paths always have torch since sentence-transformers requires it).
+- **Model-load error message includes the requested dtype.** Operators debugging an OOM at fp32 see `dtype='fp32'` in the wrapped `EmbeddingBackendError` and know to retry with bf16/fp16.
+- **`identifier_block` surfaces `dtype_requested` / `dtype_loaded` / `device_requested` / `device_loaded`.** Audit consumers can distinguish operator intent (`auto` / `None`) from resolved hardware state (`bf16` / `cuda:0`).
+
+### Caller wiring
+
+- **`variance_audit._get_embedding_backend`** takes `dtype` and `device` kwargs, includes them in the per-process backend cache key. Three different dtype requests on the same (model, revision) get three distinct backend instances — the surprisal-side analogue of this came in PR #93's cache-identity fix.
+- **`variance_audit.adjacent_sentence_cosine`** accepts `embedding_dtype` / `embedding_device` and threads them through to `_get_embedding_backend`.
+- **`variance_audit.audit_text`** accepts `embedding_dtype` / `embedding_device` with `"auto"` / `None` defaults (preserves pre-1.96 caller behavior) and forwards to `adjacent_sentence_cosine`.
+- **`validation_harness.score_smoothing_entry`** accepts the same two kwargs and forwards to `audit_text`. Without this, the per-entry Tier-3 fallback path (when batched embedding scoring isn't in play) ignored the operator's dtype request — same shape as PR #93's reviewer P1 on the surprisal side.
+- **`calibrate_thresholds.score_corpus`** threads `embedding_dtype` / `embedding_device` via `getattr(args, ..., default)` from the operator's Namespace into both the `score_smoothing_entry` call and the per-row backend construction.
+- **`calibrate_thresholds.cache_is_compatible`** treats `embedding_dtype_resolved` + `embedding_device_requested` as part of the Tier-3 cache identity (reviewer P1 on PR #101 — symmetric with PR #93's surprisal-cache identity fix). A Phase A run scored under `--embedding-dtype fp32` now correctly invalidates when reused under `--embedding-dtype bf16`. The check fires only when both sides used the pluggable embedding path (`embedding_model is not None`); legacy MiniLM caches predate the dtype contract and stay forgiving.
+  - New helper: `_resolve_embedding_dtype_label(args)` mirrors `_resolve_surprisal_dtype_label` on the embedding side — resolves the operator's `--embedding-dtype` string to the canonical loaded label via `embedding_backend._resolve_dtype`.
+  - Both `interim_meta` (mid-run checkpoint) and the final `scoring_meta` block carry `embedding_dtype_requested` / `embedding_dtype_resolved` / `embedding_device_requested` so partial-cache resume sees the same identity fields as a full-cache load.
+
+### CLI
+
+- **`calibration_survey.py`** gains `--embedding-dtype {auto,fp32,fp16,bf16}` and `--embedding-device DEVICE` flags. Forwarded into the inner Namespace alongside `--surprisal-dtype` so survey runs honor operator dtype choice rather than falling back to the backend default.
+- **`calibrate_thresholds.py`** gains the same two flags for direct invocations.
+- **`semantic_trajectory_audit.py`** gains `--dtype` and `--device` flags, threaded into its `EmbeddingBackend(...)` construction.
+
+### Tests
+
+- **13 new tests** in `test_embedding_backend.py` (40 total, was 27).
+- **4 new tests** in `test_calibration_cache.py::TestEmbeddingDtypeCacheIdentity` pinning the new cache-identity contract: Tier-3-off skips the check; pre-1.96 pluggable cache forces re-score to record the resolved label; legacy MiniLM path skips the check (back-compat); `--embedding-device` change invalidates.
+- **`test_pipeline_model_wiring`** `_stub_get` signature updated to accept and key on `dtype` + `device`.
+- **2665 tests pass** on the slim-torch harness (was 2656 on main pre-PR; +9 net from the new pure-Python tests; 8 torch-gated tests skip cleanly). 58 pre-existing slim-harness failures unrelated to this work remain.
+
+### Notes
+
+- **What this does NOT change.** Signal definitions, threshold values, AUC computation, the deterministic-mode contract, the alias table, the fallback to TF-IDF when sentence-transformers isn't installed, the encode runtime-error wrapping from PR #19. dtype is an inference-precision lever, not a numerical-contract change.
+- **bf16 cosine stability.** Embedding cosines computed in bf16 differ from fp32 by ~1e-3 in absolute terms — well below the threshold that affects any Tier-3 calibration decision. The fp32 upcast on the surprisal side (PR #93) protected the log-softmax normalization; embedding cosine doesn't need an analogous upcast because it's a dot product of normalized vectors, not a softmax-anchored quantity.
+- **No effect on the legacy MiniLM path.** When `embedding_model` is `None`, `audit_text` falls back to the pre-1.80 `_get_st_model()` legacy hardcode; the dtype kwargs are ignored along that path. Operators who want the dtype contract use `--embedding-model mxbai` (or any other alias / HF id) which routes through `EmbeddingBackend`.
+- **Aligns with the cloud bake-off matrix (#100).** Multi-GPU cloud hosts running parallel matrix processes pinned to different GPUs via `CUDA_VISIBLE_DEVICES` + per-process `SETEC_BAKEOFF_DIR` can now also pin the Tier-3 embedding model to a specific device via `--embedding-device cuda:1` etc. Throughput stack-up on H100: device fix (50-100x) × batched scoring (5-10x) × length-sort (1.2-1.4x) × bf16 (1.5-2x) for Tier-4; bf16 (1.5-2x) net on Tier-3.
+
 ## [1.95.1] - 2026-05-18
 
 **Encode the 22 polarity flips from the 2026-05-18 MAGE 5K audit into `variance_audit.COMPRESSION_HEURISTICS`. Scope: MAGE-style curated-human comparators.** PRs #92 and #96 surfaced the recommendations; this PR ships them. Four signal directions flip in lockstep across `variance_audit`, `polarity_audit`, and `slice_bakeoff_v2`:

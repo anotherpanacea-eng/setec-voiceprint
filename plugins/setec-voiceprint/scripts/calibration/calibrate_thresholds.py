@@ -1251,6 +1251,33 @@ def _resolve_surprisal_dtype_label(args: argparse.Namespace) -> str | None:
     return label
 
 
+def _resolve_embedding_dtype_label(args: argparse.Namespace) -> str | None:
+    """Resolve ``--embedding-dtype`` to the canonical loaded label.
+
+    Mirror of ``_resolve_surprisal_dtype_label`` on the Tier-3
+    embedding side (PR #101 / 1.96.0). Returns ``None`` when
+    embedding_backend / torch isn't importable; only consulted
+    when Tier 3 is on.
+
+    Same cache-identity rationale: ``auto`` resolves to bf16 on
+    H100 and fp32 on CPU, so without recording the resolved label
+    a cache scored on one host silently reuses on another with a
+    different actual precision — exactly the stale-cache bug PR
+    #93 closed on the surprisal side.
+    """
+    try:
+        from embedding_backend import _resolve_dtype  # type: ignore
+    except ImportError:
+        return None
+    try:
+        _, label = _resolve_dtype(
+            getattr(args, "embedding_dtype", "auto"),
+        )
+    except Exception:  # noqa: BLE001
+        return None
+    return label
+
+
 def _entry_id_for_record(entry: dict[str, Any]) -> str:
     """Match the synthesized id ``score_smoothing_entry`` writes onto
     every record. Used by the incremental-scoring resume path to skip
@@ -1625,6 +1652,29 @@ def score_corpus(
                     "embedding_revision": getattr(
                         args, "embedding_revision", None,
                     ),
+                    # 1.96.0+: dtype + device are part of the
+                    # embedding cache identity for the same reason
+                    # dtype is for surprisal: cosines computed in
+                    # bf16 vs fp32 differ at the ~1e-3 level (still
+                    # within signal-stat noise but visible per-pair).
+                    # _requested captures operator intent (possibly
+                    # ``"auto"`` / ``None``); _resolved is what the
+                    # backend actually loaded with on this host
+                    # after dtype + device resolution. Compat-check
+                    # compares the resolved labels so an ``auto``
+                    # cache scored on CPU (fp32) doesn't silently
+                    # reuse on a later H100 invocation (bf16).
+                    "embedding_dtype_requested": getattr(
+                        args, "embedding_dtype", "auto",
+                    ),
+                    "embedding_dtype_resolved": (
+                        _resolve_embedding_dtype_label(args)
+                        if bool(getattr(args, "tier3", False))
+                        else None
+                    ),
+                    "embedding_device_requested": getattr(
+                        args, "embedding_device", None,
+                    ),
                     "surprisal_model": getattr(
                         args, "surprisal_model", None,
                     ),
@@ -1701,6 +1751,11 @@ def score_corpus(
                 do_tier4=bool(getattr(args, "tier4", False)),
                 embedding_model=getattr(args, "embedding_model", None),
                 embedding_revision=getattr(args, "embedding_revision", None),
+                # 1.96.0+: dtype + device passthrough on the
+                # embedding side. Mirrors the surprisal-side
+                # passthrough below.
+                embedding_dtype=getattr(args, "embedding_dtype", "auto"),
+                embedding_device=getattr(args, "embedding_device", None),
                 surprisal_model=getattr(args, "surprisal_model", None),
                 surprisal_revision=getattr(args, "surprisal_revision", None),
                 # 1.93.0+: dtype passthrough for the per-entry Tier-4
@@ -1732,6 +1787,20 @@ def score_corpus(
         "do_tier4": bool(getattr(args, "tier4", False)),
         "embedding_model": getattr(args, "embedding_model", None),
         "embedding_revision": getattr(args, "embedding_revision", None),
+        # 1.96.0+: dtype + device identity for Tier-3 embedding
+        # cache reuse. See ``interim_meta`` block + ``cache_is_
+        # compatible`` for rationale.
+        "embedding_dtype_requested": getattr(
+            args, "embedding_dtype", "auto",
+        ),
+        "embedding_dtype_resolved": (
+            _resolve_embedding_dtype_label(args)
+            if bool(getattr(args, "tier3", False))
+            else None
+        ),
+        "embedding_device_requested": getattr(
+            args, "embedding_device", None,
+        ),
         "surprisal_model": getattr(args, "surprisal_model", None),
         "surprisal_revision": getattr(args, "surprisal_revision", None),
         # 1.93.0+: dtype identity for Tier-4 cache reuse. See the
@@ -1857,6 +1926,64 @@ def cache_is_compatible(
             return False, (
                 f"surprisal_dtype_resolved changed "
                 f"({cached_resolved!r} → {current_resolved!r})"
+            )
+    # 1.96.0+: same dtype-identity check for Tier-3 embedding. The
+    # surprisal-side check above closed the silent-CPU/H100-cache-
+    # reuse bug for Tier-4; this closes the symmetric gap on the
+    # embedding side. Cosines in bf16 differ from fp32 by ~1e-3 —
+    # within signal-stat noise but not within an exact-reuse
+    # contract. Device is also part of the identity: an explicit
+    # ``--embedding-device cuda:1`` cache shouldn't reuse on a
+    # later ``--embedding-device cuda:0`` run because operators
+    # use device pinning for parallelism / isolation, not noise
+    # tolerance.
+    #
+    # The check fires ONLY when both sides used the pluggable
+    # embedding path (i.e., ``embedding_model`` is set). Legacy
+    # MiniLM caches (``embedding_model=None``) predate the dtype
+    # contract and don't carry the resolved-label field — back-
+    # compat with pre-1.80 caches is preserved by skipping the
+    # check entirely on that path.
+    cur_tier3 = bool(getattr(args, "tier3", False))
+    cur_embed_model = getattr(args, "embedding_model", None)
+    if cur_tier3 and cur_embed_model is not None and cache_meta.get(
+        "embedding_model"
+    ) is not None:
+        # Field-missing → pre-1.96 cache that DID use the pluggable
+        # path; force re-score so the resolved label gets recorded
+        # going forward.
+        if "embedding_dtype_resolved" in cache_meta:
+            cached_embed_resolved = cache_meta["embedding_dtype_resolved"]
+            current_embed_resolved = _resolve_embedding_dtype_label(args)
+            if cached_embed_resolved != current_embed_resolved:
+                return False, (
+                    f"embedding_dtype_resolved changed "
+                    f"({cached_embed_resolved!r} → "
+                    f"{current_embed_resolved!r})"
+                )
+        else:
+            # Pre-1.96 cache lacks the resolved-label field on a
+            # pluggable-embedding run. Force re-score so the dtype
+            # identity gets recorded on this host. This matches the
+            # pre-1.93 → 1.93 transition on the surprisal side.
+            return False, (
+                "embedding_dtype_resolved absent on cache (pre-1.96.0 "
+                "Tier-3 pluggable-embedding cache); re-scoring to "
+                "record the resolved dtype on this host"
+            )
+        # Device is checked on requested-value (not resolved) because
+        # ``device_loaded`` requires a real model load to determine,
+        # which the per-process backend cache may not have done yet
+        # when the compat check runs. ``device_requested`` is what
+        # the operator passed (or None for ST auto-pick); two runs
+        # with the same intent should hit the same cache, runs with
+        # different intent shouldn't.
+        cur_embed_device = getattr(args, "embedding_device", None)
+        if cache_meta.get("embedding_device_requested") != cur_embed_device:
+            return False, (
+                f"embedding_device_requested changed "
+                f"({cache_meta.get('embedding_device_requested')!r} → "
+                f"{cur_embed_device!r})"
             )
     cached_sub = cache_meta.get("sub_sample")
     cur_max = getattr(args, "max_entries", None)
@@ -2633,6 +2760,27 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Pin a HuggingFace commit SHA for the Tier 3 embedding "
             "model (reproducibility). Default: revision-less."
+        ),
+    )
+    parser.add_argument(
+        "--embedding-dtype",
+        choices=("auto", "fp32", "fp16", "bf16"),
+        default="auto",
+        help=(
+            "Precision for Tier 3 embedding-model inference. ``auto`` "
+            "picks bf16 on supporting cuda (Ampere+ / Hopper / Ada), "
+            "fp16 on older cuda, fp32 on CPU / MPS. Mirror of "
+            "--surprisal-dtype on the embedding side (added 1.96.0). "
+            "No effect when --tier3 is off, or when running through "
+            "the legacy MiniLM fallback (no --embedding-model)."
+        ),
+    )
+    parser.add_argument(
+        "--embedding-device", default=None,
+        help=(
+            "Explicit device for the Tier 3 embedding model "
+            "(e.g., ``cuda:1``). Default: defer to sentence-"
+            "transformers' auto-device pick."
         ),
     )
     parser.add_argument(

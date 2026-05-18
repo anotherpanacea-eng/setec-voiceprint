@@ -559,14 +559,20 @@ def mdd_stats(text: str) -> dict[str, Any] | None:
 # itself — the underlying sentence-transformers model is lazy-loaded once
 # either way — but caching makes the code path easier to reason about and
 # trivially avoids re-running the alias-resolution + provenance setup).
-# Keyed by (alias_or_id, revision-or-empty) so different revisions don't
-# collide and a deliberate revision pin is preserved across calls.
-_EMBEDDING_BACKENDS_CACHE: dict[tuple[str, str], Any] = {}
+# Keyed by (alias_or_id, revision-or-empty, dtype, device) so different
+# revisions / dtypes / devices don't collide. Dtype + device joined the
+# cache key in 1.96.0 alongside the embedding-backend dtype contract; the
+# surprisal-side analogue (PR #93's dtype-in-cache-key fix) is in
+# ``_get_surprisal_backend``.
+_EMBEDDING_BACKENDS_CACHE: dict[tuple[str, str, str, str], Any] = {}
 
 
 def _get_embedding_backend(
     model_alias: str | None,
     revision: str | None = None,
+    *,
+    dtype: str = "auto",
+    device: str | None = None,
 ) -> Any | None:
     """Return a cached :class:`EmbeddingBackend` for ``model_alias`` or
     ``None`` when the new pluggable path can't be loaded.
@@ -584,7 +590,7 @@ def _get_embedding_backend(
     """
     if model_alias is None:
         return None
-    cache_key = (model_alias, revision or "")
+    cache_key = (model_alias, revision or "", dtype, device or "")
     cached = _EMBEDDING_BACKENDS_CACHE.get(cache_key)
     if cached is not None:
         return cached
@@ -595,6 +601,8 @@ def _get_embedding_backend(
     backend = eb.EmbeddingBackend(
         model_id=eb.resolve_model_arg(model_alias),
         revision=revision,
+        dtype=dtype,
+        device=device,
     )
     _EMBEDDING_BACKENDS_CACHE[cache_key] = backend
     return backend
@@ -614,11 +622,13 @@ def _get_st_model():
         return None
 
 
-def adjacent_sentence_cosine(
+def adjacent_sentence_cosine(  # noqa: PLR0913
     sentences: list[str],
     *,
     embedding_model: str | None = None,
     embedding_revision: str | None = None,
+    embedding_dtype: str = "auto",
+    embedding_device: str | None = None,
 ) -> dict[str, Any] | None:
     """Compute adjacent-sentence cosine similarity statistics.
 
@@ -642,7 +652,10 @@ def adjacent_sentence_cosine(
 
     # New path (1.80.0+): pluggable embedding model via embedding_backend.
     if embedding_model is not None:
-        backend = _get_embedding_backend(embedding_model, embedding_revision)
+        backend = _get_embedding_backend(
+            embedding_model, embedding_revision,
+            dtype=embedding_dtype, device=embedding_device,
+        )
         if backend is not None:
             try:
                 import numpy as np  # type: ignore
@@ -1161,6 +1174,13 @@ def audit_text(
     # preserves the legacy MiniLM hardcode for back-compat.
     embedding_model: str | None = None,
     embedding_revision: str | None = None,
+    # 1.96.0+: dtype / device for the Tier 3 embedding backend.
+    # Mirrors the surprisal-side ``surprisal_dtype`` from PR #93.
+    # ``"auto"`` resolves bf16 on Ampere+ / Hopper / Ada cuda, fp16
+    # on pre-Ampere cuda, fp32 elsewhere. ``embedding_device``
+    # defers to sentence-transformers' auto-device pick when None.
+    embedding_dtype: str = "auto",
+    embedding_device: str | None = None,
     # 1.80.0+: surprisal-model passthrough for the in-pipeline Tier 4
     # path. When set AND ``do_tier4=True`` AND no ``tier4_backend`` /
     # ``tier4_score_fn`` was injected, the Tier 4 block constructs a
@@ -1227,6 +1247,8 @@ def audit_text(
                     sentences,
                     embedding_model=embedding_model,
                     embedding_revision=embedding_revision,
+                    embedding_dtype=embedding_dtype,
+                    embedding_device=embedding_device,
                 )
                 if (HAS_ST or HAS_SKLEARN) else None
             ),

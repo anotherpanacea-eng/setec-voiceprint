@@ -177,6 +177,11 @@ def score_smoothing_entry(
     do_tier4: bool = False,
     embedding_model: str | None = None,
     embedding_revision: str | None = None,
+    # 1.96.0+: dtype + device passthrough for the per-entry Tier-3
+    # embedding path. Defaults preserve pre-1.96 behavior (auto
+    # resolution at backend construction time + ST auto-device pick).
+    embedding_dtype: str = "auto",
+    embedding_device: str | None = None,
     surprisal_model: str | None = None,
     surprisal_revision: str | None = None,
     # 1.93.0+: dtype passthrough for the per-entry Tier-4 fallback path.
@@ -241,6 +246,8 @@ def score_smoothing_entry(
         strip_aggressive=strip_aggressive,
         embedding_model=embedding_model,
         embedding_revision=embedding_revision,
+        embedding_dtype=embedding_dtype,
+        embedding_device=embedding_device,
         surprisal_model=surprisal_model,
         surprisal_revision=surprisal_revision,
         surprisal_dtype=surprisal_dtype,

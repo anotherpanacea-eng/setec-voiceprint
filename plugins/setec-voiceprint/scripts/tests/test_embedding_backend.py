@@ -312,3 +312,365 @@ class TestEncodeRuntimeErrorWrapping:
         # No _model set; the empty-list path should not call _load.
         result = backend.encode([])
         assert result.shape == (0, 0)
+
+
+# ============================================================
+# Dtype + device awareness (mirrors PR #93 / #88 on the
+# surprisal side; this is the embedding-side analogue).
+# ============================================================
+
+try:
+    import torch as _torch  # type: ignore
+    _HAS_TORCH = True
+except ImportError:
+    _HAS_TORCH = False
+
+_skip_no_torch = pytest.mark.skipif(
+    not _HAS_TORCH,
+    reason="torch not installed; dtype resolution requires torch",
+)
+
+
+# ---------- Construction-time validation (pure-Python) ----------
+
+
+def test_default_dtype_is_auto():
+    """Default dtype is ``"auto"`` so an operator who doesn't set
+    ``--embedding-dtype`` gets bf16 on Hopper, fp16 on Ampere-down,
+    fp32 on CPU. Pinning this means a future patch that changes the
+    default trips the test rather than silently inverting the
+    auto-resolution contract."""
+    b = eb.EmbeddingBackend(model_id="mxbai")
+    assert b.dtype == "auto"
+
+
+def test_default_device_is_none():
+    """Default device is ``None`` so sentence-transformers' built-in
+    auto-device logic picks cuda > mps > cpu. Operators on multi-
+    GPU hosts override per call via ``device="cuda:1"``."""
+    b = eb.EmbeddingBackend(model_id="mxbai")
+    assert b.device is None
+
+
+def test_invalid_dtype_raises_at_construction():
+    """Construction-time validation: a typo on the dtype string
+    fails fast with a typed error and a useful message naming the
+    valid set, rather than escaping at first-encode as a sentence-
+    transformers internal stack trace. Same shape as the
+    surprisal-side contract from PR #93."""
+    with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+        eb.EmbeddingBackend(model_id="mxbai", dtype="fp64")
+    assert "fp64" in str(excinfo.value)
+    assert "auto" in str(excinfo.value)  # the message lists valid values
+
+
+def test_valid_dtypes_all_accepted():
+    """All four documented dtype strings accept at construction.
+    Pins the validation logic doesn't reject something the CLI
+    accepts; the surprisal-side test has the same shape."""
+    for dt in ("auto", "fp32", "fp16", "bf16"):
+        b = eb.EmbeddingBackend(model_id="mxbai", dtype=dt)
+        assert b.dtype == dt
+
+
+def test_pre_load_identifier_block_surfaces_requested_but_not_loaded():
+    """Before ``_load`` has run, ``dtype_loaded`` and
+    ``device_loaded`` are ``None`` — the model hasn't been built
+    yet, so there's no resolved state. ``dtype_requested`` and
+    ``device_requested`` reflect operator intent immediately.
+    Distinguishes the pre-load / post-load contract."""
+    b = eb.EmbeddingBackend(
+        model_id="mxbai", dtype="bf16", device="cuda:1",
+    )
+    block = b.identifier_block()
+    assert block["dtype_requested"] == "bf16"
+    assert block["dtype_loaded"] is None
+    assert block["device_requested"] == "cuda:1"
+    assert block["device_loaded"] is None
+
+
+# ---------- _resolve_dtype probe outcomes (torch-gated) ----------
+
+
+@_skip_no_torch
+def test_resolve_dtype_auto_no_cuda_returns_fp32():
+    """On a CPU-only host (or one with cuda available but no
+    bf16 support and no fp16 demand-path), auto resolves to fp32.
+    Embedding inference in bf16 on CPU is not faster (and often
+    slower due to BF16-on-CPU emulation), so fp32 is the right
+    default."""
+    import torch
+    out, label = eb._resolve_dtype("auto", cuda_available=False)
+    assert label == "fp32"
+    assert out == torch.float32
+
+
+@_skip_no_torch
+def test_resolve_dtype_auto_bf16_cuda_returns_bf16():
+    """On bf16-supporting cuda (Ampere / Hopper / Ada), auto picks
+    bf16 — the throughput win is real and there's no precision
+    cliff on embedding models (the cosine similarities are stable
+    in bf16 to within 1e-3)."""
+    import torch
+    out, label = eb._resolve_dtype(
+        "auto", cuda_available=True, bf16_supported=True,
+    )
+    assert label == "bf16"
+    assert out == torch.bfloat16
+
+
+@_skip_no_torch
+def test_resolve_dtype_auto_pre_ampere_cuda_returns_fp16():
+    """On pre-Ampere cuda (V100 / T4), bf16 falls back to slow
+    emulation kernels. auto picks fp16 instead — same dtype
+    behaviour as the surprisal-side resolution from PR #93."""
+    import torch
+    out, label = eb._resolve_dtype(
+        "auto", cuda_available=True, bf16_supported=False,
+    )
+    assert label == "fp16"
+    assert out == torch.float16
+
+
+@_skip_no_torch
+def test_resolve_dtype_explicit_bf16_overrides_auto_resolution():
+    """An explicit ``bf16`` request is honored even on hardware
+    where auto would have picked something else. Lets operators
+    pin a dtype for reproducibility across heterogeneous hosts."""
+    import torch
+    out, label = eb._resolve_dtype(
+        "bf16", cuda_available=False, bf16_supported=False,
+    )
+    assert label == "bf16"
+    assert out == torch.bfloat16
+
+
+@_skip_no_torch
+def test_resolve_dtype_explicit_fp16_overrides_auto_resolution():
+    """Same contract for fp16."""
+    import torch
+    out, label = eb._resolve_dtype(
+        "fp16", cuda_available=True, bf16_supported=True,
+    )
+    assert label == "fp16"
+    assert out == torch.float16
+
+
+@_skip_no_torch
+def test_resolve_dtype_explicit_fp32_overrides_auto_resolution():
+    """Same contract for fp32 — operators who want guaranteed
+    precision regardless of hardware can pin fp32."""
+    import torch
+    out, label = eb._resolve_dtype(
+        "fp32", cuda_available=True, bf16_supported=True,
+    )
+    assert label == "fp32"
+    assert out == torch.float32
+
+
+@_skip_no_torch
+def test_resolve_dtype_rejects_unknown_string():
+    """The free function does its own validation so direct callers
+    (not just the dataclass) also fail-fast."""
+    with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+        eb._resolve_dtype("fp64")
+    assert "fp64" in str(excinfo.value)
+
+
+# ---------- _load passes dtype + device into ST (stubbed) ----------
+
+
+@_skip_no_torch
+def test_load_passes_torch_dtype_via_model_kwargs(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """The wrapper threads the resolved torch_dtype into
+    ``SentenceTransformer(model_kwargs={"torch_dtype": ...})``.
+    Without this, sentence-transformers loads in its fp32 default
+    regardless of what the operator requested."""
+    import torch
+    captured: dict = {}
+
+    class _FakeST:
+        def __init__(self, model_id, **kwargs):
+            captured["model_id"] = model_id
+            captured["kwargs"] = kwargs
+
+        def parameters(self):
+            # Return a single zero-tensor as the model's sole
+            # parameter so ``next(model.parameters()).device``
+            # works for the device-probe path.
+            yield torch.zeros(1)
+
+    fake_module = mock.MagicMock()
+    fake_module.SentenceTransformer = _FakeST
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    b = eb.EmbeddingBackend(model_id="mxbai", dtype="bf16")
+    b._load()
+    assert "model_kwargs" in captured["kwargs"]
+    assert captured["kwargs"]["model_kwargs"] == {"torch_dtype": torch.bfloat16}
+
+
+@_skip_no_torch
+def test_load_passes_device_when_set(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When ``device`` is set, it's threaded into the ST
+    constructor. When unset, ST's auto-device logic owns the
+    placement (no ``device=`` kwarg passed)."""
+    import torch
+    captured: dict = {}
+
+    class _FakeST:
+        def __init__(self, model_id, **kwargs):
+            captured["kwargs"] = kwargs
+
+        def parameters(self):
+            yield torch.zeros(1)
+
+    fake_module = mock.MagicMock()
+    fake_module.SentenceTransformer = _FakeST
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    b = eb.EmbeddingBackend(model_id="mxbai", device="cuda:1")
+    b._load()
+    assert captured["kwargs"].get("device") == "cuda:1"
+
+
+@_skip_no_torch
+def test_load_omits_device_kwarg_when_unset(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """No ``device`` kwarg passed to ST when caller didn't ask for
+    one — pins that we don't force ST off its auto-device logic
+    (which already picks cuda > mps > cpu correctly)."""
+    import torch
+    captured: dict = {}
+
+    class _FakeST:
+        def __init__(self, model_id, **kwargs):
+            captured["kwargs"] = kwargs
+
+        def parameters(self):
+            yield torch.zeros(1)
+
+    fake_module = mock.MagicMock()
+    fake_module.SentenceTransformer = _FakeST
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    b = eb.EmbeddingBackend(model_id="mxbai")
+    b._load()
+    assert "device" not in captured["kwargs"]
+
+
+@_skip_no_torch
+def test_load_records_resolved_dtype_label(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """After ``_load`` runs, ``_resolved_dtype_label`` surfaces in
+    ``identifier_block`` so provenance consumers see what the
+    backend actually loaded (vs. the ``auto`` sentinel the
+    operator might have passed)."""
+    import torch
+
+    class _FakeST:
+        def __init__(self, *a, **kw):
+            pass
+
+        def parameters(self):
+            yield torch.zeros(1)
+
+    fake_module = mock.MagicMock()
+    fake_module.SentenceTransformer = _FakeST
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    b = eb.EmbeddingBackend(model_id="mxbai", dtype="fp16")
+    b._load()
+    block = b.identifier_block()
+    # Operator's ``fp16`` request is honored — no auto-resolution
+    # interfering with explicit choice.
+    assert block["dtype_requested"] == "fp16"
+    assert block["dtype_loaded"] == "fp16"
+
+
+@_skip_no_torch
+def test_load_records_resolved_device_from_loaded_model(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """``device_loaded`` reflects where the model's parameters
+    actually landed — captured from ``next(model.parameters()).
+    device``. Means an operator who didn't set ``--embedding-
+    device`` still gets a useful audit field (e.g.,
+    ``cuda:0`` on a single-GPU cloud host)."""
+    import torch
+
+    class _FakeST:
+        def __init__(self, *a, **kw):
+            pass
+
+        def parameters(self):
+            # Pretend the model landed on cuda:0.
+            t = torch.zeros(1)
+            # Tensor.device is a property on the real torch object;
+            # we can't easily fake "cuda:0" without a real GPU, but
+            # the device-probe path just str()s the device. For CPU
+            # testing the captured value is "cpu" — what matters is
+            # that the field is non-None after load.
+            yield t
+
+    fake_module = mock.MagicMock()
+    fake_module.SentenceTransformer = _FakeST
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    b = eb.EmbeddingBackend(model_id="mxbai")
+    b._load()
+    block = b.identifier_block()
+    # On a CPU-only test harness the captured device is "cpu";
+    # the contract is that the field is non-None after load and
+    # carries a string form usable by audit consumers.
+    assert block["device_loaded"] is not None
+    assert isinstance(block["device_loaded"], str)
+
+
+@_skip_no_torch
+def test_load_error_message_includes_dtype_context(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When ``_load`` fails (e.g., HF Hub timeout, model id typo),
+    the wrapped error message names the dtype that was requested.
+    Operators debugging an OOM at fp32 see ``dtype='fp32'`` in
+    the failure message and know to retry with bf16/fp16."""
+    fake_module = mock.MagicMock()
+    fake_module.SentenceTransformer.side_effect = RuntimeError(
+        "fake load failure"
+    )
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    b = eb.EmbeddingBackend(model_id="my-org/never-exists", dtype="bf16")
+    with pytest.raises(eb.EmbeddingBackendError) as excinfo:
+        b._load()
+    # Either the requested dtype or the resolved label surfaces in
+    # the message — both name the dtype context the operator needs.
+    msg = str(excinfo.value)
+    assert "bf16" in msg
+
+
+@_skip_no_torch
+def test_load_falls_back_to_caller_device_when_model_has_no_parameters(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Some stub models in tests have no ``parameters()`` iterator.
+    The device-probe path catches ``StopIteration`` /
+    ``AttributeError`` and falls back to ``self.device``. Pins the
+    graceful-degradation contract so test-stub use doesn't break
+    the identifier block."""
+
+    class _StubST:
+        def __init__(self, *a, **kw):
+            pass
+        # No parameters method, no parameters iterator.
+
+    fake_module = mock.MagicMock()
+    fake_module.SentenceTransformer = _StubST
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+    b = eb.EmbeddingBackend(model_id="mxbai", device="cuda:7")
+    b._load()
+    # Without a parameters iterator, the resolved device falls back
+    # to whatever the caller declared.
+    block = b.identifier_block()
+    assert block["device_loaded"] == "cuda:7"

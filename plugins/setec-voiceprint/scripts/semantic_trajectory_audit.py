@@ -998,6 +998,25 @@ def _build_argparser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument(
+        "--dtype",
+        choices=("auto", "fp32", "fp16", "bf16"),
+        default="auto",
+        help=(
+            "Precision for embedding-model inference. ``auto`` picks "
+            "bf16 on supporting cuda (Ampere+ / Hopper / Ada), fp16 "
+            "on older cuda, fp32 on CPU / MPS. Added 1.96.0."
+        ),
+    )
+    p.add_argument(
+        "--device",
+        default=None,
+        help=(
+            "Explicit device for the embedding model (e.g., "
+            "``cuda:1``). Default: defer to sentence-transformers' "
+            "auto-device pick."
+        ),
+    )
+    p.add_argument(
         "--window-strategy",
         type=str,
         choices=("paragraph", "sentence", "fixed-token"),
@@ -1053,6 +1072,8 @@ def main(argv: list[str] | None = None) -> int:
     backend = EmbeddingBackend(
         model_id=resolve_model_arg(args.model),
         revision=args.revision,
+        dtype=getattr(args, "dtype", "auto"),
+        device=getattr(args, "device", None),
     )
     baseline_path = (
         Path(args.baseline).expanduser() if args.baseline else None
