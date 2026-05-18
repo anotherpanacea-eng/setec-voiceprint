@@ -1511,6 +1511,19 @@ _SIGNAL_PATHS: list[tuple[str, tuple[str, ...]]] = [
     ("tier2.mdd.sd", ("tier2", "mdd", "sd")),
     ("tier3.adjacent_cosine.mean", ("tier3", "adjacent_cosine", "mean")),
     ("tier3.adjacent_cosine.sd", ("tier3", "adjacent_cosine", "sd")),
+    # Tier 4 surprisal signals (1.95.0+ post-merge of the chunking PR).
+    # ``audit_text`` correctly builds ``out["tier4"]["surprisal"]`` via
+    # ``_tier4_surprisal_block``, but without these entries the path-
+    # walker at ``_extract_signal`` never reads them into
+    # ``per_signal_scores`` and the downstream threshold sweep reports
+    # "no usable (label, score) pairs" for every Tier 4 signal. Without
+    # these wired in, the polarity audit + post-1.95 registry flip work
+    # produces correct directions but the threshold-sweep / band-call
+    # paths can't read Tier 4 scores back out of the audit dict.
+    ("tier4.surprisal.mean", ("tier4", "surprisal", "mean")),
+    ("tier4.surprisal.sd", ("tier4", "surprisal", "sd")),
+    ("tier4.surprisal.autocorrelation.lag_1",
+     ("tier4", "surprisal", "autocorrelation", "lag_1")),
 ]
 
 

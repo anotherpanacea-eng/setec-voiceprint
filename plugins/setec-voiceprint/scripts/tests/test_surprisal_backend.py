@@ -440,10 +440,27 @@ class _FakeCausalLM:
     batched-scoring path's call signature; the fake ignores the
     mask (uniform-logits default doesn't depend on attention)."""
 
-    def __init__(self, n_positions: int, vocab_size: int, logits=None):
+    def __init__(
+        self, n_positions: int, vocab_size: int, logits=None,
+        max_position_embeddings: int | None = None,
+    ):
         self.n_positions = n_positions
         self.vocab_size = vocab_size
         self._logits = logits
+        # 1.96.0+ over-context chunking reads
+        # ``model.config.max_position_embeddings`` to decide chunk
+        # size. Default to the same n_positions value (so existing
+        # tests where input length < n_positions take the single-
+        # chunk path); override to a smaller value to exercise the
+        # multi-chunk path.
+        from types import SimpleNamespace
+        self.config = SimpleNamespace(
+            max_position_embeddings=(
+                max_position_embeddings
+                if max_position_embeddings is not None
+                else n_positions
+            ),
+        )
 
     def eval(self):
         return self
@@ -594,6 +611,143 @@ def test_score_text_single_token_returns_empty_series(
     assert series == []
 
 
+# --------------- Over-context chunking (originally PR #97) ------
+
+
+@_skip_no_torch
+def test_score_text_chunks_over_context_input(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When ``input_ids.shape[1] > model.config.max_position_embeddings``,
+    score_text slices the input into non-overlapping chunks and
+    concatenates the per-chunk surprisal series. Without chunking,
+    feeding the full sequence to a model whose positional embedding
+    table is smaller than the input indexes out of range — clean
+    IndexError on native-CUDA Linux, indefinite GPU hang on
+    WSL+ROCm (PR #97's original failure mode).
+
+    For a 10-token input on a model with max_position_embeddings=4,
+    we expect 3 chunks (lengths 4, 4, 2) with surprisal series of
+    lengths 3, 3, 1 — total 7 positions, vs. the 9 a single forward
+    pass would produce. The 2 lost positions are the first-position-
+    of-chunk forfeitures (chunks 2 and 3; chunk 1's first position
+    is the same as the input's first position, no loss there).
+    """
+    fake = mock.MagicMock()
+    # Tokenize to 10 distinct ids → over-context for a 4-position model.
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        list(range(10))
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
+        n_positions=4, vocab_size=8,
+        max_position_embeddings=4,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    series = b.score_text("ten tokens here")
+    # 3 chunks: [0,1,2,3] (series len 3), [4,5,6,7] (series len 3),
+    # [8,9] (series len 1). Total concatenated series length = 7.
+    assert len(series) == 7
+    # Uniform-logits fake → every position is log2(8) = 3 bits.
+    import math
+    expected = math.log2(8)
+    for v in series:
+        assert abs(v - expected) < 1e-5
+
+
+@_skip_no_torch
+def test_score_text_short_input_unchanged_under_chunking(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When ``input_ids.shape[1] <= max_position_embeddings``, the
+    chunking path collapses to a single forward pass with no
+    boundary forfeitures. Pins that the over-context fix doesn't
+    regress the common short-input case."""
+    fake = mock.MagicMock()
+    # Tokenize to 5 ids; max_position_embeddings=8 → single chunk.
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        [0, 1, 2, 3, 4]
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
+        n_positions=5, vocab_size=8,
+        max_position_embeddings=8,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    series = b.score_text("five tokens")
+    # Single chunk: series length = n - 1 = 4.
+    assert len(series) == 4
+
+
+@_skip_no_torch
+def test_score_text_chunking_falls_back_to_1024_when_config_lacks_max_position(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When the model's config carries none of
+    ``max_position_embeddings`` / ``n_positions`` / ``n_ctx``
+    (some HuggingFace configs use yet a different attribute name
+    we don't catch), the chunker falls back to 1024 — a safe value
+    that fits all the candidate models in the framework's alias
+    table. Pins the fallback so a config edge case doesn't crash
+    or silently produce a 1-chunk over-context call."""
+    from types import SimpleNamespace
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        [0, 1, 2]
+    )
+    fake_model = _FakeCausalLM(n_positions=2048, vocab_size=8)
+    # Strip the config attributes the chunker probes for.
+    fake_model.config = SimpleNamespace()
+    fake.AutoModelForCausalLM.from_pretrained.return_value = fake_model
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    # 3-token input is well under the 1024 fallback → single chunk,
+    # series length 2.
+    series = b.score_text("three")
+    assert len(series) == 2
+
+
+@_skip_no_torch
+def test_score_text_top_k_positions_index_into_concatenated_series(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When chunking is active, top-k position indices are 1-indexed
+    into the *concatenated* surprisal series (not into the original
+    input_ids). Pins the documented behavior: the position number
+    won't correspond directly to token offsets in the original
+    sequence when chunking is in play."""
+    import torch
+    # Build per-position logits so each chunk has a unique surprisal
+    # maximum that we can identify by position.
+    vocab_size = 8
+    # 8 tokens total; max_position_embeddings = 4 → 2 chunks.
+    n = 8
+    logits = torch.zeros((1, n, vocab_size))
+    # Make position 3 (chunk 1's last) and position 7 (chunk 2's
+    # last) carry highly negative logits for the actually-next token
+    # so their gathered surprisals are large. We don't need exact
+    # values — just non-uniform — so the top-k diagnostic surfaces
+    # specific positions.
+
+    fake_lm = _FakeCausalLM(
+        n_positions=n, vocab_size=vocab_size,
+        max_position_embeddings=4,
+    )
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        list(range(n)),
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = fake_lm
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    series, top_k = b.score_text("eight tokens", return_top_k=3)
+    # 2 chunks of len 4 → concatenated series len = (4-1) + (4-1) = 6.
+    assert len(series) == 6
+    # All returned positions are 1..len(series).
+    for entry in top_k:
+        assert 1 <= entry["position"] <= len(series)
+
+
 # --------------- Batched scoring --------------------------------
 
 
@@ -655,6 +809,70 @@ def test_score_texts_empty_list_returns_empty_list():
     the model. Construction-time guard before lazy-load."""
     b = sb.SurprisalBackend(model_id="tinyllama")
     assert b.score_texts([]) == []
+
+
+@_skip_no_torch
+def test_score_texts_raises_on_over_context_batch(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Preflight guard: when the padded batch length exceeds the
+    model's ``max_position_embeddings``, ``score_texts`` raises
+    ``SurprisalBackendError`` *before* the forward pass. Without
+    this guard, feeding an over-context batch to the model on
+    WSL+ROCm hangs the GPU kernel indefinitely (no Python
+    exception → calibration loop's batch-failure latch never
+    flips → operator never sees the warning, run wedges until
+    the host reaps the WSL VM).
+
+    The calibration loop catches the typed error, flips
+    ``batched_surprisal_disabled = True``, and falls through to
+    the per-entry ``score_text`` path which chunks over-context
+    inputs safely. This test pins the typed-error contract; the
+    fallback wiring is exercised in
+    ``test_calibration_batched_surprisal``.
+    """
+    fake = mock.MagicMock()
+    # 10-token texts on a 4-position model → padded batch length 10 > 4.
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        list(range(10))
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
+        n_positions=4, vocab_size=8,
+        max_position_embeddings=4,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    with pytest.raises(sb.SurprisalBackendError) as excinfo:
+        b.score_texts(["one", "two", "three"])
+    # The message should name the over-context dimension so the
+    # operator can correlate with the failing model and lower
+    # --surprisal-batch-size (or re-run with batch-size 1, which
+    # bypasses the batched path entirely).
+    assert "max_position_embeddings" in str(excinfo.value)
+
+
+@_skip_no_torch
+def test_score_texts_short_batch_unchanged_under_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When the padded batch length is within
+    ``max_position_embeddings``, the preflight is a no-op and
+    batched scoring proceeds normally. Pins that the over-context
+    guard doesn't regress the common in-context-batch path."""
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        [0, 1, 2, 3]
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
+        n_positions=4, vocab_size=8,
+        max_position_embeddings=8,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    results = b.score_texts(["a", "b"])
+    # Both texts tokenize to 4 ids → 3-element series each.
+    assert len(results) == 2
+    assert all(len(s) == 3 for s in results)
 
 
 @_skip_no_torch

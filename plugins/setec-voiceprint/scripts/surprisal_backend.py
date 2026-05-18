@@ -465,9 +465,36 @@ class SurprisalBackend:
             return [] if return_top_k == 0 else ([], [])
         if self._device is not None:
             input_ids = input_ids.to(self._device)
-        with torch.no_grad():
-            outputs = model(input_ids)
-        logits = outputs.logits  # (1, N, vocab)
+
+        # Over-context chunking (originally PR #97, 2026-05-18).
+        # Feeding ``model(input_ids)`` with
+        # ``input_ids.shape[1] > model.config.max_position_embeddings``
+        # indexes the positional embedding table out of range. On
+        # native-CUDA Linux you get a clean ``IndexError``. On
+        # WSL+ROCm the GPU kernel spins indefinitely — no Python
+        # exception, no progress, 100% utilization — and after a few
+        # minutes a Windows host event reaps the WSL VM. Four
+        # reproducible host bounces traced to this path on 2026-05-18.
+        #
+        # Fix: slice ``input_ids`` into non-overlapping chunks of
+        # ``max_len`` tokens, score each chunk independently, and
+        # concatenate the per-token surprisal series. Each chunk
+        # forfeits its first position (no left context), so a fully
+        # chunked sequence loses ``num_chunks`` positions out of N
+        # rather than just 1 — a negligible artifact at MAGE/RAID
+        # scale for distributional signals (mean, sd, acf). A future
+        # refinement could prepend a warm-up window from the prior
+        # chunk's tail and discard those positions from the scored
+        # series, but that's only worth doing if the boundary bias
+        # measurably affects a downstream gate.
+        cfg = model.config
+        max_len = (
+            getattr(cfg, "max_position_embeddings", None)
+            or getattr(cfg, "n_positions", None)
+            or getattr(cfg, "n_ctx", None)
+            or 1024
+        )
+
         # Log-softmax for numerical stability, then negate and convert
         # from nats (natural log) to bits (log base 2). Position i's
         # logits predict token i+1; gather surprisal of the actual
@@ -483,32 +510,58 @@ class SurprisalBackend:
         # numerical contract stable across dtype choices.
         import math
         log2e = 1.0 / math.log(2.0)
-        log_probs_nats = torch.log_softmax(logits[0, :-1, :].float(), dim=-1)
-        # next_tokens[i] = the actual token at position i+1 in input_ids
-        next_tokens = input_ids[0, 1:]
-        surprisals_nats = -log_probs_nats.gather(
-            -1, next_tokens.unsqueeze(-1),
-        ).squeeze(-1)
-        surprisals_bits = (surprisals_nats * log2e).tolist()
+        all_surprisals_bits: list[float] = []
+        all_next_token_ids: list[int] = []
+
+        total_len = input_ids.shape[1]
+        chunk_starts = (
+            [0] if total_len <= max_len
+            else list(range(0, total_len, max_len))
+        )
+        for start in chunk_starts:
+            end = min(start + max_len, total_len)
+            chunk_ids = input_ids[:, start:end]
+            if chunk_ids.shape[1] < 2:
+                continue
+            with torch.no_grad():
+                outputs = model(chunk_ids)
+            logits = outputs.logits  # (1, n_chunk, vocab)
+            log_probs_nats = torch.log_softmax(
+                logits[0, :-1, :].float(), dim=-1,
+            )
+            # next_tokens[i] = the actual token at position i+1 in chunk_ids
+            next_tokens = chunk_ids[0, 1:]
+            surprisals_nats = -log_probs_nats.gather(
+                -1, next_tokens.unsqueeze(-1),
+            ).squeeze(-1)
+            all_surprisals_bits.extend(
+                (surprisals_nats * log2e).tolist()
+            )
+            all_next_token_ids.extend(next_tokens.tolist())
+
         if return_top_k <= 0:
-            return surprisals_bits
+            return all_surprisals_bits
         # Top-k diagnostic: most-surprising tokens with decoded text.
-        token_ids = next_tokens.tolist()
+        # Positions are 1-indexed within the concatenated chunk series.
+        # For inputs that were chunked, the position number won't
+        # correspond directly to token offsets in the original
+        # input_ids — each chunk boundary skips a position (the
+        # chunk's position 0, which has no left context).
         indexed = sorted(
-            range(len(surprisals_bits)),
-            key=lambda i: surprisals_bits[i],
+            range(len(all_surprisals_bits)),
+            key=lambda i: all_surprisals_bits[i],
             reverse=True,
         )[:return_top_k]
         top_k = [
             {
-                "position": i + 1,  # 1-indexed position in input_ids
-                "token_id": token_ids[i],
-                "token_text": tokenizer.decode([token_ids[i]]),
-                "surprisal_bits": surprisals_bits[i],
+                "position": i + 1,
+                "token_id": all_next_token_ids[i],
+                "token_text": tokenizer.decode([all_next_token_ids[i]]),
+                "surprisal_bits": all_surprisals_bits[i],
             }
             for i in indexed
         ]
-        return surprisals_bits, top_k
+        return all_surprisals_bits, top_k
 
     def score_texts(
         self,
@@ -603,6 +656,37 @@ class SurprisalBackend:
                 # as real; safe when chunk_texts has length 1 or all
                 # entries tokenise to the same length.
                 attention_mask = torch.ones_like(input_ids)
+            # Preflight: refuse over-context batches before the forward
+            # pass (PR #98 follow-up). The padded batch length is
+            # ``max(row_lengths)``; if even one row exceeds
+            # ``max_position_embeddings``, feeding the batch indexes
+            # the positional embedding table out of range. On
+            # WSL+ROCm that hangs the GPU kernel indefinitely until
+            # the host reaps the WSL VM — the calibration loop's
+            # ``except Exception`` latch never runs because there's
+            # no Python exception to catch. Raise a typed error here
+            # so ``_refill_surprisal_cache`` flips
+            # ``batched_surprisal_disabled = True`` and remaining
+            # rows fall through to the per-entry path, where
+            # ``score_text`` chunks safely.
+            cfg = model.config
+            max_len = (
+                getattr(cfg, "max_position_embeddings", None)
+                or getattr(cfg, "n_positions", None)
+                or getattr(cfg, "n_ctx", None)
+                or 1024
+            )
+            if input_ids.shape[1] > max_len:
+                raise SurprisalBackendError(
+                    f"Batched surprisal scoring refused: padded batch "
+                    f"length {input_ids.shape[1]} exceeds model "
+                    f"max_position_embeddings={max_len}. Feeding this "
+                    f"to model(...) would index the positional "
+                    f"embedding table out of range — on WSL+ROCm "
+                    f"that hangs the GPU indefinitely. Falling back "
+                    f"to the per-entry path (which chunks "
+                    f"over-context inputs)."
+                )
             if self._device is not None:
                 input_ids = input_ids.to(self._device)
                 attention_mask = attention_mask.to(self._device)

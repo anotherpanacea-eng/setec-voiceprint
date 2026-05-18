@@ -181,6 +181,36 @@ class TestTier4WithStub:
                 f"would silently skip this heuristic."
             )
 
+    def test_tier4_paths_wired_into_signal_paths_list(self):
+        """``_SIGNAL_PATHS`` is the list the threshold-sweep / per-
+        signal extractor iterates over. PR #97 surfaced that ``audit_text``
+        builds the Tier 4 surprisal block but ``_SIGNAL_PATHS``
+        previously lacked entries for the three Tier 4 keys —
+        consequence: the downstream threshold sweep reported "no
+        usable (label, score) pairs" for every Tier 4 signal even
+        though the audit dict contained the right values.
+
+        Pin all three entries by both string-form (the first tuple
+        element used in per_signal_scores keys) and tuple-path
+        (the second element used by ``_extract_signal``).
+        """
+        path_strings = {entry[0] for entry in va._SIGNAL_PATHS}
+        path_tuples = {entry[1] for entry in va._SIGNAL_PATHS}
+        for sig in (
+            "tier4.surprisal.mean",
+            "tier4.surprisal.sd",
+            "tier4.surprisal.autocorrelation.lag_1",
+        ):
+            assert sig in path_strings, (
+                f"{sig!r} missing from _SIGNAL_PATHS string names; "
+                "threshold-sweep extractor will silently skip it."
+            )
+            assert tuple(sig.split(".")) in path_tuples, (
+                f"{sig!r} missing from _SIGNAL_PATHS tuple paths; "
+                "_extract_signal cannot walk to the value even though "
+                "audit_text emits it."
+            )
+
 
 # ---------- Edge cases / failure modes ----------
 
