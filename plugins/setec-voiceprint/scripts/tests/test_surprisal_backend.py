@@ -812,6 +812,70 @@ def test_score_texts_empty_list_returns_empty_list():
 
 
 @_skip_no_torch
+def test_score_texts_raises_on_over_context_batch(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Preflight guard: when the padded batch length exceeds the
+    model's ``max_position_embeddings``, ``score_texts`` raises
+    ``SurprisalBackendError`` *before* the forward pass. Without
+    this guard, feeding an over-context batch to the model on
+    WSL+ROCm hangs the GPU kernel indefinitely (no Python
+    exception → calibration loop's batch-failure latch never
+    flips → operator never sees the warning, run wedges until
+    the host reaps the WSL VM).
+
+    The calibration loop catches the typed error, flips
+    ``batched_surprisal_disabled = True``, and falls through to
+    the per-entry ``score_text`` path which chunks over-context
+    inputs safely. This test pins the typed-error contract; the
+    fallback wiring is exercised in
+    ``test_calibration_batched_surprisal``.
+    """
+    fake = mock.MagicMock()
+    # 10-token texts on a 4-position model → padded batch length 10 > 4.
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        list(range(10))
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
+        n_positions=4, vocab_size=8,
+        max_position_embeddings=4,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    with pytest.raises(sb.SurprisalBackendError) as excinfo:
+        b.score_texts(["one", "two", "three"])
+    # The message should name the over-context dimension so the
+    # operator can correlate with the failing model and lower
+    # --surprisal-batch-size (or re-run with batch-size 1, which
+    # bypasses the batched path entirely).
+    assert "max_position_embeddings" in str(excinfo.value)
+
+
+@_skip_no_torch
+def test_score_texts_short_batch_unchanged_under_preflight(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When the padded batch length is within
+    ``max_position_embeddings``, the preflight is a no-op and
+    batched scoring proceeds normally. Pins that the over-context
+    guard doesn't regress the common in-context-batch path."""
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
+        [0, 1, 2, 3]
+    )
+    fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
+        n_positions=4, vocab_size=8,
+        max_position_embeddings=8,
+    )
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    results = b.score_texts(["a", "b"])
+    # Both texts tokenize to 4 ids → 3-element series each.
+    assert len(results) == 2
+    assert all(len(s) == 3 for s in results)
+
+
+@_skip_no_torch
 def test_score_texts_matches_score_text_for_each_input(
     monkeypatch: pytest.MonkeyPatch,
 ):

@@ -656,6 +656,37 @@ class SurprisalBackend:
                 # as real; safe when chunk_texts has length 1 or all
                 # entries tokenise to the same length.
                 attention_mask = torch.ones_like(input_ids)
+            # Preflight: refuse over-context batches before the forward
+            # pass (PR #98 follow-up). The padded batch length is
+            # ``max(row_lengths)``; if even one row exceeds
+            # ``max_position_embeddings``, feeding the batch indexes
+            # the positional embedding table out of range. On
+            # WSL+ROCm that hangs the GPU kernel indefinitely until
+            # the host reaps the WSL VM — the calibration loop's
+            # ``except Exception`` latch never runs because there's
+            # no Python exception to catch. Raise a typed error here
+            # so ``_refill_surprisal_cache`` flips
+            # ``batched_surprisal_disabled = True`` and remaining
+            # rows fall through to the per-entry path, where
+            # ``score_text`` chunks safely.
+            cfg = model.config
+            max_len = (
+                getattr(cfg, "max_position_embeddings", None)
+                or getattr(cfg, "n_positions", None)
+                or getattr(cfg, "n_ctx", None)
+                or 1024
+            )
+            if input_ids.shape[1] > max_len:
+                raise SurprisalBackendError(
+                    f"Batched surprisal scoring refused: padded batch "
+                    f"length {input_ids.shape[1]} exceeds model "
+                    f"max_position_embeddings={max_len}. Feeding this "
+                    f"to model(...) would index the positional "
+                    f"embedding table out of range — on WSL+ROCm "
+                    f"that hangs the GPU indefinitely. Falling back "
+                    f"to the per-entry path (which chunks "
+                    f"over-context inputs)."
+                )
             if self._device is not None:
                 input_ids = input_ids.to(self._device)
                 attention_mask = attention_mask.to(self._device)
