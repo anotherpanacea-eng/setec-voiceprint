@@ -1485,6 +1485,16 @@ _SIGNAL_PATHS: list[tuple[str, tuple[str, ...]]] = [
     ("tier2.mdd.sd", ("tier2", "mdd", "sd")),
     ("tier3.adjacent_cosine.mean", ("tier3", "adjacent_cosine", "mean")),
     ("tier3.adjacent_cosine.sd", ("tier3", "adjacent_cosine", "sd")),
+    # Tier 4 surprisal signals. Added 2026-05-17 to close a wiring gap:
+    # ``audit_text`` correctly builds ``out["tier4"]["surprisal"]`` via
+    # ``_tier4_surprisal_block``, but without these entries the
+    # path-walker at ``_extract_signal`` never reads them into
+    # ``per_signal_scores`` and the downstream threshold sweep reports
+    # "no usable (label, score) pairs" for every Tier 4 signal.
+    ("tier4.surprisal.mean", ("tier4", "surprisal", "mean")),
+    ("tier4.surprisal.sd", ("tier4", "surprisal", "sd")),
+    ("tier4.surprisal.autocorrelation.lag_1",
+     ("tier4", "surprisal", "autocorrelation", "lag_1")),
 ]
 
 

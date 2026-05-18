@@ -186,6 +186,7 @@ class SurprisalBackend:
     _model: Any = field(default=None, repr=False, init=False, compare=False)
     _tokenizer: Any = field(default=None, repr=False, init=False, compare=False)
     _alias: str | None = field(default=None, repr=False, init=False, compare=False)
+    _device: str = field(default="cpu", repr=False, init=False, compare=False)
 
     def __post_init__(self) -> None:
         # Deprecation gate (added 2026-05-15). Operators who pinned a
@@ -250,6 +251,27 @@ class SurprisalBackend:
             # Causal LMs in eval mode — no dropout, no gradient
             # accumulation. Surprisal scoring is inference-only.
             self._model.eval()
+            # Move to accelerator if available. Without this the
+            # model stays on CPU and 1B-param surprisal scoring runs
+            # ~50-100x slower than necessary. EmbeddingBackend gets
+            # this for free via sentence-transformers' auto-device
+            # logic; raw transformers needs an explicit `.to(...)`.
+            # Falls back to CPU silently if torch / accelerator
+            # detection fails so this code path can't break loads on
+            # CPU-only hosts.
+            try:
+                import torch  # type: ignore
+                if torch.cuda.is_available():
+                    self._device = "cuda"
+                elif (hasattr(torch.backends, "mps")
+                      and torch.backends.mps.is_available()):
+                    self._device = "mps"
+                else:
+                    self._device = "cpu"
+                if self._device != "cpu":
+                    self._model = self._model.to(self._device)
+            except Exception:  # noqa: BLE001 — torch may be absent
+                self._device = "cpu"
         except Exception as exc:
             raise SurprisalBackendError(
                 f"Failed to load causal LM {self.model_id!r}"
@@ -293,45 +315,101 @@ class SurprisalBackend:
             return [] if return_top_k == 0 else ([], [])
         model, tokenizer = self._load()
         import torch  # type: ignore
+        import math
         encoded = tokenizer(text, return_tensors="pt")
-        input_ids = encoded["input_ids"]
+        # Move inputs onto the same device as the model. `_load()`
+        # set `self._device` based on accelerator availability;
+        # without this `.to()` call the model would receive CPU
+        # tensors and either error (CUDA model + CPU inputs) or
+        # silently copy on every forward (perf cliff).
+        input_ids = encoded["input_ids"].to(self._device)
         if input_ids.shape[1] < 2:
             return [] if return_top_k == 0 else ([], [])
-        with torch.no_grad():
-            outputs = model(input_ids)
-        logits = outputs.logits  # (1, N, vocab)
-        # Log-softmax for numerical stability, then negate and convert
-        # from nats (natural log) to bits (log base 2). Position i's
-        # logits predict token i+1; gather surprisal of the actual
-        # next token at each position.
-        import math
+
+        # PATCH (2026-05-18): chunk over-context inputs.
+        #
+        # When ``input_ids.shape[1] > model.config.max_position_embeddings``,
+        # ``model(input_ids)`` indexes into the positional embedding
+        # table out of range. On native-CUDA Linux this throws a clean
+        # IndexError; on WSL+ROCm it produces an indefinitely-spinning
+        # GPU kernel that eventually trips a host event and kills the
+        # WSL VM. Four host bounces on 2026-05-18 traced to this exact
+        # path on gpt2 (1024 ctx) and olmo2_1b (4096 ctx).
+        #
+        # The fix slices ``input_ids`` into non-overlapping chunks of
+        # ``max_len`` tokens, scores each chunk independently, and
+        # concatenates the per-token surprisal series. Each chunk
+        # forfeits its first position (no left context), so a fully
+        # chunked sequence loses ``num_chunks`` positions out of N
+        # rather than just 1 — a negligible artifact at MAGE/RAID scale
+        # for distributional signals (mean, sd, acf). A future refinement
+        # could prepend a warm-up window from the prior chunk's tail and
+        # discard those positions from the scored series, but that's
+        # only worth doing if the boundary bias measurably affects a
+        # downstream gate.
+        cfg = model.config
+        max_len = (
+            getattr(cfg, "max_position_embeddings", None)
+            or getattr(cfg, "n_positions", None)
+            or getattr(cfg, "n_ctx", None)
+            or 1024
+        )
+
         log2e = 1.0 / math.log(2.0)
-        log_probs_nats = torch.log_softmax(logits[0, :-1, :], dim=-1)
-        # next_tokens[i] = the actual token at position i+1 in input_ids
-        next_tokens = input_ids[0, 1:]
-        surprisals_nats = -log_probs_nats.gather(
-            -1, next_tokens.unsqueeze(-1),
-        ).squeeze(-1)
-        surprisals_bits = (surprisals_nats * log2e).tolist()
+        all_surprisals_bits: list[float] = []
+        all_next_token_ids: list[int] = []
+
+        total_len = input_ids.shape[1]
+        if total_len <= max_len:
+            chunk_starts = [0]
+        else:
+            chunk_starts = list(range(0, total_len, max_len))
+
+        for start in chunk_starts:
+            end = min(start + max_len, total_len)
+            chunk_ids = input_ids[:, start:end]
+            if chunk_ids.shape[1] < 2:
+                continue
+            with torch.no_grad():
+                outputs = model(chunk_ids)
+            logits = outputs.logits  # (1, n_chunk, vocab)
+            # Log-softmax for numerical stability, then negate and convert
+            # from nats (natural log) to bits (log base 2). Position i's
+            # logits predict token i+1; gather surprisal of the actual
+            # next token at each position.
+            log_probs_nats = torch.log_softmax(logits[0, :-1, :], dim=-1)
+            # next_tokens[i] = the actual token at position i+1 in chunk_ids
+            next_tokens = chunk_ids[0, 1:]
+            surprisals_nats = -log_probs_nats.gather(
+                -1, next_tokens.unsqueeze(-1),
+            ).squeeze(-1)
+            all_surprisals_bits.extend(
+                (surprisals_nats * log2e).tolist()
+            )
+            all_next_token_ids.extend(next_tokens.tolist())
+
         if return_top_k <= 0:
-            return surprisals_bits
+            return all_surprisals_bits
         # Top-k diagnostic: most-surprising tokens with decoded text.
-        token_ids = next_tokens.tolist()
+        # Note: positions are 1-indexed within the concatenated chunk
+        # series, not within the original input. For long inputs that
+        # were chunked, the position number won't correspond directly
+        # to character-level offsets in the source text.
         indexed = sorted(
-            range(len(surprisals_bits)),
-            key=lambda i: surprisals_bits[i],
+            range(len(all_surprisals_bits)),
+            key=lambda i: all_surprisals_bits[i],
             reverse=True,
         )[:return_top_k]
         top_k = [
             {
-                "position": i + 1,  # 1-indexed position in input_ids
-                "token_id": token_ids[i],
-                "token_text": tokenizer.decode([token_ids[i]]),
-                "surprisal_bits": surprisals_bits[i],
+                "position": i + 1,
+                "token_id": all_next_token_ids[i],
+                "token_text": tokenizer.decode([all_next_token_ids[i]]),
+                "surprisal_bits": all_surprisals_bits[i],
             }
             for i in indexed
         ]
-        return surprisals_bits, top_k
+        return all_surprisals_bits, top_k
 
     def identifier_block(self) -> dict[str, Any]:
         """Provenance block consumers paste into their JSON output.
