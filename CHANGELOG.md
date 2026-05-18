@@ -6,6 +6,42 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.97.0] - 2026-05-18
+
+**Cloud-portable Tier-3 / Tier-4 bake-off matrix runner.** `scripts/calibration/bakeoff_matrix.sh` — a parameterized shell driver adapted from the 2026-05-18 laptop session's `bakeoff_matrix_v2.sh` (WSL+ROCm host) to run unchanged on any cloud GPU host. Per `SPEC_cloud_bakeoff_matrix.md` from the 2026-05-18 session export. Closes Chunk B of the post-inventory sequence.
+
+### Why
+
+The laptop matrix template baked in `/home/joshua/...` and `/mnt/c/...` paths, WSL-specific env (`HSA_ENABLE_DXG_DETECTION`, `TRANSFORMERS_OFFLINE`), a 60s cooldown (post-crash thermal recovery on the WSL host), and a `--bootstrap-engine numpy` fallback that was forced after two WSL VM bounces. None of those assumptions hold on cloud GPUs. Operators kicking off a cloud bake-off shouldn't have to re-author the laptop template by hand on every machine; the framework should ship a portable driver.
+
+### Added
+
+- **`scripts/calibration/bakeoff_matrix.sh`** — cloud-portable driver. Required env: `SETEC_CORPUS_DIR`, `SETEC_BAKEOFF_DIR`, `SETEC_CALIBRATION_RUNS_DIR`. Optional env covers max_entries (default: full corpus), bootstrap engine (default `torch`), bootstrap resamples (default 2000), FPR target (default 0.01), cooldown (default 10s), roster overrides (`SETEC_PHASE_{A,B}_PATHS` as JSON maps), sentinel reset (`SETEC_RESET_SENTINELS=1`), log dir, dry-run mode (`SETEC_DRY_RUN=1`), and partial-completion opt-in (`SETEC_ALLOW_PARTIAL=1`). Honors `CUDA_VISIBLE_DEVICES` end-to-end so multi-GPU hosts can run parallel matrix copies against different GPU pins + `SETEC_BAKEOFF_DIR` values.
+  - Default Phase A and Phase B rosters use framework alias strings (not raw HF ids) so `surprisal_backend.MODEL_ALIASES` / `embedding_backend.MODEL_ALIASES` stay the single source of truth. Phase A: `mxbai`, `gemma`, `harrier`, `minilm`. Phase B: `gpt2`, `tinyllama`, `llama32_1b`, `olmo2_1b`, `qwen25_1_5b`, `qwen3_1_7b`, `smollm2_1_7b`. Operators override the rosters via `SETEC_PHASE_{A,B}_PATHS` JSON maps with either alias strings or full HF identifiers.
+  - Idempotent skip: a cell is re-run only if its `survey_*.json` is missing, zero bytes, doesn't parse, or has an empty `rows` list. Restarts after partial runs are cheap. Same contract as the laptop template.
+  - **Failure propagation:** per-cell failures accumulate into a `FAILED_CELLS` array; the script exits non-zero with the failed-cell list if any cell failed. `SETEC_ALLOW_PARTIAL=1` opts back into `rc=0` for operators who explicitly accept partial completion. Survey + summary + provenance are always written.
+  - **Bash 3.2-safe empty-roster handling:** one-phase bake-offs (`SETEC_PHASE_{A,B}_PATHS='{}'`) don't trip nounset on the empty alias array — uses the `${ARR[@]+"${ARR[@]}"}` idiom at every expansion site.
+  - Emits a per-session log, `bakeoff_matrix_{session}_provenance.json` provenance, and `bakeoff_matrix_{session}_summary.md` markdown summary at session end.
+- **`scripts/calibration/_bakeoff_provenance.py`** — Python helper that the shell driver shells out to for the testable logic (skip-if-done check, provenance build, post-run summary render). Three subcommands (`check-done`, `write-provenance`, `summarize`) keep the bash side declarative and out of inline-Python heredocs.
+  - `is_survey_complete(path)` — the skip predicate. Returns True only when the survey JSON exists, parses, and has a non-empty `rows` list. False for missing, empty-byte, corrupt, or rows-empty files — partial writes never pin a cell as done.
+  - `build_provenance(inputs, repo_root)` / `write_provenance(...)` — builds the per-session provenance dict (session_id, corpus_label, host platform / python / CUDA_VISIBLE_DEVICES, package versions for torch / transformers / sentence_transformers / numpy, git HEAD SHA, manifest path + size, phase rosters + signals + paths, calibration args, cooldown, survey dir). Pretty-printed JSON, keys sorted, trailing newline — stable across reruns for clean diffs.
+  - `summarize_matrix(survey_dir, ...)` — pure function that builds a Markdown summary table from the per-model survey JSONs. Handles missing files (renders `--`), corrupt files (renders `err`), and the inverted-polarity case where calibration_survey surfaces the direction-aware AUC in the row's error string rather than its calibration block. Picks the per-phase winner as the model with the largest `|da_AUC - 0.5|`.
+- **42 new tests** across `test_bakeoff_provenance.py` (28 unit tests on `is_survey_complete`, `build_provenance` / `write_provenance`, `summarize_matrix`, and the CLI subcommands) and `test_bakeoff_matrix_shell.py` (14 end-to-end smoke tests that exercise the shell driver in dry-run mode and against a non-loading model — env-var fail-fast, missing-manifest error, default-roster provenance, roster overrides, `SETEC_MAX_ENTRIES` recording, `SETEC_RESET_SENTINELS` cleanup, matrix-plan output, canonical-alias contract, failure propagation, `SETEC_ALLOW_PARTIAL` override, empty-roster nounset safety). The shell tests skip cleanly when `bash` isn't on PATH (slim CI harnesses).
+
+### What stays the same vs. the laptop template
+
+- Signal directions (`variance_audit` registry — that's PR #99's territory).
+- AUC computation, Mann-Whitney + bootstrap CI shape (`calibration_survey` — unchanged).
+- The Phase A / Phase B / cooldown / per-cell-survey / summary structure.
+- Idempotent skip via `survey_*.json` rows-present check (now delegated to the Python helper for testability; behavior identical).
+
+### What's NOT in this PR
+
+- **Per-GPU parallelism within one matrix process.** Spec calls out `xargs -P N` parallelization of the Phase A/B loops; for now, operators run multiple matrix processes pinned to different GPUs via `CUDA_VISIBLE_DEVICES` + per-process `SETEC_BAKEOFF_DIR`. Single-process parallelization is a follow-up if operator data shows the sequential matrix is the long pole.
+- **Auto-trigger slicer + auto-trigger polarity audit.** Spec describes a `queue_slice_after_matrix.sh` polling-loop pattern. Out of scope for this PR; the matrix script focuses on the bake-off matrix proper. The slicer / polarity-audit chaining can land as a separate driver consuming the matrix's mirrored survey outputs.
+- **Length-stratified subsampling.** Spec recommends 25–50K records with proportional-with-floor sampling across length buckets. That's `calibration_survey.py`'s responsibility, not the matrix wrapper's — manifest-side sampling lives elsewhere.
+- **Extended Phase B roster (Llama-3.2-3B, Qwen3-3B, Mistral-7B).** Spec suggests adding these for cloud runs. Operators add them via `SETEC_PHASE_B_PATHS` override rather than hard-coding into the script; the default roster matches the laptop session's tested set so behavior is consistent across hosts.
+
 ## [1.96.0] - 2026-05-18
 
 **`EmbeddingBackend` gains the dtype + device contract from PR #93 / #88's surprisal side.** Closes Chunk C of the post-inventory sequence (pivoted from "length-sorted batching" after discovering `sentence_transformers.encode()` already length-sorts internally on v2.2+ — the framework declares `>=2.7`). Per-operator-survey perf win on Phase A Tier-3 embedding runs: 1.5-2x throughput on Ampere+ / Hopper / Ada cuda hosts from bf16/fp16 inference, plus explicit per-process device pinning for the cloud bake-off matrix's parallel-pair-of-processes pattern (#100).
