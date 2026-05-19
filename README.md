@@ -53,45 +53,45 @@ The operational consequence: SETEC ships methods and tooling. It does not ship p
 
 ## Quick start
 
-All paths below are relative to `plugins/setec-voiceprint/`. Run from that directory, or prefix the script paths with `plugins/setec-voiceprint/`.
+All commands below run from the repo root. Script paths are written out as `plugins/setec-voiceprint/scripts/...` so they run as typed; private-baseline paths like `../ai-prose-baselines-private/...` resolve to the conventional sibling-to-repo location.
 
 ```
 # Whole-document smoothing diagnosis on a draft
-python3 scripts/variance_audit.py path/to/draft.txt
+python3 plugins/setec-voiceprint/scripts/variance_audit.py path/to/draft.txt
 
 # Same, with JSON output (carries the claim_license block)
-python3 scripts/variance_audit.py path/to/draft.txt --json
+python3 plugins/setec-voiceprint/scripts/variance_audit.py path/to/draft.txt --json
 
 # Compare against a personal baseline (recommended; see "Personal baselines" below)
-python3 scripts/variance_audit.py path/to/draft.txt --baseline-dir baselines/personal/
+python3 plugins/setec-voiceprint/scripts/variance_audit.py path/to/draft.txt --baseline-dir baselines/personal/
 
 # Voice-distance against a private baseline corpus
-python3 scripts/voice_distance.py path/to/draft.txt --baseline-dir ../ai-prose-baselines-private/fiction/
+python3 plugins/setec-voiceprint/scripts/voice_distance.py path/to/draft.txt --baseline-dir ../ai-prose-baselines-private/fiction/
 
 # Build a private voice profile
-python3 scripts/voice_profile.py --baseline-dir ../ai-prose-baselines-private/fiction/ \
+python3 plugins/setec-voiceprint/scripts/voice_profile.py --baseline-dir ../ai-prose-baselines-private/fiction/ \
     --out ../ai-prose-baselines-private/fiction_voice_profile.md
 
 # Count named rhetorical patterns in a draft (correctio, triplet, manifesto cadence, etc.)
-python3 scripts/aic_pattern_audit.py path/to/draft.txt
+python3 plugins/setec-voiceprint/scripts/aic_pattern_audit.py path/to/draft.txt
 
 # Validate a corpus manifest before any manifest-driven workflow
-python3 scripts/manifest_validator.py corpus_manifest.jsonl
+python3 plugins/setec-voiceprint/scripts/manifest_validator.py corpus_manifest.jsonl
 
 # Sliding-window scan to localize compression inside a long document
-python3 scripts/variance_audit.py path/to/draft.txt --window-size 1000 --window-stride 500
+python3 plugins/setec-voiceprint/scripts/variance_audit.py path/to/draft.txt --window-size 1000 --window-stride 500
 
 # Surface 5: Binoculars two-model perplexity audit (uncalibrated by default)
-python3 scripts/binoculars_audit.py path/to/draft.txt --scorer tinyllama --observer gpt2
+python3 plugins/setec-voiceprint/scripts/binoculars_audit.py path/to/draft.txt --scorer tinyllama --observer gpt2
 ```
 
 Smoke test (no baseline required):
 
 ```
-python3 scripts/variance_audit.py scripts/test_data/human_sample.txt
+python3 plugins/setec-voiceprint/scripts/variance_audit.py plugins/setec-voiceprint/scripts/test_data/human_sample.txt
 # Expected: Insufficient signal (169 words, below all length floors)
 
-python3 scripts/variance_audit.py scripts/test_data/ai_sample.txt
+python3 plugins/setec-voiceprint/scripts/variance_audit.py plugins/setec-voiceprint/scripts/test_data/ai_sample.txt
 # Expected: Moderately smoothed, burstiness_B flagged
 ```
 
@@ -110,9 +110,9 @@ pip install -r requirements.txt
 python -m spacy download en_core_web_sm
 ```
 
-This installs spaCy (Tier 2: POS-bigrams, dependency distance per sentence), SciPy (length-matched bootstrap), scikit-learn (Tier 3 cohesion via TF-IDF fallback, validation-harness ranking metrics), statsmodels (validation-harness confidence intervals), and NLTK (Brown reference corpus support). The spaCy English model `en_core_web_sm` is not on PyPI and must be downloaded separately.
+This installs spaCy (Tier 2: POS-bigrams, dependency distance per sentence), SciPy (length-matched bootstrap), scikit-learn (Tier 3 cohesion via TF-IDF fallback, validation-harness ranking metrics), and statsmodels (validation-harness confidence intervals). The spaCy English model `en_core_web_sm` is not on PyPI and must be downloaded separately.
 
-`requirements.txt` records optional dependencies in commented form: `sentence-transformers` for calibrated cohesion cosines (pulls in torch; heavier) and `textstat` for tightened FKGL later.
+`requirements.txt` records optional dependencies in commented form: `sentence-transformers` for calibrated cohesion cosines (pulls in torch; heavier), `textstat` for tightened FKGL later, and `nltk>=3.8` for `idiolect_detector.py`'s optional Brown reference-corpus path (also requires `python -m nltk.downloader brown` to fetch the corpus data).
 
 Tier 1 signals (sentence-length variance, MATTR, MTLD, Yule's K, Shannon entropy, FKGL, connective density, function-word ratio) run on the standard library alone. The install above is what's needed for Tier 2 and Tier 3.
 
