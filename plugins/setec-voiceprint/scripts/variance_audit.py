@@ -1830,6 +1830,9 @@ def audit_windows(
     allow_non_prose: bool = False,
     strip_rules: str | list[str] | None = None,
     strip_aggressive: bool = False,
+    # 1.98.0+: per-comparator direction routing forwarded to
+    # ``classify_compression`` per window.
+    comparator_class: str | None = None,
 ) -> list[dict[str, Any]]:
     """Run ``audit_text`` + ``classify_compression`` on each sliding window.
 
@@ -1859,7 +1862,10 @@ def audit_windows(
         divergences: dict[str, Any] | None = None
         if baseline is not None:
             divergences = compare_distributions(a, baseline)
-        c = classify_compression(a, divergences=divergences)
+        c = classify_compression(
+            a, divergences=divergences,
+            comparator_class=comparator_class,
+        )
         entry = {
             "start_word": w["start_word"],
             "end_word": w["end_word"],
@@ -1971,6 +1977,21 @@ class ThresholdSpec:
     length_floor: int
     provenance: str | None = None
     status: str = "heuristic"
+    # 1.98.0+: per-comparator direction overrides. When set, callers
+    # passing a ``comparator_class`` to ``resolve_direction(spec,
+    # comparator_class)`` get the per-class direction; unknown
+    # classes fall back to ``direction`` (the default).
+    #
+    # The empirical motivator: the 2026-05-18 RAID 5K bake-off
+    # showed that the MAGE-correct directions (PR #99 / 1.95.1)
+    # *do not generalise* to mixed-humans corpora. ``surprisal_sd``
+    # in particular comes back as ``globally_inverted`` on RAID
+    # under the MAGE direction — that signal needs ``"lt"`` on
+    # RAID and ``"gt"`` on MAGE. Other RAID cells are
+    # ``comparator_dependent`` at the (judge × generator) level —
+    # finer-grained than ``comparator_class`` — and stay deferred
+    # to a per-(signal × judge × generator) follow-up.
+    direction_by_comparator: dict[str, str] | None = None
 
     def __post_init__(self) -> None:
         if self.direction not in ("gt", "lt"):
@@ -1978,6 +1999,14 @@ class ThresholdSpec:
                 f"ThresholdSpec.direction must be 'gt' or 'lt', "
                 f"got {self.direction!r}"
             )
+        if self.direction_by_comparator is not None:
+            for comparator, dir_val in self.direction_by_comparator.items():
+                if dir_val not in ("gt", "lt"):
+                    raise ValueError(
+                        f"ThresholdSpec.direction_by_comparator"
+                        f"[{comparator!r}] must be 'gt' or 'lt', "
+                        f"got {dir_val!r}"
+                    )
         if self.status not in THRESHOLD_STATUS_VALUES:
             raise ValueError(
                 f"ThresholdSpec.status must be one of "
@@ -2020,6 +2049,37 @@ class ThresholdSpec:
         `status_signals()` helpers below.
         """
         return self.status not in ("calibrated", "structural_only")
+
+
+def resolve_direction(
+    spec: ThresholdSpec,
+    comparator_class: str | None = None,
+) -> str:
+    """Resolve a spec's direction against an optional comparator class.
+
+    Falls back to ``spec.direction`` when ``comparator_class`` is
+    None, when ``direction_by_comparator`` is None, or when the
+    requested class isn't in the per-comparator table. This lets
+    pre-1.98 callers that don't pass a comparator class keep
+    getting the spec's default direction unchanged.
+
+    The fallback chain (in order):
+
+      1. ``spec.direction_by_comparator[comparator_class]`` when
+         all three conditions hold (comparator_class set, dict set,
+         class present in dict).
+      2. ``spec.direction`` otherwise.
+
+    The function is a pure read — same inputs, same output, no
+    state — so it's safe to call from hot loops.
+    """
+    if comparator_class is None:
+        return spec.direction
+    if spec.direction_by_comparator is None:
+        return spec.direction
+    return spec.direction_by_comparator.get(
+        comparator_class, spec.direction,
+    )
 
 
 COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
@@ -2182,6 +2242,20 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
         value=1.5, direction="gt", weight=2.0, length_floor=300,
         status="empirically_oriented",
         provenance="mage_5k_polarity_audit_2026-05-18",
+        # 1.98.0: RAID-style mixed-humans direction override. The
+        # 2026-05-18 RAID 5K bake-off ran polarity_audit on
+        # raid_5k_slice_analysis.csv under the post-MAGE registry
+        # directions (this PR's defaults) and returned 4
+        # ``globally_inverted`` verdicts -- all 4 are surprisal_sd
+        # rows. The fix for RAID is to flip surprisal_sd back to
+        # the pre-1.95 ``lt`` direction (it's "compressed when
+        # surprisal_sd is LOW" on mixed-humans, "compressed when
+        # surprisal_sd is HIGH" on curated-humans). The remaining
+        # RAID rows are ``comparator_dependent`` at the (judge ×
+        # generator) level -- finer than ``comparator_class`` --
+        # and deferred to a follow-up per-(signal × judge ×
+        # generator) routing extension.
+        direction_by_comparator={"raid": "lt"},
     ),
     "surprisal_acf_lag1": ThresholdSpec(
         signal_path="tier4.surprisal.autocorrelation.lag_1",
@@ -2375,6 +2449,13 @@ def classify_compression(
     audit: dict[str, Any],
     *,
     divergences: dict[str, Any] | None = None,
+    # 1.98.0+: per-comparator-class direction routing. None
+    # preserves pre-1.98 behavior (use spec.direction unchanged).
+    # When set (e.g., "mage" / "raid"), each spec's direction is
+    # resolved via ``resolve_direction(spec, comparator_class)``
+    # which falls back to spec.direction for any spec without a
+    # per-comparator entry for this class.
+    comparator_class: str | None = None,
 ) -> dict[str, Any]:
     flagged: list[str] = []
     skipped: list[str] = []
@@ -2402,8 +2483,12 @@ def classify_compression(
         if signal not in COMPRESSION_HEURISTICS:
             return
         spec = COMPRESSION_HEURISTICS[signal]
-        thresh, direction, weight, length_floor = (
-            spec.value, spec.direction, spec.weight, spec.length_floor
+        # 1.98.0+: resolve direction through the per-comparator
+        # routing helper. Pre-1.98 callers (comparator_class=None)
+        # get spec.direction unchanged.
+        direction = resolve_direction(spec, comparator_class)
+        thresh, weight, length_floor = (
+            spec.value, spec.weight, spec.length_floor
         )
         if n_words < length_floor:
             skipped.append(f"{signal} (need {length_floor}+ words, have {n_words})")
@@ -2574,6 +2659,16 @@ def classify_compression(
         k: {
             "threshold": spec.value,
             "direction": spec.direction,
+            # 1.98.0+: surface BOTH the spec's default direction
+            # (above) and the direction actually used for THIS run
+            # after per-comparator routing. Audit consumers reading
+            # the output JSON can tell the registry direction
+            # apart from the comparator-specific resolution. When
+            # comparator_class is None or no per-comparator entry
+            # exists, ``direction_used`` equals ``direction``.
+            "direction_used": resolve_direction(spec, comparator_class),
+            "direction_by_comparator": spec.direction_by_comparator,
+            "comparator_class": comparator_class,
             "weight": spec.weight,
             "length_floor": spec.length_floor,
             "signal_path": spec.signal_path,
@@ -3498,6 +3593,19 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--comparator-class", default=None,
+        help=(
+            "1.98.0+: route per-signal direction through the "
+            "ThresholdSpec.direction_by_comparator table for this "
+            "comparator class. Example: --comparator-class mage uses "
+            "MAGE-style curated-human directions; --comparator-class "
+            "raid uses RAID-style mixed-humans overrides where they "
+            "exist (e.g., surprisal_sd flips back to 'lt' on RAID). "
+            "Default (unset) uses each spec's default direction "
+            "unchanged. Unknown classes fall back to default per spec."
+        ),
+    )
+    parser.add_argument(
         "--allow-non-prose", action="store_true",
         help="Skip default corpus-hygiene stripping. Use only when "
              "intentionally auditing code-heavy or markup-heavy text."
@@ -3688,7 +3796,10 @@ def main() -> int:
             divergences = compare_distributions(audit, baseline_block)
 
     if audit is not None:
-        compression = classify_compression(audit, divergences=divergences)
+        compression = classify_compression(
+            audit, divergences=divergences,
+            comparator_class=args.comparator_class,
+        )
         output["preprocessing"] = audit.get("preprocessing", {})
         output["audit"] = audit
         output["compression"] = compression
@@ -3733,6 +3844,7 @@ def main() -> int:
             allow_non_prose=args.allow_non_prose,
             strip_rules=args.strip_rules,
             strip_aggressive=args.strip_aggressive,
+            comparator_class=args.comparator_class,
         )
         output["windows"] = {
             "window_size": args.window_size,

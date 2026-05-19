@@ -6,6 +6,58 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.98.0] - 2026-05-18
+
+**Per-comparator direction routing on `ThresholdSpec.direction`.** Closes the `direction_by_comparator` chunk that PR #99's CHANGELOG explicitly deferred ("next chunk"). The 2026-05-18 RAID 5K bake-off showed that the MAGE-correct directions (PR #99) don't generalise to mixed-humans corpora — 4 `surprisal_sd` cells returned `globally_inverted` on RAID under the MAGE direction registry. This PR adds the infrastructure for per-comparator direction overrides, plus one empirical entry (`surprisal_sd: {"raid": "lt"}`) to drive the design end-to-end. Other RAID divergences are `comparator_dependent` at the (judge × generator) level — finer than `comparator_class` — and stay deferred to a per-(signal × judge × generator) follow-up.
+
+### Why this is `feat:` not `fix:`
+
+The registry shape changes (new field + new helper + new CLI flag + new resolver functions in two synced modules). Existing single-string `direction` semantics are preserved — every pre-1.98 caller and every pre-1.98 cached audit reads identically against the new code. The new behavior is opt-in via `comparator_class`. So no fix to existing operator output; a new capability that operators auditing RAID-style corpora can opt into.
+
+### `variance_audit` (registry + helper + classifier)
+
+- **`ThresholdSpec.direction_by_comparator: dict[str, str] | None = None`** — new sibling field on every spec. Validated in `__post_init__`: each value must be `"gt"` or `"lt"` (typo fails fast with the offending comparator key named in the error). Default `None` preserves pre-1.98 callers.
+- **`resolve_direction(spec, comparator_class) -> str`** — module-level pure helper. Falls back to `spec.direction` when comparator_class is None, when the per-comparator table is None, or when the class isn't in the table. Single source of truth for direction resolution; safe to call from hot loops.
+- **`classify_compression(..., comparator_class: str | None = None)`** — new kwarg, threaded into the in-loop `direction = resolve_direction(spec, comparator_class)` call. When `comparator_class` is None, pre-1.98 behavior is preserved exactly.
+- **`audit_windows(..., comparator_class=None)`** — forwards to `classify_compression` per window so sliding-window audits get per-comparator routing.
+- **`thresholds_used` JSON output** gains three new keys per signal: `direction_used` (the resolved direction for THIS run after per-comparator routing), `direction_by_comparator` (the full per-comparator table from the spec — None when not set), and `comparator_class` (what was supplied to this run, or None). The pre-existing `direction` field stays as the spec's default, so downstream consumers can compare registry default vs resolved direction without re-running the audit.
+
+### CLI
+
+- **`variance_audit.py --comparator-class CLASS`** — opt-in routing. Examples: `--comparator-class mage` uses MAGE-style directions (currently identical to the spec defaults), `--comparator-class raid` activates the RAID overrides (where they exist — currently `surprisal_sd: lt`). Unknown classes fall back to spec defaults silently per spec (no enum constraint at the CLI layer; operators may have their own comparator taxonomies that the framework doesn't yet enumerate).
+
+### Synced copies
+
+- **`polarity_audit.DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR`** — mirror of the variance_audit override table. Currently `{"surprisal_sd": {"raid": "lt"}}`.
+- **`polarity_audit.resolve_registry_direction(signal, comparator_class, *, defaults=None, overrides=None)`** — module-level resolver against the polarity-audit pair of tables. Returns the per-comparator direction when set + class present, falls back to `DEFAULT_REGISTRY_DIRECTIONS[signal]`, returns None if the signal isn't known.
+- **`slice_bakeoff_v2.SIGNAL_SPECS_BY_COMPARATOR`** — same shape as polarity_audit's override table.
+- **`slice_bakeoff_v2.resolve_signal_direction(signal, comparator_class, ...)`** — slicer-side resolver against `SIGNAL_SPECS` (tuple-shape: `(path, direction)`).
+- **`slice_bakeoff_v2.analyze(..., comparator_class=None)`** + **`--comparator-class` CLI flag** + **default-from-corpus inference** — reviewer P1 follow-up. Initial PR added the override table + helper but `analyze()` still read `SIGNAL_SPECS[signal_name]` directly, so a normal `slice_bakeoff_v2 --corpus raid --audit polarity` run still evaluated `surprisal_sd` as `gt`. Fix routes BOTH the per-cell emission AND the integrated polarity-audit handoff (`signal_to_direction`) through the resolver. The CLI defaults `comparator_class` from `--corpus` when omitted (so `--corpus raid` auto-activates RAID overrides); operators with non-standard taxonomies pass `--comparator-class` explicitly.
+
+The three override tables (variance_audit's `ThresholdSpec.direction_by_comparator` on the per-spec instances, polarity_audit's `DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR`, and slice_bakeoff_v2's `SIGNAL_SPECS_BY_COMPARATOR`) carry matching content. The lockstep is pinned by a test that asserts all three return `{"raid": "lt"}` for `surprisal_sd`.
+
+### The one empirical override that ships
+
+- **`surprisal_sd: {"raid": "lt"}`** — encoded in all three tables. Motivator: the 2026-05-18 RAID 5K bake-off returned 4 `globally_inverted` verdicts under the MAGE-direction registry, all 4 on `surprisal_sd`. The flip back to `lt` (the pre-1.95 direction) makes RAID audits empirically correct on this signal while leaving MAGE audits unchanged.
+
+### What's NOT in this PR
+
+- **The other 13 `comparator_dependent` RAID cells.** Per the 2026-05-18 RAID bake-off slice analysis, these need direction per `(signal × judge × generator)` — finer than `comparator_class`. The right structure is a future `direction_by_comparator_and_slice: dict[str, dict[tuple[str, str], str]]` field (or similar) and a richer resolver. Deferred to a follow-up chunk informed by per-generator RAID data.
+- **Per-comparator routing in the calibration pipeline.** `validation_harness.score_smoothing_entry`, `calibrate_thresholds.score_corpus`, and the rest of the calibration toolchain don't yet accept `comparator_class`. Operators using the standalone `variance_audit.py` CLI get the routing today; calibration-pipeline integration is a follow-up. The infrastructure (helper + ThresholdSpec field) is in place — only the kwarg threading is missing.
+- **Comparator-class inference from manifest metadata.** Operators have to pass `--comparator-class` explicitly; the framework doesn't infer it from a manifest field. Manifest-based inference would be a small follow-up if operator workflows benefit.
+
+### Tests
+
+- **31 new tests** in `test_per_comparator_direction_routing.py` covering: `ThresholdSpec` field shape + validation, `resolve_direction` fallback chain (None class, None table, missing class, hit), `classify_compression` end-to-end (default matches MAGE, RAID flips surprisal_sd verdict in both directions, unknown class falls back), `thresholds_used` block surfaces both registry-default and resolved direction, the lockstep contract (variance_audit / polarity_audit / slice_bakeoff_v2 all carry `surprisal_sd: {"raid": "lt"}` and nothing else), polarity_audit + slice_bakeoff resolver helpers (same fallback chain semantics), CLI flag exposed in `--help`.
+- **193 pre-existing direction-aware tests** continue to pass: `test_variance_audit_*`, `test_polarity_audit`, `test_slice_bakeoff_v2`, `test_cross_polarity_audit`, `test_before_after_restoration`, `test_calibration_polarity_inversion`. The pre-1.98 single-direction behavior is preserved bit-for-bit.
+- **2753 tests pass** on the slim-torch harness (was 2722 pre-PR; +31 net from the new routing tests). 58 pre-existing slim-harness failures unrelated to this work remain.
+
+### Notes
+
+- **Cache identity.** Per-comparator direction routing does NOT change the cache-identity contract — caches scored under one comparator class can be re-used under another by re-running `classify_compression` on the cached `audit` dict (no re-scoring of expensive Tier-3/4 signals needed). This makes per-comparator experimentation cheap.
+- **Provenance.** The `thresholds_used` block now records the comparator class for the run, so an audit consumer can tell at a glance whether the output reflects MAGE-direction or RAID-direction verdicts. Operators auditing mixed corpora can run twice (once per class) and diff the verdicts.
+- **Status field on `surprisal_sd` stays `empirically_oriented`.** The RAID override is itself empirically motivated (4 globally_inverted RAID cells on this signal); the spec's status field describes the calibration / provenance level of the value, not the directionality.
+
 ## [1.97.1] - 2026-05-18
 
 **Empirical benchmark of sentence-transformers' internal length-sort claim.** Drops a small standalone script + tests that put numbers behind PR #101's pivot framing (*"`sentence_transformers.encode()` already length-sorts internally, so a wrapper-level pre-sort would be redundant"*). Informational artifact — exits 0 regardless of outcome, no production code path change.
