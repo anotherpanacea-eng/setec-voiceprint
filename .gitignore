@@ -54,3 +54,7 @@ Thumbs.db
 # Local environment files
 .env
 .env.local
+
+# Claude Code agent harness: temporary worktrees the Agent tool creates
+# when launching isolated sub-agents. Transient state, not source.
+.claude/worktrees/
