@@ -1103,7 +1103,11 @@ def run_survey(
     original_manifest_str = str(parent_args.manifest)
     length_strat_meta: dict[str, Any] | None = None
     length_strat_manifest: Path | None = None
-    if getattr(parent_args, "length_stratify", None):
+    # ``is not None`` (not truthiness) so ``--length-stratify 0`` reaches
+    # the validator inside ``apply_length_stratification`` and raises
+    # SystemExit rather than silently falling through to a full-corpus
+    # run on RAID / MAGE scale.
+    if getattr(parent_args, "length_stratify", None) is not None:
         length_strat_manifest, length_strat_meta = (
             apply_length_stratification(parent_args)
         )

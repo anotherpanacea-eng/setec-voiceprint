@@ -686,6 +686,60 @@ def test_cli_nonpositive_length_stratify_raises(tmp_path):
         )
 
 
+def test_run_survey_rejects_length_stratify_zero_on_cli_path(tmp_path):
+    """Follow-up regression: the previous P2 fix raised SystemExit
+    inside ``apply_length_stratification`` but ``run_survey`` only
+    called into the validator when ``length_stratify`` was *truthy*.
+    ``--length-stratify 0`` is falsy, so the validator was bypassed
+    and the CLI proceeded to a full-corpus run. Fix changed the
+    guard to ``is not None``; this test pins the contract through
+    ``run_survey`` (the CLI path), not through the validator helper
+    directly.
+    """
+    word_counts = list(range(100, 200))
+    entries = _make_manifest(word_counts)
+    manifest = tmp_path / "manifest.jsonl"
+    with manifest.open("w", encoding="utf-8") as fh:
+        for entry in entries:
+            fh.write(json.dumps(entry) + "\n")
+
+    for bad_n in (0, -1):
+        args = argparse.Namespace(
+            manifest=str(manifest),
+            use="validation",
+            fpr_target=0.01,
+            out=None,
+            signal=[],
+            tier2=False, tier3=False,
+            bootstrap_resamples=10, bootstrap_confidence=0.95,
+            bootstrap_seed=42,
+            tpr_floor=0.05,
+            aggressiveness_tolerance=0.05,
+            json_only=True,
+            length_stratify=bad_n,
+            length_buckets=5,
+            length_stratify_floor=None,
+            max_entries=None,
+            max_entries_seed=42,
+        )
+        try:
+            # Patch the scorer in case the guard ever silently lets us
+            # through — we don't want to actually run the full corpus.
+            with mock.patch.object(cs.ct, "load_or_score_corpus",
+                                   return_value=([], {}, False)):
+                cs.run_survey(args, signals=["burstiness_B"])
+        except SystemExit as exc:
+            assert "length-stratify" in str(exc)
+            assert str(bad_n) in str(exc)
+            continue
+        raise AssertionError(
+            f"--length-stratify {bad_n} reached run_survey but did not "
+            "raise SystemExit; the CLI path skipped the validator "
+            "because the guard was truthiness-based instead of "
+            "`is not None`-based"
+        )
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
