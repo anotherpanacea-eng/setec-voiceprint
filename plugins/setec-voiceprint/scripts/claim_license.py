@@ -51,6 +51,7 @@ TASK_SURFACE_LABELS = {
     "craft_restoration": "craft restoration",
     "metric_targeted_restoration": "metric-targeted restoration packets",
     "external_mirror_discrimination": "external-mirror discrimination",
+    "binoculars_discrimination": "Binoculars-style perplexity-ratio discrimination",
 }
 
 
