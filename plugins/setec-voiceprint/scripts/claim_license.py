@@ -50,6 +50,7 @@ TASK_SURFACE_LABELS = {
     "calibration": "per-signal threshold calibration",
     "craft_restoration": "craft restoration",
     "metric_targeted_restoration": "metric-targeted restoration packets",
+    "external_mirror_discrimination": "external-mirror discrimination",
 }
 
 
