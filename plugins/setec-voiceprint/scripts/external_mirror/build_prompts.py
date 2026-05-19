@@ -375,6 +375,13 @@ def build(
     tool_path: Path | None = None,
 ) -> BuildResult:
     """Build prompts and return the result. Operator-callable from tests."""
+    if windows < 1:
+        raise ValueError(f"--windows must be >= 1; got {windows}.")
+    if context < 1:
+        raise ValueError(f"--context must be >= 1; got {context}.")
+    if continuation < 1:
+        raise ValueError(f"--continuation must be >= 1; got {continuation}.")
+
     raw = target_path.read_text(encoding="utf-8")
     normalized = normalize_text(raw)
     tokens = tokenize(normalized)
@@ -482,7 +489,7 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="Comma-separated context sizes (required when --positioning=expanding).",
     )
-    parser.add_argument("--out", default="prompts", help="Output directory (default ./prompts/).")
+    parser.add_argument("--out", default="runs/external_mirror", help="Output directory (default ./runs/external_mirror/; matches the repo's gitignored runs/ convention so default invocations don't stage private prompt text in git).")
     parser.add_argument(
         "--format",
         choices=["separate", "batched", "both"],
@@ -515,7 +522,7 @@ def main(argv: list[str] | None = None) -> int:
             genre_descriptor=args.genre_descriptor,
             run_id=args.run_id,
         )
-    except (ValueError, FileNotFoundError, UnicodeDecodeError) as exc:
+    except (ValueError, FileNotFoundError, FileExistsError, UnicodeDecodeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 

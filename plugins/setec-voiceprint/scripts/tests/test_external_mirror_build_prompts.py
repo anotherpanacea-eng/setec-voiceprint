@@ -453,6 +453,69 @@ def test_existing_run_id_errors_to_prevent_silent_overwrite(tmp_path):
         _build_defaults(target, tmp_path, run_id="dup")
 
 
+def test_cli_returns_one_on_run_id_collision(tmp_path):
+    """FileExistsError from --run-id reuse must be caught by main() and
+    surface as a clean ``error: ...`` exit, not a Python traceback."""
+    target = _make_target(tmp_path, n_words=3000)
+    out = tmp_path / "out"
+    rc1 = bp.main([
+        str(target),
+        "--out", str(out),
+        "--run-id", "collision",
+    ])
+    assert rc1 == 0
+    rc2 = bp.main([
+        str(target),
+        "--out", str(out),
+        "--run-id", "collision",
+    ])
+    assert rc2 == 1
+
+
+# ============================================================
+# Positive-integer validation
+# ============================================================
+
+
+@pytest.mark.parametrize("windows_value", [0, -1, -5])
+def test_windows_must_be_positive(tmp_path, windows_value):
+    target = _make_target(tmp_path, n_words=3000)
+    with pytest.raises(ValueError, match="--windows must be >= 1"):
+        _build_defaults(target, tmp_path, windows=windows_value)
+
+
+@pytest.mark.parametrize("context_value", [0, -10])
+def test_context_must_be_positive(tmp_path, context_value):
+    target = _make_target(tmp_path, n_words=3000)
+    with pytest.raises(ValueError, match="--context must be >= 1"):
+        _build_defaults(target, tmp_path, context=context_value)
+
+
+@pytest.mark.parametrize("continuation_value", [0, -3])
+def test_continuation_must_be_positive(tmp_path, continuation_value):
+    target = _make_target(tmp_path, n_words=3000)
+    with pytest.raises(ValueError, match="--continuation must be >= 1"):
+        _build_defaults(target, tmp_path, continuation=continuation_value)
+
+
+# ============================================================
+# Default --out lands under gitignored runs/
+# ============================================================
+
+
+def test_cli_default_out_lands_under_gitignored_runs(tmp_path, monkeypatch):
+    """The CLI's --out default must land under a gitignored path so
+    default invocations don't stage private prompt text in git."""
+    target = _make_target(tmp_path, n_words=3000)
+    monkeypatch.chdir(tmp_path)
+    rc = bp.main([
+        str(target),
+        "--run-id", "default_out_test",
+    ])
+    assert rc == 0
+    assert (tmp_path / "runs" / "external_mirror" / "default_out_test").is_dir()
+
+
 # ============================================================
 # CLI smoke test
 # ============================================================
