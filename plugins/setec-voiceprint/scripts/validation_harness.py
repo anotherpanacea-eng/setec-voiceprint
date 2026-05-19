@@ -188,6 +188,14 @@ def score_smoothing_entry(
     # Defaults preserve pre-1.93 behavior (auto resolution at backend
     # construction time).
     surprisal_dtype: str = "auto",
+    # 1.98.2+: per-comparator direction routing passthrough. Threaded
+    # into ``classify_compression`` so calibration-pipeline scorers
+    # honor operator intent (e.g., RAID calibration runs with
+    # ``--comparator-class raid`` correctly evaluate surprisal_sd
+    # under direction='lt' instead of the MAGE default 'gt').
+    # None preserves pre-1.98.2 behavior (use each spec's default
+    # direction).
+    comparator_class: str | None = None,
     # 1.90.0+ batched-Tier-4 wiring. When ``text`` is supplied, the
     # caller has pre-read the file (typically inside the batched-
     # scoring pre-pass in ``score_corpus``) and we skip the read here
@@ -253,7 +261,11 @@ def score_smoothing_entry(
         surprisal_dtype=surprisal_dtype,
     )
     n_words = int(audit.get("summary", {}).get("n_words", raw_n_words) or 0)
-    compression = classify_compression(audit)
+    # 1.98.2+: thread the operator's comparator_class into the
+    # per-spec direction resolution for THIS entry's classification.
+    compression = classify_compression(
+        audit, comparator_class=comparator_class,
+    )
     score = _finite_score(compression.get("compression_fraction"))
 
     # Extract per-signal scalars for the per-signal AUC table. Signals

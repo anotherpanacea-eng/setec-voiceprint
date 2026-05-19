@@ -1055,6 +1055,7 @@ def _build_harness_command(
     engine: str = "loop",
     chunk_size: int | None = None,
     device: str | None = None,
+    comparator_class: str | None = None,
 ) -> str:
     """Compose the replay command stamped into the ledger entry.
 
@@ -1099,6 +1100,15 @@ def _build_harness_command(
         parts.append(f"--bootstrap-chunk-size {q(chunk_size)}")
     if engine == "torch" and device is not None:
         parts.append(f"--bootstrap-device {q(device)}")
+    # 1.99.0+: surface --comparator-class on replay commands so an
+    # operator following the ledger reproduces the same direction
+    # regime. Without this, a threshold derived with
+    # --comparator-class raid would emit a replay command that
+    # omits the flag and silently replay under the MAGE default,
+    # producing a different threshold value on the rerun. None
+    # emits nothing (pre-1.99 callers / un-routed runs unchanged).
+    if comparator_class is not None:
+        parts.append(f"--comparator-class {q(comparator_class)}")
     return " ".join(parts)
 
 
@@ -1701,6 +1711,13 @@ def score_corpus(
                         if bool(getattr(args, "tier4", False))
                         else None
                     ),
+                    # 1.98.2+: per-comparator direction routing
+                    # identity. See the matching field in the
+                    # final ``scoring_meta`` block below for
+                    # rationale.
+                    "comparator_class": getattr(
+                        args, "comparator_class", None,
+                    ),
                     "n_entries_full": full_entry_count,
                     "n_entries_scored": len(records),
                     "sub_sample": sub_sample_meta,
@@ -1764,6 +1781,15 @@ def score_corpus(
                 # back to the SurprisalBackend default of ``auto``
                 # regardless of operator intent.
                 surprisal_dtype=getattr(args, "surprisal_dtype", "auto"),
+                # 1.98.2+: per-comparator direction routing
+                # passthrough. The standalone variance_audit.py CLI
+                # accepted ``--comparator-class`` in 1.98.0; this
+                # threading extends the contract to the calibration
+                # pipeline so RAID calibration runs auto-route to
+                # surprisal_sd=lt rather than the MAGE default gt.
+                # None preserves pre-1.98.2 behavior (use spec
+                # defaults).
+                comparator_class=getattr(args, "comparator_class", None),
                 # 1.90.0+: batched-Tier-4 wiring. ``text`` is None on
                 # a cache miss (per-entry path reads from disk as
                 # before); on a hit, the cached text + precomputed
@@ -1813,6 +1839,16 @@ def score_corpus(
             if bool(getattr(args, "tier4", False))
             else None
         ),
+        # 1.98.2+: per-comparator direction routing identity. A
+        # cached run scored under ``--comparator-class raid`` (which
+        # evaluates surprisal_sd as 'lt') cannot be reused under
+        # ``--comparator-class mage`` (which evaluates it as 'gt')
+        # -- the per_signal_scores in the cache reflect compressed
+        # / not-compressed verdicts computed under one direction,
+        # so reusing them under a different direction would silently
+        # produce wrong band calls. Same cache-identity contract
+        # shape as the dtype identity fields above.
+        "comparator_class": getattr(args, "comparator_class", None),
         "n_entries_full": full_entry_count,
         "n_entries_scored": len(records),
         "sub_sample": sub_sample_meta,
@@ -1985,6 +2021,22 @@ def cache_is_compatible(
                 f"({cache_meta.get('embedding_device_requested')!r} → "
                 f"{cur_embed_device!r})"
             )
+    # 1.98.2+: per-comparator direction routing identity. A cache
+    # scored under ``--comparator-class raid`` evaluated
+    # surprisal_sd under direction='lt'; reusing it under
+    # ``--comparator-class mage`` (or no class) would silently
+    # produce wrong band calls. Compat-check requires the
+    # comparator_class to match exactly (None == None counts as
+    # match). Field-missing on the cache side is treated as None
+    # (pre-1.98.2 caches had no concept of comparator_class).
+    cur_comparator_class = getattr(args, "comparator_class", None)
+    cached_comparator_class = cache_meta.get("comparator_class")
+    if cached_comparator_class != cur_comparator_class:
+        return False, (
+            f"comparator_class changed "
+            f"({cached_comparator_class!r} → "
+            f"{cur_comparator_class!r})"
+        )
     cached_sub = cache_meta.get("sub_sample")
     cur_max = getattr(args, "max_entries", None)
     cur_seed = getattr(args, "max_entries_seed", None)
@@ -2479,6 +2531,14 @@ def derive_threshold_from_records(
             ),
             "ci_note": ci["note"] if ci else None,
         },
+        # 1.99.0+: comparator class persisted in the ledger entry
+        # so audit consumers can tell at a glance whether a
+        # derived threshold came from a MAGE-routed, RAID-routed,
+        # or un-routed (pre-1.99 / explicit pre-existing-behavior)
+        # run. Without this, two thresholds derived from the same
+        # corpus + signal but under different comparator classes
+        # would be indistinguishable on inspection.
+        "comparator_class": getattr(args, "comparator_class", None),
         "setec_commit": _git_commit(),
         "harness_command": _build_harness_command(
             manifest_path=manifest_path,
@@ -2488,6 +2548,7 @@ def derive_threshold_from_records(
             engine=engine,
             chunk_size=chunk_size,
             device=device,
+            comparator_class=getattr(args, "comparator_class", None),
         ),
         "derivation_date": iso_date,
         "notes": args.notes or (
@@ -2781,6 +2842,22 @@ def main(argv: list[str] | None = None) -> int:
             "Explicit device for the Tier 3 embedding model "
             "(e.g., ``cuda:1``). Default: defer to sentence-"
             "transformers' auto-device pick."
+        ),
+    )
+    parser.add_argument(
+        "--comparator-class", default=None,
+        help=(
+            "1.98.2+: route per-signal direction through the "
+            "ThresholdSpec.direction_by_comparator table for this "
+            "comparator class. Mirror of variance_audit.py's "
+            "--comparator-class flag (added 1.98.0). Example: "
+            "--comparator-class raid evaluates surprisal_sd under "
+            "direction='lt' (the RAID-correct direction) instead "
+            "of the MAGE default 'gt'. None preserves pre-1.98.2 "
+            "behavior (use each spec's default direction). Cache "
+            "identity treats this as load-bearing: a cache scored "
+            "under one comparator class can't be reused under "
+            "another."
         ),
     )
     parser.add_argument(

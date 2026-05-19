@@ -394,6 +394,14 @@ def _build_inner_args(
         surprisal_dtype=getattr(
             parent_args, "surprisal_dtype", "auto",
         ),
+        # 1.98.2+: per-comparator direction routing forwarded
+        # into the inner Namespace so the survey honors operator
+        # intent end-to-end (RAID surveys now auto-evaluate
+        # surprisal_sd under direction='lt' instead of MAGE
+        # default 'gt'). None preserves pre-1.98.2 behavior.
+        comparator_class=getattr(
+            parent_args, "comparator_class", None,
+        ),
         # 1.90.0+: forward the batched-Tier-4 batch size so
         # calibration_survey runs honor the operator-chosen value
         # rather than falling back to score_corpus's default of 8.
@@ -1015,6 +1023,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "transformers' auto-device pick (cuda > mps > cpu). "
             "Use to pin per-process device on multi-GPU hosts "
             "running concurrent calibration jobs."
+        ),
+    )
+    p.add_argument(
+        "--comparator-class", default=None,
+        help=(
+            "1.98.2+: route per-signal direction through the "
+            "ThresholdSpec.direction_by_comparator table for this "
+            "comparator class. Mirror of variance_audit.py's and "
+            "calibrate_thresholds.py's --comparator-class flag. "
+            "Example: --comparator-class raid evaluates "
+            "surprisal_sd under direction='lt' (RAID-correct) "
+            "instead of MAGE default 'gt'. None preserves pre-"
+            "1.98.2 behavior. Cache identity is load-bearing on "
+            "this value."
         ),
     )
     p.add_argument("--bootstrap-resamples", type=int, default=2000)

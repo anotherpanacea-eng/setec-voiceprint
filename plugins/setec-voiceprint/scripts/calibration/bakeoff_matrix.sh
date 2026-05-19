@@ -22,8 +22,22 @@
 #                                 read survey results from)
 #
 # === Optional env vars ===
-#   SETEC_CORPUS_LABEL         -- "mage" / "raid" / etc. (provenance only;
+#   SETEC_CORPUS_LABEL         -- "mage" / "raid" / etc. (provenance +
+#                                 default for SETEC_COMPARATOR_CLASS;
 #                                 default "unknown")
+#   SETEC_COMPARATOR_CLASS     -- 1.99.0+: comparator class for per-
+#                                 signal direction routing. When set,
+#                                 propagates to calibration_survey via
+#                                 ``--comparator-class``; the
+#                                 calibration pipeline then routes
+#                                 surprisal_sd (and any other signal
+#                                 with a per-comparator override) to
+#                                 the correct direction. When omitted,
+#                                 defaults from SETEC_CORPUS_LABEL if
+#                                 the label is one of {mage, raid};
+#                                 otherwise unset (pre-1.99 behavior).
+#                                 Operators with non-standard corpora
+#                                 set this explicitly to opt in / out.
 #   SETEC_MAX_ENTRIES          -- subsample cap for calibration_survey
 #                                 (default: empty -> full corpus)
 #   SETEC_MAX_ENTRIES_SEED     -- subsample seed (default 42)
@@ -73,6 +87,19 @@ CORPUS_DIR="$SETEC_CORPUS_DIR"
 BAKEOFF_DIR="$SETEC_BAKEOFF_DIR"
 RUNS_DIR="$SETEC_CALIBRATION_RUNS_DIR"
 CORPUS_LABEL="${SETEC_CORPUS_LABEL:-unknown}"
+
+# 1.99.0+: comparator class for per-signal direction routing.
+# Explicit SETEC_COMPARATOR_CLASS wins; otherwise default from
+# SETEC_CORPUS_LABEL when the label is one of the known framework
+# classes (mage / raid); otherwise leave unset (pre-1.99 behavior --
+# the calibration pipeline uses each spec's default direction).
+if [ -n "${SETEC_COMPARATOR_CLASS:-}" ]; then
+    COMPARATOR_CLASS="$SETEC_COMPARATOR_CLASS"
+elif [ "$CORPUS_LABEL" = "mage" ] || [ "$CORPUS_LABEL" = "raid" ]; then
+    COMPARATOR_CLASS="$CORPUS_LABEL"
+else
+    COMPARATOR_CLASS=""
+fi
 MAX_ENTRIES="${SETEC_MAX_ENTRIES:-}"
 MAX_ENTRIES_SEED="${SETEC_MAX_ENTRIES_SEED:-42}"
 BOOTSTRAP_ENGINE="${SETEC_BOOTSTRAP_ENGINE:-torch}"
@@ -185,6 +212,7 @@ print(d['$2'])
 echo "============================================================"
 echo "Cloud bake-off matrix -- session $SESSION at $(date +%H:%M:%S)"
 echo "  corpus:    $CORPUS_LABEL  ($CORPUS_DIR)"
+echo "  comparator_class: ${COMPARATOR_CLASS:-(none, pre-1.99 behavior)}"
 echo "  surveys -> $BAKEOFF_DIR/  -> $RUNS_DIR/"
 echo "  log:       $LOG"
 echo "  summary:   $SUMMARY"
@@ -212,6 +240,7 @@ fi
 export _SETEC_ARGS_TMP="$ARGS_TMP"
 export _SETEC_SESSION="$SESSION"
 export _SETEC_CORPUS_LABEL="$CORPUS_LABEL"
+export _SETEC_COMPARATOR_CLASS="$COMPARATOR_CLASS"
 export _SETEC_MANIFEST_PATH="$CORPUS_DIR/manifest.jsonl"
 export _SETEC_PHASE_A_JSON="$PHASE_A_PATHS_JSON"
 export _SETEC_PHASE_B_JSON="$PHASE_B_PATHS_JSON"
@@ -233,6 +262,13 @@ me = os.environ["_SETEC_MAX_ENTRIES"].strip()
 out = {
     "session_id": os.environ["_SETEC_SESSION"],
     "corpus_label": os.environ["_SETEC_CORPUS_LABEL"],
+    # 1.99.0+: comparator class for per-signal direction routing.
+    # Empty string when unset (pre-1.99 behavior). Recorded in
+    # provenance so replays can reconstruct the exact direction
+    # regime the matrix ran under.
+    "comparator_class": (
+        os.environ["_SETEC_COMPARATOR_CLASS"] or None
+    ),
     "manifest_path": os.environ["_SETEC_MANIFEST_PATH"],
     "phase_a_aliases": list(phase_a.keys()),
     "phase_b_aliases": list(phase_b.keys()),
@@ -290,6 +326,15 @@ BASE_ARGS=(
     --records-cache-flush-every 100
     --json-only
 )
+# 1.99.0+: propagate comparator_class into every calibration_survey
+# call so RAID bake-offs evaluate surprisal_sd under direction='lt'
+# rather than the MAGE default 'gt'. Without this, the slicer-side
+# auto-default from PR #103 takes effect for the slicer but NOT for
+# the per-cell calibration scoring, leaving the cache full of
+# verdicts computed under the wrong direction.
+if [ -n "$COMPARATOR_CLASS" ]; then
+    BASE_ARGS+=(--comparator-class "$COMPARATOR_CLASS")
+fi
 if [ -n "$MAX_ENTRIES" ]; then
     BASE_ARGS+=(--max-entries "$MAX_ENTRIES" --max-entries-seed "$MAX_ENTRIES_SEED")
 fi
