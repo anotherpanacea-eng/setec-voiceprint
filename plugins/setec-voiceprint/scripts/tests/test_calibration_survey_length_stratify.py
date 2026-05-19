@@ -300,6 +300,50 @@ def test_length_stratify_total_matches_cap():
         assert sum(meta["bucket_sample_counts"].values()) == cap
 
 
+def test_length_stratify_floor_relaxes_when_floor_x_buckets_exceeds_cap():
+    """Reviewer P1: when ``floor * nonempty_buckets > cap`` every
+    bucket sits at its effective floor, ``total_surplus`` is zero,
+    and the original over-budget reconciliation branch couldn't
+    reduce anything — so the function returned more entries than
+    the operator requested. The contract is ``n_used <= cap``;
+    deterministically relax the floor instead.
+
+    Concrete: 50 entries, cap=2, B=5, floor=1 → previously returned
+    5 sampled entries (one per bucket at its floor); should now
+    return 2 with ``floor_relaxed=True``.
+    """
+    word_counts = list(range(1, 51))  # 50 entries with distinct lengths
+    entries = _make_manifest(word_counts)
+    sampled, meta = cs._length_stratify_entries(
+        entries, cap=2, n_buckets=5, floor=1, seed=42,
+    )
+    assert len(sampled) == 2, (
+        f"cap=2 contract: n_used={len(sampled)} exceeds cap; "
+        f"floor reconciliation didn't relax under-budget floors"
+    )
+    assert meta["n_used"] == 2
+    assert meta["floor_relaxed"] is True, (
+        "operator-visible signal that the requested floor was over-budget"
+    )
+    # Per-bucket sample counts must still sum to cap.
+    assert sum(meta["bucket_sample_counts"].values()) == 2
+
+
+def test_length_stratify_floor_relaxed_false_when_cap_honored():
+    """Normal case: cap=50, B=5, floor=5 (proportional fits cleanly)
+    → floor_relaxed=False. Pin: the diagnostic field is False under
+    standard configurations so an operator grepping for True in the
+    survey JSON only catches the unusual relaxation case.
+    """
+    word_counts = list(range(1, 501))  # 500 entries
+    entries = _make_manifest(word_counts)
+    sampled, meta = cs._length_stratify_entries(
+        entries, cap=50, n_buckets=5, floor=5, seed=42,
+    )
+    assert len(sampled) == 50
+    assert meta["floor_relaxed"] is False
+
+
 # ------------------- Text length resolution ---------------------
 
 
@@ -605,6 +649,41 @@ def test_cli_invalid_n_buckets_raises(tmp_path):
         assert "length-buckets" in str(exc)
         return
     raise AssertionError("Expected SystemExit for --length-buckets 0")
+
+
+def test_cli_nonpositive_length_stratify_raises(tmp_path):
+    """Reviewer P2: ``--length-stratify 0`` (or a negative value)
+    previously fell through to the ``return None, None`` branch,
+    silently disabling sampling and letting a full-corpus run
+    proceed. Reject explicitly with SystemExit so an operator who
+    typed the wrong N gets a clean error rather than a multi-hour
+    surprise on RAID/MAGE.
+    """
+    manifest = tmp_path / "m.jsonl"
+    manifest.write_text(
+        json.dumps(_make_entry(0, word_count=100)) + "\n",
+        encoding="utf-8",
+    )
+    for bad_n in (0, -1, -1000):
+        args = argparse.Namespace(
+            manifest=str(manifest),
+            length_stratify=bad_n,
+            length_buckets=5,
+            length_stratify_floor=None,
+            bootstrap_seed=42,
+            max_entries_seed=None,
+        )
+        try:
+            cs.apply_length_stratification(args)
+        except SystemExit as exc:
+            assert "length-stratify" in str(exc)
+            assert str(bad_n) in str(exc)
+            continue
+        raise AssertionError(
+            f"Expected SystemExit for --length-stratify {bad_n}; "
+            "nonpositive values must be rejected explicitly rather "
+            "than silently disabling sampling"
+        )
 
 
 if __name__ == "__main__":

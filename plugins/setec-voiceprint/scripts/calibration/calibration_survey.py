@@ -309,6 +309,7 @@ def _length_stratify_entries(
     # many buckets are tiny and proportional rounding lost entries;
     # add the slack to the largest buckets that have headroom.
     diff = sum(targets) - cap
+    floor_relaxed = False
     if diff > 0:
         # Over-budget: scale down the per-bucket over-floor portion.
         # ``surplus[i] = targets[i] - floor[i]`` where ``floor[i]`` is
@@ -337,6 +338,36 @@ def _length_stratify_entries(
                     remaining -= 1
                 j += 1
             targets = new_targets
+        else:
+            # Floors themselves over-budget: every non-empty bucket is
+            # already at its effective floor and ``total_surplus`` is
+            # zero, so the proportional-scale branch above can't
+            # reconcile. The original implementation simply returned
+            # the over-budget targets, so ``--length-stratify 2
+            # --length-buckets 5 --length-stratify-floor 1`` against
+            # 50 entries returned 5 sampled entries despite the cap=2
+            # contract. Deterministically relax the floor: decrement
+            # the largest non-empty bucket's target by 1 each round
+            # (ties broken by index ascending), stopping at 0. This
+            # preserves more representation from smaller buckets,
+            # since they're already at the floor and the larger ones
+            # have absorbed all the original headroom.
+            while diff > 0:
+                # Find the index of the bucket with the largest
+                # current target; ties broken by index ascending so
+                # the choice is deterministic.
+                best_i = -1
+                best_target = -1
+                for i in range(n_buckets):
+                    if targets[i] > best_target:
+                        best_target = targets[i]
+                        best_i = i
+                if best_i < 0 or targets[best_i] <= 0:
+                    # Every target is already 0; can't reduce further.
+                    break
+                targets[best_i] -= 1
+                diff -= 1
+            floor_relaxed = True
     elif diff < 0:
         # Under-budget (proportional rounding cost us): top up the
         # largest buckets one entry at a time until we hit cap.
@@ -377,6 +408,12 @@ def _length_stratify_entries(
         "bucket_populations": bucket_populations,
         "bucket_sample_counts": bucket_sample_counts,
         "n_dropped_no_length": n_dropped_no_length,
+        # True when the requested floor was over-budget against the cap
+        # (``floor * nonempty_buckets > cap``) and had to be relaxed
+        # to honor the ``--length-stratify N`` contract. The operator
+        # can grep for this in the survey JSON to detect smoke-test
+        # configurations where their stated floor was infeasible.
+        "floor_relaxed": floor_relaxed,
     }
     return sampled, metadata
 
@@ -434,8 +471,19 @@ def apply_length_stratification(
     ``args.manifest``. Tempdir cleanup is registered with ``atexit``.
     """
     n_target = getattr(args, "length_stratify", None)
-    if n_target is None or n_target <= 0:
+    if n_target is None:
         return None, None
+    # The flag explicitly means "sample to N entries." A nonpositive
+    # value previously fell through silently (returning None disables
+    # stratification), so ``--length-stratify 0`` against a RAID-scale
+    # manifest would launch a full-corpus run with no indication that
+    # the operator's intent was ignored. Reject explicitly.
+    if n_target <= 0:
+        raise SystemExit(
+            f"--length-stratify must be >= 1; got {n_target}. "
+            "(Omit the flag entirely to disable length-stratified "
+            "subsampling.)"
+        )
 
     raw_n_buckets = getattr(args, "length_buckets", 5)
     if raw_n_buckets is None:
