@@ -12,18 +12,19 @@ AI-assisted writing is one important use case because LLM collaboration often le
 
 The "SETEC" in the name tips its hat to *Sneakers* (1992): SETEC ASTRONOMY, "too many secrets." Authorial-voice profiles are voice-cloning inputs at the prose level — a profile built from a writer's corpus can be used to impersonate that writer's prose voice, the same way a real voiceprint can be used for audio impersonation. The framework's outputs are useful to the writer who runs them; they are also leverage to anyone else who gets hold of them. The "setec" in the name is a reminder, not a flourish.
 
-The framework distinguishes four task surfaces, three diagnostic layers, and a vocabulary of named prose patterns. The Python tooling supports distributional diagnostics on prose, authorial-voice-coherence comparison, vocabulary-repetition audits, corpus acquisition, manifest validation, empirical calibration, and craft restoration of prose.
+The framework distinguishes five task surfaces, three diagnostic layers, and a vocabulary of named prose patterns. The four core diagnostic + restoration surfaces are joined by a fifth evidence-only surface (uncalibrated by default) for AI-coupling discrimination. The Python tooling supports distributional diagnostics on prose, authorial-voice-coherence comparison, vocabulary-repetition audits, corpus acquisition, manifest validation, empirical calibration, craft restoration of prose, and structured discrimination evidence.
 
 ## Choose the question
 
 | Surface | Tools | Question it answers | Question it does NOT answer |
 |---|---|---|---|
-| **1. Prose smoothing / compression** | `variance_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py`, `bigram_diff.py`, `manuscript_bigram_diff.py` | Has this prose narrowed into a low-variance or template-heavy region? | Who caused it; whether AI was involved |
+| **1. Prose smoothing / compression** | `variance_audit.py`, `surprisal_audit.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py`, `bigram_diff.py`, `manuscript_bigram_diff.py`, `sliding_window_heatmap.py` | Has this prose narrowed into a low-variance or template-heavy region? | Who caused it; whether AI was involved |
 | **2. Voice coherence** | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `pov_voice_profile.py`, `mimicry_cosplay_audit.py` | How far is this draft from a writer, register, POV, or time-period baseline? | Why it drifted |
-| **3. Validation and calibration** | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py`, `voice_validation_harness.py`, `calibration_drift_monitor.py`, `fairness_dialect_guardrails.py`, calibration scripts | How well do these signals behave on this labeled corpus, dependency stack, and fairness slice? | Whether they generalize outside that evidence |
+| **3. Validation and calibration** | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py`, `voice_validation_harness.py`, `calibration_drift_monitor.py`, `fairness_dialect_guardrails.py`; calibration pipeline (`calibration_survey.py`, `calibrate_thresholds.py`, `polarity_audit.py`, `slice_bakeoff_v2.py`, `bakeoff_matrix.sh`, `queue_slice_after_matrix.sh`, `cross_polarity_audit.py`, `bakeoff_mage_tier34.sh`) | How well do these signals behave on this labeled corpus, dependency stack, fairness slice, comparator class, and (judge × generator) slice? | Whether they generalize outside that evidence |
 | **4. Craft restoration** | `aic_pattern_audit.py`, `restoration_packet.py`, `before_after_restoration.py`, `semantic_preservation_check.py`, `known_editor_profile.py`; reference docs | Which measured drifts can become safe revision instructions, and did revision preserve meaning? | Whether the revision is artistically better |
+| **5. Discrimination evidence (uncalibrated by default)** | `binoculars_audit.py`, `binoculars_calibrate.py`, `external_mirror/` (`build_prompts.py`, `ingest_outputs.py`, `compute_distances.py`, `compose_evidence_pack.py`, `workflow.py`) | What evidence does a per-token two-model perplexity comparison or a multi-LLM continuation-distance comparison produce on this target? | "Is this AI" — the framework ships uncalibrated bands; per-corpus thresholds are operator-side |
 
-The four surfaces share statistical signals because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same features. They answer different questions and license different claims. The framework refuses the unifying "is this AI" verdict because the underlying math does not entitle it.
+The first four surfaces share statistical signals because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same features. They answer different questions and license different claims. The framework refuses the unifying "is this AI" verdict because the underlying math does not entitle it. **Surface 5** is the deliberate accommodation: external-mirror discrimination (Hans et al. 2024 Binoculars and the SETEC external-mirror methodology) produces *structured evidence* about AI coupling without shipping a verdict — `DEFAULT_THRESHOLD_LOW = DEFAULT_THRESHOLD_HIGH = None`, verdict bands read `uncalibrated` by default, and the framework's "no thresholded claims without calibration" discipline applies. The calibration scripts in Surface 3 are the operator-side path to thresholded claims; the framework provides methodology, the operator provides the comparator.
 
 Every script's JSON output and markdown report carry an explicit `task_surface` field so downstream consumers can route by surface and refuse to mix scores across them.
 
@@ -35,7 +36,7 @@ SETEC's "is not an AI detector" posture is not modesty or hedging. It is the con
 
 **Cross-corpus polarity volatility.** The framework ran full Tier 1 calibration surveys against two separate labeled corpora on consecutive days. EditLens val split (1,506 essays, ESL-student human comparator, 2026-05-10) and MAGE (338k rows across 10 source datasets, 2026-05-11). Every Tier 1 signal that produced a comparable measurement on both corpora **flipped direction between them**. Structural-variance signals (`burstiness_B`, `sentence_length_sd`, `fkgl_sd`, `connective_density`) matched the framework's smoothing-diagnosis hypothesis on EditLens and inverted it on MAGE. Lexical-diversity signals (`mattr`, `mtld`, `yules_k`, `shannon_entropy`) inverted on EditLens and matched on MAGE. The pattern is consistent, not random: signal polarity depends on what the human comparator looks like, and no single labeled corpus produces a threshold that generalizes. Cross-corpus polarity inversion is documented in `plugins/setec-voiceprint/references/calibration-findings-2026-05-11-mage.md` and the predecessor 2026-05-10 doc.
 
-**Measurement is not adjudication.** The four task surfaces measure properties of prose — variance compression, distance from baseline, named-pattern density, semantic trajectory. The same properties have many causes (LLM smoothing, but also genre conventions, professional copyediting, register shift, ESL writing, translation, dictation cleanup, intentional voice imitation, time drift, POV collapse). A measurement that distinguishes prose with mode-collapse properties from prose without them is not the same thing as a measurement that identifies AI authorship. The framework treats those as different claims with different licensure rules; the evidence does not entitle conflation.
+**Measurement is not adjudication.** The five task surfaces measure properties of prose — variance compression, distance from baseline, named-pattern density, semantic trajectory, two-model perplexity divergence. The same properties have many causes (LLM smoothing, but also genre conventions, professional copyediting, register shift, ESL writing, translation, dictation cleanup, intentional voice imitation, time drift, POV collapse). A measurement that distinguishes prose with mode-collapse properties from prose without them is not the same thing as a measurement that identifies AI authorship. The framework treats those as different claims with different licensure rules; the evidence does not entitle conflation. Surface 5's discrimination tools tighten the gap (Hans et al. 2024 reports ~95% AUC on the Binoculars detector under matched conditions), but the framework still refuses to ship per-corpus thresholds — operator-side calibration is required before any verdict above `uncalibrated`.
 
 The operational consequence is the "Stylometry to the people" calibration posture (see `plugins/setec-voiceprint/scripts/calibration/PROVENANCE.md`): SETEC ships methods, tooling, and provenance discipline. It does not ship per-signal decision thresholds derived from labeled corpora as load-bearing defaults. Users who want anchored thresholds for their own context run `calibrate_thresholds.py` against their own baseline. The framework provides the methodology; the user provides the comparator.
 
@@ -102,32 +103,70 @@ setec-voiceprint/
 │           ├── craft-restoration/             Surface 4: pattern triage and craft repair
 │           ├── metric-targeted-restoration/   Surface 4: diagnostic JSON → revision-safe packets
 │           └── corpus-acquisition/            private baseline/impostor corpus collection
-├── references/
-│   ├── distributional-diagnostics.md   Layer A: 11 variance signals with math
-│   ├── aic-flags.md                Layer B: 7 flag families + nonfiction parallel set + genre tolerance table
-│   ├── source-triage.md            Layer C: voice attribution, named patterns, earned/unearned triage
-│   ├── rhetorical-countermoves.md  figure-by-flag pairings (fiction + nonfiction additions)
-│   └── implementation-survey.md    dependency/reference survey for borrow-before-building work
-├── scripts/
-│   ├── README.md                       script catalog and usage
-│   ├── variance_audit.py               Layer A computation; sliding-window mode
+├── plugins/setec-voiceprint/references/
+│   ├── signals-glossary.md             authoritative index of all 56 signals across 14 families
+│   ├── distributional-diagnostics.md   Layer A: variance signals with math
+│   ├── aic-flags.md                    Layer B: 7 flag families + nonfiction parallel + genre tolerance table
+│   ├── source-triage.md                Layer C: voice attribution, named patterns, earned/unearned triage
+│   ├── rhetorical-countermoves.md      figure-by-flag pairings (fiction + nonfiction additions)
+│   ├── implementation-survey.md        dependency/reference survey for borrow-before-building work
+│   ├── manifest-schema.md              corpus_manifest.jsonl field semantics
+│   ├── calibration-findings-*.md       per-corpus calibration findings (EditLens, MAGE)
+│   ├── laundering-vocabulary.md        banned-term taxonomy and provenance
+│   ├── metric-targeted-restoration.md  restoration-packet methodology
+│   └── stylometry-oracle.md            R stylo bridge and authorship-attribution reference
+├── plugins/setec-voiceprint/scripts/
+│   ├── README.md                       script catalog (long-form per-script usage)
+│   ├── variance_audit.py               Layer A computation; sliding-window mode; Tier 3 + 4 hooks
+│   ├── surprisal_audit.py              Tier 4 standalone: per-token surprisal against a configurable local LLM
 │   ├── sliding_window_heatmap.py       sliding-window output → markdown localization heatmap
 │   ├── manuscript_audit.py             cross-chapter Layer A dashboard
 │   ├── repetition_audit.py             vocabulary over-representation against external baseline
 │   ├── manuscript_repetition_audit.py  manuscript-aggregate vocabulary audit
 │   ├── chapter_distinctiveness_audit.py  leave-one-out internal-baseline vocabulary audit
 │   ├── stylometry_core.py              shared stylometric feature extraction + compute_clusters
+│   ├── surprisal_backend.py            local LLM loader + batched scoring (CUDA / MPS / CPU, fp32 / bf16 / fp16)
+│   ├── embedding_backend.py            sbert-family loader for Tier 3 + external-mirror
 │   ├── voice_distance.py               target-vs-baseline voice distance with cluster mode
 │   ├── voice_profile.py                private baseline voiceprint report
 │   ├── idiolect_detector.py            keyness/collocation extraction for preservation lists
 │   ├── adversarial_fixtures.py         deterministic Unicode stress-fixture transforms
-│   ├── manifest_validator.py           schema and integrity checks for corpus_manifest.jsonl
+│   ├── manifest_validator.py           schema + integrity checks; Issue #6 schema-migration tripwire
 │   ├── check_corpus.py                 content-level non-prose contamination gate
 │   ├── validation_harness.py           empirical validation over labeled manifest entries
 │   ├── voice_validation_harness.py     voice-coherence validation harness
 │   ├── mimicry_cosplay_audit.py        lexical mimicry without syntactic conformity
 │   ├── known_editor_profile.py         learned before/after editorial transformation profile
 │   ├── length_bootstrap.py             length-matched window sampler + scipy.stats.bootstrap helpers
+│   ├── binoculars_audit.py             Surface 5: two-model perplexity-ratio (v1) + cross-perplexity (v2) audit
+│   ├── binoculars_calibrate.py         Surface 5: threshold calibration against a labeled manifest
+│   ├── external_mirror/                Surface 5: prompt builder + ingest + distance + evidence pack
+│   │   ├── build_prompts.py            Phase A: window the target, emit ready-to-paste prompts
+│   │   ├── ingest_outputs.py           Phase B: paste-back parser (T3 + T4 formats)
+│   │   ├── compute_distances.py        Phase B: per-window pairwise cosine matrix (sbert + v2 metrics)
+│   │   ├── compose_evidence_pack.py    Phase B: schema 1.0 envelope + claim-license
+│   │   └── workflow.py                 harness: prepare / status / score subcommands
+│   ├── calibration/                    Surface 3 calibration pipeline
+│   │   ├── PROVENANCE.md               selection-criteria gates + commit-ledger procedure
+│   │   ├── RUNBOOK_*.md                operator runbooks (sharded hygiene, multi-machine, Tier 4 install)
+│   │   ├── calibration_survey.py       run derive_threshold across every signal; per-corpus survey ledger
+│   │   ├── calibrate_thresholds.py     per-signal ROC sweep + threshold + Hanley-McNeil CIs + bootstrap
+│   │   ├── polarity_audit.py           comparator-aware sign verdict from slicer CSV
+│   │   ├── slice_bakeoff_v2.py         per-stratum AUC + CIs + integrated polarity audit
+│   │   ├── cross_polarity_audit.py     cross-corpus polarity comparison (e.g., MAGE × RAID)
+│   │   ├── bakeoff_matrix.sh           cloud-portable matrix runner over (embedding × surprisal × signal) cells
+│   │   ├── queue_slice_after_matrix.sh polling chainer: matrix output → slicer → polarity audit
+│   │   ├── bakeoff_mage_tier34.sh      MAGE Tier 3+4 model-selection bake-off driver
+│   │   ├── bakeoff_mage_tier34_compare.py  companion reader: comparison tables + recommended winner
+│   │   ├── editlens_to_manifest.py     fetched-corpus → manifest writer (EditLens shape)
+│   │   ├── mage_to_manifest.py         ditto for MAGE
+│   │   ├── raid_to_manifest.py         ditto for RAID
+│   │   ├── fetch_pangram_editlens.py   EditLens corpus fetch (license-gated)
+│   │   ├── fetch_mage.py               MAGE corpus fetch
+│   │   ├── fetch_raid.py               RAID corpus fetch
+│   │   ├── shard_runner.py             distributed-scoring shard worker
+│   │   ├── shard_state.py              shard state-machine + checkpoint
+│   │   └── sharding.py                 shard partitioning helpers
 │   └── test_data/                      smoke-test corpus
 └── baselines/
     ├── README.md                   structure and compilation strategy
@@ -216,7 +255,7 @@ If you don't want the plugin, install the Python deps as above and run the scrip
 
 ## Costs and resources at the calibration tier
 
-Three of the four task surfaces have small footprints. Smoothing diagnosis and voice coherence run in seconds-to-minutes on a laptop. Validation runs on labeled fixtures in seconds. **Calibration — re-deriving thresholds from RAID, MAGE, or another large labeled corpus — is the one tier where the framework asks for nontrivial disk, time, and (optionally) GPU.** Nothing in this section applies to ordinary diagnostic use; it exists so a user planning a calibration run can decide whether to start one.
+Four of the five task surfaces have small footprints. Smoothing diagnosis and voice coherence run in seconds-to-minutes on a laptop. Validation runs on labeled fixtures in seconds. Craft restoration is local-text work. Surface 5's discrimination audits run two small LLMs in memory (default `tinyllama` + `gpt2`, ~1.5 GB combined) — laptop-feasible but noticeably heavier than the prose-only surfaces, and `external_mirror/` requires operator-side LLM access for the continuation step. **Calibration — re-deriving thresholds from RAID, MAGE, or another large labeled corpus — is the one tier where the framework asks for nontrivial disk, time, and (optionally) GPU.** Nothing in this section applies to ordinary diagnostic use; it exists so a user planning a calibration run can decide whether to start one.
 
 The figures below are honest measurements from the 2026-05 RAID + MAGE runs on an M-series MacBook, not theoretical estimates.
 
