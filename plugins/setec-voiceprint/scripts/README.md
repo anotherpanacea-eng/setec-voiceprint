@@ -1,6 +1,8 @@
 # Stylometry scripts
 
-The scripts in this directory split across four active task surfaces. Most failure modes come from confusing them.
+The scripts in this directory split across five active task surfaces. Most failure modes come from confusing them.
+
+**Path convention.** Examples below name each script by bare filename (`python3 variance_audit.py ...`), assuming you are running them from this directory (`plugins/setec-voiceprint/scripts/`) or have it on your `$PATH`. From the repo root, prefix the script name with `plugins/setec-voiceprint/scripts/` (matching the top-level README's repo-root convention), or `cd plugins/setec-voiceprint/scripts/` first.
 
 ## Active task surfaces
 
@@ -59,16 +61,31 @@ What `aic_pattern_audit.py` cannot answer: the earned/unearned verdict on any in
 
 What `restoration_packet.py` does NOT do: rewrite prose, claim AI provenance, or optimize metrics directly. The framework's metric-gaming resistance lives in the four-class targetability taxonomy: aggregate divergence and overall distances are explicitly `avoid_direct` and never become prompt instructions. v1 produces target packets and prompt text; the actual revision is a human- or LLM-in-the-loop pass with required SETEC post-checks.
 
+### Surface 5: Discrimination evidence (uncalibrated by default)
+
+These scripts produce structured evidence about a target text's proximity to LLM-generated continuations or LLM-coupled per-token surprisal patterns. They sit deliberately separate from the four core surfaces: the framework ships them with `DEFAULT_THRESHOLD_LOW = DEFAULT_THRESHOLD_HIGH = None`, verdict bands read `uncalibrated` by default, and per-corpus calibration is operator-side via `binoculars_calibrate.py`.
+
+| Script | Scope | Use when |
+|---|---|---|
+| `binoculars_audit.py` | Single document, two-model perplexity comparison | Running the Hans et al. 2024 Binoculars audit (v1 perplexity ratio or v2 true cross-perplexity) on a target with a scorer + observer LLM pair. Ships with no default thresholds. |
+| `binoculars_calibrate.py` | Threshold derivation from labeled corpus | Per-corpus threshold calibration for `binoculars_audit`. Output thresholds are operator-side; the framework's audit defaults stay `None`. |
+| `external_mirror/workflow.py` (plus `build_prompts.py`, `ingest_outputs.py`, `compute_distances.py`, `compose_evidence_pack.py`) | Multi-LLM continuation-distance comparison | Running the SETEC external-mirror methodology: window the target, prompt multiple LLM families for continuations, ingest paste-back, compute per-window pairwise embedding distances, emit a schema 1.0 evidence pack. |
+
+What Surface 5 cannot answer: "Is this AI" as a binary verdict. Hans et al. 2024 reports ~95% AUC on Binoculars under matched conditions, but those conditions do not generalize without per-corpus calibration. The framework provides the methodology; the operator provides the comparator.
+
 ### Surface tag in script output
 
 Every script's JSON output carries a top-level `task_surface` field, and every markdown report shows the surface near the header. The field tells downstream consumers which question the output is answering. Current values:
 
 | Field value | Scripts |
 |---|---|
-| `smoothing_diagnosis` | `variance_audit.py`, `sliding_window_heatmap.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
+| `smoothing_diagnosis` | `variance_audit.py`, `surprisal_audit.py`, `sliding_window_heatmap.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
 | `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `pov_voice_profile.py`, `voice_validation_harness.py` |
 | `validation` | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py` |
 | `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass), `restoration_packet.py` (metric-targeted revision packets), `before_after_restoration.py` (post-check loop); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`, and `references/metric-targeted-restoration.md` |
+| `binoculars_discrimination` | `binoculars_audit.py` |
+| `external_mirror_discrimination` | `external_mirror/compose_evidence_pack.py` (Phase B emitter; the rest of `external_mirror/` chains into this via `workflow.py`) |
+| `calibration` | `binoculars_calibrate.py`, `calibration/calibration_survey.py`, `calibration/calibrate_thresholds.py`, `calibration/polarity_audit.py`, `calibration/slice_bakeoff_v2.py`, `calibration/cross_polarity_audit.py`, `calibration/shard_runner.py` |
 
 The contract is enforceable at the data layer. The validation harness refuses to mix scores across surfaces because the surfaces answer different questions. Reports are now self-identifying so a reader (or an automated consumer) can route by surface without reading the script's filename or guessing from output shape.
 
@@ -1012,7 +1029,7 @@ extraction path to use based on the URL pattern and probe responses:
 
 ```
 # Substack (auto-detected from hostname):
-python3 scripts/acquire_blog.py https://jehsmith.substack.com \
+python3 acquire_blog.py https://jehsmith.substack.com \
     --persona smith_jeh_substack \
     --impostor-for blog \
     --register blog_essay \
@@ -1022,7 +1039,7 @@ python3 scripts/acquire_blog.py https://jehsmith.substack.com \
     --max-posts 25
 
 # WordPress / Ghost:
-python3 scripts/acquire_blog.py https://example.com \
+python3 acquire_blog.py https://example.com \
     --wordpress \
     --persona example_author_blog \
     --impostor-for blog \
@@ -1030,7 +1047,7 @@ python3 scripts/acquire_blog.py https://example.com \
     --consent-status fair_use_research
 
 # Generic HTML archive (e.g., Marginal Revolution):
-python3 scripts/acquire_blog.py https://marginalrevolution.com \
+python3 acquire_blog.py https://marginalrevolution.com \
     --html-archive \
     --archive-pattern 'https://marginalrevolution.com/marginalrevolution/2019/03' \
     --persona cowen_tyler_blog \
@@ -1039,7 +1056,7 @@ python3 scripts/acquire_blog.py https://marginalrevolution.com \
     --consent-status fair_use_research
 
 # Wayback Machine for shut-down blogs:
-python3 scripts/acquire_blog.py https://slatestarcodex.com \
+python3 acquire_blog.py https://slatestarcodex.com \
     --wayback \
     --persona alexander_scott_blog \
     --impostor-for blog \
@@ -1122,7 +1139,7 @@ other people's prose.
 ### Usage
 
 ```
-python3 scripts/acquire_blogger_takeout.py /path/to/Takeout \
+python3 acquire_blogger_takeout.py /path/to/Takeout \
     --persona example_impostor_blog \
     --author "Example Author" \
     --impostor-for your_persona_slug \
@@ -1170,12 +1187,12 @@ and feeds the filtered file to `pdf_extract.py`.
 ### Usage
 
 ```
-python3 scripts/pdf_inventory.py \
+python3 pdf_inventory.py \
     --root ~/Documents/papers \
     --output ../ai-prose-baselines-private/pdf_inventory.jsonl
 
 # Restrict to subset:
-python3 scripts/pdf_inventory.py \
+python3 pdf_inventory.py \
     --root ~/Documents/papers \
     --include-glob '**/honig*.pdf' \
     --include-glob '**/arendt*.pdf' \
@@ -1183,7 +1200,7 @@ python3 scripts/pdf_inventory.py \
     --output draft_inventory.jsonl
 
 # Verbose progress on a large library:
-python3 scripts/pdf_inventory.py \
+python3 pdf_inventory.py \
     --root ~/Documents/papers \
     --workers 4 \
     --verbose \
@@ -1243,19 +1260,19 @@ available). Each successful extraction produces:
 
 ```
 # Fast first pass: only text-extractable entries, no OCR.
-python3 scripts/pdf_extract.py \
+python3 pdf_extract.py \
     --inventory pdf_inventory_filtered.jsonl \
     --output-dir ../ai-prose-baselines-private/impostors/academic_philosophy/ \
     --skip-ocr
 
 # Full pass with OCR (requires ocrmypdf + tesseract + ghostscript + qpdf).
-python3 scripts/pdf_extract.py \
+python3 pdf_extract.py \
     --inventory pdf_inventory_filtered.jsonl \
     --output-dir ../ai-prose-baselines-private/impostors/academic_philosophy/ \
     --workers 2
 
 # Dry run to see what would be extracted:
-python3 scripts/pdf_extract.py \
+python3 pdf_extract.py \
     --inventory pdf_inventory_filtered.jsonl \
     --output-dir ../ai-prose-baselines-private/impostors/academic_philosophy/ \
     --dry-run
@@ -1328,7 +1345,7 @@ the harness can compare against the user's own fiction baseline.
 
 ```
 # All Nightmare stories by Brian Evenson and Kelly Link, 2014–2022:
-python3 scripts/acquire_magazine.py \
+python3 acquire_magazine.py \
     --magazine nightmare \
     --persona-from-author \
     --register literary_horror \
@@ -1339,7 +1356,7 @@ python3 scripts/acquire_magazine.py \
     --impostor-for fiction
 
 # Everything in The Dark since 2018, capped at 30 stories:
-python3 scripts/acquire_magazine.py \
+python3 acquire_magazine.py \
     --magazine the_dark \
     --persona-from-author \
     --register literary_horror \
@@ -1436,7 +1453,7 @@ only (`--voice-profile` only), profile + drift (adds drift section), profile
 
 ```
 # Profile + drift + idiolect, no comparison:
-python3 scripts/generate_voice_report.py \
+python3 generate_voice_report.py \
     --voice-profile path/to/voice_profile.json \
     --voice-drift path/to/drift.json \
     --idiolect-n1 path/to/idiolect_n1.json \
@@ -1449,7 +1466,7 @@ python3 scripts/generate_voice_report.py \
     --out ../ai-prose-baselines-private/voice_insights.md
 
 # With a confirmed-human matched-window control for comparison:
-python3 scripts/generate_voice_report.py \
+python3 generate_voice_report.py \
     --voice-profile subject_profile.json \
     --voice-drift subject_drift.json \
     --comparison-drift control_drift.json \
