@@ -62,9 +62,13 @@ append to ledger, bump version).
 from __future__ import annotations
 
 import argparse
+import atexit
 import datetime as _dt
 import json
+import random
+import shutil
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Sequence
@@ -81,10 +85,418 @@ PARENT_SCRIPTS = SCRIPT_DIR.parent
 if str(PARENT_SCRIPTS) not in sys.path:
     sys.path.insert(0, str(PARENT_SCRIPTS))
 from variance_audit import COMPRESSION_HEURISTICS  # type: ignore  # noqa: E402
+from validation_harness import load_manifest_entries  # type: ignore  # noqa: E402
 
 TASK_SURFACE = "smoothing_diagnosis_calibration"
 TOOL_NAME = "calibration_survey"
 SCRIPT_VERSION = "1.0"
+
+
+# ---- Length-stratified manifest subsampling ----------------------
+#
+# Roadmap item E.3 / post-1.101 follow-up: at cloud-scale calibration
+# (MAGE: ~500K entries, RAID: ~6M), the operator wants a 25-50K-entry
+# subsample whose length distribution covers the corpus' full
+# length range — not a uniform random subsample that under-weights
+# the heavy tail. Concretely: random subsampling of a heavy-tailed
+# corpus gives ~95% short essays and ~5% long ones, mirroring the
+# original distribution; that means calibrated thresholds are tuned
+# for short essays and over-confident on long ones.
+#
+# Spec calls for "proportional-with-floor sampling across length
+# buckets": split entries into B percentile buckets of text length,
+# sample proportionally to bucket size, but enforce a per-bucket
+# floor so even tiny tail buckets are represented. The floor stops
+# a 5-entry tail bucket from being completely dropped from a 50K-
+# entry sample (5/500K = 0.001%, rounds to 0 under proportional).
+#
+# This is a SAMPLING change, not a calibration claim — no calibration
+# block needed — but the survey JSON records the bucket bounds,
+# bucket counts, and seed so an operator can audit which subsample a
+# given run scored against. That provenance is the only thing that
+# lets a re-run on the same manifest reproduce the same scored set.
+#
+# Composition with --max-entries (label-stratified subsample):
+# length-stratify FIRST (manifest-side, this module), then label-
+# stratify (downstream, calibrate_thresholds._stratified_subsample).
+# Length-stratify is a "physical sample size" property; label balance
+# can be enforced on top of any size. The opposite ordering would
+# label-balance the full corpus then break the length distribution
+# when length-stratify trims tail buckets. The chosen ordering keeps
+# both contracts: length-stratify guarantees coverage, label-stratify
+# guarantees both labels are present after.
+
+
+def _entry_text_length(entry: dict[str, Any]) -> int | None:
+    """Words in this manifest entry's text.
+
+    Preference order:
+      1. ``word_count`` field if present and non-negative (manifest
+         schema's documented optional field; populated by most acquire
+         scripts via ``acquire_blogger_takeout._word_count`` and
+         friends).
+      2. Whitespace-split count of the on-disk file's text (loaded
+         from ``_resolved_path``).
+
+    Returns ``None`` only if both fail (no word_count, no readable
+    file). Whitespace tokenization (``text.split()``) matches the
+    framework's other length-sensitive code paths (paragraph_audit,
+    acquire_blogger_takeout). The choice over character count is
+    deliberate: the calibration signals are mostly per-token
+    statistics, so tokens map more directly to "how much the scorer
+    has to work with" than characters do.
+    """
+    wc = entry.get("word_count")
+    if isinstance(wc, (int, float)) and wc >= 0:
+        return int(wc)
+    resolved = entry.get("_resolved_path") or entry.get("path")
+    if not resolved:
+        return None
+    try:
+        text = Path(str(resolved)).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+    return len(text.split())
+
+
+def _percentile_bounds(values: Sequence[int], n_buckets: int) -> list[float]:
+    """Return ``n_buckets - 1`` interior cut-points (percentile-based).
+
+    For ``n_buckets=5`` the cut-points are at the 20/40/60/80
+    percentiles of ``values``. Edge cases:
+
+    * ``n_buckets <= 1`` → empty list (everything in one bucket).
+    * Empty ``values`` → empty list.
+    * Duplicate values at percentile boundaries: cuts may collapse
+      onto each other; ``_assign_bucket`` handles by walking left-to-
+      right, so duplicates land in the lowest matching bucket.
+    """
+    if n_buckets <= 1 or not values:
+        return []
+    sorted_vals = sorted(values)
+    n = len(sorted_vals)
+    cuts: list[float] = []
+    for k in range(1, n_buckets):
+        # Linear-interpolation percentile (numpy "linear" default).
+        # k/n_buckets is the target fraction; (n - 1) * fraction is
+        # the float index into the sorted list.
+        frac = k / n_buckets
+        idx = (n - 1) * frac
+        lo = int(idx)
+        hi = min(lo + 1, n - 1)
+        weight = idx - lo
+        cuts.append(
+            sorted_vals[lo] * (1 - weight) + sorted_vals[hi] * weight
+        )
+    return cuts
+
+
+def _assign_bucket(length: int, bounds: Sequence[float]) -> int:
+    """Bucket index in ``[0, len(bounds)]`` for this length.
+
+    A length below ``bounds[0]`` → bucket 0; between ``bounds[i-1]``
+    and ``bounds[i]`` → bucket i; above ``bounds[-1]`` → last bucket.
+    Lengths equal to a boundary land in the lower bucket (consistent
+    with numpy's ``digitize(right=False)``).
+    """
+    for i, b in enumerate(bounds):
+        if length < b:
+            return i
+    return len(bounds)
+
+
+def _length_stratify_entries(
+    entries: list[dict[str, Any]],
+    *,
+    cap: int,
+    n_buckets: int,
+    floor: int,
+    seed: int,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Length-stratified sub-sample of ``entries``.
+
+    Returns ``(sampled, metadata)``. The metadata block describes the
+    bucket structure for provenance: bucket bounds, per-bucket
+    population, per-bucket sample size, the seed, and the count of
+    entries dropped for missing length.
+
+    Algorithm:
+      1. Compute a length for each entry (``_entry_text_length``).
+         Entries with no resolvable length are dropped (and counted).
+      2. Compute ``n_buckets - 1`` percentile cut-points over the
+         length distribution.
+      3. Assign each entry to its bucket; shuffle within each bucket
+         with a deterministic per-bucket seed (the global ``seed``
+         offset by bucket index so a re-shuffle of one bucket can't
+         silently re-order another).
+      4. Compute the per-bucket target:
+         ``max(floor, round(cap * bucket_pop / total_pop))``, capped
+         at the bucket population (no oversampling).
+      5. If sum of targets > cap (floors over-budgeted the sample),
+         scale down the *over-floor* portion proportionally so the
+         sum lands at ``cap`` without dropping any floor below
+         ``floor``.
+      6. Take the first ``target`` entries from each (shuffled)
+         bucket.
+
+    The same ``(entries, cap, n_buckets, floor, seed)`` tuple
+    produces the same sampled set. Cap ``> len(entries)`` returns all
+    entries.
+    """
+    if cap >= len(entries):
+        return list(entries), {
+            "applied": False,
+            "reason": "cap >= manifest size; no subsampling needed",
+            "n_used": len(entries),
+            "n_full": len(entries),
+            "n_buckets": n_buckets,
+            "floor": floor,
+            "seed": seed,
+        }
+
+    lengths: list[int | None] = [_entry_text_length(e) for e in entries]
+    indexed = [
+        (i, length) for i, length in enumerate(lengths) if length is not None
+    ]
+    n_dropped_no_length = len(entries) - len(indexed)
+    if not indexed:
+        return [], {
+            "applied": True,
+            "n_used": 0,
+            "n_full": len(entries),
+            "n_buckets": n_buckets,
+            "floor": floor,
+            "seed": seed,
+            "bucket_bounds": [],
+            "bucket_populations": {},
+            "bucket_sample_counts": {},
+            "n_dropped_no_length": n_dropped_no_length,
+            "warning": (
+                "All entries lacked both word_count and a readable "
+                "_resolved_path; no length-stratification possible."
+            ),
+        }
+
+    length_only = [length for _, length in indexed]
+    bounds = _percentile_bounds(length_only, n_buckets)
+
+    # Bucket population: indices into the original `entries` list,
+    # one list per bucket. Shuffle each bucket deterministically.
+    buckets: list[list[int]] = [[] for _ in range(n_buckets)]
+    for orig_idx, length in indexed:
+        buckets[_assign_bucket(length, bounds)].append(orig_idx)
+    for b_idx, bucket in enumerate(buckets):
+        # Per-bucket seed so reshuffling one bucket (e.g. if its
+        # composition shifts because the manifest was edited) doesn't
+        # permute the others.
+        bucket_rng = random.Random(int(seed) + b_idx)
+        bucket_rng.shuffle(bucket)
+
+    total_pop = sum(len(b) for b in buckets)
+    targets: list[int] = []
+    for bucket in buckets:
+        pop = len(bucket)
+        if pop == 0:
+            targets.append(0)
+            continue
+        proportional = int(round(cap * pop / total_pop))
+        target = max(floor, proportional)
+        target = min(target, pop)  # can't sample more than we have
+        targets.append(target)
+
+    # Reconcile total against cap. Floors over-budget if floor * B >
+    # cap; scale the over-floor portion down. Floors under-budget if
+    # many buckets are tiny and proportional rounding lost entries;
+    # add the slack to the largest buckets that have headroom.
+    diff = sum(targets) - cap
+    if diff > 0:
+        # Over-budget: scale down the per-bucket over-floor portion.
+        # ``surplus[i] = targets[i] - floor[i]`` where ``floor[i]`` is
+        # the effective floor (``min(floor, pop)``). Reduce each
+        # surplus proportionally until total == cap.
+        effective_floors = [min(floor, len(b)) for b in buckets]
+        surpluses = [max(0, t - f) for t, f in zip(targets, effective_floors)]
+        total_surplus = sum(surpluses)
+        if total_surplus > 0:
+            scale = max(0.0, (total_surplus - diff) / total_surplus)
+            new_targets = [
+                effective_floors[i] + int(surpluses[i] * scale)
+                for i in range(n_buckets)
+            ]
+            # Distribute any remaining rounding error one-by-one,
+            # biased toward the larger buckets.
+            remaining = cap - sum(new_targets)
+            order = sorted(
+                range(n_buckets), key=lambda i: -len(buckets[i])
+            )
+            j = 0
+            while remaining > 0 and j < len(order) * 4:
+                i = order[j % len(order)]
+                if new_targets[i] < len(buckets[i]):
+                    new_targets[i] += 1
+                    remaining -= 1
+                j += 1
+            targets = new_targets
+    elif diff < 0:
+        # Under-budget (proportional rounding cost us): top up the
+        # largest buckets one entry at a time until we hit cap.
+        shortfall = -diff
+        order = sorted(range(n_buckets), key=lambda i: -len(buckets[i]))
+        j = 0
+        while shortfall > 0 and j < len(order) * 4:
+            i = order[j % len(order)]
+            if targets[i] < len(buckets[i]):
+                targets[i] += 1
+                shortfall -= 1
+            j += 1
+
+    sampled_orig_indices: list[int] = []
+    bucket_sample_counts: dict[str, int] = {}
+    bucket_populations: dict[str, int] = {}
+    for b_idx, bucket in enumerate(buckets):
+        take = targets[b_idx]
+        sampled_orig_indices.extend(bucket[:take])
+        bucket_sample_counts[str(b_idx)] = take
+        bucket_populations[str(b_idx)] = len(bucket)
+    # Sort to keep manifest order stable (downstream code may rely on
+    # deterministic ordering for cache identity).
+    sampled_orig_indices.sort()
+    sampled = [entries[i] for i in sampled_orig_indices]
+
+    metadata = {
+        "applied": True,
+        "n_used": len(sampled),
+        "n_full": len(entries),
+        "n_buckets": n_buckets,
+        "floor": floor,
+        "seed": seed,
+        # Bound floats rounded to integer length scale; the values
+        # are word counts so fractional precision is meaningless and
+        # the rounded form reads cleanly in the survey JSON.
+        "bucket_bounds": [round(b, 2) for b in bounds],
+        "bucket_populations": bucket_populations,
+        "bucket_sample_counts": bucket_sample_counts,
+        "n_dropped_no_length": n_dropped_no_length,
+    }
+    return sampled, metadata
+
+
+def _write_filtered_manifest(
+    original_manifest: Path,
+    sampled_entries: list[dict[str, Any]],
+    out_dir: Path,
+) -> Path:
+    """Write the length-stratified subsample back as a JSONL manifest.
+
+    Strips the ``_lineno`` / ``_resolved_path`` internal fields that
+    ``load_manifest_entries`` attached so the written manifest is a
+    clean, schema-compliant slice of the original. The downstream
+    ``score_corpus`` call will re-attach ``_resolved_path`` via its
+    own ``load_manifest_entries``.
+
+    Path resolution: the original manifest's entries may have relative
+    ``path`` fields resolved against the original manifest's parent.
+    The new manifest must preserve that resolution, so we rewrite
+    each entry's ``path`` to the absolute ``_resolved_path`` if
+    available. This keeps the score-time loader's path resolution
+    correct without forcing the temp manifest to live in the same
+    directory as the original (which may be read-only).
+    """
+    out_path = out_dir / f"{original_manifest.stem}.length_stratified.jsonl"
+    with out_path.open("w", encoding="utf-8") as fh:
+        for entry in sampled_entries:
+            clean = {
+                k: v for k, v in entry.items()
+                if not k.startswith("_")
+            }
+            # Re-anchor relative paths to absolute so the temp
+            # manifest is location-independent.
+            resolved = entry.get("_resolved_path")
+            if resolved:
+                clean["path"] = str(resolved)
+            fh.write(json.dumps(clean) + "\n")
+    return out_path
+
+
+def apply_length_stratification(
+    args: argparse.Namespace,
+) -> tuple[Path | None, dict[str, Any] | None]:
+    """Apply length-stratified subsampling and return the new manifest.
+
+    Returns ``(temp_manifest_path, metadata)`` if length-stratification
+    is active; ``(None, None)`` if it isn't.
+
+    Reads the manifest, computes lengths via
+    ``_entry_text_length`` (which prefers ``word_count`` over file
+    I/O), buckets entries by length percentile, samples
+    proportionally-with-floor, and writes the result to a tempfile.
+    The caller is responsible for substituting the returned path into
+    ``args.manifest``. Tempdir cleanup is registered with ``atexit``.
+    """
+    n_target = getattr(args, "length_stratify", None)
+    if n_target is None or n_target <= 0:
+        return None, None
+
+    raw_n_buckets = getattr(args, "length_buckets", 5)
+    if raw_n_buckets is None:
+        raw_n_buckets = 5
+    n_buckets = int(raw_n_buckets)
+    if n_buckets < 1:
+        raise SystemExit(
+            f"--length-buckets must be >= 1; got {n_buckets}"
+        )
+    # Floor default: roughly half the proportional target for the
+    # smallest equally-sized bucket. With cap=50K, B=5, the default
+    # floor is 50000 // (2*5) = 5000 — a tail bucket smaller than
+    # that gets its actual population, not the floor.
+    default_floor = max(1, n_target // (2 * n_buckets))
+    floor = getattr(args, "length_stratify_floor", None)
+    if floor is None:
+        floor = default_floor
+    floor = int(floor)
+    if floor < 0:
+        raise SystemExit(
+            f"--length-stratify-floor must be >= 0; got {floor}"
+        )
+
+    seed = getattr(args, "max_entries_seed", None)
+    if seed is None:
+        seed = getattr(args, "bootstrap_seed", 42) or 42
+    seed = int(seed)
+
+    manifest_path = Path(args.manifest)
+    entries = load_manifest_entries(manifest_path)
+    n_total = len(entries)
+    sys.stderr.write(
+        f"Length-stratifying manifest: target {n_target} from "
+        f"{n_total} entries across {n_buckets} bucket(s) "
+        f"(floor={floor}, seed={seed}).\n"
+    )
+    sampled, meta = _length_stratify_entries(
+        entries,
+        cap=int(n_target),
+        n_buckets=n_buckets,
+        floor=floor,
+        seed=seed,
+    )
+    sys.stderr.write(
+        f"Length-stratified to {len(sampled)} entries "
+        f"(bounds={meta.get('bucket_bounds')}, "
+        f"counts={meta.get('bucket_sample_counts')}).\n"
+    )
+
+    # tempfile.mkdtemp (not TemporaryDirectory) so the directory
+    # outlives this function — the survey scoring call needs to read
+    # the manifest later. Register cleanup at process exit so the
+    # tempdir doesn't accumulate across repeated invocations of the
+    # in-process API (tests, shard_runner, etc.).
+    tmp_dir = Path(tempfile.mkdtemp(prefix="calibration_survey_lengthstrat_"))
+    atexit.register(shutil.rmtree, tmp_dir, ignore_errors=True)
+    new_manifest = _write_filtered_manifest(manifest_path, sampled, tmp_dir)
+    sys.stderr.write(
+        f"Length-stratified manifest written to: {new_manifest}\n"
+    )
+    return new_manifest, meta
 
 
 # ---- Selection-criteria gates ------------------------------------
@@ -633,6 +1045,27 @@ def run_survey(
     cache_path = Path(cache_path_str).expanduser() if cache_path_str else None
     refresh = bool(getattr(parent_args, "refresh_cache", False))
 
+    # Length-stratified manifest subsampling (roadmap E.3). If
+    # ``--length-stratify N`` is active, slice the manifest to N
+    # entries with proportional-with-floor sampling across length
+    # buckets BEFORE scoring. Downstream label-stratified subsampling
+    # (``--max-entries``) composes on top — the existing
+    # ``_stratified_subsample`` in calibrate_thresholds runs over
+    # the already-length-stratified set, enforcing label balance.
+    original_manifest_str = str(parent_args.manifest)
+    length_strat_meta: dict[str, Any] | None = None
+    length_strat_manifest: Path | None = None
+    if getattr(parent_args, "length_stratify", None):
+        length_strat_manifest, length_strat_meta = (
+            apply_length_stratification(parent_args)
+        )
+        if length_strat_manifest is not None:
+            # Swap the manifest path on the parent args so all
+            # downstream calls (_build_inner_args + load_or_score_corpus)
+            # see the filtered manifest. The original path is
+            # preserved in the returned metadata for provenance.
+            parent_args.manifest = str(length_strat_manifest)
+
     inner_for_scoring = _build_inner_args(parent_args, signals[0])
     sys.stderr.write(
         f"Surveying {len(signals)} signal(s) at FPR target "
@@ -739,13 +1172,27 @@ def run_survey(
     rows.sort(key=_rank_key)
 
     max_entries = getattr(parent_args, "max_entries", None)
-    is_pipeline_check = max_entries is not None and max_entries > 0
+    # A "pipeline check" run is one where the maintainer is using a
+    # subsample (either label-stratified via --max-entries or length-
+    # stratified via --length-stratify) for end-to-end verification
+    # rather than committing thresholds. Either gates downstream
+    # consumers from treating the run as canonical.
+    is_pipeline_check = (
+        (max_entries is not None and max_entries > 0)
+        or (length_strat_meta is not None and length_strat_meta.get("applied"))
+    )
 
+    # Manifest field reports the ORIGINAL path (what the operator
+    # passed); the length-stratified tempfile is a runtime artifact
+    # the provenance block disambiguates.
     return {
         "task_surface": TASK_SURFACE,
         "tool": TOOL_NAME,
         "version": SCRIPT_VERSION,
-        "manifest": str(parent_args.manifest),
+        "manifest": original_manifest_str,
+        "length_stratified_manifest": (
+            str(length_strat_manifest) if length_strat_manifest else None
+        ),
         "fpr_target": parent_args.fpr_target,
         "use": parent_args.use,
         "tier2": parent_args.tier2,
@@ -766,6 +1213,28 @@ def run_survey(
         "aggressiveness_tolerance": aggressiveness_tolerance,
         "max_entries": max_entries,
         "max_entries_seed": getattr(parent_args, "max_entries_seed", None),
+        # Roadmap E.3: length-stratified subsample provenance. None
+        # when --length-stratify wasn't set; an audit-grade dict
+        # otherwise so a re-run with the same --length-stratify /
+        # --length-buckets / --length-stratify-floor / --max-entries-
+        # seed gets the same sample.
+        "length_stratify": (
+            {
+                "n_target": getattr(parent_args, "length_stratify", None),
+                "n_buckets": getattr(parent_args, "length_buckets", 5),
+                "floor": getattr(parent_args, "length_stratify_floor", None),
+                "seed": length_strat_meta.get("seed"),
+                "n_used": length_strat_meta.get("n_used"),
+                "n_full": length_strat_meta.get("n_full"),
+                "bucket_bounds": length_strat_meta.get("bucket_bounds"),
+                "bucket_populations": length_strat_meta.get("bucket_populations"),
+                "bucket_sample_counts": length_strat_meta.get("bucket_sample_counts"),
+                "n_dropped_no_length": length_strat_meta.get(
+                    "n_dropped_no_length", 0,
+                ),
+            }
+            if length_strat_meta is not None else None
+        ),
         "is_pipeline_check": is_pipeline_check,
         "n_signals": len(rows),
         "n_signals_all_gates_pass": sum(1 for r in rows if r.gates.all_pass),
@@ -808,11 +1277,24 @@ def render_markdown_table(survey: dict[str, Any]) -> str:
 
     lines: list[str] = ["# Calibration survey", ""]
     if survey.get("is_pipeline_check"):
+        # Either --max-entries (label-stratified) or --length-stratify
+        # (length-bucket-stratified, roadmap E.3) trips the pipeline-
+        # check banner. Surface whichever flag(s) the operator set so
+        # the warning is specific enough to act on.
+        knobs: list[str] = []
+        if survey.get("max_entries"):
+            knobs.append(f"`--max-entries {survey['max_entries']}`")
+        ls = survey.get("length_stratify")
+        if ls and ls.get("n_target"):
+            knobs.append(
+                f"`--length-stratify {ls['n_target']} "
+                f"--length-buckets {ls.get('n_buckets', 5)}`"
+            )
+        knobs_str = " and ".join(knobs) if knobs else "subsampling"
         lines.extend([
-            "> **PIPELINE CHECK** — `--max-entries "
-            f"{survey['max_entries']}` was set. This is NOT a "
-            "calibration; small-N gates won't pass meaningfully and "
-            "the resulting thresholds must NOT be committed to "
+            f"> **PIPELINE CHECK** — {knobs_str} was set. This is "
+            "NOT a calibration; small-N gates won't pass meaningfully "
+            "and the resulting thresholds must NOT be committed to "
             "`thresholds_calibrated.json`. Use this output to verify "
             "the pipeline runs end-to-end and to estimate wall-clock "
             "for the full run.",
@@ -1191,8 +1673,57 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help=(
                        "Override the sub-sample seed. Defaults to "
                        "--bootstrap-seed so the same essays are scored "
-                       "across signals (consistency across the survey)."
+                       "across signals (consistency across the survey). "
+                       "Also seeds --length-stratify (E.3)."
                    ))
+    # Roadmap item E.3: length-stratified manifest subsampling for
+    # cloud-scale calibration runs. Composes with --max-entries
+    # (length-stratify first, label-stratify second).
+    p.add_argument(
+        "--length-stratify", type=int, default=None,
+        help=(
+            "Subsample the manifest to N entries with proportional-"
+            "with-floor sampling across text-length buckets BEFORE "
+            "scoring (roadmap item E.3 / post-1.101). Spec recommends "
+            "25-50K for cloud-scale runs against 500K-6M entry corpora "
+            "(MAGE / RAID) where random subsampling under-represents "
+            "the long-essay tail. Length is read from the manifest's "
+            "``word_count`` field when present; otherwise the entry's "
+            "text is loaded from disk (O(N) reads on cold cache; for "
+            "RAID-scale runs, populate ``word_count`` upstream to "
+            "avoid this). Composes with --max-entries: length-stratify "
+            "runs first (manifest-side), then --max-entries applies "
+            "label-stratified subsampling on the already-length-"
+            "stratified manifest. The survey JSON's "
+            "``length_stratify`` block records bucket bounds and "
+            "per-bucket sample counts so the same args reproduce the "
+            "same subsample."
+        ),
+    )
+    p.add_argument(
+        "--length-buckets", type=int, default=5,
+        help=(
+            "Number of length buckets for --length-stratify. Default "
+            "5 (20/40/60/80 percentile cut-points). Bucket bounds are "
+            "computed from the corpus' actual length distribution, "
+            "not fixed widths — heavy-tailed manifests would otherwise "
+            "see all entries pile into the smallest bucket. No effect "
+            "without --length-stratify."
+        ),
+    )
+    p.add_argument(
+        "--length-stratify-floor", type=int, default=None,
+        help=(
+            "Per-bucket floor for --length-stratify: each bucket gets "
+            "at least this many entries (capped at the bucket's actual "
+            "population). Without a floor, a 5-entry tail bucket in a "
+            "50K-target sample would get 0 (5/500K rounds to 0); with "
+            "a floor of M it gets min(M, 5). Default: "
+            "``max(1, N // (2 * B))`` — half the proportional share "
+            "of an equally-sized bucket. No effect without "
+            "--length-stratify."
+        ),
+    )
     p.add_argument("--json-only", action="store_true",
                    help="Emit only the JSON ledger; skip the markdown table.")
     return p
