@@ -47,8 +47,18 @@ SCORE_VERSION_V1 = "perplexity_ratio_v1"
 
 DEFAULT_SCORER = "tinyllama"
 DEFAULT_OBSERVER = "gpt2"
-DEFAULT_THRESHOLD_LOW = 0.9
-DEFAULT_THRESHOLD_HIGH = 1.1
+# Thresholds default to None on purpose: v1 ships no framework-calibrated
+# operating point for the perplexity-ratio score against any model pair, so
+# the default verdict band is "uncalibrated". Operators who have calibrated
+# thresholds for their own model-pair + corpus can supply them explicitly via
+# --threshold-low / --threshold-high, and the audit will then surface
+# ai_likely / indeterminate / human_likely bands with a caveat noting the
+# thresholds are operator-supplied. Hard-coding numeric defaults here would
+# violate the framework rule against shipping thresholded claims without
+# calibration. v2 may add framework-calibrated defaults once empirical
+# threshold data is collected against labelled corpora.
+DEFAULT_THRESHOLD_LOW: float | None = None
+DEFAULT_THRESHOLD_HIGH: float | None = None
 MIN_STABLE_TOKENS = 50
 
 
@@ -64,14 +74,19 @@ DEFAULT_LICENSES = (
 DEFAULT_DOES_NOT_LICENSE = (
     "Does not license a binary AI/human authorship verdict. The score "
     "is one measurement against one model pair; operator judgment "
-    "remains the load-bearing decision step. Does not control for "
-    "memorization (if the target is in the training set of either "
-    "model, the score will be biased). Does not generalize across "
-    "genres without operator-validated calibration. Is an approximation "
-    "of the Hans et al. 2024 Binoculars score (this v1 uses the "
-    "perplexity ratio baseline; v2 will upgrade to true cross-perplexity "
-    "Binoculars once surprisal_backend supports distribution extraction). "
-    "Does not substitute for stylometric, embedding-based, or other "
+    "remains the load-bearing decision step. v1 ships without "
+    "framework-calibrated thresholds: by default the verdict band is "
+    "'uncalibrated' and the audit reports the raw ratio only. Operators "
+    "who supply --threshold-low / --threshold-high explicitly take "
+    "responsibility for those thresholds being appropriate for their "
+    "model pair, corpus, and register. Does not control for memorization "
+    "(if the target is in the training set of either model, the score "
+    "will be biased). Does not generalize across genres without "
+    "operator-validated calibration. Is an approximation of the Hans "
+    "et al. 2024 Binoculars score (this v1 uses the perplexity ratio "
+    "baseline; v2 will upgrade to true cross-perplexity Binoculars "
+    "once surprisal_backend supports distribution extraction). Does "
+    "not substitute for stylometric, embedding-based, or other "
     "framework audits — it complements them."
 )
 
@@ -89,9 +104,11 @@ def _mean(series: list[float]) -> float:
     return sum(series) / len(series)
 
 
-def _band(ratio: float | None, low: float, high: float) -> str:
+def _band(ratio: float | None, low: float | None, high: float | None) -> str:
     if ratio is None:
         return "unavailable"
+    if low is None or high is None:
+        return "uncalibrated"
     if ratio < low:
         return "ai_likely"
     if ratio > high:
@@ -104,8 +121,8 @@ def audit(
     *,
     scorer: SurprisalBackend,
     observer: SurprisalBackend,
-    threshold_low: float = DEFAULT_THRESHOLD_LOW,
-    threshold_high: float = DEFAULT_THRESHOLD_HIGH,
+    threshold_low: float | None = DEFAULT_THRESHOLD_LOW,
+    threshold_high: float | None = DEFAULT_THRESHOLD_HIGH,
     score_fn=None,
 ) -> dict[str, Any]:
     """Run the audit. Returns the results dict that gets wrapped into
@@ -147,6 +164,11 @@ def audit(
         ratio = scorer_mean / observer_mean
 
     verdict_band = _band(ratio, threshold_low, threshold_high)
+
+    if verdict_band == "uncalibrated":
+        caveats.append("no_calibrated_thresholds_supplied")
+    elif threshold_low is not None and threshold_high is not None:
+        caveats.append("thresholds_operator_supplied_not_framework_calibrated")
 
     return {
         "scorer": {
@@ -273,8 +295,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--scorer-revision", default=None, help="Pin scorer HF commit SHA for reproducibility.")
     parser.add_argument("--observer-revision", default=None, help="Pin observer HF commit SHA for reproducibility.")
     parser.add_argument("--surprisal-dtype", choices=("auto", "fp32", "fp16", "bf16"), default="auto", help="Precision for both model loads (default auto).")
-    parser.add_argument("--threshold-low", type=float, default=DEFAULT_THRESHOLD_LOW, help=f"Below this ratio, verdict is ai_likely (default {DEFAULT_THRESHOLD_LOW}).")
-    parser.add_argument("--threshold-high", type=float, default=DEFAULT_THRESHOLD_HIGH, help=f"Above this ratio, verdict is human_likely (default {DEFAULT_THRESHOLD_HIGH}).")
+    parser.add_argument("--threshold-low", type=float, default=DEFAULT_THRESHOLD_LOW, help="Below this ratio, verdict is ai_likely. No framework-calibrated default; without this flag the verdict band is 'uncalibrated' and no likely-author label is emitted.")
+    parser.add_argument("--threshold-high", type=float, default=DEFAULT_THRESHOLD_HIGH, help="Above this ratio, verdict is human_likely. See --threshold-low note on calibration.")
     parser.add_argument("--out", default=None, help="Evidence pack JSON path (default <target-parent>/<stem>.binoculars.json).")
     parser.add_argument("--out-md", default=None, help="Evidence pack markdown path (default <target-parent>/<stem>.binoculars.md).")
     parser.add_argument("--licenses", default=DEFAULT_LICENSES, help="Override the claim_license.licenses text.")
@@ -314,13 +336,17 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: observer backend construction failed ({args.observer}): {exc}", file=sys.stderr)
         return 3
 
-    results = audit(
-        target_text,
-        scorer=scorer,
-        observer=observer,
-        threshold_low=args.threshold_low,
-        threshold_high=args.threshold_high,
-    )
+    try:
+        results = audit(
+            target_text,
+            scorer=scorer,
+            observer=observer,
+            threshold_low=args.threshold_low,
+            threshold_high=args.threshold_high,
+        )
+    except SurprisalBackendError as exc:
+        print(f"error: scoring failed ({args.scorer} / {args.observer}): {exc}", file=sys.stderr)
+        return 3
 
     envelope = compose_envelope(
         target_path=target_path,

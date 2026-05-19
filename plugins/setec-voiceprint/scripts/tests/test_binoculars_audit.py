@@ -187,6 +187,82 @@ def test_audit_flags_observer_near_zero():
 
 
 # ============================================================
+# Calibration discipline (PR #110 P1 review)
+# ============================================================
+
+
+def test_audit_default_thresholds_produce_uncalibrated_band():
+    """Without operator-supplied thresholds, the verdict band must be
+    'uncalibrated' and a caveat must fire. Hard-coding numeric defaults
+    would violate the framework rule against shipping thresholded claims
+    without calibration."""
+    scorer = StubBackend("a")
+    observer = StubBackend("b")
+    score_fn = _score_fn_factory({
+        "a": _series(2.0, 100),
+        "b": _series(4.0, 100),
+    })
+    result = bin_audit.audit("x", scorer=scorer, observer=observer, score_fn=score_fn)
+    assert result["verdict_band"] == "uncalibrated"
+    assert "no_calibrated_thresholds_supplied" in result["caveats"]
+    assert result["perplexity_ratio"] == 0.5  # raw score still reported
+
+
+def test_audit_operator_supplied_thresholds_fire_normal_bands_with_caveat():
+    """When the operator supplies thresholds explicitly, the verdict bands
+    are computed normally, but a caveat fires noting the thresholds are
+    operator-supplied (not framework-calibrated)."""
+    scorer = StubBackend("a")
+    observer = StubBackend("b")
+    score_fn = _score_fn_factory({
+        "a": _series(2.0, 100),
+        "b": _series(4.0, 100),
+    })
+    result = bin_audit.audit(
+        "x", scorer=scorer, observer=observer, score_fn=score_fn,
+        threshold_low=0.9, threshold_high=1.1,
+    )
+    assert result["verdict_band"] == "ai_likely"
+    assert "thresholds_operator_supplied_not_framework_calibrated" in result["caveats"]
+
+
+def test_audit_only_low_threshold_supplied_still_uncalibrated():
+    """Partial threshold specification (only one of low/high) is still
+    uncalibrated — both are required."""
+    scorer = StubBackend("a")
+    observer = StubBackend("b")
+    score_fn = _score_fn_factory({
+        "a": _series(2.0, 100),
+        "b": _series(4.0, 100),
+    })
+    result = bin_audit.audit(
+        "x", scorer=scorer, observer=observer, score_fn=score_fn,
+        threshold_low=0.9, threshold_high=None,
+    )
+    assert result["verdict_band"] == "uncalibrated"
+
+
+def test_band_none_thresholds_return_uncalibrated():
+    assert bin_audit._band(0.5, low=None, high=None) == "uncalibrated"
+    assert bin_audit._band(0.5, low=0.9, high=None) == "uncalibrated"
+    assert bin_audit._band(0.5, low=None, high=1.1) == "uncalibrated"
+
+
+def test_default_threshold_constants_are_none():
+    """Pin the module-level defaults so accidental reintroduction of
+    numeric defaults is caught."""
+    assert bin_audit.DEFAULT_THRESHOLD_LOW is None
+    assert bin_audit.DEFAULT_THRESHOLD_HIGH is None
+
+
+def test_does_not_license_text_names_uncalibrated_default():
+    """The default claim_license text must surface the uncalibrated-default
+    discipline so consumers reading the evidence pack know what 'verdict
+    band: uncalibrated' means."""
+    assert "uncalibrated" in bin_audit.DEFAULT_DOES_NOT_LICENSE.lower()
+
+
+# ============================================================
 # Envelope schema
 # ============================================================
 
@@ -367,6 +443,31 @@ def test_cli_returns_nonzero_on_missing_target(tmp_path):
     assert rc == 1
 
 
+def test_cli_returns_three_on_score_text_failure(monkeypatch, tmp_path):
+    """SurprisalBackendError raised by score_text() inside audit() must be
+    caught by main() and surface as rc=3, same as a construction failure.
+    Regression test for PR #110 P2 review comment — scoring-time errors
+    were previously escaping through a Python traceback."""
+    target = tmp_path / "target.txt"
+    target.write_text("the cat sat on the mat " * 50)
+
+    def stub_init(self, *, model_id, revision=None, dtype="auto"):
+        self.model_id = model_id
+        self.revision = revision
+        self._alias = model_id
+        self.deterministic = True
+        self.dtype = dtype
+        self._resolved_dtype_label = "fp32"
+
+    def failing_score(self, text, *, return_top_k=0):
+        raise bin_audit.SurprisalBackendError("simulated inference failure")
+
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "__init__", stub_init)
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "score_text", failing_score)
+    rc = bin_audit.main([str(target)])
+    assert rc == 3
+
+
 def test_cli_returns_three_on_backend_failure(monkeypatch, tmp_path):
     """When SurprisalBackend construction fails, exit code 3 (per convention)."""
     target = tmp_path / "target.txt"
@@ -407,6 +508,8 @@ def test_cli_end_to_end_with_stubbed_backend(monkeypatch, tmp_path):
         str(target),
         "--out", str(out_json),
         "--out-md", str(out_md),
+        "--threshold-low", "0.9",
+        "--threshold-high", "1.1",
     ])
     assert rc == 0
     assert out_json.exists()
