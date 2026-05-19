@@ -91,7 +91,15 @@ def compose(
         "embedding_block": distances.get("embedding_block"),
         "labels_per_window": distances.get("labels_per_window"),
         "distance_matrices": distances.get("distance_matrices"),
+        # v2: per-metric matrices + which metrics actually ran + why
+        # the others were skipped (sklearn / spaCy availability).
+        "distance_matrices_by_metric": distances.get(
+            "distance_matrices_by_metric"
+        ),
+        "metrics_available": distances.get("metrics_available", []),
+        "metric_skip_reasons": distances.get("metric_skip_reasons", {}),
         "summary_distances": summary,
+        "summary_by_metric": distances.get("summary_by_metric", {}),
         "caveats": deduped_caveats,
         "phase_b_version": SCRIPT_VERSION,
     }
@@ -104,7 +112,10 @@ def compose(
             "families": distances.get("families", []),
             "windows_count": distances.get("windows_count"),
             "have_target_continuation": distances.get("have_target_continuation"),
-            "embedding_alias": (distances.get("embedding_block") or {}).get("alias"),
+            "embedding_alias": (distances.get("embedding_block") or {}).get("alias") if distances.get("embedding_block") else None,
+            # v2: surface which metrics' measurements actually landed
+            # so the audit consumer knows what they're reading.
+            "metrics_available": distances.get("metrics_available", []),
         },
         additional_caveats=deduped_caveats,
     )
@@ -145,6 +156,14 @@ def render_markdown(envelope: dict, distances: dict, license_block: Any) -> str:
     embedding_block = distances.get("embedding_block") or {}
     lines.append(f"- **Embedding model:** `{embedding_block.get('id') or embedding_block.get('alias', 'unknown')}`")
     lines.append(f"- **Target continuation available:** {distances.get('have_target_continuation')}")
+    # v2: surface which metrics ran + which were skipped.
+    metrics_available = distances.get("metrics_available", [])
+    skip_reasons = distances.get("metric_skip_reasons", {})
+    if metrics_available:
+        lines.append(f"- **Metrics computed:** {', '.join(f'`{m}`' for m in metrics_available)}")
+    if skip_reasons:
+        skipped = ", ".join(f"`{m}` ({why})" for m, why in skip_reasons.items())
+        lines.append(f"- **Metrics skipped:** {skipped}")
     lines.append("")
 
     if summary:
@@ -164,23 +183,60 @@ def render_markdown(envelope: dict, distances: dict, license_block: Any) -> str:
                 )
         lines.append("")
 
-    lines.append("## Per-window distance matrices")
-    lines.append("")
-    for w_idx in range(windows_count):
-        lines.append(f"### Window {w_idx + 1}")
+    # v2: per-metric per-window tables. Default to sbert for
+    # back-compat with v1 evidence packs; render additional metrics
+    # under their own sub-sections when present.
+    matrices_by_metric = distances.get("distance_matrices_by_metric") or {}
+
+    def _render_metric_block(metric_name: str, per_window: list) -> None:
+        lines.append(f"## Per-window distance matrices — `{metric_name}`")
         lines.append("")
-        labels = labels_per_window[w_idx]
-        matrix = matrices[w_idx]
-        header = "| | " + " | ".join(f"`{l}`" for l in labels) + " |"
-        sep = "|---|" + "---|" * len(labels)
-        lines.append(header)
-        lines.append(sep)
-        for i, row_label in enumerate(labels):
-            cells = []
-            for j in range(len(labels)):
-                v = matrix[i][j]
-                cells.append(f"{v:.3f}" if isinstance(v, (int, float)) else "—")
-            lines.append(f"| `{row_label}` | " + " | ".join(cells) + " |")
+        for w_idx in range(windows_count):
+            lines.append(f"### Window {w_idx + 1}")
+            lines.append("")
+            labels = labels_per_window[w_idx]
+            matrix = per_window[w_idx]
+            header = "| | " + " | ".join(f"`{l}`" for l in labels) + " |"
+            sep = "|---|" + "---|" * len(labels)
+            lines.append(header)
+            lines.append(sep)
+            for i, row_label in enumerate(labels):
+                cells = []
+                for j in range(len(labels)):
+                    v = matrix[i][j]
+                    cells.append(f"{v:.3f}" if isinstance(v, (int, float)) else "—")
+                lines.append(f"| `{row_label}` | " + " | ".join(cells) + " |")
+            lines.append("")
+
+    rendered_any = False
+    for metric_name in metrics_available:
+        per_window = matrices_by_metric.get(metric_name)
+        if per_window is None:
+            continue
+        _render_metric_block(metric_name, per_window)
+        rendered_any = True
+
+    # Fallback to the v1 layout when matrices_by_metric is absent
+    # (e.g., reading a v1-shaped distances.json that pre-dates v2).
+    if not rendered_any and matrices:
+        lines.append("## Per-window distance matrices")
+        lines.append("")
+        for w_idx in range(windows_count):
+            lines.append(f"### Window {w_idx + 1}")
+            lines.append("")
+            labels = labels_per_window[w_idx]
+            matrix = matrices[w_idx]
+            header = "| | " + " | ".join(f"`{l}`" for l in labels) + " |"
+            sep = "|---|" + "---|" * len(labels)
+            lines.append(header)
+            lines.append(sep)
+            for i, row_label in enumerate(labels):
+                cells = []
+                for j in range(len(labels)):
+                    v = matrix[i][j]
+                    cells.append(f"{v:.3f}" if isinstance(v, (int, float)) else "—")
+                lines.append(f"| `{row_label}` | " + " | ".join(cells) + " |")
+            lines.append("")
         lines.append("")
 
     caveats = envelope["results"].get("caveats") or []
