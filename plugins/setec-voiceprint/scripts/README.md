@@ -2,7 +2,7 @@
 
 The scripts in this directory split across five active task surfaces. Most failure modes come from confusing them.
 
-**Path convention.** Examples below name each script by bare filename (`python3 variance_audit.py ...`), assuming you are running them from this directory (`plugins/setec-voiceprint/scripts/`) or have it on your `$PATH`. From the repo root, prefix the script name with `plugins/setec-voiceprint/scripts/` (matching the top-level README's repo-root convention), or `cd plugins/setec-voiceprint/scripts/` first.
+**Path convention.** Examples below name each script by bare filename (`python3 variance_audit.py ...`), assuming you are running them from this directory (`plugins/setec-voiceprint/scripts/`). Python's script argument is opened as a path relative to the current working directory, so the bare form requires you to be in that directory. From the repo root, prefix the script name with `plugins/setec-voiceprint/scripts/` (matching the top-level README's repo-root convention), or `cd plugins/setec-voiceprint/scripts/` first. If you've made the scripts executable and put the directory on `$PATH`, you can drop `python3` and invoke them directly as `variance_audit.py ...`.
 
 ## Active task surfaces
 
@@ -75,29 +75,34 @@ What Surface 5 cannot answer: "Is this AI" as a binary verdict. Hans et al. 2024
 
 ### Surface tag in script output
 
-Every script's JSON output carries a top-level `task_surface` field, and every markdown report shows the surface near the header. The field tells downstream consumers which question the output is answering. Current values:
+Most user-facing scripts declare a `TASK_SURFACE` module constant and carry the value as a top-level `task_surface` field in JSON output (and the surface near the header in markdown reports). The field tells downstream consumers which question the output is answering. The table below names the value vocabulary with representative scripts per value — it's a partial overview of where each value originates, not an exhaustive script enumeration. Inner pipeline modules (e.g., `calibration/calibrate_thresholds.py`, `calibration/polarity_audit.py`, `calibration/slice_bakeoff_v2.py`, `calibration/cross_polarity_audit.py`) feed into the user-facing scripts above them and don't always carry their own `task_surface` tag; their outputs are routed through whichever caller emits the envelope.
 
-| Field value | Scripts |
-|---|---|
-| `smoothing_diagnosis` | `variance_audit.py`, `surprisal_audit.py`, `sliding_window_heatmap.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py` |
-| `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `pov_voice_profile.py`, `voice_validation_harness.py` |
-| `validation` | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py` |
-| `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass), `restoration_packet.py` (metric-targeted revision packets), `before_after_restoration.py` (post-check loop); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`, and `references/metric-targeted-restoration.md` |
-| `binoculars_discrimination` | `binoculars_audit.py` |
-| `external_mirror_discrimination` | `external_mirror/compose_evidence_pack.py` (Phase B emitter; the rest of `external_mirror/` chains into this via `workflow.py`) |
-| `calibration` | `binoculars_calibrate.py`, `calibration/calibration_survey.py`, `calibration/calibrate_thresholds.py`, `calibration/polarity_audit.py`, `calibration/slice_bakeoff_v2.py`, `calibration/cross_polarity_audit.py`, `calibration/shard_runner.py` |
+| Field value | Representative scripts | Surface |
+|---|---|---|
+| `smoothing_diagnosis` | `variance_audit.py`, `surprisal_audit.py`, `sliding_window_heatmap.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py`, `bigram_diff.py`, plus several smaller per-signal audits | 1 |
+| `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `pov_voice_profile.py`, `voice_validation_harness.py` | 2 |
+| `validation` | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py`, `adversarial_robustness_card.py`, `calibration_drift_monitor.py`, `draft_history_analysis.py` | 3 |
+| `smoothing_diagnosis_calibration` | `calibration/calibration_survey.py` (per-corpus threshold derivation across the Tier 1-4 signal stack) | 3 |
+| `calibration` | `binoculars_calibrate.py` (Surface 5 threshold derivation), `calibration/shard_runner.py` (sharded calibration worker) | 3 |
+| `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass), `restoration_packet.py` (metric-targeted revision packets), `before_after_restoration.py` (post-check loop); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`, and `references/metric-targeted-restoration.md` | 4 |
+| `binoculars_discrimination` | `binoculars_audit.py` | 5 |
+| `external_mirror_discrimination` | `external_mirror/compose_evidence_pack.py` (Phase B emitter; the rest of `external_mirror/` chains into this via `workflow.py`) | 5 |
+| `voice_coherence_acquisition` | `acquire_blog.py`, `acquire_blogger_takeout.py`, `acquire_magazine.py`, `acquire_corpus_template.py`, `acquisition_core.py` (impostor-pool corpus acquisition, feeding Surface 2 baselines) | 2 (acquisition) |
+| `setup` | `baseline_discovery.py`, `dependency_check.py` (first-run + sync-location helpers) | — |
 
 The contract is enforceable at the data layer. The validation harness refuses to mix scores across surfaces because the surfaces answer different questions. Reports are now self-identifying so a reader (or an automated consumer) can route by surface without reading the script's filename or guessing from output shape.
 
 ### Why the surfaces are kept distinct
 
-The two surfaces share statistical signals (function-word distributions, lexical diversity, sentence-length variance, syntactic patterns), because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same features. But they answer different questions and license different claims. A single "is this AI" verdict would have to collapse them into one number, which the underlying math does not entitle.
+The five surfaces share statistical signals (function-word distributions, lexical diversity, sentence-length variance, syntactic patterns), because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same features. But they answer different questions and license different claims. A single "is this AI" verdict would have to collapse them into one number, which the underlying math does not entitle.
 
 When you have a target document, ask first which question you're trying to answer. If you want to know *whether the prose looks AI-smoothed*, run the audit scripts (Surface 1). If you want to know *whether this draft sounds like the writer*, run the voice scripts (Surface 2). The two surfaces can both run on the same document; their findings should be read separately, not averaged.
 
 A third surface — empirical performance validation against a labeled corpus — is shipped in three pieces. `manifest_validator.py` checks the schema and integrity of `corpus_manifest.jsonl` so manifest-consuming tools can trust the manifest before running. `check_corpus.py` checks the files themselves for HTML/CSS/code/table contamination that a valid manifest cannot see. `validation_harness.py` reports how well smoothing-diagnosis scores discriminate against labeled validation entries, in the manifest's registers, text lengths, AI-status classes, and language-status classes. It produces claims about your corpus, not about the world.
 
 A fourth surface — craft restoration advice — lives primarily in the skill's reference docs (`references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`). It diagnoses prose patterns that humans can read, decides whether each instance is earned in context, and recommends revision moves. The earned/unearned verdict is irreducibly a writer's call. `aic_pattern_audit.py` provides a quantitative pre-pass that counts named-pattern density and surfaces candidate instances for that adjudication; the rest of the surface stays in prose.
+
+A fifth surface — discrimination evidence — sits deliberately separate from the first four. It runs the methods that get closest to a binary "is this AI" call (Binoculars two-model perplexity per Hans et al. 2024, and the SETEC external-mirror multi-LLM continuation-distance methodology) but ships them uncalibrated by default. `binoculars_audit.py` and `external_mirror/` both follow the framework's per-corpus-calibration discipline: `DEFAULT_THRESHOLD_LOW = DEFAULT_THRESHOLD_HIGH = None`, verdict bands read `uncalibrated`, and operator-side calibration through `binoculars_calibrate.py` is the path to thresholded claims. Hans et al. report ~95% AUC under matched conditions on the Binoculars detector; the framework still refuses to ship per-corpus thresholds as defaults because those conditions don't generalize without operator data. Surface 5's outputs are evidence packs, not verdicts — same separation discipline as the first four, applied to a tighter signal.
 
 ## Inputs
 
