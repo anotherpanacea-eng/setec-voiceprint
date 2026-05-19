@@ -2,7 +2,9 @@
 """Regression tests for dependency_check.py.
 
 The script reports state — what's installed, what's missing, and how
-to install the missing pieces — for the four SETEC dependency tiers.
+to install the missing pieces — for the five SETEC dependency tiers
+(core, acquisition, ocr, calibration, surprisal) plus the optional
+power-ups tier.
 Tests verify:
 
   * The tier registry is well-formed (every tier has the keys the
