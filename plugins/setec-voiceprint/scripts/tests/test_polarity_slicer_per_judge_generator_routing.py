@@ -851,3 +851,244 @@ class TestShippedSliceTablesAreEmpty:
                 f"with an inner slice override in 1.101.0; update "
                 f"this test + the CHANGELOG if intentional."
             )
+
+
+# ---------------------------------------------------------------------------
+# Explicit --registry-direction must outrank routing
+# ---------------------------------------------------------------------------
+
+
+def _write_minimal_slicer_csv(path: Path, signal: str) -> None:
+    """Write a slicer CSV with the columns ``polarity_audit.load_slicer_csv``
+    requires AND the structure ``build_audit`` needs: per-(model, signal)
+    it needs both an aggregate row (slice_key=ALL) and at least one
+    non-ALL cell row. Without the ALL aggregate, build_audit skips the
+    signal entirely.
+    """
+    path.write_text(
+        "corpus,model,signal,slice_key,slice_value,n_pos,n_neg,auc,da_auc,abs_signal\n"
+        f"raid,gpt2,{signal},ALL,ALL,100,100,0.42,0.42,abs_test\n"
+        f"raid,gpt2,{signal},original_source,raid_test,50,50,0.42,0.42,abs_test\n",
+        encoding="utf-8",
+    )
+
+
+def _find_result(audit: dict, signal: str) -> dict | None:
+    for r in audit.get("results", []):
+        if r.get("signal") == signal:
+            return r
+    return None
+
+
+class TestExplicitRegistryOverrideOutranksRouting:
+    """Reviewer P1: ``--registry-direction sig=dir`` is the operator's
+    explicit intent; it must outrank the per-comparator routing chain.
+
+    Pre-fix, the resolver always walked the per-comparator table first
+    and returned its entry if present, so ``--registry-direction
+    surprisal_sd=gt --comparator-class raid`` silently resolved back
+    to ``lt`` (the per-comparator override from PR #103). Manual
+    what-if audits became impossible exactly where routing exists.
+    """
+
+    def test_override_preserved_when_per_comparator_entry_exists(
+        self, tmp_path, monkeypatch,
+    ):
+        # Seed the per-comparator table with a routed direction that
+        # would normally clobber the operator's override.
+        monkeypatch.setitem(
+            pa.DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR,
+            "_test_sig_for_override_outranks_routing",
+            {"_test_corpus": "lt"},
+        )
+        # Also ensure the spec default exists so the resolver has a
+        # fallback layer.
+        monkeypatch.setitem(
+            pa.DEFAULT_REGISTRY_DIRECTIONS,
+            "_test_sig_for_override_outranks_routing",
+            "lt",
+        )
+        csv_path = tmp_path / "slice.csv"
+        out_json = tmp_path / "polarity_audit.json"
+        _write_minimal_slicer_csv(
+            csv_path, "_test_sig_for_override_outranks_routing",
+        )
+        rc = pa.main([
+            "--input-csv", str(csv_path),
+            "--out-json", str(out_json),
+            "--comparator-class", "_test_corpus",
+            "--registry-direction",
+            "_test_sig_for_override_outranks_routing=gt",
+        ])
+        assert rc == 0
+        audit = json.loads(out_json.read_text(encoding="utf-8"))
+        result = _find_result(
+            audit, "_test_sig_for_override_outranks_routing",
+        )
+        assert result is not None, (
+            "audit produced no result block for the test signal"
+        )
+        assert result.get("registry_direction") == "gt", (
+            "operator's --registry-direction override was silently "
+            "replaced by the per-comparator routing entry; expected 'gt' "
+            f"(the operator's choice) got "
+            f"{result.get('registry_direction')!r}"
+        )
+
+    def test_non_overridden_signals_still_route_normally(
+        self, tmp_path, monkeypatch,
+    ):
+        """Pin the symmetric contract: when the operator does NOT
+        override a signal, routing still applies. We don't disable
+        routing globally — just for explicitly-overridden signals.
+        """
+        monkeypatch.setitem(
+            pa.DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR,
+            "_test_sig_routes_when_not_overridden",
+            {"_test_corpus": "lt"},
+        )
+        monkeypatch.setitem(
+            pa.DEFAULT_REGISTRY_DIRECTIONS,
+            "_test_sig_routes_when_not_overridden",
+            "gt",
+        )
+        csv_path = tmp_path / "slice.csv"
+        out_json = tmp_path / "polarity_audit.json"
+        _write_minimal_slicer_csv(
+            csv_path, "_test_sig_routes_when_not_overridden",
+        )
+        # No --registry-direction for this signal.
+        rc = pa.main([
+            "--input-csv", str(csv_path),
+            "--out-json", str(out_json),
+            "--comparator-class", "_test_corpus",
+        ])
+        assert rc == 0
+        audit = json.loads(out_json.read_text(encoding="utf-8"))
+        result = _find_result(
+            audit, "_test_sig_routes_when_not_overridden",
+        )
+        assert result is not None, (
+            "audit produced no result block for the test signal"
+        )
+        assert result.get("registry_direction") == "lt", (
+            "without an explicit override, routing should still apply: "
+            f"_test_corpus → lt; got {result.get('registry_direction')!r}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Provenance records routing axes
+# ---------------------------------------------------------------------------
+
+
+class TestSliceBakeoffProvenanceRecordsRoutingAxes:
+    """Reviewer P2: ``analyze()`` now accepts comparator_class / judge /
+    generator, and those values can change ``da_auc``. Two runs with
+    different routing axes must leave distinguishable provenance —
+    otherwise an operator inspecting ``provenance.json`` can't tell
+    why their numbers changed.
+    """
+
+    def test_write_provenance_records_routing_axes(self, tmp_path):
+        path = tmp_path / "provenance.json"
+        sb.write_provenance(
+            path,
+            cache_dir=tmp_path,
+            cache_files=[],
+            manifest_path=tmp_path / "nonexistent_manifest.jsonl",
+            corpus="raid",
+            crosstabs=[["original_source"]],
+            min_n=30,
+            do_polarity_audit=True,
+            comparator_key="notes.domain",
+            comparator_class="raid",
+            judge="chatgpt",
+            generator="gpt-4o",
+        )
+        provenance = json.loads(path.read_text(encoding="utf-8"))
+        assert provenance["comparator_class"] == "raid"
+        assert provenance["judge"] == "chatgpt"
+        assert provenance["generator"] == "gpt-4o"
+        # Pre-existing fields still recorded.
+        assert provenance["comparator_key"] == "notes.domain"
+        assert provenance["corpus"] == "raid"
+
+    def test_write_provenance_routing_axes_default_to_none(self, tmp_path):
+        """Back-compat: when routing axes aren't supplied, the fields
+        appear as null in the JSON (not absent) so downstream readers
+        can rely on key presence.
+        """
+        path = tmp_path / "provenance.json"
+        sb.write_provenance(
+            path,
+            cache_dir=tmp_path,
+            cache_files=[],
+            manifest_path=tmp_path / "nonexistent_manifest.jsonl",
+            corpus="mage",
+            crosstabs=[["original_source"]],
+            min_n=30,
+            do_polarity_audit=False,
+            comparator_key=None,
+        )
+        provenance = json.loads(path.read_text(encoding="utf-8"))
+        assert provenance.get("comparator_class") is None
+        assert provenance.get("judge") is None
+        assert provenance.get("generator") is None
+
+
+class TestPolarityAuditJsonRecordsRoutingAxes:
+    """Reviewer P2 (companion): the standalone polarity audit's output
+    JSON also records the routing axes so the routing context survives
+    outside the command line.
+    """
+
+    def test_polarity_audit_json_records_routing_block(
+        self, tmp_path, monkeypatch,
+    ):
+        monkeypatch.setitem(
+            pa.DEFAULT_REGISTRY_DIRECTIONS,
+            "_test_sig_for_routing_block", "gt",
+        )
+        csv_path = tmp_path / "slice.csv"
+        out_json = tmp_path / "polarity_audit.json"
+        _write_minimal_slicer_csv(csv_path, "_test_sig_for_routing_block")
+        rc = pa.main([
+            "--input-csv", str(csv_path),
+            "--out-json", str(out_json),
+            "--comparator-class", "raid",
+            "--judge", "chatgpt",
+            "--generator", "gpt-4o",
+        ])
+        assert rc == 0
+        audit = json.loads(out_json.read_text(encoding="utf-8"))
+        routing = audit.get("routing", {})
+        assert routing.get("comparator_class") == "raid"
+        assert routing.get("judge") == "chatgpt"
+        assert routing.get("generator") == "gpt-4o"
+
+    def test_polarity_audit_routing_explicit_overrides_recorded(
+        self, tmp_path, monkeypatch,
+    ):
+        """The routing block also lists which signals were explicitly
+        overridden via ``--registry-direction``. Lets the operator
+        see in the output JSON which signals bypassed routing.
+        """
+        monkeypatch.setitem(
+            pa.DEFAULT_REGISTRY_DIRECTIONS,
+            "_test_sig_recorded_override", "lt",
+        )
+        csv_path = tmp_path / "slice.csv"
+        out_json = tmp_path / "polarity_audit.json"
+        _write_minimal_slicer_csv(csv_path, "_test_sig_recorded_override")
+        rc = pa.main([
+            "--input-csv", str(csv_path),
+            "--out-json", str(out_json),
+            "--registry-direction", "_test_sig_recorded_override=gt",
+        ])
+        assert rc == 0
+        audit = json.loads(out_json.read_text(encoding="utf-8"))
+        routing = audit.get("routing", {})
+        assert "_test_sig_recorded_override" in (
+            routing.get("explicit_registry_overrides") or []
+        )

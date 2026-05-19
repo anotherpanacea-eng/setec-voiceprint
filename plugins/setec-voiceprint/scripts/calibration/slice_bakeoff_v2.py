@@ -790,6 +790,9 @@ def analyze(
         min_n=min_n,
         do_polarity_audit=do_polarity_audit,
         comparator_key=comparator_key,
+        comparator_class=comparator_class,
+        judge=judge,
+        generator=generator,
     )
     return 0
 
@@ -912,8 +915,19 @@ def write_provenance(
     min_n: int,
     do_polarity_audit: bool,
     comparator_key: str | None,
+    comparator_class: str | None = None,
+    judge: str | None = None,
+    generator: str | None = None,
 ) -> None:
-    """Per-run provenance: CLI args, cache mtimes, manifest hash."""
+    """Per-run provenance: CLI args, cache mtimes, manifest hash.
+
+    ``comparator_class`` / ``judge`` / ``generator`` are the routing
+    axes that drive per-signal direction selection. Recording them
+    here lets an operator inspect ``provenance.json`` and reproduce
+    exactly which direction registry produced the ``da_auc`` numbers
+    in ``slice_analysis.csv`` — otherwise two runs with different
+    routing settings would leave indistinguishable provenance.
+    """
     try:
         manifest_hash = hashlib.sha256(
             manifest_path.read_bytes(),
@@ -946,6 +960,13 @@ def write_provenance(
         "min_n_per_class": min_n,
         "polarity_audit_enabled": do_polarity_audit,
         "comparator_key": comparator_key,
+        # Routing axes (PR #103: comparator_class; PR #119: judge,
+        # generator). Recorded here so an operator inspecting a
+        # historical provenance can reconstruct which direction
+        # registry produced the da_auc numbers in slice_analysis.csv.
+        "comparator_class": comparator_class,
+        "judge": judge,
+        "generator": generator,
     }
     path.write_text(
         json.dumps(provenance, indent=2, sort_keys=True),

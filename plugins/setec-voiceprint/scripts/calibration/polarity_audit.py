@@ -864,6 +864,22 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     registry = parse_registry_overrides(args.registry_direction)
+    # Track which signals the operator explicitly overrode via
+    # ``--registry-direction sig=dir``. Routing must NOT clobber these
+    # — otherwise an operator running a manual what-if audit
+    # ``--registry-direction surprisal_sd=gt --comparator-class raid``
+    # gets ``lt`` back from the per-comparator table (PR #103 entry),
+    # silently ignoring the override. The override is the operator's
+    # explicit intent and outranks any registry default at any layer.
+    explicit_overrides: set[str] = set()
+    for item in args.registry_direction or []:
+        if "=" not in item:
+            continue
+        sig, direction = item.split("=", 1)
+        sig = sig.strip()
+        if direction.strip() in ("gt", "lt"):
+            explicit_overrides.add(sig)
+
     # 1.98.0+: when --comparator-class is set, resolve each registry
     # default through the per-class routing helper so the audit reads
     # signals under their per-comparator direction (e.g., surprisal_sd
@@ -871,12 +887,13 @@ def main(argv: list[str] | None = None) -> int:
     # 1.101.0+: when --judge + --generator are also set, the resolver
     # walks the deeper (judge × generator) layer first. Without judge
     # or generator the resolver falls through to the per-class entry
-    # exactly like the 1.98 path. Explicit --registry-direction
-    # overrides take precedence over the routing chain because the
-    # parser already merged them into ``registry`` above.
+    # exactly like the 1.98 path. Explicitly-overridden signals are
+    # skipped so the operator's ``--registry-direction sig=dir`` wins.
     if args.comparator_class is not None or args.judge is not None \
             or args.generator is not None:
         for sig in list(registry.keys()):
+            if sig in explicit_overrides:
+                continue
             resolved = resolve_registry_direction_with_slice(
                 sig,
                 args.comparator_class,
@@ -891,6 +908,17 @@ def main(argv: list[str] | None = None) -> int:
         registry_directions=registry,
         comparator_key=args.comparator_key,
     )
+    # Record the routing axes that produced these per-signal directions
+    # so the output JSON is self-describing — without this, two audits
+    # against the same CSV under different ``--comparator-class`` /
+    # ``--judge`` / ``--generator`` settings would be indistinguishable
+    # in the output file.
+    audit["routing"] = {
+        "comparator_class": args.comparator_class,
+        "judge": args.judge,
+        "generator": args.generator,
+        "explicit_registry_overrides": sorted(explicit_overrides),
+    }
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
     args.out_json.write_text(
         json.dumps(audit, indent=2, sort_keys=True),
