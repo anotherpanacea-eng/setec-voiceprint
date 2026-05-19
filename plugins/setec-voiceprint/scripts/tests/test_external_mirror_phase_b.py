@@ -638,3 +638,34 @@ def test_ingest_cli_returns_nonzero_on_missing_manifest(tmp_path):
     outputs_dir = _make_outputs(tmp_path, families={"claude": {"format": "t3", "windows": {1: "x"}}})
     rc = ingest.main([str(prompts_dir), str(outputs_dir)])
     assert rc == 1
+
+
+def test_compute_distances_cli_can_resolve_embedding_backend_import(tmp_path):
+    """Regression test for PR #109 review comment.
+
+    ``compute_distances.py`` lives in scripts/external_mirror/. Running it as
+    a script puts only that subdirectory on sys.path — not the parent
+    scripts/ where embedding_backend lives. Without the module-load
+    sys.path prepend, the lazy ``from embedding_backend import ...`` inside
+    _load_embedding_backend() fails with ModuleNotFoundError when the CLI
+    actually tries to construct a real backend.
+
+    This test runs the CLI as a subprocess (mimicking real invocation) with
+    a minimal ingested.json and verifies the failure mode is NOT 'No module
+    named embedding_backend'. (The CLI may still fail later — e.g., because
+    sentence-transformers isn't installed in the test env — but that's a
+    different error class.)
+    """
+    import subprocess
+    ingested_path = tmp_path / "ingested.json"
+    ingested_path.write_text(json.dumps(_build_ingested()))
+
+    compute_distances_script = _EXTERNAL_MIRROR / "compute_distances.py"
+    result = subprocess.run(
+        [sys.executable, str(compute_distances_script), str(ingested_path),
+         "--out", str(tmp_path / "distances.json")],
+        capture_output=True, text=True, timeout=30,
+    )
+    assert "No module named 'embedding_backend'" not in result.stderr, (
+        f"sys.path fix regressed; stderr was: {result.stderr}"
+    )

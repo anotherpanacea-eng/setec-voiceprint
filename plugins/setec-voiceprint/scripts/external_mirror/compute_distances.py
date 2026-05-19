@@ -26,12 +26,23 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+_SCRIPTS_DIR = Path(__file__).resolve().parent.parent
+if str(_SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_DIR))
+
 
 SCRIPT_VERSION = "0.1.0"
 
 
 def _load_embedding_backend(alias: str):
-    """Import lazily so tests can stub without requiring sentence-transformers."""
+    """Import lazily so tests can stub without requiring sentence-transformers.
+
+    The lazy import is gated on the module-load sys.path prepend above; running
+    this file as a CLI (``python3 compute_distances.py ...``) only adds
+    ``scripts/external_mirror/`` to sys.path, not the parent ``scripts/``
+    directory where embedding_backend lives. Matches the pattern in
+    compose_evidence_pack.py.
+    """
     from embedding_backend import EmbeddingBackend  # type: ignore
     return EmbeddingBackend(alias=alias)
 
