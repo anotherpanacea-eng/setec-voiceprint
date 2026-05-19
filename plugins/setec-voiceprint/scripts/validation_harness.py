@@ -196,6 +196,17 @@ def score_smoothing_entry(
     # None preserves pre-1.98.2 behavior (use each spec's default
     # direction).
     comparator_class: str | None = None,
+    # 1.X+: per-(judge × generator) direction routing passthrough,
+    # symmetric to ``comparator_class``. Threaded into
+    # ``classify_compression`` so calibration-pipeline scorers can
+    # consult ThresholdSpec.direction_by_comparator_and_slice for
+    # the 13 RAID ``comparator_dependent`` cells (PR #106's
+    # infrastructure, roadmap item D plumbing). Both must be set
+    # (alongside comparator_class) to activate the inner-most
+    # fallback layer. None for either preserves pre-1.X behavior
+    # (use the per-comparator or spec default direction).
+    judge: str | None = None,
+    generator: str | None = None,
     # 1.90.0+ batched-Tier-4 wiring. When ``text`` is supplied, the
     # caller has pre-read the file (typically inside the batched-
     # scoring pre-pass in ``score_corpus``) and we skip the read here
@@ -263,8 +274,13 @@ def score_smoothing_entry(
     n_words = int(audit.get("summary", {}).get("n_words", raw_n_words) or 0)
     # 1.98.2+: thread the operator's comparator_class into the
     # per-spec direction resolution for THIS entry's classification.
+    # 1.X+: also thread judge / generator for per-(judge × generator)
+    # slice routing (PR #106 infrastructure, roadmap item D plumbing).
     compression = classify_compression(
-        audit, comparator_class=comparator_class,
+        audit,
+        comparator_class=comparator_class,
+        judge=judge,
+        generator=generator,
     )
     score = _finite_score(compression.get("compression_fraction"))
 

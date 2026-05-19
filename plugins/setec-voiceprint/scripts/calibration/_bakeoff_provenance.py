@@ -77,6 +77,13 @@ class ProvenanceInputs:
     # calibration_survey call so the routing actually takes
     # effect end-to-end.
     comparator_class: str | None = None
+    # 1.X+: per-(judge × generator) slice axes (roadmap item D).
+    # No corpus-based default (unlike comparator_class) — judges and
+    # generators are slice axes WITHIN a corpus. When set on the
+    # shell driver via SETEC_JUDGE / SETEC_GENERATOR, the driver
+    # adds --judge X --generator Y to every calibration_survey call.
+    judge: str | None = None
+    generator: str | None = None
 
 
 def _git_head_sha(cwd: Path) -> str | None:
@@ -129,6 +136,11 @@ def build_provenance(inputs: ProvenanceInputs, *, repo_root: Path) -> dict[str, 
         # bake-off from an un-routed one, and so a replay from this
         # provenance reproduces the same direction regime.
         "comparator_class": inputs.comparator_class,
+        # 1.X+: per-(judge × generator) slice axes recorded so an
+        # operator replaying from the ledger reproduces the same
+        # slice routing (roadmap item D).
+        "judge": inputs.judge,
+        "generator": inputs.generator,
         "host": {
             "platform": platform.platform(),
             "python": sys.version.split()[0],
@@ -344,6 +356,9 @@ def _main(argv: list[str]) -> int:
             # caller fixtures keep working unchanged. None when
             # the shell driver didn't set _SETEC_COMPARATOR_CLASS.
             comparator_class=raw.get("comparator_class"),
+            # 1.X+: same forgiving pattern for the new slice axes.
+            judge=raw.get("judge"),
+            generator=raw.get("generator"),
             manifest_path=Path(raw["manifest_path"]),
             phase_a_aliases=list(raw["phase_a_aliases"]),
             phase_b_aliases=list(raw["phase_b_aliases"]),

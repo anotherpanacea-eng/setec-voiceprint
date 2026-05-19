@@ -402,6 +402,12 @@ def _build_inner_args(
         comparator_class=getattr(
             parent_args, "comparator_class", None,
         ),
+        # 1.X+: per-(judge × generator) slice routing forwarded into
+        # the inner Namespace, symmetric to comparator_class above.
+        # PR #106 infrastructure, roadmap item D plumbing. Both None
+        # preserves pre-1.X behavior.
+        judge=getattr(parent_args, "judge", None),
+        generator=getattr(parent_args, "generator", None),
         # 1.90.0+: forward the batched-Tier-4 batch size so
         # calibration_survey runs honor the operator-chosen value
         # rather than falling back to score_corpus's default of 8.
@@ -1037,6 +1043,28 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "instead of MAGE default 'gt'. None preserves pre-"
             "1.98.2 behavior. Cache identity is load-bearing on "
             "this value."
+        ),
+    )
+    p.add_argument(
+        "--judge", default=None,
+        help=(
+            "1.X+: per-(judge × generator) slice axis. Mirror of "
+            "variance_audit.py's --judge flag (added 1.100.0) and "
+            "calibrate_thresholds.py's --judge flag. Combined with "
+            "--generator and --comparator-class, consults "
+            "ThresholdSpec.direction_by_comparator_and_slice for "
+            "the 13 RAID ``comparator_dependent`` cells. None "
+            "preserves pre-1.X behavior. Cache identity is "
+            "load-bearing on this value."
+        ),
+    )
+    p.add_argument(
+        "--generator", default=None,
+        help=(
+            "1.X+: per-(judge × generator) slice axis. See --judge "
+            "help text. Both must be set to activate the slice "
+            "routing layer; either alone falls back to the "
+            "per-comparator (or spec default) direction."
         ),
     )
     p.add_argument("--bootstrap-resamples", type=int, default=2000)

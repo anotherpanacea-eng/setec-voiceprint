@@ -1056,6 +1056,8 @@ def _build_harness_command(
     chunk_size: int | None = None,
     device: str | None = None,
     comparator_class: str | None = None,
+    judge: str | None = None,
+    generator: str | None = None,
 ) -> str:
     """Compose the replay command stamped into the ledger entry.
 
@@ -1109,6 +1111,16 @@ def _build_harness_command(
     # emits nothing (pre-1.99 callers / un-routed runs unchanged).
     if comparator_class is not None:
         parts.append(f"--comparator-class {q(comparator_class)}")
+    # 1.X+: surface --judge / --generator on replay commands for the
+    # same reason as --comparator-class above. A threshold derived
+    # under --judge chatgpt --generator gpt-4o must be reproducible
+    # via the ledger; without this, the replay command would silently
+    # omit the slice axes and the threshold would re-derive under the
+    # per-comparator (or spec default) direction. None emits nothing.
+    if judge is not None:
+        parts.append(f"--judge {q(judge)}")
+    if generator is not None:
+        parts.append(f"--generator {q(generator)}")
     return " ".join(parts)
 
 
@@ -1718,6 +1730,14 @@ def score_corpus(
                     "comparator_class": getattr(
                         args, "comparator_class", None,
                     ),
+                    # 1.X+: per-(judge × generator) slice identity,
+                    # symmetric to comparator_class. A cache scored
+                    # under one (judge, generator) pair can't be
+                    # reused under another — the per-spec direction
+                    # may differ (PR #106 infrastructure, roadmap
+                    # item D plumbing).
+                    "judge": getattr(args, "judge", None),
+                    "generator": getattr(args, "generator", None),
                     "n_entries_full": full_entry_count,
                     "n_entries_scored": len(records),
                     "sub_sample": sub_sample_meta,
@@ -1790,6 +1810,17 @@ def score_corpus(
                 # None preserves pre-1.98.2 behavior (use spec
                 # defaults).
                 comparator_class=getattr(args, "comparator_class", None),
+                # 1.X+: per-(judge × generator) slice routing
+                # passthrough, symmetric to comparator_class. The
+                # standalone variance_audit.py CLI accepted
+                # ``--judge`` / ``--generator`` in 1.100.0; this
+                # threading extends the contract to the calibration
+                # pipeline so operator runs against the 13 RAID
+                # ``comparator_dependent`` cells route correctly
+                # (PR #106 infrastructure, roadmap item D plumbing).
+                # Both None preserves pre-1.X behavior.
+                judge=getattr(args, "judge", None),
+                generator=getattr(args, "generator", None),
                 # 1.90.0+: batched-Tier-4 wiring. ``text`` is None on
                 # a cache miss (per-entry path reads from disk as
                 # before); on a hit, the cached text + precomputed
@@ -1849,6 +1880,13 @@ def score_corpus(
         # produce wrong band calls. Same cache-identity contract
         # shape as the dtype identity fields above.
         "comparator_class": getattr(args, "comparator_class", None),
+        # 1.X+: per-(judge × generator) slice identity, symmetric
+        # to comparator_class. Same compat-check contract: a cache
+        # scored under one (judge, generator) pair can't be reused
+        # under another because the per-spec direction may differ
+        # (the 13 RAID ``comparator_dependent`` cells from PR #106).
+        "judge": getattr(args, "judge", None),
+        "generator": getattr(args, "generator", None),
         "n_entries_full": full_entry_count,
         "n_entries_scored": len(records),
         "sub_sample": sub_sample_meta,
@@ -2036,6 +2074,23 @@ def cache_is_compatible(
             f"comparator_class changed "
             f"({cached_comparator_class!r} → "
             f"{cur_comparator_class!r})"
+        )
+    # 1.X+: per-(judge × generator) slice identity. Same compat-
+    # check contract as comparator_class above. Field-missing on
+    # the cache side is treated as None (pre-1.X caches had no
+    # concept of these slice axes).
+    cur_judge = getattr(args, "judge", None)
+    cached_judge = cache_meta.get("judge")
+    if cached_judge != cur_judge:
+        return False, (
+            f"judge changed ({cached_judge!r} → {cur_judge!r})"
+        )
+    cur_generator = getattr(args, "generator", None)
+    cached_generator = cache_meta.get("generator")
+    if cached_generator != cur_generator:
+        return False, (
+            f"generator changed "
+            f"({cached_generator!r} → {cur_generator!r})"
         )
     cached_sub = cache_meta.get("sub_sample")
     cur_max = getattr(args, "max_entries", None)
@@ -2539,6 +2594,14 @@ def derive_threshold_from_records(
         # corpus + signal but under different comparator classes
         # would be indistinguishable on inspection.
         "comparator_class": getattr(args, "comparator_class", None),
+        # 1.X+: per-(judge × generator) slice axes surfaced on the
+        # provenance entry so audit consumers see which slice the
+        # threshold was derived for. Two thresholds for the same
+        # signal under (chatgpt × gpt-4o) vs (llama × gpt-3.5)
+        # would otherwise be indistinguishable on inspection (the
+        # 13 RAID ``comparator_dependent`` cells case).
+        "judge": getattr(args, "judge", None),
+        "generator": getattr(args, "generator", None),
         "setec_commit": _git_commit(),
         "harness_command": _build_harness_command(
             manifest_path=manifest_path,
@@ -2549,6 +2612,8 @@ def derive_threshold_from_records(
             chunk_size=chunk_size,
             device=device,
             comparator_class=getattr(args, "comparator_class", None),
+            judge=getattr(args, "judge", None),
+            generator=getattr(args, "generator", None),
         ),
         "derivation_date": iso_date,
         "notes": args.notes or (
@@ -2858,6 +2923,28 @@ def main(argv: list[str] | None = None) -> int:
             "identity treats this as load-bearing: a cache scored "
             "under one comparator class can't be reused under "
             "another."
+        ),
+    )
+    parser.add_argument(
+        "--judge", default=None,
+        help=(
+            "1.X+: per-(judge × generator) slice axis for direction "
+            "routing. Mirror of variance_audit.py's --judge flag "
+            "(added 1.100.0). Combined with --generator and "
+            "--comparator-class, consults "
+            "ThresholdSpec.direction_by_comparator_and_slice for the "
+            "13 RAID ``comparator_dependent`` cells. None preserves "
+            "pre-1.X behavior (use the per-comparator or spec "
+            "default). Cache identity treats this as load-bearing."
+        ),
+    )
+    parser.add_argument(
+        "--generator", default=None,
+        help=(
+            "1.X+: per-(judge × generator) slice axis. See --judge "
+            "help text. Both must be set to activate the inner-most "
+            "slice routing layer; either alone falls back to the "
+            "per-comparator (or spec default) direction."
         ),
     )
     parser.add_argument(
