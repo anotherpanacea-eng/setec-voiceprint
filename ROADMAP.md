@@ -4,7 +4,7 @@ The architectural narrative and the path from MVP to validated framework. Intern
 
 ## Current state
 
-The framework ships a three-layer architecture (Layer A distributional diagnostics, Layer B AIC pattern flags, Layer C source triage), four task surfaces (smoothing diagnosis, voice coherence, validation, craft restoration), seventeen Python scripts spanning the smoothing-diagnosis, voice-coherence, validation, and craft-restoration surfaces, and four reference documents.
+The framework ships a three-layer architecture (Layer A distributional diagnostics, Layer B AIC pattern flags, Layer C source triage), five task surfaces (smoothing diagnosis, voice coherence, validation + calibration, craft restoration, and Surface 5 discrimination evidence shipped uncalibrated by default — Binoculars two-model perplexity + the SETEC external-mirror methodology), a script catalog spanning all five surfaces (full per-script catalog at `plugins/setec-voiceprint/scripts/README.md`), and a reference-documentation tree under `plugins/setec-voiceprint/references/` (signals glossary + per-layer math + per-corpus calibration findings + craft-pattern references).
 
 What is shipped:
 
