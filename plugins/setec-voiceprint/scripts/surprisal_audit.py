@@ -595,6 +595,29 @@ def render_markdown(audit: dict[str, Any]) -> str:
         f"**Tool:** `{audit['tool']}` (v{audit['version']})",
         f"**Tokens scored:** {audit['n_tokens_scored']:,}",
         f"**Series length:** {audit['series_length']:,}",
+    ]
+    # 1.98.1+: surface the backend identifier in the Markdown
+    # header. The full block lives in audit["backend"] (attached
+    # via ``identifier_block()`` in ``main()`` and serialised to
+    # the JSON output since PR #93), but operators reading the
+    # Markdown summary couldn't see which dtype the run actually
+    # loaded with. That mattered: the fp16/fp32 absolute-surprisal
+    # divergence (Tier-4 audit writeup, 2026-05-18: 10.76 fp32 vs
+    # 3.83 fp16 on the same TinyLlama / same essay) makes the
+    # dtype provenance load-bearing for cross-host comparison.
+    backend_block = audit.get("backend") or {}
+    if backend_block:
+        model_id = backend_block.get("id", "unknown")
+        revision = backend_block.get("revision") or "(latest)"
+        dtype_requested = backend_block.get("dtype_requested", "unknown")
+        dtype_loaded = backend_block.get("dtype_loaded") or "(unresolved)"
+        lines += [
+            f"**Backend model:** `{model_id}` "
+            f"@ revision `{revision}`",
+            f"**Dtype:** loaded `{dtype_loaded}` "
+            f"(requested `{dtype_requested}`)",
+        ]
+    lines += [
         "",
         "## Distribution summary",
         "",

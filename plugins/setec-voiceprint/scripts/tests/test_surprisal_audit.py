@@ -507,6 +507,83 @@ class TestRenderMarkdown:
         assert "user-baseline-required" in text
         assert "PROVISIONAL" in text
 
+    def test_backend_block_surfaces_model_id_revision_dtype(self):
+        """1.98.1+: the Markdown header surfaces the loaded dtype
+        + model id + revision from ``audit['backend']`` so an
+        operator reading the Markdown can tell which precision
+        regime produced the numbers. The fp16/fp32 absolute-
+        surprisal divergence (Tier-4 audit writeup, 2026-05-18:
+        ~3x difference on the same model + essay) makes dtype
+        provenance load-bearing for cross-host comparison.
+
+        Pre-1.98.1 the dtype lived only in the JSON output's
+        ``backend`` block; operators reading the Markdown summary
+        had no signal at all."""
+        out = sa.audit_surprisal("text", score_fn=_flat_stub)
+        out["backend"] = {
+            "id": "TinyLlama/TinyLlama-1.1B-intermediate-step-1431k-3T",
+            "revision": "abc123",
+            "alias": "tinyllama",
+            "deterministic_mode": True,
+            "method": "transformers-causal-lm",
+            "dtype_requested": "auto",
+            "dtype_loaded": "bf16",
+        }
+        text = sa.render_markdown(out)
+        # Model id appears prefixed so operators can grep for it.
+        assert "TinyLlama-1.1B-intermediate-step-1431k-3T" in text
+        # Revision pinned to the exact SHA, not (latest).
+        assert "abc123" in text
+        # Both requested and loaded dtypes appear together so
+        # operators can tell "auto resolved to bf16" apart from
+        # "operator explicitly asked for bf16".
+        assert "bf16" in text
+        assert "auto" in text
+
+    def test_backend_block_handles_missing_revision_gracefully(self):
+        """When the operator didn't pin a revision (``revision: None``
+        in the backend block), render as ``(latest)`` so the
+        Markdown reads cleanly. Distinguishes the "no revision
+        recorded" case from a literal string ``"None"``."""
+        out = sa.audit_surprisal("text", score_fn=_flat_stub)
+        out["backend"] = {
+            "id": "openai-community/gpt2",
+            "revision": None,
+            "dtype_requested": "fp32",
+            "dtype_loaded": "fp32",
+        }
+        text = sa.render_markdown(out)
+        assert "(latest)" in text
+        assert "gpt2" in text
+
+    def test_backend_block_handles_missing_dtype_loaded_gracefully(self):
+        """A stub backend (e.g., in a test harness without torch)
+        may write ``dtype_loaded: None`` because dtype resolution
+        was skipped. Render as ``(unresolved)`` so the Markdown
+        is self-explanatory."""
+        out = sa.audit_surprisal("text", score_fn=_flat_stub)
+        out["backend"] = {
+            "id": "stub-model", "revision": None,
+            "dtype_requested": "auto",
+            "dtype_loaded": None,
+        }
+        text = sa.render_markdown(out)
+        assert "(unresolved)" in text
+
+    def test_backend_block_omitted_does_not_crash(self):
+        """Pre-1.93 audit JSONs (or any consumer that didn't attach
+        a backend block) skip the dtype line entirely. Render must
+        not crash on missing ``audit['backend']``."""
+        out = sa.audit_surprisal("text", score_fn=_flat_stub)
+        # No backend attached.
+        text = sa.render_markdown(out)
+        # The header sections still render.
+        assert "# Surprisal audit" in text
+        assert "## Distribution summary" in text
+        # No dtype / model line attempted.
+        assert "Backend model" not in text
+        assert "Dtype" not in text
+
 
 # ---------- CLI ----------
 

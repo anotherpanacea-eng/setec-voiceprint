@@ -6,6 +6,31 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.98.1] - 2026-05-18
+
+**Surface dtype + model id + revision in `surprisal_audit.py`'s Markdown summary header.** Previously these fields lived only in the JSON output's `backend` block (attached via `identifier_block()` since PR #93); operators reading the human-readable Markdown report had no signal at all about which precision regime produced the numbers.
+
+### Why
+
+The Tier-4 surprisal audit writeup (2026-05-18) demonstrated a striking finding: the same TinyLlama model on the same essay produces mean surprisal 10.76 bits/token at fp32 and 3.83 bits/token at fp16 — a ~3x difference in absolute values. Within-model document ordering is preserved by the dtype clipping, but absolute numbers diverge dramatically. Operators comparing surprisal outputs across hosts (laptop vs cloud, sandbox vs primary) need the dtype provenance visible in the Markdown summary, not buried in the JSON's `backend` block.
+
+### Changed
+
+- **`surprisal_audit.render_markdown`** — header now includes two new lines pulled from `audit["backend"]`:
+  - `**Backend model:** \`<id>\` @ revision \`<revision>\`` — pinned HF id + revision SHA (or `(latest)` when revision is None).
+  - `**Dtype:** loaded \`<dtype_loaded>\` (requested \`<dtype_requested>\`)` — both fields so operators can tell "auto resolved to bf16" apart from "operator explicitly asked for bf16". `(unresolved)` when `dtype_loaded` is None (test-stub case without torch).
+- The block is opt-in by presence of `audit["backend"]` — pre-1.93 audits (no backend block) or any consumer that doesn't attach one render the header unchanged. No crash on missing fields.
+
+### Tests
+
+- **4 new tests** in `test_surprisal_audit.py::TestRenderMarkdown` pinning: full block surfaces id + revision + both dtype fields, missing-revision renders `(latest)`, missing-dtype-loaded renders `(unresolved)`, missing-backend-block renders cleanly (no crash, no Backend/Dtype lines).
+- **53 tests pass** in `test_surprisal_audit.py` (was 49).
+
+### Notes
+
+- **Not a JSON contract change.** The JSON output's `backend` block stays exactly as PR #93 / `identifier_block()` defines it. Only the Markdown rendering is extended.
+- **Pre-1.93 audits render cleanly.** Old cached audit JSONs without a `backend` block skip the new lines entirely — no migration needed.
+
 ## [1.98.0] - 2026-05-18
 
 **Per-comparator direction routing on `ThresholdSpec.direction`.** Closes the `direction_by_comparator` chunk that PR #99's CHANGELOG explicitly deferred ("next chunk"). The 2026-05-18 RAID 5K bake-off showed that the MAGE-correct directions (PR #99) don't generalise to mixed-humans corpora — 4 `surprisal_sd` cells returned `globally_inverted` on RAID under the MAGE direction registry. This PR adds the infrastructure for per-comparator direction overrides, plus one empirical entry (`surprisal_sd: {"raid": "lt"}`) to drive the design end-to-end. Other RAID divergences are `comparator_dependent` at the (judge × generator) level — finer than `comparator_class` — and stay deferred to a per-(signal × judge × generator) follow-up.
