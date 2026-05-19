@@ -122,33 +122,47 @@ def _band(ratio: float | None, low: float | None, high: float | None) -> str:
 def _tokenizers_compatible(
     scorer: SurprisalBackend, observer: SurprisalBackend,
 ) -> bool:
-    """True when scorer + observer share a tokenizer identity.
+    """True when scorer + observer share an aligned vocabulary.
 
-    Cross-perplexity requires the two models to index the same
-    vocabulary so the sum ``sum_v P_obs(v|ctx) * log P_scorer(v|ctx)``
-    is well-defined. The upstream fingerprint check verifies
-    tokenizer_class + vocab_size match; the per-input ``token_ids``
-    comparison inside ``audit()`` provides the load-bearing guarantee
-    on actual alignment for THIS input.
+    Cross-perplexity requires the two models' vocab indices to mean
+    the same thing — the formula sums
+    ``exp(P_observer(v|ctx)) * log P_scorer(v|ctx)`` over ALL vocab
+    positions v, so if token id N decodes to "foo" in one model and
+    "bar" in the other, the sum is computing cross-entropy over
+    misaligned distributions and produces a meaningless number.
 
-    NOT included in the check: ``model_name_or_path``. The canonical
-    Hans et al. 2024 Binoculars pair is Falcon-7b + Falcon-7b-instruct
-    — same tokenizer class + vocab + actual token-id sequences, but
-    different model name_or_path. Requiring name_or_path equality
-    would silently reject this canonical pairing and fall back to v1
-    PR, defeating the whole point of v2. Fix per PR #114 review.
+    Load-bearing check: ``vocab_sha256`` — a deterministic hash of
+    each tokenizer's full token→id table (from
+    ``tokenizer.get_vocab()``). Matching hashes prove the vocabularies
+    align entry-for-entry. The canonical Hans et al. 2024 Binoculars
+    pair (Falcon-7b base + Falcon-7b-instruct) shares the same
+    underlying tokenizer file and so the same vocab hash, even though
+    ``model_name_or_path`` differs — this check accepts that pair.
 
-    Defensive: stub backends without ``tokenizer_identity`` fall
-    back to incompatible so the audit degrades to PR ratio rather
-    than raising during the check."""
+    ``tokenizer_class`` and ``vocab_size`` are kept as a sanity
+    pre-check (two backends that don't match on these can't share a
+    vocab hash either; the early exit avoids the false-positive of
+    two unrelated tokenizers that happen to collide on hash).
+
+    Defensive: ``vocab_sha256 = None`` (tokenizer without
+    ``get_vocab``) is treated as incompatible — the audit falls back
+    to v1 PR rather than silently computing cross-perplexity over an
+    un-fingerprinted vocab. Stub backends without
+    ``tokenizer_identity()`` likewise fall back.
+    """
     try:
         a = scorer.tokenizer_identity()
         b = observer.tokenizer_identity()
     except (AttributeError, Exception):  # noqa: BLE001
         return False
+    a_vocab = a.get("vocab_sha256")
+    b_vocab = b.get("vocab_sha256")
+    if a_vocab is None or b_vocab is None:
+        return False
     return (
         a.get("tokenizer_class") == b.get("tokenizer_class")
         and a.get("vocab_size") == b.get("vocab_size")
+        and a_vocab == b_vocab
     )
 
 

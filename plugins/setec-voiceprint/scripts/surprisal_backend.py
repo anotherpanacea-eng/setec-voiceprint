@@ -841,20 +841,28 @@ class SurprisalBackend:
     def tokenizer_identity(self) -> dict[str, Any]:
         """Fingerprint for tokenizer-compatibility checks.
 
-        Two backends with matching ``tokenizer_class`` + ``vocab_size``
-        + ``model_name_or_path`` are very likely to produce the same
-        token-id sequences for the same text. Used by
-        ``binoculars_audit.py`` v2 to gate true cross-perplexity
-        computation: the Hans et al. 2024 Binoculars formula
-        requires both models to share a vocabulary so the
-        cross-entropy sum can be indexed by the same token ids.
+        Used by ``binoculars_audit.py`` v2 to gate true cross-perplexity
+        computation: the Hans et al. 2024 Binoculars formula sums
+        ``exp(P_observer(v|ctx)) * log P_scorer(v|ctx)`` over ALL
+        vocab indices v, so the two tokenizers must share the same
+        token→id mapping (not just the same class + size) — otherwise
+        the audit would compute a plausible-looking B over misaligned
+        vocabularies with no caveat.
 
-        Returns a dict with stable string-able fields so callers
-        can compare via equality. Callers that need a stricter
-        check (verifying the actual token-id sequences match for
-        their specific input) should additionally compare the
-        ``token_ids`` returned by ``score_text_with_distributions``.
+        ``vocab_sha256`` is the load-bearing field: a deterministic
+        hash of the full ``get_vocab()`` token→id table. Two backends
+        with the same hash share an aligned vocabulary regardless of
+        ``model_name_or_path`` (this lets the canonical Hans et al.
+        Falcon base / Falcon instruct pair pass while still rejecting
+        same-class same-size models with different vocab tables).
+
+        ``tokenizer_class`` and ``vocab_size`` are surfaced for
+        diagnostic / provenance display but not load-bearing for
+        cross-perplexity — they can match while ``vocab_sha256``
+        differs, and vice versa.
         """
+        import hashlib
+        import json
         _, tokenizer = self._load()
         vocab_size = getattr(tokenizer, "vocab_size", None)
         if vocab_size is None:
@@ -862,9 +870,31 @@ class SurprisalBackend:
                 vocab_size = len(tokenizer)
             except (TypeError, AttributeError):
                 vocab_size = None
+
+        # Hash the token→id table deterministically so two tokenizers
+        # with identical vocabularies (e.g., Falcon base + Falcon
+        # instruct) produce the same fingerprint regardless of where
+        # they were loaded from. JSON with sort_keys=True is the
+        # standard deterministic serialization in this codebase.
+        vocab_sha256: str | None = None
+        try:
+            vocab_dict = tokenizer.get_vocab()
+            vocab_bytes = json.dumps(
+                vocab_dict, sort_keys=True, ensure_ascii=False,
+            ).encode("utf-8")
+            vocab_sha256 = hashlib.sha256(vocab_bytes).hexdigest()
+        except (AttributeError, TypeError, ValueError):
+            # Tokenizer without get_vocab (very unusual) — leave None.
+            # _tokenizers_compatible treats None-vs-None as a fingerprint
+            # mismatch (returns False), erring toward the v1 PR
+            # fallback rather than silently computing cross-perplexity
+            # over an un-fingerprinted vocab.
+            pass
+
         return {
             "tokenizer_class": tokenizer.__class__.__name__,
             "vocab_size": vocab_size,
+            "vocab_sha256": vocab_sha256,
             "model_name_or_path": getattr(
                 tokenizer, "name_or_path", None,
             ),
