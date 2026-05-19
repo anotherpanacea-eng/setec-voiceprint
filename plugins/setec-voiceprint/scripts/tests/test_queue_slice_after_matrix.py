@@ -609,3 +609,170 @@ def test_unknown_flag_rejected(
     cp = _run_script(env, args=["--once", "--nope"])
     assert cp.returncode == 2
     assert "unknown flag" in cp.stderr
+
+
+@_skip_no_bash
+def test_standalone_polarity_audit_forwards_comparator_class(
+    tmp_path: Path, manifest: Path, stubs: tuple[Path, Path, Path],
+):
+    """Standalone polarity audit must receive ``--comparator-class`` so
+    its direction registry matches the slicer's integrated ``--audit
+    polarity`` output. Without this, the two artifacts can disagree on
+    signals routed by comparator (RAID surprisal_sd in particular).
+
+    Pin: ``SETEC_COMPARATOR_CLASS=raid`` should produce ``--comparator-
+    class raid`` in the polarity stub's argv.
+    """
+    slicer, polarity, invocations = stubs
+    watch = tmp_path / "bake"
+    watch.mkdir()
+    _make_survey(watch, "survey_phaseA_mxbai.json")
+    env = _base_env(
+        watch_dir=watch,
+        manifest=manifest,
+        slicer=slicer,
+        polarity=polarity,
+        invocations=invocations,
+        slice_out_dir=tmp_path / "slice_out",
+        corpus="raid",
+    )
+    # Slicer stub writes a CSV so polarity has something to read.
+    env["STUB_EXTRA_PATH"] = "slice_analysis.csv"
+    cp = _run_script(env, args=["--once"])
+    assert cp.returncode == 0, cp.stderr
+    invocation_lines = invocations.read_text().splitlines()
+    polarity_calls = [
+        json.loads(line) for line in invocation_lines
+        if json.loads(line)["name"] == "polarity"
+    ]
+    assert len(polarity_calls) == 1, "polarity should be called once"
+    argv = polarity_calls[0]["argv"]
+    assert "--comparator-class" in argv
+    assert argv[argv.index("--comparator-class") + 1] == "raid", (
+        "raid should propagate through; without this the standalone "
+        "polarity audit silently falls back to default registry directions"
+    )
+
+
+@_skip_no_bash
+def test_sliced_only_survey_skips_slicer_on_retry(
+    tmp_path: Path, manifest: Path, stubs: tuple[Path, Path, Path],
+):
+    """Partial-progress retry: a survey with .sliced present but
+    .polarity absent must re-run the polarity audit WITHOUT re-running
+    the (expensive) whole-cache slicer pass. The original loop only
+    skipped surveys with BOTH markers, so a transient polarity failure
+    forced a wasted slicer call on the next pass.
+    """
+    slicer, polarity, invocations = stubs
+    watch = tmp_path / "bake"
+    watch.mkdir()
+    survey = _make_survey(watch, "survey_phaseA_mxbai.json")
+    # Simulate prior pass: slicer succeeded, polarity failed.
+    (watch / (survey.name + ".sliced")).write_text("")
+    # Pre-write the CSV so the polarity stub has something to read
+    # without the slicer running again this pass.
+    slice_out = tmp_path / "slice_out"
+    slice_out.mkdir()
+    (slice_out / "slice_analysis.csv").write_text(
+        "corpus,model,signal,slice_key,slice_value,n_pos,n_neg,auc,da_auc,abs_signal\n"
+    )
+    env = _base_env(
+        watch_dir=watch,
+        manifest=manifest,
+        slicer=slicer,
+        polarity=polarity,
+        invocations=invocations,
+        slice_out_dir=slice_out,
+    )
+    cp = _run_script(env, args=["--once"])
+    assert cp.returncode == 0, cp.stderr
+    invocation_lines = invocations.read_text().splitlines()
+    slicer_calls = [
+        line for line in invocation_lines
+        if json.loads(line)["name"] == "slicer"
+    ]
+    polarity_calls = [
+        line for line in invocation_lines
+        if json.loads(line)["name"] == "polarity"
+    ]
+    assert len(slicer_calls) == 0, (
+        f"slicer must NOT run when every survey already has .sliced; "
+        f"got {len(slicer_calls)} invocations"
+    )
+    assert len(polarity_calls) == 1, "polarity should retry exactly once"
+    assert (watch / (survey.name + ".polarity")).exists(), (
+        "polarity marker should be written after the retry succeeds"
+    )
+
+
+@_skip_no_bash
+def test_two_pass_polarity_failure_then_success_slices_once(
+    tmp_path: Path, manifest: Path, stubs: tuple[Path, Path, Path],
+):
+    """Cumulative regression for the partial-progress contract: across
+    two ``--once`` passes where polarity fails on pass 1 and succeeds
+    on pass 2, the slicer is called exactly once. The original loop
+    would call it twice (once per pass) because the .sliced-only
+    survey was re-queued for slicing.
+    """
+    slicer, polarity, invocations = stubs
+    watch = tmp_path / "bake"
+    watch.mkdir()
+    survey = _make_survey(watch, "survey_phaseA_mxbai.json")
+    slice_out = tmp_path / "slice_out"
+
+    # ---- pass 1: polarity fails ----
+    failing_polarity = tmp_path / "fake_polarity_fail.py"
+    failing_polarity.write_text(
+        _STUB_TEMPLATE.format(python=sys.executable, name="polarity").replace(
+            'rc = int(os.environ.get("STUB_EXIT_CODE", "0"))',
+            "rc = 1",
+        )
+    )
+    failing_polarity.chmod(0o755)
+    env1 = _base_env(
+        watch_dir=watch,
+        manifest=manifest,
+        slicer=slicer,
+        polarity=failing_polarity,
+        invocations=invocations,
+        slice_out_dir=slice_out,
+    )
+    env1["STUB_EXTRA_PATH"] = "slice_analysis.csv"
+    cp1 = _run_script(env1, args=["--once"])
+    assert cp1.returncode == 0
+    assert (watch / (survey.name + ".sliced")).exists()
+    assert not (watch / (survey.name + ".polarity")).exists()
+
+    # ---- pass 2: polarity succeeds, slicer must NOT be re-called ----
+    env2 = _base_env(
+        watch_dir=watch,
+        manifest=manifest,
+        slicer=slicer,
+        polarity=polarity,  # the original happy stub (rc=0)
+        invocations=invocations,
+        slice_out_dir=slice_out,
+    )
+    cp2 = _run_script(env2, args=["--once"])
+    assert cp2.returncode == 0, cp2.stderr
+    assert (watch / (survey.name + ".polarity")).exists()
+
+    invocation_lines = invocations.read_text().splitlines()
+    slicer_call_count = sum(
+        1 for line in invocation_lines
+        if json.loads(line)["name"] == "slicer"
+    )
+    polarity_call_count = sum(
+        1 for line in invocation_lines
+        if json.loads(line)["name"] == "polarity"
+    )
+    assert slicer_call_count == 1, (
+        f"slicer must be called exactly once across both passes; "
+        f"got {slicer_call_count} invocations (expensive whole-cache "
+        f"pass duplicated on partial-progress retry)"
+    )
+    assert polarity_call_count == 2, (
+        f"polarity should be called both passes (fail then succeed); "
+        f"got {polarity_call_count}"
+    )

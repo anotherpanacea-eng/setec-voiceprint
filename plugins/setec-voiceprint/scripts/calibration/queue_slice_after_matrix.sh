@@ -257,6 +257,13 @@ run_polarity() {
     if [ -n "$COMPARATOR_KEY" ]; then
         pol_args+=(--comparator-key "$COMPARATOR_KEY")
     fi
+    if [ -n "$COMPARATOR_CLASS" ]; then
+        # Mirror the slicer's --comparator-class so the standalone audit
+        # uses the same direction registry as the slicer's integrated
+        # --audit polarity. Without this, the two artifacts can disagree
+        # on signals routed by comparator (RAID surprisal_sd, etc.).
+        pol_args+=(--comparator-class "$COMPARATOR_CLASS")
+    fi
     python3 "$POLARITY_BIN" "${pol_args[@]}"
 }
 
@@ -272,7 +279,14 @@ process_backlog() {
     #
     # Returns 0 always (per-survey errors are logged, not propagated, so a
     # single bad survey doesn't kill the polling loop).
-    local new_surveys=()
+    # Partition the backlog into surveys that still need slicing vs.
+    # surveys already sliced but waiting on polarity audit. A
+    # ``.sliced``-only survey from a prior partial-progress pass must
+    # NOT trigger another whole-cache slicer call — that's the point of
+    # the marker file. needs_slice ⊆ needs_polarity (any survey that
+    # gets sliced this pass also needs polarity).
+    local needs_slice=()
+    local needs_polarity=()
     # Use nullglob-style guard via find so an empty dir doesn't expand to
     # a literal pattern. find ... -print0 + read -d '' handles paths with
     # spaces safely.
@@ -281,42 +295,62 @@ process_backlog() {
         if [ -f "${survey}.sliced" ] && [ -f "${survey}.polarity" ]; then
             continue
         fi
-        new_surveys+=("$survey")
+        if [ ! -f "${survey}.sliced" ]; then
+            needs_slice+=("$survey")
+            needs_polarity+=("$survey")
+        else
+            # Sliced but polarity marker absent — partial-progress retry.
+            needs_polarity+=("$survey")
+        fi
     done < <(find "$WATCH_DIR" -maxdepth 1 -type f -name 'survey_*.json' -print0 2>/dev/null)
 
-    if [ "${#new_surveys[@]}" -eq 0 ]; then
+    if [ "${#needs_slice[@]}" -eq 0 ] && [ "${#needs_polarity[@]}" -eq 0 ]; then
         return 0
     fi
 
-    log "Found ${#new_surveys[@]} new survey(s); processing..."
-    for s in "${new_surveys[@]}"; do
-        log "  - $(basename "$s")"
-    done
+    if [ "${#needs_slice[@]}" -gt 0 ]; then
+        log "Found ${#needs_slice[@]} new survey(s) needing slicing..."
+        for s in "${needs_slice[@]}"; do
+            log "  - $(basename "$s") (slice + polarity)"
+        done
+    fi
+    if [ "${#needs_polarity[@]}" -gt "${#needs_slice[@]}" ]; then
+        log "Found $(( ${#needs_polarity[@]} - ${#needs_slice[@]} )) survey(s) needing polarity-only retry..."
+        for s in "${needs_polarity[@]}"; do
+            if [ -f "${s}.sliced" ]; then
+                log "  - $(basename "$s") (polarity only)"
+            fi
+        done
+    fi
 
     # The slicer runs once over the whole cache dir, not per-survey.
-    # If it fails, leave all markers absent so the whole batch retries
-    # next pass.
-    local slicer_rc=0
-    run_slicer || slicer_rc=$?
-    if [ "$slicer_rc" -ne 0 ]; then
-        log "slice_bakeoff_v2 failed (rc=$slicer_rc); leaving markers absent for retry"
-        return 0
+    # Skip entirely when no survey needs slicing (every one already has
+    # a ``.sliced`` marker from a prior pass).
+    if [ "${#needs_slice[@]}" -gt 0 ]; then
+        local slicer_rc=0
+        run_slicer || slicer_rc=$?
+        if [ "$slicer_rc" -ne 0 ]; then
+            log "slice_bakeoff_v2 failed (rc=$slicer_rc); leaving markers absent for retry"
+            return 0
+        fi
+        log "slice_bakeoff_v2 ok"
+        for s in "${needs_slice[@]}"; do
+            : > "${s}.sliced"
+        done
     fi
-    log "slice_bakeoff_v2 ok"
-    for s in "${new_surveys[@]}"; do
-        : > "${s}.sliced"
-    done
 
-    local pol_rc=0
-    run_polarity || pol_rc=$?
-    if [ "$pol_rc" -ne 0 ]; then
-        log "polarity_audit failed (rc=$pol_rc); .polarity markers withheld for retry"
-        return 0
+    if [ "${#needs_polarity[@]}" -gt 0 ]; then
+        local pol_rc=0
+        run_polarity || pol_rc=$?
+        if [ "$pol_rc" -ne 0 ]; then
+            log "polarity_audit failed (rc=$pol_rc); .polarity markers withheld for retry"
+            return 0
+        fi
+        log "polarity_audit ok"
+        for s in "${needs_polarity[@]}"; do
+            : > "${s}.polarity"
+        done
     fi
-    log "polarity_audit ok"
-    for s in "${new_surveys[@]}"; do
-        : > "${s}.polarity"
-    done
 
     return 0
 }
