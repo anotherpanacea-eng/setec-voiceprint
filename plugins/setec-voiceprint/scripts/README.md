@@ -591,6 +591,10 @@ if result["n_errors"] > 0:
     raise RuntimeError("Manifest has errors; refusing to run.")
 ```
 
+### Schema-migration tripwire (Refs Issue #6)
+
+The validator carries a non-blocking advisory tripwire (PR #89): when an entry has an unfamiliar nested-object field (`notes` is whitelisted via `TRIPWIRE_KNOWN_NESTED_FIELDS`), a `schema_version` / `manifest_version` field, or more than `TRIPWIRE_BROAD_FIELD_THRESHOLD = 45` fields, the result records a `tripwires` entry. One trigger per category per manifest; entirely non-blocking (no effect on `n_errors` / exit code). The JSON envelope's `results.tripwires` block and the report's "Schema-migration tripwire" section make the trigger visible. When a tripwire fires on a production manifest in the wild, that's the cue to migrate structural checks to the `jsonschema` library per Issue #6's acceptance criteria.
+
 ---
 
 ## check_corpus.py
@@ -1482,6 +1486,297 @@ corpus profile shape), `joshua_voice_drift/joshua_drift_insights.md` (profile
 + drift shape), and `scu_voice_drift/scu_drift_insights_and_comparison.md`
 (profile + drift + comparison shape). These are not committable but pin what
 the populated report should look like after the LLM pass.
+
+---
+
+## surprisal_audit.py
+
+Layer A surprisal scoring against a configurable local LLM. Computes per-token surprisal series, summary statistics (mean / sd / lag-1 autocorrelation), and the surface envelope. Tier 4 of `variance_audit`'s signal stack runs on the same backend.
+
+### Usage
+
+```bash
+python3 surprisal_audit.py target.txt \
+    --model tinyllama --dtype auto \
+    [--sliding-window --window-size 200 --stride 100] \
+    [--threshold-low X --threshold-high Y] \
+    [--out audit.json --out-md audit.md]
+```
+
+### Notes
+
+- **Model aliases.** `gpt2`, `tinyllama`, `llama32_1b`, `pythia_1b`, `olmo2_1b`, `qwen3_1_7b`, `qwen25_1_5b`. Resolves to a HuggingFace ID via `surprisal_backend.MODEL_ALIASES`. HF IDs also accepted directly. Aliases without a local cache trigger an offline-mode error rather than a silent download.
+- **Dtype.** `auto` resolves at load time per host capability (CUDA bf16, MPS fp32, CPU fp32). `--dtype fp16` forces half-precision; useful for cross-host comparison. The Markdown header surfaces `loaded` vs `requested` so operators see resolution decisions inline.
+- **Thresholds.** Defaults are `None`. Without operator-supplied `--threshold-low` / `--threshold-high`, the audit emits an `uncalibrated` verdict band rather than an authorship-direction label. Matches the framework's discipline against shipping thresholded claims without per-corpus calibration.
+- **Sliding window** mode emits one record per window; per-section drift visible without re-running over slices.
+
+---
+
+## calibration_survey.py
+
+Runs `derive_threshold` across every `COMPRESSION_HEURISTICS` signal under one labeled corpus + one FPR target, aggregates the per-signal results into a single markdown table + JSON survey ledger. Closes the pre-1.23.0 friction where the maintainer ran `calibrate_thresholds.py` once per signal in a shell loop and reconciled 11 JSON files by hand.
+
+### Usage
+
+```bash
+python3 calibration_survey.py \
+    --manifest MANIFEST.jsonl --fpr-target 0.01 \
+    [--no-tier2] [--no-tier3] [--tier4] \
+    [--embedding-model ALIAS] [--surprisal-model ALIAS] \
+    [--max-entries N --max-entries-seed S] \
+    [--length-stratify N --length-buckets B [--length-stratify-floor M]] \
+    [--comparator-class CLASS] [--judge J --generator G] \
+    [--bootstrap-engine torch --records-cache CACHE.json] \
+    [--out survey.json]
+```
+
+### Notes
+
+- **Subsampling.** `--max-entries N` does label-stratified sampling by `ai_status`. `--length-stratify N --length-buckets B` (1.X+) adds the orthogonal length axis: percentile-based buckets, per-bucket floor, proportional fill. Both compose: length-stratify runs first (writes a temp manifest), label-stratify runs second on the filtered set. The survey JSON's `length_stratify` block records bucket bounds + populations + sample counts so a sample is replay-equivalent.
+- **Routing axes.** `--comparator-class` (PR #103), `--judge` / `--generator` (PR #112) thread through into `validation_harness.score_smoothing_entry` so RAID's `surprisal_sd` evaluates as `lt` instead of the MAGE-default `gt`. None at any layer falls through to the next.
+- **Cache identity** includes the embedding/surprisal model + dtype + comparator class + judge + generator. A run under different routing axes won't silently reuse a cache scored under different conditions.
+- **Gates per row.** Five from `PROVENANCE.md`'s selection criteria — polarity, AUC/AP, n_neg, threshold interpretability, ESL conservatism. The wrapper marks the automatable four; gate 2 (AUC/AP "not embarrassing") stays maintainer judgment.
+
+---
+
+## calibrate_thresholds.py
+
+Per-signal threshold derivation from a labeled records cache: ROC sweep at target FPR, Hanley-McNeil CIs, optional bootstrap (CPU or torch-engine GPU). Emits a JSON provenance entry consumable by the survey wrapper or directly. Same CLI flag surface as `calibration_survey.py` for the routing axes + caching + subsampling so single-signal runs match survey runs bit-for-bit.
+
+### Usage
+
+```bash
+python3 calibrate_thresholds.py \
+    --manifest MANIFEST.jsonl --signal SIGNAL \
+    --fpr-target 0.01 \
+    [--comparator-class CLASS] [--judge J --generator G] \
+    [--records-cache CACHE.json] [--bootstrap-engine torch] \
+    --out threshold.json
+```
+
+### Notes
+
+- **Records cache.** Avoids re-scoring across signals or across `--fpr-target` sweeps. `cache_is_compatible` invalidates on any field that affects the per-record score (model, dtype, comparator class, judge, generator). Pre-1.X caches without those fields are treated as `None` on the cached side.
+- **Replay command.** Each derived threshold's provenance includes a `harness_command` field reconstructing the exact CLI that produced it, including all routing flags. Ledger inspection doesn't require shell-history search.
+
+---
+
+## polarity_audit.py
+
+Reads the per-cell AUC CSV produced by `slice_bakeoff_v2.py` (or v1 `slice_bakeoff.py`) and emits a structured verdict per `(model × signal)` saying whether the framework's registry direction matches the empirical sign of discrimination on the comparator at hand.
+
+### Usage
+
+```bash
+python3 polarity_audit.py \
+    --input-csv slice_analysis.csv \
+    --out-json polarity_audit.json \
+    [--comparator-key notes.original_source] \
+    [--comparator-class CLASS] [--judge J --generator G] \
+    [--registry-direction signal=gt --registry-direction signal2=lt]
+```
+
+### Notes
+
+- **Direction-aware classification.** Raw AUC > 0.5 means different things for `gt` and `lt` signals. The audit converts raw bounds to direction-aware bounds (`(1 - raw_hi, 1 - raw_lo)` for `lt`) so the consistent/inverted/chance rule applies uniformly.
+- **Verdict bands.** `globally_consistent`, `globally_inverted`, `comparator_dependent` (mixed cell outcomes within one comparator), `mixed` (mixed across comparators), or `chance` (CI overlaps 0.5).
+- **Routing axes.** `--comparator-class`, `--judge`, `--generator` thread through the same per-(comparator × judge × generator) routing chain as `variance_audit.py`. The shipped slice override table is empty pending operator data on the 13 RAID `comparator_dependent` cells.
+- **Explicit overrides outrank routing.** `--registry-direction signal=dir` is the operator's manual what-if intent; the routing layers skip any signal explicitly overridden. Without this, `--registry-direction surprisal_sd=gt --comparator-class raid` would silently resolve back to `lt` via the per-comparator table.
+
+---
+
+## slice_bakeoff_v2.py
+
+Per-stratum AUC analyzer with confidence intervals. Reads scored-records caches produced by `calibration_survey` / `calibrate_thresholds`, computes Mann-Whitney AUC across user-chosen slices with Hanley-McNeil approximate CIs, and optionally emits the integrated polarity audit alongside.
+
+### Usage
+
+```bash
+python3 slice_bakeoff_v2.py \
+    --cache-dir runs/raid_5K/caches/ \
+    --manifest raid/manifest.jsonl \
+    --out-dir runs/raid_5K/slicer_out/ \
+    --corpus raid \
+    [--crosstab notes.original_source notes.domain] \
+    [--audit polarity] \
+    [--comparator-class CLASS] [--judge J --generator G]
+```
+
+### Outputs (under `--out-dir`)
+
+- `slice_analysis.csv` — one row per (model × signal × slice) cell with raw AUC, direction-aware AUC, |signal|, and CIs.
+- `slice_analysis.md` — aggregate + per-slice tables, "real signal" subset (cells whose lower CI bound on |sig| clears 0.05).
+- `polarity_audit.json` — when `--audit polarity` is set.
+- `provenance.json` — CLI args, cache mtimes, manifest hash, slicer version, routing axes (`comparator_class` / `judge` / `generator`), run timestamp. PR #119 added the routing-axis fields so two runs with different routing settings are distinguishable on inspection.
+
+### Notes
+
+- **Slicer-side direction routing.** When `--comparator-class` (and optionally `--judge` / `--generator`) is set, each signal's direction is resolved via the same three-layer fallback chain as `polarity_audit.py`. Both the per-cell emission loop AND the integrated polarity-audit handoff use the same resolver — load-bearing parity discipline so the slicer and the integrated audit agree on direction.
+- Read-only against the registry; the slicer never modifies `variance_audit.py` or the cache.
+
+---
+
+## bakeoff_matrix.sh
+
+Cloud-portable runner for the calibration matrix. Loops `(embedding-alias × surprisal-alias × signal)` cells through `calibration_survey.py`, emitting per-config survey + cache JSONs under `$SETEC_BAKEOFF_DIR`. Successor to per-host shell scripts; paths come from env vars + CLI flags so the same script ships to laptop / cloud GPU / multi-machine.
+
+### Usage
+
+```bash
+SETEC_BAKEOFF_DIR=/runs/raid_5K \
+SETEC_MANIFEST=raid/manifest.jsonl \
+SETEC_CORPUS_LABEL=raid \
+SETEC_COMPARATOR_CLASS=raid \
+SETEC_JUDGE=chatgpt \
+SETEC_GENERATOR=gpt-4o \
+bash bakeoff_matrix.sh phase_a  # or phase_b / all
+```
+
+### Notes
+
+- **Env vars over CLI flags.** Cloud runners (and the `launchd` plist in `scripts/calibration/launchd/`) wire env vars more naturally than positional args. Auto-defaults: `SETEC_COMPARATOR_CLASS` infers from `SETEC_CORPUS_LABEL` for {mage, raid}; `SETEC_JUDGE` / `SETEC_GENERATOR` do NOT auto-default (slice axes within a corpus).
+- **Per-cell provenance.** Every cell writes its own `_provenance.json` with the resolved routing axes — replays the exact CLI.
+
+---
+
+## queue_slice_after_matrix.sh
+
+Polling driver that watches `$SETEC_BAKEOFF_DIR` for `survey_*.json` files and chains `slice_bakeoff_v2.py` + `polarity_audit.py` automatically. Closes a deferred extension from the matrix runner: the matrix is the producer; this is the consumer/chainer.
+
+### Usage
+
+```bash
+SETEC_BAKEOFF_DIR=/runs/raid_5K \
+SETEC_MANIFEST=raid/manifest.jsonl \
+SETEC_CORPUS_LABEL=raid \
+bash queue_slice_after_matrix.sh [--once]
+```
+
+### Notes
+
+- **Marker-gated idempotency.** Writes `<survey>.sliced` + `<survey>.polarity` markers after each step succeeds. Re-runs skip surveys that have both markers; `.sliced`-only surveys (transient polarity failure on a prior pass) re-run the polarity step only, not the expensive whole-cache slicer pass.
+- **`--once` mode** processes the current backlog and exits — needed for cron-style invocation. Default is poll-forever every `SETEC_QUEUE_POLL_INTERVAL` seconds (default 30).
+- **Standalone polarity output** writes to `polarity_audit_standalone.json` by default so it coexists with the slicer's integrated `polarity_audit.json` when `--audit polarity` is also enabled. Receives `--comparator-class` from the same env vars as the slicer so the two artifacts agree on direction.
+
+---
+
+## bakeoff_mage_tier34.sh + bakeoff_mage_tier34_compare.py
+
+Model-selection bake-off scripts for the MAGE Tier 3 (embedding) + Tier 4 (surprisal) candidate models. Phase A drives `calibration_survey.py --tier3 --no-tier4 --embedding-model {mxbai, gemma, harrier, minilm}` (4 configs); Phase B drives `--no-tier3 --tier4 --surprisal-model {gpt2, tinyllama, llama32_1b}` (3 configs). All configs share `--max-entries 5000 --max-entries-seed 42` so the subsample is identical across configs; each gets its own `--records-cache` so cache-identity doesn't refuse cross-config reuse.
+
+### Usage
+
+```bash
+bash bakeoff_mage_tier34.sh phase_a       # all 4 Phase A configs serially
+bash bakeoff_mage_tier34.sh phase_b mxbai # single Phase A config
+bash bakeoff_mage_tier34.sh all           # everything serially
+
+python3 bakeoff_mage_tier34_compare.py \
+    --surveys-dir /runs/bakeoff_mage_tier34_5K
+```
+
+### Notes
+
+- **Companion reader.** `_compare.py` walks every `survey_phase{A,B}_*.json`, extracts `direction_aware_auc` for each target signal from the survey's flat `rows` list, prints two markdown comparison tables (one per phase) + a recommended-winner line.
+- **Winner selection** disqualifies any config with any target signal missing or polarity-inverted, then ranks survivors by the minimum da_AUC across the phase's target signals. A stable `[0.70, 0.70]` beats a config with one excellent and one inverted signal.
+- **Phase C (full re-score with winners)** is intentionally NOT in this script. After the maintainer picks Phase A + B winners, the Phase C invocation drops `--max-entries` and adds the winning aliases — a single full-MAGE run that produces the canonical MAGE survey JSON.
+
+---
+
+## cross_polarity_audit.py
+
+Cross-corpus polarity comparison. Reads two polarity-audit JSONs (e.g., MAGE + RAID), produces a markdown table per (model × signal) with the corpus-pair verdict: do directions agree, disagree, or one is chance? Operationalizes the framework's "cross-corpus polarity volatility" finding (signal directions flip between EditLens and MAGE; this script makes that volatility legible across any pair of audits).
+
+### Usage
+
+```bash
+python3 cross_polarity_audit.py \
+    --audit-a /runs/mage_5K/slicer_out/polarity_audit.json \
+    --audit-b /runs/raid_5K/slicer_out/polarity_audit.json \
+    --label-a mage --label-b raid \
+    --out cross_polarity.md
+```
+
+---
+
+## binoculars_audit.py
+
+Two-model perplexity-ratio (v1) or true cross-perplexity (v2, Hans et al. 2024) audit. Score a target text against a scorer LLM + observer LLM pair; emit a structured evidence pack with the schema v1.0 envelope. Task surface: `binoculars_discrimination`.
+
+### Usage
+
+```bash
+python3 binoculars_audit.py target.txt \
+    --scorer tinyllama --observer gpt2 \
+    [--score-version {auto, v1, v2}] \
+    [--threshold-low X --threshold-high Y] \
+    [--out audit.json --out-md audit.md]
+```
+
+### Notes
+
+- **Score versions.** v1 = perplexity ratio (the Hans et al. baseline, ~75% AUC). v2 = cross-perplexity (the Hans et al. headline method, ~95% AUC; requires the scorer + observer to share a tokenizer). `--score-version auto` picks v2 when tokenizers are compatible and falls back to v1 with a `tokenizers_incompatible` caveat. The framework-default `tinyllama` + `gpt2` pair has different tokenizers; auto picks v1.
+- **No load-bearing thresholds.** Like `surprisal_audit.py`, `DEFAULT_THRESHOLD_LOW` / `DEFAULT_THRESHOLD_HIGH` are `None`. Without operator-supplied thresholds, the verdict band reads `uncalibrated`. Calibration is `binoculars_calibrate.py`'s job; the framework refuses to ship thresholded discrimination claims without per-corpus calibration.
+- **Caveats.** `scorer_equals_observer`, `tokenizer_mismatch`, `target_too_short_for_stable_estimate`, `observer_perplexity_near_zero`, `tokenizers_incompatible_v1_fallback`, `token_id_sequences_differ`. The score-scale distinction between v1 and v2 is named in the default `does_not_license` text so calibration consumers know v1 and v2 thresholds aren't interchangeable.
+
+---
+
+## binoculars_calibrate.py
+
+Threshold calibration for `binoculars_audit`. Runs the audit against a labeled manifest, derives empirical `threshold-low` / `threshold-high` from the per-class score distributions, emits a calibration report with the discipline gates. Output thresholds are **operator-side**: the framework's `binoculars_audit` defaults stay `None`. Task surface: `calibration`.
+
+### Usage
+
+```bash
+python3 binoculars_calibrate.py MANIFEST.jsonl \
+    --scorer ALIAS --observer ALIAS \
+    [--positive-statuses ai_generated] \
+    [--negative-statuses pre_ai_human,human] \
+    [--score-version {auto, v1, v2}] \
+    [--fpr-target 0.01 --target-tpr 0.5] \
+    [--max-entries N --max-entries-seed S] \
+    [--out calibration.json --out-md calibration.md]
+```
+
+### Notes
+
+- **Threshold-derivation formula.** `threshold-low` = `fpr_target` percentile of negative class; `threshold-high` = `target_tpr` percentile of positive class. Simple/explainable choice. The Markdown report includes a copy-pasteable `binoculars_audit.py --threshold-low X --threshold-high Y` snippet so the operator commits derived thresholds to their next audit invocation explicitly.
+- **Discipline gates** mirror `calibration_survey.py`'s shape: polarity (positives have lower mean score than negatives), sample size (≥30 each), AUC ≥ 0.6. Gates emit ✓ / ✗ markers; failing gates emit caveats but don't suppress threshold output (the operator decides what's defensible).
+
+---
+
+## external_mirror/ — discrimination evidence via LLM continuation comparison
+
+Implements the External Mirror Discrimination methodology: prompt several LLM families to extend a target's prefix, measure the embedding-distance between continuations, emit a structured evidence pack. Methodology-side closure of the "is this prose AI-coupled?" question that the framework otherwise refuses to answer as a verdict — produces structured evidence with operator-side calibration rather than a yes/no detector. Task surface: `external_mirror_discrimination`.
+
+### Five sibling scripts under `scripts/external_mirror/`
+
+| Script | Phase | Role |
+|---|---|---|
+| `build_prompts.py` | A | Window the target, emit ready-to-paste prompts per family with manifest provenance |
+| `ingest_outputs.py` | B | Paste-back parser: T3 separate-file format + T4 batched-JSON format; refusal + truncation detection |
+| `compute_distances.py` | B | Per-window pairwise cosine matrix; v1 sbert + v2 TF-IDF / POS-bigram / word-set Jaccard |
+| `compose_evidence_pack.py` | B | schema_version 1.0 envelope with claim-license + per-metric markdown tables |
+| `workflow.py` | harness | Operator workflow runner: `prepare` / `status` / `score` subcommands that chain A → operator paste-back → B |
+
+### Usage
+
+```bash
+# Phase A: prepare a run.
+python3 external_mirror/workflow.py prepare \
+    target.txt --windows 4 --context 1500 --continuation 150
+
+# (Operator pastes outputs back into runs/<run_id>/outputs/<family>/)
+
+# Phase B: ingest + score.
+python3 external_mirror/workflow.py score runs/<run_id>/
+```
+
+### Notes
+
+- **Five window-positioning strategies** in Phase A including the expanding-context regime that produced the methodology's strongest discrimination signal (sbert 0.71 at ctx=1500 on the 2026-05-18 Granta validation target).
+- **Operator discipline is load-bearing.** The harness doesn't paste prompts into chatbots; it removes bookkeeping (directory layout, prompt routing, Phase B chain orchestration) and lets the operator handle the model-interaction step. Per-window `context_sha256` in the MANIFEST so third-party operators can verify what they pasted matches what the manifest claims.
+- **v2 distance metrics** (PR #113) sit alongside the v1 sbert cosine: TF-IDF cosine (sklearn-gated), POS-bigram cosine + Jaccard (spaCy-gated), word-set Jaccard (no external deps). Skipped metrics land in `metric_skip_reasons` rather than erroring; the operator-facing decision of which to weight stays operator-side.
 
 ---
 
