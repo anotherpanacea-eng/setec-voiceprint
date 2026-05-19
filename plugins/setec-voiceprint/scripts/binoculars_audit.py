@@ -40,10 +40,11 @@ from surprisal_backend import (  # type: ignore
 )
 
 
-SCRIPT_VERSION = "0.1.0"
+SCRIPT_VERSION = "0.2.0"
 TASK_SURFACE = "binoculars_discrimination"
 TOOL_NAME = "binoculars_audit"
 SCORE_VERSION_V1 = "perplexity_ratio_v1"
+SCORE_VERSION_V2 = "binoculars_cross_perplexity_v2"
 
 DEFAULT_SCORER = "tinyllama"
 DEFAULT_OBSERVER = "gpt2"
@@ -74,20 +75,22 @@ DEFAULT_LICENSES = (
 DEFAULT_DOES_NOT_LICENSE = (
     "Does not license a binary AI/human authorship verdict. The score "
     "is one measurement against one model pair; operator judgment "
-    "remains the load-bearing decision step. v1 ships without "
-    "framework-calibrated thresholds: by default the verdict band is "
+    "remains the load-bearing decision step. Ships without "
+    "framework-calibrated thresholds by default: the verdict band is "
     "'uncalibrated' and the audit reports the raw ratio only. Operators "
     "who supply --threshold-low / --threshold-high explicitly take "
     "responsibility for those thresholds being appropriate for their "
-    "model pair, corpus, and register. Does not control for memorization "
-    "(if the target is in the training set of either model, the score "
-    "will be biased). Does not generalize across genres without "
-    "operator-validated calibration. Is an approximation of the Hans "
-    "et al. 2024 Binoculars score (this v1 uses the perplexity ratio "
-    "baseline; v2 will upgrade to true cross-perplexity Binoculars "
-    "once surprisal_backend supports distribution extraction). Does "
-    "not substitute for stylometric, embedding-based, or other "
-    "framework audits — it complements them."
+    "model pair, corpus, and register (and for the score version — "
+    "true Binoculars cross-perplexity v2 and the perplexity-ratio v1 "
+    "baseline have different numerical scales, so thresholds calibrated "
+    "for one don't transfer). Does not control for memorization (if "
+    "the target is in the training set of either model, the score will "
+    "be biased). Does not generalize across genres without "
+    "operator-validated calibration. v2 computes true Hans et al. 2024 "
+    "cross-perplexity when scorer and observer share a tokenizer; "
+    "falls back to the v1 perplexity-ratio baseline with a caveat "
+    "otherwise. Does not substitute for stylometric, embedding-based, "
+    "or other framework audits — it complements them."
 )
 
 
@@ -116,6 +119,68 @@ def _band(ratio: float | None, low: float | None, high: float | None) -> str:
     return "indeterminate"
 
 
+def _tokenizers_compatible(
+    scorer: SurprisalBackend, observer: SurprisalBackend,
+) -> bool:
+    """True when scorer + observer share a tokenizer identity.
+
+    Cross-perplexity requires the two models to index the same
+    vocabulary so the sum ``sum_v P_obs(v|ctx) * log P_scorer(v|ctx)``
+    is well-defined. Two backends loaded with the same tokenizer
+    class + vocab size + name-or-path almost always satisfy this
+    (Falcon-7b / Falcon-7b-instruct: same; GPT-2 / TinyLlama:
+    different). Callers wanting a stricter per-input check should
+    additionally compare the ``token_ids`` returned by
+    ``score_text_with_distributions``."""
+    try:
+        a = scorer.tokenizer_identity()
+        b = observer.tokenizer_identity()
+    except (AttributeError, Exception):  # noqa: BLE001
+        # Defensive: a stub backend without tokenizer_identity falls
+        # back to "incompatible" so the audit degrades to PR ratio.
+        return False
+    return (
+        a.get("tokenizer_class") == b.get("tokenizer_class")
+        and a.get("vocab_size") == b.get("vocab_size")
+        and a.get("model_name_or_path") == b.get("model_name_or_path")
+    )
+
+
+def _cross_perplexity_log_nats(
+    scorer_log_probs_nats: list[list[float]],
+    observer_log_probs_nats: list[list[float]],
+) -> float | None:
+    """Compute ``log X-PPL(s | scorer, observer)`` per Hans et al. 2024:
+
+        log X-PPL = -(1/L) * sum_l sum_v P_obs(v | s_<l) * log P_scorer(v | s_<l)
+
+    Inputs are per-token log-probability distributions in NATS,
+    one per token position (length L). Returns the natural-log
+    cross-perplexity; callers divide ``log_PPL_scorer`` (also in
+    nats) by this value to produce the Binoculars score B.
+
+    Returns None when either input is empty or the two have
+    different length (cross-perplexity is undefined without
+    aligned positions).
+    """
+    import math
+    L = len(scorer_log_probs_nats)
+    if L == 0 or L != len(observer_log_probs_nats):
+        return None
+    total = 0.0
+    for s_dist, o_dist in zip(scorer_log_probs_nats, observer_log_probs_nats):
+        if len(s_dist) != len(o_dist):
+            return None
+        # P_obs(v) = exp(log P_obs(v)). Cross-entropy term at this
+        # position: sum_v exp(o[v]) * s[v]. Negated and summed over
+        # positions then divided by L gives log X-PPL.
+        position_sum = 0.0
+        for s_lp, o_lp in zip(s_dist, o_dist):
+            position_sum += math.exp(o_lp) * s_lp
+        total += position_sum
+    return -total / L
+
+
 def audit(
     target_text: str,
     *,
@@ -124,6 +189,7 @@ def audit(
     threshold_low: float | None = DEFAULT_THRESHOLD_LOW,
     threshold_high: float | None = DEFAULT_THRESHOLD_HIGH,
     score_fn=None,
+    use_cross_perplexity: bool | None = None,
 ) -> dict[str, Any]:
     """Run the audit. Returns the results dict that gets wrapped into
     the build_output() envelope.
@@ -132,15 +198,96 @@ def audit(
     callable ``score_fn(backend, text) -> list[float]`` returning the
     per-token surprisal series in bits. Production callers pass
     ``score_fn=None`` and the audit calls ``backend.score_text`` directly.
+
+    ``use_cross_perplexity`` controls v2 behavior:
+      - ``None`` (default): auto-detect — use cross-perplexity when
+        scorer + observer share a tokenizer identity, fall back to
+        the v1 perplexity-ratio baseline otherwise.
+      - ``True``: require cross-perplexity. Errors via a caveat if
+        tokenizers are incompatible and falls back to PR.
+      - ``False``: always use the v1 PR baseline (legacy v1 behavior).
+
+    The v2 path requires ``scorer.score_text_with_distributions``
+    and ``observer.score_text_with_distributions`` (added in 1.X+
+    via surprisal_backend's distribution-returning extension). Tests
+    inject stub backends supplying both methods.
     """
     caveats: list[str] = []
 
-    if score_fn is None:
-        scorer_series = scorer.score_text(target_text)
-        observer_series = observer.score_text(target_text)
+    # Decide which score version to compute.
+    tokenizers_match = _tokenizers_compatible(scorer, observer)
+    if use_cross_perplexity is None:
+        prefer_v2 = tokenizers_match
+    elif use_cross_perplexity is True:
+        prefer_v2 = tokenizers_match
+        if not tokenizers_match:
+            caveats.append("v2_requested_but_tokenizers_incompatible_falling_back_to_v1")
     else:
+        prefer_v2 = False
+
+    score_version = SCORE_VERSION_V2 if prefer_v2 else SCORE_VERSION_V1
+    cross_perplexity_log_nats: float | None = None
+    scorer_log_ppl_nats: float | None = None
+
+    # v2 path: use score_text_with_distributions and compute true
+    # cross-perplexity Binoculars.
+    if prefer_v2 and score_fn is None:
+        try:
+            scorer_series_bits, scorer_log_probs, scorer_tokens = (
+                scorer.score_text_with_distributions(target_text)
+            )
+            observer_series_bits, observer_log_probs, observer_tokens = (
+                observer.score_text_with_distributions(target_text)
+            )
+        except AttributeError:
+            # Backend doesn't expose distributions (older surprisal_backend
+            # version or stub without the method) — fall back gracefully.
+            caveats.append("backend_lacks_score_text_with_distributions_falling_back_to_v1")
+            prefer_v2 = False
+            score_version = SCORE_VERSION_V1
+            scorer_series = scorer.score_text(target_text)
+            observer_series = observer.score_text(target_text)
+        else:
+            scorer_series = scorer_series_bits
+            observer_series = observer_series_bits
+            # Strict per-input check: actual token-id sequences must match.
+            if scorer_tokens != observer_tokens:
+                caveats.append("token_id_sequences_differ_falling_back_to_v1")
+                prefer_v2 = False
+                score_version = SCORE_VERSION_V1
+            else:
+                # Compute cross-perplexity. Inputs are in nats; result is
+                # log_X_PPL in nats.
+                cross_perplexity_log_nats = _cross_perplexity_log_nats(
+                    scorer_log_probs, observer_log_probs,
+                )
+                # log_PPL_scorer in nats: mean of -log_prob_actual_token,
+                # which equals scorer surprisal in nats. The surprisal
+                # series we got is in bits — convert.
+                import math
+                ln2 = math.log(2.0)
+                scorer_log_ppl_nats = _mean(scorer_series_bits) * ln2
+                if cross_perplexity_log_nats is None:
+                    caveats.append("cross_perplexity_undefined_falling_back_to_v1")
+                    prefer_v2 = False
+                    score_version = SCORE_VERSION_V1
+    elif prefer_v2 and score_fn is not None:
+        # Test injection: score_fn returns surprisal series only, so
+        # we honor the v1 path for stubbed tests. Tests targeting v2
+        # cross-perplexity should use a stub backend that implements
+        # score_text_with_distributions instead.
+        prefer_v2 = False
+        score_version = SCORE_VERSION_V1
         scorer_series = score_fn(scorer, target_text)
         observer_series = score_fn(observer, target_text)
+    else:
+        # v1 path (legacy / fallback): per-token surprisal series only.
+        if score_fn is None:
+            scorer_series = scorer.score_text(target_text)
+            observer_series = observer.score_text(target_text)
+        else:
+            scorer_series = score_fn(scorer, target_text)
+            observer_series = score_fn(observer, target_text)
 
     scorer_id = scorer.model_id
     observer_id = observer.model_id
@@ -156,12 +303,21 @@ def audit(
     scorer_mean = _mean(scorer_series)
     observer_mean = _mean(observer_series)
 
+    # Compute the headline score per the chosen score_version.
     ratio: float | None
-    if observer_mean < 1e-6:
-        caveats.append("observer_perplexity_near_zero")
-        ratio = None
+    if score_version == SCORE_VERSION_V2 and cross_perplexity_log_nats is not None and scorer_log_ppl_nats is not None:
+        if abs(cross_perplexity_log_nats) < 1e-9:
+            caveats.append("cross_perplexity_near_zero")
+            ratio = None
+        else:
+            ratio = scorer_log_ppl_nats / cross_perplexity_log_nats
     else:
-        ratio = scorer_mean / observer_mean
+        # v1 PR baseline.
+        if observer_mean < 1e-6:
+            caveats.append("observer_perplexity_near_zero")
+            ratio = None
+        else:
+            ratio = scorer_mean / observer_mean
 
     verdict_band = _band(ratio, threshold_low, threshold_high)
 
@@ -184,7 +340,13 @@ def audit(
         "scorer_log_perplexity_bits": scorer_mean,
         "observer_log_perplexity_bits": observer_mean,
         "perplexity_ratio": ratio,
-        "score_version": SCORE_VERSION_V1,
+        "score_version": score_version,
+        # v2: surface the cross-perplexity intermediate when computed
+        # so audit consumers can inspect both components of the
+        # Binoculars ratio without recomputing.
+        "cross_perplexity_log_nats": cross_perplexity_log_nats,
+        "scorer_log_perplexity_nats": scorer_log_ppl_nats,
+        "tokenizers_compatible": tokenizers_match,
         "thresholds": {"low": threshold_low, "high": threshold_high},
         "verdict_band": verdict_band,
         "scorer_series_length": len(scorer_series),
@@ -237,14 +399,21 @@ def compose_envelope(
 def render_markdown(envelope: dict[str, Any]) -> str:
     results = envelope["results"]
     target = envelope["target"]
+    score_version = results.get("score_version", SCORE_VERSION_V1)
+    is_v2 = score_version == SCORE_VERSION_V2
+
+    title_suffix = (
+        "(Cross-Perplexity v2)" if is_v2 else "(Perplexity Ratio v1)"
+    )
 
     lines: list[str] = []
-    lines.append("# Binoculars Audit (Perplexity Ratio v1)")
+    lines.append(f"# Binoculars Audit {title_suffix}")
     lines.append("")
     lines.append(f"- **Target:** `{target.get('path')}` ({target.get('words')} words)")
     lines.append(f"- **Scorer:** `{results['scorer']['model_id']}` (rev `{results['scorer']['revision']}`)")
     lines.append(f"- **Observer:** `{results['observer']['model_id']}` (rev `{results['observer']['revision']}`)")
-    lines.append(f"- **Score version:** `{results['score_version']}`")
+    lines.append(f"- **Score version:** `{score_version}`")
+    lines.append(f"- **Tokenizers compatible:** {results.get('tokenizers_compatible')}")
     lines.append("")
 
     lines.append("## Score")
@@ -253,10 +422,20 @@ def render_markdown(envelope: dict[str, Any]) -> str:
     lines.append("|---|---:|---:|")
     lines.append(f"| Scorer | {results['scorer_log_perplexity_bits']:.4f} | {results['scorer_series_length']} |")
     lines.append(f"| Observer | {results['observer_log_perplexity_bits']:.4f} | {results['observer_series_length']} |")
+    if is_v2:
+        xppl = results.get("cross_perplexity_log_nats")
+        scorer_nats = results.get("scorer_log_perplexity_nats")
+        if xppl is not None:
+            lines.append(f"| log X-PPL (nats) | {xppl:.4f} | — |")
+        if scorer_nats is not None:
+            lines.append(f"| log PPL scorer (nats) | {scorer_nats:.4f} | — |")
     ratio = results.get("perplexity_ratio")
     ratio_text = f"{ratio:.4f}" if ratio is not None else "(unavailable)"
     lines.append("")
-    lines.append(f"**Perplexity ratio (scorer/observer):** {ratio_text}")
+    if is_v2:
+        lines.append(f"**Binoculars score B = log_PPL_scorer / log_X-PPL:** {ratio_text}")
+    else:
+        lines.append(f"**Perplexity ratio (scorer/observer):** {ratio_text}")
     lines.append(f"**Verdict band:** `{results['verdict_band']}` (thresholds: low={results['thresholds']['low']}, high={results['thresholds']['high']})")
     lines.append("")
 
@@ -301,6 +480,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-md", default=None, help="Evidence pack markdown path (default <target-parent>/<stem>.binoculars.md).")
     parser.add_argument("--licenses", default=DEFAULT_LICENSES, help="Override the claim_license.licenses text.")
     parser.add_argument("--does-not-license", default=DEFAULT_DOES_NOT_LICENSE, help="Override the claim_license.does_not_license text.")
+    parser.add_argument(
+        "--score-version",
+        choices=("auto", "v1", "v2"),
+        default="auto",
+        help=(
+            "Which Binoculars score to compute. 'auto' (default) "
+            "uses v2 cross-perplexity when scorer + observer share "
+            "a tokenizer, falls back to v1 perplexity-ratio with a "
+            "caveat otherwise. 'v1' forces the perplexity-ratio "
+            "baseline (Hans et al. 2024 prior method). 'v2' "
+            "requests true cross-perplexity Binoculars; falls back "
+            "to v1 with a caveat if tokenizers are incompatible."
+        ),
+    )
     args = parser.parse_args(argv)
 
     target_path = Path(args.target)
@@ -336,6 +529,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: observer backend construction failed ({args.observer}): {exc}", file=sys.stderr)
         return 3
 
+    # --score-version → audit() use_cross_perplexity arg.
+    use_xppl: bool | None
+    if args.score_version == "auto":
+        use_xppl = None
+    elif args.score_version == "v2":
+        use_xppl = True
+    else:
+        use_xppl = False
+
     try:
         results = audit(
             target_text,
@@ -343,6 +545,7 @@ def main(argv: list[str] | None = None) -> int:
             observer=observer,
             threshold_low=args.threshold_low,
             threshold_high=args.threshold_high,
+            use_cross_perplexity=use_xppl,
         )
     except SurprisalBackendError as exc:
         print(f"error: scoring failed ({args.scorer} / {args.observer}): {exc}", file=sys.stderr)
