@@ -6,6 +6,40 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.106.0] - 2026-05-19
+
+**Surprisal (Tier 4 + Binoculars) tier in `dependency_check.py` + setup skill expansion.** Closes the gap surfaced in the post-1.101 doc loose-ends pass: the setup skill's tier model + `dependency_check.py`'s `TIERS` dict didn't know about Tier 4 surprisal or Binoculars. An operator running `dependency_check.py --tier surprisal` got `error: argument --tier: invalid choice 'surprisal'`; the setup skill's "Common scenarios" had no entry for "I want to run Binoculars" or "Tier 4 surprisal."
+
+### Added
+
+- **New `surprisal` tier** in `dependency_check.py` covering `transformers`, `tokenizers`, and `torch` against `requirements-surprisal.txt`. Shares the same shape as the existing four tiers: `--tier surprisal`, `--tier surprisal --json`, `--tier surprisal --suggest` all work via the existing tier-dispatch path.
+- **`SURPRISAL_PYTHON_DEPS` list** with per-dep summaries (transformers loads causal-LM scorers for Tier 4 + Binoculars; tokenizers is pinned explicitly because Binoculars v2 cross-perplexity requires the scorer + observer to share a tokenizer; torch is the backend, CPU wheels sufficient for the default `tinyllama` + `gpt2` pair).
+- **`sentence-transformers` summary** in `OPTIONAL_PYTHON_DEPS` rewritten to name its two consumers explicitly: (a) Tier 3 cohesion (where it's OPTIONAL — TF-IDF is the fallback), and (b) the default sbert distance metric in `external_mirror/compute_distances.py` (where it's REQUIRED — the operator who wants external-mirror's default behavior needs this install; the v2 metric stack of TF-IDF + POS-bigram + word-set Jaccard runs without it).
+
+### Changed
+
+- **Setup skill (`plugins/setec-voiceprint/skills/setup/SKILL.md`) — version 1.0.0 → 1.1.0.**
+  - Tier model expanded from four tiers to five; new **Surprisal (Tier 4 + Binoculars)** row in the tier table with the ~1.5–2 GB disk-cost callout. The row explicitly says external-mirror is NOT covered by this tier — pointer to the External-mirror dependency footprint note below the table.
+  - **External-mirror dependency-footprint note** added below the tier table. Explains that `external_mirror/` is Surface 5 but does not live on the Surprisal stack: the default sbert metric needs `sentence-transformers` from the Optional power-ups tier; the v2 metric stack uses sklearn + spaCy from the core tier plus stdlib.
+  - Skill description (frontmatter) extended with detection triggers for Tier 4 surprisal, Binoculars, external-mirror, transformers, torch.
+  - Step 1 ("Detect what the user is trying to do") gains separate triggers for the two routing cases: `torch` / `transformers` / `tokenizers` / Tier 4 / Binoculars → surprisal tier; `sentence_transformers` / external-mirror / compute_distances / sbert distance / external_mirror/workflow.py → optional tier (sentence-transformers). "discrimination evidence" alone is flagged as ambiguous; ask which tool before proposing.
+  - Step 4 ("Ask for permission per tier") adds a fifth yes/no for the Surprisal tier (Tier 4 + Binoculars; NOT external-mirror) and a sixth ask for the Optional power-ups with the load-bearing note that external-mirror users come HERE for sentence-transformers, not to the Surprisal tier.
+  - "Common scenarios" updated: split the prior single entry "I want to run Binoculars / external_mirror / Tier 4 surprisal" into two distinct scenarios — "I want to run Binoculars or Tier 4 surprisal" (→ surprisal tier) and "I want to run external_mirror" (→ optional tier for sentence-transformers, with a v2-only fallback noted that needs no extra install). The "ImportError: torch" scenario gained a fork explaining the two possible causes (Surprisal-tier scripts vs. external-mirror's transitive torch through sentence-transformers).
+  - Safety rules add: "Never auto-install the Surprisal tier without surfacing the install size."
+  - Tier table's install commands switched from `pip install -r plugins/setec-voiceprint/requirements-*.txt` to `pip install -r requirements-*.txt` since all four files now have root-level symlinks (the `requirements-surprisal.txt` symlink landed in PR #122).
+- **`dependency_check.py` module docstring** — "four dependency tiers" → "five dependency tiers". The Surprisal tier entry explicitly says it's for Tier 4 + Binoculars only, and that external-mirror lives on a different dep stack (sentence-transformers from the optional tier; sklearn / spaCy from the core tier).
+- **`dependency_check.py` surprisal-tier label** in the TIERS dict updated to: "Tier 4 surprisal + Binoculars (Surface 5). external-mirror's default sbert metric needs sentence-transformers from the optional tier — not this one." This is what surfaces in `--tier` help output and `--json`'s tier label.
+
+### Review fix applied in this PR
+
+The first draft conflated all of Surface 5 with the transformers + torch stack. Caught in code review at sha a898876: `external_mirror/compute_distances.py` does not import `transformers`, `tokenizers`, or `torch` directly — its default sbert metric goes through `embedding_backend.py` which loads `sentence-transformers`, and the v2 metric stack uses sklearn + spaCy + stdlib. Routing external-mirror users to `--tier surprisal` installed the wrong stack: transformers + tokenizers + torch (none of which compute_distances imports) but NOT sentence-transformers (required for the default sbert metric). Fixed per the reviewer's recommendation: keep the Surprisal tier scoped to its actual consumers (Tier 4 + Binoculars); route external-mirror users to the Optional tier's sentence-transformers entry; rewrite that entry to make external-mirror's dependence load-bearing rather than secondary.
+
+### Notes
+
+- **Smoke-tested**: `python3 plugins/setec-voiceprint/scripts/dependency_check.py --tier surprisal --json` returns the new tier block with `transformers` / `tokenizers` / `torch` python_deps and `requirements-surprisal.txt` pointer. `--help` lists `surprisal` in the `--tier` choices.
+- **No behavior change for existing users.** Adding a tier is purely additive — every pre-1.106 invocation still works bit-for-bit. The new tier is opt-in via `--tier surprisal` or via the setup skill's per-tier confirmation flow.
+- **External-mirror users need both core AND sentence-transformers** for the default sbert path. Operators who only want the v2 metric stack (TF-IDF + POS-bigram + word-set Jaccard) can run external-mirror with just the core tier — no extra install needed.
+
 ## [1.105.2] - 2026-05-19
 
 **Post-1.101 doc loose ends.** Two consistency passes (SKILL.md → five-surface framing, `scripts/README.md` → Surface 5 section + path convention note + dominant-form normalization) plus a CHANGELOG backfill for ten PRs that merged without entries during the post-1.101 cascade.
