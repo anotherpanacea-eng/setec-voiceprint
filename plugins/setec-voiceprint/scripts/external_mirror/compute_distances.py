@@ -42,9 +42,14 @@ def _load_embedding_backend(alias: str):
     ``scripts/external_mirror/`` to sys.path, not the parent ``scripts/``
     directory where embedding_backend lives. Matches the pattern in
     compose_evidence_pack.py.
+
+    The CLI's ``--embedding-alias`` flag is passed through as
+    ``EmbeddingBackend(model_id=...)`` — the dataclass field accepts either a
+    MODEL_ALIASES key (e.g. ``"mxbai"``) or a full HuggingFace identifier and
+    resolves aliases in ``__post_init__``.
     """
     from embedding_backend import EmbeddingBackend  # type: ignore
-    return EmbeddingBackend(alias=alias)
+    return EmbeddingBackend(model_id=alias)
 
 
 def _load_target_continuations(path: Path, windows_count: int) -> list[str]:

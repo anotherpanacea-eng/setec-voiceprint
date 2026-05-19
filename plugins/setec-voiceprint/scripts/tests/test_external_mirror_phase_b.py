@@ -669,3 +669,40 @@ def test_compute_distances_cli_can_resolve_embedding_backend_import(tmp_path):
     assert "No module named 'embedding_backend'" not in result.stderr, (
         f"sys.path fix regressed; stderr was: {result.stderr}"
     )
+
+
+def test_load_embedding_backend_passes_model_id_not_alias(monkeypatch):
+    """Regression test for PR #109 second review comment.
+
+    _load_embedding_backend() previously called ``EmbeddingBackend(alias=alias)``,
+    but the production dataclass takes ``model_id`` as its first field. The
+    existing tests passed a stub backend in via ``backend=`` and never
+    exercised the production constructor signature — so the bug shipped.
+
+    This test patches sys.modules['embedding_backend'] with a recording stub
+    that captures __init__ kwargs, then calls _load_embedding_backend
+    directly. The lazy import inside _load_embedding_backend picks up the
+    stub. We verify the call uses model_id, not alias.
+    """
+    import types
+
+    captured = {}
+
+    class StubEmbeddingBackend:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+    fake_module = types.ModuleType("embedding_backend")
+    fake_module.EmbeddingBackend = StubEmbeddingBackend
+    monkeypatch.setitem(sys.modules, "embedding_backend", fake_module)
+
+    dist._load_embedding_backend("mxbai")
+
+    assert "model_id" in captured, (
+        f"_load_embedding_backend must pass model_id=; captured={captured}"
+    )
+    assert captured["model_id"] == "mxbai"
+    assert "alias" not in captured, (
+        f"_load_embedding_backend must NOT pass alias= (it's not a "
+        f"production constructor field); captured={captured}"
+    )
