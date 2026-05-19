@@ -54,6 +54,27 @@ def _write_target(tmp_path: Path, text: str = "lorem ipsum " * 1000) -> Path:
     return p
 
 
+def _fake_bin(tmp_path: Path, name: str) -> Path:
+    """Create an empty stub script at tmp_path/name and return the path.
+
+    Per PR #111 P1 fix: prepare() and score() now do a preflight existence
+    check on the underlying script paths before invoking subprocess. Tests
+    that stub the runner still need a path that exists; this helper makes
+    one without needing the real Phase A / Phase B scripts on this branch.
+    """
+    p = tmp_path / name
+    p.touch()
+    return p
+
+
+def _fake_phase_b_bins(tmp_path: Path) -> dict:
+    return {
+        "ingest_bin": _fake_bin(tmp_path, "ingest_outputs.py"),
+        "distances_bin": _fake_bin(tmp_path, "compute_distances.py"),
+        "pack_bin": _fake_bin(tmp_path, "compose_evidence_pack.py"),
+    }
+
+
 def test_prepare_creates_expected_layout(tmp_path):
     target = _write_target(tmp_path)
     runner = RecordingRunner()
@@ -62,6 +83,7 @@ def test_prepare_creates_expected_layout(tmp_path):
         runs_root=tmp_path / "runs",
         families=["claude", "chatgpt"],
         run_id="t1",
+        build_prompts_bin=_fake_bin(tmp_path, "build_prompts.py"),
         runner=runner,
     )
     assert result.run_dir == tmp_path / "runs" / "t1"
@@ -86,6 +108,7 @@ def test_prepare_invokes_build_prompts_with_expected_args(tmp_path):
         continuation=150,
         positioning="equal_skipping_opening",
         genre_descriptor="literary prose",
+        build_prompts_bin=_fake_bin(tmp_path, "build_prompts.py"),
         runner=runner,
     )
     assert len(runner.calls) == 1
@@ -111,6 +134,7 @@ def test_prepare_forwards_context_grid_for_expanding(tmp_path):
         run_id="t1",
         positioning="expanding",
         context_grid="500,1000,1500,2000",
+        build_prompts_bin=_fake_bin(tmp_path, "build_prompts.py"),
         runner=runner,
     )
     cmd = runner.calls[0]
@@ -128,6 +152,7 @@ def test_prepare_forwards_positions_for_custom(tmp_path):
         run_id="t1",
         positioning="custom",
         positions="500,1500,2500",
+        build_prompts_bin=_fake_bin(tmp_path, "build_prompts.py"),
         runner=runner,
     )
     cmd = runner.calls[0]
@@ -145,6 +170,7 @@ def test_prepare_workflow_md_includes_key_fields(tmp_path):
         run_id="t1",
         windows=4,
         genre_descriptor="literary fiction",
+        build_prompts_bin=_fake_bin(tmp_path, "build_prompts.py"),
         runner=runner,
     )
     md = (result.run_dir / "WORKFLOW.md").read_text()
@@ -183,14 +209,53 @@ def test_prepare_errors_on_empty_families(tmp_path):
         )
 
 
+def test_prepare_errors_clearly_when_build_prompts_missing(tmp_path):
+    """Regression for PR #111 review comment.
+
+    If this harness merges before PR #108, build_prompts.py won't exist
+    in the same external_mirror/ directory. The harness must detect this
+    and emit a clear actionable error (naming the prerequisite PR) rather
+    than silently invoking subprocess with a nonexistent script path
+    (which exits 2 with no useful diagnostic for the operator)."""
+    target = _write_target(tmp_path)
+    fake_bin = tmp_path / "does_not_exist.py"
+    with pytest.raises(FileNotFoundError, match="build_prompts.py not found"):
+        workflow.prepare(
+            target_path=target,
+            runs_root=tmp_path / "runs",
+            families=["claude"],
+            run_id="t1",
+            build_prompts_bin=fake_bin,
+            runner=RecordingRunner(),
+        )
+
+
+def test_prepare_error_names_prerequisite_pr(tmp_path):
+    """The preflight error must name PR #108 so the operator knows what's
+    blocking the harness."""
+    target = _write_target(tmp_path)
+    fake_bin = tmp_path / "does_not_exist.py"
+    with pytest.raises(FileNotFoundError, match="#108"):
+        workflow.prepare(
+            target_path=target,
+            runs_root=tmp_path / "runs",
+            families=["claude"],
+            run_id="t1",
+            build_prompts_bin=fake_bin,
+            runner=RecordingRunner(),
+        )
+
+
 def test_prepare_errors_on_existing_run_id(tmp_path):
     target = _write_target(tmp_path)
     runner = RecordingRunner()
+    fake_bin = _fake_bin(tmp_path, "build_prompts.py")
     workflow.prepare(
         target_path=target,
         runs_root=tmp_path / "runs",
         families=["claude"],
         run_id="dup",
+        build_prompts_bin=fake_bin,
         runner=runner,
     )
     with pytest.raises(FileExistsError):
@@ -199,6 +264,7 @@ def test_prepare_errors_on_existing_run_id(tmp_path):
             runs_root=tmp_path / "runs",
             families=["claude"],
             run_id="dup",
+            build_prompts_bin=fake_bin,
             runner=runner,
         )
 
@@ -301,7 +367,7 @@ def test_render_status_produces_readable_output(tmp_path):
 def test_score_invokes_three_phase_b_steps_in_order(tmp_path):
     run_dir = _make_run_dir(tmp_path)
     runner = RecordingRunner(returncode=0)
-    r = workflow.score(run_dir, runner=runner)
+    r = workflow.score(run_dir, runner=runner, **_fake_phase_b_bins(tmp_path))
     assert len(runner.calls) == 3
     assert "ingest_outputs.py" in runner.calls[0][1]
     assert "compute_distances.py" in runner.calls[1][1]
@@ -314,7 +380,7 @@ def test_score_passes_target_continuation_when_present(tmp_path):
     run_dir = _make_run_dir(tmp_path)
     (run_dir / "target_continuation.json").write_text("[]")
     runner = RecordingRunner(returncode=0)
-    workflow.score(run_dir, runner=runner)
+    workflow.score(run_dir, runner=runner, **_fake_phase_b_bins(tmp_path))
     cmd2 = runner.calls[1]
     assert "--target-continuation" in cmd2
 
@@ -322,7 +388,7 @@ def test_score_passes_target_continuation_when_present(tmp_path):
 def test_score_omits_target_continuation_when_absent(tmp_path):
     run_dir = _make_run_dir(tmp_path)
     runner = RecordingRunner(returncode=0)
-    workflow.score(run_dir, runner=runner)
+    workflow.score(run_dir, runner=runner, **_fake_phase_b_bins(tmp_path))
     cmd2 = runner.calls[1]
     assert "--target-continuation" not in cmd2
 
@@ -330,7 +396,10 @@ def test_score_omits_target_continuation_when_absent(tmp_path):
 def test_score_forwards_embedding_alias(tmp_path):
     run_dir = _make_run_dir(tmp_path)
     runner = RecordingRunner(returncode=0)
-    workflow.score(run_dir, embedding_alias="custom-model", runner=runner)
+    workflow.score(
+        run_dir, embedding_alias="custom-model", runner=runner,
+        **_fake_phase_b_bins(tmp_path),
+    )
     cmd2 = runner.calls[1]
     assert cmd2[cmd2.index("--embedding-alias") + 1] == "custom-model"
 
@@ -339,7 +408,7 @@ def test_score_stops_on_ingest_failure(tmp_path):
     run_dir = _make_run_dir(tmp_path)
     runner = RecordingRunner(returncode=1, stderr="ingest broke")
     with pytest.raises(RuntimeError, match="step 'ingest' failed"):
-        workflow.score(run_dir, runner=runner)
+        workflow.score(run_dir, runner=runner, **_fake_phase_b_bins(tmp_path))
     assert len(runner.calls) == 1
 
 
@@ -357,7 +426,7 @@ def test_score_stops_on_distances_failure(tmp_path):
 
     runner = TwoStepRunner()
     with pytest.raises(RuntimeError, match="step 'distances' failed"):
-        workflow.score(run_dir, runner=runner)
+        workflow.score(run_dir, runner=runner, **_fake_phase_b_bins(tmp_path))
     assert len(runner.calls) == 2
 
 
@@ -367,12 +436,46 @@ def test_score_errors_on_missing_phase_a(tmp_path):
     (run_dir / "prompts").mkdir()
     (run_dir / "outputs").mkdir()
     with pytest.raises(RuntimeError, match="no Phase A run found"):
-        workflow.score(run_dir, runner=RecordingRunner())
+        workflow.score(run_dir, runner=RecordingRunner(), **_fake_phase_b_bins(tmp_path))
 
 
 def test_score_errors_on_missing_run_dir(tmp_path):
     with pytest.raises(FileNotFoundError):
         workflow.score(tmp_path / "nope", runner=RecordingRunner())
+
+
+def test_score_errors_clearly_when_phase_b_scripts_missing(tmp_path):
+    """Regression for PR #111 review comment.
+
+    If this harness merges before PR #109, the three Phase B scripts won't
+    exist in the same external_mirror/ directory. The harness must detect
+    this preflight (before invoking subprocess) and emit a clear actionable
+    error naming the prerequisite PR. Otherwise the operator sees the first
+    subprocess invocation fail with a cryptic 'can't open file' message."""
+    run_dir = _make_run_dir(tmp_path)
+    fake = tmp_path / "does_not_exist.py"
+    with pytest.raises(FileNotFoundError, match="Phase B scripts missing"):
+        workflow.score(
+            run_dir,
+            ingest_bin=fake,
+            distances_bin=fake,
+            pack_bin=fake,
+            runner=RecordingRunner(),
+        )
+
+
+def test_score_error_names_prerequisite_pr(tmp_path):
+    """The preflight error must name PR #109."""
+    run_dir = _make_run_dir(tmp_path)
+    fake = tmp_path / "does_not_exist.py"
+    with pytest.raises(FileNotFoundError, match="#109"):
+        workflow.score(
+            run_dir,
+            ingest_bin=fake,
+            distances_bin=fake,
+            pack_bin=fake,
+            runner=RecordingRunner(),
+        )
 
 
 # ============================================================
@@ -404,11 +507,13 @@ def test_cli_prepare_returns_zero(tmp_path, monkeypatch):
     target = _write_target(tmp_path)
     runner = RecordingRunner(returncode=0)
     monkeypatch.setattr(workflow, "_default_runner", runner)
+    fake_bin = _fake_bin(tmp_path, "build_prompts.py")
     rc = workflow.main([
         "prepare", str(target),
         "--runs-root", str(tmp_path / "runs"),
         "--run-id", "cli_t1",
         "--families", "claude,chatgpt",
+        "--build-prompts-bin", str(fake_bin),
     ])
     assert rc == 0
     assert (tmp_path / "runs" / "cli_t1" / "WORKFLOW.md").exists()
@@ -440,7 +545,13 @@ def test_cli_score_returns_zero(tmp_path, monkeypatch):
     run_dir = _make_run_dir(tmp_path)
     runner = RecordingRunner(returncode=0)
     monkeypatch.setattr(workflow, "_default_runner", runner)
-    rc = workflow.main(["score", str(run_dir)])
+    bins = _fake_phase_b_bins(tmp_path)
+    rc = workflow.main([
+        "score", str(run_dir),
+        "--ingest-bin", str(bins["ingest_bin"]),
+        "--distances-bin", str(bins["distances_bin"]),
+        "--pack-bin", str(bins["pack_bin"]),
+    ])
     assert rc == 0
 
 
@@ -448,5 +559,11 @@ def test_cli_score_failure_returns_one(tmp_path, monkeypatch):
     run_dir = _make_run_dir(tmp_path)
     runner = RecordingRunner(returncode=1, stderr="bork")
     monkeypatch.setattr(workflow, "_default_runner", runner)
-    rc = workflow.main(["score", str(run_dir)])
+    bins = _fake_phase_b_bins(tmp_path)
+    rc = workflow.main([
+        "score", str(run_dir),
+        "--ingest-bin", str(bins["ingest_bin"]),
+        "--distances-bin", str(bins["distances_bin"]),
+        "--pack-bin", str(bins["pack_bin"]),
+    ])
     assert rc == 1

@@ -111,6 +111,15 @@ def prepare(
     shutil.copyfile(target_path, target_copy)
 
     bin_path = build_prompts_bin or (_here() / "build_prompts.py")
+    if not bin_path.exists():
+        raise FileNotFoundError(
+            f"build_prompts.py not found at {bin_path}. The workflow harness "
+            f"requires Phase A (PR #108 / build_prompts.py) to be present in "
+            f"the same external_mirror/ directory. If this harness branch "
+            f"merged before its prerequisite, rebase it on top of #108 or "
+            f"wait for #108 to merge into main. Override the path with "
+            f"--build-prompts-bin if it lives elsewhere."
+        )
 
     cmd: list[str] = [
         sys.executable,
@@ -348,6 +357,19 @@ def score(
     ingest_bin = ingest_bin or (here / "ingest_outputs.py")
     distances_bin = distances_bin or (here / "compute_distances.py")
     pack_bin = pack_bin or (here / "compose_evidence_pack.py")
+
+    missing = [str(p) for p in (ingest_bin, distances_bin, pack_bin) if not p.exists()]
+    if missing:
+        raise FileNotFoundError(
+            f"Phase B scripts missing: {missing}. The workflow harness "
+            f"requires Phase B (PR #109 / ingest_outputs.py + "
+            f"compute_distances.py + compose_evidence_pack.py) to be "
+            f"present in the same external_mirror/ directory. If this "
+            f"harness branch merged before its prerequisite, rebase it on "
+            f"top of #109 or wait for #109 to merge into main. Override "
+            f"individual paths with --ingest-bin / --distances-bin / "
+            f"--pack-bin if they live elsewhere."
+        )
 
     prompts_root = run_dir / "prompts"
     phase_a_dirs = [p for p in prompts_root.iterdir() if p.is_dir() and (p / "MANIFEST.json").exists()] if prompts_root.exists() else []
