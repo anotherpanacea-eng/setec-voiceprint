@@ -55,6 +55,7 @@ VALID_TASK_SURFACES = frozenset({
     "calibration",
     "craft_restoration",
     "metric_targeted_restoration",
+    "external_mirror_discrimination",
 })
 
 
