@@ -47,12 +47,23 @@ def _load_survey(path: Path) -> dict[str, Any] | None:
 
 
 def _da_auc(survey: dict[str, Any], signal: str) -> float | None:
-    """Pull direction_aware_auc for a signal from a survey JSON."""
-    per_sig = (survey.get("per_signal") or {}).get(signal) or {}
-    cal = per_sig.get("calibration") or {}
-    val = cal.get("direction_aware_auc")
-    if isinstance(val, (int, float)):
-        return float(val)
+    """Pull direction_aware_auc for a signal from a survey JSON.
+
+    The survey emits a flat `rows: [{"signal": ..., "direction_aware_auc": ...}]`
+    list (see `calibration_survey.SurveyRow.to_dict`). Earlier drafts of
+    this reader assumed a nested `per_signal[sig].calibration.direction_aware_auc`
+    layout that the survey has never produced; that path silently returned
+    None for every cell.
+    """
+    for row in survey.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        if row.get("signal") != signal:
+            continue
+        val = row.get("direction_aware_auc")
+        if isinstance(val, (int, float)) and not isinstance(val, bool):
+            return float(val)
+        return None
     return None
 
 
@@ -71,50 +82,90 @@ def _format_table(
     phase_label: str, models: list[str], signals: list[str],
     surveys_dir: Path, file_prefix: str,
 ) -> str:
-    """Build a markdown comparison table for one phase."""
+    """Build a markdown comparison table for one phase.
+
+    Winner selection disqualifies any config that has ANY target signal
+    either missing or polarity-inverted (da_AUC < 0.5). Among survivors,
+    rank by the minimum da_AUC across the phase's target signals — the
+    "weakest link" metric — so the winner is robust across every signal
+    rather than excellent on one and weak on another.
+    """
     rows = []
-    # Header: model | sig1 | sig2 | ... | winner
-    header = "| Model | " + " | ".join(signals) + " | Best da_AUC |"
+    header = "| Model | " + " | ".join(signals) + " | min da_AUC |"
     sep = "|" + "---|" * (len(signals) + 2)
     rows.append(header)
     rows.append(sep)
-    summary: list[tuple[str, float | None]] = []
+    summary: list[tuple[str, list[float | None]]] = []
     for model in models:
         survey_path = surveys_dir / f"{file_prefix}_{model}.json"
         survey = _load_survey(survey_path)
         if survey is None:
-            row = f"| {model} | " + " | ".join(["  MISSING  "] * len(signals)) + " | -- |"
-            summary.append((model, None))
-            rows.append(row)
+            rows.append(
+                f"| {model} | "
+                + " | ".join(["  MISSING  "] * len(signals))
+                + " | -- |"
+            )
+            summary.append((model, [None] * len(signals)))
             continue
-        cells = []
-        max_da = None
+        per_signal_da: list[float | None] = []
+        cells: list[str] = []
         for sig in signals:
             da = _da_auc(survey, sig)
             cells.append(_format_da(da))
-            if da is not None:
-                if max_da is None or da > max_da:
-                    max_da = da
-        summary.append((model, max_da))
-        best = f"{max_da:.4f}" if max_da is not None else "--"
-        rows.append(f"| {model} | " + " | ".join(cells) + f" | {best} |")
+            per_signal_da.append(da)
+        observed = [d for d in per_signal_da if d is not None]
+        min_label = f"{min(observed):.4f}" if observed else "--"
+        rows.append(f"| {model} | " + " | ".join(cells) + f" | {min_label} |")
+        summary.append((model, per_signal_da))
     rows.append("")
-    rows.append("Legend: `*` = da_AUC >= 0.55 (clear separation); "
-                "`!` = da_AUC < 0.5 (polarity inversion).")
+    rows.append(
+        "Legend: `*` = da_AUC >= 0.55 (clear separation); "
+        "`!` = da_AUC < 0.5 (polarity inversion). "
+        "Winner column shows the MIN across signals; a config with any "
+        "inverted or missing signal is disqualified from winner selection."
+    )
     rows.append("")
-    # Recommended winner per phase.
-    valid = [(m, d) for m, d in summary if d is not None and d >= 0.5]
-    if valid:
-        valid.sort(key=lambda x: x[1], reverse=True)
-        winner_model, winner_da = valid[0]
+    # Winner: every target signal must be present AND >= 0.5; rank by min.
+    eligible: list[tuple[str, float]] = []
+    for model, das in summary:
+        if any(d is None for d in das):
+            continue
+        if any(d < 0.5 for d in das):
+            continue
+        eligible.append((model, min(das)))
+    if eligible:
+        eligible.sort(key=lambda x: x[1], reverse=True)
+        winner_model, winner_min = eligible[0]
         rows.append(
             f"**Phase {phase_label} recommended winner**: `{winner_model}` "
-            f"(best da_AUC = {winner_da:.4f})."
+            f"(min da_AUC = {winner_min:.4f} across {len(signals)} signals; "
+            f"every target signal >= 0.5)."
         )
     else:
+        # Diagnose why nothing was eligible so the operator knows where to look.
+        inverted_models = [
+            m for m, das in summary
+            if any(d is not None and d < 0.5 for d in das)
+        ]
+        partial_models = [
+            m for m, das in summary
+            if any(d is None for d in das)
+            and not any(d is not None and d < 0.5 for d in das)
+        ]
+        reasons = []
+        if inverted_models:
+            reasons.append(
+                "polarity-inverted on at least one signal: "
+                + ", ".join(f"`{m}`" for m in inverted_models)
+            )
+        if partial_models:
+            reasons.append(
+                "missing at least one signal: "
+                + ", ".join(f"`{m}`" for m in partial_models)
+            )
+        detail = "; ".join(reasons) if reasons else "every config failed to score"
         rows.append(
-            f"**Phase {phase_label} — no winner**: every config either "
-            f"polarity-inverted (da_AUC < 0.5) or failed to score. "
+            f"**Phase {phase_label} — no winner**: {detail}. "
             f"Inspect the survey JSONs for per-signal errors."
         )
     return "\n".join(rows)
