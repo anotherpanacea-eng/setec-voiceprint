@@ -128,6 +128,160 @@ DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR: dict[
 }
 
 
+# 1.101.0+: per-(comparator × judge × generator) direction overrides
+# on top of DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR. Mirror of
+# ``ThresholdSpec.direction_by_comparator_and_slice`` in
+# ``variance_audit`` (PR #106 / 1.100.0). Three-level nested dict
+# keyed by ``(signal → comparator_class → judge → generator → "gt" /
+# "lt")``.
+#
+# The empirical motivator is the same set of 13 RAID
+# ``comparator_dependent`` cells that motivated the variance_audit
+# field: the direction holds for some ``(LM-judge × generator-family)``
+# slices and inverts on others within the same comparator class.
+# PR #103's per-comparator-class field is too coarse for those cells;
+# this table's three-level dict is the cell-resolution closure.
+#
+# The fallback chain ``resolve_registry_direction_with_slice`` walks is:
+#   1. DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE
+#        [signal][comparator][judge][generator]
+#   2. DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR[signal][comparator]
+#   3. DEFAULT_REGISTRY_DIRECTIONS[signal]
+#
+# 1.101.0 ships the table + helper + plumbing through the polarity-audit
+# CLI. The override table stays EMPTY -- the per-(judge × generator)
+# taxonomy still needs operator data to settle. Once operator data
+# lands, the 13 RAID ``comparator_dependent`` cells get populated here
+# without further plumbing.
+DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE: dict[
+    str, dict[str, dict[str, dict[str, str]]]
+] = {}
+
+
+def _validate_slice_overrides(
+    overrides: dict[str, dict[str, dict[str, dict[str, str]]]],
+) -> None:
+    """Validate the three-level slice-override table.
+
+    Each leaf must be ``"gt"`` or ``"lt"``. Each non-leaf must be a
+    dict. Errors name the offending path (signal, comparator, judge,
+    generator) so an operator with a populated table finds the
+    typo quickly.
+
+    Module-level so the table itself can be validated at import time
+    (and tests can pass synthetic tables to pin the dispatch).
+    """
+    for signal, by_comp in overrides.items():
+        if not isinstance(by_comp, dict):
+            raise ValueError(
+                f"DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE"
+                f"[{signal!r}] must be a dict[str, dict[str, "
+                f"dict[str, str]]], got {type(by_comp).__name__}"
+            )
+        for comp, by_judge in by_comp.items():
+            if not isinstance(by_judge, dict):
+                raise ValueError(
+                    f"DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE"
+                    f"[{signal!r}][{comp!r}] must be a dict[str, "
+                    f"dict[str, str]], got {type(by_judge).__name__}"
+                )
+            for judge, by_gen in by_judge.items():
+                if not isinstance(by_gen, dict):
+                    raise ValueError(
+                        f"DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_"
+                        f"AND_SLICE[{signal!r}][{comp!r}][{judge!r}] "
+                        f"must be a dict[str, str], got "
+                        f"{type(by_gen).__name__}"
+                    )
+                for generator, dir_val in by_gen.items():
+                    if dir_val not in ("gt", "lt"):
+                        raise ValueError(
+                            f"DEFAULT_REGISTRY_DIRECTIONS_BY_"
+                            f"COMPARATOR_AND_SLICE[{signal!r}][{comp!r}]"
+                            f"[{judge!r}][{generator!r}] must be 'gt' "
+                            f"or 'lt', got {dir_val!r}"
+                        )
+
+
+# Validate the shipped table at import. The shipped table is empty
+# in 1.101.0; this guards against future populate-PRs landing with a
+# structural typo.
+_validate_slice_overrides(
+    DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE,
+)
+
+
+def resolve_registry_direction_with_slice(
+    signal: str,
+    comparator_class: str | None = None,
+    judge: str | None = None,
+    generator: str | None = None,
+    *,
+    defaults: dict[str, str] | None = None,
+    overrides: dict[str, dict[str, str]] | None = None,
+    slice_overrides: (
+        dict[str, dict[str, dict[str, dict[str, str]]]] | None
+    ) = None,
+) -> str | None:
+    """Resolve a signal's registry direction through the full
+    (comparator × judge × generator) routing chain (1.101.0+).
+
+    Fallback chain (most-specific to least-specific):
+
+      1. ``slice_overrides[signal][comparator_class][judge][generator]``
+         -- when all FIVE conditions hold (comparator_class set, judge
+         set, generator set, the slice table set, and the full path
+         present in the nested dict).
+      2. ``overrides[signal][comparator_class]`` -- per-class override
+         from PR #103 / 1.98.0. Used when the (judge, generator) lookup
+         misses but the per-class entry hits.
+      3. ``defaults[signal]`` -- the registry default.
+      4. ``None`` -- signal isn't in defaults at all.
+
+    Pre-1.101 callers (passing only comparator_class via
+    ``resolve_registry_direction``) get exactly the PR #103 fallback
+    chain -- the new helper is a strict superset that adds an outer
+    layer above the per-comparator dict.
+
+    ``defaults``, ``overrides``, and ``slice_overrides`` default to
+    the module tables so most callers can just pass ``signal`` +
+    optional routing args. Tests can pass synthetic tables to pin
+    the dispatch without mutating module state.
+    """
+    if defaults is None:
+        defaults = DEFAULT_REGISTRY_DIRECTIONS
+    if overrides is None:
+        overrides = DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR
+    if slice_overrides is None:
+        slice_overrides = (
+            DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE
+        )
+    # Layer 1: per-(comparator × judge × generator) override.
+    if (
+        comparator_class is not None
+        and judge is not None
+        and generator is not None
+        and signal in slice_overrides
+    ):
+        by_comp = slice_overrides[signal]
+        by_judge = by_comp.get(comparator_class)
+        if by_judge is not None:
+            by_generator = by_judge.get(judge)
+            if by_generator is not None:
+                resolved = by_generator.get(generator)
+                if resolved is not None:
+                    return resolved
+    # Layer 2: per-comparator-class override (PR #103 fallback).
+    if (
+        comparator_class is not None
+        and signal in overrides
+        and comparator_class in overrides[signal]
+    ):
+        return overrides[signal][comparator_class]
+    # Layer 3: registry default (or None when signal unknown).
+    return defaults.get(signal)
+
+
 def resolve_registry_direction(
     signal: str,
     comparator_class: str | None = None,
@@ -146,22 +300,25 @@ def resolve_registry_direction(
       2. ``defaults[signal]`` otherwise.
       3. ``None`` if signal isn't in defaults at all.
 
+    Thin wrapper over ``resolve_registry_direction_with_slice`` for
+    callers that don't yet supply judge / generator. Preserves the
+    exact pre-1.101 fallback chain bit-for-bit so pre-1.101 callers
+    that don't pass judge / generator keep getting the same answer.
+
+    For new callers wanting the full (comparator × judge × generator)
+    chain, use ``resolve_registry_direction_with_slice`` directly.
+
     ``defaults`` and ``overrides`` default to the module tables so
     most callers can just pass ``signal`` + optional
     ``comparator_class``. Tests can pass synthetic tables to pin
     the dispatch without mutating module state.
     """
-    if defaults is None:
-        defaults = DEFAULT_REGISTRY_DIRECTIONS
-    if overrides is None:
-        overrides = DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR
-    if (
-        comparator_class is not None
-        and signal in overrides
-        and comparator_class in overrides[signal]
-    ):
-        return overrides[signal][comparator_class]
-    return defaults.get(signal)
+    return resolve_registry_direction_with_slice(
+        signal, comparator_class,
+        judge=None, generator=None,
+        defaults=defaults, overrides=overrides,
+        slice_overrides=None,
+    )
 
 
 # ----------------------------------------------------------------- CI math
@@ -625,6 +782,44 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "DEFAULT_REGISTRY_DIRECTIONS."
         ),
     )
+    p.add_argument(
+        "--comparator-class", default=None,
+        help=(
+            "1.98.0+: comparator class for per-signal direction "
+            "routing. When set, each signal's effective direction is "
+            "resolved via ``resolve_registry_direction(signal, "
+            "comparator_class)`` -- so a RAID polarity audit reads "
+            "``surprisal_sd`` under direction='lt' (per the 2026-05-18 "
+            "RAID 5K bake-off finding), while MAGE stays at the "
+            "default 'gt'. Unknown classes fall back to defaults per "
+            "signal. NOT auto-defaulted from --input-csv; the audit "
+            "is corpus-agnostic at this CLI layer."
+        ),
+    )
+    p.add_argument(
+        "--judge", default=None,
+        help=(
+            "1.101.0+: route per-signal direction through the "
+            "DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE table "
+            "at the (comparator × judge × generator) cell. Used with "
+            "--comparator-class + --generator to activate the inner-"
+            "most fallback layer (full path → per-class → default). "
+            "Used for the 13 RAID ``comparator_dependent`` cells where "
+            "the direction differs by (LM-judge × generator-family). "
+            "When the inner table has no entry for this specific cell, "
+            "falls back to the per-class direction. NOT auto-defaulted "
+            "from corpus -- judge/generator are slice axes within a "
+            "corpus, not properties of it."
+        ),
+    )
+    p.add_argument(
+        "--generator", default=None,
+        help=(
+            "1.101.0+: see --judge. Used together to activate the "
+            "per-(comparator × judge × generator) inner-most "
+            "fallback layer in the direction resolver."
+        ),
+    )
     return p
 
 
@@ -669,11 +864,61 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 2
     registry = parse_registry_overrides(args.registry_direction)
+    # Track which signals the operator explicitly overrode via
+    # ``--registry-direction sig=dir``. Routing must NOT clobber these
+    # — otherwise an operator running a manual what-if audit
+    # ``--registry-direction surprisal_sd=gt --comparator-class raid``
+    # gets ``lt`` back from the per-comparator table (PR #103 entry),
+    # silently ignoring the override. The override is the operator's
+    # explicit intent and outranks any registry default at any layer.
+    explicit_overrides: set[str] = set()
+    for item in args.registry_direction or []:
+        if "=" not in item:
+            continue
+        sig, direction = item.split("=", 1)
+        sig = sig.strip()
+        if direction.strip() in ("gt", "lt"):
+            explicit_overrides.add(sig)
+
+    # 1.98.0+: when --comparator-class is set, resolve each registry
+    # default through the per-class routing helper so the audit reads
+    # signals under their per-comparator direction (e.g., surprisal_sd
+    # under direction='lt' on RAID).
+    # 1.101.0+: when --judge + --generator are also set, the resolver
+    # walks the deeper (judge × generator) layer first. Without judge
+    # or generator the resolver falls through to the per-class entry
+    # exactly like the 1.98 path. Explicitly-overridden signals are
+    # skipped so the operator's ``--registry-direction sig=dir`` wins.
+    if args.comparator_class is not None or args.judge is not None \
+            or args.generator is not None:
+        for sig in list(registry.keys()):
+            if sig in explicit_overrides:
+                continue
+            resolved = resolve_registry_direction_with_slice(
+                sig,
+                args.comparator_class,
+                judge=args.judge,
+                generator=args.generator,
+                defaults=registry,
+            )
+            if resolved is not None:
+                registry[sig] = resolved
     audit = build_audit(
         rows,
         registry_directions=registry,
         comparator_key=args.comparator_key,
     )
+    # Record the routing axes that produced these per-signal directions
+    # so the output JSON is self-describing — without this, two audits
+    # against the same CSV under different ``--comparator-class`` /
+    # ``--judge`` / ``--generator`` settings would be indistinguishable
+    # in the output file.
+    audit["routing"] = {
+        "comparator_class": args.comparator_class,
+        "judge": args.judge,
+        "generator": args.generator,
+        "explicit_registry_overrides": sorted(explicit_overrides),
+    }
     args.out_json.parent.mkdir(parents=True, exist_ok=True)
     args.out_json.write_text(
         json.dumps(audit, indent=2, sort_keys=True),
