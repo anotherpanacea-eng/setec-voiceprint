@@ -1497,17 +1497,17 @@ Layer A surprisal scoring against a configurable local LLM. Computes per-token s
 
 ```bash
 python3 surprisal_audit.py target.txt \
-    --model tinyllama --dtype auto \
+    --model tinyllama --surprisal-dtype auto \
     [--sliding-window --window-size 200 --stride 100] \
-    [--threshold-low X --threshold-high Y] \
-    [--out audit.json --out-md audit.md]
+    [--top-k 10] [--json] [--out audit.{md,json}]
 ```
 
 ### Notes
 
 - **Model aliases.** `gpt2`, `tinyllama`, `llama32_1b`, `pythia_1b`, `olmo2_1b`, `qwen3_1_7b`, `qwen25_1_5b`. Resolves to a HuggingFace ID via `surprisal_backend.MODEL_ALIASES`. HF IDs also accepted directly. Aliases without a local cache trigger an offline-mode error rather than a silent download.
-- **Dtype.** `auto` resolves at load time per host capability (CUDA bf16, MPS fp32, CPU fp32). `--dtype fp16` forces half-precision; useful for cross-host comparison. The Markdown header surfaces `loaded` vs `requested` so operators see resolution decisions inline.
-- **Thresholds.** Defaults are `None`. Without operator-supplied `--threshold-low` / `--threshold-high`, the audit emits an `uncalibrated` verdict band rather than an authorship-direction label. Matches the framework's discipline against shipping thresholded claims without per-corpus calibration.
+- **Dtype.** `--surprisal-dtype auto` resolves at load time per host capability (CUDA bf16, MPS fp32, CPU fp32). Explicit values (`fp32` / `fp16` / `bf16`) override; useful for cross-host comparison. The `log_softmax` step is always computed in fp32 so the surprisal-series numerical contract is stable across dtype choices (1.93.0+). The Markdown header surfaces `loaded` vs `requested` so operators see resolution decisions inline.
+- **Output format.** `--json` selects JSON; default is Markdown. `--out` writes to the given path; without it, output goes to stdout. There is no separate `--out-md` — format is selected by `--json`, location by `--out`.
+- **No CLI thresholds.** This script reports the surprisal-series envelope; threshold-band verdicts on derived signals belong to `variance_audit.py` (Tier 4 signals against the calibrated registry) and `binoculars_audit.py` (the discrimination surface). Standalone surprisal audits are descriptive, not adjudicative.
 - **Sliding window** mode emits one record per window; per-section drift visible without re-running over slices.
 
 ---
@@ -1579,7 +1579,7 @@ python3 polarity_audit.py \
 ### Notes
 
 - **Direction-aware classification.** Raw AUC > 0.5 means different things for `gt` and `lt` signals. The audit converts raw bounds to direction-aware bounds (`(1 - raw_hi, 1 - raw_lo)` for `lt`) so the consistent/inverted/chance rule applies uniformly.
-- **Verdict bands.** `globally_consistent`, `globally_inverted`, `comparator_dependent` (mixed cell outcomes within one comparator), `mixed` (mixed across comparators), or `chance` (CI overlaps 0.5).
+- **Verdict bands.** `globally_consistent`, `globally_inverted`, `comparator_dependent` (mixed cell outcomes within one comparator), `mixed_noisy` (cell outcomes split across both consistent + inverted within one comparator with no clear majority), or `chance` (CI overlaps 0.5).
 - **Routing axes.** `--comparator-class`, `--judge`, `--generator` thread through the same per-(comparator × judge × generator) routing chain as `variance_audit.py`. The shipped slice override table is empty pending operator data on the 13 RAID `comparator_dependent` cells.
 - **Explicit overrides outrank routing.** `--registry-direction signal=dir` is the operator's manual what-if intent; the routing layers skip any signal explicitly overridden. Without this, `--registry-direction surprisal_sd=gt --comparator-class raid` would silently resolve back to `lt` via the per-comparator table.
 
@@ -1597,7 +1597,7 @@ python3 slice_bakeoff_v2.py \
     --manifest raid/manifest.jsonl \
     --out-dir runs/raid_5K/slicer_out/ \
     --corpus raid \
-    [--crosstab notes.original_source notes.domain] \
+    [--crosstab notes.original_source,notes.domain] \
     [--audit polarity] \
     [--comparator-class CLASS] [--judge J --generator G]
 ```
@@ -1667,9 +1667,10 @@ Model-selection bake-off scripts for the MAGE Tier 3 (embedding) + Tier 4 (surpr
 ### Usage
 
 ```bash
-bash bakeoff_mage_tier34.sh phase_a       # all 4 Phase A configs serially
-bash bakeoff_mage_tier34.sh phase_b mxbai # single Phase A config
-bash bakeoff_mage_tier34.sh all           # everything serially
+bash bakeoff_mage_tier34.sh phase_a          # all 4 Phase A configs serially
+bash bakeoff_mage_tier34.sh phase_a mxbai    # single Phase A config (mxbai embedding)
+bash bakeoff_mage_tier34.sh phase_b tinyllama  # single Phase B config (tinyllama surprisal)
+bash bakeoff_mage_tier34.sh all              # everything serially
 
 python3 bakeoff_mage_tier34_compare.py \
     --surveys-dir /runs/bakeoff_mage_tier34_5K
