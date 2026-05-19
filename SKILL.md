@@ -11,9 +11,9 @@ Measure how prose changes, compare it against human baselines, and recommend bou
 
 This skill is not an AI detector. It also is not an audio voice ID tool. Its core discipline is to measure the stylometric signal in text, name the comparison set, and refuse claims the evidence does not license.
 
-## Four Task Surfaces
+## Five Task Surfaces
 
-This skill ships tools that share statistical signals but answer four different questions. Most failure modes come from confusing them. Each surface has its own claim, its own inputs, and its own limits.
+This skill ships tools that share statistical signals but answer five different questions. Most failure modes come from confusing them. Each surface has its own claim, its own inputs, and its own limits. The first four are the core diagnostic + restoration surfaces; the fifth is discrimination evidence shipped uncalibrated by default.
 
 ### 1. Prose smoothing / compression diagnosis  *(`variance_audit.py`, Layer A)*
 
@@ -55,11 +55,21 @@ This skill ships tools that share statistical signals but answer four different 
 
 **Cannot answer.** Anything about provenance. Anything quantitative about distributional smoothing. Whether the writer should have used AI in the first place.
 
-## Why Four, Not One
+### 5. Discrimination evidence  *(`binoculars_audit.py`, `binoculars_calibrate.py`, `external_mirror/`)*
 
-The four surfaces share signals because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same statistical features (function-word distributions, lexical diversity, sentence-length variance, syntactic patterns). But they answer different questions, license different claims, and fail in different ways. A single "is this AI" verdict would have to collapse all four into one number; the math does not entitle that.
+**Question.** Under a two-model perplexity comparison (Hans et al. 2024 Binoculars) or a multi-LLM continuation-distance comparison (SETEC's external mirror), what evidence does a target text produce about its proximity to LLM-generated continuations or LLM-coupled per-token surprisal patterns?
 
-The skill therefore ships narrow surfaces and refuses the unifying verdict. Each output knows what comparison it is making, what it cannot know, and what practical revision decision follows.
+**Inputs.** A target text. For Binoculars: a scorer LLM + observer LLM pair (default `tinyllama` + `gpt2`). For external mirror: a windowed prefix plus operator-side LLM continuation outputs pasted back into the workflow harness.
+
+**Outputs.** Structured evidence packs with schema-versioned envelopes and `claim_license` blocks. Verdict bands read `uncalibrated` by default; operator-supplied per-corpus thresholds activate calibrated bands.
+
+**Cannot answer.** "Is this AI" as a binary verdict. The framework deliberately ships these tools with `DEFAULT_THRESHOLD_LOW = DEFAULT_THRESHOLD_HIGH = None`; per-corpus calibration is operator-side via `binoculars_calibrate.py`. Hans et al. 2024 reports ~95% AUC on the Binoculars detector under matched conditions, but those conditions do not generalize without local calibration. The framework provides the methodology; the operator provides the comparator.
+
+## Why Five, Not One
+
+The five surfaces share signals because RLHF-induced mode collapse, register conventions, and time-stable authorial idiolect all leave traces in the same statistical features (function-word distributions, lexical diversity, sentence-length variance, syntactic patterns). But they answer different questions, license different claims, and fail in different ways. A single "is this AI" verdict would have to collapse them all into one number; the math does not entitle that.
+
+The skill therefore ships narrow surfaces and refuses the unifying verdict. Each output knows what comparison it is making, what it cannot know, and what practical revision decision follows. Surface 5's discrimination tools come closest to a binary call — at ~95% AUC under matched conditions on the published Binoculars benchmark — and the framework still refuses to ship per-corpus thresholds as defaults. Calibration moves the responsibility for thresholded claims onto the operator who supplied the comparator corpus, where it belongs.
 
 ## The Mode-Collapse Lens
 

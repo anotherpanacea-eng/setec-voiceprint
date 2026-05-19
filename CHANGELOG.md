@@ -6,6 +6,39 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.105.2] - 2026-05-19
+
+**Post-1.101 doc loose ends.** Two consistency passes (SKILL.md → five-surface framing, `scripts/README.md` → Surface 5 section + path convention note + dominant-form normalization) plus a CHANGELOG backfill for ten PRs that merged without entries during the post-1.101 cascade.
+
+### Changed
+
+- **`SKILL.md`**: "Four Task Surfaces" → "Five Task Surfaces"; added a Surface 5 entry (discrimination evidence, uncalibrated by default) in the same Question / Inputs / Outputs / Cannot answer shape as Surfaces 1-4. "Why Four, Not One" → "Why Five, Not One"; rewritten paragraph names Surface 5's ~95% AUC ceiling under matched conditions and the per-corpus-calibration discipline.
+- **`plugins/setec-voiceprint/scripts/README.md`**:
+  - Path convention note at the top: examples name scripts by bare filename (`python3 variance_audit.py ...`), assuming you're in `plugins/setec-voiceprint/scripts/`; from the repo root, prefix with that path (matching the top-level README) or `cd` first.
+  - Surface 5 entry under "Active task surfaces" with Script / Scope / Use when table for `binoculars_audit`, `binoculars_calibrate`, and the `external_mirror/` chain.
+  - Surface tag table extended with `binoculars_discrimination`, `external_mirror_discrimination`, and `calibration` rows.
+  - Normalized the 15 outlier `python3 scripts/foo.py` examples to bare-form `python3 foo.py` to match the dominant convention used by the rest of the catalog.
+- **`plugin.json` + `marketplace.json` versions**: 1.105.1 → 1.105.2.
+
+### Backfill: PRs #107–#116 (post-1.101 cascade)
+
+These PRs merged between 1.101.0 (#105 / 2026-05-18) and 1.101.1 (#89 / 2026-05-19) without CHANGELOG entries. The 1.102.0–1.105.1 version sequence stepped over the gap; this section is the catch-up. Listed in PR-number order.
+
+- **#107 — `docs(roadmap)`: post-1.101 follow-ups from the 2026-05-18 PR cascade.** Documented the follow-up tracks (D, E.1–E.3, F.1–F.3, G.1–G.3) in `ROADMAP.md`'s "Post-1.101 follow-ups" section that surfaced during the per-comparator routing cascade but were out of scope for the merged PRs. Items D, E.2, E.3, F.2 have since shipped (PRs #112, #117, #118, #119); items F.1, F.3, G are operator-data-blocked; E.1 is operator-justify-blocked.
+- **#108 — `feat(external_mirror)`: Phase A prompt builder + roadmap follow-ups.** Added `plugins/setec-voiceprint/scripts/external_mirror/build_prompts.py` — windows the target text, emits ready-to-paste prompts per LLM family with manifest provenance. First piece of the external-mirror discrimination methodology pipeline.
+- **#109 — `feat(external_mirror)`: Phase B (ingest + distance + evidence pack) v1.** Three new scripts under `external_mirror/`: `ingest_outputs.py` (paste-back parser, T3 separate-file + T4 batched-JSON formats with refusal + truncation detection), `compute_distances.py` (per-window pairwise sbert-cosine matrix), `compose_evidence_pack.py` (schema 1.0 envelope with `claim_license`). Closes the methodology pipeline end-to-end at v1 (sbert-only distance metric).
+- **#110 — `feat(binoculars)`: Design 3-tight audit, perplexity-ratio v1.** Added `binoculars_audit.py` — implements two-model perplexity-ratio audit per Hans et al. 2024 with scorer + observer LLM pair. Ships with `DEFAULT_THRESHOLD_LOW = DEFAULT_THRESHOLD_HIGH = None`; verdict bands read `uncalibrated` until operator supplies thresholds. Task surface: `binoculars_discrimination`.
+- **#111 — `feat(external_mirror)`: operator workflow harness.** Added `external_mirror/workflow.py` — operator-facing harness with `prepare` / `status` / `score` subcommands that chain Phase A → operator paste-back → Phase B. The harness handles directory layout, prompt routing, and Phase B orchestration; the operator handles the model-interaction step. Per-window `context_sha256` in the MANIFEST so third-party operators can verify the pasted continuations match the documented prefix.
+- **#112 — `feat(calibration)`: thread judge/generator through the calibration pipeline.** Closes the calibration-side gap PR #105 explicitly deferred: `judge` / `generator` now thread through `validation_harness.score_smoothing_entry`, `calibrate_thresholds.score_corpus`, `calibration_survey.py --judge / --generator`, `calibrate_thresholds.py --judge / --generator`, and `bakeoff_matrix.sh` (new `SETEC_JUDGE` / `SETEC_GENERATOR` env vars). Cache identity includes both fields; provenance replay surfaces `--judge X --generator Y`. This is ROADMAP item D — the symmetric closure for PR #106's `direction_by_comparator_and_slice` infrastructure.
+- **#113 — `feat(external_mirror)`: Phase B v2 — TF-IDF / POS-bigram / word-set Jaccard metrics.** Extended `compute_distances.py` from v1's sbert-only path to a four-metric stack: sbert cosine + TF-IDF cosine (sklearn-gated) + POS-bigram cosine + POS-bigram Jaccard (spaCy-gated) + word-set Jaccard (no external deps). Skipped metrics land in `metric_skip_reasons` rather than erroring; per-metric markdown tables surface in the evidence pack so the operator-facing decision of which to weight stays operator-side.
+- **#114 — `feat(binoculars)`: v2 — true cross-perplexity (Hans et al. 2024).** Added v2 score path to `binoculars_audit.py` — true cross-perplexity (~95% AUC under matched conditions per Hans et al.) vs. v1's perplexity-ratio baseline (~75% AUC). New `--score-version {auto, v1, v2}` flag; `auto` picks v2 when scorer + observer tokenizers are compatible, falls back to v1 with a `tokenizers_incompatible` caveat. Default `tinyllama` + `gpt2` pair has incompatible tokenizers; auto picks v1. The score-scale distinction between v1 and v2 is named in the default `does_not_license` text so calibration consumers know v1 and v2 thresholds aren't interchangeable.
+- **#115 — `feat(binoculars)`: threshold calibration script.** Added `binoculars_calibrate.py` — runs the audit against a labeled manifest, derives empirical `threshold-low` / `threshold-high` from per-class score distributions, emits a calibration report with the discipline gates (polarity, sample size ≥30 each class, AUC ≥ 0.6). Output thresholds are operator-side; the framework's `binoculars_audit` defaults stay `None`. Task surface: `calibration`. Closes the per-corpus calibration path for Surface 5.
+- **#116 — `docs`: evidence pack publication.** Added `docs/evidence-packs/nazir-serpent-in-the-grove.html` — a published glass-box evidence pack on a 2026 Commonwealth Short Story Prize Caribbean regional winner that an external detector flagged as AI-generated. Pack documents SETEC Tier 1-4 + AIC craft audit results, external-mirror Design 1-4 outputs (with K=1 striking finding and K=4 corrective aggregate; expanding-context Design 4 peak sbert 0.71 at ctx=1500), controls, caveats per the methodology spec, replication notes, and provenance. Companion `docs/index.html` landing page + `docs/.nojekyll` so GitHub Pages serves files as-is.
+
+### Notes
+
+- The backfill above does not retroactively assign version numbers (1.101.0 → 1.101.1 stay as they are on the version timeline). The unrecorded PRs are documented here in the next available CHANGELOG entry, which is how the convention's "version on commit" rule is honored without disturbing released versions or marketplace catalog state.
+
 ## [1.105.1] - 2026-05-19
 
 **Tool catalog refresh.** README + `scripts/README.md` brought current with the calibration pipeline, binoculars, external_mirror, and surprisal_audit additions accumulated across PRs #100-#119. Docs-only release; no code or behavior changes.

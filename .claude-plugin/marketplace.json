@@ -1,7 +1,7 @@
 {
   "name": "setec-voiceprint",
   "metadata": {
-    "version": "1.105.1",
+    "version": "1.105.2",
     "description": "Text-only stylometry for authorial voice in prose (not audio voice identification). SETEC stylometric framework: AI-prose smoothing diagnosis, authorial-voice coherence comparison (drift, per-POV, impostor pool), manifest validation, per-comparator + per-(judge × generator) direction-routed calibration toolchain, craft restoration, impostor-pool acquisition from blogs / Blogger Takeout / online magazines / PDF libraries, author-facing voice insights report generation, plus Surface 5 discrimination evidence tools (Binoculars two-model perplexity + external-mirror multi-LLM continuation distance) shipped uncalibrated by default."
   },
   "owner": {
@@ -12,7 +12,7 @@
     {
       "name": "setec-voiceprint",
       "source": "./plugins/setec-voiceprint",
-      "version": "1.105.1",
+      "version": "1.105.2",
       "description": "Text-only stylometry for authorial voice in prose — not audio voice identification or speaker recognition. Stylometric tools for AI-prose smoothing diagnosis and authorial-voice coherence comparison. Five task surfaces: smoothing diagnosis (Layer A variance signals on prose), authorial-voice coherence comparison (Burrows-style Delta + cluster mode + idiolect preservation lists + authorial-voice drift tracking across time periods + per-POV authorial-voiceprints with voice-collapse detection + impostor-pool acquisition for the General Imposters method), validation + calibration (manifest integrity + corpus-hygiene gate + ROC/PR harness on smoothing and authorial-voice coherence + voice-validation harness + per-comparator + per-(judge × generator) direction-routed calibration toolchain with bake-off matrix runner + length-stratified subsampling + slicer/polarity-audit chainer + provenance ledger), craft-restoration (AIC flag families, source triage, rhetorical countermoves, metric-targeted restoration packets that translate diagnostic outputs into bounded revision-safe prompts, before/after restoration verdicts with metric-gaming detection), and discrimination evidence shipped uncalibrated by default (Hans et al. 2024 Binoculars two-model perplexity audit + the SETEC external-mirror multi-LLM continuation-distance evidence pack). Python tooling spans manuscript-level audits, sliding-window localization, length-matched bootstrap percentiles, R `stylo` oracle verification, MVP empirical validation against labeled corpora, live blog acquisition (Substack / WordPress / generic-HTML / Wayback), offline Blogger Takeout import, online literary-horror magazine scraping (Nightmare, The Dark, with per-magazine modules behind a uniform CLI), and PDF library inventory + extraction (pypdf text-layer + optional ocrmypdf OCR) for the impostor pool. 'Voiceprint' in the name refers to authorial voice in prose (Burrows-Delta-style authorship fingerprinting), not vocal spectography.",
       "author": {
         "name": "anotherpanacea-eng",
