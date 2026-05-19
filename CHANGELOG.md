@@ -6,6 +6,54 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.100.0] - 2026-05-18
+
+**Per-(comparator × judge × generator) direction routing infrastructure.** Closes the structural follow-up PR #103 (1.98.0) explicitly deferred for the 13 RAID `comparator_dependent` cells from the 2026-05-18 audit. Ships the deeper routing infrastructure — new field, new helper, new CLI flags, new JSON-output fields — with the override table EMPTY. Population of the 13 RAID cells lands in a follow-up once the operator-side per-(judge × generator) data taxonomy settles.
+
+### Why "infrastructure now, data later"
+
+PR #103 documented: *"The right structure is direction per (signal × judge × generator). Other RAID divergences are comparator_dependent at the (judge × generator) level — finer than comparator_class — and stay deferred to a per-(signal × judge × generator) follow-up."* The deferred work splits cleanly in two: the **infrastructure** (registry shape extension, helper, plumbing, CLI) is bounded code that doesn't need operator data to design correctly. The **data** (which (judge, generator) cells get which direction for which signal) needs the per-cell RAID slice analysis to settle. This PR ships the infrastructure so the data can land as a 5-line override table in a future PR without re-touching the resolver / plumbing / CLI.
+
+### Registry shape
+
+- **`ThresholdSpec.direction_by_comparator_and_slice: dict[str, dict[str, dict[str, str]]] | None = None`** — new optional field on every spec. Three-level nested dict keyed by `(comparator_class, judge, generator) → "gt" | "lt"`. Defaults to None; sits alongside (does not replace) the PR #103 `direction_by_comparator: dict[str, str] | None` field.
+- **Validation** in `__post_init__`: every leaf direction must be `"gt"` or `"lt"`; structure-shape typos (string where dict expected at any nesting level) fail fast with the offending path named in the error (`raid.chatgpt.gpt-4o`, etc.).
+
+### Resolver
+
+- **`resolve_direction_with_slice(spec, comparator_class, judge=None, generator=None) -> str`** — module-level pure helper. Three-layer fallback chain (most-specific to least-specific):
+  1. `spec.direction_by_comparator_and_slice[comparator][judge][generator]` (full path)
+  2. `spec.direction_by_comparator[comparator]` (PR #103 per-class)
+  3. `spec.direction` (spec default)
+- **`resolve_direction(spec, comparator_class)`** — kept as a thin back-compat wrapper that calls `resolve_direction_with_slice(spec, comparator_class, judge=None, generator=None)`. Pre-1.100 callers (everywhere from `validation_harness` to `before_after_restoration` to operator tests) get the exact PR #103 fallback chain bit-for-bit.
+
+### Plumbing
+
+- **`classify_compression(..., judge: str | None = None, generator: str | None = None)`** — new kwargs alongside `comparator_class`. Uses `resolve_direction_with_slice` for the per-signal direction lookup. Pre-1.100 callers (no judge/generator) get pre-1.100 behavior exactly.
+- **`audit_windows(..., judge=None, generator=None)`** — forwards per window.
+- **`thresholds_used` JSON output** gains three new keys per signal: `judge`, `generator`, and `direction_by_comparator_and_slice` (the spec's full inner table — None when not set). `direction_used` now resolves through the full chain so audit consumers see what the inner loop actually used.
+
+### CLI
+
+- **`variance_audit.py --judge JUDGE --generator GENERATOR`** — new flags. Both must be set (alongside `--comparator-class`) to activate the innermost fallback layer. Unknown (judge, generator) combinations silently fall back to the per-class direction per spec.
+
+### Tests
+
+- **24 new tests** in `test_per_judge_generator_routing.py`: field shape + nested validation, full three-layer fallback chain, `resolve_direction` back-compat wrapper, `classify_compression` end-to-end, `thresholds_used` surfaces all new fields, shipped-registry pin (every spec has `direction_by_comparator_and_slice=None` in 1.100.0), CLI flags exposed in `--help`.
+- **166 pre-existing direction-aware tests** pass unchanged (zero regressions).
+
+### What's NOT in this PR
+
+- **Population of the 13 RAID `comparator_dependent` cells.** Shipped table stays empty in 1.100.0. Once the per-(judge × generator) RAID slice analysis settles, a follow-up PR fills in `direction_by_comparator_and_slice` on the affected specs (`adjacent_cosine_mean`, `surprisal_mean`, `surprisal_acf_lag1`, and the 13 specific cells across them) with no other code change required.
+- **Synced copies in `polarity_audit` / `slice_bakeoff_v2`.** Both still operate at the per-comparator-class level only. Adding deeper-routing support there requires the same data-population question to be settled first.
+- **Calibration-pipeline plumbing through `validation_harness` / `calibrate_thresholds`.** `score_smoothing_entry` doesn't accept `judge` / `generator` yet. Operators using the standalone `variance_audit.py` CLI get the routing today; calibration-pipeline integration follows the same pattern as PR #103's per-class extension (and PR #105's calibration-pipeline threading).
+
+### Notes
+
+- **No breaking changes.** The new field defaults to None on every spec; the new helper falls back to the same answers PR #103's resolver gave; the new CLI flags default to None. Every pre-1.100 caller keeps working bit-for-bit.
+- **Cache identity unchanged.** Since `judge` / `generator` aren't yet plumbed through the calibration pipeline (scope discipline), there's no cache-identity contract change in 1.100.0. The PR #93-style identity addition for these fields lands when the calibration-side plumbing does.
+- **Version skip from 1.99 → 1.100.** Follows the framework's `feat:` → MINOR convention (*"Major version is reserved for breaking changes to the public CLI / JSON contract"*). 1.100.0 is the next MINOR from 1.99.0; nothing here is breaking.
+
 ## [1.98.1] - 2026-05-18
 
 **Surface dtype + model id + revision in `surprisal_audit.py`'s Markdown summary header.** Previously these fields lived only in the JSON output's `backend` block (attached via `identifier_block()` since PR #93); operators reading the human-readable Markdown report had no signal at all about which precision regime produced the numbers.
@@ -30,7 +78,6 @@ The Tier-4 surprisal audit writeup (2026-05-18) demonstrated a striking finding:
 
 - **Not a JSON contract change.** The JSON output's `backend` block stays exactly as PR #93 / `identifier_block()` defines it. Only the Markdown rendering is extended.
 - **Pre-1.93 audits render cleanly.** Old cached audit JSONs without a `backend` block skip the new lines entirely — no migration needed.
-
 ## [1.98.0] - 2026-05-18
 
 **Per-comparator direction routing on `ThresholdSpec.direction`.** Closes the `direction_by_comparator` chunk that PR #99's CHANGELOG explicitly deferred ("next chunk"). The 2026-05-18 RAID 5K bake-off showed that the MAGE-correct directions (PR #99) don't generalise to mixed-humans corpora — 4 `surprisal_sd` cells returned `globally_inverted` on RAID under the MAGE direction registry. This PR adds the infrastructure for per-comparator direction overrides, plus one empirical entry (`surprisal_sd: {"raid": "lt"}`) to drive the design end-to-end. Other RAID divergences are `comparator_dependent` at the (judge × generator) level — finer than `comparator_class` — and stay deferred to a per-(signal × judge × generator) follow-up.

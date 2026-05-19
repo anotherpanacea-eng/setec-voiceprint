@@ -1833,6 +1833,10 @@ def audit_windows(
     # 1.98.0+: per-comparator direction routing forwarded to
     # ``classify_compression`` per window.
     comparator_class: str | None = None,
+    # 1.100.0+: per-(judge × generator) direction routing
+    # forwarded alongside comparator_class.
+    judge: str | None = None,
+    generator: str | None = None,
 ) -> list[dict[str, Any]]:
     """Run ``audit_text`` + ``classify_compression`` on each sliding window.
 
@@ -1865,6 +1869,7 @@ def audit_windows(
         c = classify_compression(
             a, divergences=divergences,
             comparator_class=comparator_class,
+            judge=judge, generator=generator,
         )
         entry = {
             "start_word": w["start_word"],
@@ -1992,6 +1997,36 @@ class ThresholdSpec:
     # finer-grained than ``comparator_class`` — and stay deferred
     # to a per-(signal × judge × generator) follow-up.
     direction_by_comparator: dict[str, str] | None = None
+    # 1.100.0+: per-(comparator × judge × generator) direction
+    # overrides. Three-level nested dict: outer keyed by
+    # comparator class (e.g., "raid"), middle by LM-judge id
+    # (e.g., "chatgpt"), inner by generator family (e.g.,
+    # "gpt-4o-mini") → direction "gt" or "lt".
+    #
+    # The empirical motivator: the 2026-05-18 RAID 5K bake-off
+    # surfaced 13 ``comparator_dependent`` cells (per polarity_-
+    # audit verdict) where the direction holds for some
+    # ``(LM-judge × generator-family)`` slices and inverts on
+    # others within the same comparator class. PR #103's per-
+    # comparator-class field was too coarse for those cells;
+    # this field's three-level dict is the cell-resolution
+    # closure.
+    #
+    # The fallback chain ``resolve_direction_with_slice`` walks
+    # is:
+    #   1. direction_by_comparator_and_slice[comp][judge][gen]
+    #   2. direction_by_comparator[comp]   (PR #103, per-class)
+    #   3. direction                        (spec default)
+    #
+    # 1.100.0 ships the field + helper + plumbing through
+    # ``classify_compression``. The override TABLE stays empty
+    # (no populated cells yet) -- the per-(judge × generator)
+    # taxonomy still needs operator data to settle. Once
+    # operator data lands, the 13 RAID ``comparator_dependent``
+    # cells get populated here without further plumbing.
+    direction_by_comparator_and_slice: (
+        dict[str, dict[str, dict[str, str]]] | None
+    ) = None
 
     def __post_init__(self) -> None:
         if self.direction not in ("gt", "lt"):
@@ -2007,6 +2042,36 @@ class ThresholdSpec:
                         f"[{comparator!r}] must be 'gt' or 'lt', "
                         f"got {dir_val!r}"
                     )
+        if self.direction_by_comparator_and_slice is not None:
+            # Validate every leaf direction in the nested dict.
+            # Three levels: comparator → judge → generator → "gt"/"lt".
+            # A typo at any level (e.g., a string value where a dict
+            # is expected, or a leaf "xx" instead of "gt"/"lt") fails
+            # fast at construction with the offending path named.
+            for comp, by_judge in (
+                self.direction_by_comparator_and_slice.items()
+            ):
+                if not isinstance(by_judge, dict):
+                    raise ValueError(
+                        f"ThresholdSpec.direction_by_comparator_and_slice"
+                        f"[{comp!r}] must be a dict[str, dict[str, str]], "
+                        f"got {type(by_judge).__name__}"
+                    )
+                for judge, by_gen in by_judge.items():
+                    if not isinstance(by_gen, dict):
+                        raise ValueError(
+                            f"ThresholdSpec.direction_by_comparator_and_slice"
+                            f"[{comp!r}][{judge!r}] must be a dict[str, str], "
+                            f"got {type(by_gen).__name__}"
+                        )
+                    for generator, dir_val in by_gen.items():
+                        if dir_val not in ("gt", "lt"):
+                            raise ValueError(
+                                f"ThresholdSpec.direction_by_comparator_"
+                                f"and_slice[{comp!r}][{judge!r}]"
+                                f"[{generator!r}] must be 'gt' or 'lt', "
+                                f"got {dir_val!r}"
+                            )
         if self.status not in THRESHOLD_STATUS_VALUES:
             raise ValueError(
                 f"ThresholdSpec.status must be one of "
@@ -2051,34 +2116,81 @@ class ThresholdSpec:
         return self.status not in ("calibrated", "structural_only")
 
 
+def resolve_direction_with_slice(
+    spec: ThresholdSpec,
+    comparator_class: str | None = None,
+    judge: str | None = None,
+    generator: str | None = None,
+) -> str:
+    """Resolve a spec's direction against the full
+    (comparator × judge × generator) routing chain (1.100.0+).
+
+    Fallback chain (most-specific to least-specific):
+
+      1. ``spec.direction_by_comparator_and_slice[comparator]
+         [judge][generator]`` -- when all FIVE conditions hold
+         (comparator_class set, judge set, generator set, the
+         comparator-and-slice table set, and the full path present
+         in the nested dict).
+      2. ``spec.direction_by_comparator[comparator_class]`` --
+         per-class override from PR #103 / 1.98.0. Used when the
+         (judge, generator) lookup misses but the per-class entry
+         hits.
+      3. ``spec.direction`` -- the spec default.
+
+    Pre-1.100 callers (passing only comparator_class via
+    ``resolve_direction``) get exactly the PR #103 fallback chain
+    -- the new helper is a strict superset that adds an outer
+    layer above the per-comparator dict.
+
+    The function is a pure read -- same inputs, same output, no
+    state -- so it's safe to call from hot loops.
+    """
+    # Layer 1: per-(comparator × judge × generator) override.
+    if (
+        comparator_class is not None
+        and judge is not None
+        and generator is not None
+        and spec.direction_by_comparator_and_slice is not None
+    ):
+        by_judge = spec.direction_by_comparator_and_slice.get(
+            comparator_class,
+        )
+        if by_judge is not None:
+            by_generator = by_judge.get(judge)
+            if by_generator is not None:
+                resolved = by_generator.get(generator)
+                if resolved is not None:
+                    return resolved
+    # Layer 2: per-comparator-class override (PR #103 fallback).
+    if (
+        comparator_class is not None
+        and spec.direction_by_comparator is not None
+    ):
+        resolved = spec.direction_by_comparator.get(comparator_class)
+        if resolved is not None:
+            return resolved
+    # Layer 3: spec default.
+    return spec.direction
+
+
 def resolve_direction(
     spec: ThresholdSpec,
     comparator_class: str | None = None,
 ) -> str:
-    """Resolve a spec's direction against an optional comparator class.
+    """Per-comparator-class direction resolver (PR #103 / 1.98.0).
 
-    Falls back to ``spec.direction`` when ``comparator_class`` is
-    None, when ``direction_by_comparator`` is None, or when the
-    requested class isn't in the per-comparator table. This lets
-    pre-1.98 callers that don't pass a comparator class keep
-    getting the spec's default direction unchanged.
+    Thin wrapper over ``resolve_direction_with_slice`` for callers
+    that don't yet supply judge / generator. Preserves the exact
+    pre-1.100 fallback chain bit-for-bit so pre-1.100 callers that
+    don't pass judge / generator keep getting the same answer.
 
-    The fallback chain (in order):
-
-      1. ``spec.direction_by_comparator[comparator_class]`` when
-         all three conditions hold (comparator_class set, dict set,
-         class present in dict).
-      2. ``spec.direction`` otherwise.
-
-    The function is a pure read — same inputs, same output, no
-    state — so it's safe to call from hot loops.
+    For new callers wanting the full (comparator × judge ×
+    generator) chain, use ``resolve_direction_with_slice``
+    directly.
     """
-    if comparator_class is None:
-        return spec.direction
-    if spec.direction_by_comparator is None:
-        return spec.direction
-    return spec.direction_by_comparator.get(
-        comparator_class, spec.direction,
+    return resolve_direction_with_slice(
+        spec, comparator_class, judge=None, generator=None,
     )
 
 
@@ -2456,6 +2568,16 @@ def classify_compression(
     # which falls back to spec.direction for any spec without a
     # per-comparator entry for this class.
     comparator_class: str | None = None,
+    # 1.100.0+: per-(judge × generator) direction routing within
+    # a comparator class. Both must be set (alongside
+    # comparator_class) to activate the inner-most fallback layer.
+    # Used for the 13 RAID ``comparator_dependent`` cells where
+    # the direction differs by (LM-judge × generator-family)
+    # within the same comparator class. None for either preserves
+    # pre-1.100 behavior (uses the per-comparator or spec
+    # default).
+    judge: str | None = None,
+    generator: str | None = None,
 ) -> dict[str, Any]:
     flagged: list[str] = []
     skipped: list[str] = []
@@ -2483,10 +2605,15 @@ def classify_compression(
         if signal not in COMPRESSION_HEURISTICS:
             return
         spec = COMPRESSION_HEURISTICS[signal]
-        # 1.98.0+: resolve direction through the per-comparator
-        # routing helper. Pre-1.98 callers (comparator_class=None)
-        # get spec.direction unchanged.
-        direction = resolve_direction(spec, comparator_class)
+        # 1.100.0+: resolve direction through the full per-
+        # (comparator × judge × generator) routing helper. The
+        # fallback chain (most-specific to least-specific):
+        # full path → per-class → spec default. Pre-1.100 callers
+        # passing comparator_class only (or nothing) get the
+        # exact pre-1.100 PR #103 fallback chain.
+        direction = resolve_direction_with_slice(
+            spec, comparator_class, judge=judge, generator=generator,
+        )
         thresh, weight, length_floor = (
             spec.value, spec.weight, spec.length_floor
         )
@@ -2666,9 +2793,26 @@ def classify_compression(
             # apart from the comparator-specific resolution. When
             # comparator_class is None or no per-comparator entry
             # exists, ``direction_used`` equals ``direction``.
-            "direction_used": resolve_direction(spec, comparator_class),
+            #
+            # 1.100.0+: ``direction_used`` now resolves through
+            # the full (comparator × judge × generator) chain so
+            # the JSON output reflects whatever the inner loop
+            # actually used. ``direction_by_comparator_and_slice``
+            # and ``judge`` / ``generator`` surface alongside
+            # ``comparator_class`` so audit consumers can tell
+            # registry default from class-level resolution from
+            # (judge × generator) cell-level resolution.
+            "direction_used": resolve_direction_with_slice(
+                spec, comparator_class,
+                judge=judge, generator=generator,
+            ),
             "direction_by_comparator": spec.direction_by_comparator,
+            "direction_by_comparator_and_slice": (
+                spec.direction_by_comparator_and_slice
+            ),
             "comparator_class": comparator_class,
+            "judge": judge,
+            "generator": generator,
             "weight": spec.weight,
             "length_floor": spec.length_floor,
             "signal_path": spec.signal_path,
@@ -3606,6 +3750,30 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--judge", default=None,
+        help=(
+            "1.100.0+: route per-signal direction through the "
+            "ThresholdSpec.direction_by_comparator_and_slice table "
+            "at the (comparator × judge × generator) cell. Used with "
+            "--comparator-class + --generator to activate the inner-"
+            "most fallback layer (full path → per-class → spec "
+            "default). Used for the 13 RAID ``comparator_dependent`` "
+            "cells from the 2026-05-18 audit where the direction "
+            "differs by (LM-judge × generator-family). When the "
+            "inner table has no entry for this specific cell, falls "
+            "back to the per-class direction. Default None preserves "
+            "the per-class behavior unchanged."
+        ),
+    )
+    parser.add_argument(
+        "--generator", default=None,
+        help=(
+            "1.100.0+: see --judge. Used together to activate the "
+            "per-(comparator × judge × generator) inner-most "
+            "fallback layer in the direction resolver."
+        ),
+    )
+    parser.add_argument(
         "--allow-non-prose", action="store_true",
         help="Skip default corpus-hygiene stripping. Use only when "
              "intentionally auditing code-heavy or markup-heavy text."
@@ -3799,6 +3967,7 @@ def main() -> int:
         compression = classify_compression(
             audit, divergences=divergences,
             comparator_class=args.comparator_class,
+            judge=args.judge, generator=args.generator,
         )
         output["preprocessing"] = audit.get("preprocessing", {})
         output["audit"] = audit
@@ -3845,6 +4014,7 @@ def main() -> int:
             strip_rules=args.strip_rules,
             strip_aggressive=args.strip_aggressive,
             comparator_class=args.comparator_class,
+            judge=args.judge, generator=args.generator,
         )
         output["windows"] = {
             "window_size": args.window_size,
