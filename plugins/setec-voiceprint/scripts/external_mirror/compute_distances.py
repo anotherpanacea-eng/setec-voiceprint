@@ -391,6 +391,18 @@ def compute(
                     # sklearn went away between _resolve_metrics and
                     # here — shouldn't happen, but degrade gracefully.
                     pass
+                except ValueError as exc:
+                    # Degenerate vocabulary: sklearn's TfidfVectorizer
+                    # raises ValueError("empty vocabulary") when the
+                    # present texts contain no tokens under its default
+                    # token pattern (e.g., punctuation-only outputs,
+                    # single-character continuations, or refusal-adjacent
+                    # short texts). Treat the metric as per-window
+                    # unavailable rather than crashing the whole run.
+                    # Per PR #113 review fix.
+                    caveats.append(
+                        f"tfidf_degenerate_vocab_window: {exc}"
+                    )
             assert matrices_by_metric["tfidf"] is not None
             matrices_by_metric["tfidf"].append(tfidf_full)
 

@@ -891,6 +891,110 @@ def test_compute_summary_by_metric_present():
     assert "mean_vs_target" in word_jaccard_summary["claude"]
 
 
+def test_compute_handles_tfidf_degenerate_vocab_without_crashing(monkeypatch):
+    """Regression for PR #113 review comment.
+
+    sklearn's TfidfVectorizer raises ValueError("empty vocabulary")
+    when the input texts contain no tokens under its default token
+    pattern (e.g., single-character continuations, punctuation-only
+    refusal-adjacent text). Pre-fix: the ValueError escaped from
+    _tfidf_cosine_matrix, propagated up through compute(), and
+    crashed the whole run via the broad exception handler in main().
+    Post-fix: the metric is per-window unavailable (None matrix
+    + tfidf_degenerate_vocab_window caveat).
+
+    The test simulates the failure by monkey-patching
+    _tfidf_cosine_matrix to raise the same ValueError sklearn would,
+    plus setting HAS_SKLEARN=True so the tfidf metric runs."""
+    monkeypatch.setattr(dist, "HAS_SKLEARN", True)
+
+    def _raise_empty_vocab(_texts):
+        raise ValueError("empty vocabulary; perhaps the documents only contain stop words")
+
+    monkeypatch.setattr(dist, "_tfidf_cosine_matrix", _raise_empty_vocab)
+
+    ingested = _build_ingested(windows_count=1, families_texts={
+        "claude": ["t"],
+        "chatgpt": ["x"],
+    })
+    payload = dist.compute(
+        ingested, target_continuations=["y"],
+        backend=StubBackend(),
+        metrics=["sbert", "tfidf", "word_jaccard"],
+    )
+    # The run completed without crashing.
+    assert "tfidf" in payload["metrics_available"]
+    # That window's tfidf matrix is all-None (no pair-distances
+    # could be computed). sbert + word_jaccard ran normally.
+    tfidf_matrices = payload["distance_matrices_by_metric"]["tfidf"]
+    assert tfidf_matrices is not None
+    assert len(tfidf_matrices) == 1
+    for row in tfidf_matrices[0]:
+        for cell in row:
+            assert cell is None
+    # A per-window caveat names the failure mode for inspection.
+    assert any(
+        "tfidf_degenerate_vocab_window" in c
+        for c in payload["per_window_caveats"][0]
+    )
+    # Other metrics aren't affected by the tfidf failure.
+    assert payload["distance_matrices_by_metric"]["word_jaccard"] is not None
+    assert payload["distance_matrices_by_metric"]["sbert"] is not None
+
+
+def test_compute_tfidf_degenerate_vocab_multi_window_partial_coverage(monkeypatch):
+    """When TF-IDF succeeds on one window and fails on another, the
+    per-window matrices reflect that — the failed window has all-None
+    cells, the successful window has actual distances."""
+    monkeypatch.setattr(dist, "HAS_SKLEARN", True)
+
+    call_count = {"n": 0}
+
+    def _fail_on_second_window(texts):
+        call_count["n"] += 1
+        if call_count["n"] == 2:
+            raise ValueError("empty vocabulary")
+        # Return a trivial all-zero matrix to simulate a clean run.
+        n = len(texts)
+        return [[0.0] * n for _ in range(n)]
+
+    monkeypatch.setattr(dist, "_tfidf_cosine_matrix", _fail_on_second_window)
+
+    ingested = _build_ingested(windows_count=2, families_texts={
+        "claude": ["the quick brown fox", "t"],
+        "chatgpt": ["a different sentence here", "x"],
+    })
+    payload = dist.compute(
+        ingested, target_continuations=["something", "y"],
+        backend=StubBackend(),
+        metrics=["tfidf", "word_jaccard"],
+    )
+    tfidf_matrices = payload["distance_matrices_by_metric"]["tfidf"]
+    # Window 1: tfidf succeeded → at least some non-None cells.
+    has_value_w1 = any(
+        isinstance(cell, (int, float))
+        for row in tfidf_matrices[0]
+        for cell in row
+    )
+    assert has_value_w1
+    # Window 2: tfidf failed → all-None cells.
+    all_none_w2 = all(
+        cell is None
+        for row in tfidf_matrices[1]
+        for cell in row
+    )
+    assert all_none_w2
+    # Only window 2 has the caveat.
+    assert not any(
+        "tfidf_degenerate_vocab_window" in c
+        for c in payload["per_window_caveats"][0]
+    )
+    assert any(
+        "tfidf_degenerate_vocab_window" in c
+        for c in payload["per_window_caveats"][1]
+    )
+
+
 # ============================================================
 # v2 metrics: evidence pack rendering
 # ============================================================
