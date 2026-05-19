@@ -424,6 +424,15 @@ def test_calibrate_max_entries_subsamples(tmp_path):
 
 
 def _make_full_results(tmp_path, n_pos=40, n_neg=40):
+    """Build a clean fixture that:
+    - passes all four discipline gates (polarity, sample-size, AUC),
+    - produces non-degenerate thresholds (low < high),
+    so the "all gates pass" rendering path is exercised.
+
+    Distributions overlap (necessary for threshold-low < threshold-high
+    given my percentile-of-class formula) but polarity is correct (pos
+    mean < neg mean) and AUC stays well above 0.6.
+    Positives: linspace(0.3, 1.0); negatives: linspace(0.5, 1.5)."""
     files = _make_text_files(tmp_path, n_pos + n_neg)
     entries = []
     for i, f in enumerate(files):
@@ -435,8 +444,15 @@ def _make_full_results(tmp_path, n_pos=40, n_neg=40):
 
     def audit_fn(text, scorer, observer, score_version):
         idx = int(text.split()[2])
+        if idx < n_pos:
+            # Positives spread 0.3 to 1.0.
+            score = 0.3 + 0.7 * (idx / max(1, n_pos - 1))
+        else:
+            j = idx - n_pos
+            # Negatives spread 0.5 to 1.5.
+            score = 0.5 + 1.0 * (j / max(1, n_neg - 1))
         return {
-            "perplexity_ratio": 0.5 if idx < n_pos else 1.5,
+            "perplexity_ratio": score,
             "score_version": "binoculars_cross_perplexity_v2",
         }
 
@@ -542,6 +558,219 @@ def test_polarity_inverted_fixture_flags_caveat(tmp_path):
     )
     assert results["gates"]["polarity_correct"] is False
     assert any("polarity_inverted" in c for c in results["caveats"])
+
+
+# ============================================================
+# Input validation (PR #115 P2 review fix)
+# ============================================================
+
+
+def test_calibrate_rejects_fpr_target_above_one(tmp_path):
+    manifest = _make_manifest(tmp_path, [
+        {"path": str(tmp_path / "x.txt"), "ai_status": "ai_generated"},
+    ])
+    (tmp_path / "x.txt").write_text("x")
+    with pytest.raises(ValueError, match="fpr_target must be in"):
+        cal.calibrate(
+            manifest_path=manifest,
+            scorer=StubBackend("s"), observer=StubBackend("o"),
+            positive_statuses={"ai_generated"},
+            negative_statuses={"pre_ai_human"},
+            fpr_target=2.0,
+            audit_fn=lambda t, s, o, sv: {"perplexity_ratio": 1.0, "score_version": "v1"},
+        )
+
+
+def test_calibrate_rejects_fpr_target_below_zero(tmp_path):
+    manifest = _make_manifest(tmp_path, [
+        {"path": str(tmp_path / "x.txt"), "ai_status": "ai_generated"},
+    ])
+    (tmp_path / "x.txt").write_text("x")
+    with pytest.raises(ValueError, match="fpr_target must be in"):
+        cal.calibrate(
+            manifest_path=manifest,
+            scorer=StubBackend("s"), observer=StubBackend("o"),
+            positive_statuses={"ai_generated"},
+            negative_statuses={"pre_ai_human"},
+            fpr_target=-0.1,
+            audit_fn=lambda t, s, o, sv: {"perplexity_ratio": 1.0, "score_version": "v1"},
+        )
+
+
+def test_calibrate_rejects_target_tpr_above_one(tmp_path):
+    manifest = _make_manifest(tmp_path, [
+        {"path": str(tmp_path / "x.txt"), "ai_status": "ai_generated"},
+    ])
+    (tmp_path / "x.txt").write_text("x")
+    with pytest.raises(ValueError, match="target_tpr must be in"):
+        cal.calibrate(
+            manifest_path=manifest,
+            scorer=StubBackend("s"), observer=StubBackend("o"),
+            positive_statuses={"ai_generated"},
+            negative_statuses={"pre_ai_human"},
+            target_tpr=1.5,
+            audit_fn=lambda t, s, o, sv: {"perplexity_ratio": 1.0, "score_version": "v1"},
+        )
+
+
+def test_calibrate_rejects_target_tpr_below_zero(tmp_path):
+    manifest = _make_manifest(tmp_path, [
+        {"path": str(tmp_path / "x.txt"), "ai_status": "ai_generated"},
+    ])
+    (tmp_path / "x.txt").write_text("x")
+    with pytest.raises(ValueError, match="target_tpr must be in"):
+        cal.calibrate(
+            manifest_path=manifest,
+            scorer=StubBackend("s"), observer=StubBackend("o"),
+            positive_statuses={"ai_generated"},
+            negative_statuses={"pre_ai_human"},
+            target_tpr=-1.0,
+            audit_fn=lambda t, s, o, sv: {"perplexity_ratio": 1.0, "score_version": "v1"},
+        )
+
+
+def test_calibrate_rejects_empty_positive_statuses(tmp_path):
+    manifest = _make_manifest(tmp_path, [
+        {"path": str(tmp_path / "x.txt"), "ai_status": "ai_generated"},
+    ])
+    (tmp_path / "x.txt").write_text("x")
+    with pytest.raises(ValueError, match="positive_statuses must be non-empty"):
+        cal.calibrate(
+            manifest_path=manifest,
+            scorer=StubBackend("s"), observer=StubBackend("o"),
+            positive_statuses=set(),
+            negative_statuses={"pre_ai_human"},
+            audit_fn=lambda t, s, o, sv: {"perplexity_ratio": 1.0, "score_version": "v1"},
+        )
+
+
+def test_calibrate_rejects_empty_negative_statuses(tmp_path):
+    manifest = _make_manifest(tmp_path, [
+        {"path": str(tmp_path / "x.txt"), "ai_status": "ai_generated"},
+    ])
+    (tmp_path / "x.txt").write_text("x")
+    with pytest.raises(ValueError, match="negative_statuses must be non-empty"):
+        cal.calibrate(
+            manifest_path=manifest,
+            scorer=StubBackend("s"), observer=StubBackend("o"),
+            positive_statuses={"ai_generated"},
+            negative_statuses=set(),
+            audit_fn=lambda t, s, o, sv: {"perplexity_ratio": 1.0, "score_version": "v1"},
+        )
+
+
+def test_calibrate_accepts_boundary_zero_and_one():
+    """fpr_target=0 and target_tpr=1 are degenerate but valid rates.
+    The script accepts them (operator's call); only out-of-range
+    values are rejected."""
+    # No manifest read needed; expect ValueError if rejected, no
+    # error otherwise. Use a tmp manifest path that won't be read
+    # since the boundary check happens first.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        tdp = Path(td)
+        manifest = tdp / "manifest.jsonl"
+        manifest.write_text("")  # empty manifest is OK; no entries
+        # No raise on boundary values.
+        cal.calibrate(
+            manifest_path=manifest,
+            scorer=StubBackend("s"), observer=StubBackend("o"),
+            positive_statuses={"ai_generated"},
+            negative_statuses={"pre_ai_human"},
+            fpr_target=0.0,
+            target_tpr=1.0,
+            audit_fn=lambda t, s, o, sv: {"perplexity_ratio": 1.0, "score_version": "v1"},
+        )
+
+
+# ============================================================
+# Provisional-threshold rendering (PR #115 P1 review fix)
+# ============================================================
+
+
+def test_markdown_emits_inspection_only_block_when_gates_fail(tmp_path):
+    """When any discipline gate fails, the markdown must NOT render
+    the copy-pasteable `binoculars_audit.py --threshold-low X
+    --threshold-high Y` recommendation. It should emit an
+    inspection-only block with explicit refusal language naming
+    which gates failed.
+
+    Fixture: small samples (8 each) → sufficient_positives /
+    sufficient_negatives gates fail."""
+    files = _make_text_files(tmp_path, 16)
+    entries = [
+        {"path": str(f), "ai_status": "ai_generated" if i < 8 else "pre_ai_human"}
+        for i, f in enumerate(files)
+    ]
+    manifest = _make_manifest(tmp_path, entries)
+
+    def audit_fn(text, scorer, observer, score_version):
+        idx = int(text.split()[2])
+        return {
+            "perplexity_ratio": 0.5 if idx < 8 else 1.5,
+            "score_version": "v1",
+        }
+
+    results = cal.calibrate(
+        manifest_path=manifest,
+        scorer=StubBackend("scorer"), observer=StubBackend("observer"),
+        positive_statuses={"ai_generated"},
+        negative_statuses={"pre_ai_human"},
+        audit_fn=audit_fn,
+    )
+    envelope = cal.compose_envelope(manifest_path=manifest, results=results)
+    md = cal.render_markdown(envelope)
+
+    # The recommendation form must NOT appear.
+    assert "To use these thresholds in subsequent audits" not in md
+    # The inspection-only form MUST appear with refusal language.
+    assert "INSPECTION ONLY" in md
+    assert "DO NOT pass these" in md
+    # The failing gate is named.
+    assert "sufficient_positives" in md or "sufficient_negatives" in md
+
+
+def test_markdown_emits_inspection_only_block_on_polarity_inversion(tmp_path):
+    """Polarity-inverted fixture (gates report polarity_correct=False)
+    must also surface as inspection-only."""
+    files = _make_text_files(tmp_path, 80)
+    entries = [
+        {"path": str(f), "ai_status": "ai_generated" if i < 40 else "pre_ai_human"}
+        for i, f in enumerate(files)
+    ]
+    manifest = _make_manifest(tmp_path, entries)
+
+    def audit_fn(text, scorer, observer, score_version):
+        idx = int(text.split()[2])
+        # INVERTED: positives at HIGHER scores.
+        return {
+            "perplexity_ratio": 1.5 if idx < 40 else 0.5,
+            "score_version": "v1",
+        }
+
+    results = cal.calibrate(
+        manifest_path=manifest,
+        scorer=StubBackend("scorer"), observer=StubBackend("observer"),
+        positive_statuses={"ai_generated"},
+        negative_statuses={"pre_ai_human"},
+        audit_fn=audit_fn,
+    )
+    envelope = cal.compose_envelope(manifest_path=manifest, results=results)
+    md = cal.render_markdown(envelope)
+    assert "To use these thresholds in subsequent audits" not in md
+    assert "INSPECTION ONLY" in md
+    assert "polarity_correct" in md
+
+
+def test_markdown_emits_recommendation_block_when_all_gates_pass(tmp_path):
+    """Sanity: with the clean fixture (≥30 per class, separable
+    distributions, polarity correct, high AUC), the recommendation
+    form is rendered."""
+    manifest, results = _make_full_results(tmp_path)
+    envelope = cal.compose_envelope(manifest_path=manifest, results=results)
+    md = cal.render_markdown(envelope)
+    assert "To use these thresholds in subsequent audits" in md
+    assert "INSPECTION ONLY" not in md
 
 
 # ============================================================

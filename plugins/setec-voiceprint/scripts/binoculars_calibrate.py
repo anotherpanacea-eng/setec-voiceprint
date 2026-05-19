@@ -351,7 +351,38 @@ def calibrate(
     observer, score_version) -> {"perplexity_ratio": float | None,
     "score_version": str}``. Production callers pass None and the
     function calls binoculars_audit.audit() directly.
+
+    Raises ValueError for impossible target values (per PR #115
+    review fix): ``fpr_target`` and ``target_tpr`` must lie in
+    [0, 1], and the positive / negative status sets must be
+    non-empty. The script is publishing calibration data — accepting
+    e.g. ``fpr_target=2.0`` and recording it as if it were an
+    operator choice would make the resulting thresholds
+    methodologically indefensible.
     """
+    if not (0.0 <= fpr_target <= 1.0):
+        raise ValueError(
+            f"fpr_target must be in [0, 1]; got {fpr_target}. "
+            f"This is a false-positive rate; values outside [0, 1] "
+            f"have no meaning as a rate."
+        )
+    if not (0.0 <= target_tpr <= 1.0):
+        raise ValueError(
+            f"target_tpr must be in [0, 1]; got {target_tpr}. "
+            f"This is a true-positive rate; values outside [0, 1] "
+            f"have no meaning as a rate."
+        )
+    if not positive_statuses:
+        raise ValueError(
+            "positive_statuses must be non-empty (no labels means "
+            "no positive class to calibrate against)."
+        )
+    if not negative_statuses:
+        raise ValueError(
+            "negative_statuses must be non-empty (no labels means "
+            "no negative class for the FPR-target computation)."
+        )
+
     entries = _load_manifest(manifest_path)
 
     if max_entries is not None and len(entries) > max_entries:
@@ -576,16 +607,58 @@ def render_markdown(envelope: dict[str, Any]) -> str:
     lines.append(f"- **FPR at threshold-high:** {f'{fpr:.3f}' if fpr is not None else '(unavailable)'}")
     lines.append(f"- **Indeterminate rate:** {f'{ind:.3f}' if ind is not None else '(unavailable)'}")
     lines.append("")
+    # Per PR #115 review fix: only render the copy-pasteable
+    # replay snippet when ALL discipline gates pass AND the
+    # thresholds are non-degenerate (low < high). Provisional
+    # thresholds get an inspection-only block with explicit refusal
+    # language so the markdown can't be skimmed and used as a
+    # recommendation when the gates said the calibration isn't
+    # defensible.
+    gates_for_replay = results.get("gates", {}) or {}
+    all_gates_pass = all(gates_for_replay.values()) if gates_for_replay else False
+    non_degenerate = (
+        low is not None and high is not None and low < high
+    )
+    can_recommend = all_gates_pass and non_degenerate
+
     if low is not None and high is not None:
-        lines.append("**To use these thresholds in subsequent audits:**")
-        lines.append("")
-        lines.append("```")
-        lines.append(f"python3 binoculars_audit.py TARGET.txt \\")
-        lines.append(f"    --scorer {(results['scorer'] or {}).get('model_id')} \\")
-        lines.append(f"    --observer {(results['observer'] or {}).get('model_id')} \\")
-        lines.append(f"    --threshold-low {low:.4f} \\")
-        lines.append(f"    --threshold-high {high:.4f}")
-        lines.append("```")
+        if can_recommend:
+            lines.append("**To use these thresholds in subsequent audits:**")
+            lines.append("")
+            lines.append("```")
+            lines.append(f"python3 binoculars_audit.py TARGET.txt \\")
+            lines.append(f"    --scorer {(results['scorer'] or {}).get('model_id')} \\")
+            lines.append(f"    --observer {(results['observer'] or {}).get('model_id')} \\")
+            lines.append(f"    --threshold-low {low:.4f} \\")
+            lines.append(f"    --threshold-high {high:.4f}")
+            lines.append("```")
+        else:
+            # Provisional / inspection-only block.
+            failed_gates = [
+                name for name, ok in gates_for_replay.items() if not ok
+            ]
+            reason = (
+                ", ".join(failed_gates)
+                if failed_gates
+                else "degenerate threshold layout (low >= high)"
+            )
+            lines.append("**Thresholds — INSPECTION ONLY (do not use):**")
+            lines.append("")
+            lines.append(
+                f"The discipline gates failed ({reason}), so these "
+                f"numeric thresholds are not defensible for use in "
+                f"`binoculars_audit.py`. The values below are surfaced "
+                f"for inspection only:"
+            )
+            lines.append("")
+            lines.append("```text")
+            lines.append(f"# threshold-low  = {low:.4f}")
+            lines.append(f"# threshold-high = {high:.4f}")
+            lines.append("# DO NOT pass these to binoculars_audit.py;")
+            lines.append("# the calibration corpus is too small / too noisy /")
+            lines.append("# polarity-inverted / overlapping-distribution to")
+            lines.append("# support a defensible operating point.")
+            lines.append("```")
         lines.append("")
 
     # Gate verdicts.
