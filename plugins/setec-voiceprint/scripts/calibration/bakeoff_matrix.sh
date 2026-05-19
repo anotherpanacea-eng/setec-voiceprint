@@ -38,6 +38,26 @@
 #                                 otherwise unset (pre-1.99 behavior).
 #                                 Operators with non-standard corpora
 #                                 set this explicitly to opt in / out.
+#   SETEC_JUDGE                -- 1.X+: per-(judge × generator) slice
+#                                 axis for direction routing. NO
+#                                 corpus-based default (unlike
+#                                 SETEC_COMPARATOR_CLASS) — judges
+#                                 and generators are slice axes
+#                                 WITHIN a corpus, so they can't
+#                                 auto-default from the corpus
+#                                 label. Pass explicitly when running
+#                                 against the 13 RAID
+#                                 ``comparator_dependent`` cells
+#                                 (PR #106 infrastructure, roadmap
+#                                 item D plumbing). Unset preserves
+#                                 pre-1.X behavior.
+#   SETEC_GENERATOR            -- 1.X+: per-(judge × generator) slice
+#                                 axis. Both SETEC_JUDGE and
+#                                 SETEC_GENERATOR must be set to
+#                                 activate the slice routing layer;
+#                                 either alone falls back to the
+#                                 per-comparator (or spec default)
+#                                 direction.
 #   SETEC_MAX_ENTRIES          -- subsample cap for calibration_survey
 #                                 (default: empty -> full corpus)
 #   SETEC_MAX_ENTRIES_SEED     -- subsample seed (default 42)
@@ -100,6 +120,16 @@ elif [ "$CORPUS_LABEL" = "mage" ] || [ "$CORPUS_LABEL" = "raid" ]; then
 else
     COMPARATOR_CLASS=""
 fi
+
+# 1.X+: per-(judge × generator) slice axes. Unlike COMPARATOR_CLASS
+# above, NO corpus-based default — judge and generator are slice
+# axes WITHIN a corpus (the RAID corpus has multiple judges and
+# generators per record), so they can't auto-default from the
+# corpus label. Operator must pass them explicitly via SETEC_JUDGE
+# and SETEC_GENERATOR. Roadmap item D plumbing; PR #106 shipped the
+# routing infrastructure.
+JUDGE="${SETEC_JUDGE:-}"
+GENERATOR="${SETEC_GENERATOR:-}"
 MAX_ENTRIES="${SETEC_MAX_ENTRIES:-}"
 MAX_ENTRIES_SEED="${SETEC_MAX_ENTRIES_SEED:-42}"
 BOOTSTRAP_ENGINE="${SETEC_BOOTSTRAP_ENGINE:-torch}"
@@ -213,6 +243,8 @@ echo "============================================================"
 echo "Cloud bake-off matrix -- session $SESSION at $(date +%H:%M:%S)"
 echo "  corpus:    $CORPUS_LABEL  ($CORPUS_DIR)"
 echo "  comparator_class: ${COMPARATOR_CLASS:-(none, pre-1.99 behavior)}"
+echo "  judge:     ${JUDGE:-(none, pre-1.X behavior)}"
+echo "  generator: ${GENERATOR:-(none, pre-1.X behavior)}"
 echo "  surveys -> $BAKEOFF_DIR/  -> $RUNS_DIR/"
 echo "  log:       $LOG"
 echo "  summary:   $SUMMARY"
@@ -241,6 +273,8 @@ export _SETEC_ARGS_TMP="$ARGS_TMP"
 export _SETEC_SESSION="$SESSION"
 export _SETEC_CORPUS_LABEL="$CORPUS_LABEL"
 export _SETEC_COMPARATOR_CLASS="$COMPARATOR_CLASS"
+export _SETEC_JUDGE="$JUDGE"
+export _SETEC_GENERATOR="$GENERATOR"
 export _SETEC_MANIFEST_PATH="$CORPUS_DIR/manifest.jsonl"
 export _SETEC_PHASE_A_JSON="$PHASE_A_PATHS_JSON"
 export _SETEC_PHASE_B_JSON="$PHASE_B_PATHS_JSON"
@@ -269,6 +303,10 @@ out = {
     "comparator_class": (
         os.environ["_SETEC_COMPARATOR_CLASS"] or None
     ),
+    # 1.X+: per-(judge × generator) slice axes. Empty string when
+    # unset (pre-1.X behavior). Roadmap item D plumbing.
+    "judge": os.environ["_SETEC_JUDGE"] or None,
+    "generator": os.environ["_SETEC_GENERATOR"] or None,
     "manifest_path": os.environ["_SETEC_MANIFEST_PATH"],
     "phase_a_aliases": list(phase_a.keys()),
     "phase_b_aliases": list(phase_b.keys()),
@@ -334,6 +372,17 @@ BASE_ARGS=(
 # verdicts computed under the wrong direction.
 if [ -n "$COMPARATOR_CLASS" ]; then
     BASE_ARGS+=(--comparator-class "$COMPARATOR_CLASS")
+fi
+# 1.X+: propagate judge / generator slice axes when explicitly set
+# (no corpus-based default — they're slice axes WITHIN a corpus).
+# Both must be set to activate the inner-most slice routing layer
+# in ThresholdSpec.direction_by_comparator_and_slice; either alone
+# falls back to the per-comparator (or spec default) direction.
+if [ -n "$JUDGE" ]; then
+    BASE_ARGS+=(--judge "$JUDGE")
+fi
+if [ -n "$GENERATOR" ]; then
+    BASE_ARGS+=(--generator "$GENERATOR")
 fi
 if [ -n "$MAX_ENTRIES" ]; then
     BASE_ARGS+=(--max-entries "$MAX_ENTRIES" --max-entries-seed "$MAX_ENTRIES_SEED")
