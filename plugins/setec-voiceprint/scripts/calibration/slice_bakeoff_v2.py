@@ -411,6 +411,15 @@ def analyze(
     min_n: int,
     do_polarity_audit: bool,
     comparator_key: str | None,
+    # 1.98.0+: per-comparator direction routing. When set, each
+    # signal's direction is resolved via ``resolve_signal_direction
+    # (signal_name, comparator_class)`` instead of the bare
+    # ``SIGNAL_SPECS[signal_name][1]`` default. Lets the slicer emit
+    # the empirically correct direction on a per-comparator basis
+    # (e.g., surprisal_sd flips back to ``lt`` on RAID per the
+    # 2026-05-18 RAID 5K bake-off finding). None preserves pre-
+    # 1.98.0 behavior (every signal uses its SIGNAL_SPECS default).
+    comparator_class: str | None = None,
 ) -> int:
     if not cache_dir.exists():
         print(f"[{corpus}] cache_dir missing: {cache_dir}", file=sys.stderr)
@@ -449,7 +458,15 @@ def analyze(
             r["_notes"] = notes_by_id.get(r.get("id"), {})
 
         for signal_name in signals:
-            signal_path, direction = SIGNAL_SPECS[signal_name]
+            # 1.98.0+: resolve direction through the per-comparator
+            # routing helper. ``comparator_class=None`` preserves
+            # the pre-1.98 ``SIGNAL_SPECS[signal_name][1]`` default
+            # exactly; a known class (e.g., 'raid') activates any
+            # override registered in SIGNAL_SPECS_BY_COMPARATOR.
+            signal_path = SIGNAL_SPECS[signal_name][0]
+            direction = resolve_signal_direction(
+                signal_name, comparator_class,
+            )
 
             # Aggregate.
             pos, neg = collect_scores(records, signal_path)
@@ -560,8 +577,16 @@ def analyze(
     # produce byte-identical verdicts. The slicer rows already carry
     # the CI columns the audit needs.
     if do_polarity_audit:
+        # 1.98.0+: per-signal directions resolved via the routing
+        # helper, so the integrated polarity audit sees the same
+        # directions the slicer emitted for cells above. Without
+        # this, the slicer would emit (signal, direction='lt') cells
+        # on RAID while the integrated polarity audit evaluated them
+        # under the default 'gt' -- the two outputs disagreed on the
+        # load-bearing empirical change.
         signal_to_direction = {
-            name: direction for name, (_, direction) in SIGNAL_SPECS.items()
+            name: resolve_signal_direction(name, comparator_class)
+            for name in SIGNAL_SPECS
         }
         # Override DEFAULT_REGISTRY_DIRECTIONS for any signals not in
         # the standalone module's table (defensive: keeps the slicer
@@ -832,7 +857,53 @@ def build_arg_parser() -> argparse.ArgumentParser:
              "recommendation block. Typical values: "
              "'notes.original_source' (MAGE), 'notes.domain' (RAID).",
     )
+    p.add_argument(
+        "--comparator-class", default=None,
+        help=(
+            "1.98.0+: comparator class for per-signal direction "
+            "routing. When set, each signal's direction is resolved "
+            "via ``resolve_signal_direction(signal_name, "
+            "comparator_class)`` -- so RAID slicer output emits "
+            "``surprisal_sd`` with direction='lt' (and the "
+            "integrated polarity audit reads the same), while MAGE "
+            "stays at the default 'gt'. "
+            "DEFAULT: when omitted, defaults to ``--corpus`` if "
+            "the corpus name is a known class (``mage`` / "
+            "``raid``); otherwise None (no routing -- pre-1.98 "
+            "behavior). Operators with non-standard taxonomies pass "
+            "this explicitly to override the default-from-corpus "
+            "inference."
+        ),
+    )
     return p
+
+
+# 1.98.0+: comparator classes the slicer auto-defaults from --corpus
+# when --comparator-class is omitted. Operators with non-standard
+# corpora (e.g., 'editlens', 'custom_eval') pass --comparator-class
+# explicitly; only the known framework taxonomy auto-routes.
+_KNOWN_COMPARATOR_CLASSES_FROM_CORPUS = frozenset({"mage", "raid"})
+
+
+def _resolve_cli_comparator_class(
+    *, comparator_class_arg: str | None, corpus: str,
+) -> str | None:
+    """Resolve the effective comparator class from CLI args.
+
+    Precedence:
+      1. Explicit ``--comparator-class``: returned as-is (even when
+         the value is an unknown class -- the per-signal resolver
+         falls back to defaults silently per spec).
+      2. Implicit from ``--corpus``: when the corpus name is one of
+         ``{mage, raid}``, use it. Lets the common case work
+         without an extra flag.
+      3. None: no routing (pre-1.98 behavior).
+    """
+    if comparator_class_arg is not None:
+        return comparator_class_arg
+    if corpus in _KNOWN_COMPARATOR_CLASSES_FROM_CORPUS:
+        return corpus
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -843,6 +914,10 @@ def main(argv: list[str] | None = None) -> int:
         if len(keys) >= 1:
             crosstabs.append(keys)
     do_polarity = args.audit == "polarity"
+    comparator_class = _resolve_cli_comparator_class(
+        comparator_class_arg=args.comparator_class,
+        corpus=args.corpus,
+    )
     return analyze(
         cache_dir=args.cache_dir,
         manifest_path=args.manifest,
@@ -855,6 +930,7 @@ def main(argv: list[str] | None = None) -> int:
         min_n=args.min_n,
         do_polarity_audit=do_polarity,
         comparator_key=args.comparator_key,
+        comparator_class=comparator_class,
     )
 
 
