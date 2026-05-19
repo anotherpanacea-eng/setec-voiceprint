@@ -483,9 +483,13 @@ The 2.0 refactor target (Compression-of-Choice) sits beyond this roadmap. None o
 
 A nine-PR cascade between 2026-05-18 and 2026-05-18 (#99 MAGE polarity flips → #101 embedding dtype/device → #100 cloud bake-off matrix → #102 length-sort benchmark → #103 per-comparator routing → #104 dtype-in-Markdown → #105 calibration-pipeline `comparator_class` threading → #106 per-(judge × generator) routing infrastructure → version cascade closure) shipped the per-comparator routing infrastructure end-to-end (`ThresholdSpec.direction_by_comparator` + `direction_by_comparator_and_slice`, `resolve_direction_with_slice`, CLI flags on every entry point, calibration-pipeline plumbing, cache-identity contracts, provenance replay). Several follow-ups surfaced during that cascade that are explicitly out-of-scope for the merged PRs but worth pinning so they don't drift.
 
-#### D. Per-(judge × generator) calibration-pipeline plumbing (mirror of #105 for #106's infrastructure)
+**Status as of 2026-05-19.** Items **D, E.2, E.3, F.2 shipped** (PRs #112, #117, #118, #119). Items **F.1, F.3, G** remain operator-data-blocked; item **E.1** remains operator-justify-blocked (don't optimize sequential matrix until it's the bottleneck on a real cloud run). See per-item status lines below and the closeout row in the cross-cutting sequencing table.
 
-**Finding.** PR #106 (1.100.0) shipped `direction_by_comparator_and_slice` on `ThresholdSpec` + the `resolve_direction_with_slice` helper + `--judge` / `--generator` CLI flags on `variance_audit.py`. PR #105 (1.101.0) shipped `comparator_class` threading through the entire calibration pipeline (`validation_harness.score_smoothing_entry` → `calibrate_thresholds.score_corpus` → `calibration_survey.py --comparator-class` → `bakeoff_matrix.sh SETEC_COMPARATOR_CLASS`). The symmetric gap remains: `judge` and `generator` are not yet threaded through the calibration pipeline. An operator running `bakeoff_matrix.sh --corpus raid` against the eventual 13-cell RAID override population (item F below) will still get the per-class routing only; the per-(judge × generator) cell verdicts the inner-most table is designed to deliver won't fire on the calibration path.
+#### D. Per-(judge × generator) calibration-pipeline plumbing (mirror of #105 for #106's infrastructure) — **shipped (PR #112)**
+
+**Status.** Shipped by PR #112. `judge` / `generator` thread through `validation_harness.score_smoothing_entry`, `calibrate_thresholds.score_corpus`, `calibration_survey.py`, `calibrate_thresholds.py`, and `bakeoff_matrix.sh` (`SETEC_JUDGE` / `SETEC_GENERATOR` env vars); cache identity includes both fields; provenance replay surfaces `--judge X --generator Y`. The original finding + scope is preserved below as historical record.
+
+**Original finding.** PR #106 (1.100.0) shipped `direction_by_comparator_and_slice` on `ThresholdSpec` + the `resolve_direction_with_slice` helper + `--judge` / `--generator` CLI flags on `variance_audit.py`. PR #105 (1.101.0) shipped `comparator_class` threading through the entire calibration pipeline (`validation_harness.score_smoothing_entry` → `calibrate_thresholds.score_corpus` → `calibration_survey.py --comparator-class` → `bakeoff_matrix.sh SETEC_COMPARATOR_CLASS`). The symmetric gap remains: `judge` and `generator` are not yet threaded through the calibration pipeline. An operator running `bakeoff_matrix.sh --corpus raid` against the eventual 13-cell RAID override population (item F below) will still get the per-class routing only; the per-(judge × generator) cell verdicts the inner-most table is designed to deliver won't fire on the calibration path.
 
 **Why this matters operationally.** Same shape as PR #105's load-bearing closure for `comparator_class`. Without this, the standalone `variance_audit.py --comparator-class raid --judge chatgpt --generator gpt-4o` produces the correct per-cell verdict but the calibration pipeline (the workflow operators actually use for the matrix bake-off) silently falls back to per-class direction. Same end-to-end parity discipline the cascade has been chasing.
 
@@ -503,19 +507,19 @@ A nine-PR cascade between 2026-05-18 and 2026-05-18 (#99 MAGE polarity flips →
 
 **Risks.** Minimal. The infrastructure exists; this is mechanical plumbing of two more kwargs through the same chain PR #105 already plumbed.
 
-#### E. `bakeoff_matrix.sh` operational follow-ups (deferred from PR #100)
+#### E. `bakeoff_matrix.sh` operational follow-ups (deferred from PR #100) — **E.2 and E.3 shipped; E.1 still pending operator-justify data**
 
 PR #100 (1.97.0) shipped the cloud-portable matrix runner but explicitly deferred three operational extensions:
 
-1. **Per-GPU parallelism within one matrix process.** Spec called for `xargs -P N` parallelization of Phase A/B loops; PR #100 shipped sequential cells, with the workaround being multiple matrix processes pinned to different GPUs via `CUDA_VISIBLE_DEVICES` + per-process `SETEC_BAKEOFF_DIR` values. The follow-up: optional `SETEC_MATRIX_PARALLELISM=N` env var that uses `xargs -P` (or GNU parallel as a fallback) to run N cells concurrently within one process. The operator data point that justifies it: a real cloud run where the sequential-cells time is the long pole vs. an alternative resource (GPU memory, model-load overhead).
-2. **Auto-trigger slicer + polarity audit chaining.** Spec described a `queue_slice_after_matrix.sh` polling-loop pattern that watches `$BAKEOFF_DIR/` for completed `survey_*.json` files and triggers `slice_bakeoff_v2.py` + `polarity_audit.py` automatically. PR #100 kept the matrix script focused on the matrix proper. This follow-up is a small `scripts/calibration/queue_slice_after_matrix.sh` driver. Bounded.
-3. **Length-stratified subsampling.** Spec recommended 25-50K records with proportional-with-floor sampling across length buckets, for cloud runs at scale. That's `calibration_survey.py`'s responsibility (manifest-side sampling), not the matrix wrapper's. New flag `--length-stratify N --length-buckets B` that subsamples the manifest by length bucket before scoring.
+1. **Per-GPU parallelism within one matrix process.** _Status: still pending; operator-justify-blocked._ Spec called for `xargs -P N` parallelization of Phase A/B loops; PR #100 shipped sequential cells, with the workaround being multiple matrix processes pinned to different GPUs via `CUDA_VISIBLE_DEVICES` + per-process `SETEC_BAKEOFF_DIR` values. The follow-up: optional `SETEC_MATRIX_PARALLELISM=N` env var that uses `xargs -P` (or GNU parallel as a fallback) to run N cells concurrently within one process. The operator data point that justifies it: a real cloud run where the sequential-cells time is the long pole vs. an alternative resource (GPU memory, model-load overhead).
+2. **Auto-trigger slicer + polarity audit chaining.** _Status: shipped (PR #117, 1.103.0)._ `scripts/calibration/queue_slice_after_matrix.sh` watches `$SETEC_BAKEOFF_DIR/` for completed `survey_*.json` files and triggers `slice_bakeoff_v2.py` + `polarity_audit.py` automatically. Marker-gated idempotency (`<survey>.sliced` + `<survey>.polarity`); `--once` mode for cron-style invocation; routing axes flow from the same env vars as the matrix script.
+3. **Length-stratified subsampling.** _Status: shipped (PR #118, 1.104.0)._ `calibration_survey.py --length-stratify N --length-buckets B [--length-stratify-floor M]` subsamples the manifest by length bucket before scoring; composes with the existing `--max-entries` (length stratifies first via temp manifest, label stratifies second on filtered set); the survey JSON's `length_stratify` block records bucket bounds + populations + sample counts for replay equivalence.
 
 **Phasing.** Three independent `feat:` PRs, each ~150-300 lines. Item 1 (parallelism) needs operator validation data first — should land only when an operator reports the sequential matrix is actually the bottleneck on a real cloud GPU. Items 2 and 3 are ship-anytime infrastructure.
 
 **Risks.** Item 1 has the most subtlety (`xargs -P` interacts with `CUDA_VISIBLE_DEVICES` in ways that could surprise — concurrent processes contending for the same GPU is a common cloud footgun). Items 2 and 3 are straightforward.
 
-#### F. Operator-side data: populate the 13 RAID `comparator_dependent` cells
+#### F. Operator-side data: populate the 13 RAID `comparator_dependent` cells — **F.2 infrastructure shipped (PR #119); F.1 + F.3 pending operator data**
 
 **Finding.** PR #103 (1.98.0) shipped per-comparator-class routing with one populated override (`surprisal_sd: {"raid": "lt"}` for the 4 RAID `globally_inverted` cells). PR #106 (1.100.0) shipped the deeper per-(judge × generator) infrastructure with the override table **empty** — the 13 RAID `comparator_dependent` cells from the 2026-05-18 audit need the per-(judge × generator) slice analysis to settle before the table can be populated. Once it settles, populating the table is a **single PR with no plumbing change** — just the override entries on the affected specs (`adjacent_cosine_mean`, `surprisal_mean`, `surprisal_acf_lag1`, and 13 specific cells across them).
 
@@ -523,13 +527,13 @@ PR #100 (1.97.0) shipped the cloud-portable matrix runner but explicitly deferre
 
 **Once data lands, follow-up has three parts:**
 
-1. **Single populated-table PR.** Edits to `variance_audit.COMPRESSION_HEURISTICS[<signal>].direction_by_comparator_and_slice` on the affected specs. Five-line table per signal. CHANGELOG entry tagged `fix:` / PATCH (encoding empirically-derived directions, not adding a new feature).
-2. **Synced copies in `polarity_audit` / `slice_bakeoff_v2`.** Both modules currently operate at the per-class routing level (PR #103); the deeper shape needs matching tables + resolvers (`DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE` + `resolve_registry_direction_with_slice`). This is the symmetric extension to what PR #103 + the slicer-side wiring did at the per-class level. Bounded `feat:` PR, ~200 lines.
-3. **End-to-end validation.** Re-run RAID bake-off matrix with `--judge` / `--generator` populated (which requires item D's calibration-pipeline plumbing) and confirm the per-cell verdicts match the polarity-audit findings cell-by-cell.
+1. **Single populated-table PR.** _Status: pending operator data._ Edits to `variance_audit.COMPRESSION_HEURISTICS[<signal>].direction_by_comparator_and_slice` on the affected specs. Five-line table per signal. CHANGELOG entry tagged `fix:` / PATCH (encoding empirically-derived directions, not adding a new feature).
+2. **Synced copies in `polarity_audit` / `slice_bakeoff_v2`.** _Status: shipped (PR #119, 1.105.0)._ Both modules now carry `DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE` (resp. `SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE`), `resolve_registry_direction_with_slice` / `resolve_signal_direction_with_slice`, `--judge` / `--generator` CLI flags, and the slicer's per-cell emission + integrated polarity-audit handoff both use the same resolver. Override tables ship EMPTY — item F.1 fills them when data lands.
+3. **End-to-end validation.** _Status: pending operator data._ Re-run RAID bake-off matrix with `--judge` / `--generator` populated (item D's plumbing is now in place per PR #112) and confirm the per-cell verdicts match the polarity-audit findings cell-by-cell.
 
-**Phasing.** Item 1 ships immediately when data lands. Item 2 follows. Item 3 is operational validation, not a PR.
+**Phasing.** Item 1 ships immediately when data lands. Item 2 followed item D ahead of data. Item 3 is operational validation, not a PR.
 
-#### G. Original Tier-4 audit writeup extensions (operator-side, data-collection)
+#### G. Original Tier-4 audit writeup extensions (operator-side, data-collection) — **pending operator data; framework-side support already in place**
 
 The 2026-05-18 Tier-4 surprisal audit writeup against the *Conceptual Repair and Its Counterfeits* essay surfaced three follow-up extensions the operator explicitly called out as "what I'd want to do next." None require framework code; all are operator-side data work that the framework already supports via existing CLI surfaces.
 
@@ -539,18 +543,18 @@ The 2026-05-18 Tier-4 surprisal audit writeup against the *Conceptual Repair and
 
 #### Cross-cutting sequencing
 
-| Order | Item | Effort | Blocks downstream? |
+| Order | Item | Status | Effort (estimated) |
 |---|---|---|---|
-| 1 | D — Judge/generator calibration-pipeline plumbing | 4–6 hours | Item F.3 (end-to-end validation) |
-| 2 | E.2 — Auto-trigger slicer chaining | 3–4 hours | No |
-| 3 | E.3 — Length-stratified subsampling | 4–6 hours | No |
-| 4 | G.1/G.2/G.3 — Operator data extensions | Operator-side, no PR | Strengthens F's empirical case |
-| 5 | F.1 — Populate the 13 RAID cells (once data lands) | 1–2 hours | F.2, F.3 |
-| 6 | F.2 — Deeper-shape synced copies | 3–4 hours | F.3 |
-| 7 | F.3 — End-to-end RAID validation | Operator-side, no PR | — |
-| 8 | E.1 — Per-GPU parallelism (when operator data justifies it) | 6–8 hours | No |
+| 1 | D — Judge/generator calibration-pipeline plumbing | ✓ shipped (PR #112) | 4–6 hours |
+| 2 | E.2 — Auto-trigger slicer chaining | ✓ shipped (PR #117, 1.103.0) | 3–4 hours |
+| 3 | E.3 — Length-stratified subsampling | ✓ shipped (PR #118, 1.104.0) | 4–6 hours |
+| 4 | G.1/G.2/G.3 — Operator data extensions | Pending operator data (no PR) | Operator-side |
+| 5 | F.1 — Populate the 13 RAID cells (once data lands) | Pending operator data | 1–2 hours |
+| 6 | F.2 — Deeper-shape synced copies | ✓ shipped (PR #119, 1.105.0) | 3–4 hours |
+| 7 | F.3 — End-to-end RAID validation | Pending operator data (no PR) | Operator-side |
+| 8 | E.1 — Per-GPU parallelism | Pending operator-justify data | 6–8 hours |
 
-Item D is the most defensible immediate follow-up: bounded code, no operator-data dependency, closes a parity gap the cascade has been consistent about closing for every other routing field. Items E.2 / E.3 are independent ship-anytime infrastructure. Items F and G interlock around the per-(judge × generator) RAID data — the framework code is ready (D + F.2), waiting on the operator-side slice analysis. Item E.1 is the only item that needs prior operator data to justify (don't optimize the sequential matrix until it's the actual bottleneck on a real cloud run).
+**As of 2026-05-19.** The framework infrastructure for the post-1.101 cascade is closed: items D, E.2, E.3, F.2 all shipped (PRs #112, #117, #118, #119). The remaining items are operator-side data work (F.1, F.3, G.1/G.2/G.3) or operator-justify-blocked (E.1, where the sequential matrix needs to be empirically the bottleneck before parallelism is worth the `xargs -P` × `CUDA_VISIBLE_DEVICES` footgun). When operator data settles the 13 RAID `comparator_dependent` cells, F.1 is a single-PR five-line-table fix on the affected `direction_by_comparator_and_slice` specs — no further plumbing needed.
 
 ## Open architectural questions
 

@@ -6,6 +6,86 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.105.1] - 2026-05-19
+
+**Tool catalog refresh.** README + `scripts/README.md` brought current with the calibration pipeline, binoculars, external_mirror, and surprisal_audit additions accumulated across PRs #100-#119. Docs-only release; no code or behavior changes.
+
+### Changed
+
+- **README.md "Choose the question" table** gains a fifth row for **Surface 5 — Discrimination evidence (uncalibrated by default)** covering `binoculars_audit.py` + `binoculars_calibrate.py` + `external_mirror/`. The cell's "Question it does NOT answer" entry names the framework's discipline explicitly: `DEFAULT_THRESHOLD_LOW = DEFAULT_THRESHOLD_HIGH = None`, verdict bands read `uncalibrated` by default, per-corpus thresholds are operator-side. Surfaces 1 + 3 cells gain the recent additions (`surprisal_audit.py` + `sliding_window_heatmap.py` on Surface 1; the full calibration pipeline on Surface 3). The intro and the measurement-is-not-adjudication paragraph update from "four task surfaces" to "five."
+- **README.md Files tree** corrected to put `scripts/` + `references/` under `plugins/setec-voiceprint/` (their actual location) and enumerated for every recent addition.
+- **`plugins/setec-voiceprint/scripts/README.md`** — 12 new h2 sections, each following the existing Usage / Output / Notes shape: `surprisal_audit`, `calibration_survey`, `calibrate_thresholds`, `polarity_audit`, `slice_bakeoff_v2`, `bakeoff_matrix.sh`, `queue_slice_after_matrix.sh`, `bakeoff_mage_tier34{,_compare}`, `cross_polarity_audit`, `binoculars_audit`, `binoculars_calibrate`, `external_mirror/`. The existing `manifest_validator.py` section gains a **Schema-migration tripwire (Refs Issue #6)** subsection documenting PR #89's non-blocking advisory entries.
+- **`plugin.json`** description and `version` updated for the five-surface framing and version cascade.
+
+### Review fixes applied in this PR
+
+Six accuracy fixes caught in code review at `e650fe2` and `9fa8175`:
+
+1. **`surprisal_audit.py` docs**: corrected CLI surface. Flag is `--surprisal-dtype` (not `--dtype`); no `--threshold-low` / `--threshold-high` flags exist; output format is selected by `--json`, location by `--out` (no `--out-md`). The "uncalibrated threshold band" framing was wrong for this script — it reports the surprisal-series envelope (descriptive); threshold-band verdicts live in `variance_audit` (Tier 4 calibrated registry) and `binoculars_audit` (discrimination surface).
+2. **`slice_bakeoff_v2.py --crosstab` example**: shape is comma-separated values per `--crosstab` (`action="append"` so it's repeatable). Old example passed two space-separated args which would parse the second as a stray positional.
+3. **`polarity_audit.py` verdict enum**: `mixed` → `mixed_noisy` to match `polarity_verdict()`'s actual return value.
+4. **`bakeoff_mage_tier34.sh` example**: `phase_b mxbai` is invalid (mxbai is Phase A). Replaced with `phase_a mxbai` + `phase_b tinyllama` so each phase is illustrated correctly.
+5. **README four-surface framing**: lingering "four task surfaces" framing on the intro paragraph and the cost paragraph updated to "five" with a Surface 5 cost note (two small LLMs in memory, ~1.5 GB; `external_mirror/` requires operator-side LLM access).
+6. **`surprisal_audit.py` alias list**: dropped `pythia_1b` (not in `surprisal_backend.MODEL_ALIASES`); added the three missing entries (`llama32_3b`, `openelm_1b`, `smollm2_1_7b`); alphabetized so future drift between docs + code is visually obvious.
+
+### Notes
+
+- The fifth surface ships **uncalibrated by default**. `binoculars_audit.py` and the standalone surprisal/discrimination tools refuse to emit thresholded "is this AI" verdicts without operator-supplied calibration; the framework provides methodology, the operator provides the comparator. Surface 3's calibration pipeline is the operator-side path to thresholded claims on Surface 5 tools.
+- Markdown well-formed: 90 balanced code fences in `scripts/README.md`, 20 in `README.md`.
+
+## [1.105.0] - 2026-05-19
+
+**Per-(judge × generator) routing infrastructure in `polarity_audit` + `slice_bakeoff_v2` (closes roadmap item F.2).** Mirrors PR #106's 1.100.0 `variance_audit` extension on the polarity-audit and slicer side: three-level nested override tables + `resolve_*_with_slice` helpers in both modules, with the tables empty (data-population deferred to item F.1, which is operator-data-blocked). Both modules now match the routing depth `variance_audit` shipped in 1.100.0.
+
+### Why
+
+PR #106 (1.100.0) shipped `ThresholdSpec.direction_by_comparator_and_slice` + `resolve_direction_with_slice` + `--judge` / `--generator` CLI flags on `variance_audit.py`. The polarity-audit and slicer-side tables still operated at the per-comparator-class level only. An operator running `slice_bakeoff_v2.py --comparator-class raid --judge chatgpt --generator gpt-4o` got the per-class routing for cell emission but no per-(judge × generator) finesse — the 13 RAID `comparator_dependent` cells from the 2026-05-18 audit need this deeper shape. Same parity discipline the cascade has chased for every other routing field: standalone CLI got the routing first; this PR closes the loop on the two downstream consumers.
+
+### Added
+
+- **`polarity_audit.DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE`** and **`slice_bakeoff_v2.SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE`** — three-level nested dicts keyed by `(signal → comparator → judge → generator → "gt" | "lt")`. Ship empty.
+- **`resolve_registry_direction_with_slice(signal, comparator, judge, generator)`** in `polarity_audit` and **`resolve_signal_direction_with_slice(...)`** in `slice_bakeoff_v2` — three-layer fallback chain (slice → comparator → spec default), mirrored across both modules so the standalone audit CLI and the slicer's `--audit polarity` mode produce identical verdicts.
+- **`--judge` / `--generator` CLI flags** on both `polarity_audit.py` and `slice_bakeoff_v2.py`. Both must be set (alongside `--comparator-class`) to activate the innermost fallback layer; unknown cells fall back to the per-class direction per spec.
+- **Slicer-side direction routing** applies to per-cell AUC emission AND the integrated polarity-audit handoff (parity discipline: the slicer and the integrated audit agree on direction).
+- **Module-level `_validate_slice_overrides`** in both modules — shape-validates a populated table at import time so an operator with a typo finds the offending `(signal, comparator, judge, generator)` path quickly.
+
+### Review fixes applied in this PR
+
+1. **Explicit `--registry-direction` overrides outrank routing.** Without this, `--registry-direction surprisal_sd=gt --comparator-class raid` would silently resolve back to `lt` via the per-comparator table. The operator's manual what-if intent now skips the routing layers for any signal explicitly overridden.
+2. **`provenance.json` records routing axes.** Adds `comparator_class` / `judge` / `generator` fields so two runs with different routing settings are distinguishable on inspection.
+
+### Notes
+
+- Override tables stay EMPTY in 1.105.0. Population of the 13 RAID `comparator_dependent` cells (item F.1) is operator-data-blocked: needs the 2026-05-18 RAID 5K bake-off bundle re-run with `slice_bakeoff_v2.py --crosstab judge,generator --audit polarity` to surface per-(LM-judge × generator-family) verdicts. When data lands, populating the tables is a single PR with no plumbing change.
+
+## [1.104.0] - 2026-05-19
+
+**Length-stratified manifest subsampling in `calibration_survey.py` (closes roadmap item E.3).** Closes the third operational follow-up deferred from PR #100. The cloud bake-off matrix at 25-50K records benefits from a length axis orthogonal to the existing label axis: percentile-based buckets, per-bucket floor, proportional fill.
+
+### Added
+
+- **`--length-stratify N --length-buckets B [--length-stratify-floor M]`** on `calibration_survey.py`. Runs first (writes a temp manifest); composes with the existing `--max-entries` (label-stratified) which runs second on the filtered set.
+- **`length_stratify` block** in the survey JSON ledger records bucket bounds + populations + sample counts so a sample is replay-equivalent.
+
+### Notes
+
+- Both subsampling layers compose: length stratification produces a temp manifest, label stratification runs on the filtered set. Sample replay requires both the length-stratify block and the existing label-stratify seed.
+
+## [1.103.0] - 2026-05-19
+
+**`queue_slice_after_matrix.sh` — chain slicer + polarity audit after the bake-off matrix (closes roadmap item E.2).** Closes the second operational follow-up deferred from PR #100. The bake-off matrix runner is the producer; this is the consumer that watches `$SETEC_BAKEOFF_DIR` for completed `survey_*.json` files and triggers `slice_bakeoff_v2.py` + `polarity_audit.py` automatically.
+
+### Added
+
+- **`scripts/calibration/queue_slice_after_matrix.sh`** — marker-gated polling driver.
+- **`--once` mode** processes the current backlog and exits (cron-style invocation); default polls every `SETEC_QUEUE_POLL_INTERVAL` seconds (default 30).
+
+### Notes
+
+- **Marker-gated idempotency.** Writes `<survey>.sliced` + `<survey>.polarity` markers after each step succeeds. Re-runs skip surveys that have both markers; `.sliced`-only surveys (transient polarity failure on a prior pass) re-run the polarity step only, not the expensive whole-cache slicer pass.
+- **Standalone polarity output** writes to `polarity_audit_standalone.json` by default so it coexists with the slicer's integrated `polarity_audit.json` when `--audit polarity` is also enabled on the same survey.
+- **Routing parity.** Receives `--comparator-class` from the same env vars as the matrix script so the two artifacts agree on direction.
+
 ## [1.102.0] - 2026-05-19
 
 **MAGE Tier 3+4 model-selection bake-off scripts.** Two new utilities under `scripts/calibration/` that drive the 1.81.0 standalone CLI across the candidate embedding + surprisal models on a single shared 5K MAGE subsample. Closes out the "which embedding / surprisal model do we ship as the default" question that motivated PRs #77 + #78.
