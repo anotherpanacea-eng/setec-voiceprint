@@ -6,6 +6,16 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.106.1] - 2026-05-19
+
+**Stale four-surface framing cleanup.** Three docs/comment references that the post-1.101 cascade missed during the four → five surface rename. Pure docs cleanup, no runtime change.
+
+### Changed
+
+- `plugins/setec-voiceprint/scripts/variance_audit.py` — module-level comment enumerating the task surfaces extended from four to five (adds `binoculars_discrimination` / `external_mirror_discrimination` for Surface 5, called out as uncalibrated by default).
+- `plugins/setec-voiceprint/references/manifest-schema.md` — opening paragraph's task-surface enumeration extended to name Surface 5 alongside the original four.
+- `plugins/setec-voiceprint/scripts/tests/test_dependency_check.py` — docstring's "four SETEC dependency tiers" → "five SETEC dependency tiers (core, acquisition, ocr, calibration, surprisal) plus the optional power-ups tier." Existing test assertions iterate `TIERS.items()` rather than hard-coding the count, so no test changes needed.
+
 ## [1.106.0] - 2026-05-19
 
 **Surprisal (Tier 4 + Binoculars) tier in `dependency_check.py` + setup skill expansion.** Closes the gap surfaced in the post-1.101 doc loose-ends pass: the setup skill's tier model + `dependency_check.py`'s `TIERS` dict didn't know about Tier 4 surprisal or Binoculars. An operator running `dependency_check.py --tier surprisal` got `error: argument --tier: invalid choice 'surprisal'`; the setup skill's "Common scenarios" had no entry for "I want to run Binoculars" or "Tier 4 surprisal."

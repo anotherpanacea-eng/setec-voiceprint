@@ -37,11 +37,14 @@ import statistics
 import sys
 from dataclasses import dataclass
 
-# Task-surface tag. The framework distinguishes four surfaces:
-#   - smoothing_diagnosis: prose-quality diagnosis, regardless of provenance
-#   - voice_coherence:     does this draft match a writer/register baseline
-#   - validation:          empirical performance against a labeled corpus
-#   - craft_restoration:   what to do (lives in skill references, not scripts)
+# Task-surface tag. The framework distinguishes five surfaces:
+#   - smoothing_diagnosis:          prose-quality diagnosis, regardless of provenance
+#   - voice_coherence:              does this draft match a writer/register baseline
+#   - validation:                   empirical performance against a labeled corpus
+#   - craft_restoration:            what to do (lives in skill references, not scripts)
+#   - binoculars_discrimination / external_mirror_discrimination:
+#                                   discrimination evidence (Surface 5), shipped
+#                                   uncalibrated by default
 # Every script's JSON output carries its surface so a downstream harness
 # can refuse to mix scores across surfaces, and reports self-identify
 # which question they answer. See ROADMAP.md "Phase 1 -> Phase 2

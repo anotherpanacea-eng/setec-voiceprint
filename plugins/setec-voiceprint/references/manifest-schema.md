@@ -1,6 +1,6 @@
 # SETEC corpus manifest schema
 
-The canonical reference for the `corpus_manifest.jsonl` contract. SETEC's task surfaces (smoothing diagnosis, voice coherence, validation, craft restoration) all read from manifests; the validator at `scripts/manifest_validator.py` enforces this schema and emits ratchet warnings when downstream tools would otherwise produce subtly-wrong results.
+The canonical reference for the `corpus_manifest.jsonl` contract. SETEC's task surfaces (smoothing diagnosis, voice coherence, validation + calibration, craft restoration, and the uncalibrated-by-default discrimination-evidence Surface 5) all read from manifests; the validator at `scripts/manifest_validator.py` enforces this schema and emits ratchet warnings when downstream tools would otherwise produce subtly-wrong results.
 
 **Format:** JSONL — one JSON object per line, blank lines and lines starting with `#` skipped.
 
