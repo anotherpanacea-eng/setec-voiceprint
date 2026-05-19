@@ -1504,7 +1504,7 @@ python3 surprisal_audit.py target.txt \
 
 ### Notes
 
-- **Model aliases.** `gpt2`, `tinyllama`, `llama32_1b`, `pythia_1b`, `olmo2_1b`, `qwen3_1_7b`, `qwen25_1_5b`. Resolves to a HuggingFace ID via `surprisal_backend.MODEL_ALIASES`. HF IDs also accepted directly. Aliases without a local cache trigger an offline-mode error rather than a silent download.
+- **Model aliases.** `gpt2`, `llama32_1b`, `llama32_3b`, `olmo2_1b`, `openelm_1b`, `qwen25_1_5b`, `qwen3_1_7b`, `smollm2_1_7b`, `tinyllama`. Resolves to a HuggingFace ID via `surprisal_backend.MODEL_ALIASES`. HF IDs also accepted directly. Aliases without a local cache trigger an offline-mode error rather than a silent download.
 - **Dtype.** `--surprisal-dtype auto` resolves at load time per host capability (CUDA bf16, MPS fp32, CPU fp32). Explicit values (`fp32` / `fp16` / `bf16`) override; useful for cross-host comparison. The `log_softmax` step is always computed in fp32 so the surprisal-series numerical contract is stable across dtype choices (1.93.0+). The Markdown header surfaces `loaded` vs `requested` so operators see resolution decisions inline.
 - **Output format.** `--json` selects JSON; default is Markdown. `--out` writes to the given path; without it, output goes to stdout. There is no separate `--out-md` — format is selected by `--json`, location by `--out`.
 - **No CLI thresholds.** This script reports the surprisal-series envelope; threshold-band verdicts on derived signals belong to `variance_audit.py` (Tier 4 signals against the calibrated registry) and `binoculars_audit.py` (the discrimination surface). Standalone surprisal audits are descriptive, not adjudicative.
