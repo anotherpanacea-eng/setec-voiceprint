@@ -1055,6 +1055,7 @@ def _build_harness_command(
     engine: str = "loop",
     chunk_size: int | None = None,
     device: str | None = None,
+    comparator_class: str | None = None,
 ) -> str:
     """Compose the replay command stamped into the ledger entry.
 
@@ -1099,6 +1100,15 @@ def _build_harness_command(
         parts.append(f"--bootstrap-chunk-size {q(chunk_size)}")
     if engine == "torch" and device is not None:
         parts.append(f"--bootstrap-device {q(device)}")
+    # 1.99.0+: surface --comparator-class on replay commands so an
+    # operator following the ledger reproduces the same direction
+    # regime. Without this, a threshold derived with
+    # --comparator-class raid would emit a replay command that
+    # omits the flag and silently replay under the MAGE default,
+    # producing a different threshold value on the rerun. None
+    # emits nothing (pre-1.99 callers / un-routed runs unchanged).
+    if comparator_class is not None:
+        parts.append(f"--comparator-class {q(comparator_class)}")
     return " ".join(parts)
 
 
@@ -2521,6 +2531,14 @@ def derive_threshold_from_records(
             ),
             "ci_note": ci["note"] if ci else None,
         },
+        # 1.99.0+: comparator class persisted in the ledger entry
+        # so audit consumers can tell at a glance whether a
+        # derived threshold came from a MAGE-routed, RAID-routed,
+        # or un-routed (pre-1.99 / explicit pre-existing-behavior)
+        # run. Without this, two thresholds derived from the same
+        # corpus + signal but under different comparator classes
+        # would be indistinguishable on inspection.
+        "comparator_class": getattr(args, "comparator_class", None),
         "setec_commit": _git_commit(),
         "harness_command": _build_harness_command(
             manifest_path=manifest_path,
@@ -2530,6 +2548,7 @@ def derive_threshold_from_records(
             engine=engine,
             chunk_size=chunk_size,
             device=device,
+            comparator_class=getattr(args, "comparator_class", None),
         ),
         "derivation_date": iso_date,
         "notes": args.notes or (

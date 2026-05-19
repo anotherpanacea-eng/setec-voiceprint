@@ -68,6 +68,15 @@ class ProvenanceInputs:
     fpr_target: float
     cooldown_sec: int
     survey_dir: Path
+    # 1.99.0+: comparator class for per-signal direction routing.
+    # Defaults to None to keep pre-1.99 test fixtures
+    # (``ProvenanceInputs(...)`` without this kwarg) working
+    # unchanged. When set (operator passed SETEC_COMPARATOR_CLASS
+    # or it auto-defaulted from a known corpus label), the shell
+    # driver also adds --comparator-class to every
+    # calibration_survey call so the routing actually takes
+    # effect end-to-end.
+    comparator_class: str | None = None
 
 
 def _git_head_sha(cwd: Path) -> str | None:
@@ -116,6 +125,10 @@ def build_provenance(inputs: ProvenanceInputs, *, repo_root: Path) -> dict[str, 
     return {
         "session_id": inputs.session_id,
         "corpus_label": inputs.corpus_label,
+        # 1.99.0+: persisted so audit consumers can tell a routed
+        # bake-off from an un-routed one, and so a replay from this
+        # provenance reproduces the same direction regime.
+        "comparator_class": inputs.comparator_class,
         "host": {
             "platform": platform.platform(),
             "python": sys.version.split()[0],
@@ -327,6 +340,10 @@ def _main(argv: list[str]) -> int:
         inputs = ProvenanceInputs(
             session_id=raw["session_id"],
             corpus_label=raw["corpus_label"],
+            # 1.99.0+: forgiving on the key's absence so pre-1.99
+            # caller fixtures keep working unchanged. None when
+            # the shell driver didn't set _SETEC_COMPARATOR_CLASS.
+            comparator_class=raw.get("comparator_class"),
             manifest_path=Path(raw["manifest_path"]),
             phase_a_aliases=list(raw["phase_a_aliases"]),
             phase_b_aliases=list(raw["phase_b_aliases"]),

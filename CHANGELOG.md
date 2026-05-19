@@ -25,6 +25,17 @@ PR #103 shipped the per-comparator routing infrastructure but only wired the sta
 - **`calibrate_thresholds.py --comparator-class CLASS`** — new flag. Same vocabulary as `variance_audit.py`'s flag (string; default None; unknown classes fall back to spec defaults silently per spec).
 - **`calibration_survey.py --comparator-class CLASS`** — same flag at the survey layer. Forwarded into the inner calibration namespace.
 
+### Bake-off wrapper (reviewer P1 follow-up)
+
+- **`bakeoff_matrix.sh`** now propagates `comparator_class` end-to-end. New env var `SETEC_COMPARATOR_CLASS` (explicit operator override) with auto-default from `SETEC_CORPUS_LABEL` when it's one of `{mage, raid}`. The resolved value is appended to `BASE_ARGS` as `--comparator-class CLASS` for every calibration_survey invocation. Without this, a RAID bake-off launched through the script still evaluated comparator-dependent signals under the default registry direction — the slicer-side auto-default from PR #103 was active for the slicer alone, leaving the per-cell calibration scoring un-routed.
+- **`_bakeoff_provenance.py`** records `comparator_class` in the per-session JSON. `ProvenanceInputs` gains the field (default None so pre-1.99 fixtures keep working without an update). Replays from a recorded provenance now reproduce the exact direction regime the matrix ran under.
+- **Banner output** surfaces the resolved comparator class (`comparator_class: raid` or `(none, pre-1.99 behavior)`).
+
+### Calibration provenance replay (reviewer P1 follow-up)
+
+- **`_build_harness_command`** now accepts `comparator_class` and emits `--comparator-class CLASS` (shell-quoted) on routed runs. Pre-1.99 / un-routed runs emit clean commands (no flag).
+- **Threshold-ledger entry** persists `comparator_class` as a top-level field alongside the corpus / calibration identity block. Audit consumers can tell two thresholds derived under different classes apart on inspection without parsing the `harness_command` string.
+
 ### Cache identity
 
 - **`scoring_meta["comparator_class"]`** + **`interim_meta["comparator_class"]`** — both the final and mid-run checkpoint metadata blocks now record the comparator_class for the scoring run.
