@@ -126,6 +126,23 @@ ALLOWED_LANGUAGE_STATUS = {
 # Fields required on every entry. Missing required fields are errors.
 REQUIRED_FIELDS = ("id", "path", "ai_status", "use")
 
+# Schema-migration tripwire (Issue #6). The handcrafted validator stays
+# in place until the manifest shape outgrows it: *unfamiliar* nested
+# per-entry objects, an explicit schema/manifest version field, or
+# substantially more fields than today's flat KNOWN_FIELDS set. When
+# any of these fire, validate_manifest() records a tripwire entry
+# pointing back to Issue #6 so the next reader knows to consider
+# migrating structural checks to the jsonschema library.
+#
+# Already-documented nested fields (the `ai_status: mixed` path uses
+# ``notes.composite_states``; see references/manifest-schema.md §16
+# and editlens_to_manifest.py) do NOT fire the nested-trigger — the
+# handcrafted validator already covers them. The trigger is for
+# *unfamiliar* nested shape that would warrant moving to jsonschema.
+TRIPWIRE_BROAD_FIELD_THRESHOLD = 45
+TRIPWIRE_VERSION_FIELDS = ("schema_version", "manifest_version")
+TRIPWIRE_KNOWN_NESTED_FIELDS = frozenset({"notes"})
+
 # All recognized field names. Unknown fields generate warnings.
 KNOWN_FIELDS = {
     "id", "path", "project_area", "author", "persona", "register",
@@ -628,6 +645,8 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
     # impostor entries we'll validate after the main pass.
     persona_to_registers: dict[str, set[str]] = {}
     impostor_entries: list[tuple[int, dict[str, Any]]] = []
+    tripwires: list[dict[str, Any]] = []
+    tripwires_seen: set[str] = set()
 
     if not path.exists():
         return {
@@ -689,6 +708,70 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
         issues.extend(
             validate_entry(entry, lineno, path, seen_ids, seen_paths)
         )
+
+        # Issue #6 schema-migration tripwire. One trigger per category
+        # is enough; subsequent fires of the same category are skipped.
+        entry_id_for_tripwire = (
+            entry.get("id") if isinstance(entry.get("id"), str) else None
+        )
+        if "nested" not in tripwires_seen:
+            for fname, fvalue in entry.items():
+                if (
+                    isinstance(fvalue, dict)
+                    and fname not in TRIPWIRE_KNOWN_NESTED_FIELDS
+                ):
+                    tripwires_seen.add("nested")
+                    tripwires.append({
+                        "category": "nested",
+                        "lineno": lineno,
+                        "id": entry_id_for_tripwire,
+                        "field": fname,
+                        "message": (
+                            f"Entry on line {lineno} has an unfamiliar "
+                            f"nested-object field '{fname}'. The "
+                            "handcrafted validator handles documented "
+                            "nesting (e.g. `notes.composite_states`); "
+                            "an unfamiliar nested field is the trigger "
+                            "Issue #6 named for considering a "
+                            "jsonschema-library migration."
+                        ),
+                    })
+                    break
+        if "versioned" not in tripwires_seen:
+            for vfield in TRIPWIRE_VERSION_FIELDS:
+                if vfield in entry:
+                    tripwires_seen.add("versioned")
+                    tripwires.append({
+                        "category": "versioned",
+                        "lineno": lineno,
+                        "id": entry_id_for_tripwire,
+                        "field": vfield,
+                        "message": (
+                            f"Entry on line {lineno} carries a "
+                            f"version field '{vfield}'. Per-entry "
+                            "versioning is the trigger Issue #6 named "
+                            "for considering a jsonschema-library "
+                            "migration."
+                        ),
+                    })
+                    break
+        if (
+            "broad" not in tripwires_seen
+            and len(entry) > TRIPWIRE_BROAD_FIELD_THRESHOLD
+        ):
+            tripwires_seen.add("broad")
+            tripwires.append({
+                "category": "broad",
+                "lineno": lineno,
+                "id": entry_id_for_tripwire,
+                "field": None,
+                "message": (
+                    f"Entry on line {lineno} has {len(entry)} fields, "
+                    f"above the threshold ({TRIPWIRE_BROAD_FIELD_THRESHOLD}). "
+                    "Per-entry breadth is the trigger Issue #6 named "
+                    "for considering a jsonschema-library migration."
+                ),
+            })
 
         # Summary buckets.
         register = entry.get("register")
@@ -810,6 +893,7 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
         "n_errors": n_errors,
         "n_warnings": n_warnings,
         "issues": [i.to_dict() for i in issues],
+        "tripwires": tripwires,
         "summary": {
             "by_register": dict(by_register),
             "by_ai_status": dict(by_ai_status),
@@ -893,6 +977,26 @@ def render_report(result: dict[str, Any]) -> str:
             field = f", field={i['field']!r}" if i["field"] else ""
             lines.append(
                 f"- line {i['lineno']} ({ident}{field}): {i['message']}"
+            )
+        lines.append("")
+
+    tripwires_list = result.get("tripwires", []) or []
+    if tripwires_list:
+        lines.append("## Schema-migration tripwire (Issue #6)")
+        lines.append("")
+        lines.append(
+            "The manifest shape has grown past one of the triggers "
+            "Issue #6 named for considering a jsonschema-library "
+            "migration. The handcrafted validator still passes; this "
+            "is an advisory marker, not a failure."
+        )
+        lines.append("")
+        for t in tripwires_list:
+            ident = f"id={t['id']!r}" if t.get("id") else "id=<none>"
+            field = f", field={t['field']!r}" if t.get("field") else ""
+            lines.append(
+                f"- [{t['category']}] line {t['lineno']} "
+                f"({ident}{field}): {t['message']}"
             )
         lines.append("")
 
@@ -1000,7 +1104,7 @@ def build_audit_payload(
     results_payload: dict[str, Any] = {}
     for k in (
         "manifest_path", "n_entries", "n_errors", "n_warnings",
-        "issues", "summary",
+        "issues", "tripwires", "summary",
     ):
         if k in result:
             results_payload[k] = result[k]
@@ -1010,6 +1114,13 @@ def build_audit_payload(
         warnings.append(
             f"{result.get('n_errors')} manifest error(s); see "
             "results.issues."
+        )
+    tripwires_list = result.get("tripwires") or []
+    if tripwires_list:
+        categories = sorted({t.get("category") for t in tripwires_list if t.get("category")})
+        warnings.append(
+            "Schema-migration tripwire fired (Issue #6): "
+            f"{', '.join(categories)}. See results.tripwires."
         )
 
     return build_output(

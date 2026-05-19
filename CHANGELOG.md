@@ -6,6 +6,22 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.101.1] - 2026-05-19
+
+**Manifest-validator tripwire planted as groundwork for Issue #6 (jsonschema migration).** Refs #6 — does not close it. The manifest already uses one documented nesting path (`notes.composite_states` for the `ai_status: mixed` case), so "is it nested?" alone is no longer a clean trigger. This tripwire fires on *unfamiliar* shape — unrecognized nested fields, explicit versioning, or broad field counts — and is deferred-with-tripwire, not completed.
+
+### Added
+
+- `validate_manifest()` now records advisory entries under a new `tripwires` key in the result dict whenever any entry has (a) an **unfamiliar** nested-object field — `notes` is whitelisted via `TRIPWIRE_KNOWN_NESTED_FIELDS`, (b) a `schema_version` / `manifest_version` field, or (c) more than `TRIPWIRE_BROAD_FIELD_THRESHOLD = 45` total fields. One trigger per category per manifest; entirely non-blocking.
+- `build_audit_payload()` carries `tripwires` into `results.tripwires` (per CODEX P2 on PR #89 — JSON-envelope consumers must see what fired) and adds a top-level envelope warning listing fired categories when at least one tripwire is present.
+- New markdown section in `render_report()`: "Schema-migration tripwire (Issue #6)" appears only when at least one tripwire fired.
+- 12 new tests in `test_manifest_validator_tripwire.py`: dormant state, each trigger category, `notes` whitelist behavior, non-blocking interaction with normal validation, envelope round-trip, and markdown rendering.
+
+### Notes
+
+- The handcrafted manifest validator stays in place. When a tripwire fires in the wild on a production manifest, that's the cue to migrate structural checks to the `jsonschema` library per Issue #6's acceptance criteria.
+- No CLI behavior changes for current manifests. The 36 entries the calibration pipeline emits with `notes.composite_states` are not flagged (whitelist). 224 manifest + editlens + impostor pipeline tests pass unchanged.
+
 ## [1.101.0] - 2026-05-18
 
 **Thread `comparator_class` through the calibration pipeline.** Closes the calibration-side gap PR #103's CHANGELOG (1.98.0) explicitly deferred: the standalone `variance_audit.py` CLI accepted `--comparator-class` in 1.98.0, but `validation_harness.score_smoothing_entry`, `calibrate_thresholds.score_corpus`, and `calibration_survey.py` didn't, so the workflow operators actually use for the cloud bake-off matrix (#100) still got the un-routed MAGE-default directions. RAID calibration runs evaluated `surprisal_sd` under direction `gt` instead of the RAID-correct `lt`.
@@ -604,7 +620,6 @@ Audit output preserved in `internal/polarity_audit_results/` (gitignored): `pola
 - **No signal definitions, threshold values, or PROVENANCE block contents change.** The `identifier_block` output is unchanged. The patch is a performance fix and a new optional API surface; it does not alter what surprisal values mean.
 - **`score_text(text)` signature and behavior are preserved.** Existing callers (`surprisal_audit.audit_surprisal`, `variance_audit.audit_text` via the tier4 path, the `calibration_survey` per-row loop) continue to work without modification. Wiring those callers to use the new batched method is a separate follow-up; the survey-loop opt-in is the next natural patch.
 - **Why now.** The RUNBOOK_tier4_install §8 throughput table puts a stock-backend L4 at ~2500 tok/s. At MAGE scale (~218M tokens) that's ~24 GPU-hours. With the device fix and `score_texts(batch_size=16)` on an H100, MAGE Tier-4 lands in ~1.5–2 hours. The bug was a load-bearing cost driver for any operator renting GPU time to run Tier-4 calibration.
-
 ## [1.88.0] - 2026-05-17
 
 **Output schema unification wave 8 — close the loop. 7 remaining CLI scripts migrate to schema_version 1.0.** After this wave **every user-facing audit / diagnostic script in SETEC's CLI surface ships the unified envelope** — including the validation-surface scripts (confounder_audit, evidentiary_conditions_gate, surface_disagreement_resolver, adversarial_robustness_card) and the editorial-craft surfaces (draft_history_analysis, fairness_dialect_guardrails, prestige_metaphor). The JSON schema unification issue is closed across the SETEC audit surface.
