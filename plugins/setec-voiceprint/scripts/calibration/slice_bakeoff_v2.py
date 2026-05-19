@@ -110,6 +110,150 @@ SIGNAL_SPECS_BY_COMPARATOR: dict[str, dict[str, str]] = {
 }
 
 
+# 1.101.0+: per-(comparator × judge × generator) direction overrides
+# on top of SIGNAL_SPECS_BY_COMPARATOR. Mirror of
+# polarity_audit.DEFAULT_REGISTRY_DIRECTIONS_BY_COMPARATOR_AND_SLICE
+# and variance_audit.ThresholdSpec.direction_by_comparator_and_slice
+# (PR #106 / 1.100.0). Three-level nested dict keyed by
+# ``(signal → comparator → judge → generator → "gt" / "lt")``.
+#
+# The empirical motivator is the same set of 13 RAID
+# ``comparator_dependent`` cells that motivated the variance_audit
+# and polarity_audit fields: the direction holds for some
+# ``(LM-judge × generator-family)`` slices and inverts on others
+# within the same comparator class.
+#
+# The fallback chain ``resolve_signal_direction_with_slice`` walks is:
+#   1. SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE[signal][comparator]
+#        [judge][generator]
+#   2. SIGNAL_SPECS_BY_COMPARATOR[signal][comparator]   (PR #103)
+#   3. SIGNAL_SPECS[signal][1]                           (spec default)
+#
+# 1.101.0 ships the table + helper + plumbing through analyze() (per-
+# cell emission + integrated polarity-audit handoff) and the CLI. The
+# table stays EMPTY -- the per-(judge × generator) RAID data taxonomy
+# still needs operator data to settle. Once operator data lands, the
+# 13 RAID ``comparator_dependent`` cells get populated here without
+# further plumbing.
+SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE: dict[
+    str, dict[str, dict[str, dict[str, str]]]
+] = {}
+
+
+def _validate_slice_overrides(
+    overrides: dict[str, dict[str, dict[str, dict[str, str]]]],
+) -> None:
+    """Validate the three-level slice-override table.
+
+    Each leaf must be ``"gt"`` or ``"lt"``. Each non-leaf must be a
+    dict. Errors name the offending path (signal, comparator, judge,
+    generator) so an operator with a populated table finds the typo
+    quickly. Module-level so the table itself can be validated at
+    import time.
+    """
+    for signal, by_comp in overrides.items():
+        if not isinstance(by_comp, dict):
+            raise ValueError(
+                f"SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE[{signal!r}] "
+                f"must be a dict[str, dict[str, dict[str, str]]], "
+                f"got {type(by_comp).__name__}"
+            )
+        for comp, by_judge in by_comp.items():
+            if not isinstance(by_judge, dict):
+                raise ValueError(
+                    f"SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE[{signal!r}]"
+                    f"[{comp!r}] must be a dict[str, dict[str, str]], "
+                    f"got {type(by_judge).__name__}"
+                )
+            for judge, by_gen in by_judge.items():
+                if not isinstance(by_gen, dict):
+                    raise ValueError(
+                        f"SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE"
+                        f"[{signal!r}][{comp!r}][{judge!r}] must be a "
+                        f"dict[str, str], got {type(by_gen).__name__}"
+                    )
+                for generator, dir_val in by_gen.items():
+                    if dir_val not in ("gt", "lt"):
+                        raise ValueError(
+                            f"SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE"
+                            f"[{signal!r}][{comp!r}][{judge!r}]"
+                            f"[{generator!r}] must be 'gt' or 'lt', "
+                            f"got {dir_val!r}"
+                        )
+
+
+# Validate the shipped table at import. The shipped table is empty
+# in 1.101.0; this guards against future populate-PRs landing with a
+# structural typo.
+_validate_slice_overrides(SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE)
+
+
+def resolve_signal_direction_with_slice(
+    signal: str,
+    comparator_class: str | None = None,
+    judge: str | None = None,
+    generator: str | None = None,
+    *,
+    specs: dict[str, tuple[str, str]] | None = None,
+    overrides: dict[str, dict[str, str]] | None = None,
+    slice_overrides: (
+        dict[str, dict[str, dict[str, dict[str, str]]]] | None
+    ) = None,
+) -> str | None:
+    """Slicer-side resolver through the full (comparator × judge ×
+    generator) routing chain (1.101.0+).
+
+    Fallback chain (most-specific to least-specific):
+
+      1. ``slice_overrides[signal][comparator_class][judge][generator]``
+         -- when all FIVE conditions hold (comparator_class set, judge
+         set, generator set, the slice table set, and the full path
+         present in the nested dict).
+      2. ``overrides[signal][comparator_class]`` -- per-class override
+         from PR #103 / 1.98.0. Used when the (judge, generator) lookup
+         misses but the per-class entry hits.
+      3. ``specs[signal][1]`` -- the SIGNAL_SPECS default direction.
+      4. ``None`` -- signal isn't in specs at all.
+
+    Pre-1.101 callers (passing only comparator_class via
+    ``resolve_signal_direction``) get exactly the PR #103 fallback
+    chain -- the new helper is a strict superset that adds an outer
+    layer above the per-comparator dict.
+    """
+    if specs is None:
+        specs = SIGNAL_SPECS
+    if overrides is None:
+        overrides = SIGNAL_SPECS_BY_COMPARATOR
+    if slice_overrides is None:
+        slice_overrides = SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE
+    # Layer 1: per-(comparator × judge × generator) override.
+    if (
+        comparator_class is not None
+        and judge is not None
+        and generator is not None
+        and signal in slice_overrides
+    ):
+        by_comp = slice_overrides[signal]
+        by_judge = by_comp.get(comparator_class)
+        if by_judge is not None:
+            by_generator = by_judge.get(judge)
+            if by_generator is not None:
+                resolved = by_generator.get(generator)
+                if resolved is not None:
+                    return resolved
+    # Layer 2: per-comparator-class override (PR #103 fallback).
+    if (
+        comparator_class is not None
+        and signal in overrides
+        and comparator_class in overrides[signal]
+    ):
+        return overrides[signal][comparator_class]
+    # Layer 3: spec default (or None when signal unknown).
+    if signal in specs:
+        return specs[signal][1]
+    return None
+
+
 def resolve_signal_direction(
     signal: str,
     comparator_class: str | None = None,
@@ -121,20 +265,21 @@ def resolve_signal_direction(
     polarity_audit.resolve_registry_direction; uses SIGNAL_SPECS
     (signal -> (path, direction) tuples) as the default table.
     Returns the direction string or None if signal isn't known.
+
+    Thin back-compat wrapper over ``resolve_signal_direction_with_slice``
+    for callers that don't yet supply judge / generator. Preserves the
+    exact pre-1.101 PR #103 fallback chain bit-for-bit so pre-1.101
+    callers keep getting the same answer.
+
+    For new callers wanting the full (comparator × judge × generator)
+    chain, use ``resolve_signal_direction_with_slice`` directly.
     """
-    if specs is None:
-        specs = SIGNAL_SPECS
-    if overrides is None:
-        overrides = SIGNAL_SPECS_BY_COMPARATOR
-    if (
-        comparator_class is not None
-        and signal in overrides
-        and comparator_class in overrides[signal]
-    ):
-        return overrides[signal][comparator_class]
-    if signal in specs:
-        return specs[signal][1]
-    return None
+    return resolve_signal_direction_with_slice(
+        signal, comparator_class,
+        judge=None, generator=None,
+        specs=specs, overrides=overrides,
+        slice_overrides=None,
+    )
 
 
 PHASE_A_SIGNALS = ("adjacent_cosine_mean", "adjacent_cosine_sd")
@@ -420,6 +565,17 @@ def analyze(
     # 2026-05-18 RAID 5K bake-off finding). None preserves pre-
     # 1.98.0 behavior (every signal uses its SIGNAL_SPECS default).
     comparator_class: str | None = None,
+    # 1.101.0+: per-(judge × generator) direction routing within a
+    # comparator class. Both must be set (alongside comparator_class)
+    # to activate the inner-most fallback layer in
+    # ``resolve_signal_direction_with_slice``. Used for the 13 RAID
+    # ``comparator_dependent`` cells where the direction differs by
+    # (LM-judge × generator-family) within the same comparator class.
+    # None for either preserves the per-class (or default) behavior.
+    # NOT auto-defaulted from corpus -- judge / generator are slice
+    # axes within a corpus, not properties of it (per PR #112).
+    judge: str | None = None,
+    generator: str | None = None,
 ) -> int:
     if not cache_dir.exists():
         print(f"[{corpus}] cache_dir missing: {cache_dir}", file=sys.stderr)
@@ -463,9 +619,17 @@ def analyze(
             # the pre-1.98 ``SIGNAL_SPECS[signal_name][1]`` default
             # exactly; a known class (e.g., 'raid') activates any
             # override registered in SIGNAL_SPECS_BY_COMPARATOR.
+            # 1.101.0+: when ``judge`` + ``generator`` are also set,
+            # the resolver walks the deeper (judge × generator) layer
+            # first. The integrated polarity-audit handoff below
+            # MUST use this same call so the per-cell directions and
+            # the integrated audit agree -- the load-bearing parity
+            # discipline from PR #103's fix commit, now extended to
+            # the deeper layer.
             signal_path = SIGNAL_SPECS[signal_name][0]
-            direction = resolve_signal_direction(
+            direction = resolve_signal_direction_with_slice(
                 signal_name, comparator_class,
+                judge=judge, generator=generator,
             )
 
             # Aggregate.
@@ -584,8 +748,17 @@ def analyze(
         # on RAID while the integrated polarity audit evaluated them
         # under the default 'gt' -- the two outputs disagreed on the
         # load-bearing empirical change.
+        # 1.101.0+: the same resolver call is used here so the slicer
+        # and the integrated polarity audit agree at the (judge ×
+        # generator) layer too. If the per-cell loop above used the
+        # cell-resolution layer and the handoff here used only the
+        # per-class layer, we'd reintroduce the disagreement PR #103's
+        # fix commit addressed -- just one level deeper.
         signal_to_direction = {
-            name: resolve_signal_direction(name, comparator_class)
+            name: resolve_signal_direction_with_slice(
+                name, comparator_class,
+                judge=judge, generator=generator,
+            )
             for name in SIGNAL_SPECS
         }
         # Override DEFAULT_REGISTRY_DIRECTIONS for any signals not in
@@ -875,6 +1048,34 @@ def build_arg_parser() -> argparse.ArgumentParser:
             "inference."
         ),
     )
+    p.add_argument(
+        "--judge", default=None,
+        help=(
+            "1.101.0+: route per-signal direction through the "
+            "SIGNAL_SPECS_BY_COMPARATOR_AND_SLICE table at the "
+            "(comparator × judge × generator) cell. Used with "
+            "--comparator-class + --generator to activate the inner-"
+            "most fallback layer (full path → per-class → spec "
+            "default). Used for the 13 RAID ``comparator_dependent`` "
+            "cells where the direction differs by (LM-judge × "
+            "generator-family). When the inner table has no entry "
+            "for this specific cell, falls back to the per-class "
+            "direction. NOT auto-defaulted from --corpus -- judge / "
+            "generator are slice axes within a corpus, not properties "
+            "of it (per PR #112). Default None preserves per-class "
+            "behavior unchanged."
+        ),
+    )
+    p.add_argument(
+        "--generator", default=None,
+        help=(
+            "1.101.0+: see --judge. Used together to activate the "
+            "per-(comparator × judge × generator) inner-most "
+            "fallback layer in the slicer's direction resolver. "
+            "The same resolved direction is used for both per-cell "
+            "emission and the integrated polarity-audit handoff."
+        ),
+    )
     return p
 
 
@@ -931,6 +1132,8 @@ def main(argv: list[str] | None = None) -> int:
         do_polarity_audit=do_polarity,
         comparator_key=args.comparator_key,
         comparator_class=comparator_class,
+        judge=args.judge,
+        generator=args.generator,
     )
 
 
