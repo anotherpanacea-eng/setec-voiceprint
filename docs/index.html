@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SETEC Docs</title>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --bg: #fafaf7;
+    --rule: #d4d4d0;
+    --accent: #8b2c1c;
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 16px; }
+  body {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    line-height: 1.55;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  h1, h2 {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.25;
+  }
+  h1 { font-size: 1.75rem; margin: 0 0 0.5rem; color: var(--accent); }
+  h2 {
+    font-size: 1.15rem;
+    margin: 2rem 0 0.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+  }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { background: rgba(139, 44, 28, 0.08); }
+  p, ul { margin: 0.75rem 0; }
+  ul { padding-left: 1.5rem; }
+  li { margin: 0.4rem 0; }
+  .lede { color: var(--muted); font-size: 0.95rem; }
+  .meta {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-top: 0.25rem;
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>SETEC Documentation</h1>
+
+<p class="lede">Glass-box stylometric audits and supporting documentation for the <a href="https://github.com/anotherpanacea-eng/setec-voiceprint">SETEC voiceprint framework</a>.</p>
+
+<h2>Evidence packs</h2>
+
+<ul>
+  <li>
+    <a href="evidence-packs/nazir-serpent-in-the-grove.html">"The Serpent in the Grove" (Nazir, <em>Granta</em> 2026)</a>
+    <div class="meta">Caribbean regional winner, 2026 Commonwealth Short Story Prize. Pangram flagged 100% AI; SETEC distributional and craft signals returned mixed evidence; expanding-context mirror tests recovered GPT-family discrimination.</div>
+  </li>
+</ul>
+
+</main>
+</body>
+</html>

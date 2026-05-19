@@ -41,6 +41,7 @@
     margin: 2.5rem 0 0.75rem;
     padding-top: 1rem;
     border-top: 1px solid var(--rule);
+    scroll-margin-top: 1rem;
   }
   h3 {
     font-size: 1.05rem;
@@ -152,6 +153,32 @@
     color: var(--accent);
   }
   .tldr p { margin: 0.4rem 0; font-size: 0.95rem; }
+  nav.toc {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.9rem;
+    background: #fff;
+    border: 1px solid var(--rule);
+    padding: 0.75rem 1.25rem;
+    border-radius: 4px;
+    margin: 1.5rem 0 2rem;
+  }
+  nav.toc h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  nav.toc ol {
+    margin: 0;
+    padding-left: 1.25rem;
+    columns: 2;
+    column-gap: 1.5rem;
+  }
+  nav.toc li { margin: 0.15rem 0; break-inside: avoid; }
+  @media (max-width: 600px) {
+    nav.toc ol { columns: 1; }
+  }
   @media (max-width: 600px) {
     body { padding: 1rem 0.75rem 3rem; }
     h1 { font-size: 1.4rem; }
@@ -178,7 +205,25 @@
   <p>Pangram says 100% AI at high confidence. SETEC's distributional tiers and named-pattern audits found no smoothing signature. One craft signal (image conjunction) ran 1.35x baseline but source-triaged as the story's controlling metaphor. Fixed-window mirror tests landed in ambiguous middle. Expanding-context mirror tests recovered discrimination consistent with GPT-family generation. The case is unresolved on the prose evidence available to a non-Pangram operator.</p>
 </div>
 
-<h2>Aggregate Evidence</h2>
+<nav class="toc" aria-label="Contents">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#aggregate">Aggregate Evidence</a></li>
+    <li><a href="#tier-1-4">SETEC Tier 1-4 (distributional)</a></li>
+    <li><a href="#aic">SETEC AIC craft audit</a></li>
+    <li><a href="#mirror-1">Mirror Design 1: document-level</a></li>
+    <li><a href="#mirror-2-k1">Mirror Design 2, K=1: rum-shop</a></li>
+    <li><a href="#mirror-2-k4">Mirror Design 2, K=4 aggregate</a></li>
+    <li><a href="#mirror-3">Mirror Design 3: binoculars proxy</a></li>
+    <li><a href="#mirror-4">Mirror Design 4: expanding-context</a></li>
+    <li><a href="#controls">Controls</a></li>
+    <li><a href="#caveats">Caveats</a></li>
+    <li><a href="#replication">Replication</a></li>
+    <li><a href="#provenance">Provenance</a></li>
+  </ol>
+</nav>
+
+<h2 id="aggregate">Aggregate Evidence</h2>
 
 <table>
   <thead>
@@ -205,7 +250,7 @@
   </tbody>
 </table>
 
-<h2>SETEC Tier 1-4 (distributional)</h2>
+<h2 id="tier-1-4">SETEC Tier 1-4 (distributional)</h2>
 
 <table>
   <thead>
@@ -223,7 +268,7 @@
 
 <p>None of the four tiers flagged the smoothing signature characteristic of post-alignment LLM output.</p>
 
-<h2>SETEC AIC craft audit</h2>
+<h2 id="aic">SETEC AIC craft audit</h2>
 
 <table>
   <thead>
@@ -240,13 +285,13 @@
 
 <p>Per-instance audit of every flagged image conjunction: each was load-bearing for the story's controlling metaphor (the grove remembers; the house remembers; the boy remembers). The story's thematic spine is that physical objects in this village carry memory across generations. The elevation is the story enacting its argument, not a generic AI craft tic. This is the category SETEC's craft-restoration skill labels "earned by frame."</p>
 
-<h2>Mirror Design 1: document-level</h2>
+<h2 id="mirror-1">Mirror Design 1: document-level</h2>
 
 <p>Topical scaffolding extracted from target → Claude generates a mirror from scaffolding alone → distance metrics computed (word-set Jaccard, TF-IDF cosine, POS-bigram cosine, POS-bigram Jaccard, sentence-transformer cosine).</p>
 
 <p>Result: ambiguous. Lexical metrics inflated by scaffolding leakage; syntactic and semantic metrics non-discriminating. Not load-bearing in this pack.</p>
 
-<h2>Mirror Design 2, K=1: rum-shop window</h2>
+<h2 id="mirror-2-k1">Mirror Design 2, K=1: rum-shop window</h2>
 
 <p>First 500 words of Nazir handed to fresh GPT-5.x session → model writes next 150 words blind → compared to Nazir's actual continuation.</p>
 
@@ -276,9 +321,9 @@
 
 <p>Structural matches: opening-clause simile personifying the rum shop (crab claw / rotten tooth); boards weathered by sweat; <em>the air sweet with cane</em> almost verbatim; three-drink crescendo with one-two-three rhetorical structure; Zoongie introduced with mysterious-origin framing.</p>
 
-<h2>Mirror Design 2, K=4 aggregate</h2>
+<h2 id="mirror-2-k4">Mirror Design 2, K=4 aggregate</h2>
 
-<p>Per SPEC, single-window mirror results are not load-bearing. Three additional windows run.</p>
+<p>Single-window mirror results are not load-bearing. Three additional windows run.</p>
 
 <table>
   <thead>
@@ -295,11 +340,11 @@
 
 <p>Aggregate sits between AI control (0.18) and human control (0.10). The K=1 finding did not generalize. Reference baselines for comparison in the section below.</p>
 
-<h2>Mirror Design 3: binoculars proxy</h2>
+<h2 id="mirror-3">Mirror Design 3: binoculars proxy</h2>
 
 <p>gpt2 / distilgpt2 base/instruct pair (per Hans et al. 2024). Small-model proxy too low-capacity for reliable discrimination on long-form literary prose. Cross-model correlation pattern non-discriminating. Not load-bearing. A Falcon-7B or Llama-3-8B paired-model run, on GPU, is the right next test.</p>
 
-<h2>Mirror Design 4: expanding-context</h2>
+<h2 id="mirror-4">Mirror Design 4: expanding-context</h2>
 
 <p>Start fixed at document opening. Context grown across four sizes: 500 / 1000 / 1500 / 2000 words. At each size, fresh subagent (Claude or GPT) writes next 150 words blind. Each subagent sees only its allotted context.</p>
 
@@ -338,7 +383,7 @@
 
 <p>Beat-for-beat structural match across 150 words: Marsha braced with rope, Sita's face emerging from the well, Vishnu joining the haul, physical strain, Sita coughing water, Vishnu's psychological reckoning. 1500 words of preceding context could have set up many possible continuations. GPT picked the one Nazir picked.</p>
 
-<h2>Controls</h2>
+<h2 id="controls">Controls</h2>
 
 <table>
   <thead>
@@ -351,7 +396,7 @@
   </tbody>
 </table>
 
-<h2>Caveats</h2>
+<h2 id="caveats">Caveats</h2>
 
 <ol>
   <li><strong>Single-family mirror panel.</strong> Two LLM families plus a proxy binoculars run. Cannot rule out generation by an untested family.</li>
@@ -364,23 +409,21 @@
   <li><strong>Single-shot, not a trained classifier.</strong> Will not match Pangram's accuracy. Trades raw discrimination for interpretability.</li>
 </ol>
 
-<h2>Replication</h2>
+<h2 id="replication">Replication</h2>
 
 <ul>
   <li><strong>Framework:</strong> <a href="https://github.com/anotherpanacea-eng/setec-voiceprint">github.com/anotherpanacea-eng/setec-voiceprint</a></li>
-  <li><strong>Methodology spec:</strong> <code>SPEC_external_mirror_discrimination.md</code> v0.1 in the repo above. Prompt templates T1-T6 documented there.</li>
   <li><strong>Target text:</strong> Public at granta.com (linked above).</li>
   <li><strong>Mirror outputs, control texts, and per-window data files:</strong> Available on request. Email <a href="mailto:anotherpanacea@gmail.com">anotherpanacea@gmail.com</a>.</li>
   <li><strong>Procedure:</strong> Each mirror test is a fresh-context LLM session. Subagent isolation required: each session sees only its allotted context, never any other session's input or output.</li>
 </ul>
 
-<h2>Provenance</h2>
+<h2 id="provenance">Provenance</h2>
 
 <table>
   <tbody>
     <tr><th>Operator</th><td>Joshua Miller (anotherpanacea@gmail.com)</td></tr>
     <tr><th>Framework</th><td>SETEC v1.90.2 (open-source, link above)</td></tr>
-    <tr><th>Methodology spec</th><td>SPEC_external_mirror_discrimination.md v0.1</td></tr>
     <tr><th>Run dates</th><td>18-19 May 2026</td></tr>
     <tr><th>Models</th><td>GPT-5.x (OpenAI consumer subscription), Claude Opus 4.7 (Anthropic consumer subscription), gpt2 / distilgpt2 (HuggingFace, local CPU)</td></tr>
     <tr><th>AI baseline</th><td>GPT-5.x literary-fiction generation, ~1,000 words</td></tr>
