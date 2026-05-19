@@ -6,6 +6,42 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 _(Empty. Future work lands here, gets versioned on commit.)_
 
+## [1.101.0] - 2026-05-18
+
+**Thread `comparator_class` through the calibration pipeline.** Closes the calibration-side gap PR #103's CHANGELOG (1.98.0) explicitly deferred: the standalone `variance_audit.py` CLI accepted `--comparator-class` in 1.98.0, but `validation_harness.score_smoothing_entry`, `calibrate_thresholds.score_corpus`, and `calibration_survey.py` didn't, so the workflow operators actually use for the cloud bake-off matrix (#100) still got the un-routed MAGE-default directions. RAID calibration runs evaluated `surprisal_sd` under direction `gt` instead of the RAID-correct `lt`.
+
+### Why
+
+PR #103 shipped the per-comparator routing infrastructure but only wired the standalone `variance_audit.py` CLI. Operators on the calibration toolchain — the entire matrix bake-off pipeline — couldn't opt into the routing. This PR closes that asymmetry so a `bakeoff_matrix.sh --corpus raid` run (via `calibration_survey.py` → `calibrate_thresholds.py` → `validation_harness.score_smoothing_entry` → `classify_compression`) actually evaluates `surprisal_sd` as `lt` when `--comparator-class raid` is supplied.
+
+### Plumbing
+
+- **`validation_harness.score_smoothing_entry(..., comparator_class: str | None = None)`** — new kwarg. Threaded into the `classify_compression(audit, comparator_class=...)` call. Default None preserves pre-1.99 callers bit-for-bit.
+- **`calibrate_thresholds.score_corpus`** — reads `args.comparator_class` via `getattr(..., None)` (same pattern as `embedding_dtype` / `surprisal_dtype` since PR #93) and forwards into `score_smoothing_entry`.
+- **`calibration_survey._build_inner_args`** — forwards `parent_args.comparator_class` into the inner Namespace that `calibrate_thresholds` consumes. Survey runs now honor `--comparator-class` end-to-end.
+
+### CLI
+
+- **`calibrate_thresholds.py --comparator-class CLASS`** — new flag. Same vocabulary as `variance_audit.py`'s flag (string; default None; unknown classes fall back to spec defaults silently per spec).
+- **`calibration_survey.py --comparator-class CLASS`** — same flag at the survey layer. Forwarded into the inner calibration namespace.
+
+### Cache identity
+
+- **`scoring_meta["comparator_class"]`** + **`interim_meta["comparator_class"]`** — both the final and mid-run checkpoint metadata blocks now record the comparator_class for the scoring run.
+- **`cache_is_compatible`** treats `comparator_class` as load-bearing: a cache scored under one class can't be reused under another. The `per_signal_scores` in the cache reflect compressed/not-compressed verdicts computed under one direction; reusing them under a different direction would silently produce wrong band calls. Same contract shape as `surprisal_dtype_resolved` (PR #93).
+- Pre-1.99 caches that lack the `comparator_class` field are treated as `comparator_class=None` and stay compatible with current runs that also don't supply one — no migration needed for existing caches.
+
+### Tests
+
+- **12 new tests** in `test_comparator_class_calibration_pipeline.py`: per-entry scorer signature accepts the kwarg, default-None preserves pre-1.99 behavior, explicit class forwards to the classifier, `score_corpus` reads from args, cache identity (matching None ↔ None passes, matching raid ↔ raid passes, raid ↔ mage invalidates, adding the class on the args side invalidates, removing it invalidates), CLI flag exposed on both `calibrate_thresholds.py` and `calibration_survey.py`, survey forwards into the inner Namespace.
+- **106 pre-existing direction-aware + calibration-cache tests** pass unchanged (zero regressions).
+
+### Notes
+
+- **End-to-end audit/calibration parity.** With this PR, `variance_audit.py --comparator-class raid` (standalone audit, 1.98.0) and `bakeoff_matrix.sh ... --comparator-class raid` (calibration pipeline, 1.101.0) now agree on direction for every signal. Pre-1.101 they could silently disagree on the load-bearing RAID/surprisal_sd flip.
+- **Cache invalidation cost.** Operators with cached calibration outputs from pre-1.101 runs that want to switch comparator classes WILL see a cache miss on the first run after upgrade — same as the dtype-identity migrations from PR #93 (surprisal) and PR #101 (embedding). That's the correct contract; reusing across classes would mix verdicts computed under different directions.
+- **What's NOT in this PR.** Per-(signal × judge × generator) routing for the 13 RAID `comparator_dependent` cells PR #103 deferred. That's a structural follow-up — extending `direction_by_comparator` to a deeper shape — and the per-(judge × generator) RAID data taxonomy still needs to settle.
+
 ## [1.100.0] - 2026-05-18
 
 **Per-(comparator × judge × generator) direction routing infrastructure.** Closes the structural follow-up PR #103 (1.98.0) explicitly deferred for the 13 RAID `comparator_dependent` cells from the 2026-05-18 audit. Ships the deeper routing infrastructure — new field, new helper, new CLI flags, new JSON-output fields — with the override table EMPTY. Population of the 13 RAID cells lands in a follow-up once the operator-side per-(judge × generator) data taxonomy settles.
