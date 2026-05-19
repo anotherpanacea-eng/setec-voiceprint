@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Evidence Pack: "The Serpent in the Grove" (Nazir, Granta 2026)</title>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --bg: #fafaf7;
+    --rule: #d4d4d0;
+    --accent: #8b2c1c;
+    --code-bg: #f0efea;
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 16px; }
+  body {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    line-height: 1.55;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+  }
+  main {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+  h1, h2, h3 {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.25;
+  }
+  h1 {
+    font-size: 1.75rem;
+    margin: 0 0 0.5rem;
+    color: var(--accent);
+  }
+  h2 {
+    font-size: 1.25rem;
+    margin: 2.5rem 0 0.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+    scroll-margin-top: 1rem;
+  }
+  h3 {
+    font-size: 1.05rem;
+    margin: 1.5rem 0 0.5rem;
+    color: var(--muted);
+  }
+  p, ul, ol { margin: 0.75rem 0; }
+  ul, ol { padding-left: 1.5rem; }
+  li { margin: 0.25rem 0; }
+  a {
+    color: var(--accent);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+  }
+  a:hover { background: rgba(139, 44, 28, 0.08); }
+  .meta {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.875rem;
+    color: var(--muted);
+    border-left: 3px solid var(--rule);
+    padding: 0.5rem 0 0.5rem 1rem;
+    margin: 1rem 0 2rem;
+  }
+  .meta div { margin: 0.2rem 0; }
+  .meta strong { color: var(--fg); font-weight: 600; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  th, td {
+    text-align: left;
+    padding: 0.5rem 0.6rem;
+    border-bottom: 1px solid var(--rule);
+    vertical-align: top;
+  }
+  th {
+    background: var(--code-bg);
+    font-weight: 600;
+    border-bottom: 2px solid var(--rule);
+  }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  tr:hover td { background: rgba(139, 44, 28, 0.03); }
+  .peak {
+    font-weight: 700;
+    color: var(--accent);
+  }
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid var(--rule);
+    color: #333;
+    font-style: italic;
+    background: rgba(0, 0, 0, 0.02);
+  }
+  blockquote p { margin: 0.25rem 0; }
+  code {
+    font-family: "SF Mono", Monaco, "Cascadia Code", Consolas, monospace;
+    background: var(--code-bg);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+    font-size: 0.85em;
+  }
+  pre {
+    background: var(--code-bg);
+    padding: 0.75rem;
+    border-radius: 4px;
+    overflow-x: auto;
+    font-size: 0.85rem;
+    margin: 1rem 0;
+  }
+  pre code { background: none; padding: 0; }
+  .verdict {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.15rem 0.5rem;
+    border-radius: 3px;
+    display: inline-block;
+  }
+  .v-llm { background: #fdecea; color: #8b2c1c; }
+  .v-human { background: #e8f1ea; color: #1f6b3f; }
+  .v-amb { background: #fbf3e2; color: #7a5b00; }
+  .v-sug { background: #ecf0fb; color: #2d4d8a; }
+  footer {
+    margin-top: 4rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--rule);
+    font-size: 0.85rem;
+    color: var(--muted);
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  .tldr {
+    background: #fff;
+    border: 1px solid var(--rule);
+    padding: 1rem 1.25rem;
+    border-radius: 4px;
+    margin: 1.5rem 0;
+  }
+  .tldr h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--accent);
+  }
+  .tldr p { margin: 0.4rem 0; font-size: 0.95rem; }
+  nav.toc {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    font-size: 0.9rem;
+    background: #fff;
+    border: 1px solid var(--rule);
+    padding: 0.75rem 1.25rem;
+    border-radius: 4px;
+    margin: 1.5rem 0 2rem;
+  }
+  nav.toc h3 {
+    margin: 0 0 0.4rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  nav.toc ol {
+    margin: 0;
+    padding-left: 1.25rem;
+    columns: 2;
+    column-gap: 1.5rem;
+  }
+  nav.toc li { margin: 0.15rem 0; break-inside: avoid; }
+  @media (max-width: 600px) {
+    nav.toc ol { columns: 1; }
+  }
+  @media (max-width: 600px) {
+    body { padding: 1rem 0.75rem 3rem; }
+    h1 { font-size: 1.4rem; }
+    table { font-size: 0.8rem; }
+    th, td { padding: 0.4rem 0.4rem; }
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Evidence Pack: "The Serpent in the Grove"</h1>
+
+<div class="meta">
+  <div><strong>Target:</strong> Jamir Nazir, "The Serpent in the Grove." Caribbean regional winner, 2026 Commonwealth Short Story Prize. Published in <em>Granta</em>, 18 May 2026. ~3,447 words. <a href="https://granta.com/the-serpent-in-the-grove/">Source</a> · <a href="https://archive.is/qbFZy">Archive</a></div>
+  <div><strong>Operator:</strong> Joshua Miller. Maintainer, SETEC v1.90.2 (<a href="https://github.com/anotherpanacea-eng/setec-voiceprint">github.com/anotherpanacea-eng/setec-voiceprint</a>)</div>
+  <div><strong>Run dates:</strong> 18-19 May 2026</div>
+  <div><strong>Models:</strong> GPT-5.x (OpenAI), Claude Opus 4.7 (Anthropic), gpt2 / distilgpt2 (HuggingFace, local CPU)</div>
+  <div><strong>Companion:</strong> Substack post at <a href="https://anotherpanacea.substack.com">anotherpanacea.substack.com</a> (May 19, 2026)</div>
+</div>
+
+<div class="tldr">
+  <h3>Headline</h3>
+  <p>Pangram says 100% AI at high confidence. SETEC's distributional tiers and named-pattern audits found no smoothing signature. One craft signal (image conjunction) ran 1.35x baseline but source-triaged as the story's controlling metaphor. Fixed-window mirror tests landed in ambiguous middle. Expanding-context mirror tests recovered discrimination consistent with GPT-family generation. The case is unresolved on the prose evidence available to a non-Pangram operator.</p>
+</div>
+
+<nav class="toc" aria-label="Contents">
+  <h3>Contents</h3>
+  <ol>
+    <li><a href="#aggregate">Aggregate Evidence</a></li>
+    <li><a href="#tier-1-4">SETEC Tier 1-4 (distributional)</a></li>
+    <li><a href="#aic">SETEC AIC craft audit</a></li>
+    <li><a href="#mirror-1">Mirror Design 1: document-level</a></li>
+    <li><a href="#mirror-2-k1">Mirror Design 2, K=1: rum-shop</a></li>
+    <li><a href="#mirror-2-k4">Mirror Design 2, K=4 aggregate</a></li>
+    <li><a href="#mirror-3">Mirror Design 3: binoculars proxy</a></li>
+    <li><a href="#mirror-4">Mirror Design 4: expanding-context</a></li>
+    <li><a href="#controls">Controls</a></li>
+    <li><a href="#caveats">Caveats</a></li>
+    <li><a href="#replication">Replication</a></li>
+    <li><a href="#provenance">Provenance</a></li>
+  </ol>
+</nav>
+
+<h2 id="aggregate">Aggregate Evidence</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Test</th>
+      <th>Result</th>
+      <th>Direction</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td>Pangram (commercial)</td><td>100% AI, high confidence, 12/12 chunks flagged</td><td><span class="verdict v-llm">LLM</span></td></tr>
+    <tr><td>SETEC Tier 1-2 (variance)</td><td>All signals in human-fiction range</td><td><span class="verdict v-human">Human</span></td></tr>
+    <tr><td>SETEC Tier 3 (sbert cohesion)</td><td>Below typical native-fiction range</td><td><span class="verdict v-human">Human</span></td></tr>
+    <tr><td>SETEC Tier 4 (surprisal)</td><td>6.5 bits/token (LLM typical 4-5)</td><td><span class="verdict v-human">Human</span></td></tr>
+    <tr><td>SETEC AIC-7 (named patterns)</td><td>At or below literary baseline</td><td><span class="verdict v-human">Human</span></td></tr>
+    <tr><td>SETEC AIC-8 (image conjunction)</td><td>1.35x baseline; earned by frame</td><td><span class="verdict v-sug">Suggestive</span></td></tr>
+    <tr><td>SETEC AIC-9 (kicker density)</td><td>At baseline</td><td><span class="verdict v-human">Human</span></td></tr>
+    <tr><td>Mirror Design 1 (document-level)</td><td>Ambiguous, marginally LLM-shaped</td><td><span class="verdict v-amb">Amb.</span></td></tr>
+    <tr><td>Mirror Design 2, K=1 (rum-shop)</td><td>word-Jaccard 0.22 vs. AI control 0.18</td><td><span class="verdict v-llm">LLM</span></td></tr>
+    <tr><td>Mirror Design 2, K=4 aggregate</td><td>Mean 0.156 (AI 0.18 / human 0.10)</td><td><span class="verdict v-amb">Amb.</span></td></tr>
+    <tr><td>Mirror Design 3 (binoculars proxy)</td><td>Non-discriminating</td><td><span class="verdict v-amb">—</span></td></tr>
+    <tr><td>Mirror Design 4 (Claude expanding)</td><td>+0.13–0.19 sbert above human control</td><td><span class="verdict v-llm">LLM</span></td></tr>
+    <tr><td>Mirror Design 4 (GPT expanding)</td><td>sbert <span class="peak">0.71</span> at ctx=1500; beats human by 0.21</td><td><span class="verdict v-llm">GPT-family</span></td></tr>
+  </tbody>
+</table>
+
+<h2 id="tier-1-4">SETEC Tier 1-4 (distributional)</h2>
+
+<table>
+  <thead>
+    <tr><th>Signal</th><th>Result</th><th>Flag?</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Sentence-length variance</td><td>Human range</td><td>No</td></tr>
+    <tr><td>Lexical diversity (MATTR / MTLD)</td><td>High</td><td>No</td></tr>
+    <tr><td>Reading-level spread (FKGL std)</td><td>Wide</td><td>No</td></tr>
+    <tr><td>Syntactic templates (POS-bigram)</td><td>Diverse</td><td>No</td></tr>
+    <tr><td>Adjacent-sentence semantic cohesion</td><td>Below typical native-fiction range</td><td>No (anti-flag)</td></tr>
+    <tr><td>Per-token surprisal (gpt2)</td><td>6.5 bits/token (LLM typical 4-5)</td><td>No</td></tr>
+  </tbody>
+</table>
+
+<p>None of the four tiers flagged the smoothing signature characteristic of post-alignment LLM output.</p>
+
+<h2 id="aic">SETEC AIC craft audit</h2>
+
+<table>
+  <thead>
+    <tr><th>Pattern family</th><th>Rate vs. literary baseline</th><th>Note</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>AIC-7: correctio, triplet, manifesto cadence, professional-parallel stack, paragraph-final kicker</td><td>At or below baseline</td><td>No flag</td></tr>
+    <tr><td>AIC-8: image conjunction (concrete object + abstract verb)</td><td><strong>1.35x baseline</strong></td><td>Source-triages as earned</td></tr>
+    <tr><td>AIC-9: kicker density / closure inflation</td><td>At baseline</td><td>No flag</td></tr>
+  </tbody>
+</table>
+
+<h3>AIC-8 source-triage</h3>
+
+<p>Per-instance audit of every flagged image conjunction: each was load-bearing for the story's controlling metaphor (the grove remembers; the house remembers; the boy remembers). The story's thematic spine is that physical objects in this village carry memory across generations. The elevation is the story enacting its argument, not a generic AI craft tic. This is the category SETEC's craft-restoration skill labels "earned by frame."</p>
+
+<h2 id="mirror-1">Mirror Design 1: document-level</h2>
+
+<p>Topical scaffolding extracted from target → Claude generates a mirror from scaffolding alone → distance metrics computed (word-set Jaccard, TF-IDF cosine, POS-bigram cosine, POS-bigram Jaccard, sentence-transformer cosine).</p>
+
+<p>Result: ambiguous. Lexical metrics inflated by scaffolding leakage; syntactic and semantic metrics non-discriminating. Not load-bearing in this pack.</p>
+
+<h2 id="mirror-2-k1">Mirror Design 2, K=1: rum-shop window</h2>
+
+<p>First 500 words of Nazir handed to fresh GPT-5.x session → model writes next 150 words blind → compared to Nazir's actual continuation.</p>
+
+<table>
+  <thead>
+    <tr><th>Metric</th><th class="num">Nazir vs. GPT mirror</th><th class="num">AI control (GPT continues its own prose)</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Word-set Jaccard</td><td class="num"><strong>0.22</strong></td><td class="num">0.18</td></tr>
+    <tr><td>TF-IDF cosine</td><td class="num">0.41</td><td class="num">0.34</td></tr>
+    <tr><td>POS-bigram cosine</td><td class="num">0.93</td><td class="num">0.91</td></tr>
+    <tr><td>Sentence-transformer cosine</td><td class="num">0.62</td><td class="num">0.58</td></tr>
+  </tbody>
+</table>
+
+<h3>GPT-5.x blind continuation (rum-shop)</h3>
+
+<blockquote>
+<p>...crouched low in the corner of the road like a crab with one claw, its boards soft from years of spill and sweat. Inside, shadows hung thick, the air sweet with cane and kerosene. Men lined along a counter scarred by bottles, trading coins meant for flour or lamp oil for measures of rum that burned like memory. One drink loosened the tongue, two made promises come easy, three drowned the small voice saying better sense. Zoongie moved between them with a sway that made stools shift. Some said she was Wilfred's niece, some said she came out of the bush on a wet night, carrying her own thunder.</p>
+</blockquote>
+
+<h3>Nazir's actual continuation</h3>
+
+<blockquote>
+<p>...leaned into the road like a rotten tooth. Inside, boards blackened by smoke and sweat, the air sweet with cane and forgetting. Coins meant for rice or kerosene slid across the counter and came back white rum hot as apology. One drink opened the chest, two turned fear into courage's cheap cousin, three steadied the hand enough to write the future in invisible ink. She moved through that shop like heat through dry bush. They called her Zoongie. Maybe it was a name; maybe rain took a shape and decided to keep it.</p>
+</blockquote>
+
+<p>Structural matches: opening-clause simile personifying the rum shop (crab claw / rotten tooth); boards weathered by sweat; <em>the air sweet with cane</em> almost verbatim; three-drink crescendo with one-two-three rhetorical structure; Zoongie introduced with mysterious-origin framing.</p>
+
+<h2 id="mirror-2-k4">Mirror Design 2, K=4 aggregate</h2>
+
+<p>Single-window mirror results are not load-bearing. Three additional windows run.</p>
+
+<table>
+  <thead>
+    <tr><th>Window</th><th>Position in story</th><th class="num">Word-Jaccard vs. GPT mirror</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>W1</td><td>Rum shop</td><td class="num">0.22</td></tr>
+    <tr><td>W2</td><td>Sita at the well</td><td class="num">0.10</td></tr>
+    <tr><td>W3</td><td>Vigil and recovery</td><td class="num">0.16</td></tr>
+    <tr><td>W4</td><td>Years-later closing</td><td class="num">0.14</td></tr>
+    <tr><td><strong>Aggregate</strong></td><td>Mean across 4 windows</td><td class="num"><strong>0.156</strong></td></tr>
+  </tbody>
+</table>
+
+<p>Aggregate sits between AI control (0.18) and human control (0.10). The K=1 finding did not generalize. Reference baselines for comparison in the section below.</p>
+
+<h2 id="mirror-3">Mirror Design 3: binoculars proxy</h2>
+
+<p>gpt2 / distilgpt2 base/instruct pair (per Hans et al. 2024). Small-model proxy too low-capacity for reliable discrimination on long-form literary prose. Cross-model correlation pattern non-discriminating. Not load-bearing. A Falcon-7B or Llama-3-8B paired-model run, on GPU, is the right next test.</p>
+
+<h2 id="mirror-4">Mirror Design 4: expanding-context</h2>
+
+<p>Start fixed at document opening. Context grown across four sizes: 500 / 1000 / 1500 / 2000 words. At each size, fresh subagent (Claude or GPT) writes next 150 words blind. Each subagent sees only its allotted context.</p>
+
+<table>
+  <thead>
+    <tr><th class="num">Context</th><th class="num">Nazir under GPT-5</th><th class="num">Nazir under Claude</th><th class="num">Human control under Claude</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="num">500 words</td><td class="num">0.4643</td><td class="num">0.4460</td><td class="num">0.3025</td></tr>
+    <tr><td class="num">1000 words</td><td class="num">0.5991</td><td class="num">0.5704</td><td class="num">0.3811</td></tr>
+    <tr><td class="num">1500 words</td><td class="num peak">0.7058</td><td class="num">0.6248</td><td class="num">0.4994</td></tr>
+    <tr><td class="num">2000 words</td><td class="num">0.6876</td><td class="num">0.6196</td><td class="num">—</td></tr>
+  </tbody>
+</table>
+
+<p>Sentence-transformer cosine between blind continuation and Nazir's actual next 150 words.</p>
+
+<ul>
+  <li><strong>GPT slope on Nazir:</strong> +0.241 over 500→1500 (steepest).</li>
+  <li><strong>Claude slope on Nazir:</strong> +0.179 over the same range.</li>
+  <li><strong>Discrimination at ctx=1500:</strong> GPT on Nazir beats Claude on the human control by +0.21 sbert. Claude on Nazir beats Claude on the human control by +0.13.</li>
+  <li>Both Nazir curves sit above the human-control curve at every measured context size.</li>
+</ul>
+
+<h3>GPT-5.x blind continuation at ctx=1500</h3>
+
+<blockquote>
+<p>...his tongue. The scene outside hit him like a thrown stone: Marsha's heels dug into dust, a rope pulled tight, the square of sky above the well. Without thinking he dropped to his knees and added his weight. The vine burned his palms. Sweat poured from him like rain from a roof. They hauled until his chest cracked. When she lay on the ground coughing water, the world swam.</p>
+</blockquote>
+
+<h3>Nazir's actual continuation</h3>
+
+<blockquote>
+<p>...his tongue, and went to the well. He saw Marsha braced, saw the well mouth, saw Sita's face rise pale from the dark with water sticking to her skin. In one bright click he saw his future rearrange...</p>
+</blockquote>
+
+<p>Beat-for-beat structural match across 150 words: Marsha braced with rope, Sita's face emerging from the well, Vishnu joining the haul, physical strain, Sita coughing water, Vishnu's psychological reckoning. 1500 words of preceding context could have set up many possible continuations. GPT picked the one Nazir picked.</p>
+
+<h2 id="controls">Controls</h2>
+
+<table>
+  <thead>
+    <tr><th>Control</th><th>Source</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>AI baseline (matched)</td><td>GPT-5.x literary-fiction story, ~1,000 words, Norwegian fisherman vignette. Continued by GPT under same procedure.</td><td>Provides in-LLM-distribution reference for distance metrics.</td></tr>
+    <tr><td>Human baseline (negative)</td><td>Yan Lianke, "Chinese Psyche." <em>Granta</em> 2026 memoir essay, ~2,010 words.</td><td>Post-training-cutoff. Author has documented online footprint. <strong>Register caveat:</strong> memoir, not literary fiction.</td></tr>
+    <tr><td>Rejected control</td><td>Conrad, <em>Heart of Darkness</em> opening.</td><td>Rejected: gpt2 reproduced text fragments from training memory under mirror procedure.</td></tr>
+  </tbody>
+</table>
+
+<h2 id="caveats">Caveats</h2>
+
+<ol>
+  <li><strong>Single-family mirror panel.</strong> Two LLM families plus a proxy binoculars run. Cannot rule out generation by an untested family.</li>
+  <li><strong>Window noise at low K.</strong> K=1 was striking but did not generalize. K≥4 is the load-bearing threshold per SPEC.</li>
+  <li><strong>Topical scaffolding leakage in Design 1.</strong> Lexical metrics inflated by proper-noun and setting overlap.</li>
+  <li><strong>Human control register confound.</strong> Memoir control rather than literary-fiction control. Strongest unresolved methodological gap.</li>
+  <li><strong>GPT continuation sbert compression.</strong> GPT-family continuations produce high sentence-transformer cosine to a wide input range. Qualitative beat-match at ctx=1500 is more diagnostic than the sbert number alone.</li>
+  <li><strong>No AI literary-fiction control on the expanding-context curve.</strong> Cannot distinguish "GPT-family-shaped" from "in-LLM-distribution-shaped" more generally on this signal.</li>
+  <li><strong>Model identity drift.</strong> Models pinned to operator's account-routed versions at run time (above). Future model versions not reproducible.</li>
+  <li><strong>Single-shot, not a trained classifier.</strong> Will not match Pangram's accuracy. Trades raw discrimination for interpretability.</li>
+</ol>
+
+<h2 id="replication">Replication</h2>
+
+<ul>
+  <li><strong>Framework:</strong> <a href="https://github.com/anotherpanacea-eng/setec-voiceprint">github.com/anotherpanacea-eng/setec-voiceprint</a></li>
+  <li><strong>Target text:</strong> Public at granta.com (linked above).</li>
+  <li><strong>Mirror outputs, control texts, and per-window data files:</strong> Available on request. Email <a href="mailto:anotherpanacea@gmail.com">anotherpanacea@gmail.com</a>.</li>
+  <li><strong>Procedure:</strong> Each mirror test is a fresh-context LLM session. Subagent isolation required: each session sees only its allotted context, never any other session's input or output.</li>
+</ul>
+
+<h2 id="provenance">Provenance</h2>
+
+<table>
+  <tbody>
+    <tr><th>Operator</th><td>Joshua Miller (anotherpanacea@gmail.com)</td></tr>
+    <tr><th>Framework</th><td>SETEC v1.90.2 (open-source, link above)</td></tr>
+    <tr><th>Run dates</th><td>18-19 May 2026</td></tr>
+    <tr><th>Models</th><td>GPT-5.x (OpenAI consumer subscription), Claude Opus 4.7 (Anthropic consumer subscription), gpt2 / distilgpt2 (HuggingFace, local CPU)</td></tr>
+    <tr><th>AI baseline</th><td>GPT-5.x literary-fiction generation, ~1,000 words</td></tr>
+    <tr><th>Human baseline</th><td>Yan Lianke, "Chinese Psyche," <em>Granta</em> 2026 memoir</td></tr>
+    <tr><th>Conflicts</th><td>Operator maintains SETEC. No commercial relationship with Pangram, Granta, or the Commonwealth Foundation. No prior relationship with Jamir Nazir.</td></tr>
+  </tbody>
+</table>
+
+<footer>
+  <p>Evidence pack published as a glass-box artifact. Designed to be audited, replicated, or contested. No verdict claim. Companion argument at <a href="https://anotherpanacea.substack.com">anotherpanacea.substack.com</a>.</p>
+  <p>Last updated: 19 May 2026.</p>
+</footer>
+
+</main>
+</body>
+</html>
