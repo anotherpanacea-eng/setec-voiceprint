@@ -563,6 +563,93 @@ class SurprisalBackend:
         ]
         return all_surprisals_bits, top_k
 
+    def score_text_with_distributions(
+        self, text: str,
+    ) -> tuple[list[float], list[list[float]], list[int]]:
+        """Per-token surprisal series + full log-prob distributions.
+
+        Returns ``(surprisal_bits, log_probs_nats, token_ids)`` where:
+
+        - ``surprisal_bits`` matches ``score_text(text)`` exactly
+          (per-token surprisal in bits, length ``len(tokens) - 1``).
+        - ``log_probs_nats`` is a list of vocab-sized log-probability
+          vectors (in **nats**, not bits — downstream cross-entropy
+          math works directly with natural log probabilities).
+          ``log_probs_nats[i][v]`` is ``log P(token_v | prefix at i)``.
+          Length matches ``surprisal_bits``.
+        - ``token_ids`` is the full tokenized sequence (length
+          ``len(surprisal_bits) + 1``); callers can compare two
+          backends' token_ids to verify tokenization compatibility
+          before computing cross-perplexity.
+
+        Used by ``binoculars_audit.py`` v2 for true Hans et al. 2024
+        Binoculars cross-perplexity, which requires the FULL
+        distribution at each token position, not just the
+        actual-token surprisal that ``score_text`` exposes.
+
+        Memory considerations: returns ``(num_tokens-1) * vocab_size``
+        floats per chunk. For a 200-token continuation against a
+        50k-vocab model that's ~10M floats / ~40MB in fp32. Tractable
+        for the short continuations Binoculars audits target (the
+        framework's continuation default is 150 words ≈ 200-300
+        tokens); operators scoring long texts should expect proportional
+        memory use. Empty / single-token inputs return ``([], [], [])``.
+        """
+        if not text.strip():
+            return [], [], []
+        model, tokenizer = self._load()
+        import torch  # type: ignore
+        encoded = tokenizer(text, return_tensors="pt")
+        input_ids = encoded["input_ids"]
+        if input_ids.shape[1] < 2:
+            return [], [], [int(input_ids[0, 0].item())] if input_ids.shape[1] == 1 else []
+        if self._device is not None:
+            input_ids = input_ids.to(self._device)
+
+        cfg = model.config
+        max_len = (
+            getattr(cfg, "max_position_embeddings", None)
+            or getattr(cfg, "n_positions", None)
+            or getattr(cfg, "n_ctx", None)
+            or 1024
+        )
+
+        import math
+        log2e = 1.0 / math.log(2.0)
+        all_surprisals_bits: list[float] = []
+        all_log_probs_nats: list[list[float]] = []
+        full_token_ids: list[int] = input_ids[0].tolist()
+
+        total_len = input_ids.shape[1]
+        chunk_starts = (
+            [0] if total_len <= max_len
+            else list(range(0, total_len, max_len))
+        )
+        for start in chunk_starts:
+            end = min(start + max_len, total_len)
+            chunk_ids = input_ids[:, start:end]
+            if chunk_ids.shape[1] < 2:
+                continue
+            with torch.no_grad():
+                outputs = model(chunk_ids)
+            logits = outputs.logits  # (1, n_chunk, vocab)
+            log_probs_nats = torch.log_softmax(
+                logits[0, :-1, :].float(), dim=-1,
+            )  # (n_chunk-1, vocab)
+            next_tokens = chunk_ids[0, 1:]
+            surprisals_nats = -log_probs_nats.gather(
+                -1, next_tokens.unsqueeze(-1),
+            ).squeeze(-1)
+            all_surprisals_bits.extend(
+                (surprisals_nats * log2e).tolist()
+            )
+            # Materialize the full per-position log-prob distributions
+            # as plain Python lists so downstream code (binoculars
+            # cross-perplexity) doesn't need torch.
+            all_log_probs_nats.extend(log_probs_nats.tolist())
+
+        return all_surprisals_bits, all_log_probs_nats, full_token_ids
+
     def score_texts(
         self,
         texts: list[str],
@@ -749,6 +836,68 @@ class SurprisalBackend:
             "method": "transformers-causal-lm",
             "dtype_requested": self.dtype,
             "dtype_loaded": self._resolved_dtype_label,
+        }
+
+    def tokenizer_identity(self) -> dict[str, Any]:
+        """Fingerprint for tokenizer-compatibility checks.
+
+        Used by ``binoculars_audit.py`` v2 to gate true cross-perplexity
+        computation: the Hans et al. 2024 Binoculars formula sums
+        ``exp(P_observer(v|ctx)) * log P_scorer(v|ctx)`` over ALL
+        vocab indices v, so the two tokenizers must share the same
+        token→id mapping (not just the same class + size) — otherwise
+        the audit would compute a plausible-looking B over misaligned
+        vocabularies with no caveat.
+
+        ``vocab_sha256`` is the load-bearing field: a deterministic
+        hash of the full ``get_vocab()`` token→id table. Two backends
+        with the same hash share an aligned vocabulary regardless of
+        ``model_name_or_path`` (this lets the canonical Hans et al.
+        Falcon base / Falcon instruct pair pass while still rejecting
+        same-class same-size models with different vocab tables).
+
+        ``tokenizer_class`` and ``vocab_size`` are surfaced for
+        diagnostic / provenance display but not load-bearing for
+        cross-perplexity — they can match while ``vocab_sha256``
+        differs, and vice versa.
+        """
+        import hashlib
+        import json
+        _, tokenizer = self._load()
+        vocab_size = getattr(tokenizer, "vocab_size", None)
+        if vocab_size is None:
+            try:
+                vocab_size = len(tokenizer)
+            except (TypeError, AttributeError):
+                vocab_size = None
+
+        # Hash the token→id table deterministically so two tokenizers
+        # with identical vocabularies (e.g., Falcon base + Falcon
+        # instruct) produce the same fingerprint regardless of where
+        # they were loaded from. JSON with sort_keys=True is the
+        # standard deterministic serialization in this codebase.
+        vocab_sha256: str | None = None
+        try:
+            vocab_dict = tokenizer.get_vocab()
+            vocab_bytes = json.dumps(
+                vocab_dict, sort_keys=True, ensure_ascii=False,
+            ).encode("utf-8")
+            vocab_sha256 = hashlib.sha256(vocab_bytes).hexdigest()
+        except (AttributeError, TypeError, ValueError):
+            # Tokenizer without get_vocab (very unusual) — leave None.
+            # _tokenizers_compatible treats None-vs-None as a fingerprint
+            # mismatch (returns False), erring toward the v1 PR
+            # fallback rather than silently computing cross-perplexity
+            # over an un-fingerprinted vocab.
+            pass
+
+        return {
+            "tokenizer_class": tokenizer.__class__.__name__,
+            "vocab_size": vocab_size,
+            "vocab_sha256": vocab_sha256,
+            "model_name_or_path": getattr(
+                tokenizer, "name_or_path", None,
+            ),
         }
 
 

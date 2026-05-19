@@ -518,3 +518,500 @@ def test_cli_end_to_end_with_stubbed_backend(monkeypatch, tmp_path):
     assert envelope["task_surface"] == "binoculars_discrimination"
     assert envelope["results"]["perplexity_ratio"] == 0.5
     assert envelope["results"]["verdict_band"] == "ai_likely"
+
+
+# ============================================================
+# v2 cross-perplexity: helper math
+# ============================================================
+
+
+def test_cross_perplexity_log_nats_identical_distributions():
+    """When scorer and observer produce the SAME distribution at each
+    position, log X-PPL equals the entropy of that distribution. For
+    a uniform distribution over V=3, entropy = log(3)."""
+    import math
+    uniform = [-math.log(3.0)] * 3
+    scorer = [uniform, uniform]
+    observer = [uniform, uniform]
+    log_xppl = bin_audit._cross_perplexity_log_nats(scorer, observer)
+    assert log_xppl is not None
+    assert abs(log_xppl - math.log(3.0)) < 1e-6
+
+
+def test_cross_perplexity_log_nats_empty_returns_none():
+    assert bin_audit._cross_perplexity_log_nats([], []) is None
+
+
+def test_cross_perplexity_log_nats_length_mismatch_returns_none():
+    s = [[-1.0, -2.0, -3.0]]
+    o = [[-1.0, -2.0, -3.0], [-1.5, -2.0, -2.5]]
+    assert bin_audit._cross_perplexity_log_nats(s, o) is None
+
+
+def test_cross_perplexity_log_nats_vocab_size_mismatch_returns_none():
+    s = [[-1.0, -2.0]]
+    o = [[-1.0, -2.0, -3.0]]
+    assert bin_audit._cross_perplexity_log_nats(s, o) is None
+
+
+def test_tokenizers_compatible_matches_identical_fingerprints():
+    class A:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "X", "vocab_size": 50000,
+                "vocab_sha256": "deadbeef" * 8,
+                "model_name_or_path": "p",
+            }
+    class B:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "X", "vocab_size": 50000,
+                "vocab_sha256": "deadbeef" * 8,
+                "model_name_or_path": "p",
+            }
+    assert bin_audit._tokenizers_compatible(A(), B()) is True
+
+
+def test_tokenizers_compatible_rejects_different_class():
+    class A:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "GPT2Tokenizer", "vocab_size": 50000,
+                "vocab_sha256": "aaaa" * 16,
+                "model_name_or_path": "gpt2",
+            }
+    class B:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "LlamaTokenizer", "vocab_size": 32000,
+                "vocab_sha256": "bbbb" * 16,
+                "model_name_or_path": "tinyllama",
+            }
+    assert bin_audit._tokenizers_compatible(A(), B()) is False
+
+
+def test_tokenizers_compatible_returns_false_when_method_missing():
+    """A stub backend without tokenizer_identity falls back to
+    incompatible rather than blowing up the audit."""
+    class A:
+        pass
+    class B:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "X", "vocab_size": 1,
+                "vocab_sha256": "aa" * 32,
+                "model_name_or_path": None,
+            }
+    assert bin_audit._tokenizers_compatible(A(), B()) is False
+
+
+def test_tokenizers_compatible_ignores_model_name_or_path():
+    """Regression test for the first PR #114 review (Falcon pair fix).
+
+    The canonical Hans et al. 2024 Binoculars pair is Falcon-7b +
+    Falcon-7b-instruct: same tokenizer class + vocab_size + SAME
+    vocab_sha256 (both load the same underlying tokenizer file),
+    but DIFFERENT model_name_or_path. The upstream fingerprint check
+    must not require name_or_path equality, or v2 cross-perplexity
+    silently falls back to v1 PR for the main intended use case."""
+    FALCON_VOCAB_SHA = "feed" * 16  # both Falcon variants share this hash
+    class FalconBase:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "FalconTokenizer",
+                "vocab_size": 65024,
+                "vocab_sha256": FALCON_VOCAB_SHA,
+                "model_name_or_path": "tiiuae/falcon-7b",
+            }
+    class FalconInstruct:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "FalconTokenizer",
+                "vocab_size": 65024,
+                "vocab_sha256": FALCON_VOCAB_SHA,
+                "model_name_or_path": "tiiuae/falcon-7b-instruct",
+            }
+    assert bin_audit._tokenizers_compatible(FalconBase(), FalconInstruct()) is True
+
+
+def test_tokenizers_compatible_rejects_same_class_size_but_different_vocab_hash():
+    """Regression test for the second PR #114 review (vocab-alignment).
+
+    Two tokenizers can have the same class + vocab_size and produce
+    identical token-id sequences for ONE particular input, but still
+    have different token→id tables for the rest of the vocabulary.
+    Cross-perplexity sums over ALL vocab indices — if id N decodes
+    to "foo" in one tokenizer and "bar" in the other, the audit
+    computes a meaningless number with no caveat. The compat check
+    must require the full vocab hash to match, not just class +
+    size. Reviewer's canonical case: two HF tokenizers with the same
+    class + size but a different token→id mapping."""
+    class TokA:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "Tokenizer",
+                "vocab_size": 50000,
+                "vocab_sha256": "aa" * 32,
+                "model_name_or_path": "model_a",
+            }
+    class TokB:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "Tokenizer",
+                "vocab_size": 50000,
+                "vocab_sha256": "bb" * 32,  # different table
+                "model_name_or_path": "model_b",
+            }
+    assert bin_audit._tokenizers_compatible(TokA(), TokB()) is False
+
+
+def test_tokenizers_compatible_rejects_missing_vocab_sha256():
+    """``vocab_sha256 = None`` (tokenizer without get_vocab(), e.g., a
+    stub that hasn't been updated) falls back to incompatible. We'd
+    rather compute the v1 PR ratio than silently sum cross-entropy
+    over an un-fingerprinted vocab."""
+    class WithHash:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "X", "vocab_size": 100,
+                "vocab_sha256": "cc" * 32,
+                "model_name_or_path": "x",
+            }
+    class WithoutHash:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "X", "vocab_size": 100,
+                "vocab_sha256": None,
+                "model_name_or_path": "y",
+            }
+    assert bin_audit._tokenizers_compatible(WithHash(), WithoutHash()) is False
+    assert bin_audit._tokenizers_compatible(WithoutHash(), WithHash()) is False
+    # Both missing also rejects (don't paper over None==None).
+    assert bin_audit._tokenizers_compatible(WithoutHash(), WithoutHash()) is False
+
+
+# ============================================================
+# v2 cross-perplexity: audit() integration
+# ============================================================
+
+
+class V2StubBackend:
+    """Stub backend exposing both score_text (v1) and
+    score_text_with_distributions (v2), plus tokenizer_identity for
+    compat checks. Distributions are uniform over vocab_size so
+    cross-perplexity math is analytically tractable in tests."""
+
+    def __init__(
+        self,
+        model_id: str,
+        *,
+        tokenizer_class: str = "StubTokenizer",
+        vocab_size: int = 5,
+        vocab_sha256: str | None = None,
+        token_ids: list[int] | None = None,
+        surprisal_value_bits: float = 2.0,
+    ):
+        self.model_id = model_id
+        self.revision = None
+        self._alias = model_id
+        self._tokenizer_class = tokenizer_class
+        self._vocab_size = vocab_size
+        # Default: derive deterministically from (class, size) so two
+        # stubs with the same (class, size) get the same hash (test
+        # callers' intent), and different (class, size) pairs get
+        # different hashes. Tests can override explicitly to simulate
+        # the same-class-same-size-different-vocab-table case.
+        import hashlib as _h
+        self._vocab_sha256 = (
+            vocab_sha256
+            if vocab_sha256 is not None
+            else _h.sha256(
+                f"{tokenizer_class}|{vocab_size}".encode("utf-8"),
+            ).hexdigest()
+        )
+        self._token_ids = token_ids or list(range(101))
+        self._surprisal_value_bits = surprisal_value_bits
+
+    def identifier_block(self):
+        return {
+            "id": self.model_id, "revision": None, "alias": self._alias,
+            "deterministic_mode": True, "method": "stub",
+            "dtype_requested": "auto", "dtype_loaded": "fp32",
+        }
+
+    def tokenizer_identity(self):
+        return {
+            "tokenizer_class": self._tokenizer_class,
+            "vocab_size": self._vocab_size,
+            "vocab_sha256": self._vocab_sha256,
+            "model_name_or_path": self.model_id,
+        }
+
+    def score_text(self, text, *, return_top_k=0):
+        return [self._surprisal_value_bits] * (len(self._token_ids) - 1)
+
+    def score_text_with_distributions(self, text):
+        import math
+        uniform = [-math.log(self._vocab_size)] * self._vocab_size
+        L = len(self._token_ids) - 1
+        return (
+            [self._surprisal_value_bits] * L,
+            [uniform[:] for _ in range(L)],
+            list(self._token_ids),
+        )
+
+
+def test_audit_auto_uses_v2_when_tokenizers_compatible():
+    scorer = V2StubBackend("scorer", tokenizer_class="X", vocab_size=5)
+    observer = V2StubBackend("observer", tokenizer_class="X", vocab_size=5)
+    # Same tokenizer_class + vocab_size + model_name_or_path required.
+    observer._tokenizer_class = "X"
+    observer._vocab_size = 5
+    # But model_name_or_path differs (model_id) — so compatible check
+    # also needs same model_name_or_path. For the auto test we want
+    # compatibility, so override:
+    scorer.model_id = "shared"
+    observer.model_id = "shared"
+    result = bin_audit.audit("text", scorer=scorer, observer=observer)
+    assert result["score_version"] == bin_audit.SCORE_VERSION_V2
+    assert result["tokenizers_compatible"] is True
+    assert result["cross_perplexity_log_nats"] is not None
+    assert result["scorer_log_perplexity_nats"] is not None
+    assert result["perplexity_ratio"] is not None
+
+
+def test_audit_auto_falls_back_to_v1_when_tokenizers_differ():
+    scorer = V2StubBackend("scorer", tokenizer_class="GPT2", vocab_size=50000)
+    observer = V2StubBackend("observer", tokenizer_class="LLaMA", vocab_size=32000)
+    result = bin_audit.audit("text", scorer=scorer, observer=observer)
+    assert result["score_version"] == bin_audit.SCORE_VERSION_V1
+    assert result["tokenizers_compatible"] is False
+    assert result["cross_perplexity_log_nats"] is None
+
+
+def test_audit_auto_falls_back_when_same_class_size_but_different_vocab_hash():
+    """End-to-end regression for the vocab-alignment fix. Two stub
+    backends with the SAME tokenizer_class + vocab_size but DIFFERENT
+    vocab_sha256 must NOT be considered compatible; cross-perplexity
+    over misaligned vocabularies would produce a meaningless B score.
+    The audit must fall back to v1 PR with tokenizers_compatible=False."""
+    scorer = V2StubBackend(
+        "scorer", tokenizer_class="X", vocab_size=5,
+        vocab_sha256="11" * 32,
+    )
+    observer = V2StubBackend(
+        "observer", tokenizer_class="X", vocab_size=5,
+        vocab_sha256="22" * 32,  # different table
+    )
+    result = bin_audit.audit("text", scorer=scorer, observer=observer)
+    assert result["score_version"] == bin_audit.SCORE_VERSION_V1
+    assert result["tokenizers_compatible"] is False
+    assert result["cross_perplexity_log_nats"] is None
+
+
+def test_audit_v2_requested_with_incompatible_tokenizers_falls_back():
+    scorer = V2StubBackend("scorer", tokenizer_class="GPT2", vocab_size=50000)
+    observer = V2StubBackend("observer", tokenizer_class="LLaMA", vocab_size=32000)
+    result = bin_audit.audit(
+        "text", scorer=scorer, observer=observer,
+        use_cross_perplexity=True,
+    )
+    assert result["score_version"] == bin_audit.SCORE_VERSION_V1
+    assert any("incompatible" in c for c in result["caveats"])
+
+
+def test_audit_v1_forced_skips_cross_perplexity_even_when_compatible():
+    """use_cross_perplexity=False forces v1 even with matched
+    tokenizers. Preserves legacy v1 behavior."""
+    scorer = V2StubBackend("scorer", tokenizer_class="X", vocab_size=5)
+    observer = V2StubBackend("observer", tokenizer_class="X", vocab_size=5)
+    scorer.model_id = "shared"
+    observer.model_id = "shared"
+    result = bin_audit.audit(
+        "text", scorer=scorer, observer=observer,
+        use_cross_perplexity=False,
+    )
+    assert result["score_version"] == bin_audit.SCORE_VERSION_V1
+    assert result["cross_perplexity_log_nats"] is None
+
+
+def test_audit_v2_score_when_tokens_align_and_distributions_uniform():
+    """For uniform vocab=5 distributions and 2.0-bit surprisals:
+    log_PPL_scorer = 2.0 * ln(2) nats; log_X-PPL = log(5) nats;
+    B = (2.0 * ln(2)) / log(5)."""
+    import math
+    scorer = V2StubBackend("scorer", tokenizer_class="X", vocab_size=5)
+    observer = V2StubBackend("observer", tokenizer_class="X", vocab_size=5)
+    scorer.model_id = "shared"
+    observer.model_id = "shared"
+    result = bin_audit.audit("text", scorer=scorer, observer=observer)
+    expected = (2.0 * math.log(2.0)) / math.log(5.0)
+    assert abs(result["perplexity_ratio"] - expected) < 1e-6
+
+
+def test_audit_v2_token_id_mismatch_falls_back_to_v1():
+    """Even with matching tokenizer fingerprints, if THIS input
+    produces different token-id sequences on the two backends the
+    audit must fall back to v1."""
+    scorer = V2StubBackend(
+        "shared", tokenizer_class="X", vocab_size=5,
+        token_ids=list(range(101)),
+    )
+    observer = V2StubBackend(
+        "shared", tokenizer_class="X", vocab_size=5,
+        token_ids=list(range(1, 102)),
+    )
+    result = bin_audit.audit("text", scorer=scorer, observer=observer)
+    assert result["score_version"] == bin_audit.SCORE_VERSION_V1
+    assert any("token_id_sequences_differ" in c for c in result["caveats"])
+
+
+def test_audit_score_fn_injection_forces_v1():
+    """score_fn (test-only v1 stub) bypasses v2 even when tokenizers
+    match — the stub doesn't provide distributions."""
+    scorer = V2StubBackend("scorer", tokenizer_class="X", vocab_size=5)
+    observer = V2StubBackend("observer", tokenizer_class="X", vocab_size=5)
+    scorer.model_id = "shared"
+    observer.model_id = "shared"
+
+    def score_fn(b, t):
+        return [3.0] * 100
+
+    result = bin_audit.audit(
+        "text", scorer=scorer, observer=observer,
+        score_fn=score_fn,
+    )
+    assert result["score_version"] == bin_audit.SCORE_VERSION_V1
+
+
+# ============================================================
+# v2 envelope + markdown
+# ============================================================
+
+
+def test_v2_envelope_includes_cross_perplexity_fields():
+    scorer = V2StubBackend("scorer", tokenizer_class="X", vocab_size=5)
+    observer = V2StubBackend("observer", tokenizer_class="X", vocab_size=5)
+    scorer.model_id = "shared"
+    observer.model_id = "shared"
+    results = bin_audit.audit("text", scorer=scorer, observer=observer)
+    envelope = bin_audit.compose_envelope(
+        target_path=Path("/tmp/x"), target_words=100, results=results,
+    )
+    assert envelope["results"]["score_version"] == bin_audit.SCORE_VERSION_V2
+    assert envelope["results"]["cross_perplexity_log_nats"] is not None
+    assert envelope["results"]["tokenizers_compatible"] is True
+
+
+def test_v2_markdown_renders_cross_perplexity_title_and_score():
+    scorer = V2StubBackend("scorer", tokenizer_class="X", vocab_size=5)
+    observer = V2StubBackend("observer", tokenizer_class="X", vocab_size=5)
+    scorer.model_id = "shared"
+    observer.model_id = "shared"
+    results = bin_audit.audit("text", scorer=scorer, observer=observer)
+    envelope = bin_audit.compose_envelope(
+        target_path=Path("/tmp/x"), target_words=100, results=results,
+    )
+    md = bin_audit.render_markdown(envelope)
+    assert "Cross-Perplexity v2" in md
+    assert "Binoculars score B" in md
+    assert "Tokenizers compatible:** True" in md
+
+
+def test_v1_markdown_unchanged_for_legacy_score_version():
+    scorer = V2StubBackend("scorer", tokenizer_class="A", vocab_size=5)
+    observer = V2StubBackend("observer", tokenizer_class="B", vocab_size=5)
+    results = bin_audit.audit("text", scorer=scorer, observer=observer)
+    envelope = bin_audit.compose_envelope(
+        target_path=Path("/tmp/x"), target_words=100, results=results,
+    )
+    md = bin_audit.render_markdown(envelope)
+    assert "Perplexity Ratio v1" in md
+    assert "Perplexity ratio (scorer/observer):" in md
+
+
+# ============================================================
+# CLI flag
+# ============================================================
+
+
+def test_cli_score_version_auto_picks_v2_when_compatible(monkeypatch, tmp_path):
+    target = tmp_path / "target.txt"
+    target.write_text("the cat sat on the mat " * 50)
+
+    def stub_init(self, *, model_id, revision=None, dtype="auto"):
+        self.model_id = model_id
+        self.revision = revision
+        self._alias = model_id
+        self.deterministic = True
+        self.dtype = dtype
+        self._resolved_dtype_label = "fp32"
+
+    def stub_tok_id(self):
+        return {
+            "tokenizer_class": "X", "vocab_size": 5,
+            "vocab_sha256": "ee" * 32,
+            "model_name_or_path": "shared",
+        }
+
+    import math
+    def stub_swd(self, text):
+        uniform = [-math.log(5.0)] * 5
+        L = 100
+        return ([2.0] * L, [uniform[:] for _ in range(L)], list(range(101)))
+
+    def stub_score_text(self, text, *, return_top_k=0):
+        return [2.0] * 100
+
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "__init__", stub_init)
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "tokenizer_identity", stub_tok_id)
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "score_text_with_distributions", stub_swd)
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "score_text", stub_score_text)
+
+    out_json = tmp_path / "result.json"
+    rc = bin_audit.main([
+        str(target),
+        "--out", str(out_json),
+        "--out-md", str(tmp_path / "result.md"),
+    ])
+    assert rc == 0
+    envelope = json.loads(out_json.read_text())
+    assert envelope["results"]["score_version"] == bin_audit.SCORE_VERSION_V2
+
+
+def test_cli_score_version_v1_forces_perplexity_ratio(monkeypatch, tmp_path):
+    target = tmp_path / "target.txt"
+    target.write_text("the cat sat on the mat " * 50)
+
+    def stub_init(self, *, model_id, revision=None, dtype="auto"):
+        self.model_id = model_id
+        self.revision = revision
+        self._alias = model_id
+        self.deterministic = True
+        self.dtype = dtype
+        self._resolved_dtype_label = "fp32"
+
+    def stub_tok_id(self):
+        return {
+            "tokenizer_class": "X", "vocab_size": 5,
+            "vocab_sha256": "ee" * 32,
+            "model_name_or_path": "shared",
+        }
+
+    def stub_score_text(self, text, *, return_top_k=0):
+        return [2.0] * 100
+
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "__init__", stub_init)
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "tokenizer_identity", stub_tok_id)
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "score_text", stub_score_text)
+
+    out_json = tmp_path / "result.json"
+    rc = bin_audit.main([
+        str(target),
+        "--out", str(out_json),
+        "--out-md", str(tmp_path / "result.md"),
+        "--score-version", "v1",
+    ])
+    assert rc == 0
+    envelope = json.loads(out_json.read_text())
+    assert envelope["results"]["score_version"] == bin_audit.SCORE_VERSION_V1
