@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """dependency_check.py — survey the SETEC framework's runtime deps.
 
-Walks the four dependency tiers SETEC uses and reports what's
+Walks the five dependency tiers SETEC uses and reports what's
 present, what's missing, and how to install it. Designed for the
 `setup` skill to invoke before the first real task: a fresh
 SETEC install often runs into "module not found" deep inside a
@@ -26,10 +26,26 @@ Tiers:
     `requirements-calibration.txt`. Includes huggingface_hub,
     pyarrow.
 
+  * **Surprisal (Tier 4 + Binoculars).** Required for Tier 4
+    surprisal signals in ``variance_audit.py`` + ``surprisal_audit.py``
+    and for the Binoculars two-model perplexity audit
+    (``binoculars_audit.py`` + ``binoculars_calibrate.py``). Lives in
+    `requirements-surprisal.txt`. Includes transformers, tokenizers,
+    torch. Substantial install footprint (~1.5-2 GB with torch's
+    CUDA wheels); the setup skill should surface the size cost
+    before installing. The external-mirror tools under
+    ``external_mirror/`` do NOT live on this stack — their default
+    sbert distance metric uses ``sentence-transformers`` (from the
+    optional tier; torch comes in transitively), and the v2 metric
+    stack uses sklearn / spaCy (from the core tier) plus stdlib.
+
   * **Optional power-ups.** sentence-transformers (Tier 3 cohesion
-    via SBERT instead of TF-IDF), textstat (better FKGL), nltk
-    (Brown corpus for idiolect_detector). All commented in
-    requirements.txt; install only on demand.
+    via SBERT instead of TF-IDF; AND the default sbert distance
+    path in ``external_mirror/compute_distances.py`` — required
+    for external-mirror's default metric, not optional there),
+    textstat (better FKGL), nltk (Brown corpus for
+    idiolect_detector). All commented in requirements.txt;
+    install only on demand.
 
 Usage:
 
@@ -334,16 +350,75 @@ CALIBRATION_PYTHON_DEPS = [
     ),
 ]
 
-# Tier 4: optional power-ups across all tiers.
+# Tier 4 + Binoculars: shared transformers + torch stack. Tier 4
+# surprisal (variance_audit.py --tier4 + surprisal_audit.py) loads
+# causal LMs through surprisal_backend.py; Binoculars uses the same
+# backend for its scorer + observer pair (binoculars_audit.py +
+# binoculars_calibrate.py). Substantial install footprint (~1.5-2 GB
+# with torch's CUDA wheels on most platforms); the setup skill
+# surfaces the size cost before installing.
+#
+# The external-mirror tools (external_mirror/) deliberately do NOT
+# live on this stack — their default sbert distance metric uses
+# sentence-transformers (from the optional tier; torch comes in
+# transitively), and the v2 metric stack uses sklearn + spaCy from
+# the core tier. Operators installing this tier for Binoculars only
+# do not get external-mirror's default sbert metric; that needs
+# sentence-transformers from the optional tier.
+SURPRISAL_PYTHON_DEPS = [
+    PythonDep(
+        name="transformers",
+        import_name="transformers",
+        pip_name="transformers",
+        summary=(
+            "HuggingFace transformers — loads causal LM scorers for "
+            "Tier 4 surprisal (variance_audit.py --tier4, "
+            "surprisal_audit.py) and the Binoculars scorer + observer "
+            "pair (binoculars_audit.py)."
+        ),
+    ),
+    PythonDep(
+        name="tokenizers",
+        import_name="tokenizers",
+        pip_name="tokenizers",
+        summary=(
+            "HuggingFace tokenizers — usually pulled in by transformers, "
+            "but pinned here so the version is explicit. The Binoculars "
+            "v2 cross-perplexity path requires the scorer + observer to "
+            "share a tokenizer; tokenizer-compat detection lives in "
+            "binoculars_audit.py."
+        ),
+    ),
+    PythonDep(
+        name="torch",
+        import_name="torch",
+        pip_name="torch",
+        summary=(
+            "PyTorch — backend for transformers. CPU wheels suffice "
+            "for the framework's default tinyllama + gpt2 pair. CUDA / "
+            "ROCm / MPS wheels speed up Tier 4 and Binoculars on a "
+            "discrete GPU but aren't required."
+        ),
+    ),
+]
+
+# Tier 5: optional power-ups across all tiers.
 OPTIONAL_PYTHON_DEPS = [
     PythonDep(
         name="sentence-transformers",
         import_name="sentence_transformers",
         pip_name="sentence-transformers",
         summary=(
-            "Calibrated sentence embeddings for Tier 3 cohesion (SBERT). "
-            "Heavier than scikit-learn TF-IDF but produces cosines "
-            "comparable to literature reference values."
+            "Calibrated sentence embeddings. Two consumers: (a) Tier 3 "
+            "cohesion (SBERT instead of scikit-learn TF-IDF; cosines "
+            "comparable to literature reference values; this is "
+            "OPTIONAL for Tier 3 — TF-IDF works as a fallback). (b) the "
+            "default sbert distance metric in "
+            "external_mirror/compute_distances.py (Surface 5; "
+            "REQUIRED for external-mirror's default metric — the v2 "
+            "metric stack of TF-IDF + POS-bigram + word-set Jaccard "
+            "can run without sentence-transformers, but the default "
+            "sbert path cannot). Pulls in torch (~2 GB)."
         ),
         optional_in_tier=True,
     ),
@@ -397,6 +472,18 @@ TIERS = {
         "label": "threshold calibration",
         "requirements_file": "requirements-calibration.txt",
         "python_deps": CALIBRATION_PYTHON_DEPS,
+        "spacy_models": [],
+        "system_deps": [],
+    },
+    "surprisal": {
+        "label": (
+            "Tier 4 surprisal + Binoculars (Surface 5). "
+            "external-mirror's default sbert metric needs "
+            "sentence-transformers from the optional tier — "
+            "not this one."
+        ),
+        "requirements_file": "requirements-surprisal.txt",
+        "python_deps": SURPRISAL_PYTHON_DEPS,
         "spacy_models": [],
         "system_deps": [],
     },

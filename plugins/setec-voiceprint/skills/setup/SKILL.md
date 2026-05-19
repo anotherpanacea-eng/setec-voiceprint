@@ -5,18 +5,21 @@ description: >
   has just installed the plugin, asks about "setting up SETEC,"
   reports a "module not found" error from a SETEC script, asks "what
   does this plugin need to run," asks how to install spaCy / pypdf /
-  ocrmypdf for SETEC, asks why a feature isn't working, or asks for
-  install commands. Also triggers on "missing dependency,"
-  "ImportError" from a setec-voiceprint script, "first-time setup,"
-  "is everything installed," or "do I need anything else for SETEC."
-version: 1.0.0
+  ocrmypdf / transformers / torch for SETEC, asks why a feature isn't
+  working, or asks for install commands. Also triggers on "missing
+  dependency," "ImportError" from a setec-voiceprint script,
+  "first-time setup," "is everything installed," "do I need anything
+  else for SETEC," "Tier 4 surprisal," "Binoculars," "external mirror,"
+  or any question about installing dependencies for Surface 5
+  (discrimination evidence).
+version: 1.1.0
 ---
 
 # SETEC Setup Skill
 
-This skill surveys the user's environment for the four SETEC dependency tiers, reports what's installed and what's missing, asks for permission, and runs the installs the user authorizes. The goal is to catch "module not found" errors up front rather than mid-pipeline.
+This skill surveys the user's environment for the five SETEC dependency tiers, reports what's installed and what's missing, asks for permission, and runs the installs the user authorizes. The goal is to catch "module not found" errors up front rather than mid-pipeline.
 
-The framework is opt-in by tier. A user running only smoothing-diagnosis doesn't need acquisition deps; a user running only acquisition doesn't need calibration deps. The skill identifies which tier(s) the user actually needs and proposes only those installs.
+The framework is opt-in by tier. A user running only smoothing-diagnosis doesn't need acquisition deps; a user running only Binoculars / Tier 4 surprisal doesn't need calibration deps. The skill identifies which tier(s) the user actually needs and proposes only those installs.
 
 ## What this skill licenses, and what it does not
 
@@ -29,11 +32,16 @@ The user owns the environment. The skill proposes; the user disposes.
 
 | Tier | When needed | Install command |
 |---|---|---|
-| **Core stylometry** | Every diagnostic script (variance audit, voice distance, manifest validation, etc.). spaCy + en_core_web_sm + scipy + scikit-learn + statsmodels. | `pip install -r plugins/setec-voiceprint/requirements.txt` then `python -m spacy download en_core_web_sm` |
-| **Acquisition** | The five impostor-pool acquisition scripts (`acquire_blog`, `acquire_blogger_takeout`, `acquire_magazine`, `pdf_inventory`, `pdf_extract`). requests + feedparser + bs4 + lxml + python-dateutil + pypdf. | `pip install -r plugins/setec-voiceprint/requirements-acquisition.txt` |
+| **Core stylometry** | Every diagnostic script (variance audit, voice distance, manifest validation, etc.). spaCy + en_core_web_sm + scipy + scikit-learn + statsmodels. | `pip install -r requirements.txt` then `python -m spacy download en_core_web_sm` |
+| **Acquisition** | The five impostor-pool acquisition scripts (`acquire_blog`, `acquire_blogger_takeout`, `acquire_magazine`, `pdf_inventory`, `pdf_extract`). requests + feedparser + bs4 + lxml + python-dateutil + pypdf. | `pip install -r requirements-acquisition.txt` |
 | **OCR (optional within acquisition)** | Only when extracting text from image-only / mixed PDFs. ocrmypdf + tesseract + ghostscript + qpdf. | `pip install ocrmypdf` plus the system-binary install for the user's platform (see below). |
-| **Calibration** | Only when re-deriving thresholds from EditLens / RAID / MAGE. huggingface_hub + pyarrow. | `pip install -r plugins/setec-voiceprint/requirements-calibration.txt` |
-| **Optional power-ups** | sentence-transformers (calibrated Tier 3 cohesion), textstat (better FKGL), nltk (Brown corpus for idiolect). All commented in `requirements.txt`. | `pip install <package>` per power-up. |
+| **Calibration** | Only when re-deriving thresholds from EditLens / RAID / MAGE. huggingface_hub + pyarrow. | `pip install -r requirements-calibration.txt` |
+| **Surprisal (Tier 4 + Binoculars)** | Tier 4 surprisal signals in `variance_audit.py --tier4` and `surprisal_audit.py`; the Binoculars two-model perplexity audit (`binoculars_audit.py`, `binoculars_calibrate.py`). transformers + tokenizers + torch. **~1.5–2 GB on disk** with torch's CUDA wheels — flag the cost before installing. Does **not** cover `external_mirror/` — see the External-mirror note below the table. | `pip install -r requirements-surprisal.txt` |
+| **Optional power-ups** | sentence-transformers (calibrated Tier 3 cohesion via SBERT AND the default sbert distance metric in `external_mirror/compute_distances.py` — required for external-mirror's default path, not optional there), textstat (better FKGL), nltk (Brown corpus for idiolect). All commented in `requirements.txt`. | `pip install <package>` per power-up. |
+
+All `requirements-*.txt` files live under `plugins/setec-voiceprint/`. Root-level symlinks (`requirements.txt`, `requirements-acquisition.txt`, `requirements-calibration.txt`, `requirements-surprisal.txt`) point at them so the commands above work from the repo root or from the plugin directory.
+
+**External-mirror dependency footprint.** `external_mirror/` is a Surface 5 tool but does NOT live on the Surprisal tier's transformers + torch stack. Its dependency profile depends on which distance metric the operator wants: (a) the default sbert metric needs **`sentence-transformers`** from the Optional power-ups row above — that's the load-bearing install for external-mirror's default behavior, and it pulls in torch transitively; (b) the v2 metric stack (TF-IDF + POS-bigram + word-set Jaccard) uses sklearn + spaCy from the **core tier** plus stdlib, no extra install needed. An operator who only wants the v2 metrics can run external-mirror with just the core tier; an operator who wants the default sbert behavior needs core + sentence-transformers. Routing external-mirror users at the Surprisal tier alone installs the wrong stack (transformers + tokenizers + torch, none of which compute_distances.py imports directly).
 
 ## Workflow
 
@@ -77,7 +85,10 @@ Read the user's request to identify which tier(s) they likely need:
 - "ModuleNotFoundError" mentioning `spacy`, `scipy`, `sklearn`, `statsmodels` → **core tier**.
 - "ModuleNotFoundError" mentioning `ocrmypdf` or "OCR not working" / "image-only PDF" → **OCR sub-tier**.
 - "ModuleNotFoundError" mentioning `huggingface_hub` / "calibrate thresholds" / "EditLens" → **calibration tier**.
+- "ModuleNotFoundError" mentioning `torch` / `transformers` / `tokenizers`, or any of: "Tier 4 surprisal," "Binoculars," "perplexity ratio," "cross-perplexity," "surprisal_audit," "binoculars_audit," `variance_audit.py --tier4` → **surprisal tier**.
+- "ModuleNotFoundError: sentence_transformers" from `compute_distances.py` / `embedding_backend.py` / external-mirror, or any of: "external mirror," "external-mirror," "compose_evidence_pack," "sbert distance," `external_mirror/workflow.py` → **optional tier** (sentence-transformers is required for external-mirror's default sbert metric, not just for Tier 3 cohesion).
 - "Tier 3 cohesion" / "SBERT" / "sentence-transformers" / "Brown corpus" → **optional tier**.
+- "discrimination evidence" alone is ambiguous between Binoculars (surprisal tier) and external-mirror (optional tier — sentence-transformers). Ask which tool the user is reaching for before proposing an install.
 
 When unsure, default to surveying **all tiers** — the script is fast.
 
@@ -129,8 +140,10 @@ Never bundle multiple tiers into one yes/no. Ask explicitly per tier the user mi
 > 2. Acquisition (6 packages — needed for impostor-pool acquisition) — install? **y/n**
 > 3. OCR (Python + 3 system binaries via Homebrew/apt/manual — only for image-only PDFs) — install? **y/n**
 > 4. Calibration (2 packages — only for re-deriving thresholds) — install? **y/n**
+> 5. Surprisal (Tier 4 + Binoculars) (3 packages — transformers + tokenizers + torch, **~1.5–2 GB on disk** — needed for Tier 4 surprisal and Binoculars; NOT external-mirror) — install? **y/n**
+> 6. Optional power-ups (sentence-transformers ~2 GB unlocks SBERT Tier 3 cohesion AND external-mirror's default sbert distance metric; textstat tightens FKGL; nltk adds Brown reference corpus) — install which? **per-power-up y/n**
 
-The user may say "yes to core only" or "yes to acquisition, skip OCR" — honor each granular choice.
+The user may say "yes to core only" or "yes to acquisition, skip OCR and Surprisal" — honor each granular choice. If the user wants external-mirror specifically, route them to the **Optional** ask above (sentence-transformers), not the Surprisal tier — those install different stacks. The Surprisal tier has the largest single install footprint; always name the disk cost when proposing it.
 
 ### Step 5: Run the installs the user authorized
 
@@ -194,6 +207,7 @@ Python deps install identically across platforms via `pip install`. The user mus
 - **Never run `pip install` without a tier-level user confirmation.** The user grants permission per tier; the skill executes only what's authorized.
 - **Never run `sudo apt-get install` without explicit per-command confirmation.** System-binary installs require root on Linux; the user must be aware.
 - **Never auto-install `sentence-transformers`** without surfacing the install size (~2 GB with torch dependencies). Always tell the user the size cost.
+- **Never auto-install the Surprisal tier** without surfacing the install size (~1.5–2 GB for transformers + tokenizers + torch). It's the largest install in the framework; the user must see the cost before approving.
 - **Never modify the user's `requirements.txt` or other repo files** during install. The skill's job is to run `pip install`, not to add packages to the user's project.
 - **Never claim a dep is "broken" when it's just missing.** A `ModuleNotFoundError` means the package isn't installed; it doesn't mean the framework's wiring is wrong.
 
@@ -201,7 +215,7 @@ Python deps install identically across platforms via `pip install`. The user mus
 
 ### Fresh install, "set up SETEC"
 
-Run `dependency_check.py` for all tiers. Report state. Default proposal: install core + acquisition (these cover 90% of typical use). Ask about calibration / OCR / optional separately.
+Run `dependency_check.py` for all tiers. Report state. Default proposal: install core + acquisition (these cover the four core diagnostic surfaces and the impostor-pool workflow). Ask about calibration / OCR / surprisal / optional separately. For Surprisal specifically, always name the ~1.5–2 GB install footprint when proposing it; users who only run the four prose-only surfaces don't need it.
 
 ### "I'm getting ModuleNotFoundError on `bs4`"
 
@@ -213,11 +227,31 @@ Run `dependency_check.py --tier ocr`. The Python side is `pip install ocrmypdf`.
 
 ### "Why is Tier 3 cohesion using TF-IDF instead of SBERT?"
 
-Run `dependency_check.py --tier optional`. Surface that `sentence-transformers` is missing; explain that it's optional (TF-IDF works as a fallback) and that installing pulls in `torch` (~2 GB). Let the user decide.
+Run `dependency_check.py --tier optional`. Surface that `sentence-transformers` is missing; explain that it's optional (TF-IDF works as a fallback) and that installing pulls in `torch` (~2 GB). Let the user decide. If the user is also running `external_mirror/`, note that the sbert distance path requires `sentence-transformers` too — installing it once unlocks both.
 
 ### "I'm running on Windows and OCR doesn't work"
 
 Likely cause: missing tesseract / ghostscript / qpdf system binaries. `dependency_check.py --tier ocr` confirms which are absent. Walk the user through chocolatey or manual install for the missing binaries.
+
+### "I want to run Binoculars or Tier 4 surprisal"
+
+Run `dependency_check.py --tier surprisal`. Surface the missing deps (transformers / tokenizers / torch); name the install footprint up front (**~1.5–2 GB**, dominated by torch's CUDA wheels). Propose `pip install -r requirements-surprisal.txt`. Ask before running. Note that GPU acceleration (CUDA / ROCm / MPS) is optional — CPU wheels suffice for the framework's default `tinyllama` + `gpt2` Binoculars pair; the GPU path matters when scoring large corpora through `variance_audit.py --tier4` or `calibration_survey.py --tier4`.
+
+### "I want to run external_mirror"
+
+This is a Surface 5 tool but does NOT live on the Surprisal tier — `compute_distances.py` does not import transformers, tokenizers, or torch directly. Two paths depending on which distance metric the operator wants:
+
+- **Default sbert metric** (the v1 path, ~0.71 sbert AUC at ctx=1500 on the published Granta validation target): requires `sentence-transformers` from the Optional tier. Run `dependency_check.py --tier optional`; if missing, propose `pip install sentence-transformers` and name the size (~2 GB; pulls in torch transitively). Ask before running.
+- **v2 metric stack only** (TF-IDF + POS-bigram cosine + POS-bigram Jaccard + word-set Jaccard, no sbert): runs on the **core tier alone** — `scikit-learn` + `spaCy` from `requirements.txt` plus stdlib. If the user has core installed, external-mirror's v2 metrics work without any additional install. The v2 metric stack is what landed in PR #113; it's the operator-side fallback for environments where the sbert install isn't acceptable.
+
+The reviewer-caught pitfall: routing an external-mirror user to `--tier surprisal` installs transformers + tokenizers + torch but NOT sentence-transformers, so the default sbert metric still fails. Always reach for the Optional tier (or v2-only) for external-mirror.
+
+### "ImportError: torch" from a Surface 5 script
+
+Two possible causes depending on which Surface 5 tool surfaced the error:
+
+- From `binoculars_audit.py` / `binoculars_calibrate.py` / `surprisal_audit.py` / `variance_audit.py --tier4`: missing the Surprisal tier. Run `dependency_check.py --tier surprisal`; `pip install -r requirements-surprisal.txt` resolves it. If the user is in a constrained environment (no GPU, low disk) and only needs Binoculars on small targets, the CPU-only torch wheel (~750 MB) is sufficient; the framework's surprisal_backend auto-resolves the right device at load time.
+- From `external_mirror/compute_distances.py` / `embedding_backend.py`: missing `sentence-transformers` (torch is transitive through it). Run `dependency_check.py --tier optional`; `pip install sentence-transformers` resolves it.
 
 ## What to do when the user says no
 
