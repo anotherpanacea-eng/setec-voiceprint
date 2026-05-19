@@ -585,6 +585,34 @@ def test_tokenizers_compatible_returns_false_when_method_missing():
     assert bin_audit._tokenizers_compatible(A(), B()) is False
 
 
+def test_tokenizers_compatible_ignores_model_name_or_path():
+    """Regression test for PR #114 review comment.
+
+    The canonical Hans et al. 2024 Binoculars pair is Falcon-7b +
+    Falcon-7b-instruct: same tokenizer class + vocab_size + same
+    token-id sequences for the same input, but DIFFERENT
+    model_name_or_path. The upstream fingerprint check must not
+    require name_or_path equality, or v2 cross-perplexity silently
+    falls back to v1 PR for the main intended use case. The per-input
+    token_ids comparison inside audit() provides the load-bearing
+    guarantee."""
+    class FalconBase:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "FalconTokenizer",
+                "vocab_size": 65024,
+                "model_name_or_path": "tiiuae/falcon-7b",
+            }
+    class FalconInstruct:
+        def tokenizer_identity(self):
+            return {
+                "tokenizer_class": "FalconTokenizer",
+                "vocab_size": 65024,
+                "model_name_or_path": "tiiuae/falcon-7b-instruct",
+            }
+    assert bin_audit._tokenizers_compatible(FalconBase(), FalconInstruct()) is True
+
+
 # ============================================================
 # v2 cross-perplexity: audit() integration
 # ============================================================

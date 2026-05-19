@@ -126,23 +126,29 @@ def _tokenizers_compatible(
 
     Cross-perplexity requires the two models to index the same
     vocabulary so the sum ``sum_v P_obs(v|ctx) * log P_scorer(v|ctx)``
-    is well-defined. Two backends loaded with the same tokenizer
-    class + vocab size + name-or-path almost always satisfy this
-    (Falcon-7b / Falcon-7b-instruct: same; GPT-2 / TinyLlama:
-    different). Callers wanting a stricter per-input check should
-    additionally compare the ``token_ids`` returned by
-    ``score_text_with_distributions``."""
+    is well-defined. The upstream fingerprint check verifies
+    tokenizer_class + vocab_size match; the per-input ``token_ids``
+    comparison inside ``audit()`` provides the load-bearing guarantee
+    on actual alignment for THIS input.
+
+    NOT included in the check: ``model_name_or_path``. The canonical
+    Hans et al. 2024 Binoculars pair is Falcon-7b + Falcon-7b-instruct
+    — same tokenizer class + vocab + actual token-id sequences, but
+    different model name_or_path. Requiring name_or_path equality
+    would silently reject this canonical pairing and fall back to v1
+    PR, defeating the whole point of v2. Fix per PR #114 review.
+
+    Defensive: stub backends without ``tokenizer_identity`` fall
+    back to incompatible so the audit degrades to PR ratio rather
+    than raising during the check."""
     try:
         a = scorer.tokenizer_identity()
         b = observer.tokenizer_identity()
     except (AttributeError, Exception):  # noqa: BLE001
-        # Defensive: a stub backend without tokenizer_identity falls
-        # back to "incompatible" so the audit degrades to PR ratio.
         return False
     return (
         a.get("tokenizer_class") == b.get("tokenizer_class")
         and a.get("vocab_size") == b.get("vocab_size")
-        and a.get("model_name_or_path") == b.get("model_name_or_path")
     )
 
 
