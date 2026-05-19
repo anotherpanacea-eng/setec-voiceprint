@@ -706,3 +706,239 @@ def test_load_embedding_backend_passes_model_id_not_alias(monkeypatch):
         f"_load_embedding_backend must NOT pass alias= (it's not a "
         f"production constructor field); captured={captured}"
     )
+
+
+# ============================================================
+# v2 metrics: helper-level unit tests
+# ============================================================
+
+
+def test_word_set_lowercases_and_splits():
+    assert dist._word_set("The Quick Brown FOX") == {"the", "quick", "brown", "fox"}
+
+
+def test_word_set_empty():
+    assert dist._word_set("") == set()
+
+
+def test_jaccard_identical_sets():
+    assert dist._jaccard_from_sets({"a", "b", "c"}, {"a", "b", "c"}) == 0.0
+
+
+def test_jaccard_disjoint_sets():
+    assert dist._jaccard_from_sets({"a", "b"}, {"c", "d"}) == 1.0
+
+
+def test_jaccard_partial_overlap():
+    d = dist._jaccard_from_sets({"a", "b", "c"}, {"b", "c", "d"})
+    assert abs(d - 0.5) < 1e-9
+
+
+def test_jaccard_empty_vs_empty_is_zero():
+    assert dist._jaccard_from_sets(set(), set()) == 0.0
+
+
+def test_cosine_from_dict_vectors_identical():
+    a = {"x": 1.0, "y": 2.0}
+    d = dist._cosine_from_dict_vectors(a, a)
+    assert d is not None
+    assert abs(d) < 1e-9
+
+
+def test_cosine_from_dict_vectors_orthogonal():
+    a = {"x": 1.0}
+    b = {"y": 1.0}
+    d = dist._cosine_from_dict_vectors(a, b)
+    assert d is not None
+    assert abs(d - 1.0) < 1e-9
+
+
+def test_cosine_from_dict_vectors_zero_returns_none():
+    assert dist._cosine_from_dict_vectors({}, {"x": 1.0}) is None
+
+
+# ============================================================
+# v2 metrics: gating + skip reasons
+# ============================================================
+
+
+def test_resolve_metrics_defaults_to_all_available():
+    metrics, skips = dist._resolve_metrics(None)
+    # word_jaccard + sbert always run; tfidf and pos_bigram_* gated.
+    assert "sbert" in metrics
+    assert "word_jaccard" in metrics
+    if not dist.HAS_SKLEARN:
+        assert "tfidf" not in metrics
+        assert skips.get("tfidf") == "sklearn unavailable"
+    if not dist.HAS_SPACY:
+        assert "pos_bigram_cosine" not in metrics
+        assert "pos_bigram_jaccard" not in metrics
+        assert "spaCy" in skips.get("pos_bigram_cosine", "")
+
+
+def test_resolve_metrics_explicit_subset_respected():
+    metrics, _ = dist._resolve_metrics(["sbert", "word_jaccard"])
+    assert metrics == ["sbert", "word_jaccard"]
+
+
+def test_resolve_metrics_unknown_metric_recorded_as_skip():
+    metrics, skips = dist._resolve_metrics(["sbert", "frobnicate"])
+    assert "frobnicate" not in metrics
+    assert "frobnicate" in skips
+    assert "unknown" in skips["frobnicate"]
+
+
+# ============================================================
+# v2 metrics: compute() integration
+# ============================================================
+
+
+def test_compute_runs_word_jaccard_unconditionally():
+    """word_jaccard has no external deps; the matrix must be present
+    in distance_matrices_by_metric regardless of the test env."""
+    ingested = _build_ingested(windows_count=1, families_texts={
+        "claude": ["the cat sat on the mat"],
+        "chatgpt": ["a different sequence of words entirely"],
+    })
+    payload = dist.compute(
+        ingested,
+        target_continuations=["the cat sat on the mat"],
+        backend=StubBackend(),
+    )
+    assert "word_jaccard" in payload["metrics_available"]
+    assert payload["distance_matrices_by_metric"]["word_jaccard"] is not None
+    matrix = payload["distance_matrices_by_metric"]["word_jaccard"][0]
+    # __target__ identical to claude → distance ~0.
+    labels = payload["labels_per_window"][0]
+    t_idx = labels.index("__target__")
+    c_idx = labels.index("claude")
+    assert abs(matrix[t_idx][c_idx]) < 1e-9
+
+
+def test_compute_preserves_v1_distance_matrices_field():
+    """Back-compat: ``distance_matrices`` (top-level) is the sbert
+    variant. v1 consumers reading this key get the same shape."""
+    ingested = _build_ingested(windows_count=1, families_texts={
+        "claude": ["text"],
+    })
+    payload = dist.compute(ingested, target_continuations=["target"], backend=StubBackend())
+    assert "distance_matrices" in payload
+    # And matches the sbert entry in distance_matrices_by_metric.
+    assert payload["distance_matrices"] == payload["distance_matrices_by_metric"]["sbert"]
+
+
+def test_compute_records_metrics_available_and_skip_reasons():
+    ingested = _build_ingested(windows_count=1, families_texts={"claude": ["text"]})
+    payload = dist.compute(ingested, target_continuations=["target"], backend=StubBackend())
+    assert "sbert" in payload["metrics_available"]
+    assert "word_jaccard" in payload["metrics_available"]
+    # tfidf + pos_bigram_* land in skip_reasons in the test env.
+    if not dist.HAS_SKLEARN:
+        assert "tfidf" in payload["metric_skip_reasons"]
+    if not dist.HAS_SPACY:
+        assert "pos_bigram_cosine" in payload["metric_skip_reasons"]
+
+
+def test_compute_opt_in_metrics_filter():
+    """Explicit --metrics filter shrinks the metrics_available list."""
+    ingested = _build_ingested(windows_count=1, families_texts={"claude": ["text"]})
+    payload = dist.compute(
+        ingested, target_continuations=["target"],
+        backend=StubBackend(),
+        metrics=["word_jaccard"],
+    )
+    assert payload["metrics_available"] == ["word_jaccard"]
+    # Other metrics produce None matrices when not requested.
+    assert payload["distance_matrices_by_metric"]["sbert"] is None
+    assert payload["distance_matrices_by_metric"]["word_jaccard"] is not None
+
+
+def test_compute_word_jaccard_matrix_shape_matches_sbert():
+    """v2 metric matrices share the same (N+1)×(N+1) shape as v1
+    sbert. Refused / empty cells are None in both."""
+    ingested = _build_ingested(windows_count=1, families_texts={
+        "claude": ["text one"],
+        "chatgpt": ["text two"],
+    })
+    payload = dist.compute(
+        ingested, target_continuations=["target"],
+        backend=StubBackend(),
+    )
+    labels = payload["labels_per_window"][0]
+    n = len(labels)  # 3: __target__, claude, chatgpt
+    wj = payload["distance_matrices_by_metric"]["word_jaccard"][0]
+    assert len(wj) == n
+    assert all(len(row) == n for row in wj)
+
+
+def test_compute_summary_by_metric_present():
+    """v2 surfaces per-metric summary stats so consumers can compare
+    family-vs-target medians across metrics."""
+    ingested = _build_ingested(windows_count=2, families_texts={
+        "claude": ["a", "b"],
+        "chatgpt": ["c", "d"],
+    })
+    payload = dist.compute(
+        ingested, target_continuations=["t1", "t2"],
+        backend=StubBackend(),
+    )
+    assert "summary_by_metric" in payload
+    sbert_summary = payload["summary_by_metric"]["sbert"]
+    word_jaccard_summary = payload["summary_by_metric"]["word_jaccard"]
+    assert "claude" in sbert_summary
+    assert "claude" in word_jaccard_summary
+    assert "mean_vs_target" in sbert_summary["claude"]
+    assert "mean_vs_target" in word_jaccard_summary["claude"]
+
+
+# ============================================================
+# v2 metrics: evidence pack rendering
+# ============================================================
+
+
+def test_evidence_pack_renders_metric_block_per_available_metric():
+    distances = _build_distances_payload(windows_count=1)
+    # Add v2 fields to simulate a v2-shape distances.json.
+    distances["distance_matrices_by_metric"] = {
+        "sbert": distances["distance_matrices"],
+        "word_jaccard": distances["distance_matrices"],
+        "tfidf": None,
+        "pos_bigram_cosine": None,
+        "pos_bigram_jaccard": None,
+    }
+    distances["metrics_available"] = ["sbert", "word_jaccard"]
+    distances["metric_skip_reasons"] = {"tfidf": "sklearn unavailable"}
+    distances["summary_by_metric"] = {
+        "sbert": distances["summary"],
+        "word_jaccard": distances["summary"],
+    }
+    envelope, md = pack.compose(distances)
+    assert "Per-window distance matrices — `sbert`" in md
+    assert "Per-window distance matrices — `word_jaccard`" in md
+    assert "Metrics computed:" in md
+    assert "Metrics skipped:" in md
+    assert "sklearn unavailable" in md
+
+
+def test_evidence_pack_back_compat_with_v1_distances_json():
+    """When given a v1-shape distances.json (no
+    distance_matrices_by_metric), the pack still renders the
+    legacy single-table layout."""
+    distances = _build_distances_payload(windows_count=1)
+    # No v2 fields.
+    envelope, md = pack.compose(distances)
+    assert "Per-window distance matrices" in md
+
+
+def test_evidence_pack_claim_license_records_metrics_available():
+    distances = _build_distances_payload(windows_count=1)
+    distances["distance_matrices_by_metric"] = {
+        "sbert": distances["distance_matrices"],
+        "word_jaccard": distances["distance_matrices"],
+        "tfidf": None,
+        "pos_bigram_cosine": None,
+        "pos_bigram_jaccard": None,
+    }
+    distances["metrics_available"] = ["sbert", "word_jaccard"]
+    envelope, _ = pack.compose(distances)
+    assert envelope["claim_license"]["comparison_set"]["metrics_available"] == ["sbert", "word_jaccard"]
