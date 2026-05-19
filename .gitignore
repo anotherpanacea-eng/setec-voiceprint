@@ -6,6 +6,11 @@
 *PRIVATE*
 *private*
 
+# Claude Code agent harness state. The .claude/worktrees/ directory holds
+# temporary git worktrees the agent harness manages during sub-agent runs;
+# it's harness-managed state, not project content.
+.claude/
+
 # Internal working directory: working roadmap, session logs, design notes,
 # review correspondence, commit-slice plans, and other artifacts that inform
 # the project's evolution but are not part of the public release.
