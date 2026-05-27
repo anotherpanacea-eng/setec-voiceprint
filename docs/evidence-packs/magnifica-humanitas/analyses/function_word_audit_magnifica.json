@@ -1,0 +1,248 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "voice_coherence",
+  "tool": "function_word_grammar_audit",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/magnifica-humanitas-en.txt",
+    "words": 38637,
+    "preprocessing": {
+      "applied": true,
+      "opt_out": false,
+      "rules_active": [
+        "yaml_front_matter",
+        "html_block",
+        "fenced_code",
+        "indented_code",
+        "inline_code",
+        "css_at_rule",
+        "css_rule_block",
+        "html_tag",
+        "json_block",
+        "ascii_table"
+      ],
+      "masking_rules_active": [],
+      "input_tokens_before": 38299,
+      "input_tokens_after": 38299,
+      "tokens_stripped": 0,
+      "tokens_stripped_by_rule": {},
+      "tokens_masked": 0,
+      "strip_ratio": 0.0,
+      "dominant_rule": null,
+      "warning": null
+    }
+  },
+  "baseline": {
+    "n_files": 5,
+    "words": 0,
+    "n_skipped": 0,
+    "skipped_files": [],
+    "per_file_summaries": [
+      {
+        "file": "baseline_001",
+        "function_word_ratio": 0.5124671449882787,
+        "function_bigram_entropy_bits": 9.08,
+        "preposition_entropy_bits": 3.162,
+        "subordinator_entropy_bits": 2.961,
+        "auxiliary_chain_count": 89,
+        "pronoun_transition_same_share": 0.276
+      },
+      {
+        "file": "baseline_002",
+        "function_word_ratio": 0.49067387125266276,
+        "function_bigram_entropy_bits": 9.124,
+        "preposition_entropy_bits": 3.24,
+        "subordinator_entropy_bits": 2.937,
+        "auxiliary_chain_count": 141,
+        "pronoun_transition_same_share": 0.359
+      },
+      {
+        "file": "baseline_003",
+        "function_word_ratio": 0.4884047786366831,
+        "function_bigram_entropy_bits": 8.213,
+        "preposition_entropy_bits": 3.301,
+        "subordinator_entropy_bits": 3.033,
+        "auxiliary_chain_count": 43,
+        "pronoun_transition_same_share": 0.309
+      },
+      {
+        "file": "baseline_004",
+        "function_word_ratio": 0.4816156208172585,
+        "function_bigram_entropy_bits": 8.988,
+        "preposition_entropy_bits": 3.244,
+        "subordinator_entropy_bits": 3.034,
+        "auxiliary_chain_count": 171,
+        "pronoun_transition_same_share": 0.342
+      },
+      {
+        "file": "baseline_005",
+        "function_word_ratio": 0.5030773347605031,
+        "function_bigram_entropy_bits": 8.578,
+        "preposition_entropy_bits": 3.232,
+        "subordinator_entropy_bits": 2.98,
+        "auxiliary_chain_count": 55,
+        "pronoun_transition_same_share": 0.276
+      }
+    ],
+    "aggregate": {
+      "function_word_ratio": {
+        "mean": 0.49524775009107724,
+        "sd": 0.012363166374494557,
+        "n": 5
+      },
+      "function_bigram_entropy_bits": {
+        "mean": 8.796600000000002,
+        "sd": 0.39131675149423434,
+        "n": 5
+      },
+      "preposition_entropy_bits": {
+        "mean": 3.2358,
+        "sd": 0.049489392802902814,
+        "n": 5
+      },
+      "subordinator_entropy_bits": {
+        "mean": 2.989,
+        "sd": 0.04338778629983328,
+        "n": 5
+      },
+      "auxiliary_chain_count": {
+        "mean": 99.8,
+        "sd": 55.03816857418131,
+        "n": 5
+      },
+      "pronoun_transition_same_share": {
+        "mean": 0.3124,
+        "sd": 0.037779624137886804,
+        "n": 5
+      }
+    },
+    "include_filenames": false
+  },
+  "results": {
+    "n_function_words": 17510,
+    "function_word_ratio": 0.45319253565235396,
+    "function_bigrams": {
+      "of the": 338,
+      "in the": 196,
+      "and the": 161,
+      "to the": 155,
+      "it is": 139,
+      "as a": 89,
+      "on the": 79,
+      "is not": 74,
+      "to be": 72,
+      "in this": 70,
+      "for the": 69,
+      "that the": 61,
+      "of a": 60,
+      "by the": 58,
+      "is a": 57,
+      "at the": 55,
+      "those who": 55,
+      "of our": 51,
+      "with the": 49,
+      "is the": 47
+    },
+    "function_bigram_entropy_bits": 8.449,
+    "n_function_trigrams": 1376,
+    "preposition_counts": {
+      "of": 1866,
+      "to": 1151,
+      "in": 780,
+      "for": 433,
+      "as": 292,
+      "with": 232,
+      "by": 194,
+      "on": 184,
+      "from": 135,
+      "at": 105,
+      "through": 65,
+      "between": 65,
+      "without": 59,
+      "into": 49,
+      "toward": 40
+    },
+    "preposition_entropy_bits": 3.301,
+    "demonstrative_counts": {
+      "that": 615,
+      "this": 321,
+      "those": 94,
+      "these": 75
+    },
+    "relative_pronoun_counts": {
+      "which": 162,
+      "that": 615,
+      "whom": 10,
+      "who": 111,
+      "whose": 6
+    },
+    "complementizer_counts": {
+      "that": 615,
+      "if": 47,
+      "whether": 10
+    },
+    "subordinator_counts": {
+      "when": 103,
+      "if": 47,
+      "while": 37,
+      "since": 28,
+      "because": 25,
+      "after": 19,
+      "before": 12,
+      "though": 4,
+      "although": 3,
+      "unless": 3,
+      "whenever": 2,
+      "until": 2,
+      "whereas": 2
+    },
+    "subordinator_entropy_bits": 2.797,
+    "auxiliary_chain_count": 118,
+    "pronoun_transition": {
+      "same": 59,
+      "different": 75,
+      "total": 134,
+      "same_share": 0.44
+    },
+    "compression": {
+      "band": "Lightly grammar-shifted",
+      "compression_fraction": 0.0,
+      "flagged_signals": [],
+      "n_flagged": 0,
+      "n_signals": 6
+    },
+    "baseline_comparison": {
+      "available": true,
+      "z_function_word_ratio": -3.401654007138817,
+      "z_function_bigram_entropy": -0.88828295408438,
+      "z_preposition_entropy": 1.3174540301932345,
+      "z_subordinator_entropy": -4.425208483170239,
+      "z_auxiliary_chain_count": 0.3306796078337846,
+      "z_pronoun_transition_same_share": 3.3774819869644492
+    }
+  },
+  "claim_license": {
+    "task_surface": "voice_coherence",
+    "licenses": "Function-word sequence-grammar profile of the input: n-gram inventory + entropy, preposition profile, demonstrative usage, relative-pronoun and complementizer choice, subordinator profile, auxiliary chains, pronoun transitions. Surfaces *how* the writer arranges function words, beyond the frequency picture Burrows Delta provides.",
+    "does_not_license": "An AI-provenance verdict. Function-word grammar varies with register, education, and audience as well as voice. The differential diagnosis of cause is the confounder audit's job.",
+    "comparison_set": {
+      "n_words": 38637,
+      "band": "Lightly grammar-shifted"
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Relative-pronoun and complementizer counts can't distinguish (e.g.) `that` as relativizer vs. as complementizer without spaCy parsing. The audit reports raw token counts; baseline comparison handles the genre / writer norm.",
+      "Heuristic thresholds (band call) are calibration-pending; treat the band as a cue, not a verdict.",
+      "Function-word grammar is genre-bound: legal prose has high subordinator density; lyrical prose may have very low. Read alongside register match."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** voice-coherence comparison\n\n**Reports:** Function-word sequence-grammar profile of the input: n-gram inventory + entropy, preposition profile, demonstrative usage, relative-pronoun and complementizer choice, subordinator profile, auxiliary chains, pronoun transitions. Surfaces *how* the writer arranges function words, beyond the frequency picture Burrows Delta provides.\n\n**Does NOT report:** An AI-provenance verdict. Function-word grammar varies with register, education, and audience as well as voice. The differential diagnosis of cause is the confounder audit's job.\n\n### Comparison context\n\n- **band:** Lightly grammar-shifted\n- **n words:** 38637\n\n### Caveats\n\n- Relative-pronoun and complementizer counts can't distinguish (e.g.) `that` as relativizer vs. as complementizer without spaCy parsing. The audit reports raw token counts; baseline comparison handles the genre / writer norm.\n- Heuristic thresholds (band call) are calibration-pending; treat the band as a cue, not a verdict.\n- Function-word grammar is genre-bound: legal prose has high subordinator density; lyrical prose may have very low. Read alongside register match.",
+  "warnings": [],
+  "ai_status": null
+}

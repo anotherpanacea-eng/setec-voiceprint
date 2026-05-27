@@ -1,0 +1,58 @@
+[
+  {
+    "name": "dilexit-nos-en",
+    "words": 27982,
+    "simple_regex_count": 65,
+    "simple_regex_per1k": 2.3229,
+    "expanded_regex_count": 116,
+    "expanded_regex_per1k": 4.1455
+  },
+  {
+    "name": "fratelli-tutti-en",
+    "words": 38353,
+    "simple_regex_count": 161,
+    "simple_regex_per1k": 4.1978,
+    "expanded_regex_count": 217,
+    "expanded_regex_per1k": 5.658
+  },
+  {
+    "name": "laudate-deum-en",
+    "words": 7094,
+    "simple_regex_count": 22,
+    "simple_regex_per1k": 3.1012,
+    "expanded_regex_count": 36,
+    "expanded_regex_per1k": 5.0747
+  },
+  {
+    "name": "laudato-si-en",
+    "words": 37970,
+    "simple_regex_count": 125,
+    "simple_regex_per1k": 3.2921,
+    "expanded_regex_count": 196,
+    "expanded_regex_per1k": 5.162
+  },
+  {
+    "name": "lumen-fidei-en",
+    "words": 18490,
+    "simple_regex_count": 30,
+    "simple_regex_per1k": 1.6225,
+    "expanded_regex_count": 41,
+    "expanded_regex_per1k": 2.2174
+  },
+  {
+    "name": "magnifica-humanitas-en",
+    "words": 38299,
+    "simple_regex_count": 195,
+    "simple_regex_per1k": 5.0915,
+    "expanded_regex_count": 304,
+    "expanded_regex_per1k": 7.9375
+  },
+  {
+    "name": "magnifica-humanitas-it",
+    "words": 36203,
+    "simple_regex_count": 0,
+    "simple_regex_per1k": 0.0,
+    "expanded_regex_count": 0,
+    "expanded_regex_per1k": 0.0
+  }
+]

@@ -1,0 +1,329 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "craft_restoration",
+  "tool": "aic_pattern_audit",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "texts/dilexit-nos-en.txt",
+    "words": 28154
+  },
+  "baseline": null,
+  "results": {
+    "patterns": {
+      "negation_hedge": {
+        "label": "Negation Hedge",
+        "severity_note": "'Not X.' / 'Not X. Not Y.' sentence-initial cognitive sorting (earned) or narrator hedge (unearned)",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "correctio": {
+        "label": "Disguised Correctio",
+        "severity_note": "'not X, but Y' inline + 'It is not X. It is Y' frame; cuts on payoff test if affirm repeats negate",
+        "count": 41,
+        "density_per_1k": 1.456276195212048,
+        "hits": [
+          {
+            "sentence_index": 17,
+            "text": "For Homer, it indicates not only the centre of the body, but also the human soul and spirit.",
+            "span": "not only the centre of the body, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 21,
+            "text": "From ancient times, then, there has been an appreciation of the fact that human beings are not simply a sum of different skills, but a unity of body and soul with a coordinating centre that provides a backdrop of meaning and direction to all that a person experiences.",
+            "span": "not simply a sum of different skills, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 34,
+            "text": "This interior reality of each person is frequently concealed behind a great deal of \u201cfoliage\u201d, which makes it difficult for us not only to understand ourselves, but even more to know others: \u201cThe heart is devious above all else; it is perverse, who can understand it?\u201d ( Jer 17:9).",
+            "span": "not only to understand ourselves, but e",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 37,
+            "text": "Despite our every attempt to appear as something we are not, our heart is the ultimate judge, not of what we show or hide from others, but of who we truly are.",
+            "span": "not of what we show or hide from others, but o",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 101,
+            "text": "It follows that biologists are not being more \u201crealistic\u201d when they discuss the heart, since they see only one aspect of it; the whole is not less real, but even more real.",
+            "span": "not less real, but e",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 107,
+            "text": "For Heidegger, as interpreted by one contemporary thinker, philosophy does not begin with a simple concept or certainty, but with a shock: \u201cThought must be provoked before it begins to work with concepts or while it works with them.",
+            "span": "not begin with a simple concept or certainty, but w",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 133,
+            "text": "What Mary \u201ckept\u201d was not only her memory of what she had seen and heard, but also those aspects of it that she did not yet understand; these nonetheless remained present and alive in her memory, waiting to be \u201cput together\u201d in her heart.",
+            "span": "not only her memory of what she had seen and heard, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 142,
+            "text": "This profound core, present in every man and woman, is not that of the soul, but of the entire person in his or her unique psychosomatic identity.",
+            "span": "not that of the soul, but o",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 174,
+            "text": "Saint Bonaventure tells us that in the end we should not pray for light, but for \u201craging fire\u201d. [7] He teaches that, \u201cfaith is in the intellect, in such a way as to provoke affection.",
+            "span": "not pray for light, but f",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 175,
+            "text": "In this sense, for example, the knowledge that Christ died for us does not remain knowledge, but necessarily becomes affection, love\u201d. [8] Along the same lines, Saint John Henry Newman took as his motto the phrase Cor ad cor loquitur , since, beyond all our thoughts and ideas, the Lord saves us by s",
+            "span": "not remain knowledge, but n",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 176,
+            "text": "This realization led him, the distinguished intellectual, to recognize that his deepest encounter with himself and with the Lord came not from his reading or reflection, but from his prayerful dialogue, heart to heart, with Christ, alive and present.",
+            "span": "not from his reading or reflection, but f",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 201,
+            "text": "Let us never forget that our hearts are not self-sufficient, but frail and wounded.",
+            "span": "not self-sufficient, but f",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 308,
+            "text": "A word that is not shallow, sentimental or merely edifying. / It is love, sheer love.",
+            "span": "that is not s",
+            "note": "'It is not X. It is Y' frame"
+          },
+          {
+            "sentence_index": 339,
+            "text": "It was not devised at a desk or designed by an artist; it is \u201cno imaginary symbol, but a real symbol which represents the centre, the source from which salvation flowed for all humanity\u201d. [2]",
+            "span": "not devised at a desk or designed by an artist; it is \u201cno imaginary symbol, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 387,
+            "text": "Saint Basil emphasized that the Lord\u2019s incarnation was not something fanciful, and that \u201cthe Lord possessed our natural affections\u201d. [7] Saint John Chrysostom pointed to an example: \u201cHad he not possessed our nature, he would not have experienced sadness from time to time\u201d. [8] Saint Ambrose stated t",
+            "span": "not out of necessity, but c",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 406,
+            "text": "These three loves are not separate, parallel or disconnected, but together act and find expression in a constant and vital unity.",
+            "span": "not separate, parallel or disconnected, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 431,
+            "text": "That is why, from the very beginning, the Church\u2019s preaching does not end with Jesus, but with the Father.",
+            "span": "not end with Jesus, but w",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 447,
+            "text": "It is how he addressed the Father in expressing his anguish at his impending death: \u201c Abba, Father, for you all things are possible; remove this cup from me; yet, not what I want, but what you want\u201d ( Mk 14:36).",
+            "span": "not what I want, but w",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 491,
+            "text": "All of us, when we pause in silence, need to feel not only the beating of our own heart, but deeper still, the beating of a trustworthy presence, perceptible with faith\u2019s senses and yet much more real: the presence of Christ, the heart of the world\u201d. [3]",
+            "span": "not only the beating of our own heart, but d",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 587,
+            "text": "Yet the Spirit whom we have received does not distance us from the risen Lord, but fills us with his presence, for by drinking of the Spirit we drink of the same Christ.",
+            "span": "not distance us from the risen Lord, but f",
+            "note": "inline 'not X, but Y'"
+          }
+        ]
+      },
+      "pseudo_aphorism": {
+        "label": "Pseudo-Aphorism",
+        "severity_note": "gnomic generalization ('X as Y', 'is the Y of Z', 'There is a kind of'); often has real image right after that does the work",
+        "count": 4,
+        "density_per_1k": 0.14207572636215104,
+        "hits": [
+          {
+            "sentence_index": 373,
+            "text": "And the heart is the symbol of that love.",
+            "span": "is the symbol of that love.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 419,
+            "text": "Among lovers, the wound of one is the wound of both\u201d. [1] John of the Cross regards the image of Christ\u2019s pierced side as an invitation to full union with the Lord.",
+            "span": "is the wound of both\u201d.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 474,
+            "text": "We give glory to the Father \u201cthrough\u201d Christ, [5] \u201cwith\u201d Christ, [6] and \u201cin\u201d Christ. [7] Saint John Paul II taught that, \u201cthe Saviour\u2019s heart invites us to return to the Father\u2019s love, which is the source of every authentic love\u201d. [8] This is precisely what the Holy Spirit, who comes to us through ",
+            "span": "is the source of every authentic love\u201d.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 589,
+            "text": "Drink of Christ, for he is the source of life.",
+            "span": "is the source of life.",
+            "note": "gnomic frame"
+          }
+        ]
+      },
+      "manifesto_cadence": {
+        "label": "Manifesto Cadence",
+        "severity_note": "3+ parallel sentences with same anaphoric head; earned when each escalates/restricts/reveals, unearned when parallel substitutes for development",
+        "count": 1,
+        "density_per_1k": 0.03551893159053776,
+        "hits": [
+          {
+            "sentence_index": 589,
+            "text": "Drink of Christ, for he is the source of life. // Drink of Christ, for he is the river whose streams gladden the city of God. // Drink of Christ, for he is our peace. // Drink of Christ, for from his side flows living water\u201d.",
+            "span": "4 sentences with anaphoric head 'drink of'",
+            "note": "run length 4"
+          }
+        ]
+      },
+      "triplet": {
+        "label": "Triplet",
+        "severity_note": "3- or 4-item comma-and lists; classical figure but at high density reads as rhythmic fill",
+        "count": 9,
+        "density_per_1k": 0.3196703843148398,
+        "hits": [
+          {
+            "sentence_index": 136,
+            "text": "No algorithm will ever be able to capture, for example, the nostalgia that all of us feel, whatever our age, and wherever we live, when we recall how we first used a fork to seal the edges of the pies that we helped our mothers or grandmothers to make at home.",
+            "span": "of us feel, whatever our age, and wherever we live",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 198,
+            "text": "It explains that human beings \u201cby their interior life, transcend the entire material universe; they experience this deep interiority when they enter into their own heart, where God, who probes the heart, awaits them, and where they decide their own destiny in the sight of God\u201d.",
+            "span": "probes the heart, awaits them, and where they decide",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 363,
+            "text": "Standing before the image, we stand before Christ, and in his presence, \u201clove pauses, contemplates mystery, and enjoys it in silence\u201d. [5]",
+            "span": "love pauses, contemplates mystery, and enjoys it in",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 510,
+            "text": "Many Jansenists found this difficult to comprehend, for they looked askance on all that was human, affective and corporeal, and so viewed this devotion as distancing us from pure worship of the Most High God.",
+            "span": "that was human, affective and corporeal, and so viewed this",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 662,
+            "text": "Remain thus, beloved daughter, and like another little one, Saint John, while others are tasting different kinds of food at the table of the Lord, lay your head, your soul and your spirit, in a gesture of utter trust, on the loving bosom of this dear Lord\u201d. \u201cI hope that you are resting in the cleft ",
+            "span": "Remain thus, beloved daughter, and like another little",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 736,
+            "text": "He told Christ, \u201cYou have bestowed on me so many benefits, that it would appear ingratitude towards your heart not to believe that it is disposed to bestow on me every good, however great, and that your love and your generosity are boundless\u201d.",
+            "span": "me every good, however great, and that your love",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 843,
+            "text": "Our starting point is the Gospel, with all that it demands from us of love, forgiveness and justice, and of solidarity with those who are poor and rejected by the world\u201d.",
+            "span": "us of love, forgiveness and justice, and of solidarity with",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 964,
+            "text": "This new principle in human history \u2013 which emphasizes that individuals are even more \u2018worthy\u2019 of our respect and love when they are weak, scorned, or suffering, even to the point of losing the human \u2018figure\u2019 \u2013 has changed the face of the world.",
+            "span": "they are weak, scorned, or suffering",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1008,
+            "text": "Nor was this a light decision: \u201cWith all my strength I try to show and prove to these poor lost brethren that our religion is all charity, all fraternity, and that its emblem is a heart\u201d.",
+            "span": "is all charity, all fraternity, and that its emblem",
+            "note": "3- or 4-item comma-separated list"
+          }
+        ]
+      },
+      "professional_parallel_stack": {
+        "label": "Professional-Parallel Stack",
+        "severity_note": "3+ adjacent paragraphs with same opening clause structure ('A X may Y', 'A Z may Y'); performs comprehensiveness without differentiating",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "false_balance": {
+        "label": "False-Balance Construction",
+        "severity_note": "'while reasonable people may disagree', both-sidesing without specifying the disagreement",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "hedge_and_affirm": {
+        "label": "Hedge-and-Affirm",
+        "severity_note": "'while X is generally true, in some cases Y' performs caution while saying nothing definite",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "recommendation_template": {
+        "label": "Recommendation Template",
+        "severity_note": "'DC must commit to', 'we urge X', generic-actor + modal + generic-verb without specifying action",
+        "count": 1,
+        "density_per_1k": 0.03551893159053776,
+        "hits": [
+          {
+            "sentence_index": 687,
+            "text": "This apparition, then, invites us to grow in our encounter with Christ, putting our trust completely in his love, until we attain full and definitive union with him. \u201cIt is necessary that the divine heart of Jesus in some way replace our own; that he alone live and work in us and for us; that his wi",
+            "span": "It is necessary that",
+            "note": "recommendation-template frame"
+          }
+        ]
+      },
+      "authority_laundering": {
+        "label": "Authority Laundering",
+        "severity_note": "'research has shown', 'experts agree' without naming the research or the experts",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      }
+    }
+  },
+  "claim_license": {
+    "task_surface": "craft_restoration",
+    "licenses": "A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.",
+    "does_not_license": "An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.",
+    "comparison_set": {
+      "target_words": 28154,
+      "baseline_words": 0,
+      "has_baseline": false,
+      "n_patterns_reported": 10
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.",
+      "The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.",
+      "Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis)."
+    ],
+    "references": [
+      "references/aic-flags.md",
+      "references/source-triage.md"
+    ]
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** craft restoration\n\n**Reports:** A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.\n\n**Does NOT report:** An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.\n\n### Comparison context\n\n- **baseline words:** 0\n- **has baseline:** False\n- **n patterns reported:** 10\n- **target words:** 28154\n\n### Caveats\n\n- Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.\n- The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.\n- Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis).\n\n### References\n\n- references/aic-flags.md\n- references/source-triage.md",
+  "warnings": [],
+  "ai_status": null
+}

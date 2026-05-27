@@ -1,0 +1,70 @@
+{
+  "W1_par7_Babel": {
+    "claude_pred_vs_actual": {
+      "word_jaccard": 0.2038,
+      "tfidf_cosine": 0.7243,
+      "pos_bigram_cosine": 0.8766
+    },
+    "claude_pred_vs_prefix_tail": {
+      "word_jaccard": 0.1124,
+      "tfidf_cosine": 0.4521,
+      "pos_bigram_cosine": 0.8394
+    },
+    "actual_vs_prefix_tail": {
+      "word_jaccard": 0.0977,
+      "tfidf_cosine": 0.4498,
+      "pos_bigram_cosine": 0.7542
+    }
+  },
+  "W2_par10_BabelSyndrome": {
+    "claude_pred_vs_actual": {
+      "word_jaccard": 0.1071,
+      "tfidf_cosine": 0.5258,
+      "pos_bigram_cosine": 0.7571
+    },
+    "claude_pred_vs_prefix_tail": {
+      "word_jaccard": 0.1098,
+      "tfidf_cosine": 0.4771,
+      "pos_bigram_cosine": 0.8056
+    },
+    "actual_vs_prefix_tail": {
+      "word_jaccard": 0.1073,
+      "tfidf_cosine": 0.4596,
+      "pos_bigram_cosine": 0.8048
+    }
+  },
+  "W3_par100_GenuinelyHelpful": {
+    "claude_pred_vs_actual": {
+      "word_jaccard": 0.1236,
+      "tfidf_cosine": 0.5256,
+      "pos_bigram_cosine": 0.8233
+    },
+    "claude_pred_vs_prefix_tail": {
+      "word_jaccard": 0.1609,
+      "tfidf_cosine": 0.4129,
+      "pos_bigram_cosine": 0.8094
+    },
+    "actual_vs_prefix_tail": {
+      "word_jaccard": 0.1204,
+      "tfidf_cosine": 0.3825,
+      "pos_bigram_cosine": 0.8044
+    }
+  },
+  "W4_par107_Alignment": {
+    "claude_pred_vs_actual": {
+      "word_jaccard": 0.1519,
+      "tfidf_cosine": 0.5158,
+      "pos_bigram_cosine": 0.8073
+    },
+    "claude_pred_vs_prefix_tail": {
+      "word_jaccard": 0.1005,
+      "tfidf_cosine": 0.3728,
+      "pos_bigram_cosine": 0.8058
+    },
+    "actual_vs_prefix_tail": {
+      "word_jaccard": 0.1628,
+      "tfidf_cosine": 0.4701,
+      "pos_bigram_cosine": 0.7892
+    }
+  }
+}

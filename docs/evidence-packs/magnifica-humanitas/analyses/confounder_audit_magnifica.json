@@ -1,0 +1,283 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "validation",
+  "tool": "confounder_audit",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "/tmp/confounder_inputs/variance_audit_magnifica-humanitas-en.json",
+    "words": 0
+  },
+  "baseline": null,
+  "results": {
+    "observations": {
+      "marked_move_entropy": "high",
+      "aic_pattern_density": "high"
+    },
+    "ranked_confounders": [
+      {
+        "confounder": "house_style_enforcement",
+        "compatibility_score": 1.0,
+        "n_matches": 1,
+        "n_contradictions": 0,
+        "n_any": 0,
+        "n_signals_with_expectation": 9,
+        "n_observations_used": 1,
+        "evidence_for": [
+          "aic_pattern_density=high matches expected"
+        ],
+        "evidence_against": [],
+        "unobserved_signals": [
+          "sentence_variance",
+          "punctuation_regularity",
+          "connective_density",
+          "paragraph_regularity",
+          "discourse_marker_density",
+          "register_match",
+          "generic_institutional_density",
+          "nominalization_density"
+        ]
+      },
+      {
+        "confounder": "professional_copyediting",
+        "compatibility_score": 0.5,
+        "n_matches": 0,
+        "n_contradictions": 0,
+        "n_any": 1,
+        "n_signals_with_expectation": 12,
+        "n_observations_used": 1,
+        "evidence_for": [],
+        "evidence_against": [],
+        "unobserved_signals": [
+          "sentence_variance",
+          "lexical_diversity",
+          "pos_bigram_kl",
+          "punctuation_regularity",
+          "idiolect_survival",
+          "connective_density",
+          "paragraph_regularity",
+          "discourse_marker_density",
+          "length_localization",
+          "nominalization_density",
+          "agentless_passive_rate"
+        ]
+      },
+      {
+        "confounder": "legal_or_policy_memo_style",
+        "compatibility_score": 0.5,
+        "n_matches": 1,
+        "n_contradictions": 1,
+        "n_any": 0,
+        "n_signals_with_expectation": 12,
+        "n_observations_used": 2,
+        "evidence_for": [
+          "aic_pattern_density=high matches expected"
+        ],
+        "evidence_against": [
+          "marked_move_entropy=high contradicts expected low"
+        ],
+        "unobserved_signals": [
+          "sentence_variance",
+          "pos_bigram_kl",
+          "punctuation_regularity",
+          "connective_density",
+          "paragraph_regularity",
+          "discourse_marker_density",
+          "register_match",
+          "nominalization_density",
+          "agentless_passive_rate",
+          "generic_institutional_density"
+        ]
+      },
+      {
+        "confounder": "ai_smoothing",
+        "compatibility_score": 0.5,
+        "n_matches": 1,
+        "n_contradictions": 1,
+        "n_any": 0,
+        "n_signals_with_expectation": 17,
+        "n_observations_used": 2,
+        "evidence_for": [
+          "aic_pattern_density=high matches expected"
+        ],
+        "evidence_against": [
+          "marked_move_entropy=high contradicts expected low"
+        ],
+        "unobserved_signals": [
+          "sentence_variance",
+          "mdd_variance",
+          "lexical_diversity",
+          "pos_bigram_kl",
+          "char_ngram_delta",
+          "punctuation_regularity",
+          "idiolect_survival",
+          "connective_density",
+          "paragraph_regularity",
+          "discourse_marker_density",
+          "length_localization",
+          "nominalization_density",
+          "agentless_passive_rate",
+          "generic_institutional_density",
+          "concrete_detail_density"
+        ]
+      },
+      {
+        "confounder": "intentional_voice_imitation",
+        "compatibility_score": 0.5,
+        "n_matches": 0,
+        "n_contradictions": 0,
+        "n_any": 1,
+        "n_signals_with_expectation": 8,
+        "n_observations_used": 1,
+        "evidence_for": [],
+        "evidence_against": [],
+        "unobserved_signals": [
+          "sentence_variance",
+          "idiolect_survival",
+          "char_ngram_delta",
+          "discourse_marker_density",
+          "register_match",
+          "nominalization_density",
+          "agentless_passive_rate"
+        ]
+      },
+      {
+        "confounder": "register_genre_shift",
+        "compatibility_score": 0.0,
+        "n_matches": 0,
+        "n_contradictions": 0,
+        "n_any": 0,
+        "n_signals_with_expectation": 9,
+        "n_observations_used": 0,
+        "evidence_for": [],
+        "evidence_against": [],
+        "unobserved_signals": [
+          "sentence_variance",
+          "pos_bigram_kl",
+          "char_ngram_delta",
+          "register_match",
+          "discourse_marker_density",
+          "idiolect_survival",
+          "paragraph_regularity",
+          "nominalization_density",
+          "agentless_passive_rate"
+        ]
+      },
+      {
+        "confounder": "translation_or_esl_cleanup",
+        "compatibility_score": 0.0,
+        "n_matches": 0,
+        "n_contradictions": 0,
+        "n_any": 0,
+        "n_signals_with_expectation": 8,
+        "n_observations_used": 0,
+        "evidence_for": [],
+        "evidence_against": [],
+        "unobserved_signals": [
+          "sentence_variance",
+          "lexical_diversity",
+          "pos_bigram_kl",
+          "punctuation_regularity",
+          "idiolect_survival",
+          "discourse_marker_density",
+          "nominalization_density",
+          "agentless_passive_rate"
+        ]
+      },
+      {
+        "confounder": "dictation_or_transcription_cleanup",
+        "compatibility_score": 0.0,
+        "n_matches": 0,
+        "n_contradictions": 0,
+        "n_any": 0,
+        "n_signals_with_expectation": 7,
+        "n_observations_used": 0,
+        "evidence_for": [],
+        "evidence_against": [],
+        "unobserved_signals": [
+          "sentence_variance",
+          "punctuation_regularity",
+          "discourse_marker_density",
+          "idiolect_survival",
+          "lexical_diversity",
+          "nominalization_density",
+          "agentless_passive_rate"
+        ]
+      },
+      {
+        "confounder": "developmental_revision",
+        "compatibility_score": 0.0,
+        "n_matches": 0,
+        "n_contradictions": 0,
+        "n_any": 0,
+        "n_signals_with_expectation": 7,
+        "n_observations_used": 0,
+        "evidence_for": [],
+        "evidence_against": [],
+        "unobserved_signals": [
+          "sentence_variance",
+          "length_localization",
+          "idiolect_survival",
+          "paragraph_regularity",
+          "discourse_marker_density",
+          "nominalization_density",
+          "agentless_passive_rate"
+        ]
+      }
+    ],
+    "distinguishing_evidence": [],
+    "missing_evidence": [
+      "`pos_bigram_kl` \u2014 no baseline supplied or POS-bigram KL not computed",
+      "`char_ngram_delta` \u2014 no voice-distance comparison provided",
+      "`idiolect_survival` \u2014 supply both --idiolect-json (idiolect_detector output) and --target-text (target file path) so the audit can compute the preservation-list survival rate",
+      "`punctuation_regularity` \u2014 no punctuation-cadence audit available (ROADMAP Tier-2 promotion)",
+      "`register_match` \u2014 no register classification or baseline match supplied",
+      "`length_localization` \u2014 no sliding-window heatmap data supplied",
+      "`discourse_marker_density` \u2014 no discourse_move_signature output provided",
+      "`paragraph_regularity` \u2014 no paragraph_audit output provided",
+      "`nominalization_density` \u2014 no agency_abstraction_audit output provided",
+      "`agentless_passive_rate` \u2014 no agency_abstraction_audit output provided",
+      "`generic_institutional_density` \u2014 no agency_abstraction_audit output provided",
+      "`concrete_detail_density` \u2014 no agency_abstraction_audit output provided"
+    ],
+    "n_observations": 2,
+    "inputs_used": {
+      "variance": true,
+      "voice_distance": false,
+      "paragraph": false,
+      "discourse": true,
+      "aic": true,
+      "agency": false,
+      "idiolect": false,
+      "target_text": true
+    }
+  },
+  "claim_license": {
+    "task_surface": "validation",
+    "licenses": "A *differential diagnosis* of the observed signal pattern: which alternative explanations (professional copyediting, register/genre shift, legal/policy memo style, translation/ESL cleanup, dictation cleanup, house-style enforcement, developmental revision, AI smoothing, intentional voice imitation) are compatible with the evidence, ranked by per-confounder compatibility score, with per-signal evidence.",
+    "does_not_license": "A verdict on which explanation is correct. The audit is not a classifier and does not produce probability estimates. The compatibility scores are descriptive (\"how many observed signals point in the direction this explanation predicts\"), not probabilistic. The framework's load-bearing claim is that the math doesn't entitle the verdict; this audit is the formal expression of that stance \u2014 it surfaces the differential, it does not commit to a cause.",
+    "comparison_set": {
+      "n_observations": 2,
+      "inputs_used": "variance, discourse, aic, target_text",
+      "n_confounders_ranked": 9
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "The confounder signature matrix is empirical-shape, not labeled-corpus-validated. Treat per-confounder expectations as design hypotheses, not as a calibrated model.",
+      "Compatibility scores are insensitive to the *strength* of evidence \u2014 a weak signal pointing in the expected direction counts the same as a strong one. Reading compatibility alongside the per-signal evidence list is essential.",
+      "Distinguishing-evidence rules out *among the top candidates*; explanations the writer hasn't enumerated (e.g. translation cleanup combined with a register shift) aren't scored.",
+      "Missing-evidence list names what the user could supply to sharpen the differential. The audit downgrades gracefully \u2014 fewer inputs means fewer distinguishing observations, but the output still surfaces the underspecification."
+    ],
+    "references": [
+      "ROADMAP.md Trustworthiness Tier 1 \u2014 Confounder audit / Layer D",
+      "1.30.3 CHANGELOG \u2014 original framing of the confounder-audit goal"
+    ]
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** validation / labeled-corpus harness\n\n**Reports:** A *differential diagnosis* of the observed signal pattern: which alternative explanations (professional copyediting, register/genre shift, legal/policy memo style, translation/ESL cleanup, dictation cleanup, house-style enforcement, developmental revision, AI smoothing, intentional voice imitation) are compatible with the evidence, ranked by per-confounder compatibility score, with per-signal evidence.\n\n**Does NOT report:** A verdict on which explanation is correct. The audit is not a classifier and does not produce probability estimates. The compatibility scores are descriptive (\"how many observed signals point in the direction this explanation predicts\"), not probabilistic. The framework's load-bearing claim is that the math doesn't entitle the verdict; this audit is the formal expression of that stance \u2014 it surfaces the differential, it does not commit to a cause.\n\n### Comparison context\n\n- **inputs used:** variance, discourse, aic, target_text\n- **n confounders ranked:** 9\n- **n observations:** 2\n\n### Caveats\n\n- The confounder signature matrix is empirical-shape, not labeled-corpus-validated. Treat per-confounder expectations as design hypotheses, not as a calibrated model.\n- Compatibility scores are insensitive to the *strength* of evidence \u2014 a weak signal pointing in the expected direction counts the same as a strong one. Reading compatibility alongside the per-signal evidence list is essential.\n- Distinguishing-evidence rules out *among the top candidates*; explanations the writer hasn't enumerated (e.g. translation cleanup combined with a register shift) aren't scored.\n- Missing-evidence list names what the user could supply to sharpen the differential. The audit downgrades gracefully \u2014 fewer inputs means fewer distinguishing observations, but the output still surfaces the underspecification.\n\n### References\n\n- ROADMAP.md Trustworthiness Tier 1 \u2014 Confounder audit / Layer D\n- 1.30.3 CHANGELOG \u2014 original framing of the confounder-audit goal",
+  "warnings": [],
+  "ai_status": null
+}

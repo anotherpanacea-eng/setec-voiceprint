@@ -1,0 +1,4073 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "smoothing_diagnosis",
+  "tool": "kicker_density",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/fratelli-tutti-en.txt",
+    "words": 38353
+  },
+  "baseline": null,
+  "results": {
+    "signal_path": "aic_8_9.kicker_density",
+    "family": "aic-9-closure-inflation",
+    "value": 0.12077294685990338,
+    "spacing_variance": 8.295458145897678,
+    "polarity": "\u2191",
+    "status": "provisional",
+    "task_surface": "smoothing_diagnosis",
+    "claim_license": "voice_diagnostic",
+    "paragraphs": [
+      {
+        "paragraph_index": 0,
+        "final_sentence": "ENCYCLICAL LETTER FRATELLI TUTTI OF THE HOLY FATHER FRANCIS ON FRATERNITY AND SOCIAL FRIENDSHIP",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='P'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 1,
+        "final_sentence": "In his simple and direct way, Saint Francis expressed the essence of a fraternal openness that allows us to acknowledge, appreciate and love each person, regardless of physical proximity, regardless of where he or she was born or lives.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 2,
+        "final_sentence": "Wherever he went, he sowed seeds of peace and walked alongside the poor, the abandoned, the infirm and the outcast, the least of his brothers and sisters.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 3,
+        "final_sentence": "WITHOUT BORDERS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 4,
+        "final_sentence": "We are impressed that some eight hundred years ago Saint Francis urged that all forms of hostility or conflict be avoided and that a humble and fraternal \u201csubjection\u201d be shown to those who did not share his faith.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 5,
+        "final_sentence": "Francis has inspired these pages.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 6,
+        "final_sentence": "I have also incorporated, along with my own thoughts, a number of letters, documents and considerations that I have received from many individuals and groups throughout the world.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 7,
+        "final_sentence": "Although I have written it from the Christian convictions that inspire and sustain me, I have sought to make this reflection an invitation to dialogue among all people of good will.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=31 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 8,
+        "final_sentence": "Anyone who thinks that the only lesson to be learned was the need to improve what we were already doing, or to refine existing systems and regulations, is denying reality.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 9,
+        "final_sentence": "Let us dream, then, as a single human family, as fellow travelers sharing the same flesh, as children of the same earth which is our common home, each of us bringing the richness of his or her beliefs and convictions, each of us with his or her own voice, brothers and sisters all.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=53 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 10,
+        "final_sentence": "CHAPTER ONE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 11,
+        "final_sentence": "DARK CLOUDS OVER A CLOSED WORLD",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='D'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 12,
+        "final_sentence": "Without claiming to carry out an exhaustive analysis or to study every aspect of our present-day experience, I intend simply to consider certain trends in our world that hinder the development of universal fraternity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 13,
+        "final_sentence": "SHATTERED DREAMS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 14,
+        "final_sentence": "In some countries and regions, attempts at reconciliation and rapprochement proved fruitful, while others showed great promise.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 15,
+        "final_sentence": "It is not possible to settle for what was achieved in the past and complacently enjoy it, as if we could somehow disregard the fact that many of our brothers and sisters still endure situations that cry out for our attention\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=41 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 16,
+        "final_sentence": "In this way, political life becomes increasingly fragile in the face of transnational economic powers that operate with the principle of \u201cdivide and conquer\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 17,
+        "final_sentence": "The end of historical consciousness",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 18,
+        "final_sentence": "To do so, however, they need young people who have no use for history, who spurn the spiritual and human riches inherited from past generations, and are ignorant of everything that came before them\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 19,
+        "final_sentence": "They have been bent and shaped to serve as tools for domination, as meaningless tags that can be used to justify any action.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 20,
+        "final_sentence": "LACKING A PLAN FOR EVERYONE",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='E'"
+        ]
+      },
+      {
+        "paragraph_index": 21,
+        "final_sentence": "In this craven exchange of charges and counter-charges, debate degenerates into a permanent state of disagreement and confrontation.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 22,
+        "final_sentence": "We are growing ever more distant from one another, while the slow and demanding march towards an increasingly united and just world is suffering a new and dramatic setback.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 23,
+        "final_sentence": "In this shallow, short-sighted culture that we have created, bereft of a shared vision, \u201cit is foreseeable that, once certain resources have been depleted, the scene will be set for new wars, albeit under the guise of noble claims\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 24,
+        "final_sentence": "A \u201cthrowaway\u201d world",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 25,
+        "final_sentence": "We have grown indifferent to all kinds of wastefulness, starting with the waste of food, which is deplorable in the extreme\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 26,
+        "final_sentence": "We also end up depriving young people of a necessary connection to their roots and a wisdom that the young cannot achieve on their own.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 27,
+        "final_sentence": "Instances of racism continue to shame us, for they show that our supposed social progress is not as real or definitive as we think.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 28,
+        "final_sentence": "Poverty must always be understood and gauged in the context of the actual opportunities available in each concrete historical period.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 29,
+        "final_sentence": "Insufficiently universal human rights",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 30,
+        "final_sentence": "What does this tell us about the equality of rights grounded in innate human dignity?",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 31,
+        "final_sentence": "Indeed, \u201cdoubly poor are those women who endure situations of exclusion, mistreatment and violence, since they are frequently less able to defend their rights\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 32,
+        "final_sentence": "Trafficking in persons and other contemporary forms of enslavement are a worldwide problem that needs to be taken seriously by humanity as a whole: \u201csince criminal organizations employ global networks to achieve their goals, efforts to eliminate this phenomenon also demand a common and, indeed, a global effort on the part of various sectors of society\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=56 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 33,
+        "final_sentence": "Conflict and fear",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 34,
+        "final_sentence": "These situations of violence, sad to say, \u201chave become so common as to constitute a real \u2018third world war\u2019 fought piecemeal\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 35,
+        "final_sentence": "Our world is trapped in a strange contradiction: we believe that we can \u201censure stability and peace through a false sense of security sustained by a mentality of fear and mistrust\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 36,
+        "final_sentence": "They are left without horizons, for they lack this interchange with others\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 37,
+        "final_sentence": "There also exists a typically \u201cmafioso\u201d pedagogy that, by appealing to a false communitarian mystique, creates bonds of dependency and fealty from which it is very difficult to break free.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 38,
+        "final_sentence": "GLOBALIZATION AND PROGRESS WITHOUT A SHARED ROADMAP",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='P'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 39,
+        "final_sentence": "This panorama, for all its undeniable advances, does not appear to lead to a more humane future.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 40,
+        "final_sentence": "Culture clash, no; culture of encounter, yes\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=7 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 41,
+        "final_sentence": "How wonderful would it be, even as we discover faraway planets, to rediscover the needs of the brothers and sisters who orbit around us\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 42,
+        "final_sentence": "PANDEMICS AND OTHER CALAMITIES IN HISTORY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 43,
+        "final_sentence": "As I said in those days, \u201cthe storm has exposed our vulnerability and uncovered those false and superfluous certainties around which we constructed our daily schedules, our projects, our habits and priorities\u2026 Amid this storm, the fa\u00e7ade of those stereotypes with which we camouflaged our egos, always worrying about appearances, has fallen away, revealing once more the ineluctable and blessed awareness that we are part of one another, that we are brothers and sisters of one another\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=77 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 44,
+        "final_sentence": "The pain, uncertainty and fear, and the realization of our own limitations, brought on by the pandemic have only made it all the more urgent that we rethink our styles of life, our relationships, the organization of our societies and, above all, the meaning of our existence.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 45,
+        "final_sentence": "We are reminded of the well-known verse of the poet Virgil that evokes the \u201ctears of things\u201d, the misfortunes of life and history.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 46,
+        "final_sentence": "If only we might rediscover once for all that we need one another, and that in this way our human family can experience a rebirth, with all its faces, all its hands and all its voices, beyond the walls that we have erected.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 47,
+        "final_sentence": "The notion of \u201cevery man for himself\u201d will rapidly degenerate into a free-for-all that would prove worse than any pandemic.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 48,
+        "final_sentence": "AN ABSENCE OF HUMAN DIGNITY ON THE BORDERS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 49,
+        "final_sentence": "They dream of a better future and they want to create the conditions for achieving it\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 50,
+        "final_sentence": "For this reason, \u201cthere is also a need to reaffirm the right not to emigrate, that is, to remain in one\u2019s homeland\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 51,
+        "final_sentence": "For Christians, this way of thinking and acting is unacceptable, since it sets certain political preferences above deep convictions of our faith: the inalienable dignity of each human person regardless of origin, race or religion, and the supreme law of fraternal love.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=42 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 52,
+        "final_sentence": "Nonetheless, \u201caided by its great cultural and religious heritage, it has the means to defend the centrality of the human person and to find the right balance between its twofold moral responsibility to protect the rights of its citizens and to assure assistance and acceptance to migrants\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 53,
+        "final_sentence": "In this way, fear deprives us of the desire and the ability to encounter the other\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 54,
+        "final_sentence": "THE ILLUSION OF COMMUNICATION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 55,
+        "final_sentence": "Respect for others disintegrates, and even as we dismiss, ignore or keep others distant, we can shamelessly peer into every detail of their lives.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 56,
+        "final_sentence": "It is not capable of uniting humanity.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=7 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 57,
+        "final_sentence": "Shameless aggression",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 58,
+        "final_sentence": "Social aggression has found unparalleled room for expansion through computers and mobile devices.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 59,
+        "final_sentence": "These closed circuits facilitate the spread of fake news and false information, fomenting prejudice and hate\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 60,
+        "final_sentence": "How can this contribute to the fraternity that our common Father asks of us?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='?'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 61,
+        "final_sentence": "Information without wisdom",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 62,
+        "final_sentence": "Persons or situations we find unpleasant or disagreeable are simply deleted in today\u2019s virtual networks; a virtual circle is then created, isolating us from the real world in which we are living.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 63,
+        "final_sentence": "My desire is that the seed that Saint Francis planted may grow in the hearts of many\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 64,
+        "final_sentence": "This process, by its intrinsic logic, blocks the kind of serene reflection that could lead us to a shared wisdom.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 65,
+        "final_sentence": "The process of building fraternity, be it local or universal, can only be undertaken by spirits that are free and open to authentic encounters.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 66,
+        "final_sentence": "FORMS OF SUBJECTION AND OF SELF-CONTEMPT",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='T'"
+        ]
+      },
+      {
+        "paragraph_index": 67,
+        "final_sentence": "In the affluent sectors of many poor countries, and at times in those who have recently emerged from poverty, there is a resistance to native ways of thinking and acting, and a tendency to look down on one\u2019s own cultural identity, as if it were the sole cause of every ill.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=52 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 68,
+        "final_sentence": "Then too, ignoring the culture of their people has led to the inability of many political leaders to devise an effective development plan that could be freely accepted and sustained over time.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 69,
+        "final_sentence": "A land will be fruitful, and its people bear fruit and give birth to the future, only to the extent that it can foster a sense of belonging among its members, create bonds of integration between generations and different communities, and avoid all that makes us insensitive to others and leads to further alienation\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=54 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 70,
+        "final_sentence": "HOPE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 71,
+        "final_sentence": "We began to realize that our lives are interwoven with and sustained by ordinary people valiantly shaping the decisive events of our shared history: doctors, nurses, pharmacists, storekeepers and supermarket workers, cleaning personnel, caretakers, transport workers, men and women working to provide essential services and public safety, volunteers, priests and religious\u2026 They understood that no one is saved alone.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=59 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 72,
+        "final_sentence": "Let us continue, then, to advance along the paths of hope.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 73,
+        "final_sentence": "CHAPTER TWO",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='O'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 74,
+        "final_sentence": "A STRANGER ON THE ROAD",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='D'"
+        ]
+      },
+      {
+        "paragraph_index": 75,
+        "final_sentence": "Although this Letter is addressed to all people of good will, regardless of their religious convictions, the parable is one that any of us can relate to and find challenging.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 76,
+        "final_sentence": "The next day he took out two denarii, gave them to the innkeeper, and said, \u2018Take care of him; and when I come back, I will repay you whatever more you spend.\u2019 Which of these three, do you think, was a neighbour to the man who fell into the hands of the robbers?\u201d He said, \u2018The one who showed him mercy.\u2019 Jesus said to him, \u2018Go and do likewise.\u2019\u201d ( Lk 10:25-37).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=73 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 77,
+        "final_sentence": "The context",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 78,
+        "final_sentence": "Instead, he encourages us to create a different culture, in which we resolve our conflicts and care for one another.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 79,
+        "final_sentence": "Many centuries later, Saint Irenaeus would use the image of a melody to make the same point: \u201cOne who seeks the truth should not concentrate on the differences between one note and another, thinking as if each was created separately and apart from the others; instead, he should realize that one and the same person composed the entire melody\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=59 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 80,
+        "final_sentence": "The desire to imitate God\u2019s own way of acting gradually replaced the tendency to think only of those nearest us: \u201cThe compassion of man is for his neighbour, but the compassion of the Lord is for all living beings\u201d ( Sir 18:13).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=43 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 81,
+        "final_sentence": "Hence the summons to \u201cbe merciful, just as your Father is merciful\u201d ( Lk 6:36).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 82,
+        "final_sentence": "It derives from the enduring memory of the Jewish people that they themselves had once lived as foreigners in Egypt:",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=20 > 15",
+          "non_period_final=':'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 83,
+        "final_sentence": "\u201cYou shall not wrong or oppress a stranger, for you were strangers in the land of Egypt\u201d ( Ex 22:21).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=20 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 84,
+        "final_sentence": "\u201cYou shall not oppress a stranger; you know the heart of a stranger, for you were strangers in the land of Egypt\u201d ( Ex 23:9).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 85,
+        "final_sentence": "The stranger who resides with you shall be to you as the citizen among you; you shall love the stranger as yourself, for you were strangers in the land of Egypt\u201d (Lev 19:33-34).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 86,
+        "final_sentence": "Remember that you were a slave in the land of Egypt\u201d ( Deut 24:21-22).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 87,
+        "final_sentence": "The call to fraternal love echoes throughout the New Testament:",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=':'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 88,
+        "final_sentence": "\u201cFor the whole law is summed up in a single commandment, \u2018You shall love your neighbour as yourself\u2019\u201d ( Gal 5:14).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 89,
+        "final_sentence": "But whoever hates another believer is in the darkness\u201d ( 1 Jn 2:10-11).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 90,
+        "final_sentence": "Whoever does not love abides in death\u201d ( 1 Jn 3:14).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 91,
+        "final_sentence": "\u201cThose who do not love a brother or sister whom they have seen, cannot love God whom they have not seen\u201d ( 1 Jn 4:20).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 92,
+        "final_sentence": "Love enables us to create one great family, where all of us can feel at home\u2026 Love exudes compassion and dignity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 93,
+        "final_sentence": "Abandoned on the wayside",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 94,
+        "final_sentence": "Without even knowing the injured man, he saw him as deserving of his time and attention.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 95,
+        "final_sentence": "We have become accustomed to looking the other way, passing by, ignoring situations until they affect us directly.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 96,
+        "final_sentence": "A society that seeks prosperity but turns its back on suffering.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 97,
+        "final_sentence": "By his actions, the Good Samaritan showed that \u201cthe existence of each and every individual is deeply tied to that of others: life is not simply time that passes; life is a time for interactions\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 98,
+        "final_sentence": "At the same time, it warns us about the attitude of those who think only of themselves and fail to shoulder the inevitable responsibilities of life as it is.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 99,
+        "final_sentence": "That is the meaning of dignity.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=6 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 100,
+        "final_sentence": "A story constantly retold",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 101,
+        "final_sentence": "All of us have in ourselves something of the wounded man, something of the robber, something of the passers-by, and something of the Good Samaritan.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 102,
+        "final_sentence": "It could be said that, here and now, anyone who is neither a robber nor a passer-by is either injured himself or bearing an injured person on his shoulders.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 103,
+        "final_sentence": "Jesus trusts in the best of the human spirit; with this parable, he encourages us to persevere in love, to restore dignity to the suffering and to build a society worthy of the name.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 104,
+        "final_sentence": "The characters of the story",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 105,
+        "final_sentence": "Will the wounded man end up being the justification for our irreconcilable divisions, our cruel indifference, our intestine conflicts?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=19 > 15",
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 106,
+        "final_sentence": "The poor are beyond the scope of their interest.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 107,
+        "final_sentence": "Paradoxically, those who claim to be unbelievers can sometimes put God\u2019s will into practice better than believers.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 108,
+        "final_sentence": "Plunging people into despair closes a perfectly perverse circle: such is the agenda of the invisible dictatorship of hidden interests that have gained mastery over both resources and the possibility of thinking and expressing opinions.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 109,
+        "final_sentence": "We televise live pictures of them, even speaking about them with euphemisms and with apparent tolerance\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 110,
+        "final_sentence": "Starting anew",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='w'"
+        ]
+      },
+      {
+        "paragraph_index": 111,
+        "final_sentence": "For our part, let us foster what is good and place ourselves at its service.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 112,
+        "final_sentence": "Reparation and reconciliation will give us new life and set us all free from fear.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 113,
+        "final_sentence": "Let us care for the needs of every man and woman, young and old, with the same fraternal spirit of care and closeness that marked the Good Samaritan.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=28 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 114,
+        "final_sentence": "Neighbours without borders",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 115,
+        "final_sentence": "He asks us not to decide who is close enough to be our neighbour, but rather that we ourselves become neighbours to all.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 116,
+        "final_sentence": "I should no longer say that I have neighbours to help, but that I must myself be a neighbour to others.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 117,
+        "final_sentence": "In fact, one ancient Jewish text referring to nations that were hated, speaks of Samaria as \u201cnot even a people\u201d ( Sir 50:25); it also refers to \u201cthe foolish people that live in Shechem\u201d (50:26).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 118,
+        "final_sentence": "It gives a universal dimension to our call to love, one that transcends all prejudices, all historical and cultural barriers, all petty interests.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 119,
+        "final_sentence": "The plea of the stranger",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 120,
+        "final_sentence": "In the process, we come to experience others as our \u201cown flesh\u201d ( Is 58:7).",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 121,
+        "final_sentence": "Theology continues to be enriched by its reflection on this great truth.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 122,
+        "final_sentence": "For this reason, it is important that catechesis and preaching speak more directly and clearly about the social meaning of existence, the fraternal dimension of spirituality, our conviction of the inalienable dignity of each person, and our reasons for loving and accepting all our brothers and sisters.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 123,
+        "final_sentence": "CHAPTER THREE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 124,
+        "final_sentence": "ENVISAGING AND ENGENDERING AN OPEN WORLD",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='D'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 125,
+        "final_sentence": "On the contrary, there is no life when we claim to be self-sufficient and live as islands: in these attitudes, death prevails\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 126,
+        "final_sentence": "MOVING BEYOND OURSELVES",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 127,
+        "final_sentence": "For this reason, \u201cman always has to take up the challenge of moving beyond himself\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 128,
+        "final_sentence": "Closed groups and self-absorbed couples that define themselves in opposition to others tend to be expressions of selfishness and mere self-preservation.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 129,
+        "final_sentence": "The monks realized that the values they sought to cultivate had to be accompanied by a readiness to move beyond themselves in openness to others.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 130,
+        "final_sentence": "The unique value of love",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 131,
+        "final_sentence": "Saint Bonaventure, for his part, explained that the other virtues, without charity, strictly speaking do not fulfil the commandments \u201cthe way God wants them to be fulfilled\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 132,
+        "final_sentence": "All of us, as believers, need to recognize that love takes first place: love must never be put at risk, and the greatest danger lies in failing to love (cf. 1 Cor 13:1-13).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 133,
+        "final_sentence": "And \u201cthe love whereby someone becomes pleasing ( grata ) to another is the reason why the latter bestows something on him freely ( gratis )\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 134,
+        "final_sentence": "Only by cultivating this way of relating to one another will we make possible a social friendship that excludes no one and a fraternity that is open to all.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 135,
+        "final_sentence": "A LOVE EVER MORE OPEN",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='N'"
+        ]
+      },
+      {
+        "paragraph_index": 136,
+        "final_sentence": "As Jesus told us: \u201cYou are all brothers\u201d ( Mt 23:8).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 137,
+        "final_sentence": "In the dynamics of history, and in the diversity of ethnic groups, societies and cultures, we see the seeds of a vocation to form a community composed of brothers and sisters who accept and care for one another\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 138,
+        "final_sentence": "Open societies that integrate everyone",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 139,
+        "final_sentence": "Racism is a virus that quickly mutates and, instead of disappearing, goes into hiding, and lurks in waiting.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 140,
+        "final_sentence": "Let me repeat: we need to have \u201cthe courage to give a voice to those who are discriminated against due to their disability, because sadly, in some countries even today, people find it hard to acknowledge them as persons of equal dignity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 141,
+        "final_sentence": "Inadequate understandings of universal love",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 142,
+        "final_sentence": "In this way, they deny that there is room for everybody.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 143,
+        "final_sentence": "How much our human family needs to learn to live together in harmony and peace, without all of us having to be the same!\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 144,
+        "final_sentence": "BEYOND A WORLD OF \u201cASSOCIATES\u201d",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 145,
+        "final_sentence": "Free of every label and position, he was able to interrupt his journey, change his plans, and unexpectedly come to the aid of an injured person who needed his help.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 146,
+        "final_sentence": "The word \u201cneighbour\u201d loses all meaning; there can only be \u201cassociates\u201d, partners in the pursuit of particular interests.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 147,
+        "final_sentence": "Liberty, equality and fraternity",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 148,
+        "final_sentence": "This shallow understanding has little to do with the richness of a liberty directed above all to love.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 149,
+        "final_sentence": "Within that framework, what place is there for those who are not part of one\u2019s group of associates, yet long for a better life for themselves and their families?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 150,
+        "final_sentence": "It makes us believe that everything consists in giving free rein to our own ambitions, as if by pursuing ever greater ambitions and creating safety nets we would somehow be serving the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 151,
+        "final_sentence": "A UNIVERSAL LOVE THAT PROMOTES PERSONS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 152,
+        "final_sentence": "This is a basic principle of social life that tends to be ignored in a variety of ways by those who sense that it does not fit into their worldview or serve their purposes.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 153,
+        "final_sentence": "Unless this basic principle is upheld, there will be no future either for fraternity or for the survival of humanity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 154,
+        "final_sentence": "What we need in fact are states and civil institutions that are present and active, that look beyond the free and efficient working of certain economic, political or ideological systems, and are primarily concerned with individuals and the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 155,
+        "final_sentence": "If a society is governed primarily by the criteria of market freedom and efficiency, there is no place for such persons, and fraternity will remain just another vague ideal.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 156,
+        "final_sentence": "Not only by providing for their basic needs, but by enabling them to give the best of themselves, even though their performance may be less than optimum, their pace slow or their efficiency limited.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 157,
+        "final_sentence": "Underlying this is a conception of the human person as detached from all social and anthropological contexts, as if the person were a \u201cmonad\u201d ( mon\u00e1s ), increasingly unconcerned with others\u2026 Unless the rights of each individual are harmoniously ordered to the greater good, those rights will end up being considered limitless and consequently will become a source of conflicts and violence\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=60 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 158,
+        "final_sentence": "PROMOTING THE MORAL GOOD",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='D'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 159,
+        "final_sentence": "This is an attitude that \u201cwills the good\u201d of others; it bespeaks a yearning for goodness, an inclination towards all that is fine and excellent, a desire to fill the lives of others with what is beautiful, sublime and edifying.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 160,
+        "final_sentence": "Every society needs to ensure that values are passed on; otherwise, what is handed down are selfishness, violence, corruption in its various forms, indifference and, ultimately, a life closed to transcendence and entrenched in individual interests.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 161,
+        "final_sentence": "The value of solidarity",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 162,
+        "final_sentence": "The values of freedom, mutual respect and solidarity can be handed on from a tender age\u2026 Communicators also have a responsibility for education and formation, especially nowadays, when the means of information and communication are so widespread\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 163,
+        "final_sentence": "Service is never ideological, for we do not serve ideas, we serve people\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 164,
+        "final_sentence": "It means confronting the destructive effects of the empire of money\u2026 Solidarity, understood in its most profound meaning, is a way of making history, and this is what popular movements are doing\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 165,
+        "final_sentence": "The same attitude is demanded if we are to recognize the rights of all people, even those born beyond our own borders.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 166,
+        "final_sentence": "RE-ENVISAGING THE SOCIAL ROLE OF PROPERTY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 167,
+        "final_sentence": "As a community, we have an obligation to ensure that every person lives with dignity and has sufficient opportunities for his or her integral development.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 168,
+        "final_sentence": "In the words of Saint Gregory the Great, \u201cWhen we provide the needy with their basic needs, we are giving them what belongs to them, not to us\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=28 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 169,
+        "final_sentence": "Yet it often happens that secondary rights displace primary and overriding rights, in practice making them irrelevant.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 170,
+        "final_sentence": "Rights without borders",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 171,
+        "final_sentence": "As it is unacceptable that some have fewer rights by virtue of being women, it is likewise unacceptable that the mere place of one\u2019s birth or residence should result in his or her possessing fewer opportunities for a developed and dignified life.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 172,
+        "final_sentence": "The right of some to free enterprise or market freedom cannot supersede the rights of peoples and the dignity of the poor, or, for that matter, respect for the natural environment, for \u201cif we make something our own, it is only to administer it for the good of all\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=49 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 173,
+        "final_sentence": "The right to private property is always accompanied by the primary and prior principle of the subordination of all private property to the universal destination of the earth\u2019s goods, and thus the right of all to their use.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 174,
+        "final_sentence": "The rights of peoples",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 175,
+        "final_sentence": "As the Bishops of the United States have taught, there are fundamental rights that \u201cprecede any society because they flow from the dignity granted to each person as created by God\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=31 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 176,
+        "final_sentence": "At times, the inability to recognize equal human dignity leads the more developed regions in some countries to think that they can jettison the \u201cdead weight\u201d of poorer regions and so increase their level of consumption.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 177,
+        "final_sentence": "While respecting the principle that all legitimately acquired debt must be repaid, the way in which many poor countries fulfil this obligation should not end up compromising their very existence and growth.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 178,
+        "final_sentence": "For a real and lasting peace will only be possible \u201con the basis of a global ethic of solidarity and cooperation in the service of a future shaped by interdependence and shared responsibility in the whole human family\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 179,
+        "final_sentence": "CHAPTER FOUR",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='R'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 180,
+        "final_sentence": "A HEART OPEN TO THE WHOLE WORLD",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='D'"
+        ]
+      },
+      {
+        "paragraph_index": 181,
+        "final_sentence": "If the conviction that all human beings are brothers and sisters is not to remain an abstract idea but to find concrete embodiment, then numerous related issues emerge, forcing us to see things in a new light and to develop new responses.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 182,
+        "final_sentence": "BORDERS AND THEIR LIMITS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 183,
+        "final_sentence": "For \u201cit is not a case of implementing welfare programmes from the top down, but rather of undertaking a journey together, through these four actions, in order to build cities and countries that, while preserving their respective cultural and religious identity, are open to differences and know how to promote them in the spirit of human fraternity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=57 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 184,
+        "final_sentence": "As examples, we may cite: increasing and simplifying the granting of visas; adopting programmes of individual and community sponsorship; opening humanitarian corridors for the most vulnerable refugees; providing suitable and dignified housing; guaranteeing personal security and access to basic services; ensuring adequate consular assistance and the right to retain personal identity documents; equitable access to the justice system; the possibility of opening bank accounts and the guarantee of the minimum needed to survive; freedom of movement and the possibility of employment; protecting minors and ensuring their regular access to education; providing for programmes of temporary guardianship or shelter; guaranteeing religious freedom; promoting integration into society; supporting the reuniting of families; and preparing local communities for the process of integration.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=119 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 185,
+        "final_sentence": "Its misuse paves the way for hostility and discord; it undoes any successes and takes away the religious and civil rights of some citizens who are thus discriminated against\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 186,
+        "final_sentence": "Such planning should include effective assistance for integrating migrants in their receiving countries, while also promoting the development of their countries of origin through policies inspired by solidarity, yet not linking assistance to ideological strategies and practices alien or contrary to the cultures of the peoples being assisted\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 187,
+        "final_sentence": "RECIPROCAL GIFTS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 188,
+        "final_sentence": "For this reason, \u201cI especially urge young people not to play into the hands of those who would set them against other young people, newly arrived in their countries, and who would encourage them to view the latter as a threat, and not possessed of the same inalienable dignity as every other human being\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=54 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 189,
+        "final_sentence": "Patience and trust are called for in such dialogue, permitting individuals, families and communities to hand on the values of their own culture and welcome the good that comes from others\u2019 experiences\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 190,
+        "final_sentence": "Immigrants, if they are helped to integrate, are a blessing, a source of enrichment and new gift that encourages a society to grow\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 191,
+        "final_sentence": "It is likewise important to reinforce the bond of fundamental human rights in order to help ensure a dignified life for all the men and women of East and West, avoiding the politics of double standards\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 192,
+        "final_sentence": "A fruitful exchange",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 193,
+        "final_sentence": "In the end, this will impoverish us all.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=8 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 194,
+        "final_sentence": "From the standpoint of integral development, this presupposes \u201cgiving poorer nations an effective voice in shared decision-making\u201d and the capacity to \u201cfacilitate access to the international market on the part of countries suffering from poverty and underdevelopment\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 195,
+        "final_sentence": "A gratuitousness open to others",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 196,
+        "final_sentence": "Some countries, though, presume to accept only scientists or investors.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 197,
+        "final_sentence": "As Jesus told his disciples: \u201cWithout cost you have received, without cost you are to give\u201d ( Mt 10:8).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 198,
+        "final_sentence": "Only a social and political culture that readily and \u201cgratuitously\u201d welcomes others will have a future.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 199,
+        "final_sentence": "LOCAL AND UNIVERSAL",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='L'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 200,
+        "final_sentence": "To separate them would be to disfigure each and to create a dangerous polarization.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=14 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 201,
+        "final_sentence": "Local flavour",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 202,
+        "final_sentence": "All this brings out the positive meaning of the right to property: I care for and cultivate something that I possess, in such a way that it can contribute to the good of all.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 203,
+        "final_sentence": "Gen 11:1-9).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 204,
+        "final_sentence": "We can work on a small scale, in our own neighbourhood, but with a larger perspective\u2026 The global need not stifle, nor the particular prove barren\u201d; our model must be that of a polyhedron, in which the value of each individual is respected, where \u201cthe whole is greater than the part, but it is also greater than the sum of its parts\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=62 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 205,
+        "final_sentence": "A universal horizon",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 206,
+        "final_sentence": "A healthy culture, on the other hand, is open and welcoming by its very nature; indeed, \u201ca culture without universal values is not truly a culture\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 207,
+        "final_sentence": "Our local experience needs to develop \u201cin contrast to\u201d and \u201cin harmony with\u201d the experiences of others living in diverse cultural contexts.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 208,
+        "final_sentence": "The world grows and is filled with new beauty, thanks to the successive syntheses produced between cultures that are open and free of any form of cultural imposition.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 209,
+        "final_sentence": "All individuals, whatever their origin, know that they are part of the greater human family, without which they will not be able to understand themselves fully.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 210,
+        "final_sentence": "For \u201cman is a limited being who is himself limitless\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 211,
+        "final_sentence": "Starting with our own region",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 212,
+        "final_sentence": "Cultural, economic and political integration with neighbouring peoples should therefore be accompanied by a process of education that promotes the value of love for one\u2019s neighbour, the first indispensable step towards attaining a healthy universal integration.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 213,
+        "final_sentence": "Perhaps we were trained in this kind of fear and mistrust.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 214,
+        "final_sentence": "Today, no state can ensure the common good of its population if it remains isolated.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 215,
+        "final_sentence": "CHAPTER FIVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 216,
+        "final_sentence": "A BETTER KIND OF POLITICS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 217,
+        "final_sentence": "Sadly, politics today often takes forms that hinder progress towards a different world.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 218,
+        "final_sentence": "FORMS OF POPULISM AND LIBERALISM",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='M'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 219,
+        "final_sentence": "In both cases, it becomes difficult to envisage an open world that makes room for everyone, including the most vulnerable, and shows respect for different cultures.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 220,
+        "final_sentence": "Popular vs. populist",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='t'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 221,
+        "final_sentence": "Nowadays it has become impossible for someone to express a view on any subject without being categorized one way or the other, either to be unfairly discredited or to be praised to the skies.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 222,
+        "final_sentence": "Unless they are taken into account \u2013 together with a sound critique of demagoguery \u2013 a fundamental aspect of social reality would be overlooked.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 223,
+        "final_sentence": "And that is not something automatic, but rather a slow, difficult process\u2026 of advancing towards a common project\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 224,
+        "final_sentence": "This becomes all the more serious when, whether in cruder or more subtle forms, it leads to the usurpation of institutions and laws.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 225,
+        "final_sentence": "In this way, it does not deny its proper identity, but is open to being mobilized, challenged, broadened and enriched by others, and thus to further growth and development.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 226,
+        "final_sentence": "At the same time, it follows that \u201cwelfare projects, which meet certain urgent needs, should be considered merely temporary responses\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 227,
+        "final_sentence": "Work gives us a sense of shared responsibility for the development of the world, and ultimately, for our life as a people.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 228,
+        "final_sentence": "The benefits and limits of liberal approaches",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 229,
+        "final_sentence": "Neither the notion of \u201cpeople\u201d nor that of \u201cneighbour\u201d can be considered purely abstract or romantic, in such a way that social organization, science and civic institutions can be rejected or treated with contempt.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 230,
+        "final_sentence": "A domestic hearth has no real warmth unless it is safeguarded by law, by a state of tranquillity founded on law, and enjoys a minimum of wellbeing ensured by the division of labour, commercial exchange, social justice and political citizenship\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 231,
+        "final_sentence": "Even the most rigorous scientific studies can propose different courses of action.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 232,
+        "final_sentence": "Concupiscence, however, can be overcome with the help of God.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 233,
+        "final_sentence": "Some liberal approaches ignore this factor of human weakness; they envisage a world that follows a determined order and is capable by itself of ensuring a bright future and providing solutions for every problem.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 234,
+        "final_sentence": "It has also shown that, in addition to recovering a sound political life that is not subject to the dictates of finance, \u201cwe must put human dignity back at the centre and on that pillar build the alternative social structures we need\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 235,
+        "final_sentence": "They may be troublesome, and certain \u201ctheorists\u201d may find it hard to classify them, yet we must find the courage to acknowledge that, without them, \u201cdemocracy atrophies, turns into a mere word, a formality; it loses its representative character and becomes disembodied, since it leaves out the people in their daily struggle for dignity, in the building of their future\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=60 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 236,
+        "final_sentence": "INTERNATIONAL POWER",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='R'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 237,
+        "final_sentence": "Indeed, it appears that the actual strategies developed worldwide in the wake of the crisis fostered greater individualism, less integration and increased freedom for the truly powerful, who always find a way to escape unscathed.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 238,
+        "final_sentence": "Yet today\u2019s world presents us with many false rights and \u2013 at the same time \u2013 broad sectors which are vulnerable, victims of power badly exercised\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 239,
+        "final_sentence": "Still, such an authority ought at least to promote more effective world organizations, equipped with the power to provide for the global common good, the elimination of hunger and poverty and the sure defence of fundamental human rights.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 240,
+        "final_sentence": "There is need to prevent this Organization from being delegitimized, since its problems and shortcomings are capable of being jointly addressed and resolved.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 241,
+        "final_sentence": "Among these normative instruments, preference should be given to multilateral agreements between states, because, more than bilateral agreements, they guarantee the promotion of a truly universal common good and the protection of weaker states.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 242,
+        "final_sentence": "These groups and organizations often carry out commendable efforts in the service of the common good and their members at times show true heroism, revealing something of the grandeur of which our humanity is still capable.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 243,
+        "final_sentence": "SOCIAL AND POLITICAL CHARITY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 244,
+        "final_sentence": "Can there be an effective process of growth towards universal fraternity and social peace without a sound political life?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=19 > 15",
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 245,
+        "final_sentence": "The politics we need",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 246,
+        "final_sentence": "We cannot expect economics to do this, nor can we allow economics to take over the real power of the state.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 247,
+        "final_sentence": "As the Bishops of Portugal have taught, the earth \u201cis lent to each generation, to be handed on to the generation that follows\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 248,
+        "final_sentence": "An economy that is an integral part of a political, social, cultural and popular programme directed to the common good could pave the way for \u201cdifferent possibilities which do not involve stifling human creativity and its ideals of progress, but rather directing that energy along new channels\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 249,
+        "final_sentence": "Political love",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 250,
+        "final_sentence": "Once more, I appeal for a renewed appreciation of politics as \u201ca lofty vocation and one of the highest forms of charity, inasmuch as it seeks the common good\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 251,
+        "final_sentence": "For this reason, charity finds expression not only in close and intimate relationships but also in \u201cmacro-relationships: social, economic and political\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 252,
+        "final_sentence": "Good politics will seek ways of building communities at every level of social life, in order to recalibrate and reorient globalization and thus avoid its disruptive effects.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 253,
+        "final_sentence": "Effective love",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 254,
+        "final_sentence": "Social love is a \u201cforce capable of inspiring new ways of approaching the problems of today\u2019s world, of profoundly renewing structures, social organizations and legal systems from within\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 255,
+        "final_sentence": "Charity\u2019s openness to truth thus protects it from \u201ca fideism that deprives it of its human and universal breadth\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 256,
+        "final_sentence": "Concrete efforts must be made to bring about whatever they and their nations need for the sake of their development.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 257,
+        "final_sentence": "THE EXERCISE OF POLITICAL LOVE",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='E'"
+        ]
+      },
+      {
+        "paragraph_index": 258,
+        "final_sentence": "While one person can help another by providing something to eat, the politician creates a job for that other person, and thus practices a lofty form of charity that ennobles his or her political activity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 259,
+        "final_sentence": "Sacrifices born of love",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 260,
+        "final_sentence": "Here too we see the importance of the principle of subsidiarity , which is inseparable from the principle of solidarity .",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 261,
+        "final_sentence": "This includes taking intelligent advantage of the immense resources offered by technological development.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 262,
+        "final_sentence": "These things are essential; they can no longer be deferred.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 263,
+        "final_sentence": "A love that integrates and unites",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 264,
+        "final_sentence": "It may seem na\u00efve and utopian, yet we cannot renounce this lofty aim.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 265,
+        "final_sentence": "May we not be content with being enclosed in one fragment of reality.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 266,
+        "final_sentence": "When a specific policy sows hatred and fear towards other nations in the name of its own country\u2019s welfare, there is need to be concerned, to react in time and immediately to correct the course.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 267,
+        "final_sentence": "FRUITFULNESS OVER RESULTS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 268,
+        "final_sentence": "Yet it must never be forgotten that \u201cloving the most insignificant of human beings as a brother, as if there were no one else in the world but him, cannot be considered a waste of time\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 269,
+        "final_sentence": "They are our brothers and sisters, and as such we must love and care for them\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 270,
+        "final_sentence": "All of these encircle our world like a vital force\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 271,
+        "final_sentence": "Indeed, \u201cauthentic political life, built upon respect for law and frank dialogue between individuals, is constantly renewed whenever there is a realization that every woman and man, and every new generation, brings the promise of new relational, intellectual, cultural and spiritual energies\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 272,
+        "final_sentence": "At times, in thinking of the future, we do well to ask ourselves, \u201cWhy I am doing this?\u201d, \u201cWhat is my real aim?\u201d For as time goes on, reflecting on the past, the questions will not be: \u201cHow many people endorsed me?\u201d, \u201cHow many voted for me?\u201d, \u201cHow many had a positive image of me?\u201d The real, and potentially painful, questions will be, \u201cHow much love did I put into my work?\u201d \u201cWhat did I do for the progress of our people?\u201d \u201cWhat mark did I leave on the life of society?\u201d \u201cWhat real bonds did I create?\u201d \u201cWhat positive forces did I unleash?\u201d \u201cHow much social peace did I sow?\u201d \u201cWhat good did I achieve in the position that was entrusted to me?\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=124 > 15",
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 273,
+        "final_sentence": "CHAPTER SIX",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='X'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 274,
+        "final_sentence": "DIALOGUE AND FRIENDSHIP IN SOCIETY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 275,
+        "final_sentence": "Unlike disagreement and conflict, persistent and courageous dialogue does not make headlines, but quietly helps the world to live much better than we imagine.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 276,
+        "final_sentence": "SOCIAL DIALOGUE FOR A NEW CULTURE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 277,
+        "final_sentence": "A country flourishes when constructive dialogue occurs between its many rich cultural components: popular culture, university culture, youth culture, artistic culture, technological culture, economic culture, family culture and media culture\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 278,
+        "final_sentence": "But monologues engage no one, and their content is frequently self-serving and contradictory.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=14 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 279,
+        "final_sentence": "Attempts can be made to justify or excuse it when it tends to serve one\u2019s own economic or ideological interests, but sooner or later it turns against those very interests.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 280,
+        "final_sentence": "God willing, such heroes are quietly emerging, even now, in the midst of our society.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 281,
+        "final_sentence": "Building together",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 282,
+        "final_sentence": "Let us not forget that \u201cdifferences are creative; they create tension and in the resolution of tension lies humanity\u2019s progress\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 283,
+        "final_sentence": "Researchers who are expert in their own field, yet also familiar with the findings of other sciences and disciplines, are in a position to discern other aspects of the object of their study and thus to become open to a more comprehensive and integral knowledge of reality.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 284,
+        "final_sentence": "As the Bishops of Australia have pointed out, we cannot accept \u201ca digital world designed to exploit our weaknesses and bring out the worst in people\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 285,
+        "final_sentence": "The BASIS of Consensus",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 286,
+        "final_sentence": "Under the guise of tolerance, relativism ultimately leaves the interpretation of moral values to those in power, to be defined as they see fit. \u201cIn the absence of objective truths or sound principles other than the satisfaction of our own desires and immediate needs\u2026 we should not think that political efforts or the force of law will be sufficient\u2026 When the culture itself is corrupt, and objective truth and universally valid principles are no longer upheld, then laws can only be seen as arbitrary impositions or obstacles to be avoided\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=90 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 287,
+        "final_sentence": "A society is noble and decent not least for its support of the pursuit of truth and its adherence to the most basic of truths.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 288,
+        "final_sentence": "As it peers into human nature, reason discovers universal values derived from that same nature.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 289,
+        "final_sentence": "Before the demands of morality we are all absolutely equal\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 290,
+        "final_sentence": "In the end, the law of the strongest prevails.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 291,
+        "final_sentence": "Consensus and truth",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 292,
+        "final_sentence": "Our understanding of their meaning and scope can increase \u2013 and in that respect, consensus is a dynamic reality \u2013 but in themselves, they are held to be enduring by virtue of their inherent meaning.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 293,
+        "final_sentence": "These three realities can be harmonized whenever, through dialogue, people are unafraid to get to the heart of an issue.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 294,
+        "final_sentence": "The intellect can investigate the reality of things through reflection, experience and dialogue, and come to recognize in that reality, which transcends it, the basis of certain universal moral demands.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 295,
+        "final_sentence": "Thus, room for dialogue will always exist.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=7 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 296,
+        "final_sentence": "A NEW CULTURE",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='E'"
+        ]
+      },
+      {
+        "paragraph_index": 297,
+        "final_sentence": "For they have another way of looking at things; they see aspects of reality that are invisible to the centres of power where weighty decisions are made.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 298,
+        "final_sentence": "Encounter that becomes culture",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 299,
+        "final_sentence": "The subject of this culture is the people, not simply one part of society that would pacify the rest with the help of professional and media resources.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 300,
+        "final_sentence": "Let us teach them to fight the good fight of the culture of encounter!",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='!'"
+        ]
+      },
+      {
+        "paragraph_index": 301,
+        "final_sentence": "The joy of acknowledging others",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 302,
+        "final_sentence": "While rejecting certain visible forms of violence, another more insidious kind of violence can take root: the violence of those who despise people who are different, especially when their demands in any way compromise their own particular interests.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 303,
+        "final_sentence": "A realistic and inclusive social covenant must also be a \u201ccultural covenant\u201d, one that respects and acknowledges the different worldviews, cultures and lifestyles that coexist in society.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 304,
+        "final_sentence": "A cultural covenant eschews a monolithic understanding of the identity of a particular place; it entails respect for diversity by offering opportunities for advancement and social integration to all.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 305,
+        "final_sentence": "We have to stand in the place of others, if we are to discover what is genuine, or at least understandable, in their motivations and concerns.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 306,
+        "final_sentence": "RECOVERING KINDNESS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 307,
+        "final_sentence": "Those who do so become stars shining in the midst of darkness.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 308,
+        "final_sentence": "It involves \u201cspeaking words of comfort, strength, consolation and encouragement\u201d and not \u201cwords that demean, sadden, anger or show scorn\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 309,
+        "final_sentence": "Kindness facilitates the quest for consensus; it opens new paths where hostility and conflict would burn all bridges.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 310,
+        "final_sentence": "CHAPTER SEVEN",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 311,
+        "final_sentence": "PATHS OF RENEWED ENCOUNTER",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='R'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 312,
+        "final_sentence": "There is also a need for peacemakers, men and women prepared to work boldly and creatively to initiate processes of healing and renewed encounter.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 313,
+        "final_sentence": "STARTING ANEW FROM THE TRUTH",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='H'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 314,
+        "final_sentence": "The people have the right to know what happened\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 315,
+        "final_sentence": "We must break this cycle which seems inescapable\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=8 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 316,
+        "final_sentence": "THE ART AND ARCHITECTURE OF PEACE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 317,
+        "final_sentence": "The path to social unity always entails acknowledging the possibility that others have, at least in part, a legitimate point of view, something worthwhile to contribute, even if they were in error or acted badly. \u201cWe should never confine others to what they may have said or done, but value them for the promise that they embody\u201d, a promise that always brings with it a spark of new hope.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=69 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 318,
+        "final_sentence": "As the Bishops of South Korea have pointed out, true peace \u201ccan be achieved only when we strive for justice through dialogue, pursuing reconciliation and mutual development\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 319,
+        "final_sentence": "Do we love our society or is it still something remote, something anonymous that does not involve us, something to which we are not committed?\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 320,
+        "final_sentence": "Peace is not achieved by normative frameworks and institutional arrangements between well-meaning political or economic groups\u2026 It is always helpful to incorporate into our peace processes the experience of those sectors that have often been overlooked, so that communities themselves can influence the development of a collective memory\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=49 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 321,
+        "final_sentence": "Mainly because, as the Bishops of Colombia have rightly noted, the \u201corigins and objectives of civil demonstrations are not always clear; certain forms of political manipulation are present and in some cases they have been exploited for partisan interests\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 322,
+        "final_sentence": "Beginning with the least",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 323,
+        "final_sentence": "For peace \u201cis not merely absence of war but a tireless commitment \u2013 especially on the part of those of us charged with greater responsibility \u2013 to recognize, protect and concretely restore the dignity, so often overlooked or ignored, of our brothers and sisters, so that they can see themselves as the principal protagonists of the destiny of their nation\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=58 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 324,
+        "final_sentence": "The option for the poor should lead us to friendship with the poor\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 325,
+        "final_sentence": "If we have to begin anew, it must always be from the least of our brothers and sisters.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 326,
+        "final_sentence": "THE VALUE AND MEANING OF FORGIVENESS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 327,
+        "final_sentence": "Unable to deal with problems, they opt for an apparent peace.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 328,
+        "final_sentence": "Inevitable conflict",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 329,
+        "final_sentence": "Yet there is a risk that an inadequate understanding and presentation of these profound convictions can lead to fatalism, apathy and injustice, or even intolerance and violence.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 330,
+        "final_sentence": "Mt 18:23-35).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 331,
+        "final_sentence": "The Acts of the Apostles notes that the disciples, albeit persecuted by some of the authorities, \u201chad favour with all the people\u201d (2:47; cf. 4:21.33; 5:13).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 332,
+        "final_sentence": "The Church is well aware that in the course of history conflicts of interest between different social groups inevitably arise, and that in the face of such conflicts Christians must often take a position, honestly and decisively\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=37 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 333,
+        "final_sentence": "Legitimate conflict and forgiveness",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 334,
+        "final_sentence": "This is entirely just; forgiveness does not forbid it but actually demands it.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 335,
+        "final_sentence": "Nothing is gained this way and, in the end, everything is lost.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 336,
+        "final_sentence": "Each of us should realize that \u201ceven the harsh judgment I hold in my heart against my brother or my sister, the open wound that was never cured, the offense that was never forgiven, the rancour that is only going to hurt me, are all instances of a struggle that I carry within me, a little flame deep in my heart that needs to be extinguished before it turns into a great blaze\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=73 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 337,
+        "final_sentence": "The best way to move on",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 338,
+        "final_sentence": "Conflict between different groups \u201cif it abstains from enmities and mutual hatred, gradually changes into an honest discussion of differences founded on a desire for justice\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 339,
+        "final_sentence": "All of us know that \u201cwhen we, as individuals and communities, learn to look beyond ourselves and our particular interests, then understanding and mutual commitment bear fruit\u2026 in a setting where conflicts, tensions and even groups once considered inimical can attain a multifaceted unity that gives rise to new life\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=50 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 340,
+        "final_sentence": "MEMORY",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='Y'"
+        ]
+      },
+      {
+        "paragraph_index": 341,
+        "final_sentence": "In any case, forgetting is never the answer.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=8 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 342,
+        "final_sentence": "Never again, Lord, never again!\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 343,
+        "final_sentence": "We must never grow accustomed or inured to them.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 344,
+        "final_sentence": "To remember goodness is also a healthy thing.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=8 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 345,
+        "final_sentence": "Forgiving but not forgetting",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='g'"
+        ]
+      },
+      {
+        "paragraph_index": 346,
+        "final_sentence": "If forgiveness is gratuitous, then it can be shown even to someone who resists repentance and is unable to beg pardon.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 347,
+        "final_sentence": "Revenge resolves nothing.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=3 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 348,
+        "final_sentence": "Forgiveness is precisely what enables us to pursue justice without falling into a spiral of revenge or the injustice of forgetting.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 349,
+        "final_sentence": "There can be no racial, national, confessional or partisan differences\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 350,
+        "final_sentence": "And let us ask him for the grace to send us forth, in humility and meekness, along the demanding but enriching path of seeking peace\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 351,
+        "final_sentence": "WAR AND THE DEATH PENALTY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 352,
+        "final_sentence": "These are war and the death penalty.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=7 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 353,
+        "final_sentence": "The injustice of war",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 354,
+        "final_sentence": "Our world is encountering growing difficulties on the slow path to peace upon which it had embarked and which had already begun to bear good fruit.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 355,
+        "final_sentence": "If rules are considered simply as means to be used whenever it proves advantageous, and to be ignored when it is not, uncontrollable forces are unleashed that cause grave harm to societies, to the poor and vulnerable, to fraternal relations, to the environment and to cultural treasures, with irretrievable losses for the global community.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=54 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 356,
+        "final_sentence": "Never again war!",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='!'"
+        ]
+      },
+      {
+        "paragraph_index": 357,
+        "final_sentence": "In today\u2019s world, there are no longer just isolated outbreaks of war in one country or another; instead, we are experiencing a \u201cworld war fought piecemeal\u201d, since the destinies of countries are so closely interconnected on the global scene.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 358,
+        "final_sentence": "The dread spectre of war thus began to gain new ground.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 359,
+        "final_sentence": "Nor will it trouble us to be deemed naive for choosing peace.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 360,
+        "final_sentence": "With the money spent on weapons and other military expenditures, let us establish a global fund that can finally put an end to hunger and favour development in the most impoverished countries, so that their citizens will not resort to violent or illusory solutions, or have to leave their countries in order to seek a more dignified life.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=58 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 361,
+        "final_sentence": "The death penalty",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 362,
+        "final_sentence": "Today we state clearly that \u201cthe death penalty is inadmissible\u201d and the Church is firmly committed to calling for its abolition worldwide.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 363,
+        "final_sentence": "This means that legitimate public authority can and must \u201cinflict punishments according to the seriousness of the crimes\u201d and that judicial power be guaranteed a \u201cnecessary independence in the realm of law\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 364,
+        "final_sentence": "This too is considered a condemnation, but who does not see that, when savage violence is restrained and remedies meant to produce repentance are provided, it should be considered a benefit rather than a mere punitive measure\u2026 Do not let the atrocity of their sins feed a desire for vengeance, but desire instead to heal the wounds which those deeds have inflicted on their souls\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=65 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 365,
+        "final_sentence": "This has made all the more dangerous the growing practice in some countries of resorting to preventive custody, imprisonment without trial and especially the death penalty.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 366,
+        "final_sentence": "Particularly serious in this regard are so-called extrajudicial or extralegal executions, which are \u201chomicides deliberately committed by certain states and by their agents, often passed off as clashes with criminals or presented as the unintended consequences of the reasonable, necessary and proportionate use of force in applying the law\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=50 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 367,
+        "final_sentence": "I would link this to life imprisonment\u2026 A life sentence is a secret death penalty\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 368,
+        "final_sentence": "I will give everyone the possibility of sharing this planet with me, despite all our differences.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 369,
+        "final_sentence": "Jesus\u2019 reaction, which sprang from his heart, bridges the gap of the centuries and reaches the present as an enduring appeal.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 370,
+        "final_sentence": "CHAPTER EIGHT",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='T'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 371,
+        "final_sentence": "RELIGIONS AT THE SERVICE OF FRATERNITY IN OUR WORLD",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='D'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 372,
+        "final_sentence": "In the words of the Bishops of India, \u201cthe goal of dialogue is to establish friendship, peace and harmony, and to share spiritual and moral values and experiences in a spirit of truth and love\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 373,
+        "final_sentence": "THE ULTIMATE FOUNDATION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 374,
+        "final_sentence": "For \u201creason, by itself, is capable of grasping the equality between men and of giving stability to their civic coexistence, but it cannot establish fraternity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 375,
+        "final_sentence": "Not even the majority of the social body may violate these rights, by going against the minority\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 376,
+        "final_sentence": "You know well how much suffering is caused by the denial of freedom of conscience and of religious freedom, and how that wound leaves a humanity which is impoverished, because it lacks hope and ideals to guide it\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 377,
+        "final_sentence": "Yet often they are viewed with disdain as a result of \u201cthe myopia of a certain rationalism\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 378,
+        "final_sentence": "And in imitation of Mary, the Mother of Jesus, \u201cwe want to be a Church that serves, that leaves home and goes forth from its places of worship, goes forth from its sacristies, in order to accompany life, to sustain hope, to be the sign of unity\u2026 to build bridges, to break down walls, to sow seeds of reconciliation\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=59 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 379,
+        "final_sentence": "Christian identity",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 380,
+        "final_sentence": "From it, there arises, \u201cfor Christian thought and for the action of the Church, the primacy given to relationship, to the encounter with the sacred mystery of the other, to universal communion with the entire human family, as a vocation of all\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=42 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 381,
+        "final_sentence": "In the power of the risen Lord, she wants to give birth to a new world, where all of us are brothers and sisters, where there is room for all those whom our societies discard, where justice and peace are resplendent.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=41 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 382,
+        "final_sentence": "It also testifies to the fact that, since the important things we share are so many, it is possible to find a means of serene, ordered and peaceful coexistence, accepting our differences and rejoicing that, as children of the one God, we are all brothers and sisters\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=47 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 383,
+        "final_sentence": "This notwithstanding, \u201ceven as we make this journey towards full communion, we already have the duty to offer common witness to the love of God for all people by working together in the service of humanity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 384,
+        "final_sentence": "RELIGION AND VIOLENCE",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='E'"
+        ]
+      },
+      {
+        "paragraph_index": 385,
+        "final_sentence": "When the last day comes, and there is sufficient light to see things as they really are, we are going to find ourselves quite surprised\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 386,
+        "final_sentence": "The truth is that violence has no basis in our fundamental religious convictions, but only in their distortion.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 387,
+        "final_sentence": "Religious convictions about the sacred meaning of human life permit us \u201cto recognize the fundamental values of our common humanity, values in the name of which we can and must cooperate, build and dialogue, pardon and grow; this will allow different voices to unite in creating a melody of sublime nobility and beauty, instead of fanatical cries of hatred\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=59 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 388,
+        "final_sentence": "Each one of us is called to be an artisan of peace, by uniting and not dividing, by extinguishing hatred and not holding on to it, by opening paths of dialogue and not by constructing new walls\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 389,
+        "final_sentence": "An appeal",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='l'"
+        ]
+      },
+      {
+        "paragraph_index": 390,
+        "final_sentence": "For this reason I would like to reiterate here the appeal for peace, justice and fraternity that we made together:",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=20 > 15",
+          "non_period_final=':'"
+        ]
+      },
+      {
+        "paragraph_index": 391,
+        "final_sentence": "\u201cIn the name of God, who has created all human beings equal in rights, duties and dignity, and who has called them to live together as brothers and sisters, to fill the earth and make known the values of goodness, love and peace;",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=43 > 15",
+          "non_period_final=';'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 392,
+        "final_sentence": "\u201cIn the name of innocent human life that God has forbidden to kill, affirming that whoever kills a person is like one who kills the whole of humanity, and that whoever saves a person is like one who saves the whole of humanity;",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=43 > 15",
+          "non_period_final=';'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 393,
+        "final_sentence": "\u201cIn the name of the poor, the destitute, the marginalized and those most in need, whom God has commanded us to help as a duty required of all persons, especially the wealthy and those of means;",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=36 > 15",
+          "non_period_final=';'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 394,
+        "final_sentence": "\u201cIn the name of orphans, widows, refugees and those exiled from their homes and their countries; in the name of all victims of wars, persecution and injustice; in the name of the weak, those who live in fear, prisoners of war and those tortured in any part of the world, without distinction;",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=52 > 15",
+          "non_period_final=';'"
+        ]
+      },
+      {
+        "paragraph_index": 395,
+        "final_sentence": "\u201cIn the name of peoples who have lost their security, peace and the possibility of living together, becoming victims of destruction, calamity and war;",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "non_period_final=';'"
+        ]
+      },
+      {
+        "paragraph_index": 396,
+        "final_sentence": "\u201cIn the name of human fraternity , that embraces all human beings, unites them and renders them equal;",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "non_period_final=';'"
+        ]
+      },
+      {
+        "paragraph_index": 397,
+        "final_sentence": "\u201cIn the name of this fraternity torn apart by policies of extremism and division, by systems of unrestrained profit or by hateful ideological tendencies that manipulate the actions and the future of men and women;",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "non_period_final=';'"
+        ]
+      },
+      {
+        "paragraph_index": 398,
+        "final_sentence": "\u201cIn the name of freedom, that God has given to all human beings, creating them free and setting them apart by this gift;",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=23 > 15",
+          "non_period_final=';'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 399,
+        "final_sentence": "\u201cIn the name of justice and mercy, the foundations of prosperity and the cornerstone of faith;",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=16 > 15",
+          "non_period_final=';'"
+        ]
+      },
+      {
+        "paragraph_index": 400,
+        "final_sentence": "\u201cIn the name of all persons of goodwill present in every part of the world;",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final=';'"
+        ]
+      },
+      {
+        "paragraph_index": 401,
+        "final_sentence": "\u201cIn the name of God and of everything stated thus far, [we] declare the adoption of a culture of dialogue as the path; mutual cooperation as the code of conduct; reciprocal understanding as the method and standard\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=37 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 402,
+        "final_sentence": "* * *",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=0 > 15",
+          "non_period_final='*'"
+        ]
+      },
+      {
+        "paragraph_index": 403,
+        "final_sentence": "I am speaking of Blessed Charles de Foucauld.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 404,
+        "final_sentence": "Amen.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=1 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 405,
+        "final_sentence": "A Prayer to the Creator",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='r'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 406,
+        "final_sentence": "Move us to create healthier societies and a more dignified world, a world without hunger, poverty, violence and war.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 407,
+        "final_sentence": "Amen.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=1 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 408,
+        "final_sentence": "An Ecumenical Christian Prayer",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='r'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 409,
+        "final_sentence": "Grant us the love reflected in the actions of Jesus, in his family of Nazareth, and in the early Christian community.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 410,
+        "final_sentence": "Grant that we Christians may live the Gospel, discovering Christ in each human being, recognizing him crucified in the sufferings of the abandoned and forgotten of our world, and risen in each brother or sister who makes a new start.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=40 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 411,
+        "final_sentence": "Amen.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=1 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 412,
+        "final_sentence": "Given in Assisi, at the tomb of Saint Francis, on 3 October, Vigil of the Feast of the Saint, in the year 2020, the eighth of my Pontificate.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=28 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 413,
+        "final_sentence": "Franciscus",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      }
+    ],
+    "diagnostics": {
+      "total_paragraphs": 414,
+      "kicker_count": 50,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy"
+    }
+  },
+  "claim_license": {
+    "task_surface": "smoothing_diagnosis",
+    "licenses": "AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.",
+    "does_not_license": "An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.",
+    "comparison_set": {
+      "total_paragraphs": 414,
+      "kicker_count": 50,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy",
+      "baseline_source": null
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.",
+      "Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.",
+      "Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** AI-prose smoothing diagnosis\n\n**Reports:** AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.\n\n**Does NOT report:** An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.\n\n### Comparison context\n\n- **baseline source:** None\n- **kicker count:** 50\n- **proper noun detection:** spacy\n- **total paragraphs:** 414\n- **word limit:** 15\n\n### Caveats\n\n- Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.\n- Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.\n- Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance.",
+  "warnings": [],
+  "ai_status": null
+}

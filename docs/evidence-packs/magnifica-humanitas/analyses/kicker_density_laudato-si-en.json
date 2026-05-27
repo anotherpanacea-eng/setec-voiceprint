@@ -1,0 +1,3116 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "smoothing_diagnosis",
+  "tool": "kicker_density",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/laudato-si-en.txt",
+    "words": 37970
+  },
+  "baseline": null,
+  "results": {
+    "signal_path": "aic_8_9.kicker_density",
+    "family": "aic-9-closure-inflation",
+    "value": 0.10126582278481013,
+    "spacing_variance": 9.55718499068824,
+    "polarity": "\u2191",
+    "status": "provisional",
+    "task_surface": "smoothing_diagnosis",
+    "claim_license": "voice_diagnostic",
+    "paragraphs": [
+      {
+        "paragraph_index": 0,
+        "final_sentence": "ENCYCLICAL LETTER LAUDATO SI\u2019 OF THE HOLY FATHER FRANCIS ON CARE FOR OUR COMMON HOME",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 1,
+        "final_sentence": "In the words of this beautiful canticle, Saint Francis of Assisi reminds us that our common home is like a sister with whom we share our life and a beautiful mother who opens her arms to embrace us. \u201cPraise be to you, my Lord, through our Sister, Mother Earth, who sustains and governs us, and who produces various fruit with coloured flowers and herbs\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=64 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 2,
+        "final_sentence": "Gen 2:7); our very bodies are made up of her elements, we breathe her air and we receive life and refreshment from her waters.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 3,
+        "final_sentence": "Nothing in this world is indifferent to us",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 4,
+        "final_sentence": "In this Encyclical, I would like to enter into dialogue with all people about our common home.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 5,
+        "final_sentence": "He spoke in similar terms to the Food and Agriculture Organization of the United Nations about the potential for an \u201cecological catastrophe under the effective explosion of industrial civilization\u201d, and stressed \u201cthe urgent need for a radical change in the conduct of humanity\u201d, inasmuch as \u201cthe most extraordinary scientific advances, the most amazing technical abilities, the most astonishing economic growth, unless they are accompanied by authentic social and moral progress, will definitively turn against man\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=75 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 6,
+        "final_sentence": "Accordingly, our human ability to transform reality must proceed in line with God\u2019s original gift of all that is.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=20 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 7,
+        "final_sentence": "The misuse of creation begins when we no longer recognize any higher instance than ourselves, when we see nothing else but ourselves\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 8,
+        "final_sentence": "United by the same concern",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 9,
+        "final_sentence": "To give just one striking example, I would mention the statements made by the beloved Ecumenical Patriarch Bartholomew, with whom we share the hope of full ecclesial communion.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=28 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 10,
+        "final_sentence": "For \u201cto commit a crime against the natural world is a sin against ourselves and a sin against God\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 11,
+        "final_sentence": "It is our humble conviction that the divine and the human meet in the slightest detail in the seamless garment of God\u2019s creation, in the last speck of dust of our planet\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 12,
+        "final_sentence": "Saint Francis of Assisi",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='i'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 13,
+        "final_sentence": "He shows us just how inseparable the bond is between concern for nature, justice for the poor, commitment to society, and interior peace.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 14,
+        "final_sentence": "The poverty and austerity of Saint Francis were no mere veneer of asceticism, but something much more radical: a refusal to turn reality into an object simply to be used and controlled.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 15,
+        "final_sentence": "Rather than a problem to be solved, the world is a joyful mystery to be contemplated with gladness and praise.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 16,
+        "final_sentence": "My appeal",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='l'"
+        ]
+      },
+      {
+        "paragraph_index": 17,
+        "final_sentence": "They wonder how anyone can claim to be building a better future without thinking of the environmental crisis and the sufferings of the excluded.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 18,
+        "final_sentence": "All of us can cooperate as instruments of God for the care of creation, each according to his or her own culture, experience, involvements and talents.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 19,
+        "final_sentence": "Finally, convinced as I am that change is impossible without motivation and a process of education, I will offer some inspired guidelines for human development to be found in the treasure of Christian spiritual experience.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 20,
+        "final_sentence": "These questions will not be dealt with once and for all, but reframed and enriched again and again.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 21,
+        "final_sentence": "CHAPTER ONE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 22,
+        "final_sentence": "WHAT IS HAPPENING TO OUR COMMON HOME",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='E'"
+        ]
+      },
+      {
+        "paragraph_index": 23,
+        "final_sentence": "So, before considering how faith brings new incentives and requirements with regard to the world of which we are a part, I will briefly turn to what is happening to our common home.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 24,
+        "final_sentence": "Change is something desirable, yet it becomes a source of anxiety when it causes harm to the world and to the quality of life of much of humanity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 25,
+        "final_sentence": "Our goal is not to amass information or to satisfy curiosity, but rather to become painfully aware, to dare to turn what is happening to the world into our own personal suffering and thus to discover what each of us can do about it.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=44 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 26,
+        "final_sentence": "POLLUTION AND CLIMATE CHANGE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 27,
+        "final_sentence": "Pollution, waste and the throwaway culture",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='e'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 28,
+        "final_sentence": "Technology, which, linked to business interests, is presented as the only way of solving these problems, in fact proves incapable of seeing the mysterious network of relations between things and so sometimes solves one problem only to create others.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 29,
+        "final_sentence": "Frequently no measures are taken until after people\u2019s health has been irreversibly affected.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=14 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 30,
+        "final_sentence": "A serious consideration of this issue would be one way of counteracting the throwaway culture which affects the entire planet, but it must be said that only limited progress has been made in this regard.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 31,
+        "final_sentence": "Climate as a common good",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 32,
+        "final_sentence": "Another determining factor has been an increase in changed uses of the soil, principally deforestation for agricultural purposes.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 33,
+        "final_sentence": "A rise in the sea level, for example, can create extremely serious situations, if we consider that a quarter of the world\u2019s population lives on the coast or nearby, and that the majority of our megacities are situated in coastal areas.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 34,
+        "final_sentence": "Our lack of response to these tragedies involving our brothers and sisters points to the loss of that sense of responsibility for our fellow men and women upon which all civil society is founded.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 35,
+        "final_sentence": "But these good practices are still far from widespread.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 36,
+        "final_sentence": "THE ISSUE OF WATER",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='R'"
+        ]
+      },
+      {
+        "paragraph_index": 37,
+        "final_sentence": "The exploitation of the planet has already exceeded acceptable limits and we still have not solved the problem of poverty.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 38,
+        "final_sentence": "Some countries have areas rich in water while others endure drastic scarcity.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 39,
+        "final_sentence": "Detergents and chemical products, commonly used in many places of the world, continue to pour into our rivers, lakes and seas.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 40,
+        "final_sentence": "This shows that the problem of water is partly an educational and cultural issue, since there is little awareness of the seriousness of such behaviour within a context of great inequality.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 41,
+        "final_sentence": "The environmental repercussions could affect billions of people; it is also conceivable that the control of water by large multinational businesses may become a major source of conflict in this century.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 42,
+        "final_sentence": "LOSS OF BIODIVERSITY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 43,
+        "final_sentence": "Different species contain genes which could be key resources in years ahead for meeting human needs and regulating environmental problems.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 44,
+        "final_sentence": "We have no such right.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=5 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 45,
+        "final_sentence": "We seem to think that we can substitute an irreplaceable and irretrievable beauty with something which we have created ourselves.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 46,
+        "final_sentence": "Frequently, when certain species are exploited commercially, little attention is paid to studying their reproductive patterns in order to prevent their depletion and the consequent imbalance of the ecosystem.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 47,
+        "final_sentence": "We can be silent witnesses to terrible injustices if we think that we can obtain significant benefits by making the rest of humanity, present and future, pay the extremely high costs of environmental deterioration.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 48,
+        "final_sentence": "Certain places need greater protection because of their immense importance for the global ecosystem, or because they represent important water reserves and thus safeguard other forms of life.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 49,
+        "final_sentence": "We cannot fail to praise the commitment of international agencies and civil society organizations which draw public attention to these issues and offer critical cooperation, employing legitimate means of pressure, to ensure that each government carries out its proper and inalienable responsibility to preserve its country\u2019s environment and natural resources, without capitulating to spurious local or international interests.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=59 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 50,
+        "final_sentence": "In some coastal areas the disappearance of ecosystems sustained by mangrove swamps is a source of serious concern.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 51,
+        "final_sentence": "Particularly threatened are marine organisms which we tend to overlook, like some forms of plankton; they represent a significant element in the ocean food chain, and species used for our food ultimately depend on them.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 52,
+        "final_sentence": "All of this helps us to see that every intervention in nature can have consequences which are not immediately evident, and that certain ways of exploiting resources prove costly in terms of degradation which ultimately reaches the ocean bed itself.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 53,
+        "final_sentence": "This will require undertaking a careful inventory of the species which it hosts, with a view to developing programmes and strategies of protection with particular care for safeguarding species heading towards extinction.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 54,
+        "final_sentence": "DECLINE IN THE QUALITY OF HUMAN LIFE AND THE BREAKDOWN OF SOCIETY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 55,
+        "final_sentence": "So we cannot fail to consider the effects on people\u2019s lives of environmental deterioration, current models of development and the throwaway culture.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 56,
+        "final_sentence": "We were not meant to be inundated by cement, asphalt, glass and metal, and deprived of physical contact with nature.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 57,
+        "final_sentence": "Frequently, we find beautiful and carefully manicured green spaces in so-called \u201csafer\u201d areas of cities, but not in the more hidden areas where the disposable of society live.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 58,
+        "final_sentence": "Some of these signs are also symptomatic of real social decline, the silent rupture of the bonds of integration and social cohesion.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 59,
+        "final_sentence": "For this reason, we should be concerned that, alongside the exciting possibilities offered by these media, a deep and melancholic dissatisfaction with interpersonal relations, or a harmful sense of isolation, can also arise.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 60,
+        "final_sentence": "GLOBAL INEQUALITY",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='Y'"
+        ]
+      },
+      {
+        "paragraph_index": 61,
+        "final_sentence": "The impact of present imbalances is also seen in the premature death of many of the poor, in conflicts sparked by the shortage of resources, and in any number of other problems which are insufficiently represented on global agendas.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 62,
+        "final_sentence": "Today, however, we have to realize that a true ecological approach always becomes a social approach; it must integrate questions of justice in debates on the environment, so as to hear both the cry of the earth and the cry of the poor .",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 63,
+        "final_sentence": "Still, attention needs to be paid to imbalances in population density, on both national and global levels, since a rise in consumption would lead to complex regional situations, as a result of the interplay between problems linked to environmental pollution, transport, waste treatment, loss of resources and quality of life.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=50 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 64,
+        "final_sentence": "Generally, after ceasing their activity and withdrawing, they leave behind great human and environmental liabilities such as unemployment, abandoned towns, the depletion of natural reserves, deforestation, the impoverishment of agriculture and local stock breeding, open pits, riven hills, polluted rivers and a handful of social works which are no longer sustainable\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=51 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 65,
+        "final_sentence": "There are no frontiers or barriers, political or social, behind which we can hide, still less is there room for the globalization of indifference.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 66,
+        "final_sentence": "WEAK RESPONSES",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 67,
+        "final_sentence": "The establishment of a legal framework which can set clear boundaries and ensure the protection of ecosystems has become indispensable; otherwise, the new power structures based on the techno-economic paradigm may overwhelm not only our politics but also freedom and justice.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 68,
+        "final_sentence": "Consequently the most one can expect is superficial rhetoric, sporadic acts of philanthropy and perfunctory expressions of concern for the environment, whereas any genuine attempt by groups within society to introduce change is viewed as a nuisance based on romantic illusions or an obstacle to be circumvented.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 69,
+        "final_sentence": "An outsider looking at our world would be amazed at such behaviour, which at times appears self-destructive.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 70,
+        "final_sentence": "As a result, \u201cwhatever is fragile, like the environment, is defenceless before the interests of a deified market, which become the only rule\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 71,
+        "final_sentence": "What would induce anyone, at this stage, to hold on to power only to be remembered for their inability to take action when it was urgent and necessary to do so?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=31 > 15",
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 72,
+        "final_sentence": "For all our limitations, gestures of generosity, solidarity and care cannot but well up within us, since we were made for love.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 73,
+        "final_sentence": "This is the way human beings contrive to feed their self-destructive vices: trying not to see them, trying not to acknowledge them, delaying the important decisions and pretending that nothing will happen.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 74,
+        "final_sentence": "A VARIETY OF OPINIONS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 75,
+        "final_sentence": "This makes a variety of proposals possible, all capable of entering into dialogue with a view to developing comprehensive solutions.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 76,
+        "final_sentence": "There are regions now at high risk and, aside from all doomsday predictions, the present world system is certainly unsustainable from a number of points of view, for we have stopped thinking about the goals of human activity. \u201cIf we scan the regions of our planet, we immediately see that humanity has disappointed God\u2019s expectations\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=56 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 77,
+        "final_sentence": "CHAPTER TWO",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='O'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 78,
+        "final_sentence": "THE GOSPEL OF CREATION",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='N'"
+        ]
+      },
+      {
+        "paragraph_index": 79,
+        "final_sentence": "Nonetheless, science and religion, with their distinctive approaches to understanding reality, can enter into an intense dialogue fruitful for both.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 80,
+        "final_sentence": "THE LIGHT OFFERED BY FAITH",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='H'"
+        ]
+      },
+      {
+        "paragraph_index": 81,
+        "final_sentence": "The development of the Church\u2019s social teaching represents such a synthesis with regard to social issues; this teaching is called to be enriched by taking up new challenges.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 82,
+        "final_sentence": "It is good for humanity and the world at large when we believers better recognize the ecological commitments which stem from our convictions.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 83,
+        "final_sentence": "THE WISDOM OF THE BIBLICAL ACCOUNTS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 84,
+        "final_sentence": "Each of us is willed, each of us is loved, each of us is necessary\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 85,
+        "final_sentence": "This is a far cry from our situation today, where sin is manifest in all its destructive power in wars, the various forms of violence and abuse, the abandonment of the most vulnerable, and attacks on nature.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 86,
+        "final_sentence": "Thus God rejects every claim to absolute ownership: \u201cThe land shall not be sold in perpetuity, for the land is mine; for you are strangers and sojourners with me\u201d ( Lev 25:23).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 87,
+        "final_sentence": "Clearly, the Bible has no place for a tyrannical anthropocentrism unconcerned for other creatures.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 88,
+        "final_sentence": "Man must therefore respect the particular goodness of every creature, to avoid any disordered use of things\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 89,
+        "final_sentence": "These ancient stories, full of symbolism, bear witness to a conviction which we today share, that everything is interconnected, and that genuine care for our own lives and our relationships with nature is inseparable from fraternity, justice and faithfulness to others.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=41 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 90,
+        "final_sentence": "And you shall not strip your vineyard bare, neither shall you gather the fallen grapes of your vineyard; you shall leave them for the poor and for the sojourner\u201d ( Lev 19:9-10).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 91,
+        "final_sentence": "This is why we adore him.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=6 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 92,
+        "final_sentence": "He gives power to the faint, and strengthens the powerless\u201d ( Is 40:28b-29).",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 93,
+        "final_sentence": "Injustice is not invincible.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=4 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 94,
+        "final_sentence": "Otherwise, human beings will always try to impose their own laws and interests on reality.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 95,
+        "final_sentence": "THE MYSTERY OF THE UNIVERSE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 96,
+        "final_sentence": "Nature is usually seen as a system which can be studied, understood and controlled, whereas creation can only be understood as a gift from the outstretched hand of the Father of all, and as a reality illuminated by the love which calls us together into universal communion.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=47 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 97,
+        "final_sentence": "Consequently, we can ascend from created things \u201cto the greatness of God and to his loving mercy\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 98,
+        "final_sentence": "A fragile world, entrusted by God to human care, challenges us to devise intelligent ways of directing, developing and limiting our power.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 99,
+        "final_sentence": "The work of the Church seeks not only to remind everyone of the duty to care for nature, but at the same time \u201cshe must above all protect mankind from self-destruction\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 100,
+        "final_sentence": "It is as if a shipbuilder were able to give timbers the wherewithal to move themselves to take the form of a ship\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 101,
+        "final_sentence": "The biblical accounts of creation invite us to see each human being as a subject who can never be reduced to the status of an object.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 102,
+        "final_sentence": "It shall not be so among you; but whoever would be great among you must be your servant\u201d ( Mt 20:25-26).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 103,
+        "final_sentence": "Human beings, endowed with intelligence and love, and drawn by the fullness of Christ, are called to lead all creatures back to their Creator.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 104,
+        "final_sentence": "THE MESSAGE OF EACH CREATURE IN THE HARMONY OF CREATION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 105,
+        "final_sentence": "Anyone who has grown up in the hills or used to sit by the spring to drink, or played outdoors in the neighbourhood square; going back to these places is a chance to recover something of their true selves.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 106,
+        "final_sentence": "Paying attention to this manifestation, we learn to see ourselves in relation to all other creatures: \u201cI express myself in expressing the world; in my effort to decipher the sacredness of the world, I explore my own\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 107,
+        "final_sentence": "Creatures exist only in dependence on each other, to complete each other, in the service of each other\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 108,
+        "final_sentence": "This sentiment finds magnificent expression in the hymn of Saint Francis of Assisi:",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=':'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 109,
+        "final_sentence": "Praised be you, my Lord, through Brother Fire, through whom you light the night, and he is beautiful and playful and robust and strong\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 110,
+        "final_sentence": "We would end up unduly demanding of them something which they, in their smallness, cannot give us.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 111,
+        "final_sentence": "A UNIVERSAL COMMUNION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 112,
+        "final_sentence": "Here I would reiterate that \u201cGod has joined us so closely to the world around us that we can feel the desertification of the soil almost as a physical ailment, and the extinction of a species as a painful disfigurement\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=40 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 113,
+        "final_sentence": "In practice, we continue to tolerate that some consider themselves more human than others, as if they had been born with greater rights.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 114,
+        "final_sentence": "Concern for the environment thus needs to be joined to a sincere love for our fellow human beings and an unwavering commitment to resolving the problems of society.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 115,
+        "final_sentence": "Everything is related, and we human beings are united as brothers and sisters on a wonderful pilgrimage, woven together by the love God has for each of his creatures and which also unites us in fond affection with brother sun, sister moon, brother river and mother earth.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=47 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 116,
+        "final_sentence": "THE COMMON DESTINATION OF GOODS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      },
+      {
+        "paragraph_index": 117,
+        "final_sentence": "This calls into serious question the unjust habits of a part of humanity.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 118,
+        "final_sentence": "That means that apart from the ownership of property, rural people must have access to means of technical education, credit, insurance, and markets\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 119,
+        "final_sentence": "That is why the New Zealand bishops asked what the commandment \u201cThou shall not kill\u201d means when \u201ctwenty percent of the world\u2019s population consumes resources at a rate that robs the poor nations and future generations of what they need to survive\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=43 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 120,
+        "final_sentence": "THE GAZE OF JESUS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 121,
+        "final_sentence": "And not one of them is forgotten before God\u201d ( Lk 12:6). \u201cLook at the birds of the air: they neither sow nor reap nor gather into barns, and yet your heavenly Father feeds them\u201d ( Mt 6:26).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 122,
+        "final_sentence": "As he made his way throughout the land, he often stopped to contemplate the beauty sown by his Father, and invited his disciples to perceive a divine message in things: \u201cLift up your eyes, and see how the fields are already white for harvest\u201d ( Jn 4:35). \u201cThe kingdom of God is like a grain of mustard seed which a man took and sowed in his field; it is the smallest of all seeds, but once it has grown, it is the greatest of plants\u201d ( Mt 13:31-32).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=89 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 123,
+        "final_sentence": "As Saint John Paul II taught, \u201cby enduring the toil of work in union with Christ crucified for us, man in a way collaborates with the Son of God for the redemption of humanity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 124,
+        "final_sentence": "From the beginning of the world, but particularly through the incarnation, the mystery of Christ is at work in a hidden manner in the natural world as a whole, without thereby impinging on its autonomy.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 125,
+        "final_sentence": "The very flowers of the field and the birds which his human eyes contemplated and admired are now imbued with his radiant presence.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 126,
+        "final_sentence": "CHAPTER THREE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 127,
+        "final_sentence": "THE HUMAN ROOTS OF THE ECOLOGICAL CRISIS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 128,
+        "final_sentence": "At this stage, I propose that we focus on the dominant technocratic paradigm and the place of human beings and of human action in the world.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 129,
+        "final_sentence": "TECHNOLOGY: CREATIVITY AND POWER",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='R'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 130,
+        "final_sentence": "How could we not acknowledge the work of many scientists and engineers who have provided alternatives to make development sustainable?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=20 > 15",
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 131,
+        "final_sentence": "So, in the beauty intended by the one who uses new technical instruments and in the contemplation of such beauty, a quantum leap occurs, resulting in a fulfilment which is uniquely human.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 132,
+        "final_sentence": "It is extremely risky for a small part of humanity to have it.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 133,
+        "final_sentence": "We have certain superficial mechanisms, but we cannot claim to have a sound ethics, a culture and spirituality genuinely capable of setting limits and teaching clear-minded self-restraint.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 134,
+        "final_sentence": "THE GLOBALIZATION OF THE TECHNOCRATIC PARADIGM",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='M'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 135,
+        "final_sentence": "It is the false notion that \u201can infinite quantity of energy and resources are available, that it is possible to renew them quickly, and that the negative effects of the exploitation of the natural order can be easily absorbed\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 136,
+        "final_sentence": "Decisions which may seem purely instrumental are in reality decisions about the kind of society we want to build.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 137,
+        "final_sentence": "Our capacity to make decisions, a more genuine freedom and the space for each one\u2019s alternative creativity are diminished.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 138,
+        "final_sentence": "We fail to see the deepest roots of our present failures, which have to do with the direction, goals, meaning and social implications of technological and economic growth.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 139,
+        "final_sentence": "Once more we see that \u201crealities are more important than ideas\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 140,
+        "final_sentence": "To seek only a technical remedy to each environmental problem which comes up is to separate what is in reality interconnected and to mask the true and deepest problems of the global system.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 141,
+        "final_sentence": "Will the promise last, in spite of everything, with all that is authentic rising up in stubborn resistance?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 142,
+        "final_sentence": "Otherwise we would simply legitimate the present situation and need new forms of escapism to help us endure the emptiness.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 143,
+        "final_sentence": "Nobody is suggesting a return to the Stone Age, but we do need to slow down and look at reality in a different way, to appropriate the positive and sustainable progress which has been made, but also to recover the values and the great goals swept away by our unrestrained delusions of grandeur.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=53 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 144,
+        "final_sentence": "THE CRISIS AND EFFECTS OF MODERN ANTHROPOCENTRISM",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='M'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 145,
+        "final_sentence": "He must therefore respect the natural and moral structure with which he has been endowed\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 146,
+        "final_sentence": "Instead, our \u201cdominion\u201d over the universe should be understood more properly in the sense of responsible stewardship.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 147,
+        "final_sentence": "Once the human being declares independence from reality and behaves with absolute dominion, the very foundations of our life begin to crumble, for \u201cinstead of carrying out his role as a cooperator with God in the work of creation, man sets himself up in place of God and thus ends up provoking a rebellion on the part of nature\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=59 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 148,
+        "final_sentence": "Human beings cannot be expected to feel responsibility for the world unless, at the same time, their unique capacities of knowledge, will, freedom and responsibility are recognized and valued.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 149,
+        "final_sentence": "Otherwise, it would be nothing more than romantic individualism dressed up in ecological garb, locking us into a stifling immanence.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 150,
+        "final_sentence": "How can we genuinely teach the importance of concern for other vulnerable beings, however troublesome or inconvenient they may be, if we fail to protect a human embryo, even when its presence is uncomfortable and creates difficulties? \u201cIf personal and social sensitivity towards the acceptance of the new life is lost, then other forms of acceptance that are valuable for society also wither away\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=64 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 151,
+        "final_sentence": "In doing so, it reveals its eternal newness.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=8 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 152,
+        "final_sentence": "Practical relativism",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 153,
+        "final_sentence": "There is a logic in all this whereby different attitudes can feed on one another, leading to environmental degradation and social decay.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 154,
+        "final_sentence": "We should not think that political efforts or the force of law will be sufficient to prevent actions which affect the environment because, when the culture itself is corrupt and objective truth and universally valid principles are no longer upheld, then laws can only be seen as arbitrary impositions or obstacles to be avoided.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=54 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 155,
+        "final_sentence": "The need to protect employment",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 156,
+        "final_sentence": "Developing the created world in a prudent way is the best way of caring for it, as this means that we ourselves become the instrument used by God to bring out the potential which he himself inscribed in things: \u201cThe Lord created medicines out of the earth, and a sensible man will not despise them\u201d ( Sir 38:4).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=58 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 157,
+        "final_sentence": "Together with the awe-filled contemplation of creation which we find in Saint Francis of Assisi, the Christian spiritual tradition has also developed a rich and balanced understanding of the meaning of work, as, for example, in the life of Blessed Charles de Foucauld and his followers.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=47 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 158,
+        "final_sentence": "This way of experiencing work makes us more protective and respectful of the environment; it imbues our relationship to the world with a healthy sobriety.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 159,
+        "final_sentence": "It follows that, in the reality of today\u2019s global society, it is essential that \u201cwe continue to prioritize the goal of access to steady employment for everyone\u201d, no matter the limited interests of business and dubious economic reasoning.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 160,
+        "final_sentence": "To stop investing in people, in order to gain greater short-term financial gain, is bad business for society.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 161,
+        "final_sentence": "It can be a fruitful source of prosperity for the areas in which it operates, especially if it sees the creation of jobs as an essential part of its service to the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 162,
+        "final_sentence": "New biological technologies",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 163,
+        "final_sentence": "All such use and experimentation \u201crequires a religious respect for the integrity of creation\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=14 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 164,
+        "final_sentence": "We need constantly to rethink the goals, effects, overall context and ethical limits of this human activity, which is a form of power involving considerable risks.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 165,
+        "final_sentence": "Any legitimate intervention will act on nature only in order \u201cto favour its development in its own line, that of creation, as intended by God\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 166,
+        "final_sentence": "In nature, however, this process is slow and cannot be compared to the fast pace induced by contemporary technological advances, even when the latter build upon several centuries of scientific progress.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 167,
+        "final_sentence": "This dependency would be aggravated were the production of infertile seeds to be considered; the effect would be to force farmers to purchase them from larger producers.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 168,
+        "final_sentence": "This is a complex environmental issue; it calls for a comprehensive approach which would require, at the very least, greater efforts to finance various lines of independent, interdisciplinary research capable of shedding new light on the problem.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 169,
+        "final_sentence": "As we have seen in this chapter, a technology severed from ethics will not easily be able to limit its own power.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 170,
+        "final_sentence": "CHAPTER FOUR",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='R'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 171,
+        "final_sentence": "INTEGRAL ECOLOGY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 172,
+        "final_sentence": "Since everything is closely interrelated, and today\u2019s problems call for a vision capable of taking into account every aspect of the global crisis, I suggest that we now consider some elements of an integral ecology , one which clearly respects its human and social dimensions.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=45 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 173,
+        "final_sentence": "ENVIRONMENTAL, ECONOMIC AND SOCIAL ECOLOGY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 174,
+        "final_sentence": "It follows that the fragmentation of knowledge and the isolation of bits of information can actually become a form of ignorance, unless they are integrated into a broader vision of reality.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 175,
+        "final_sentence": "Strategies for a solution demand an integrated approach to combating poverty, restoring dignity to the excluded, and at the same time protecting nature.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 176,
+        "final_sentence": "So, when we speak of \u201csustainable use\u201d, consideration must always be given to each ecosystem\u2019s regenerative ability in its different areas and aspects.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 177,
+        "final_sentence": "There is an interrelation between ecosystems and between the various spheres of social interaction, demonstrating yet again that \u201cthe whole is greater than the part\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 178,
+        "final_sentence": "Thus, for example, drug use in affluent societies creates a continual and growing demand for products imported from poorer regions, where behaviour is corrupted, lives are destroyed, and the environment continues to deteriorate.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 179,
+        "final_sentence": "CULTURAL ECOLOGY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 180,
+        "final_sentence": "Culture is more than what we have inherited from the past; it is also, and above all, a living, dynamic and participatory present reality, which cannot be excluded as we rethink the relationship between human beings and the environment.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 181,
+        "final_sentence": "Nor can the notion of the quality of life be imposed from without, for quality of life must be understood within the world of symbols and customs proper to each human group.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 182,
+        "final_sentence": "The imposition of a dominant lifestyle linked to a single form of production can be just as harmful as the altering of ecosystems.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 183,
+        "final_sentence": "Nevertheless, in various parts of the world, pressure is being put on them to abandon their homelands to make room for agricultural or mining projects which are undertaken without regard for the degradation of nature and culture.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 184,
+        "final_sentence": "ECOLOGY OF DAILY LIFE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 185,
+        "final_sentence": "We make every effort to adapt to our environment, but when it is disorderly, chaotic or saturated with noise and ugliness, such overstimulation makes it difficult to find ourselves integrated and happy.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 186,
+        "final_sentence": "In this way, any place can turn from being a hell on earth into the setting for a dignified life.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 187,
+        "final_sentence": "This experience of a communitarian salvation often generates creative ideas for the improvement of a building or a neighbourhood.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 188,
+        "final_sentence": "Here too, we see how important it is that urban planning always take into consideration the views of those who will live in these areas.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 189,
+        "final_sentence": "For this same reason, in both urban and rural settings, it is helpful to set aside some places which can be preserved and protected from constant changes brought by human intervention.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 190,
+        "final_sentence": "How attractive are those cities which, even in their architectural design, are full of spaces which connect, relate and favour the recognition of others!\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 191,
+        "final_sentence": "Yet some measures needed will not prove easily acceptable to society unless substantial improvements are made in the systems themselves, which in many cities force people to put up with undignified conditions due to crowding, inconvenience, infrequent service and lack of safety.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 192,
+        "final_sentence": "Yet this should not make us overlook the abandonment and neglect also experienced by some rural populations which lack access to essential services and where some workers are reduced to conditions of servitude, without rights or even the hope of a more dignified life.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=44 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 193,
+        "final_sentence": "It is not a healthy attitude which would seek \u201cto cancel out sexual difference because it no longer knows how to confront it\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 194,
+        "final_sentence": "THE PRINCIPLE OF THE COMMON GOOD",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='D'"
+        ]
+      },
+      {
+        "paragraph_index": 195,
+        "final_sentence": "The common good is \u201cthe sum of those conditions of social life which allow social groups and their individual members relatively thorough and ready access to their own fulfilment\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 196,
+        "final_sentence": "Society as a whole, and the state in particular, are obliged to defend and promote the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 197,
+        "final_sentence": "We need only look around us to see that, today, this option is in fact an ethical imperative essential for effectively attaining the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 198,
+        "final_sentence": "JUSTICE BETWEEN THE GENERATIONS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 199,
+        "final_sentence": "An integral ecology is marked by this broader vision.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 200,
+        "final_sentence": "The issue is one which dramatically affects us, for it has to do with the ultimate meaning of our earthly sojourn.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 201,
+        "final_sentence": "We need to reflect on our accountability before those who will have to endure the dire consequences.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 202,
+        "final_sentence": "Hence, \u201cin addition to a fairer sense of intergenerational solidarity there is also an urgent moral need for a renewed sense of intragenerational solidarity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 203,
+        "final_sentence": "CHAPTER FIVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 204,
+        "final_sentence": "LINES OF APPROACH AND ACTION",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='N'"
+        ]
+      },
+      {
+        "paragraph_index": 205,
+        "final_sentence": "Although the contemplation of this reality in itself has already shown the need for a change of direction and other courses of action, now we shall try to outline the major paths of dialogue which can help us escape the spiral of self-destruction which currently engulfs us.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=48 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 206,
+        "final_sentence": "DIALOGUE ON THE ENVIRONMENT IN THE INTERNATIONAL COMMUNITY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 207,
+        "final_sentence": "Such a consensus could lead, for example, to planning a sustainable and diversified agriculture, developing renewable and less polluting forms of energy, encouraging a more efficient use of energy, promoting a better management of marine and forest resources, and ensuring universal access to drinking water.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=45 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 208,
+        "final_sentence": "Although the post-industrial period may well be remembered as one of the most irresponsible in history, nonetheless there is reason to hope that humanity at the dawn of the twenty-first century will be remembered for having generously shouldered its grave responsibilities.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 209,
+        "final_sentence": "This notwithstanding, recent World Summits on the environment have not lived up to expectations because, due to lack of political will, they were unable to reach truly meaningful and effective global agreements on the environment.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 210,
+        "final_sentence": "The principles which it proclaimed still await an efficient and flexible means of practical implementation.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 211,
+        "final_sentence": "Thanks to the Vienna Convention for the protection of the ozone layer and its implementation through the Montreal Protocol and amendments, the problem of the layer\u2019s thinning seems to have entered a phase of resolution.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 212,
+        "final_sentence": "We believers cannot fail to ask God for a positive outcome to the present discussions, so that future generations will not have to suffer the effects of our ill-advised delays.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=31 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 213,
+        "final_sentence": "As the bishops of Bolivia have stated, \u201cthe countries which have benefited from a high degree of industrialization, at the cost of enormous emissions of greenhouse gases, have a greater responsibility for providing a solution to the problems they have caused\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=41 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 214,
+        "final_sentence": "Rather, it may simply become a ploy which permits maintaining the excessive consumption of some countries and sectors.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 215,
+        "final_sentence": "In any event, these are primarily ethical decisions, rooted in solidarity between all peoples.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=14 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 216,
+        "final_sentence": "Global regulatory norms are needed to impose obligations and prevent unacceptable actions, for example, when powerful companies or countries dump contaminated waste or offshore polluting industries in other countries.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 217,
+        "final_sentence": "What is needed, in effect, is an agreement on systems of governance for the whole range of so-called \u201cglobal commons\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 218,
+        "final_sentence": "Diplomacy also takes on new importance in the work of developing international strategies which can anticipate serious problems affecting us all.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 219,
+        "final_sentence": "DIALOGUE FOR NEW NATIONAL AND LOCAL POLICIES",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 220,
+        "final_sentence": "Questions related to the environment and economic development can no longer be approached only from the standpoint of differences between countries; they also call for greater attention to policies on the national and local levels.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 221,
+        "final_sentence": "But political and institutional frameworks do not exist simply to avoid bad practice, but also to promote best practice, to stimulate creativity in seeking new solutions and to encourage individual or group initiatives.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 222,
+        "final_sentence": "Political powers do not find it easy to assume this duty in the work of nation-building.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 223,
+        "final_sentence": "Local legislation can be more effective, too, if agreements exist between neighbouring communities to support the same environmental policies.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 224,
+        "final_sentence": "Truly, much can be done!",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='!'"
+        ]
+      },
+      {
+        "paragraph_index": 225,
+        "final_sentence": "It should be added, though, that even the best mechanisms can break down when there are no worthy goals and values, or a genuine and profound humanism to serve as the basis of a noble and generous society.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 226,
+        "final_sentence": "DIALOGUE AND TRANSPARENCY IN DECISION-MAKING",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='G'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 227,
+        "final_sentence": "On the other hand, the forms of corruption which conceal the actual environmental impact of a given project, in exchange for favours, usually produce specious agreements which fail to inform adequately and to allow for full debate.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 228,
+        "final_sentence": "Honesty and truth are needed in scientific and political discussions; these should not be limited to the issue of whether or not a particular project is permitted by law.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 229,
+        "final_sentence": "The culture of consumerism, which prioritizes short-term gain and private interest, can make it easy to rubber-stamp authorizations or to conceal information.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 230,
+        "final_sentence": "This indisputable fact overrides any other assessment of environmental impact on a region.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 231,
+        "final_sentence": "Here the burden of proof is effectively reversed, since in such cases objective and conclusive demonstrations will have to be brought forward to demonstrate that the proposed activity will not cause serious harm to the environment or to those who inhabit it.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 232,
+        "final_sentence": "The outcome may be a decision not to proceed with a given project, to modify it or to consider alternative proposals.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 233,
+        "final_sentence": "But I am concerned to encourage an honest and open debate so that particular interests or ideologies will not prejudice the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 234,
+        "final_sentence": "POLITICS AND ECONOMY IN DIALOGUE FOR HUMAN FULFILMENT",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='T'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 235,
+        "final_sentence": "The problem of the real economy is not confronted with vigour, yet it is the real economy which makes diversification and improvement in production possible, helps companies to function well, and enables small and medium businesses to develop and create employment.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=41 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 236,
+        "final_sentence": "Moreover, biodiversity is considered at most a deposit of economic resources available for exploitation, with no serious thought for the real value of things, their significance for persons and cultures, or the concerns and needs of the poor.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 237,
+        "final_sentence": "It is a matter of openness to different possibilities which do not involve stifling human creativity and its ideals of progress, but rather directing that energy along new channels.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 238,
+        "final_sentence": "On the other hand, to find ever new ways of despoiling nature, purely for the sake of new consumer items and quick profit, would be, in human terms, less worthy and creative, and more superficial.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 239,
+        "final_sentence": "Benedict XVI has said that \u201ctechnologically advanced societies must be prepared to encourage more sober lifestyles, while reducing their energy consumption and improving its efficiency\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 240,
+        "final_sentence": "It absorbs the language and values of ecology into the categories of finance and technocracy, and the social and environmental responsibility of businesses often gets reduced to a series of marketing and image-enhancing measures.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 241,
+        "final_sentence": "An instrumental way of reasoning, which provides a purely static analysis of realities in the service of present needs, is at work whether resources are allocated by the market or by state central planning.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 242,
+        "final_sentence": "For \u201cthe current model, with its emphasis on success and self-reliance, does not appear to favour an investment in efforts to help the slow, the weak or the less talented to find opportunities in life\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 243,
+        "final_sentence": "A healthy politics needs to be able to take up this challenge.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 244,
+        "final_sentence": "Here too, we see how true it is that \u201cunity is greater than conflict\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=14 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 245,
+        "final_sentence": "RELIGIONS IN DIALOGUE WITH SCIENCE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 246,
+        "final_sentence": "The ethical principles capable of being apprehended by reason can always reappear in different guise and find expression in a variety of languages, including religious language.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 247,
+        "final_sentence": "Cultural limitations in different eras often affected the perception of these ethical and spiritual treasures, yet by constantly returning to their sources, religions will be better equipped to respond to today\u2019s needs.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 248,
+        "final_sentence": "The gravity of the ecological crisis demands that we all look to the common good, embarking on a path of dialogue which demands patience, self-discipline and generosity, always keeping in mind that \u201crealities are greater than ideas\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 249,
+        "final_sentence": "CHAPTER SIX",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='X'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 250,
+        "final_sentence": "ECOLOGICAL EDUCATION AND SPIRITUALITY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 251,
+        "final_sentence": "A great cultural, spiritual and educational challenge stands before us, and it will demand that we set out on the long path of renewal.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 252,
+        "final_sentence": "TOWARDS A NEW LIFESTYLE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 253,
+        "final_sentence": "We have too many means and only a few insubstantial ends.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 254,
+        "final_sentence": "Obsession with a consumerist lifestyle, above all when few people are capable of maintaining it, can only lead to violence and mutual destruction.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 255,
+        "final_sentence": "No one has the right to take it from us.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 256,
+        "final_sentence": "Today, in a word, \u201cthe issue of environmental degradation challenges us to examine our lifestyle\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 257,
+        "final_sentence": "Here, I would echo that courageous challenge: \u201cAs never before in history, common destiny beckons us to seek a new beginning\u2026 Let ours be a time remembered for the awakening of a new reverence for life, the firm resolve to achieve sustainability, the quickening of the struggle for justice and peace, and the joyful celebration of life\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=57 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 258,
+        "final_sentence": "If we can overcome individualism, we will truly be able to develop a different lifestyle and bring about significant changes in society.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 259,
+        "final_sentence": "EDUCATING FOR THE COVENANT BETWEEN HUMANITY AND THE ENVIRONMENT",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='T'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 260,
+        "final_sentence": "We are faced with an educational challenge.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=7 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 261,
+        "final_sentence": "It needs educators capable of developing an ethics of ecology, and helping people, through effective pedagogy, to grow in solidarity, responsibility and compassionate care.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 262,
+        "final_sentence": "Reusing something instead of immediately discarding it, when done for the right reasons, can be an act of love which expresses our own dignity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 263,
+        "final_sentence": "Furthermore, such actions can restore our sense of self-esteem; they can enable us to live more fully and to feel that life on earth is worthwhile.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 264,
+        "final_sentence": "These simple gestures of heartfelt courtesy help to create a culture of shared life and respect for our surroundings.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 265,
+        "final_sentence": "But we also need the personal qualities of self-control and willingness to learn from one another.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 266,
+        "final_sentence": "Otherwise, the paradigm of consumerism will continue to advance, with the help of the media and the highly effective workings of the market.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 267,
+        "final_sentence": "ECOLOGICAL CONVERSION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 268,
+        "final_sentence": "Admittedly, Christians have not always appropriated and developed the spiritual treasures bestowed by God upon the Church, where the life of the spirit is not dissociated from the body or from nature or from worldly realities, but lived in and with them, in communion with all that surrounds us.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=49 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 269,
+        "final_sentence": "Living our vocation to be protectors of God\u2019s handiwork is essential to a life of virtue; it is not an optional or a secondary aspect of our Christian experience.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 270,
+        "final_sentence": "We need to experience a conversion, or change of heart\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 271,
+        "final_sentence": "The ecological conversion needed to bring about lasting change is also a community conversion.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=14 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 272,
+        "final_sentence": "We do not understand our superiority as a reason for personal glory or irresponsible dominion, but rather as a different capacity which, in its turn, entails a serious responsibility stemming from our faith.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 273,
+        "final_sentence": "In this way, we will help nurture that sublime fraternity with all creation which Saint Francis of Assisi so radiantly embodied.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 274,
+        "final_sentence": "JOY AND PEACE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 275,
+        "final_sentence": "This implies avoiding the dynamic of dominion and the mere accumulation of pleasures.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 276,
+        "final_sentence": "Happiness means knowing how to limit some needs which only diminish us, and being open to the many different possibilities which life can offer.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 277,
+        "final_sentence": "It is not easy to promote this kind of healthy humility or happy sobriety when we consider ourselves autonomous, when we exclude God from our lives or replace him with our own ego, and think that our subjective feelings can define what is right and what is wrong.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 278,
+        "final_sentence": "An integral ecology includes taking time to recover a serene harmony with creation, reflecting on our lifestyle and our ideals, and contemplating the Creator who lives among us and surrounds us, whose presence \u201cmust not be contrived but found, uncovered\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=40 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 279,
+        "final_sentence": "He was completely present to everyone and to everything, and in this way he showed us the way to overcome that unhealthy anxiety which makes us superficial, aggressive and compulsive consumers.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 280,
+        "final_sentence": "That moment of blessing, however brief, reminds us of our dependence on God for life; it strengthens our feeling of gratitude for the gifts of creation; it acknowledges those who by their labours provide us with these goods; and it reaffirms our solidarity with those in greatest need.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 281,
+        "final_sentence": "CIVIC AND POLITICAL LOVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 282,
+        "final_sentence": "In this sense, we can speak of a \u201cuniversal fraternity\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 283,
+        "final_sentence": "When the foundations of social life are corroded, what ensues are battles over conflicting interests, new forms of violence and brutality, and obstacles to the growth of a genuine culture of care for the environment.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 284,
+        "final_sentence": "In the end, a world of exacerbated consumption is at the same time a world which mistreats life in all its forms.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 285,
+        "final_sentence": "When we feel that God is calling us to intervene with others in these social dynamics, we should realize that this too is part of our spirituality, which is an exercise of charity and, as such, matures and sanctifies us.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=40 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 286,
+        "final_sentence": "These community actions, when they express self-giving love, can also become intense spiritual experiences.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 287,
+        "final_sentence": "SACRAMENTAL SIGNS AND THE CELEBRATION OF REST",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='T'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 288,
+        "final_sentence": "Saint Bonaventure teaches us that \u201ccontemplation deepens the more we feel the working of God\u2019s grace within our hearts, and the better we learn to encounter God in creatures outside ourselves\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 289,
+        "final_sentence": "These valleys are what my Beloved is to me\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 290,
+        "final_sentence": "Rather, bodiliness is considered in all its value in the liturgical act, whereby the human body is disclosed in its inner nature as a temple of the Holy Spirit and is united with the Lord Jesus, who himself took a body for the world\u2019s salvation\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=46 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 291,
+        "final_sentence": "Thus, the Eucharist is also a source of light and motivation for our concerns for the environment, directing us to be stewards of all creation.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 292,
+        "final_sentence": "And so the day of rest, centred on the Eucharist, sheds it light on the whole week, and motivates us to greater concern for nature and the poor.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=28 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 293,
+        "final_sentence": "THE TRINITY AND THE RELATIONSHIP BETWEEN CREATURES",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 294,
+        "final_sentence": "Consequently, \u201cwhen we contemplate with wonder the universe in all its grandeur and beauty, we must praise the whole Trinity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=20 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 295,
+        "final_sentence": "In this way, he points out to us the challenge of trying to read reality in a Trinitarian key.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 296,
+        "final_sentence": "Everything is interconnected, and this invites us to develop a spirituality of that global solidarity which flows from the mystery of the Trinity.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 297,
+        "final_sentence": "QUEEN OF ALL CREATION",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='N'"
+        ]
+      },
+      {
+        "paragraph_index": 298,
+        "final_sentence": "Hence, we can ask her to enable us to look at this world with eyes of wisdom.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 299,
+        "final_sentence": "He too can teach us how to show care; he can inspire us to work with generosity and tenderness in protecting this world which God has entrusted to us.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 300,
+        "final_sentence": "BEYOND THE SUN",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 301,
+        "final_sentence": "Eternal life will be a shared experience of awe, in which each creature, resplendently transfigured, will take its rightful place and have something to give those poor men and women who will have been liberated once and for all.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 302,
+        "final_sentence": "May our struggles and our concern for this planet never take away the joy of our hope.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 303,
+        "final_sentence": "Praise be to him !",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='!'"
+        ]
+      },
+      {
+        "paragraph_index": 304,
+        "final_sentence": "* * * * *",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=0 > 15",
+          "non_period_final='*'"
+        ]
+      },
+      {
+        "paragraph_index": 305,
+        "final_sentence": "The first we can share with all who believe in a God who is the all-powerful Creator, while in the other we Christians ask for inspiration to take up the commitment to creation set before us by the Gospel of Jesus.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=42 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 306,
+        "final_sentence": "A prayer for our earth",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 307,
+        "final_sentence": "Encourage us, we pray, in our struggle for justice, love and peace.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 308,
+        "final_sentence": "A Christian prayer in union with creation",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='n'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 309,
+        "final_sentence": "Praise be to you!",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='!'"
+        ]
+      },
+      {
+        "paragraph_index": 310,
+        "final_sentence": "Praise be to you!",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='!'"
+        ]
+      },
+      {
+        "paragraph_index": 311,
+        "final_sentence": "Praise be to you!",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='!'"
+        ]
+      },
+      {
+        "paragraph_index": 312,
+        "final_sentence": "Give us the grace to feel profoundly joined to everything that is.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 313,
+        "final_sentence": "Amen.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=1 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 314,
+        "final_sentence": "Given in Rome at Saint Peter\u2019s on 24 May, the Solemnity of Pentecost, in the year 2015, the third of my Pontificate.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 315,
+        "final_sentence": "Franciscus",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      }
+    ],
+    "diagnostics": {
+      "total_paragraphs": 316,
+      "kicker_count": 32,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy"
+    }
+  },
+  "claim_license": {
+    "task_surface": "smoothing_diagnosis",
+    "licenses": "AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.",
+    "does_not_license": "An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.",
+    "comparison_set": {
+      "total_paragraphs": 316,
+      "kicker_count": 32,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy",
+      "baseline_source": null
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.",
+      "Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.",
+      "Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** AI-prose smoothing diagnosis\n\n**Reports:** AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.\n\n**Does NOT report:** An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.\n\n### Comparison context\n\n- **baseline source:** None\n- **kicker count:** 32\n- **proper noun detection:** spacy\n- **total paragraphs:** 316\n- **word limit:** 15\n\n### Caveats\n\n- Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.\n- Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.\n- Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance.",
+  "warnings": [],
+  "ai_status": null
+}

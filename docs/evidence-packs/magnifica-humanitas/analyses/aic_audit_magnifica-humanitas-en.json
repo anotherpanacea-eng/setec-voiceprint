@@ -1,0 +1,335 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "craft_restoration",
+  "tool": "aic_pattern_audit",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "texts/magnifica-humanitas-en.txt",
+    "words": 38637
+  },
+  "baseline": null,
+  "results": {
+    "patterns": {
+      "negation_hedge": {
+        "label": "Negation Hedge",
+        "severity_note": "'Not X.' / 'Not X. Not Y.' sentence-initial cognitive sorting (earned) or narrator hedge (unearned)",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "correctio": {
+        "label": "Disguised Correctio",
+        "severity_note": "'not X, but Y' inline + 'It is not X. It is Y' frame; cuts on payoff test if affirm repeats negate",
+        "count": 95,
+        "density_per_1k": 2.458783031808888,
+        "hits": [
+          {
+            "sentence_index": 13,
+            "text": "With that document, my beloved predecessor gave impetus to the reflection on society, the economy and politics, which is now known as the \u201cSocial Doctrine of the Church.\u201d When some objected that the Church should not waste energy on worldly matters, but instead focus on communicating the message of ",
+            "span": "not waste energy on worldly matters, but i",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 16,
+            "text": "It is not an inert set of concepts, but a living corpus of truth that safeguards and interprets humanity\u2019s vocation to a full and just life.",
+            "span": "not an inert set of concepts, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 56,
+            "text": "The result is not unity, but dispersion.",
+            "span": "not unity, but d",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 67,
+            "text": "The narrative shows how the city is reborn, not through the initiative of one man, but through the shared responsibility of all: men, women, priests, artisans, heads of households and young people all play a part.",
+            "span": "not through the initiative of one man, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 69,
+            "text": "Thus, ancient Jerusalem rediscovers a common language \u2014 not one of uniformity, but one of communion, namely the harmony that arises when all persons assume their own role and recognize that their strength comes from the Lord.",
+            "span": "not one of uniformity, but o",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 77,
+            "text": "Therefore, the primary choice is not between a \u201cyes\u201d or \u201cno\u201d to technology, but rather between constructing Babel or rebuilding Jerusalem; between a power that claims to dominate the heavens and a people who work together in the presence of God to rebuild the walls of fraternal coexistence.",
+            "span": "not between a \u201cyes\u201d or \u201cno\u201d to technology, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 84,
+            "text": "Within this shared task, Christians discover their unique role of guiding actions toward God so that, in his light, pluralism does not dissipate into disorder, but instead, through the practice of synodality, it becomes the space in which humanity rediscovers its solid foundations and its final end.",
+            "span": "not dissipate into disorder, but i",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 132,
+            "text": "In this regard, artificial intelligence, too, should not be considered as merely yet another theme to be studied or a crisis to be managed, but rather as a development that challenges the categories of Social Doctrine from within, calling for their further development in fidelity to the Gospel.",
+            "span": "not be considered as merely yet another theme to be studied or a crisis to be managed, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 166,
+            "text": "In this way, the essential core of revealed Truth is not altered, but made explicit and adopted as a living standard for guiding concrete choices, inspiring paths of personal and communal conversion, promoting structural reforms and supporting new forms of evangelical witness in public life.",
+            "span": "not altered, but m",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 182,
+            "text": "Herein lies the proper function of Social Doctrine, which does not claim to supplant the responsibilities of politics or institutions, but offers itself as a foundation for collective discernment, helping to recognize and promote whatever serves the dignity of persons, the vitality of communities an",
+            "span": "not claim to supplant the responsibilities of politics or institutions, but o",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 186,
+            "text": "In order to rediscover the evangelical approach of a gentle proclamation of truth that is not imposed, Saint John Paul II invited us to examine honestly the times when acquiescence was given to \u201cintolerance and even the use of violence in the service of truth.\u201d16 In this same vein, I too have reaffi",
+            "span": "not a territory to be defended, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 187,
+            "text": "For his part, Pope Francis expressed this same perspective in his striking phrase, \u201ctime is greater than space.\u201d18 What matters most is not occupying positions of power or defending cultural strongholds, but initiating good processes and enabling them to mature.",
+            "span": "not occupying positions of power or defending cultural strongholds, but i",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 188,
+            "text": "In this way, the truth of the Gospel is not imposed from above, but grows over time within the concrete interweaving of lives, communities and cultures.",
+            "span": "not imposed from above, but g",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 189,
+            "text": "This is not a truth that fears diversity, but instead welcomes and guides it.",
+            "span": "not a truth that fears diversity, but i",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 190,
+            "text": "It does not eliminate conflicts, but transforms them, reuniting that which history tends to scatter.",
+            "span": "not eliminate conflicts, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 195,
+            "text": "It follows, then, that the People of God are not only gathered together from many peoples, but are also intertwined through different functions, vocations, cultures and traditions, each being called to support and enrich one another.",
+            "span": "not only gathered together from many peoples, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 200,
+            "text": "It is not a handbook of principles and norms to be applied, but a process of shared discernment.",
+            "span": "not a handbook of principles and norms to be applied, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 203,
+            "text": "Therefore, when the dignity of our brothers and sisters is violated, when politics fails to address the tragedies of humanity, when the economy turns against the person or science oversteps the limits of its competence,22 the Church \u2014 together with other Christian denominations and believers of othe",
+            "span": "not in order to dominate, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 218,
+            "text": "Confronted with the \u201cnew things\u201d of his time \u2014 the conflict between capital and labor, the question of the workforce, and economic and social transformations \u2014 Leo XIII did not limit himself merely to acknowledging the unrest, but saw these situations as an area for the Church\u2019s pastoral mission.",
+            "span": "not limit himself merely to acknowledging the unrest, but s",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 225,
+            "text": "It is not surprising, then, that Pius XI defined it as the \u201cMagna Carta\u201d25 of Christian social action.",
+            "span": "It is not s",
+            "note": "'It is not X. It is Y' frame"
+          }
+        ]
+      },
+      "pseudo_aphorism": {
+        "label": "Pseudo-Aphorism",
+        "severity_note": "gnomic generalization ('X as Y', 'is the Y of Z', 'There is a kind of'); often has real image right after that does the work",
+        "count": 3,
+        "density_per_1k": 0.07764577995185962,
+        "hits": [
+          {
+            "sentence_index": 394,
+            "text": "When Benedict XVI referred to the non-negotiable values that the Church must always defend, he included among them \u201cthe promotion of the common good.\u201d75 For a Christian, going beyond the narrow confines of one\u2019s own interests and committing oneself, within the limits of one\u2019s ability, to the common ",
+            "span": "is the promotion of life.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 1011,
+            "text": "While the world\u2019s wealth has grown in absolute terms, it is increasingly concentrated in fewer hands, widening inequalities both within and between countries. \u201cThere are a few who have too much, and too many who have little, that is the logic of today.\u201d162 Scientific and technological advances, even",
+            "span": "is the logic of today.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 1420,
+            "text": "It is the peace of the risen Christ.",
+            "span": "is the peace of the risen Christ.",
+            "note": "gnomic frame"
+          }
+        ]
+      },
+      "manifesto_cadence": {
+        "label": "Manifesto Cadence",
+        "severity_note": "3+ parallel sentences with same anaphoric head; earned when each escalates/restricts/reveals, unearned when parallel substitutes for development",
+        "count": 1,
+        "density_per_1k": 0.025881926650619873,
+        "hits": [
+          {
+            "sentence_index": 682,
+            "text": "To speak of the universal destination of goods means finding ways of ensuring universal access to both technologies and the education needed to use them. // To speak of subsidiarity calls for protecting the ability of communities to make choices and corrections, rather than confining their role to mere oversight after the standards have been set elsewhere. // To speak of solidarity obliges us to recognize the hidden, often exploited workers, who sustain algorithmic systems. // To speak of justic",
+            "span": "4 sentences with anaphoric head 'to speak'",
+            "note": "run length 4"
+          }
+        ]
+      },
+      "triplet": {
+        "label": "Triplet",
+        "severity_note": "3- or 4-item comma-and lists; classical figure but at high density reads as rhythmic fill",
+        "count": 9,
+        "density_per_1k": 0.23293733985557885,
+        "hits": [
+          {
+            "sentence_index": 91,
+            "text": "Like Saint Augustine, we too can say, \u201cYou have made us for yourself, O Lord, and our heart is restless until it rests in you.\u201d8 Indeed, God has inscribed in our hearts a desire for happiness that embraces all the dimensions of life.",
+            "span": "us for yourself, O Lord, and our heart is",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 141,
+            "text": "She recognizes today\u2019s questions and challenges as the current setting in which to carry out her particular vocation of listening, dialogue and service, and of being responsive to everything concerning the lives of contemporary men and women.",
+            "span": "vocation of listening, dialogue and service, and of being responsive",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 340,
+            "text": "Those who believe in him are engaged in the great work of renewal that began with the mystery of his passion, death and resurrection, and they cooperate in building up the Kingdom of God, learning to embrace all men and women as brothers and sisters, children of one Father.",
+            "span": "of his passion, death and resurrection, and they cooperate in",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 365,
+            "text": "The recent Declaration Dignitas Infinita offers a summary of the Church\u2019s thinking on this subject: \u201cEvery human person possesses an infinite dignity, inalienably grounded in his or her very being, which prevails in and beyond every circumstance, state, or situation the person may ever encounter\u201d62 ",
+            "span": "beyond every circumstance, state, or situation the person",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 449,
+            "text": "This level, which monopolizes expertise, data and decision-making authority, involves companies and platforms that define conditions for access, rules of visibility, forms of interaction, and even economic opportunities.",
+            "span": "conditions for access, rules of visibility, forms of interaction, and even economic opportunities",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 642,
+            "text": "Important and sensitive decisions \u2014 concerning employment, credit, access to public services or even a person\u2019s reputation \u2014 risk being fully delegated to automated systems that do not know \u201ccompassion, mercy, forgiveness, and above all, the hope that people are able to change,\u201d125 and can therefore",
+            "span": "compassion, mercy, forgiveness, and above all",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 649,
+            "text": "In this way, injustice goes unnoticed, and compassion, mercy and Cf.",
+            "span": "In this way, injustice goes unnoticed, and compassion",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 653,
+            "text": "In reality, every technical tool embodies choices and priorities through what it measures, ignores and optimizes, and how it classifies people and situations.",
+            "span": "what it measures, ignores and optimizes, and how it classifies",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 959,
+            "text": "The pursuit of greater profits cannot justify choices that systematically sacrifice jobs, because the human person is an end, not a means, and the economic order must remain subordinate to human dignity and the common good.",
+            "span": "is an end, not a means, and the economic order",
+            "note": "3- or 4-item comma-separated list"
+          }
+        ]
+      },
+      "professional_parallel_stack": {
+        "label": "Professional-Parallel Stack",
+        "severity_note": "3+ adjacent paragraphs with same opening clause structure ('A X may Y', 'A Z may Y'); performs comprehensiveness without differentiating",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "false_balance": {
+        "label": "False-Balance Construction",
+        "severity_note": "'while reasonable people may disagree', both-sidesing without specifying the disagreement",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "hedge_and_affirm": {
+        "label": "Hedge-and-Affirm",
+        "severity_note": "'while X is generally true, in some cases Y' performs caution while saying nothing definite",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "recommendation_template": {
+        "label": "Recommendation Template",
+        "severity_note": "'DC must commit to', 'we urge X', generic-actor + modal + generic-verb without specifying action",
+        "count": 3,
+        "density_per_1k": 0.07764577995185962,
+        "hits": [
+          {
+            "sentence_index": 382,
+            "text": "It is a fact that \u201cdoubly poor are those women who endure situations of exclusion, mistreatment and violence, since they are frequently less able to defend their rights.\u201d74 It is, therefore, not enough to state simply that men and women have equal dignity and rights; it is necessary that this be ref",
+            "span": "it is necessary that",
+            "note": "recommendation-template frame"
+          },
+          {
+            "sentence_index": 674,
+            "text": "For this reason, it is essential that the use of AI, especially when it touches on public goods and fundamental rights, be guided by clear criteria and effective oversight, grounded in participation and subsidiarity.",
+            "span": "it is essential that",
+            "note": "recommendation-template frame"
+          },
+          {
+            "sentence_index": 1028,
+            "text": "First, transparency and accountability: when data and algorithms influence credit distribution, personnel selection or access to services and opportunities, it is necessary that decisions be understandable, contestable and subject to oversight, so that individuals are not reduced to mere profiles.",
+            "span": "it is necessary that",
+            "note": "recommendation-template frame"
+          }
+        ]
+      },
+      "authority_laundering": {
+        "label": "Authority Laundering",
+        "severity_note": "'research has shown', 'experts agree' without naming the research or the experts",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      }
+    }
+  },
+  "claim_license": {
+    "task_surface": "craft_restoration",
+    "licenses": "A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.",
+    "does_not_license": "An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.",
+    "comparison_set": {
+      "target_words": 38637,
+      "baseline_words": 0,
+      "has_baseline": false,
+      "n_patterns_reported": 10
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.",
+      "The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.",
+      "Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis)."
+    ],
+    "references": [
+      "references/aic-flags.md",
+      "references/source-triage.md"
+    ]
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** craft restoration\n\n**Reports:** A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.\n\n**Does NOT report:** An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.\n\n### Comparison context\n\n- **baseline words:** 0\n- **has baseline:** False\n- **n patterns reported:** 10\n- **target words:** 38637\n\n### Caveats\n\n- Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.\n- The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.\n- Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis).\n\n### References\n\n- references/aic-flags.md\n- references/source-triage.md",
+  "warnings": [],
+  "ai_status": null
+}
