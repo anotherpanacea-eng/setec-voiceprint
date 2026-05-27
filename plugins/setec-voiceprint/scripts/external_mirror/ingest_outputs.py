@@ -153,6 +153,26 @@ _VALID_BLINDING = frozenset({"isolated", "partial", "not_blinded"})
 _VALID_VISIBILITY = frozenset({"low", "medium", "high"})
 
 
+def _validate_bool(value, field_path: str, caveats_out: list[str]):
+    """Validate that ``value`` is None or an actual Python bool. Returns
+    the value if valid (bool or None); returns None and appends a
+    caveat if the type is wrong.
+
+    family.json is hand-authored operator metadata, so the failure mode
+    this guards against is the operator writing the string ``"false"``
+    or ``"true"`` (or any other truthy/falsy non-bool). Without this
+    guard, downstream identity-checks (``is False``) silently fail and
+    the markdown renderer treats any non-empty string as truthy, which
+    inverts the rendered cell on load-bearing cutoff/blinding evidence.
+    """
+    if value is None or isinstance(value, bool):
+        return value
+    caveats_out.append(
+        f"family_json_invalid_field_type:{field_path}:expected_bool_got_{type(value).__name__}"
+    )
+    return None
+
+
 def _load_family_metadata(family_dir: Path) -> tuple[dict | None, list[str]]:
     """Load optional family.json. Returns (metadata, caveats).
 
@@ -184,6 +204,24 @@ def _load_family_metadata(family_dir: Path) -> tuple[dict | None, list[str]]:
                 caveats.append(f"family_json_unknown_interface:{interface}")
             if blinding is not None and blinding not in _VALID_BLINDING:
                 caveats.append(f"family_json_unknown_blinding:{blinding}")
+            # PR #126 review fix: validate boolean fields strictly. The
+            # SPEC schema declares reasoning_mode and web_search_enabled as
+            # bools, but family.json is hand-authored so the operator can
+            # easily write the string "false" or "true" — Python's
+            # truthiness treats those as True (any non-empty string is
+            # truthy), which would silently flip the rendered cell. Type
+            # mismatch → caveat + normalize to None so the renderer shows
+            # "—" rather than misleading "yes".
+            reasoning_mode = _validate_bool(
+                mp.get("reasoning_mode"),
+                "mirror_panel.reasoning_mode",
+                caveats,
+            )
+            web_search_enabled = _validate_bool(
+                mp.get("web_search_enabled"),
+                "mirror_panel.web_search_enabled",
+                caveats,
+            )
             # v0.2: once a mirror_panel block is present, the SPEC requires
             # training_cutoff_date, interface, and orchestration_layer_blinding
             # (the three load-bearing identification + blinding fields). A
@@ -205,8 +243,8 @@ def _load_family_metadata(family_dir: Path) -> tuple[dict | None, list[str]]:
                 "orchestration_layer_blinding": blinding,
                 # v0.2 codex-rerun additions:
                 "nominal_family": mp.get("nominal_family"),
-                "reasoning_mode": mp.get("reasoning_mode"),
-                "web_search_enabled": mp.get("web_search_enabled"),
+                "reasoning_mode": reasoning_mode,
+                "web_search_enabled": web_search_enabled,
             }
 
     ctrl = data.get("control")
@@ -217,8 +255,23 @@ def _load_family_metadata(family_dir: Path) -> tuple[dict | None, list[str]]:
             visibility = ctrl.get("visibility_class")
             if visibility is not None and visibility not in _VALID_VISIBILITY:
                 caveats.append(f"family_json_unknown_visibility:{visibility}")
+            # PR #126 review fix: same boolean validation as mirror_panel.
+            # A string "false" for cutoff_precedes_publication would
+            # otherwise (a) silently fail the `is False` caveat check and
+            # (b) render as "yes" in the markdown control table — exactly
+            # inverting the load-bearing cutoff evidence the operator
+            # intended to record.
+            cutoff_precedes_publication = _validate_bool(
+                ctrl.get("cutoff_precedes_publication"),
+                "control.cutoff_precedes_publication",
+                caveats,
+            )
             # v0.2: once a control block is present, the SPEC requires
             # publication_date, cutoff_precedes_publication, and visibility_class.
+            # Note: cutoff_precedes_publication checks against the raw
+            # ctrl.get() — type validation above runs orthogonally to
+            # the missing-required check (a present-but-invalid value
+            # gets both a type caveat AND counts as not-missing).
             for required in (
                 "publication_date",
                 "cutoff_precedes_publication",
@@ -230,7 +283,7 @@ def _load_family_metadata(family_dir: Path) -> tuple[dict | None, list[str]]:
                     )
             cleaned["control"] = {
                 "publication_date": ctrl.get("publication_date"),
-                "cutoff_precedes_publication": ctrl.get("cutoff_precedes_publication"),
+                "cutoff_precedes_publication": cutoff_precedes_publication,
                 "visibility_class": visibility,
             }
 

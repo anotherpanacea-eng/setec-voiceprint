@@ -63,6 +63,24 @@ DEFAULT_DOES_NOT_LICENSE = (
 )
 
 
+def _render_bool_cell(value) -> str:
+    """Strict bool renderer for the v0.2 metadata tables. Returns
+    "yes" for True, "no" for False, "—" for None or any other type.
+
+    PR #126 review fix: the loose ``"yes" if value else "no"`` pattern
+    rendered any truthy non-bool (string "false", int 1, list ["x"])
+    as "yes", which inverts load-bearing cutoff / blinding evidence.
+    The loader at ``_load_family_metadata`` now normalizes invalid types
+    to None, but this strict renderer is belt-and-suspenders: if any
+    non-bool ever reaches this layer, it shows "—" rather than guess.
+    """
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    return "—"
+
+
 def _split_metadata(
     family_metadata: dict,
 ) -> tuple[list[dict], dict]:
@@ -222,18 +240,14 @@ def render_markdown(envelope: dict, distances: dict, license_block: Any) -> str:
         lines.append("| Family | Nominal | Training cutoff | Interface | Orchestration | Reasoning | Web search |")
         lines.append("|---|---|---|---|---|---|---|")
         for entry in mirror_panel:
-            reasoning = entry.get("reasoning_mode")
-            reasoning_str = "—" if reasoning is None else ("yes" if reasoning else "no")
-            web_search = entry.get("web_search_enabled")
-            web_str = "—" if web_search is None else ("yes" if web_search else "no")
             lines.append(
                 f"| `{entry.get('family', '?')}` | "
                 f"{entry.get('nominal_family') or '—'} | "
                 f"{entry.get('training_cutoff_date') or '—'} | "
                 f"{entry.get('interface') or '—'} | "
                 f"{entry.get('orchestration_layer_blinding') or '—'} | "
-                f"{reasoning_str} | "
-                f"{web_str} |"
+                f"{_render_bool_cell(entry.get('reasoning_mode'))} | "
+                f"{_render_bool_cell(entry.get('web_search_enabled'))} |"
             )
         lines.append("")
 
@@ -246,12 +260,10 @@ def render_markdown(envelope: dict, distances: dict, license_block: Any) -> str:
         lines.append("| Family | Publication date | Cutoff precedes publication | Visibility class |")
         lines.append("|---|---|---|---|")
         for entry in rows:
-            cutoff_pre = entry.get("cutoff_precedes_publication")
-            cutoff_str = "—" if cutoff_pre is None else ("yes" if cutoff_pre else "no")
             lines.append(
                 f"| `{entry.get('family', '?')}` | "
                 f"{entry.get('publication_date') or '—'} | "
-                f"{cutoff_str} | "
+                f"{_render_bool_cell(entry.get('cutoff_precedes_publication'))} | "
                 f"{entry.get('visibility_class') or '—'} |"
             )
         lines.append("")

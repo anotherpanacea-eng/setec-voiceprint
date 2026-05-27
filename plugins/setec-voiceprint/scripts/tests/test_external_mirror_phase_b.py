@@ -1558,3 +1558,189 @@ def test_p2_missing_required_caveat_flows_to_evidence_pack(tmp_path):
     assert "mirror_panel.interface" in caveats_blob
     # The rendered pack surfaces it too.
     assert "missing_required_field" in markdown
+
+
+# ============================================================
+# PR #126 second-round review fix — P1 string-bool validation
+# ============================================================
+#
+# family.json is hand-authored, so the operator can easily write the
+# string "false" / "true" / "no" / "yes" / etc. for what the schema
+# declares as a bool. Without validation:
+#   - identity-check caveats (`is False`, `is True`) silently fail
+#   - the renderer treats any non-empty string as truthy → cell shows
+#     "yes" even when the operator meant "false"
+# Both effects invert load-bearing cutoff / blinding evidence.
+
+
+def test_string_false_cutoff_precedes_publication_emits_type_caveat(tmp_path):
+    """The exact reviewer-reproduced case: '\"cutoff_precedes_publication\":
+    \"false\"' must emit a validation caveat, not silently render as yes."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "encyclical_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "encyclical_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2024-10-24",
+            "cutoff_precedes_publication": "false",  # string, not bool
+            "visibility_class": "high",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_invalid_field_type:control.cutoff_precedes_publication" in c
+        for c in fam_caveats
+    )
+    # The invalid value is normalized to None so the renderer can't be fooled.
+    assert payload["family_metadata"]["encyclical_control"]["control"]["cutoff_precedes_publication"] is None
+
+
+def test_string_true_reasoning_mode_emits_type_caveat(tmp_path):
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": "true",  # string, not bool
+            "web_search_enabled": False,
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_invalid_field_type:mirror_panel.reasoning_mode" in c
+        for c in fam_caveats
+    )
+    assert payload["family_metadata"]["claude"]["mirror_panel"]["reasoning_mode"] is None
+
+
+def test_string_false_web_search_emits_type_caveat(tmp_path):
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": False,
+            "web_search_enabled": "false",  # string, not bool
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_invalid_field_type:mirror_panel.web_search_enabled" in c
+        for c in fam_caveats
+    )
+    assert payload["family_metadata"]["claude"]["mirror_panel"]["web_search_enabled"] is None
+
+
+def test_non_bool_int_emits_type_caveat(tmp_path):
+    """Type validation rejects integers (and other non-bool truthy values)
+    as cleanly as it rejects strings."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": 1,  # int, not bool
+            "web_search_enabled": False,
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_invalid_field_type:mirror_panel.reasoning_mode" in c
+        and "expected_bool_got_int" in c
+        for c in fam_caveats
+    )
+
+
+def test_render_bool_cell_yes_no_dash():
+    """The renderer is strict on identity: only True/False yield yes/no;
+    everything else (None, string, int) yields the dash."""
+    assert pack._render_bool_cell(True) == "yes"
+    assert pack._render_bool_cell(False) == "no"
+    assert pack._render_bool_cell(None) == "—"
+    assert pack._render_bool_cell("false") == "—"  # operator typo
+    assert pack._render_bool_cell("true") == "—"
+    assert pack._render_bool_cell(1) == "—"
+    assert pack._render_bool_cell(0) == "—"
+    assert pack._render_bool_cell([]) == "—"
+
+
+def test_string_false_cutoff_does_not_render_as_yes_end_to_end(tmp_path):
+    """End-to-end regression for the reviewer-reproduced case: the
+    operator writes '\"cutoff_precedes_publication\": \"false\"',
+    intending 'this control is contaminated.' Pre-fix: the markdown
+    rendered 'Cutoff precedes publication: yes' (inverted) and no
+    caveat fired. Post-fix: the cell shows '—' (the loader normalized
+    the bad value to None) AND a type-validation caveat surfaces in
+    the evidence pack."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "encyclical_control": {"format": "t3", "windows": {1: "a continuation of suitable length goes here yes yes"}},
+    })
+    (outputs_dir / "encyclical_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2024-10-24",
+            "cutoff_precedes_publication": "false",  # string, not bool
+            "visibility_class": "high",
+        }
+    }))
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    distances = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    envelope, markdown = pack.compose(distances)
+
+    # Caveat surfaces in the pack.
+    caveats_blob = "\n".join(envelope["results"]["caveats"])
+    assert "family_json_invalid_field_type:control.cutoff_precedes_publication" in caveats_blob
+
+    # The Controls table renders "—" not "yes" for the invalid value.
+    # The row signature: visibility_class is 'high'; the cell before it
+    # is the cutoff column.
+    assert "| — | high |" in markdown
+    # Belt-and-suspenders: no "| yes |" anywhere on a row that contains "high".
+    for line in markdown.splitlines():
+        if "| high |" in line:
+            assert "| yes |" not in line
+
+
+def test_actual_bool_false_still_renders_as_no_and_emits_semantic_caveat(tmp_path):
+    """Regression guard: the type-validation fix must not break the
+    valid-bool path. cutoff_precedes_publication=False (real bool) should
+    still emit control_predates_cutoff_gap_conservative AND render 'no'."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "encyclical_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "encyclical_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2024-10-24",
+            "cutoff_precedes_publication": False,  # actual bool
+            "visibility_class": "high",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    # No type caveat for an actual bool.
+    assert not any("family_json_invalid_field_type" in c for c in fam_caveats)
+    # Semantic caveat does fire.
+    assert "control_predates_cutoff_gap_conservative" in payload["derived_caveats"]
+
+    distances = dist.compute(payload, target_continuations=["t"], backend=StubBackend())
+    _, markdown = pack.compose(distances)
+    # Real False renders as "no" — not as "—" or "yes".
+    assert "| no | high |" in markdown
