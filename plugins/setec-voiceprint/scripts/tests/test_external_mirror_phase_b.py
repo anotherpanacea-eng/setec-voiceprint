@@ -1046,3 +1046,701 @@ def test_evidence_pack_claim_license_records_metrics_available():
     distances["metrics_available"] = ["sbert", "word_jaccard"]
     envelope, _ = pack.compose(distances)
     assert envelope["claim_license"]["comparison_set"]["metrics_available"] == ["sbert", "word_jaccard"]
+
+
+# ============================================================
+# SPEC v0.2 — per-family metadata (mirror_panel + controls)
+# ============================================================
+#
+# Tests for the v0.2 spec refinements: cutoff precedence, two-layer
+# blinding, post-cutoff control selection, JSON schema fields,
+# reasoning-mode exclusion, web-search disable, effective vs.
+# nominal subagent model. Backwards-compat invariant: absent
+# family.json = v0.1 behavior, no derived caveats.
+
+
+def test_derive_metadata_caveats_orchestration_partial():
+    meta = {"mirror_panel": {"orchestration_layer_blinding": "partial"}}
+    assert "orchestration_layer_not_fully_blinded" in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_orchestration_not_blinded():
+    meta = {"mirror_panel": {"orchestration_layer_blinding": "not_blinded"}}
+    assert "orchestration_layer_not_fully_blinded" in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_orchestration_isolated_silent():
+    meta = {"mirror_panel": {"orchestration_layer_blinding": "isolated", "web_search_enabled": False}}
+    assert "orchestration_layer_not_fully_blinded" not in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_visibility_high():
+    meta = {"control": {"visibility_class": "high"}}
+    assert "control_visibility_high_refresh_risk" in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_cutoff_does_not_precede():
+    meta = {"control": {"cutoff_precedes_publication": False}}
+    assert "control_predates_cutoff_gap_conservative" in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_empty_input():
+    assert ingest.derive_metadata_caveats(None) == []
+    assert ingest.derive_metadata_caveats({}) == []
+
+
+# v0.2 codex-rerun additions: caveats #10-#12
+
+
+def test_derive_metadata_caveats_reasoning_mode_emits_tag():
+    meta = {"mirror_panel": {"reasoning_mode": True, "web_search_enabled": False}}
+    assert "reasoning_mode_variant_used" in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_reasoning_mode_false_silent():
+    meta = {"mirror_panel": {"reasoning_mode": False, "web_search_enabled": False}}
+    assert "reasoning_mode_variant_used" not in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_web_search_true_emits_tag():
+    meta = {"mirror_panel": {"reasoning_mode": False, "web_search_enabled": True}}
+    assert "web_search_not_disabled" in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_web_search_unverified_emits_tag():
+    # Operator submitted a mirror_panel block but did not set web_search_enabled.
+    # The SPEC's "could not verify the disable" condition: null counts as unverified.
+    meta = {"mirror_panel": {"interface": "claude_code_task_tool"}}
+    assert "web_search_not_disabled" in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_web_search_explicitly_false_silent():
+    meta = {"mirror_panel": {"web_search_enabled": False}}
+    assert "web_search_not_disabled" not in ingest.derive_metadata_caveats(meta)
+
+
+def test_derive_metadata_caveats_effective_differs_from_nominal_emits_tag():
+    meta = {"mirror_panel": {"nominal_family": "gpt_5", "web_search_enabled": False}}
+    out = ingest.derive_metadata_caveats(meta, family_name="codex_parent_model")
+    assert "effective_model_differs_from_nominal" in out
+
+
+def test_derive_metadata_caveats_effective_matches_nominal_silent():
+    meta = {"mirror_panel": {"nominal_family": "gpt_5", "web_search_enabled": False}}
+    out = ingest.derive_metadata_caveats(meta, family_name="gpt_5")
+    assert "effective_model_differs_from_nominal" not in out
+
+
+def test_derive_metadata_caveats_nominal_absent_silent():
+    meta = {"mirror_panel": {"web_search_enabled": False}}
+    out = ingest.derive_metadata_caveats(meta, family_name="anything")
+    assert "effective_model_differs_from_nominal" not in out
+
+
+def test_ingest_loads_family_json(tmp_path):
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "claude output"}},
+        "human_control": {"format": "t3", "windows": {1: "human output"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "claude_code_task_tool",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": False,
+            "web_search_enabled": False,
+        }
+    }))
+    (outputs_dir / "human_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2026-03-15",
+            "cutoff_precedes_publication": True,
+            "visibility_class": "low",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    assert "family_metadata" in payload
+    assert payload["family_metadata"]["claude"]["mirror_panel"]["training_cutoff_date"] == "2026-01-01"
+    assert payload["family_metadata"]["human_control"]["control"]["visibility_class"] == "low"
+
+
+def test_ingest_auto_emits_derived_caveats(tmp_path):
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+        "encyclical_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {"orchestration_layer_blinding": "not_blinded"}
+    }))
+    (outputs_dir / "encyclical_control" / "family.json").write_text(json.dumps({
+        "control": {"visibility_class": "high", "cutoff_precedes_publication": False}
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    derived = set(payload["derived_caveats"])
+    assert "orchestration_layer_not_fully_blinded" in derived
+    assert "control_visibility_high_refresh_risk" in derived
+    assert "control_predates_cutoff_gap_conservative" in derived
+
+
+def test_ingest_invalid_family_json_emits_caveat_does_not_raise(tmp_path):
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text("{not valid json")
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    assert "family_metadata" in payload and not payload["family_metadata"]
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any("family_json_parse_failed" in c for c in fam_caveats)
+
+
+def test_ingest_unknown_enum_values_flagged(tmp_path):
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "interface": "bogus_interface",
+            "orchestration_layer_blinding": "kinda_isolated",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any("family_json_unknown_interface" in c for c in fam_caveats)
+    assert any("family_json_unknown_blinding" in c for c in fam_caveats)
+
+
+def test_ingest_no_family_json_means_no_metadata(tmp_path):
+    """v0.1 backwards compatibility: absent family.json means absent metadata."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    assert payload["family_metadata"] == {}
+    assert payload["derived_caveats"] == []
+    assert "metadata" not in payload["families"][0]
+
+
+def test_ingest_emits_codex_rerun_caveats(tmp_path):
+    """End-to-end: the Codex-rerun scenario emits the three new caveat tags."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "codex_parent_model": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "codex_parent_model" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2024-10-01",
+            "interface": "codex_serial_agent",
+            "orchestration_layer_blinding": "isolated",
+            "nominal_family": "gpt_5",
+            "reasoning_mode": True,
+            "web_search_enabled": True,
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    derived = set(payload["derived_caveats"])
+    assert "reasoning_mode_variant_used" in derived
+    assert "web_search_not_disabled" in derived
+    assert "effective_model_differs_from_nominal" in derived
+
+
+def test_ingest_clean_v02_run_emits_no_codex_rerun_caveats(tmp_path):
+    """A properly-disciplined run should not trigger the three new tags."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "gpt_5": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "gpt_5" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2024-10-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": False,
+            "web_search_enabled": False,
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    derived = set(payload["derived_caveats"])
+    assert "reasoning_mode_variant_used" not in derived
+    assert "web_search_not_disabled" not in derived
+    assert "effective_model_differs_from_nominal" not in derived
+
+
+def test_compute_distances_passes_family_metadata_through():
+    ingested = _build_ingested(windows_count=1, families_texts={"claude": ["x"]})
+    ingested["family_metadata"] = {
+        "claude": {"mirror_panel": {"training_cutoff_date": "2026-01-01"}}
+    }
+    payload = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    assert payload["family_metadata"]["claude"]["mirror_panel"]["training_cutoff_date"] == "2026-01-01"
+
+
+def test_compute_distances_surfaces_derived_caveats_globally():
+    ingested = _build_ingested(windows_count=1, families_texts={"claude": ["x"]})
+    ingested["derived_caveats"] = [
+        "orchestration_layer_not_fully_blinded",
+        "control_visibility_high_refresh_risk",
+    ]
+    payload = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    assert "orchestration_layer_not_fully_blinded" in payload["global_caveats"]
+    assert "control_visibility_high_refresh_risk" in payload["global_caveats"]
+
+
+def test_compose_envelope_emits_mirror_panel_and_controls_blocks():
+    distances = _build_distances_payload()
+    distances["family_metadata"] = {
+        "claude": {
+            "mirror_panel": {
+                "training_cutoff_date": "2026-01-01",
+                "interface": "claude_code_task_tool",
+                "orchestration_layer_blinding": "isolated",
+            }
+        },
+        "human_control": {
+            "control": {
+                "publication_date": "2026-03-15",
+                "cutoff_precedes_publication": True,
+                "visibility_class": "low",
+            }
+        },
+    }
+    envelope, _ = pack.compose(distances)
+    mirror_panel = envelope["results"]["mirror_panel"]
+    assert len(mirror_panel) == 1
+    assert mirror_panel[0]["family"] == "claude"
+    assert mirror_panel[0]["training_cutoff_date"] == "2026-01-01"
+    controls = envelope["results"]["controls"]
+    known_human = controls["known_human_control"]
+    assert known_human["family"] == "human_control"
+    assert known_human["visibility_class"] == "low"
+
+
+def test_compose_markdown_renders_mirror_panel_table():
+    distances = _build_distances_payload()
+    distances["family_metadata"] = {
+        "claude": {
+            "mirror_panel": {
+                "training_cutoff_date": "2026-01-01",
+                "interface": "claude_code_task_tool",
+                "orchestration_layer_blinding": "isolated",
+            }
+        },
+    }
+    _, md = pack.compose(distances)
+    assert "## Mirror panel (SPEC v0.2)" in md
+    assert "2026-01-01" in md
+    assert "claude_code_task_tool" in md
+
+
+def test_compose_markdown_renders_controls_table_with_yes_no():
+    distances = _build_distances_payload()
+    distances["family_metadata"] = {
+        "human_control": {
+            "control": {
+                "publication_date": "2024-10-24",
+                "cutoff_precedes_publication": False,
+                "visibility_class": "high",
+            }
+        },
+    }
+    _, md = pack.compose(distances)
+    assert "## Controls (SPEC v0.2)" in md
+    assert "2024-10-24" in md
+    assert "| no |" in md
+    assert "| high |" in md
+
+
+def test_compose_skips_v02_sections_when_no_metadata():
+    """v0.1 backwards compatibility: no metadata → no mirror_panel/controls sections."""
+    distances = _build_distances_payload()
+    envelope, md = pack.compose(distances)
+    assert envelope["results"]["mirror_panel"] == []
+    assert envelope["results"]["controls"] == {}
+    assert "## Mirror panel" not in md
+    assert "## Controls (SPEC v0.2)" not in md
+
+
+def test_compose_markdown_renders_codex_rerun_columns():
+    """Markdown mirror-panel table surfaces nominal, reasoning, web_search columns."""
+    distances = _build_distances_payload()
+    distances["family_metadata"] = {
+        "codex_parent_model": {
+            "mirror_panel": {
+                "training_cutoff_date": "2024-10-01",
+                "interface": "codex_serial_agent",
+                "orchestration_layer_blinding": "isolated",
+                "nominal_family": "gpt_5",
+                "reasoning_mode": False,
+                "web_search_enabled": False,
+            }
+        },
+    }
+    _, md = pack.compose(distances)
+    assert "Nominal" in md and "Reasoning" in md and "Web search" in md
+    assert "gpt_5" in md
+    assert "codex_serial_agent" in md
+
+
+# ============================================================
+# PR #126 review fixes — P1 (caveat forwarding) and P2 (incomplete metadata)
+# ============================================================
+#
+# P1: family-level caveats from ingest (parse failures, unknown enum values,
+#     missing required fields, missing windows) must reach the evidence pack
+#     via compute_distances's global_caveats. Before the fix, only the
+#     structural target_continuation_unavailable caveat and derived_caveats
+#     were forwarded; ingested["caveats"] was dropped.
+#
+# P2: a present-but-incomplete mirror_panel / control block now emits
+#     family_json_missing_required_field:<block>.<field> caveats so the
+#     auditor sees that v0.2 metadata is partial. The SPEC requires
+#     training_cutoff_date + interface + orchestration_layer_blinding for
+#     mirror_panel, and publication_date + cutoff_precedes_publication +
+#     visibility_class for control.
+
+
+def test_p1_ingest_caveats_flow_through_to_distances(tmp_path):
+    """P1: family-level ingest caveats reach compute_distances global_caveats."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text("{not valid json")
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    assert any("family_json_parse_failed" in c for c in ingested["caveats"])
+
+    distances = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    global_caveats_blob = "\n".join(distances["global_caveats"])
+    assert "family_json_parse_failed" in global_caveats_blob
+
+
+def test_p1_ingest_caveats_flow_through_to_evidence_pack(tmp_path):
+    """P1: end-to-end regression. Invalid family.json → evidence pack caveats."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "a continuation of suitable length goes here yes yes"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text("{not valid json")
+
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    distances = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    envelope, markdown = pack.compose(distances)
+
+    caveats_blob = "\n".join(envelope["results"]["caveats"])
+    assert "family_json_parse_failed" in caveats_blob
+    # And the rendered markdown surfaces it under the Caveats heading.
+    assert "family_json_parse_failed" in markdown
+
+
+def test_p1_missing_window_caveat_reaches_evidence_pack(tmp_path):
+    """P1: other family-level caveats (missing windows) also flow through."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=4)
+    outputs_dir = _make_outputs(tmp_path, families={
+        # Only window 1 — windows 2/3/4 missing
+        "claude": {"format": "t3", "windows": {1: "x " * 200}},
+    })
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    distances = dist.compute(ingested, target_continuations=None, backend=StubBackend())
+    envelope, _ = pack.compose(distances)
+    caveats_blob = "\n".join(envelope["results"]["caveats"])
+    assert "missing_windows" in caveats_blob
+
+
+def test_p2_partial_mirror_panel_emits_missing_required_caveats(tmp_path):
+    """P2: a mirror_panel block with only one required field emits caveats
+    for the two missing required fields."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "web_search_enabled": False,
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_missing_required_field:mirror_panel.interface" in c
+        for c in fam_caveats
+    )
+    assert any(
+        "family_json_missing_required_field:mirror_panel.orchestration_layer_blinding" in c
+        for c in fam_caveats
+    )
+    # The supplied field is not flagged as missing.
+    assert not any(
+        "family_json_missing_required_field:mirror_panel.training_cutoff_date" in c
+        for c in fam_caveats
+    )
+
+
+def test_p2_partial_control_emits_missing_required_caveats(tmp_path):
+    """P2: a control block with only one required field emits caveats for
+    the two missing required fields."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "human_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "human_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "visibility_class": "low",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_missing_required_field:control.publication_date" in c
+        for c in fam_caveats
+    )
+    assert any(
+        "family_json_missing_required_field:control.cutoff_precedes_publication" in c
+        for c in fam_caveats
+    )
+    assert not any(
+        "family_json_missing_required_field:control.visibility_class" in c
+        for c in fam_caveats
+    )
+
+
+def test_p2_complete_metadata_emits_no_missing_required_caveats(tmp_path):
+    """P2: when every required field is supplied, no missing-required caveat fires."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+        "human_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": False,
+            "web_search_enabled": False,
+        }
+    }))
+    (outputs_dir / "human_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2026-03-15",
+            "cutoff_precedes_publication": True,
+            "visibility_class": "low",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    for fam in payload["families"]:
+        for c in fam["caveats"]:
+            assert "family_json_missing_required_field" not in c
+
+
+def test_p2_missing_required_caveat_flows_to_evidence_pack(tmp_path):
+    """P1+P2 integrated: missing-required-field caveat reaches the evidence pack."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "a continuation of suitable length goes here yes yes"}},
+    })
+    # Only orchestration_layer_blinding supplied; training_cutoff_date + interface missing.
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "orchestration_layer_blinding": "isolated",
+            "web_search_enabled": False,
+        }
+    }))
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    distances = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    envelope, markdown = pack.compose(distances)
+    caveats_blob = "\n".join(envelope["results"]["caveats"])
+    assert "mirror_panel.training_cutoff_date" in caveats_blob
+    assert "mirror_panel.interface" in caveats_blob
+    # The rendered pack surfaces it too.
+    assert "missing_required_field" in markdown
+
+
+# ============================================================
+# PR #126 second-round review fix — P1 string-bool validation
+# ============================================================
+#
+# family.json is hand-authored, so the operator can easily write the
+# string "false" / "true" / "no" / "yes" / etc. for what the schema
+# declares as a bool. Without validation:
+#   - identity-check caveats (`is False`, `is True`) silently fail
+#   - the renderer treats any non-empty string as truthy → cell shows
+#     "yes" even when the operator meant "false"
+# Both effects invert load-bearing cutoff / blinding evidence.
+
+
+def test_string_false_cutoff_precedes_publication_emits_type_caveat(tmp_path):
+    """The exact reviewer-reproduced case: '\"cutoff_precedes_publication\":
+    \"false\"' must emit a validation caveat, not silently render as yes."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "encyclical_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "encyclical_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2024-10-24",
+            "cutoff_precedes_publication": "false",  # string, not bool
+            "visibility_class": "high",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_invalid_field_type:control.cutoff_precedes_publication" in c
+        for c in fam_caveats
+    )
+    # The invalid value is normalized to None so the renderer can't be fooled.
+    assert payload["family_metadata"]["encyclical_control"]["control"]["cutoff_precedes_publication"] is None
+
+
+def test_string_true_reasoning_mode_emits_type_caveat(tmp_path):
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": "true",  # string, not bool
+            "web_search_enabled": False,
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_invalid_field_type:mirror_panel.reasoning_mode" in c
+        for c in fam_caveats
+    )
+    assert payload["family_metadata"]["claude"]["mirror_panel"]["reasoning_mode"] is None
+
+
+def test_string_false_web_search_emits_type_caveat(tmp_path):
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": False,
+            "web_search_enabled": "false",  # string, not bool
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_invalid_field_type:mirror_panel.web_search_enabled" in c
+        for c in fam_caveats
+    )
+    assert payload["family_metadata"]["claude"]["mirror_panel"]["web_search_enabled"] is None
+
+
+def test_non_bool_int_emits_type_caveat(tmp_path):
+    """Type validation rejects integers (and other non-bool truthy values)
+    as cleanly as it rejects strings."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": 1,  # int, not bool
+            "web_search_enabled": False,
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_invalid_field_type:mirror_panel.reasoning_mode" in c
+        and "expected_bool_got_int" in c
+        for c in fam_caveats
+    )
+
+
+def test_render_bool_cell_yes_no_dash():
+    """The renderer is strict on identity: only True/False yield yes/no;
+    everything else (None, string, int) yields the dash."""
+    assert pack._render_bool_cell(True) == "yes"
+    assert pack._render_bool_cell(False) == "no"
+    assert pack._render_bool_cell(None) == "—"
+    assert pack._render_bool_cell("false") == "—"  # operator typo
+    assert pack._render_bool_cell("true") == "—"
+    assert pack._render_bool_cell(1) == "—"
+    assert pack._render_bool_cell(0) == "—"
+    assert pack._render_bool_cell([]) == "—"
+
+
+def test_string_false_cutoff_does_not_render_as_yes_end_to_end(tmp_path):
+    """End-to-end regression for the reviewer-reproduced case: the
+    operator writes '\"cutoff_precedes_publication\": \"false\"',
+    intending 'this control is contaminated.' Pre-fix: the markdown
+    rendered 'Cutoff precedes publication: yes' (inverted) and no
+    caveat fired. Post-fix: the cell shows '—' (the loader normalized
+    the bad value to None) AND a type-validation caveat surfaces in
+    the evidence pack."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "encyclical_control": {"format": "t3", "windows": {1: "a continuation of suitable length goes here yes yes"}},
+    })
+    (outputs_dir / "encyclical_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2024-10-24",
+            "cutoff_precedes_publication": "false",  # string, not bool
+            "visibility_class": "high",
+        }
+    }))
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    distances = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    envelope, markdown = pack.compose(distances)
+
+    # Caveat surfaces in the pack.
+    caveats_blob = "\n".join(envelope["results"]["caveats"])
+    assert "family_json_invalid_field_type:control.cutoff_precedes_publication" in caveats_blob
+
+    # The Controls table renders "—" not "yes" for the invalid value.
+    # The row signature: visibility_class is 'high'; the cell before it
+    # is the cutoff column.
+    assert "| — | high |" in markdown
+    # Belt-and-suspenders: no "| yes |" anywhere on a row that contains "high".
+    for line in markdown.splitlines():
+        if "| high |" in line:
+            assert "| yes |" not in line
+
+
+def test_actual_bool_false_still_renders_as_no_and_emits_semantic_caveat(tmp_path):
+    """Regression guard: the type-validation fix must not break the
+    valid-bool path. cutoff_precedes_publication=False (real bool) should
+    still emit control_predates_cutoff_gap_conservative AND render 'no'."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "encyclical_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "encyclical_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2024-10-24",
+            "cutoff_precedes_publication": False,  # actual bool
+            "visibility_class": "high",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    # No type caveat for an actual bool.
+    assert not any("family_json_invalid_field_type" in c for c in fam_caveats)
+    # Semantic caveat does fire.
+    assert "control_predates_cutoff_gap_conservative" in payload["derived_caveats"]
+
+    distances = dist.compute(payload, target_continuations=["t"], backend=StubBackend())
+    _, markdown = pack.compose(distances)
+    # Real False renders as "no" — not as "—" or "yes".
+    assert "| no | high |" in markdown

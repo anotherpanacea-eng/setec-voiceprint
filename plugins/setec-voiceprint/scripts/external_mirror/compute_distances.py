@@ -462,6 +462,30 @@ def compute(
         global_caveat = None
 
     ingested_bytes = json.dumps(ingested, sort_keys=True).encode("utf-8")
+    # v0.2: surface caveats from ingest at the global level so they reach
+    # the evidence pack. Three streams fold in here:
+    #   - structural caveat (target_continuation_unavailable)
+    #   - per-family caveats from ingest (family.json parse failures,
+    #     unknown enum values, missing required fields, missing windows,
+    #     refusals at the family level) — these are family-prefixed
+    #     strings in ingested["caveats"]
+    #   - derived_caveats from metadata semantics (orchestration blinding,
+    #     visibility class, reasoning mode, web search, effective vs
+    #     nominal). The SPEC v0.2 controlled-vocabulary tags.
+    # All three need to survive into evidence_pack so the auditor sees
+    # everything the operator's ingest revealed.
+    global_caveats_list: list[str] = []
+    if global_caveat:
+        global_caveats_list.append(global_caveat)
+    ingest_caveats = ingested.get("caveats") or []
+    for c in ingest_caveats:
+        if c not in global_caveats_list:
+            global_caveats_list.append(c)
+    derived = ingested.get("derived_caveats") or []
+    for c in derived:
+        if c not in global_caveats_list:
+            global_caveats_list.append(c)
+
     # v2: per-metric summary stats. v1 had a flat dict; v2 keeps the
     # flat dict (= sbert summary, back-compat) and adds a nested
     # ``summary_by_metric`` so consumers can read per-metric stats.
@@ -487,6 +511,12 @@ def compute(
         "embedding_block": embedding_block_for_payload,
         "manifest": ingested["manifest"],
         "families": family_labels,
+        # v0.2 spec: pass per-family metadata (training_cutoff_date,
+        # interface, orchestration_layer_blinding, nominal_family,
+        # reasoning_mode, web_search_enabled, control block) through to
+        # the evidence pack composer. None when no family.json was
+        # supplied (v0.1 backwards-compat).
+        "family_metadata": ingested.get("family_metadata", {}),
         "windows_count": windows_count,
         "have_target_continuation": have_target,
         "labels_per_window": labels_per_window,
@@ -506,7 +536,7 @@ def compute(
         "summary": summary_by_metric.get("sbert", {}),
         "summary_by_metric": summary_by_metric,
         "ingested_sha256": hashlib.sha256(ingested_bytes).hexdigest(),
-        "global_caveats": [global_caveat] if global_caveat else [],
+        "global_caveats": global_caveats_list,
     }
     return payload
 

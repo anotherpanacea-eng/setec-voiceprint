@@ -51,10 +51,64 @@ DEFAULT_DOES_NOT_LICENSE = (
     "matrix is one measurement in one embedding model; operator judgment "
     "remains the load-bearing decision step. Does not generalize beyond "
     "the genre descriptor used in Phase A's prompts. Does not control "
-    "for memorization (if the target text is in any LLM family's training "
-    "set, distances will be artificially low). Does not substitute for "
-    "stylometric, surprisal, or other framework audits — it complements them."
+    "for memorization: per SPEC v0.2, the mirror model's published training "
+    "cutoff MUST precede both the target's and the human-control's publication "
+    "dates, or the discrimination signal is contaminated (target side: "
+    "measures recall not inference; control side: gap compresses, signal is "
+    "conservative). High-visibility recent documents may fail this even when "
+    "nominally post-cutoff. Does not substitute for stylometric, surprisal, "
+    "or other framework audits — it complements them. Operators using agent "
+    "orchestration must additionally guarantee orchestration-layer blinding: "
+    "subagent context isolation is necessary but not sufficient."
 )
+
+
+def _render_bool_cell(value) -> str:
+    """Strict bool renderer for the v0.2 metadata tables. Returns
+    "yes" for True, "no" for False, "—" for None or any other type.
+
+    PR #126 review fix: the loose ``"yes" if value else "no"`` pattern
+    rendered any truthy non-bool (string "false", int 1, list ["x"])
+    as "yes", which inverts load-bearing cutoff / blinding evidence.
+    The loader at ``_load_family_metadata`` now normalizes invalid types
+    to None, but this strict renderer is belt-and-suspenders: if any
+    non-bool ever reaches this layer, it shows "—" rather than guess.
+    """
+    if value is True:
+        return "yes"
+    if value is False:
+        return "no"
+    return "—"
+
+
+def _split_metadata(
+    family_metadata: dict,
+) -> tuple[list[dict], dict]:
+    """Split per-family metadata into mirror_panel and controls blocks.
+
+    Per SPEC v0.2 §JSON schema: a family may declare a mirror_panel block
+    (training_cutoff_date / interface / orchestration_layer_blinding /
+    nominal_family / reasoning_mode / web_search_enabled), a control block
+    (publication_date / cutoff_precedes_publication / visibility_class), or
+    both. The evidence pack surfaces them under two separate keys so readers
+    can navigate by role.
+    """
+    mirror_panel: list[dict] = []
+    controls_known_human: list[dict] = []
+    for family, meta in sorted(family_metadata.items()):
+        mp = (meta or {}).get("mirror_panel")
+        if mp:
+            mirror_panel.append({"family": family, **mp})
+        ctrl = (meta or {}).get("control")
+        if ctrl:
+            controls_known_human.append({"family": family, **ctrl})
+    controls_block: dict = {}
+    if controls_known_human:
+        controls_block["known_human_control"] = (
+            controls_known_human[0] if len(controls_known_human) == 1
+            else controls_known_human
+        )
+    return mirror_panel, controls_block
 
 
 def compose(
@@ -79,6 +133,8 @@ def compose(
             deduped_caveats.append(c)
 
     summary = distances.get("summary", {})
+    family_metadata = distances.get("family_metadata", {}) or {}
+    mirror_panel, controls_block = _split_metadata(family_metadata)
 
     results = {
         "phase_a_run_id": manifest.get("run_id"),
@@ -87,6 +143,12 @@ def compose(
         "positioning": manifest.get("positioning"),
         "windows_count": distances.get("windows_count"),
         "families": distances.get("families", []),
+        # v0.2 spec: per-family metadata split into mirror_panel (LLM
+        # mirror families: cutoff / interface / blinding / reasoning /
+        # web-search / nominal vs effective) and controls (human-control
+        # publication date, cutoff-precedence, visibility class).
+        "mirror_panel": mirror_panel,
+        "controls": controls_block,
         "have_target_continuation": distances.get("have_target_continuation"),
         "embedding_block": distances.get("embedding_block"),
         "labels_per_window": distances.get("labels_per_window"),
@@ -165,6 +227,46 @@ def render_markdown(envelope: dict, distances: dict, license_block: Any) -> str:
         skipped = ", ".join(f"`{m}` ({why})" for m, why in skip_reasons.items())
         lines.append(f"- **Metrics skipped:** {skipped}")
     lines.append("")
+
+    # v0.2 spec: mirror_panel + controls tables surface per-family
+    # cutoff / interface / blinding / reasoning / web-search and
+    # human-control publication metadata. Only render when present;
+    # absent metadata means a v0.1-style run.
+    results_block = envelope.get("results", {}) or {}
+    mirror_panel = results_block.get("mirror_panel") or []
+    if mirror_panel:
+        lines.append("## Mirror panel (SPEC v0.2)")
+        lines.append("")
+        lines.append("| Family | Nominal | Training cutoff | Interface | Orchestration | Reasoning | Web search |")
+        lines.append("|---|---|---|---|---|---|---|")
+        for entry in mirror_panel:
+            lines.append(
+                f"| `{entry.get('family', '?')}` | "
+                f"{entry.get('nominal_family') or '—'} | "
+                f"{entry.get('training_cutoff_date') or '—'} | "
+                f"{entry.get('interface') or '—'} | "
+                f"{entry.get('orchestration_layer_blinding') or '—'} | "
+                f"{_render_bool_cell(entry.get('reasoning_mode'))} | "
+                f"{_render_bool_cell(entry.get('web_search_enabled'))} |"
+            )
+        lines.append("")
+
+    controls_block_md = results_block.get("controls") or {}
+    known_human = controls_block_md.get("known_human_control")
+    if known_human:
+        rows = known_human if isinstance(known_human, list) else [known_human]
+        lines.append("## Controls (SPEC v0.2)")
+        lines.append("")
+        lines.append("| Family | Publication date | Cutoff precedes publication | Visibility class |")
+        lines.append("|---|---|---|---|")
+        for entry in rows:
+            lines.append(
+                f"| `{entry.get('family', '?')}` | "
+                f"{entry.get('publication_date') or '—'} | "
+                f"{_render_bool_cell(entry.get('cutoff_precedes_publication'))} | "
+                f"{entry.get('visibility_class') or '—'} |"
+            )
+        lines.append("")
 
     if summary:
         lines.append("## Summary distances (family vs target)")
