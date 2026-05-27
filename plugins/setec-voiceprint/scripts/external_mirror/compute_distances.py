@@ -462,11 +462,25 @@ def compute(
         global_caveat = None
 
     ingested_bytes = json.dumps(ingested, sort_keys=True).encode("utf-8")
-    # v0.2: surface caveats derived from per-family metadata at the global level
-    # so the evidence pack sees them alongside structural caveats.
+    # v0.2: surface caveats from ingest at the global level so they reach
+    # the evidence pack. Three streams fold in here:
+    #   - structural caveat (target_continuation_unavailable)
+    #   - per-family caveats from ingest (family.json parse failures,
+    #     unknown enum values, missing required fields, missing windows,
+    #     refusals at the family level) — these are family-prefixed
+    #     strings in ingested["caveats"]
+    #   - derived_caveats from metadata semantics (orchestration blinding,
+    #     visibility class, reasoning mode, web search, effective vs
+    #     nominal). The SPEC v0.2 controlled-vocabulary tags.
+    # All three need to survive into evidence_pack so the auditor sees
+    # everything the operator's ingest revealed.
     global_caveats_list: list[str] = []
     if global_caveat:
         global_caveats_list.append(global_caveat)
+    ingest_caveats = ingested.get("caveats") or []
+    for c in ingest_caveats:
+        if c not in global_caveats_list:
+            global_caveats_list.append(c)
     derived = ingested.get("derived_caveats") or []
     for c in derived:
         if c not in global_caveats_list:

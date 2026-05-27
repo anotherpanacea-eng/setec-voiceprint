@@ -184,6 +184,21 @@ def _load_family_metadata(family_dir: Path) -> tuple[dict | None, list[str]]:
                 caveats.append(f"family_json_unknown_interface:{interface}")
             if blinding is not None and blinding not in _VALID_BLINDING:
                 caveats.append(f"family_json_unknown_blinding:{blinding}")
+            # v0.2: once a mirror_panel block is present, the SPEC requires
+            # training_cutoff_date, interface, and orchestration_layer_blinding
+            # (the three load-bearing identification + blinding fields). A
+            # present-but-incomplete block should not look clean to the auditor.
+            # Other mirror_panel fields are advisory or trigger their own
+            # caveat in derive_metadata_caveats.
+            for required in (
+                "training_cutoff_date",
+                "interface",
+                "orchestration_layer_blinding",
+            ):
+                if mp.get(required) is None:
+                    caveats.append(
+                        f"family_json_missing_required_field:mirror_panel.{required}"
+                    )
             cleaned["mirror_panel"] = {
                 "training_cutoff_date": mp.get("training_cutoff_date"),
                 "interface": interface,
@@ -202,6 +217,17 @@ def _load_family_metadata(family_dir: Path) -> tuple[dict | None, list[str]]:
             visibility = ctrl.get("visibility_class")
             if visibility is not None and visibility not in _VALID_VISIBILITY:
                 caveats.append(f"family_json_unknown_visibility:{visibility}")
+            # v0.2: once a control block is present, the SPEC requires
+            # publication_date, cutoff_precedes_publication, and visibility_class.
+            for required in (
+                "publication_date",
+                "cutoff_precedes_publication",
+                "visibility_class",
+            ):
+                if ctrl.get(required) is None:
+                    caveats.append(
+                        f"family_json_missing_required_field:control.{required}"
+                    )
             cleaned["control"] = {
                 "publication_date": ctrl.get("publication_date"),
                 "cutoff_precedes_publication": ctrl.get("cutoff_precedes_publication"),

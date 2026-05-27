@@ -1383,3 +1383,178 @@ def test_compose_markdown_renders_codex_rerun_columns():
     assert "Nominal" in md and "Reasoning" in md and "Web search" in md
     assert "gpt_5" in md
     assert "codex_serial_agent" in md
+
+
+# ============================================================
+# PR #126 review fixes — P1 (caveat forwarding) and P2 (incomplete metadata)
+# ============================================================
+#
+# P1: family-level caveats from ingest (parse failures, unknown enum values,
+#     missing required fields, missing windows) must reach the evidence pack
+#     via compute_distances's global_caveats. Before the fix, only the
+#     structural target_continuation_unavailable caveat and derived_caveats
+#     were forwarded; ingested["caveats"] was dropped.
+#
+# P2: a present-but-incomplete mirror_panel / control block now emits
+#     family_json_missing_required_field:<block>.<field> caveats so the
+#     auditor sees that v0.2 metadata is partial. The SPEC requires
+#     training_cutoff_date + interface + orchestration_layer_blinding for
+#     mirror_panel, and publication_date + cutoff_precedes_publication +
+#     visibility_class for control.
+
+
+def test_p1_ingest_caveats_flow_through_to_distances(tmp_path):
+    """P1: family-level ingest caveats reach compute_distances global_caveats."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text("{not valid json")
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    assert any("family_json_parse_failed" in c for c in ingested["caveats"])
+
+    distances = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    global_caveats_blob = "\n".join(distances["global_caveats"])
+    assert "family_json_parse_failed" in global_caveats_blob
+
+
+def test_p1_ingest_caveats_flow_through_to_evidence_pack(tmp_path):
+    """P1: end-to-end regression. Invalid family.json → evidence pack caveats."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "a continuation of suitable length goes here yes yes"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text("{not valid json")
+
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    distances = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    envelope, markdown = pack.compose(distances)
+
+    caveats_blob = "\n".join(envelope["results"]["caveats"])
+    assert "family_json_parse_failed" in caveats_blob
+    # And the rendered markdown surfaces it under the Caveats heading.
+    assert "family_json_parse_failed" in markdown
+
+
+def test_p1_missing_window_caveat_reaches_evidence_pack(tmp_path):
+    """P1: other family-level caveats (missing windows) also flow through."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=4)
+    outputs_dir = _make_outputs(tmp_path, families={
+        # Only window 1 — windows 2/3/4 missing
+        "claude": {"format": "t3", "windows": {1: "x " * 200}},
+    })
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    distances = dist.compute(ingested, target_continuations=None, backend=StubBackend())
+    envelope, _ = pack.compose(distances)
+    caveats_blob = "\n".join(envelope["results"]["caveats"])
+    assert "missing_windows" in caveats_blob
+
+
+def test_p2_partial_mirror_panel_emits_missing_required_caveats(tmp_path):
+    """P2: a mirror_panel block with only one required field emits caveats
+    for the two missing required fields."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "web_search_enabled": False,
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_missing_required_field:mirror_panel.interface" in c
+        for c in fam_caveats
+    )
+    assert any(
+        "family_json_missing_required_field:mirror_panel.orchestration_layer_blinding" in c
+        for c in fam_caveats
+    )
+    # The supplied field is not flagged as missing.
+    assert not any(
+        "family_json_missing_required_field:mirror_panel.training_cutoff_date" in c
+        for c in fam_caveats
+    )
+
+
+def test_p2_partial_control_emits_missing_required_caveats(tmp_path):
+    """P2: a control block with only one required field emits caveats for
+    the two missing required fields."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "human_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "human_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "visibility_class": "low",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    fam_caveats = payload["families"][0]["caveats"]
+    assert any(
+        "family_json_missing_required_field:control.publication_date" in c
+        for c in fam_caveats
+    )
+    assert any(
+        "family_json_missing_required_field:control.cutoff_precedes_publication" in c
+        for c in fam_caveats
+    )
+    assert not any(
+        "family_json_missing_required_field:control.visibility_class" in c
+        for c in fam_caveats
+    )
+
+
+def test_p2_complete_metadata_emits_no_missing_required_caveats(tmp_path):
+    """P2: when every required field is supplied, no missing-required caveat fires."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "out"}},
+        "human_control": {"format": "t3", "windows": {1: "out"}},
+    })
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "training_cutoff_date": "2026-01-01",
+            "interface": "manual_fresh_chat",
+            "orchestration_layer_blinding": "isolated",
+            "reasoning_mode": False,
+            "web_search_enabled": False,
+        }
+    }))
+    (outputs_dir / "human_control" / "family.json").write_text(json.dumps({
+        "control": {
+            "publication_date": "2026-03-15",
+            "cutoff_precedes_publication": True,
+            "visibility_class": "low",
+        }
+    }))
+    payload = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    for fam in payload["families"]:
+        for c in fam["caveats"]:
+            assert "family_json_missing_required_field" not in c
+
+
+def test_p2_missing_required_caveat_flows_to_evidence_pack(tmp_path):
+    """P1+P2 integrated: missing-required-field caveat reaches the evidence pack."""
+    prompts_dir = _make_manifest(tmp_path, windows_count=1)
+    outputs_dir = _make_outputs(tmp_path, families={
+        "claude": {"format": "t3", "windows": {1: "a continuation of suitable length goes here yes yes"}},
+    })
+    # Only orchestration_layer_blinding supplied; training_cutoff_date + interface missing.
+    (outputs_dir / "claude" / "family.json").write_text(json.dumps({
+        "mirror_panel": {
+            "orchestration_layer_blinding": "isolated",
+            "web_search_enabled": False,
+        }
+    }))
+    ingested = ingest.ingest(prompts_dir, outputs_dir, strict=False)
+    distances = dist.compute(ingested, target_continuations=["t"], backend=StubBackend())
+    envelope, markdown = pack.compose(distances)
+    caveats_blob = "\n".join(envelope["results"]["caveats"])
+    assert "mirror_panel.training_cutoff_date" in caveats_blob
+    assert "mirror_panel.interface" in caveats_blob
+    # The rendered pack surfaces it too.
+    assert "missing_required_field" in markdown
