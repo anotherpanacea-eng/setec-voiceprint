@@ -6,6 +6,15 @@ of every adjacent sentence pair, and reports mean/median/std for each file.
 
 Target: magnifica-humanitas-en.txt
 Baselines: dilexit-nos, fratelli-tutti, laudato-si, lumen-fidei, laudate-deum.
+
+ARCHIVAL PROVENANCE: this script ran in the operator's working folder
+when the evidence pack was produced; it is preserved here as the
+recipe that generated the published `tier3_sbert_cohesion.json`. The
+source corpus (`texts/`) is intentionally NOT shipped in this repo
+(see the publish handoff's do-not-publish list). To rerun: drop your
+own corpus at `texts/` next to this script (or override `TEXTS_DIR`)
+and an output path at `OUT`. Both are relative-from-cwd so the script
+is portable in principle, not just in spirit.
 """
 from __future__ import annotations
 import json
@@ -18,8 +27,8 @@ from pathlib import Path
 import numpy as np
 from sentence_transformers import SentenceTransformer
 
-TEXTS_DIR = Path("/sessions/vibrant-charming-babbage/mnt/Claude Cowork Working Folder/Writing/stylometry sequence/magnifica-humanitas/texts")
-OUT = Path("/sessions/vibrant-charming-babbage/mnt/Claude Cowork Working Folder/Writing/stylometry sequence/magnifica-humanitas/analyses/tier3_sbert_cohesion.json")
+TEXTS_DIR = Path(os.environ.get("TEXTS_DIR", "texts"))
+OUT = Path(os.environ.get("OUT", "tier3_sbert_cohesion.json"))
 
 # Simple sentence segmenter — splits on period/question/exclamation followed by
 # whitespace + capital. Good enough for prose comparison.

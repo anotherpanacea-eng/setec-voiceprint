@@ -1,9 +1,19 @@
 #!/usr/bin/env python3
-"""Extract control windows from Dilexit Nos (Francis 2024), parallel methodology to Magnifica."""
+"""Extract control windows from Dilexit Nos (Francis 2024), parallel methodology to Magnifica.
+
+ARCHIVAL PROVENANCE: this script ran in the operator's working folder
+when the evidence pack was produced; preserved here as the recipe
+that generated the published prefix/target files in this directory.
+The source corpus is intentionally NOT shipped in this repo (see the
+publish handoff's do-not-publish list). To rerun: set SRC to your
+own copy of Dilexit Nos (or override via the SRC env var) and OUT_DIR
+to your desired output path.
+"""
+import os
 import re
 from pathlib import Path
 
-src = Path("/sessions/vibrant-charming-babbage/mnt/Claude Cowork Working Folder/Writing/stylometry sequence/magnifica-humanitas/texts/dilexit-nos-en.txt")
+src = Path(os.environ.get("SRC", "texts/dilexit-nos-en.txt"))
 text = src.read_text(encoding="utf-8")
 para_pattern = re.compile(r'^(\d+)\.\s+', re.MULTILINE)
 matches = list(para_pattern.finditer(text))
@@ -45,7 +55,7 @@ for name, pnum in targets.items():
                      "prefix_word_count": len(prefix_words), "target_150w": target_150,
                      "target_word_count": len(target_150.split())}
 
-out_dir = Path("/sessions/vibrant-charming-babbage/mnt/Claude Cowork Working Folder/Writing/stylometry sequence/magnifica-humanitas/mirror_control_dilexit")
+out_dir = Path(os.environ.get("OUT_DIR", "."))
 out_dir.mkdir(exist_ok=True)
 for name, w in windows.items():
     (out_dir / f"{name}_prefix.txt").write_text(w["prefix_500w"], encoding="utf-8")

@@ -2,11 +2,21 @@
 """Extract prefix windows and target continuations for the mirror test.
 Pangram-flagged sections per Linch's analysis: par 7 (Babel screenshot),
 par 10 (Babel syndrome quote), par 100 (genuinely helpful quote),
-par 107 (alignment quote)."""
+par 107 (alignment quote).
+
+ARCHIVAL PROVENANCE: this script ran in the operator's working folder
+when the evidence pack was produced; preserved here as the recipe
+that generated the published prefix/target files in this directory.
+The source corpus is intentionally NOT shipped in this repo (see the
+publish handoff's do-not-publish list). To rerun: set SRC to point at
+your own copy of the encyclical (or override via the SRC env var) and
+OUT_DIR to your desired output path.
+"""
+import os
 import re
 from pathlib import Path
 
-src = Path("/sessions/vibrant-charming-babbage/mnt/Claude Cowork Working Folder/Writing/stylometry sequence/magnifica-humanitas/texts/magnifica-humanitas-en.txt")
+src = Path(os.environ.get("SRC", "texts/magnifica-humanitas-en.txt"))
 text = src.read_text(encoding="utf-8")
 
 # Split by paragraph markers "N. " at line start (allowing leading whitespace)
@@ -81,7 +91,7 @@ for name, pnum in targets.items():
     }
 
 # Save each window's prefix and target separately
-out_dir = Path("/sessions/vibrant-charming-babbage/mnt/Claude Cowork Working Folder/Writing/stylometry sequence/magnifica-humanitas/mirror_test")
+out_dir = Path(os.environ.get("OUT_DIR", "."))
 out_dir.mkdir(exist_ok=True)
 for name, w in windows.items():
     (out_dir / f"{name}_prefix.txt").write_text(w["prefix_500w"], encoding="utf-8")
