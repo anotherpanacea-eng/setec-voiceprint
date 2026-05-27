@@ -1,0 +1,387 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "voice_coherence",
+  "tool": "construction_signature_audit",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/magnifica-humanitas-en.txt",
+    "words": 38637,
+    "spacy_available": true
+  },
+  "baseline": {
+    "n_files": 2,
+    "words": 66257
+  },
+  "results": {
+    "constructions": {
+      "cleft": {
+        "label": "Cleft",
+        "description": "It-cleft: \"It is X that/who Y\". Foregrounds X. Over-density reads as authoritative-emphasis cadence.",
+        "requires_spacy": false,
+        "available": true,
+        "count": 11,
+        "density_per_1k": 0.28470119315681863,
+        "hits": [
+          {
+            "sentence_index": 346,
+            "text": "Human dignity does not depend on a person\u2019s abilities, wealth or position in life, nor on the right or wrong choices made; instead, it is a gift that precedes and transcends each person, endowed by God as an expression of his unfailing love.",
+            "span": "it is a gift that p",
+            "note": ""
+          },
+          {
+            "sentence_index": 382,
+            "text": "It is a fact that \u201cdoubly poor are those women who endure situations of exclusion, mistreatment and violence, since they are frequently less able to defend their rights.\u201d74 It is, therefore, not enough to state simply that men and women have equal dignity and rights; it is necessary that this be reflected in concrete decisions, such as in laws, access to employment, education, social and political responsibilities, and the way society listens to and values women\u2019s contributions.",
+            "span": "It is a fact that \u201c",
+            "note": ""
+          },
+          {
+            "sentence_index": 397,
+            "text": "It is not the sum total of individual benefits, nor the intersection of their particular interests; it is a greater good that belongs to everyone, and it can only be achieved, nurtured and protected by our collective efforts.",
+            "span": "it is a greater good that b",
+            "note": ""
+          },
+          {
+            "sentence_index": 405,
+            "text": "It is the pursuit of the common good that gives life to a people, understood not as a mere collection of individuals, but as a living reality in which people learn to recognize that they themselves are interconnected and jointly responsible for the BENEDICT XVI, Apostolic Exhortation Sacramentum Caritatis (22 February 2007), 83: AAS 99 (2007), 169. res publica.",
+            "span": "It is the pursuit of the common good that g",
+            "note": ""
+          },
+          {
+            "sentence_index": 440,
+            "text": "It is the responsibility of the political community to create the conditions that allow individuals, families, associations and intermediary organizations to fulfil their mission in society, without being replaced or reduced to mere facilitators.94",
+            "span": "It is the responsibility of the political community to create the conditions tha",
+            "note": ""
+          },
+          {
+            "sentence_index": 804,
+            "text": "Indeed, it is God himself who overcomes the \u201cinfinite\u201d disproportion.136 In him, the re-creation of the human person happens. \u201cIf anyone is in Christ, there is a new creation: everything old has passed away; see, everything has become new\u201d (2 Cor 5:17).",
+            "span": "it is God himself who o",
+            "note": ""
+          },
+          {
+            "sentence_index": 1035,
+            "text": "Founded on the enduring union between a man and a woman, it is the first environment in which all persons develop their potential, become aware of their dignity and learn the earliest forms of truth and goodness, internalizing the habits that prepare them for life in society.166 As the first natural society, endowed with foundational rights, the family is the fundamental and irreplaceable cell of every community organization.167 Consequently, when political projects and major economic decisions relegate the family to a marginal or secondary role, the authentic growth of the entire social body is compromised.168",
+            "span": "it is the first environment in which a",
+            "note": ""
+          },
+          {
+            "sentence_index": 1452,
+            "text": "It is the mystery of \u201crecapitulation\u201d: the certainty that the Father has decreed to bring all things, those in heaven and those on earth, back to Christ, the one Head (cf.",
+            "span": "It is the mystery of \u201crecapitulation\u201d: the certainty that t",
+            "note": ""
+          },
+          {
+            "sentence_index": 1463,
+            "text": "If you are the body and members of Christ, then it is your sacrament that is placed on the table of the Lord; it is your sacrament that you receive.",
+            "span": "it is your sacrament that i",
+            "note": ""
+          },
+          {
+            "sentence_index": 1463,
+            "text": "If you are the body and members of Christ, then it is your sacrament that is placed on the table of the Lord; it is your sacrament that you receive.",
+            "span": "it is your sacrament that y",
+            "note": ""
+          },
+          {
+            "sentence_index": 1536,
+            "text": "The Blessed Virgin Mary not only teaches us to recognize God\u2019s invisible work, but also directs our gaze to \u201cthe points at which humanity is broken and the world becomes distorted: the contrast between the humble and the powerful, the poor and the rich, the satiated and the hungry,\u201d teaching us \u201cto look at the world from a lower position: through the eyes of those who suffer rather than the mighty; to view history through the eyes of the little ones, rather than through the perspective of the powerful; to interpret the events of history from the viewpoint of the widow, the orphan, the stranger, the wounded child, the exile and the fugitive.\u201d223 The Blessed Virgin thus becomes \u201cpoet and prophetess of Redemption,\u201d because on her lips is proclaimed \u201cthe strongest and most innovative hymn ever articulated, the Magnificat; it is she who reveals the transformative vision of the Christian economy, the historical and social result that still draws its origin and strength from Christianity.\u201d224",
+            "span": "it is she who r",
+            "note": ""
+          }
+        ],
+        "baseline_density_per_1k": 0.3622258780204356,
+        "delta_per_1k": -0.07752468486361697
+      },
+      "agentless_passive": {
+        "label": "Agentless passive",
+        "description": "Passive voice WITHOUT a by-phrase. Erases agency. Over-density reads as bureaucratic / institutional register.",
+        "requires_spacy": true,
+        "available": true,
+        "count": 277,
+        "density_per_1k": 7.169293682221705,
+        "hits": [
+          {
+            "sentence_index": 3,
+            "text": "Each generation inherits the task of shaping its own era, of guiding history to become a place where the dignity of every person is safeguarded, justice is promoted and fraternity is made possible.",
+            "span": "the dignity of every person is safeguarded",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 13,
+            "text": "With that document, my beloved predecessor gave impetus to the reflection on society, the economy and politics, which is now known as the \u201cSocial Doctrine of the Church.\u201d When some objected that the Church should not waste energy on worldly matters, but instead focus on communicating the message of eternal life, Leo XIII responded with realism and wisdom, saying that the proclamation of the Gospel cannot overlook the concrete lives of people.4 Many decades have passed since then, and the Magisterium, pastors, theologians and faithful have continued to reflect on social issues in the light of the Gospel.",
+            "span": "which is now known as the \u201cSocial Doctrine of the Church",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 24,
+            "text": "Technology should not be considered, in itself, as a force antagonistic to humanity.",
+            "span": "Technology should not be considered, in itself, as a force antagonistic to humanity.",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 28,
+            "text": "The power and prevalence of emerging technologies are interwoven into the fabric of daily life, shaping decision-making processes and deeply affecting the collective imagination: \u201cNever has humanity had such power over itself.\u201d6 New technologies open up a horizon extending in directions that are imaginable but not yet fully predictable.",
+            "span": "The power and prevalence of emerging technologies are interwoven into the fabric of daily life, shaping decision-making processes and deeply affecting the collective imagination",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 33,
+            "text": "Nevertheless, the issue is not limited to regulation.",
+            "span": "the issue is not limited to regulation.",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 34,
+            "text": "As Pope Francis warned, we must realistically ask ourselves who holds this power today and how they use it: \u201cIt must also be recognized that nuclear energy, biotechnology, information technology, knowledge of our own DNA, and many other abilities which we have acquired\u2026 have given those with the knowledge, and especially the economic resources to use them, an impressive dominance over the whole of humanity and the entire world.\u201d7 In the past, it was largely up to the State to guide and direct innovation.",
+            "span": "It must also be recognized that nuclear energy, biotechnology, information technology, knowledge of our own DNA, and many other abilities which we have acquired\u2026 have given those with the knowledge, and especially the economic resources to use them, an impressive dominance over the whole of humanity and the entire world",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 35,
+            "text": "Today, however, the main drivers of development are private, often transnational, parties that are endowed with resources and the capacity to intervene that surpass those of many Governments.",
+            "span": "that are endowed with resources and the capacity to intervene",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 55,
+            "text": "When a city is built on pride and the claim to self-sufficiency, communication breaks down, languages are confused and people no longer understand each other.",
+            "span": "a city is built on pride and the claim to self-sufficiency",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 94,
+            "text": "Secondly, building for the common good means accepting the limits and weakness of humanity without considering them an error to be corrected.",
+            "span": "an error to be corrected",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 97,
+            "text": "As a result, while some pursue the illusion of unlimited self-assertion, many are deprived of basic necessities.",
+            "span": "many are deprived of basic necessities.",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 98,
+            "text": "The Church reminds us, with a firm yet humble voice, that true fulfilment is not achieved by eliminating weakness but through harmonious growth.",
+            "span": "true fulfilment is not achieved by eliminating weakness but through harmonious growth",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 99,
+            "text": "It is found where freedom and responsibility are intertwined with mutual care and true solidarity, and where progress is measured by the dignity of each person and the good of all peoples.",
+            "span": "It is found where freedom and responsibility are intertwined with mutual care and true solidarity, and where progress is measured by the dignity of each person and the good of all peoples.",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 102,
+            "text": "No one can single-handedly bear the weight of the challenges the world is facing, just as no one is so weak that they cannot play their part, for \u201cpower is made perfect in weakness\u201d (2 Cor 12:9).",
+            "span": "power is made perfect in weakness\u201d (2 Cor 12:9).",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 103,
+            "text": "All are given their own section of the wall: scientists and researchers, entrepreneurs and workers, educators and legislators, civil society, popular movements and faith communities.",
+            "span": "All are given their own section of the wall: scientists and researchers, entrepreneurs and workers, educators and legislators, civil society, popular movements and faith communities.",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 132,
+            "text": "In this regard, artificial intelligence, too, should not be considered as merely yet another theme to be studied or a crisis to be managed, but rather as a development that challenges the categories of Social Doctrine from within, calling for their further development in fidelity to the Gospel.",
+            "span": "artificial intelligence, too, should not be considered as merely yet another theme to be studied or a crisis to be managed, but rather as a development that challenges the categories of Social Doctrine from within, calling for their further development in fidelity to the Gospel.",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 142,
+            "text": "This involvement in people\u2019s lives helps the Church understand ever more clearly that her mission has a historical scope and entails a responsibility for the way in which social relations are built.",
+            "span": "social relations are built",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 145,
+            "text": "Pope Francis emphasized this historical dimension of the Church\u2019s mission: \u201cNo one can demand that religion should be relegated to the inner sanctum of personal life, without influence on societal and national life, without concern for the soundness of civil institutions, without a right to offer an opinion on events affecting society.\u201d9",
+            "span": "religion should be relegated to the inner sanctum of personal life, without influence on societal and national life, without concern for the soundness of civil institutions, without a right to offer an opinion on events affecting society",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 154,
+            "text": "The Church\u2019s presence in the world is also expressed through her relationship with civil society and public institutions.",
+            "span": "The Church\u2019s presence in the world is also expressed through her relationship with civil society and public institutions.",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 164,
+            "text": "Gaudium et Spes reminds us that \u201cit is the task of the whole People of God, particularly of its pastors and theologians, to listen to and distinguish the many voices of our times and to interpret them in the light of God\u2019s word, in order that the revealed Truth may be more deeply penetrated, better understood and more suitably presented.\u201d11 Listening to the \u201cmany voices\u201d is no mere sociological exercise, but instead requires spiritual discernment.",
+            "span": "the revealed Truth may be more deeply penetrated",
+            "note": "passive without explicit agent"
+          },
+          {
+            "sentence_index": 166,
+            "text": "In this way, the essential core of revealed Truth is not altered, but made explicit and adopted as a living standard for guiding concrete choices, inspiring paths of personal and communal conversion, promoting structural reforms and supporting new forms of evangelical witness in public life.",
+            "span": "the essential core of revealed Truth is not altered, but made explicit and adopted as a living standard for guiding concrete choices, inspiring paths of personal and communal conversion, promoting structural reforms and supporting new forms of evangelical witness in public life.",
+            "note": "passive without explicit agent"
+          }
+        ],
+        "baseline_density_per_1k": 6.867198937470758,
+        "delta_per_1k": 0.30209474475094655
+      },
+      "stacked_prepositional_phrases": {
+        "label": "Stacked PPs",
+        "description": "3+ consecutive prepositional phrases at clause end. Reads as nominalized / abstract cadence.",
+        "requires_spacy": true,
+        "available": true,
+        "count": 278,
+        "density_per_1k": 7.195175608872325,
+        "hits": [
+          {
+            "sentence_index": 10,
+            "text": "Indeed, openness to dialogue is an integral part of the Church\u2019s vocation because, constituted in Christ as \u201ca sacrament\u2026 of communion with God and of the unity of the entire human race,\u201d3 she recognizes history as the place where the Gospel challenges and directs human experience.",
+            "span": "in Christ as \u201ca sacrament\u2026 of communion with God and of the unity of the entire human race,\u201d3 she recognizes history as",
+            "note": "4 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 13,
+            "text": "With that document, my beloved predecessor gave impetus to the reflection on society, the economy and politics, which is now known as the \u201cSocial Doctrine of the Church.\u201d When some objected that the Church should not waste energy on worldly matters, but instead focus on communicating the message of eternal life, Leo XIII responded with realism and wisdom, saying that the proclamation of the Gospel cannot overlook the concrete lives of people.4 Many decades have passed since then, and the Magisterium, pastors, theologians and faithful have continued to reflect on social issues in the light of the Gospel.",
+            "span": "on social issues in the light of",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 24,
+            "text": "Technology should not be considered, in itself, as a force antagonistic to humanity.",
+            "span": "in itself, as a force antagonistic to",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 25,
+            "text": "On the contrary, it has formed part of our history since the beginning as \u201ca profoundly human reality, linked to the autonomy and freedom of man.\u201d5 Over the centuries, technological development has significantly improved the living conditions of humanity.",
+            "span": "of our history since the beginning as \u201ca profoundly human reality, linked to the autonomy and freedom of man.\u201d5 Over the centuries, technological development has significantly improved the living conditions of",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 31,
+            "text": "It now falls to us to face the challenges of our time with clarity of thought and responsibility.",
+            "span": "of our time with clarity of",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 40,
+            "text": "We are living through a rapid phase of transition, a \u201cchange of era,\u201d in which \u2014 while some are vying for the future of new technologies and others dedicate themselves to reflecting on the matter \u2014 most people are watching and waiting, observing from afar and merely hoping for the best.",
+            "span": "through a rapid phase of transition, a \u201cchange of era,\u201d in which \u2014 while some are vying for the future of new technologies and others dedicate themselves to reflecting on the matter \u2014 most people are watching and waiting, observing from afar and merely hoping for",
+            "note": "5 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 46,
+            "text": "In order to answer these questions and discern how to navigate responsibly the era of AI, I would like to bring to mind two scenes from the Bible: the construction of the Tower of Babel (cf.",
+            "span": "from the Bible: the construction of the Tower of",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 49,
+            "text": "The story of Babel appears in the Book of Genesis, at the origins of humanity, immediately after the genealogies of Noah\u2019s sons.",
+            "span": "in the Book of Genesis, at the origins of humanity, immediately after the genealogies of",
+            "note": "4 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 50,
+            "text": "After settling in a plain in the land of Shinar, the people decided to build a city and a tower \u201cwith its top in the heavens\u201d (Gen 11:4).",
+            "span": "in a plain in the land of Shinar, the people decided to build a city and a tower \u201cwith its top in",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 59,
+            "text": "The Book of Nehemiah, in turn, opens at a time of great vulnerability in the history of ancient Israel.",
+            "span": "at a time of great vulnerability in the history of",
+            "note": "4 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 72,
+            "text": "Scientific discoveries are talents entrusted to humanity so that they may bear fruit (cf.",
+            "span": "to humanity so that",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 79,
+            "text": "We must, then, avoid the \u201cBabel syndrome,\u201d namely the idolatry of profit that sacrifices the weak, a uniformity that neutralizes differences, and the pretense that a single language \u2014 even a digital one \u2014 can translate everything, including the mystery of the person, into data and performance.",
+            "span": "including the mystery of the person, into",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 84,
+            "text": "Within this shared task, Christians discover their unique role of guiding actions toward God so that, in his light, pluralism does not dissipate into disorder, but instead, through the practice of synodality, it becomes the space in which humanity rediscovers its solid foundations and its final end.",
+            "span": "toward God so that, in his light, pluralism does not dissipate into disorder, but instead, through the practice of synodality, it becomes the space in",
+            "note": "4 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 85,
+            "text": "In the Book of Revelation, John sees the New Jerusalem \u201ccoming down out of heaven from God\u201d (Rev 21:2) as a gift for all humanity.",
+            "span": "out of heaven from God\u201d (Rev 21:2) as a gift for",
+            "note": "5 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 95,
+            "text": "Today, the human desire for fullness of life is at risk of being misled by deceitful goals, such as the prospect of a technology that promises to free us from all weakness, and models of wellbeing that leave behind entire populations.",
+            "span": "by deceitful goals, such as the prospect of a technology that promises to free us from all weakness, and models of wellbeing that leave behind",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 96,
+            "text": "All too often, we place our hope in unlimited \u201cupgrades,\u201d in forms of progress that exacerbate inequalities, and in immediate solutions incapable of healing people\u2019s wounds.",
+            "span": "in unlimited \u201cupgrades,\u201d in forms of progress that exacerbate inequalities, and in immediate solutions incapable of",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 110,
+            "text": "Instead, let us establish standards for discernment \u2014 the dignity of the human person, the universal destination of goods, the preferential option for the poor, care for our common home and peace \u2014 and let us translate these standards into practices such as responsible planning, the assessment of human and social impact, the inclusion of the most vulnerable, the promotion of digital literacy and guiding research and industry toward justice and peace.",
+            "span": "for discernment \u2014 the dignity of the human person, the universal destination of goods, the preferential option for the poor, care for our common home and peace \u2014 and let us translate these standards into practices such as responsible planning, the assessment of human and social impact, the inclusion of the most vulnerable, the promotion of digital literacy and guiding research and industry toward",
+            "note": "4 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 116,
+            "text": "We must lovingly safeguard the grandeur of humanity bestowed upon us and revealed in its fullness in Christ, the splendor of which no machine can ever replace.",
+            "span": "in its fullness in Christ, the splendor of",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 131,
+            "text": "Indeed, in each era the res novae require that this teaching address historical questions in the light of revealed Truth.",
+            "span": "that this teaching address historical questions in the light of",
+            "note": "3 consecutive preposition heads"
+          },
+          {
+            "sentence_index": 132,
+            "text": "In this regard, artificial intelligence, too, should not be considered as merely yet another theme to be studied or a crisis to be managed, but rather as a development that challenges the categories of Social Doctrine from within, calling for their further development in fidelity to the Gospel.",
+            "span": "of Social Doctrine from within, calling for their further development in fidelity to",
+            "note": "3 consecutive preposition heads"
+          }
+        ],
+        "baseline_density_per_1k": 8.678328327572935,
+        "delta_per_1k": -1.4831527187006097
+      }
+    }
+  },
+  "claim_license": {
+    "task_surface": "voice_coherence",
+    "licenses": "Per-construction density (count and per-1k) for each of up to 12 named syntactic constructions in the target text, with optional baseline comparison. The audit makes the writer's syntactic-construction vocabulary visible at the level of named figures (\"this draft uses fronted adverbials at 2.4\u00d7 the writer's baseline density\").",
+    "does_not_license": "A provenance verdict. Construction density is a **voice-coherence layer**, not a classifier. AI-shaped prose has characteristic construction preferences (high agentless passive, high extraposition, high stacked PPs), but so do many legitimate registers (institutional / legal / academic prose). Pair with the confounder audit and the evidentiary-conditions gate before drawing any conclusion.",
+    "comparison_set": {
+      "target_words": 38637,
+      "n_baseline_files": 2,
+      "n_constructions_available": 3,
+      "spacy_available": true
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Three constructions (agented passive, agentless passive, stacked PPs) require spaCy + en_core_web_sm; they report `available: false` when spaCy is unavailable rather than producing degraded results.",
+      "The regex-only detectors are heuristic. They favor recall over precision: occasional false positives are expected; the per-construction `hits` list lets the user audit them.",
+      "Densities are calibration-pending. No corpus-wide construction-density bands have shipped yet \u2014 interpret in absolute terms (counts) until calibration land."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** voice-coherence comparison\n\n**Reports:** Per-construction density (count and per-1k) for each of up to 12 named syntactic constructions in the target text, with optional baseline comparison. The audit makes the writer's syntactic-construction vocabulary visible at the level of named figures (\"this draft uses fronted adverbials at 2.4\u00d7 the writer's baseline density\").\n\n**Does NOT report:** A provenance verdict. Construction density is a **voice-coherence layer**, not a classifier. AI-shaped prose has characteristic construction preferences (high agentless passive, high extraposition, high stacked PPs), but so do many legitimate registers (institutional / legal / academic prose). Pair with the confounder audit and the evidentiary-conditions gate before drawing any conclusion.\n\n### Comparison context\n\n- **n baseline files:** 2\n- **n constructions available:** 3\n- **spacy available:** True\n- **target words:** 38637\n\n### Caveats\n\n- Three constructions (agented passive, agentless passive, stacked PPs) require spaCy + en_core_web_sm; they report `available: false` when spaCy is unavailable rather than producing degraded results.\n- The regex-only detectors are heuristic. They favor recall over precision: occasional false positives are expected; the per-construction `hits` list lets the user audit them.\n- Densities are calibration-pending. No corpus-wide construction-density bands have shipped yet \u2014 interpret in absolute terms (counts) until calibration land.",
+  "warnings": [],
+  "ai_status": null
+}

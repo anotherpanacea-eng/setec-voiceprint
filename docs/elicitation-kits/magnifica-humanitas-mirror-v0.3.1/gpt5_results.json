@@ -1,0 +1,90 @@
+{
+  "magnifica_gpt5_per_window": {
+    "W1": {
+      "word_jaccard": 0.1257,
+      "tfidf_cosine": 0.5546,
+      "pos_bigram_cosine": 0.7885,
+      "pred_word_count": 150,
+      "target_word_count": 150
+    },
+    "W2": {
+      "word_jaccard": 0.0944,
+      "tfidf_cosine": 0.4262,
+      "pos_bigram_cosine": 0.7692,
+      "pred_word_count": 147,
+      "target_word_count": 150
+    },
+    "W3": {
+      "word_jaccard": 0.1,
+      "tfidf_cosine": 0.5135,
+      "pos_bigram_cosine": 0.7872,
+      "pred_word_count": 150,
+      "target_word_count": 150
+    },
+    "W4": {
+      "word_jaccard": 0.1353,
+      "tfidf_cosine": 0.4442,
+      "pos_bigram_cosine": 0.7201,
+      "pred_word_count": 143,
+      "target_word_count": 122
+    }
+  },
+  "dilexit_gpt5_per_window": {
+    "C1": {
+      "word_jaccard": 0.0789,
+      "tfidf_cosine": 0.1505,
+      "pos_bigram_cosine": 0.6792,
+      "pred_word_count": 150,
+      "target_word_count": 86
+    },
+    "C2": {
+      "word_jaccard": 0.1271,
+      "tfidf_cosine": 0.4432,
+      "pos_bigram_cosine": 0.7161,
+      "pred_word_count": 150,
+      "target_word_count": 150
+    },
+    "C3": {
+      "word_jaccard": 0.1439,
+      "tfidf_cosine": 0.4049,
+      "pos_bigram_cosine": 0.7332,
+      "pred_word_count": 144,
+      "target_word_count": 77
+    },
+    "C4": {
+      "word_jaccard": 0.2053,
+      "tfidf_cosine": 0.6771,
+      "pos_bigram_cosine": 0.8145,
+      "pred_word_count": 150,
+      "target_word_count": 135
+    }
+  },
+  "magnifica_gpt5_K4_aggregate": {
+    "n": 4,
+    "word_jaccard": 0.11385,
+    "tfidf_cosine": 0.484625,
+    "pos_bigram_cosine": 0.76625
+  },
+  "dilexit_gpt5_K4_aggregate": {
+    "n": 4,
+    "word_jaccard": 0.1388,
+    "tfidf_cosine": 0.418925,
+    "pos_bigram_cosine": 0.73575
+  },
+  "dilexit_gpt5_K3_aggregate_excluding_C1": {
+    "n": 3,
+    "word_jaccard": 0.15876666666666667,
+    "tfidf_cosine": 0.5084,
+    "pos_bigram_cosine": 0.7545999999999999
+  },
+  "claude_blind_reference_magnifica": {
+    "word_jaccard": 0.1421,
+    "tfidf_cosine": 0.5932,
+    "pos_bigram_cosine": 0.8311
+  },
+  "claude_blind_reference_dilexit": {
+    "word_jaccard": 0.1247,
+    "tfidf_cosine": 0.4363,
+    "pos_bigram_cosine": 0.7268
+  }
+}

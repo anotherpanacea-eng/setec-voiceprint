@@ -1,0 +1,3356 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "smoothing_diagnosis",
+  "tool": "kicker_density",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/magnifica-humanitas-en.txt",
+    "words": 38299
+  },
+  "baseline": null,
+  "results": {
+    "signal_path": "aic_8_9.kicker_density",
+    "family": "aic-9-closure-inflation",
+    "value": 0.021148036253776436,
+    "spacing_variance": 44.17540794001417,
+    "polarity": "\u2191",
+    "status": "provisional",
+    "task_surface": "smoothing_diagnosis",
+    "claim_license": "voice_diagnostic",
+    "paragraphs": [
+      {
+        "paragraph_index": 0,
+        "final_sentence": "INTRODUCTION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 1,
+        "final_sentence": "Whenever humanity is in danger of marring its true identity, we Christians lift our eyes to the Incarnate God, knowing that it is \u201conly in the mystery of the Word made flesh that the mystery of humanity truly becomes clear.\u201d1 In Jesus Christ, this humanity in its grandeur becomes the Way, the Truth and the Life, opening the path for each of us to grow toward fullness.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=68 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 2,
+        "final_sentence": "Indeed, openness to dialogue is an integral part of the Church\u2019s vocation because, constituted in Christ as \u201ca sacrament\u2026 of communion with God and of the unity of the entire human race,\u201d3 she recognizes history as the place where the Gospel challenges and directs human experience.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 3,
+        "final_sentence": "Prov 8:22-31).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 4,
+        "final_sentence": "The res novae of our time",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 5,
+        "final_sentence": "This complicates the assessment of their potential impact and the long-term effects they may have on both the dignity of individuals and the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 6,
+        "final_sentence": "Technological power thus takes on an unprecedented, predominantly \u201cprivate\u201d aspect, which makes it even more challenging to discern, govern and direct such power toward the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 7,
+        "final_sentence": "What direction should we choose as a people and as a human community?",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 8,
+        "final_sentence": "Two biblical images",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 9,
+        "final_sentence": "Babel thus reveals the limits of any effort that, however grandiose, arises from self-affirmation, sacrifices human dignity for efficiency and aspires to reach heaven without God\u2019s blessing.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 10,
+        "final_sentence": "Thus, ancient Jerusalem rediscovers a common language \u2014 not one of uniformity, but one of communion, namely the harmony that arises when all persons assume their own role and recognize that their strength comes from the Lord.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 11,
+        "final_sentence": "Therefore, the primary choice is not between a \u201cyes\u201d or \u201cno\u201d to technology, but rather between constructing Babel or rebuilding Jerusalem; between a power that claims to dominate the heavens and a people who work together in the presence of God to rebuild the walls of fraternal coexistence.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 12,
+        "final_sentence": "And this vision of grace is an invitation for us Christians to work together in order to foster a peaceful, just and dignified life in community within today\u2019s \u201ccities.\u201d",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=30 > 15",
+          "non_period_final='\u201d'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 13,
+        "final_sentence": "Building for the common good",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 14,
+        "final_sentence": "The Church, in dialogue with the men and women of our time, recognizes the urgent need to safeguard and guide this aspiration toward its deepest truth.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 15,
+        "final_sentence": "It is found where freedom and responsibility are intertwined with mutual care and true solidarity, and where progress is measured by the dignity of each person and the good of all peoples.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 16,
+        "final_sentence": "We should not be intimidated by tensions or differences because they can become creative forces when guided by shared responsibility.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 17,
+        "final_sentence": "Instead, let us establish standards for discernment \u2014 the dignity of the human person, the universal destination of goods, the preferential option for the poor, care for our common home and peace \u2014 and let us translate these standards into practices such as responsible planning, the assessment of human and social impact, the inclusion of the most vulnerable, the promotion of digital literacy and guiding research and industry toward justice and peace.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=70 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 18,
+        "final_sentence": "Remaining human",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 19,
+        "final_sentence": "True progress always stems from a heart open to others, an intelligence willing to listen and a will that seeks what unites rather than what separates.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 20,
+        "final_sentence": "With the heart of a shepherd and a father, I ask everyone to abandon the construction of yet another Tower of Babel and to join forces in building up the common good, so that humanity will never lose its beauty, and the world once again will come to recognize the human heart as the place where God desires to dwell.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=60 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 21,
+        "final_sentence": "CHAPTER ONE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 22,
+        "final_sentence": "A DYNAMIC APPROACH FAITHFUL TO THE GOSPEL",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='L'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 23,
+        "final_sentence": "In this regard, artificial intelligence, too, should not be considered as merely yet another theme to be studied or a crisis to be managed, but rather as a development that challenges the categories of Social Doctrine from within, calling for their further development in fidelity to the Gospel.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 24,
+        "final_sentence": "Indeed, it is for this very reason that she strives to serve the common good.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 25,
+        "final_sentence": "A Church journeying through human history",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 26,
+        "final_sentence": "Pope Francis emphasized this historical dimension of the Church\u2019s mission: \u201cNo one can demand that religion should be relegated to the inner sanctum of personal life, without influence on societal and national life, without concern for the soundness of civil institutions, without a right to offer an opinion on events affecting society.\u201d9",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=54 > 15",
+          "non_period_final='9'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 27,
+        "final_sentence": "The Church thus stands alongside the world without overpowering it, so that the promise of justice and peace that the Holy Spirit continues to sustain in the heart of humanity may come to fruition in every human endeavor.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 28,
+        "final_sentence": "When the Church intervenes, she does so following the example of the Good Samaritan, with discretion and closeness, aware that what arises from urgent necessity cannot become the norm, nor replace the institutional responsibilities proper to the civil community.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 29,
+        "final_sentence": "History is thus understood as one of the places in which the Church allows herself to be taught by the Spirit about the humanizing power of the Gospel; and she learns to develop her own teaching at the service of the dignity of every person and the good of all peoples.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=51 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 30,
+        "final_sentence": "The wisdom of the word of God in dialogue with the human sciences",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 31,
+        "final_sentence": "Following this perspective, Pope Francis emphasized that when dealing with many specific questions, the Church does not claim to offer \u201ca definitive opinion,\u201d14 but recognizes the importance of listening to scientific research and of encouraging a serious and honest debate among experts while welcoming a diversity of opinions.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=49 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 32,
+        "final_sentence": "Herein lies the proper function of Social Doctrine, which does not claim to supplant the responsibilities of politics or institutions, but offers itself as a foundation for collective discernment, helping to recognize and promote whatever serves the dignity of persons, the vitality of communities and the common good.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 33,
+        "final_sentence": "Social Doctrine as a shared discernment",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='t'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 34,
+        "final_sentence": "This concept can also be illustrated by the image of a multifaceted polyhedron,19 in which the one truth of the Gospel is reflected from different angles.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 35,
+        "final_sentence": "The fruitful tension between the universality of the Church\u2019s mission and her local roots is an intrinsic aspect of her life, for she encompasses the whole world, while addressing the specific issues of each context as the real setting in which the Gospel takes shape.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=46 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 36,
+        "final_sentence": "Understood in this way, Social Doctrine becomes a theology of communion in history, a history in which the Word made flesh continues to be present through dialogue, memory and prophecy.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 37,
+        "final_sentence": "The development of Social Doctrine from Leo XIII to the present",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='t'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 38,
+        "final_sentence": "I will now review some of the significant stages of this development, beginning with the period inaugurated by the Encyclical Rerum Novarum.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 39,
+        "final_sentence": "The first stages of the Church\u2019s Social Doctrine",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='e'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 40,
+        "final_sentence": "In this way, the perennial contents of the faith and ancient ecclesial wisdom find expression in a living doctrine that remains faithful to the Gospel while growing in response to the \u201cnew things\u201d of every era.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 41,
+        "final_sentence": "Rerum Novarum thereby continues to remind us that there is no authentic evangelization that does not also affect the structures of human society.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 42,
+        "final_sentence": "At least three insights of his social teaching remain particularly relevant today: the awareness that injustice concerns not only individual behavior but also economic and institutional structures; the importance of the principle of subsidiarity, which calls for the strengthening of the fabric of associations and communities while avoiding further centralization of power; and the link between the dignity of work, fair remuneration and the genuine possibility for families to lead a dignified life.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=73 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 43,
+        "final_sentence": "These guidelines continue to provide important criteria that enable Social Doctrine to interpret the dynamics of globalization and promote a more just and peaceful international order.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 44,
+        "final_sentence": "The years of the Second Vatican Council",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='l'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 45,
+        "final_sentence": "A few years later, in Pacem in Terris, John XXIII addressed for the first time not only the faithful, but also all people of good will, organically linking the dignity of the person to the recognition of fundamental rights and duties, and proposing a direction for society \u2014 at the international level too \u2014 based on truth, justice, love and freedom.28 In the present day, which is marked by widespread conflict and new forms of global interdependence, the following aspects of his thought remain particularly significant: the universal perspective of his appeal; his reference to human rights as a shared framework; and his conviction that lasting peace requires institutions and relations between peoples that are inspired by the dignity of every person.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=121 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 46,
+        "final_sentence": "Here, the Council recognized that religious freedom is a fundamental right grounded in human dignity that must be guaranteed by law so as to prevent people from being forced to act against their conscience or impeded from seeking and professing the truth both privately and publicly.30 This principle is highly relevant today and continues to provide Social Doctrine with decisive criteria for protecting individuals and building pluralistic and peaceful societies.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=71 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 47,
+        "final_sentence": "The establishment of the Pontifical Commission Iustitia et Pax should also be seen in this light as an attempt to give stable form to this insight at the ecclesial and international levels, while bearing in mind the growing gap between rich and poor countries and the need for policies that genuinely promote more humane living conditions for all.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=58 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 48,
+        "final_sentence": "Rather, beginning where people are marginalized, it must allow the Gospel to pass judgment on those economic and political structures which \u2014 as John Paul II would later remind us \u2014 can become veritable \u201cstructures of sin.\u201d34 As a result, no person or people will be treated as expendable in the processes of development.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=53 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 49,
+        "final_sentence": "The recent Magisterium",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='m'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 50,
+        "final_sentence": "Through work, human beings bring their freedom, creativity and capacity for cooperation into play, contributing to the cultural and moral elevation of society.36 In light of this, the various kinds of job insecurity, fragmented career paths and automation must not be evaluated solely in terms of efficiency, but in relation to the dignity of the worker, the right to sufficient remuneration and the genuine possibility of participating in society.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=70 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 51,
+        "final_sentence": "He acknowledged the failure of numerous attempts to accelerate the economic development of poor peoples and to assist them in the process of industrialization, noting the persistent and indeed widening gap between the world\u2019s North and South.37 He also denounced the economic, financial and commercial mechanisms that, managed by the strongest economies, structurally favor their own interests while stifling weaker economies, and he asked that they be subjected to serious ethical, not just technical, scrutiny.38 In this context, solidarity was understood as a concrete, shared responsibility among individuals, peoples and nations \u2014 a form of social friendship or political charity oriented toward the \u201ccivilization of love\u201d proposed by Paul VI.39",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=113 > 15",
+          "non_period_final='9'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 52,
+        "final_sentence": "The affirmation of the link between the dignity of work, solidarity among peoples, a critical assessment of democracy and the market economy continues to provide criteria for evaluating new forms of exploitation, exclusion and crises in political representation.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 53,
+        "final_sentence": "He reaffirmed, however, that in wealthy countries new kinds of poverty were emerging as well as unprecedented forms of exclusion, while, in poorer regions, small minorities lived in consumerist affluence alongside situations of dehumanizing poverty.43 In addition, he observed that the new global economic and financial system, marked by a vast mobility of capital and means of production, had reduced the political power of States and their ability to influence economic processes.44 For this reason, Benedict XVI reiterated that economic activity cannot claim to solve social problems simply through the expansion of a commercial mentality, but must be ordered toward the common good, for which the political community bears its own irreplaceable responsibility.45",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=116 > 15",
+          "non_period_final='5'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 54,
+        "final_sentence": "It stands as an invitation to evaluate every model of development on its ability to be inclusive and sustainable, to rebuild the relationship between economics and politics on the common good, and to acknowledge the critical and generative role of charity in public life.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=44 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 55,
+        "final_sentence": "Francis\u2019 insistence on a synodal Church, a Church that \u201cwalks together,\u201d that seeks to read the signs of the times in the light of the Gospel and allows herself to be evangelized by the poor with whom she shares history, also fits into this perspective.47",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=46 > 15",
+          "non_period_final='7'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 56,
+        "final_sentence": "Finally, he advocated for genuine dialogue between those working in the fields of politics and finance, so that neither would become self-referential.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 57,
+        "final_sentence": "Turning to the word of God, he reminded us that the truest response to the love of the heart of Jesus is concrete love for our brothers and sisters, and affirmed that \u201cthere is no greater way for us to return love for love.\u201d50",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=45 > 15",
+          "non_period_final='0'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 58,
+        "final_sentence": "Interpreting history in the light of faith",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 59,
+        "final_sentence": "It is to the great principles of Social Doctrine, which direct the discernment of believers in their personal and public lives, that I now wish to turn our attention, in order to grasp more effectively their internal coherence and capacity to guide our times.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=44 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 60,
+        "final_sentence": "CHAPTER TWO",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='O'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 61,
+        "final_sentence": "FOUNDATIONS AND PRINCIPLES OF",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='F'"
+        ]
+      },
+      {
+        "paragraph_index": 62,
+        "final_sentence": "THE SOCIAL DOCTRINE OF THE CHURCH",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='H'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 63,
+        "final_sentence": "I am convinced that a harmonious relationship between these principles requires that they be considered collectively, so that it becomes clear how they relate to and complement each other.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 64,
+        "final_sentence": "In this way, theological and philosophical enquiry will be able to further explore and support the Church\u2019s pastoral journey, and contribute to the Magisterium\u2019s task of enlightening the consciences of the faithful and guiding their efforts to make the life of our societies more just and fraternal.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=49 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 65,
+        "final_sentence": "The foundations of Social Doctrine",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='e'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 66,
+        "final_sentence": "The human person: image of the Triune God",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='d'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 67,
+        "final_sentence": "The Church\u2019s Social Doctrine brings us to the very heart of our faith: the mystery of the living God, revealed in Jesus Christ, who, as a communion of Persons \u2014 Father, Son and Holy Spirit \u2014 is love itself in relationship, expressed in the mutual gift of self and in sharing with the world.51 As the Council recalled, human persons are called to communion with God and \u201ccan fully discover their true selves only in sincere self-giving.\u201d52 Indeed their deepest vocation is to enter into the Trinitarian dynamic of love received and shared.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=95 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 68,
+        "final_sentence": "In this way, both the proclamation of the Gospel and Christian life, guided by the action of the Holy Spirit, tend to bring about social consequences in the world.54",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=30 > 15",
+          "non_period_final='4'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 69,
+        "final_sentence": "For this reason, the human person always remains the \u201cway for the Church\u201d55 and the heart of every authentic path of integral human development.56",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=26 > 15",
+          "non_period_final='6'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 70,
+        "final_sentence": "The equal dignity of all human beings",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 71,
+        "final_sentence": "There are rights that apply to everyone simply by virtue of being human, and no human power can legitimately deny or arbitrarily limit them.59",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=25 > 15",
+          "non_period_final='9'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 72,
+        "final_sentence": "This is the dignity that belongs to every human being simply by virtue of existing, of having been willed, created and loved by God.60 No sin, failure, humiliation or exclusion can diminish the profound value of a human life that God has willed and called into being.61",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=49 > 15",
+          "non_period_final='1'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 73,
+        "final_sentence": "The dignity of every human being can be described as infinite, as Saint John Paul II stated,63 for two reasons: first, because the love of God, who calls us to friendship with him, is infinite; and second, his love is absolutely unconditional, in the sense that, even if we search endlessly, we will never find anything that can erase or deny it.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=63 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 74,
+        "final_sentence": "The supreme value of human rights",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 75,
+        "final_sentence": "The Church gratefully acknowledges that \u201cthe movement toward the identification and proclamation of human rights is one of the most significant attempts to respond effectively to the inescapable demands of human dignity.\u201d64 In this regard, Saint John Paul II stated that the Universal Declaration of Human Rights, proclaimed by the United Nations on 10 December 1948, remains one of the highest expressions of the human conscience of our time.65 It is \u201ca milestone on the long and difficult path of the human race.\u201d66 For this reason, from the Christian perspective, human rights are not an external addition to the person, but an expression of intrinsic human dignity, which the international community is called to protect and promote.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=120 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 76,
+        "final_sentence": "When this fundamental right is denied \u2014 as in the cases of induced abortion, killing of the innocent and euthanasia \u2014 we are faced with choices that the Church considers gravely wrong.71",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=31 > 15",
+          "non_period_final='1'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 77,
+        "final_sentence": "If this task of inquiry were abandoned, it is conceivable that rights considered untouchable today might, in the future, end up being questioned or denied by those in power, perhaps after having obtained only an apparent consensus from populations that are frightened or manipulated.73",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=45 > 15",
+          "non_period_final='3'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 78,
+        "final_sentence": "As long as this gap persists, we cannot say that society truly and fully recognizes that women have the same dignity as men.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 79,
+        "final_sentence": "Similarly, it is not enough to extol individual freedom or private enterprise if we then allow a multitude of people to continue living without decent work, protections or access to basic necessities.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 80,
+        "final_sentence": "The principles of Social Doctrine",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='e'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 81,
+        "final_sentence": "The principle of the common good",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 82,
+        "final_sentence": "When Benedict XVI referred to the non-negotiable values that the Church must always defend, he included among them \u201cthe promotion of the common good.\u201d75 For a Christian, going beyond the narrow confines of one\u2019s own interests and committing oneself, within the limits of one\u2019s ability, to the common good is a non-negotiable value, as is the promotion of life.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=64 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 83,
+        "final_sentence": "We can say that social action reaches its fullness when it is directed toward this shared good, just as a person\u2019s moral action finds its fulfillment in the choice of the true good.77",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=35 > 15",
+          "non_period_final='7'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 84,
+        "final_sentence": "If we were to add up the individual goods, we could not explain the existence of this \u201cplus\u201d that transcends them and, at the same time, enriches them.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 85,
+        "final_sentence": "It is clear that there are many ideological and practical differences among people, as well as differing interests and frequent disagreements, but that does not mean it is impossible to engage in dialogue to establish a set of basic agreements that enable the creation of a shared vision, upon which everyone can move forward together.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=55 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 86,
+        "final_sentence": "When politics abandons a long-term perspective and reduces itself to short-term calculations or sterile polarizations, then the language of the common good loses credibility, and, at the same time, social inequalities and divisions grow.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 87,
+        "final_sentence": "Indeed, the promotion of the common good can never be separated from respect for the right of peoples to exist, to preserve their own identity and to contribute their unique qualities to the family of nations.84 Moreover, any attempt or plan to eliminate or subjugate a nation is gravely immoral and therefore unacceptable.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=54 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 88,
+        "final_sentence": "The principle of the universal destination of goods",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 89,
+        "final_sentence": "Saint John Paul II recalled that, \u201cGod gave the earth to the whole human race for the sustenance of all its members, without excluding or favoring anyone.\u201d86 Consequently, \u201cit is not in accordance with God\u2019s plan to use this gift in such a way that its benefits accrue solely to a select few.\u201d87 Today, we are called to recognize that this universal destination applies not only to material goods, but also to immaterial and cultural goods.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=79 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 90,
+        "final_sentence": "For this reason, Pope Francis reminded us that solidarity, when lived out in its fullest sense, also means \u201cto restore to the poor what belongs to them.\u201d90",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=28 > 15",
+          "non_period_final='0'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 91,
+        "final_sentence": "Furthermore, care for our common home and our responsibility toward the poor and future generations require that the use of the goods of creation and the new possibilities offered by technology be regulated in such a way as to respect the environment, avoid waste and prevent new forms of exploitation.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=50 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 92,
+        "final_sentence": "The principle of subsidiarity",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 93,
+        "final_sentence": "Moreover, higher-level institutions must recognize, protect and promote the freedom and creativity of lower-level entities, coordinating their contributions so that they can cooperate effectively for the common good.91",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=31 > 15",
+          "non_period_final='1'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 94,
+        "final_sentence": "It is the responsibility of the political community to create the conditions that allow individuals, families, associations and intermediary organizations to fulfil their mission in society, without being replaced or reduced to mere facilitators.94",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=35 > 15",
+          "non_period_final='4'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 95,
+        "final_sentence": "When families, associations, local communities, volunteer organizations and those in the so-called \u201cthird sector\u201d are recognized and supported, social life becomes more accessible to people, services become more attuned to real needs, and solutions are more creative and respectful of the dignity of each person.95",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=47 > 15",
+          "non_period_final='5'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 96,
+        "final_sentence": "The principle of subsidiarity requires that such processes not be imposed from above in an opaque and unilateral manner, but instead be directed toward the common good with transparency, accountability and meaningful forms of participation (including independent checks, transparency regarding algorithms, equitable access to data and avenues for recourse).96",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=50 > 15",
+          "non_period_final='6'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 97,
+        "final_sentence": "When it comes to decisions regarding economic flows and digital platforms, as well as the governance of data and algorithms, we cannot allow a handful of actors to dictate these processes on their own; instead, we must build forms of cooperation that respect the various levels of the global community and make them jointly responsible for the common good.97",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=60 > 15",
+          "non_period_final='7'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 98,
+        "final_sentence": "The principle of solidarity",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 99,
+        "final_sentence": "Solidarity is expressed when each person, both individually and collectively, takes part in the life of the community \u2014 by staying informed, engaging with others, making their voice heard and contributing to public decisions and choices \u2014 while also assuming real responsibility so that the common good is achieved through shared decision-making.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=51 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 100,
+        "final_sentence": "Solidarity arises precisely when we decide not to remain indifferent to what happens to our neighbor but instead to transform unavoidable bonds \u2014 economic, cultural and technological \u2014 into paths of sharing, cooperation and mutual care, embracing the idea of \u201cthinking and acting in terms of community.\u201d101",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=46 > 15",
+          "non_period_final='1'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 101,
+        "final_sentence": "For this reason, it requires a modest and shared way of life, the ability to forego immediate benefits in order to create opportunities for others in the future, and a willingness to challenge habits and privileges \u2014 including those related to digital consumption and the use of technology \u2014 when they prevent others from living with dignity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=55 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 102,
+        "final_sentence": "Solidarity demands that decisions regarding data, algorithms, platforms and artificial intelligence take into account not only the immediate benefit for a few, but also the impact on all peoples and on future generations.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 103,
+        "final_sentence": "The principle of social justice",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 104,
+        "final_sentence": "In this regard, the Second Vatican Council reminds us that every institution is called to serve the human person and his or her dignity.105 Social justice is, therefore, characterized by the capacity of a social, economic and political order to allow everyone \u2014 particularly the weakest \u2014 to live a truly dignified life, without leaving anyone behind.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=56 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 105,
+        "final_sentence": "From this perspective, social justice requires us to look at individuals and communities, starting with the most vulnerable: the poor, migrants, refugees, internally displaced persons, victims of violence and people living in urban or existential peripheries.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 106,
+        "final_sentence": "This may include restoring dignity and a voice to those who have been ignored, fostering processes of healing for collective memory, opposing discriminatory laws and practices, and providing concrete support to those who still bear the consequences of wrongs suffered in the past.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 107,
+        "final_sentence": "In the digital age, a just social order guarantees everyone equal access to opportunities, protects the youngest and weakest members of society, combats hate and misinformation and subjects the use of data and technology to public oversight, so that the guiding principle is not solely profit but the dignity of every person and the common good of all people.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=59 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 108,
+        "final_sentence": "When these rights are respected, migration can become an opportunity for encounter and mutual enrichment among peoples.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 109,
+        "final_sentence": "Integral human development",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='t'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 110,
+        "final_sentence": "By \u201cintegral human development,\u201d we mean a process in which the growth of individuals and peoples encompasses all dimensions of existence and opens the future to subsequent generations as well.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 111,
+        "final_sentence": "Development is not truly human if it increases consumption for some while shifting costs and burdens onto others, or relegates entire regions to subordinate roles, preventing them from realizing their full potential.111 Development is integral when it is not limited to the economic sphere, but promotes quality of life in its spiritual, cultural, moral and relational dimensions, while respecting our common home, the diversity of peoples and their ways of life.112",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=73 > 15",
+          "non_period_final='2'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 112,
+        "final_sentence": "It follows that true progress is not what increases the wellbeing of some by degrading ecosystems, shifting costs onto the most disadvantaged communities, or compromising the living conditions of those who will follow us.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 113,
+        "final_sentence": "It is here that the principles of Social Doctrine become concrete criteria for discernment regarding the issues which we will address in the following chapters.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 114,
+        "final_sentence": "An examen for the Church",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='h'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 115,
+        "final_sentence": "The Final Document of the Synod identifies a culture of transparency, accountability and evaluation as key practices for missionary transformation.114",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=21 > 15",
+          "non_period_final='4'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 116,
+        "final_sentence": "In practical terms, the participation of the baptized in decision-making processes and their shared responsibility in the mission are achieved through genuine, rather than merely nominal, participatory bodies.115",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=30 > 15",
+          "non_period_final='5'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 117,
+        "final_sentence": "The diverse sensibilities present in the Church and the strong convictions that animate each person are a source of richness if they remain anchored in the certainty that unity is a gift received and a responsibility to be fulfilled.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 118,
+        "final_sentence": "In this way, the Church will be able to bear credible witness to society that seeking the common good together, with shared responsibility and fraternity, is not a utopia, but a real possibility.117",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=34 > 15",
+          "non_period_final='7'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 119,
+        "final_sentence": "CHAPTER THREE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 120,
+        "final_sentence": "TECHNOLOGY AND DOMINANCE.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 121,
+        "final_sentence": "THE GRANDEUR OF HUMANITY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 122,
+        "final_sentence": "IN LIGHT OF THE PROMISES OF AI",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='I'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 123,
+        "final_sentence": "This is a choice not only for our future but also for our present, since artificial intelligence and other emerging technologies are already part of our daily lives.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 124,
+        "final_sentence": "Under the guidance of the Holy Spirit, the Church allows herself to be enlightened by God\u2019s word, reads the signs of the times and creatively seeks new ways for relationships between peoples and nations to become ever more conformed to the demands of the Kingdom of God.118 For this reason, I encourage all members of the Church not to be afraid of the present challenges, but to listen to one another and firmly embrace their responsibilities in building a more humane and fraternal society.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=86 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 125,
+        "final_sentence": "The technocratic paradigm and digital power",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 126,
+        "final_sentence": "When it becomes the standard by which everything is judged, it begins to dictate what matters and what can be discarded, reducing creation to an object of exploitation and human beings to mere cogs in a system driven toward ever greater efficiency.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 127,
+        "final_sentence": "In this respect, the words of Romano Guardini remain relevant: \u201cContemporary man has not been trained to use power well.\u201d120",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=21 > 15",
+          "non_period_final='0'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 128,
+        "final_sentence": "If technological development advances without a corresponding ethical and social progress, the result may be an increase in means without a growth in humanity: \u201chaving more\u201d without \u201cbeing more.\u201d In such a scenario, there is a risk that individuals will be evaluated principally according to the outcomes they produce.122",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=50 > 15",
+          "non_period_final='2'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 129,
+        "final_sentence": "When such power is concentrated in the hands of a few, it tends to become opaque and evade public oversight, increasing the risk of distorted forms of development that give rise to new dependencies, exclusions, manipulations and inequalities.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 130,
+        "final_sentence": "On this basis, we can now examine more closely what artificial intelligence is, the possibilities it opens up and the risks it entails.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 131,
+        "final_sentence": "Artificial intelligence",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 132,
+        "final_sentence": "I limit myself to recalling a few essential elements for a moral and social discernment that safeguards the primacy of the human person, in order to ensure that it will always be human intelligence, with its conscience and freedom, that guides technical innovations and responsibly determines their use and limits.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=50 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 133,
+        "final_sentence": "There thus emerges an urgent need for a twofold commitment: on the one hand, a deepening of scientific research; on the other, the exercise of moral and spiritual discernment.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 134,
+        "final_sentence": "Rather, it is a form of statistical adaptation based on data and feedback, which can be very effective, but does not imply inner growth.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 135,
+        "final_sentence": "A valuable tool that requires vigilance",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 136,
+        "final_sentence": "Here, the danger is not so much that a person may believe they are communicating with another person, but rather that they may gradually lose the very desire to form genuine human connections.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 137,
+        "final_sentence": "For this reason, it is essential to develop more sustainable technological solutions that reduce environmental impact and help protect our common home.124",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=23 > 15",
+          "non_period_final='4'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 138,
+        "final_sentence": "Responsibility, transparency and the governance of AI",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='I'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 139,
+        "final_sentence": "Yet there is also a subtler danger, for when AI systems present themselves as neutral and objective, they end up reflecting and reinforcing the stereotypes or ideological bias of their designers and developers.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 140,
+        "final_sentence": "DICASTERY FOR THE DOCTRINE OF THE FAITH \u2013 DICASTERY FOR CULTURE AND EDUCATION, Note Antiqua et Nova (14 January 2025), 96: AAS 117 (2025), 201. forgiveness \u2014 understood not as mere appearances but as real political actions \u2014 gradually disappear from view.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 141,
+        "final_sentence": "For this reason, ethical discernment cannot be limited to asking whether we are using a system for good or bad purposes; it must also examine how that system is designed and what vision of the human person and society is embedded in the data and models that guide it.126",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=50 > 15",
+          "non_period_final='6'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 142,
+        "final_sentence": "This is where accountability becomes crucial: the possibility of identifying who must \u201caccount\u201d for decisions, justify them, monitor them, and, when necessary, challenge them and remedy any harm caused.127",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=30 > 15",
+          "non_period_final='7'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 143,
+        "final_sentence": "Otherwise, change will be governed only by technocratic thinking and presented as necessary and inevitable, ultimately imposing rules shaped by those who control data, infrastructure and computing power.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 144,
+        "final_sentence": "What is needed is a more active political involvement that is capable of slowing things down when everything is accelerating, and of protecting the opportunities for communities still to be able to participate and ask questions.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 145,
+        "final_sentence": "It is necessary to think creatively in order to manage data as a common or shared good, in a spirit of participation, as Saint John Paul II already suggested regarding collective goods.128",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=33 > 15",
+          "non_period_final='8'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 146,
+        "final_sentence": "Likewise, it means acknowledging that social justice is not only a goal to be safeguarded after technologies are deployed, but a condition that must shape their very design from the outset.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 147,
+        "final_sentence": "For this reason, merely regulating it is insufficient; it must be disarmed, welcoming and accessible.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 148,
+        "final_sentence": "Just as the creator of an artistic or literary work must consider the values it conveys, so developers are called to embed values in their projects with due seriousness: with transparency, responsibility toward affected communities and careful attention to ensuring that what is being cultivated is a genuine good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=49 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 149,
+        "final_sentence": "What must not be lost",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 150,
+        "final_sentence": "When efficiency becomes the ultimate measure of value, human beings are tempted to see themselves as a project to be optimized rather than as persons called to relationship and communion.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 151,
+        "final_sentence": "This critical point does not oppose intelligence, but serves as a reminder that when intelligence becomes self-referential, its true purpose of serving life and the human person is lost.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 152,
+        "final_sentence": "After all, human beings are the subjects of relationships and responsible for their own decisions.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 153,
+        "final_sentence": "Underlying narratives: transhumanism and posthumanism",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 154,
+        "final_sentence": "They tend to foster enthusiasm for new technologies through a futuristic vision of an \u201cenhanced human being\u201d or \u201chuman-machine hybrid.\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 155,
+        "final_sentence": "Even when such ideas remain largely speculative, they gain relevance by altering the collective imagination and thereby influence social, economic and political choices.129",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=24 > 15",
+          "non_period_final='9'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 156,
+        "final_sentence": "It is one thing to integrate technology within a human-centered, relational vision; it is quite another to be guided by an outlook that devalues human limits and promises a purely technical form of \u201csalvation.\u201d The limit, the heart and the grandeur of the human person",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=46 > 15",
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 157,
+        "final_sentence": "While it is right to strive to alleviate the suffering that marks human life, it is also wise to acknowledge our fundamental finitude, knowing that \u201creligious experience, and in particular Christian faith, propose that we live, without oversimplification, this ambivalence between human greatness and limitation, interpreting it in the light of our original and fundamental relationship with God.\u201d131",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=59 > 15",
+          "non_period_final='1'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 158,
+        "final_sentence": "Mysteriously, it is precisely in such moments that we can discover a new wisdom, tangibly experience the closeness of others and encounter the presence of the Lord.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 159,
+        "final_sentence": "It is only thanks to the interplay of these elements that the wonders of the soul occur within us, allowing us to sense the richness of our humanity.132 To renounce this adventure, both tragic and splendid, in the name of a presumed transcendence of all limits, could mean many things, but it would no longer be human.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=58 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 160,
+        "final_sentence": "After all, man is that being who invented the gas chambers of Auschwitz; however, he is also that being who entered those gas chambers upright, with the Lord\u2019s Prayer or the Shema Yisrael on his lips.\u201d133",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=38 > 15",
+          "non_period_final='3'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 161,
+        "final_sentence": "At the end of our lives, that alone will matter.\u201d FRANCIS, Encyclical Letter Dilexit Nos (24 October 2024), 11: AAS 116 (2024), 1372.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 162,
+        "final_sentence": "The very fragility of these achievements highlights how precious the responsibility is of those who initiate and sustain them.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 163,
+        "final_sentence": "In different contexts, many courageous and generous women have also stood out, including Saint Laura Montoya, Saint Teresa of Calcutta, Dorothy Day, Marie Sk\u0142odowska-Curie, Maria Montessori, Elisabeth Elliot, Wangari Maathai, Benazir Bhutto and countless others from every continent whose commitment has contributed to making history more humane.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 164,
+        "final_sentence": "Their testimony demonstrates that goodness does not advance automatically, but requires the perseverance, memory and interior conversion necessary to begin anew, even after defeat.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 165,
+        "final_sentence": "The Christian faith answers that question by pointing to a fulfilment that does not arise from a technological divinization, but through God\u2019s grace received in Christ.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 166,
+        "final_sentence": "The authentic \u201cmore than human\u201d: grace and Christian humanism",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='m'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 167,
+        "final_sentence": "Indeed, it is God himself who overcomes the \u201cinfinite\u201d disproportion.136 In him, the re-creation of the human person happens. \u201cIf anyone is in Christ, there is a new creation: everything old has passed away; see, everything has become new\u201d (2 Cor 5:17).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=45 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 168,
+        "final_sentence": "A person\u2019s future is not calculable, but depends on one\u2019s freedom \u2014 elevated by the inexhaustible grace of God \u2014 and on the relationships cultivated.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 169,
+        "final_sentence": "Two cities and two loves",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 170,
+        "final_sentence": "If, however, power grows while the heart withers and human bonds fray, then we are faced with a new form of Babel \u2014 a construction that is grandiose, yet fundamentally dehumanizing.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 171,
+        "final_sentence": "The age of AI is no exception: the construction of Babel or the rebuilding of Jerusalem begins within each one of us.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 172,
+        "final_sentence": "CHAPTER FOUR",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='R'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 173,
+        "final_sentence": "SAFEGUARDING HUMANITY AT A TIME OF TRANSFORMATION.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 174,
+        "final_sentence": "TRUTH, WORK, FREEDOM",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='M'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 175,
+        "final_sentence": "In light of the principles of the Church\u2019s Social Doctrine, the digital transformation invites us to rediscover truth as a common good, to protect the dignity of work and to safeguard freedom against all forms of dependence and commercialization.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=40 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 176,
+        "final_sentence": "Truth as a common good",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 177,
+        "final_sentence": "Truth and democracy",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 178,
+        "final_sentence": "Only the shared pursuit of the veracity of facts, perceived as a common good, can provide a solid foundation for just communication.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 179,
+        "final_sentence": "A society is noble and decent, not least for its support of the pursuit of truth and its adherence to the most basic of truths.\u201d142",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=26 > 15",
+          "non_period_final='2'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 180,
+        "final_sentence": "As the philosopher Hannah Arendt wrote, the ideal subjects of such regimes are not so much those who are ideologically convinced, but rather \u201cpeople for whom the distinction between fact and fiction (i.e., the reality of experience) and the distinction between true and false (i.e., the standards of thought) no longer exist.\u201d143",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=55 > 15",
+          "non_period_final='3'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 181,
+        "final_sentence": "Communication and the collective imagination",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='n'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 182,
+        "final_sentence": "This is \u201cnot a parallel or purely virtual world,\u201d145 since what originates online now becomes a part of people\u2019s lives, especially of the youngest.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 183,
+        "final_sentence": "Such power should be constantly guided by the pursuit of truth and respect for human dignity, so that the culture fostered on the internet does not become an instrument of excessive distraction, homogenization or dominance, but rather a setting in which inner freedom and critical thought can mature.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=48 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 184,
+        "final_sentence": "Toward an ecology of communication",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 185,
+        "final_sentence": "In universities, the principal challenge lies in the integration of knowledge, cultivating both the capacity to connect and synthesize knowledge in order to grasp complexity, and the skills necessary to verify facts.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 186,
+        "final_sentence": "To them, I wish to repeat the words that Pope Francis used in speaking to journalists: \u201cI also thank you for what you tell us about what goes wrong in the Church, for helping us not to sweep it under the carpet, and for the voice you have given to the victims of abuse.\u201d146 Yet vigilance and transparency remain first and foremost a grave responsibility for the Church herself, and we must not wait for others to compel us to confront uncomfortable truths about ourselves.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=86 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 187,
+        "final_sentence": "An educational alliance for the digital age",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 188,
+        "final_sentence": "The pervasiveness of digital media fosters a culture of immediacy and hyper-stimulation, which gives rise to fatigue, boredom and apathy concerning the effort required for seeking the truth.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 189,
+        "final_sentence": "As Plato wrote, the deepest and most important things are learned only after much time and effort, by engaging in discussion with others, \u201cstriking upon\u201d ideas and experiences together Cross of the Pian Order to Mr Philip Pullella and Ms Valentina Alazraki (13 November 2021): L\u2019Osservatore Romano, 13 November 2021, 12. like flint until the spark of understanding is kindled within us.147 We must learn, then, how to exercise restraint in the use of AI and to protect our young people from the promise of the perfect machine, from that subtle temptation which renders human thought seemingly superfluous precisely when it is most needed.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=106 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 190,
+        "final_sentence": "Having a personal mobile device at too early an age and using it without adult supervision can exacerbate young people\u2019s vulnerabilities, foster addiction and expose them to isolation, bullying and cyberbullying, as well as to pressures to share intimate images or sensitive information.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=44 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 191,
+        "final_sentence": "Thus can children and adolescents, who are entrusted to our care, be genuinely protected as a precious treasure.148 At the same time, it is also necessary to teach children, adolescents and young people how to recognize manipulation, defend their dignity and respect that of others in digital environments.149",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=50 > 15",
+          "non_period_final='9'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 192,
+        "final_sentence": "The central role of schools",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 193,
+        "final_sentence": "Today, the world of education faces a number of urgent challenges.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 194,
+        "final_sentence": "In the face of this risk, it is nevertheless important to acknowledge and encourage the contribution of the many private Catholic educational institutions which ensure inclusive access for children and young people of every background, even when families\u2019 economic circumstances would not otherwise allow it.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=45 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 195,
+        "final_sentence": "It is necessary to support the ongoing formation of teachers throughout their professional lives, so that they can engage positively with new technologies, helping students to use them responsibly, critically and creatively, rather than passively succumbing to their influence.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 196,
+        "final_sentence": "A genuinely healthy attitude is needed, requiring rhythms that incorporate silence, in-depth study, reading and judicious analysis, for without these elements inner freedom may be compromised.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 197,
+        "final_sentence": "Schools are not called to follow the pace of the digital world, but to offer that which the digital sphere by itself cannot provide, namely a shared time for learning and developing trustworthy relationships.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 198,
+        "final_sentence": "The dignity of work at a time of digital transition",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 199,
+        "final_sentence": "The value of work",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='k'"
+        ]
+      },
+      {
+        "paragraph_index": 200,
+        "final_sentence": "Created in the image of the Creator, our own work in some way continues his, for thereby we contribute to the progress of society and the common good, put to good use the capabilities we have received, improve and beautify the world, support our families, engage in cooperative relationships and, through listening and dialogue, learn to build together something that no one could achieve alone.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=65 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 201,
+        "final_sentence": "In this regard, financial assistance to the poor may at times be necessary in emergencies, but it cannot become the sole response, since the goal is to enable each person to live with dignity through his or her own work.151",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=41 > 15",
+          "non_period_final='1'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 202,
+        "final_sentence": "The need to keep up with the pace of technology can erode workers\u2019 sense of agency and stifle the innovative abilities they are expected to bring to their work.\u201d152 Precisely in order to avoid this drift, it is necessary to design systems that are centered on the human person and not solely on performance.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=55 > 15",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 203,
+        "final_sentence": "The problem of unemployment",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 204,
+        "final_sentence": "In many sectors, this can already be seen in new forms of job insecurity and inequality, characterized by outsized remuneration for a highly specialized minority alongside declining wages for a large portion of the workforce.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 205,
+        "final_sentence": "The pursuit of greater profits cannot justify choices that systematically sacrifice jobs, because the human person is an end, not a means, and the economic order must remain subordinate to human dignity and the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 206,
+        "final_sentence": "While not pursuing an abstract harmony, we must build concrete forms of human coexistence at this time of transformation.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 207,
+        "final_sentence": "For this reason, the Church\u2019s Social Doctrine insists that access to work for all must be a high priority for public policies and economic processes, serving as a criterion for evaluating the human quality of any development model.155 Moreover, in those parts of the world where work tends to diminish or change radically due to technological and organizational processes outside of democratic control, we must rethink the nature of work and its connection to citizenship, ensuring that unemployment does not jeopardize social participation.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=85 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 208,
+        "final_sentence": "In this context, without bold decisions, the prospect of greater poverty and inequality looms large, which would leave many individuals marginalized, stranded and surrounded by the machines and automated systems that have replaced them.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 209,
+        "final_sentence": "When these conditions are present, innovation can serve as an ally of safer, more creative and dignified work; without them, innovation tends to become an accelerator of injustice.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 210,
+        "final_sentence": "An economy that values dignity",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 211,
+        "final_sentence": "This is possible when it recognizes that the creation of dignified, valuable jobs are an essential part of its proper service to society.158",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=24 > 15",
+          "non_period_final='8'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 212,
+        "final_sentence": "The experience of recent decades shows that in economic and financial crises, it is always the poor who pay the highest price, while the theories that promise automatic general prosperity often prove to be illusory.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 213,
+        "final_sentence": "It will also affect the concept of development, educational processes, mindsets and public opinion, as well as peace, which is only authentic when based on justice.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 214,
+        "final_sentence": "Finance for its own sake is fundamentally different from finance aimed at the development, creation and evolution of work.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 215,
+        "final_sentence": "Today, justice requires access to the benefits of innovation, including care, knowledge, tools and opportunities.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 216,
+        "final_sentence": "Indeed, justice concerns every phase of economic activity, from resource acquisition to financing, and from production to consumption; every choice has moral consequences.163",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=24 > 15",
+          "non_period_final='3'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 217,
+        "final_sentence": "The interdependence between peace and development, as Saint Paul VI prophetically wrote in 1967,165 remains applicable today, for prosperity contributes to building and reinforcing peace only if it is widespread, inclusive and sustainable.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 218,
+        "final_sentence": "Indeed, these criteria do not constitute a curb on innovation; instead they make it civilized and humane.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 219,
+        "final_sentence": "Families and young people: the social conditions for hope",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 220,
+        "final_sentence": "Founded on the enduring union between a man and a woman, it is the first environment in which all persons develop their potential, become aware of their dignity and learn the earliest forms of truth and goodness, internalizing the habits that prepare them for life in society.166 As the first natural society, endowed with foundational rights, the family is the fundamental and irreplaceable cell of every community organization.167 Consequently, when political projects and major economic decisions relegate the family to a marginal or secondary role, the authentic growth of the entire social body is compromised.168",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=98 > 15",
+          "non_period_final='8'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 221,
+        "final_sentence": "While technological successes are celebrated, the social fabric is progressively eroded, as if by a silent virus.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 222,
+        "final_sentence": "The need to change jobs several times over the course of life requires that continuous updating and retraining be provided, so that new generations can competently and independently face the risks of an economic environment that is both changing and often unpredictable.170",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=43 > 15",
+          "non_period_final='0'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 223,
+        "final_sentence": "The State has the duty to support business activity by fostering conditions favorable to employment, promoting work where it is lacking and defending it in times of crisis, since it is a primary good for families and for society.171 Particularly in an age of continuous technological transformation, we need a political creativity that will promote \u201cwork\u201d and place the family and coming generations at the center; otherwise our economic progress will translate into new forms of insecurity and exclusion.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=80 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 224,
+        "final_sentence": "If implemented, these technological transformations can be navigated without undermining the capacity to build the future, which is what makes a society prosperous.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 225,
+        "final_sentence": "Protecting freedom against dependencies and commercialization",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 226,
+        "final_sentence": "Dependencies and societal control",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='l'"
+        ]
+      },
+      {
+        "paragraph_index": 227,
+        "final_sentence": "There is an urgent need to promote technologies that strengthen interior freedom by fostering education in digital sobriety and the protection of minors, thus countering models that exploit vulnerability.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 228,
+        "final_sentence": "It calls for clear rules, transparency, the possibility of recourse and proportionate limits on the use of intrusive technologies, so that technology will remain at the service of the human person and not become a form of control over consciences.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 229,
+        "final_sentence": "Even certain forms of structural indebtedness, which keep entire peoples in conditions of dependence, reflect the same mentality, in new forms, that tolerates relationships of subordination akin to slavery.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 230,
+        "final_sentence": "Breaking the chains of new forms of slavery",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 231,
+        "final_sentence": "If technology promises emancipation, yet produces new forms of global subordination, it stands in contradiction to the fundamental principle of human dignity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 232,
+        "final_sentence": "Without this ethical and humanizing reflection, the growing power of digital systems could lead us toward new atrocities that are no less shameful than those of the past that we now deplore, while we continue to present ourselves as \u201cadvanced\u201d and \u201ccivilized\u201d societies.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 233,
+        "final_sentence": "Failing to respond firmly, or tolerating these practices in any way, is in some way to become complicit in today\u2019s sins, which are akin to those of the past when slavery was being concealed and justified.173",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=38 > 15",
+          "non_period_final='3'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 234,
+        "final_sentence": "For this, in the name of the Church, I sincerely ask for pardon.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 235,
+        "final_sentence": "If we want to avoid the need to ask for pardon again in the future for having failed to respect the treasure of human dignity that is required by our faith, it falls to us today to denounce, clearly and firmly, trafficking in its many forms and, together with all who are committed to this cause, to support concrete efforts of prevention, protection, liberation and rehabilitation.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=66 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 236,
+        "final_sentence": "Otherwise, the digital age will not be post-colonial, but colonial in another form.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=14 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 237,
+        "final_sentence": "When such efforts converge, the digital environment can be transformed from a space of exploitation into one of protection, prevention and the promotion of human dignity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 238,
+        "final_sentence": "A shared responsibility",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 239,
+        "final_sentence": "If, however, technology is integrated with a wise perspective, it can become an instrument of growth, justice and fraternity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 240,
+        "final_sentence": "And only in this way can the promise of progress be recognized as authentic, because it is measured against the inviolable dignity of every man and woman.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 241,
+        "final_sentence": "CHAPTER FIVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 242,
+        "final_sentence": "THE CULTURE OF POWER AND THE CIVILIZATION OF LOVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 243,
+        "final_sentence": "In an increasingly interdependent world, peace is not simply one issue among others, but a prerequisite for the universal common good and a test of the moral maturity of peoples, especially of those who bear responsibility for governing.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=38 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 244,
+        "final_sentence": "We should, therefore, consider these principles as guidelines for our decision-making.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=12 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 245,
+        "final_sentence": "On the other hand, patience is required in order to rebuild Jerusalem \u201cpiece by piece,\u201d as in the time of Nehemiah, by safeguarding humanity and the common good.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=28 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 246,
+        "final_sentence": "It is this prospect of commitment, this construction site of hope, that we call the \u201ccivilization of love.\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 247,
+        "final_sentence": "The civilization of love in the digital age",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 248,
+        "final_sentence": "As the Encyclical Letter Fratelli Tutti reminded us, only this social love is capable of becoming a culture and a norm, and thereby of bringing about a stable international order, transforming mere armed coexistence into a community with a shared future.178",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=42 > 15",
+          "non_period_final='8'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 249,
+        "final_sentence": "This is the guiding principle for technological processes: it is not enough for artificial intelligence to make us more efficient or connected; it must also serve to build a universal human family, with shared rights and duties, where digital proximity becomes a real opportunity for encounter and mutual care.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=49 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 250,
+        "final_sentence": "The culture of power",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 251,
+        "final_sentence": "This culture of power infiltrates society, changes relationships and behaviors, and grows by normalizing war, pursuing ever-greater military power, taking advantage of the crisis of multilateralism and fueling a false realism that insists that there is no alternative.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 252,
+        "final_sentence": "The normalization of war",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 253,
+        "final_sentence": "VIII, 506.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 254,
+        "final_sentence": "Even during the Cold War, despite the existence of serious conflicts, there remained the awareness that a new world war had to be avoided at all costs.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 255,
+        "final_sentence": "Public opinion is gradually being shaped and conditioned by polarizing media narratives, which are often amplified by algorithms that prioritize conflict and confrontation.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 256,
+        "final_sentence": "Without a living memory of the horrors of war, political decisions risk being made on the basis of power alone, without any consideration for the long-term consequences.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 257,
+        "final_sentence": "The use of force, violence and weapons reflects a relational poverty that always has disastrous consequences for civilian populations.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 258,
+        "final_sentence": "Force without limits",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 259,
+        "final_sentence": "In this sense, there are also financial interests that contribute to fueling tensions in various regions of the world.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 260,
+        "final_sentence": "This has also contributed to a new arms race, which is hard to control and accompanied by the gradual dismantling of nuclear reduction agreements, as well as the development of \u201cminiaturized\u201d weapons, that make their use seem like a more viable option.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 261,
+        "final_sentence": "It is much easier to start a war than to stop it, and yet, discussion on conflict prevention remains tragically marginal.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 262,
+        "final_sentence": "In this way, some would also wrongly justify even \u2018preventive\u2019 attacks or acts of war that can hardly avoid entailing \u2018evils and disorders graver than the evil to be eliminated.\u2019\u201d is no longer a definitive victory, but the perpetuation of conflict as a source of power and income.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=48 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 263,
+        "final_sentence": "Weapons and artificial intelligence",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 264,
+        "final_sentence": "This violates the principle that armed force should be used only as a last resort in cases of legitimate self-defense.183 For this reason, the development and use of AI in warfare must be subject to the most rigorous ethical constraints, to guarantee respect for human dignity and the sanctity of life and to avoid a race to develop such arms.184",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=63 > 15",
+          "non_period_final='4'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 265,
+        "final_sentence": "This does not diminish the importance of instilling, as far as possible, values and sound judgment into the artificial systems we build, so that they can contribute to a moral ecosystem in which humans are better able to listen to their own consciences, as well as allowing AI models to establish appropriate boundaries.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=53 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 266,
+        "final_sentence": "Target selection and the use of force must not confuse combatants and non-combatants, nor ignore the impact on defenseless populations.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 267,
+        "final_sentence": "Finally, it is imperative to establish a shared framework \u2014 also at the international level \u2014 in order to curb the technological arms race and ensure robust protection for civilians and the infrastructures necessary for their survival.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 268,
+        "final_sentence": "The crisis of multilateralism",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 269,
+        "final_sentence": "The result is a far cry from genuine multilateralism; instead, what has appeared is a disorderly and conflict-ridden multipolarism with a prevailing sense of mistrust.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 270,
+        "final_sentence": "The force of international law is thus replaced by the claim that \u201cmight makes right.\u201d Consequently, tribunals that are competent for settling disputes between States or dealing with war crimes are often weakened or bypassed, with devastating ramifications for political culture and social cohesion.185",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=45 > 15",
+          "non_period_final='5'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 271,
+        "final_sentence": "Indeed, the principle of proportionality in responding to aggression, the protection of access to water, food and essential goods, and respect for the lives of civilians, especially children, come to be regarded as na\u00efve relics of the past.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 272,
+        "final_sentence": "A supposed political realism",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 273,
+        "final_sentence": "Meanwhile, the real cost falls on the poorest, who see resources for healthcare, education and social services being reduced.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 274,
+        "final_sentence": "In fact, peace is neither a na\u00efve hope nor merely the absence of war; instead, it is always possible as the fruit of justice and charity.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 275,
+        "final_sentence": "Thus, diversity is increasingly perceived as a threat, which fuels a desire for possession, a will to dominate, hegemonic ambitions, abuses of power and a fear of those who are different, thereby creating an environment in which new conflicts can develop almost imperceptibly.186",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=44 > 15",
+          "non_period_final='6'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 276,
+        "final_sentence": "When people come to believe that nothing is genuinely true and that principles are hollow words, then the fuse in their hearts is lit for new eruptions of intolerance and aggression.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 277,
+        "final_sentence": "In countries marked by serious social tensions, we cannot rule out the possibility that some leaders may consider armed conflict as an effective way of diverting attention from domestic problems and a cynical tool for managing difficulties.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 278,
+        "final_sentence": "In this way, they risk cooperating \u2014 perhaps unknowingly \u2014 with questionable projects that fuel new forms of violence, manipulation and dominance.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 279,
+        "final_sentence": "Building the civilization of love",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 280,
+        "final_sentence": "In the words of the prophet Isaiah: \u201cBehold, I am doing a new thing; now it springs forth, do you not perceive it?\u201d (Is 43:19).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 281,
+        "final_sentence": "For this reason, even when suffering seems to have the last word, Christians serve the good and are sustained by a theological hope that gives reality both meaning and direction.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 282,
+        "final_sentence": "We can all do our part",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 283,
+        "final_sentence": "We all have our own areas for action, and it is precisely there \u2014 and nowhere else \u2014 that we must choose whether to fuel the mentality of force (even if only through indifference, cynicism, lies or hatred), or to preserve the mindset of peace (with truth, moderation, closeness and care).",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=49 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 284,
+        "final_sentence": "Without presuming to exhaust this theme, I would like to propose five paths toward daily and public responsibility: the need to disarm words, building peace through justice, adopting the perspective of victims, cultivating a healthy realism and reviving dialogue and multilateralism.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=41 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 285,
+        "final_sentence": "The need to disarm words",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 286,
+        "final_sentence": "We have a real opportunity to contribute to the common good each time we speak the truth, offer wise advice, support those in need of comfort, denounce injustice and give a voice to the voiceless.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 287,
+        "final_sentence": "Building peace through justice",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 288,
+        "final_sentence": "Then practice justice!\u201d191 Let us never grow weary of seeking justice!",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "non_period_final='!'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 289,
+        "final_sentence": "Adopting the perspective of victims",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 290,
+        "final_sentence": "Painful events require both history and memory, the former to recount the facts, the latter to bear witness to lived experiences.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 291,
+        "final_sentence": "As Saint Paul VI recalled, the Church feels she must make her own both the voice of those who died in past wars and the voice of the living who still bear wounds today, so that their cries may become an appeal for peace and harmony and not a prelude to new conflicts.195",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=54 > 15",
+          "non_period_final='5'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 292,
+        "final_sentence": "Cultivating a healthy realism",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 293,
+        "final_sentence": "Instead, it seeks viable paths for making peace more than a mere word, through credible institutions, verifiable guarantees, patient negotiations, conflict prevention and the protection of civilians.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 294,
+        "final_sentence": "Reviving dialogue",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 295,
+        "final_sentence": "He insisted that people must return to speaking with one another, because a sincere and persevering dialogue always opens up the possibility of an honorable solution.196",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=27 > 15",
+          "non_period_final='6'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 296,
+        "final_sentence": "For if we experience authentic encounters with others, with those who are different, strangers and migrants, it becomes much more difficult even to imagine war.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 297,
+        "final_sentence": "Giorgio La Pira expressed the hope that \u201cthe method of war be replaced by the method of peace: the method of negotiation, of encounter, of convergence, that is, the authentically human method!\u201d197 The awareness that all peoples share a common future demands that the \u201cculture of negotiation\u201d become an increasingly shared political and cultural commitment, capable of gradually leading humanity away from the cycle of violence.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=67 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 298,
+        "final_sentence": "Let us reject the Manichean notions so typical of that mindset of violence that divides the world into those who are good and those who are evil.\u201d198",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=28 > 15",
+          "non_period_final='8'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 299,
+        "final_sentence": "In rejecting the mindset of violence, interreligious dialogue plays a decisive role, because at the heart of the great spiritual paths lies a message of peace.199 Whereas those who use the name of God to legitimize terrorism, violence or war betray his true nature, for to fight in the name of religion means attacking religion itself.200 The \u201cspirit of Assisi,\u201d evoked by Saint John Paul II and carried forward by Pope Francis \u2014 for example, through his dialogue with the Grand Imam of Al-Azhar \u2014 shows that believers can draw upon the most authentic sources of their particular spiritual traditions, where there is no room for \u201csanctified hatred.\u201d",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=109 > 15",
+          "non_period_final='\u201d'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 300,
+        "final_sentence": "The necessity of diplomacy and multilateralism",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 301,
+        "final_sentence": "Faced with the impulsive broadcasts, aggressive rhetoric and power politics that characterize our time, \u201cthe vocation of diplomacy is to foster dialogue with all parties, including those interlocutors considered less \u2018convenient\u2019 or not considered legitimized to negotiate.\u201d201 Therefore, every ounce of humility and patience should be employed in order to nurture even the faintest signs of goodwill among parties in conflict, so as to advance the process of peace.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=70 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 302,
+        "final_sentence": "For this reason, diplomacy must be capable of operating effectively in this new environment, negotiating shared regulations on the use of digital technologies, in order to protect civilians and the most vulnerable from \u201cinvisible\u201d yet real forms of violence.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 303,
+        "final_sentence": "This is not simply a question of technical adjustments, for the crisis of convictions and values that also concerns the ethical foundations of nations makes it more difficult to direct multilateralism toward the true common good.202",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=37 > 15",
+          "non_period_final='2'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 304,
+        "final_sentence": "In this way, papal diplomacy expresses the catholicity of the Church and contributes to the building of a civilization of love, where even new technologies can be oriented toward the common good.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 305,
+        "final_sentence": "Praying and hoping",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='g'"
+        ]
+      },
+      {
+        "paragraph_index": 306,
+        "final_sentence": "Let us never tire of praying for peace and of committing ourselves to achieving it in our relationships and in society.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 307,
+        "final_sentence": "CONCLUSION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 308,
+        "final_sentence": "This avenue emerges through contemplating God\u2019s plan, living ecclesial unity by partaking of the Eucharist, building a world centered on the common good and praying in union with the Blessed Virgin Mary.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 309,
+        "final_sentence": "The Word became flesh",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='h'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 310,
+        "final_sentence": "Yet our hearts yearn for an approach that is wise and benevolent, akin to that which Mary praises in her Magnificat, when she proclaims that God\u2019s mercy extends in every generation to those who fear him.205 This plan of mercy continues to unfold throughout history today, even amid the rapid and unsettling changes brought by algorithms and global networks, and it becomes a compass in the digital era for living our lives according to the Gospel.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=78 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 311,
+        "final_sentence": "It does so through the power to become children of God, and is awakened when we allow ourselves to be moved by the tears of the little ones, the fragility of the elderly, the silence of victims and the struggle of those who fight against the evil they do not wish to commit.207 In this wounded yet beloved flesh, the Father shows us the true humanity of a life fulfilled through openness and communion, which leads us to desire that his will be done on earth as it is in heaven.208",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=93 > 15",
+          "non_period_final='8'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 312,
+        "final_sentence": "There is no moment or human situation that is not worthy of God. \u201cAccording to the teaching of our faith, we have and adore, in our mysteries, a God who is born in a manger, a God who lives and travels in Judea, a God who dies on the cross, a dead God who lies in the tomb.\u201d210 The future of humanity, therefore, finds its standard in the ability to welcome this divine way of drawing near, of sharing the burden of the world, of transforming relationships from within. \u201cO wonder... man is God and this God-Man passes through all those stages, endures all those states and ennobles them, sanctifies them, deifies them in himself!\u201d211 What saves humanity is the divine love that descends into the most fragile point of our history and renews it from within.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=140 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 313,
+        "final_sentence": "Indeed, everything will be purified and reunited in the One, who gathers every fragment of life, every tear and every authentically human achievement, rescuing them from nothingness and delivering them, redeemed, to the Father.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 314,
+        "final_sentence": "One body in Christ",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='t'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 315,
+        "final_sentence": "For you hear the words, \u2018the Body of Christ\u2019 and respond \u2018Amen.\u2019 Be then a member of the Body of Christ that your Amen may be true!\u201d214",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=28 > 15",
+          "non_period_final='4'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 316,
+        "final_sentence": "And while new economic and technological networks can generate exclusion, isolation and dependencies, the Church \u2014 nourished by the Eucharist \u2014 is called to make visible a different paradigm, one that preserves human connections, gives a voice to the invisible and ensures that processes are aimed at respecting people\u2019s dignity.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=49 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 317,
+        "final_sentence": "The construction site of our time",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 318,
+        "final_sentence": "We must be faithful to the truth, invest in education, cultivate relationships and love justice and peace.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 319,
+        "final_sentence": "Fidelity to the truth requires integrating the possibilities offered by technology within a framework marked by wisdom, which is capable of safeguarding both the dignity of each person and the future of our common home.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 320,
+        "final_sentence": "Teaching new generations that technological evolution does not follow a predetermined path, but can be guided by personal and collective responsibility, constitutes one of the most valuable services to the common good.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 321,
+        "final_sentence": "It is precisely this covenant between glory and fragility that becomes the criterion for evaluating the anthropological models offered by contemporary culture.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 322,
+        "final_sentence": "We proclaim a hope rooted in the One who came down from heaven to \u201ccreate a new story here below.\u201d For this reason, those who believe are committed to ensuring that a greater justice will take the place of inequality, and that the industry of war will be replaced by the craft of peace.221",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=55 > 15",
+          "non_period_final='1'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 323,
+        "final_sentence": "Like Nehemiah, we too are called to unite listening and courage, prayer and responsibility, so that, even when a technocratic mentality or partisan interests seem to prevail, the human city may become a more fitting place to live.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 324,
+        "final_sentence": "As we await its fulfillment, this vision is set before us as an encouragement \u2014 a call to overcome our divisions and to work together \u2014 for this is the way of Jesus Christ, yesterday, today and forever.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 325,
+        "final_sentence": "The song of hope: the Magnificat",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='t'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 326,
+        "final_sentence": "Yet his secret strength is destined in the end to be revealed.\u201d222",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='2'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 327,
+        "final_sentence": "The Blessed Virgin Mary not only teaches us to recognize God\u2019s invisible work, but also directs our gaze to \u201cthe points at which humanity is broken and the world becomes distorted: the contrast between the humble and the powerful, the poor and the rich, the satiated and the hungry,\u201d teaching us \u201cto look at the world from a lower position: through the eyes of those who suffer rather than the mighty; to view history through the eyes of the little ones, rather than through the perspective of the powerful; to interpret the events of history from the viewpoint of the widow, the orphan, the stranger, the wounded child, the exile and the fugitive.\u201d223 The Blessed Virgin thus becomes \u201cpoet and prophetess of Redemption,\u201d because on her lips is proclaimed \u201cthe strongest and most innovative hymn ever articulated, the Magnificat; it is she who reveals the transformative vision of the Christian economy, the historical and social result that still draws its origin and strength from Christianity.\u201d224",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=168 > 15",
+          "non_period_final='4'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 328,
+        "final_sentence": "I entrust our desire to the Mother of Christ, to the Woman of the Magnificat, that she may guide our steps through this time of change and preserve in each of us true faith in the Gospel, so that we may bear witness to the grandeur of humanity, in which God has made his dwelling.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=55 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 329,
+        "final_sentence": "Given in Rome, at Saint Peter\u2019s, on 15 May, in the year 2026, the second of my Pontificate.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 330,
+        "final_sentence": "XIV",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='V'",
+          "contains_propn (spacy)"
+        ]
+      }
+    ],
+    "diagnostics": {
+      "total_paragraphs": 331,
+      "kicker_count": 7,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy"
+    }
+  },
+  "claim_license": {
+    "task_surface": "smoothing_diagnosis",
+    "licenses": "AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.",
+    "does_not_license": "An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.",
+    "comparison_set": {
+      "total_paragraphs": 331,
+      "kicker_count": 7,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy",
+      "baseline_source": null
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.",
+      "Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.",
+      "Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** AI-prose smoothing diagnosis\n\n**Reports:** AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.\n\n**Does NOT report:** An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.\n\n### Comparison context\n\n- **baseline source:** None\n- **kicker count:** 7\n- **proper noun detection:** spacy\n- **total paragraphs:** 331\n- **word limit:** 15\n\n### Caveats\n\n- Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.\n- Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.\n- Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance.",
+  "warnings": [],
+  "ai_status": null
+}

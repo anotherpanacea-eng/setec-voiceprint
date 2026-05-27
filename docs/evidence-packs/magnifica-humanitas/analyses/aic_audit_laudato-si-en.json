@@ -1,0 +1,420 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "craft_restoration",
+  "tool": "aic_pattern_audit",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "texts/laudato-si-en.txt",
+    "words": 38103
+  },
+  "baseline": null,
+  "results": {
+    "patterns": {
+      "negation_hedge": {
+        "label": "Negation Hedge",
+        "severity_note": "'Not X.' / 'Not X. Not Y.' sentence-initial cognitive sorting (earned) or narrator hedge (unearned)",
+        "count": 2,
+        "density_per_1k": 0.0524893053040443,
+        "hits": [
+          {
+            "sentence_index": 1096,
+            "text": "Not only the poor, but many other members of society as well, find it difficult to own a home. Having a home has much to do with a sense of personal dignity and the growth of families.",
+            "span": "Not only the poor, but many other members of society as well, find it difficult to own a home.",
+            "note": "sentence-initial negation followed by affirming sentence"
+          },
+          {
+            "sentence_index": 1654,
+            "text": "Not everyone is called to engage directly in political life. Society is also enriched by a countless array of organizations which work to promote the common good and to defend the environment, whether natural or urban.",
+            "span": "Not everyone is called to engage directly in political life.",
+            "note": "sentence-initial negation followed by affirming sentence"
+          }
+        ]
+      },
+      "correctio": {
+        "label": "Disguised Correctio",
+        "severity_note": "'not X, but Y' inline + 'It is not X. It is Y' frame; cuts on payoff test if affirm repeats negate",
+        "count": 28,
+        "density_per_1k": 0.7348502742566202,
+        "hits": [
+          {
+            "sentence_index": 25,
+            "text": "The destruction of the human environment is extremely serious, not only because God has entrusted the world to us men and women, but because human life is itself a gift which must be defended from various forms of debasement.",
+            "span": "not only because God has entrusted the world to us men and women, but b",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 112,
+            "text": "These questions will not be dealt with once and for all, but reframed and enriched again and again.",
+            "span": "not be dealt with once and for all, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 127,
+            "text": "Our goal is not to amass information or to satisfy curiosity, but rather to become painfully aware, to dare to turn what is happening to the world into our own personal suffering and thus to discover what each of us can do about it.",
+            "span": "not to amass information or to satisfy curiosity, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 273,
+            "text": "Oceans not only contain the bulk of our planet\u2019s water supply, but also most of the immense variety of living creatures, many of them still unknown to us and threatened for various reasons.",
+            "span": "not only contain the bulk of our planet\u2019s water supply, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 393,
+            "text": "These achievements do not solve global problems, but they do show that men and women are still capable of intervening positively.",
+            "span": "not solve global problems, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 442,
+            "text": "This shows us the immense dignity of each person, \u201cwho is not just something, but someone.",
+            "span": "not just something, but s",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 478,
+            "text": "Along these same lines, rest on the seventh day is meant not only for human beings, but also so \u201cthat your ox and your donkey may have rest\u201d ( Ex 23:12).",
+            "span": "not only for human beings, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 571,
+            "text": "The work of the Church seeks not only to remind everyone of the duty to care for nature, but at the same time \u201cshe must above all protect mankind from self-destruction\u201d.",
+            "span": "not only to remind everyone of the duty to care for nature, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 591,
+            "text": "It shall not be so among you; but whoever would be great among you must be your servant\u201d ( Mt 20:25-26).",
+            "span": "not be so among you; but w",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 680,
+            "text": "Consequently, he maintained, \u201cit is not in accord with God\u2019s plan that this gift be used in such a way that its benefits favour only a few\u201d. / This calls into serious question the unjust habits of a part of humanity.",
+            "span": "it is not i",
+            "note": "'It is not X. It is Y' frame"
+          },
+          {
+            "sentence_index": 797,
+            "text": "They may not affirm such theories with words, but nonetheless support them with their deeds by showing no interest in more balanced levels of production, a better distribution of wealth, concern for the environment and the rights of future generations.",
+            "span": "not affirm such theories with words, but n",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 958,
+            "text": "The risks involved are not always due to the techniques used, but rather to their improper or excessive application.",
+            "span": "not always due to the techniques used, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1005,
+            "text": "We are faced not with two separate crises, one environmental and the other social, but rather with one complex crisis which is both social and environmental.",
+            "span": "not with two separate crises, one environmental and the other social, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1010,
+            "text": "We take these systems into account not only to determine how best to use them, but also because they have an intrinsic value independent of their usefulness.",
+            "span": "not only to determine how best to use them, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1054,
+            "text": "Many intensive forms of environmental exploitation and degradation not only exhaust the resources which provide local communities with their livelihood, but also undo the social structures which, for a long time, shaped cultural identity and their sense of the meaning of life and community.",
+            "span": "not only exhaust the resources which provide local communities with their livelihood, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1059,
+            "text": "They are not merely one minority among others, but should be the principal dialogue partners, especially when large projects affecting their land are proposed.",
+            "span": "not merely one minority among others, but s",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1096,
+            "text": "Not only the poor, but many other members of society as well, find it difficult to own a home.",
+            "span": "Not only the poor, but m",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1144,
+            "text": "Intergenerational solidarity is not optional, but rather a basic question of justice, since the world we have received also belongs to those who will follow us.",
+            "span": "not optional, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1173,
+            "text": "Let us not only keep the poor of the future in mind, but also today\u2019s poor, whose life on this earth is brief and who cannot keep on waiting.",
+            "span": "not only keep the poor of the future in mind, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1260,
+            "text": "There are not just winners and losers among countries, but within poorer countries themselves.",
+            "span": "not just winners and losers among countries, but w",
+            "note": "inline 'not X, but Y'"
+          }
+        ]
+      },
+      "pseudo_aphorism": {
+        "label": "Pseudo-Aphorism",
+        "severity_note": "gnomic generalization ('X as Y', 'is the Y of Z', 'There is a kind of'); often has real image right after that does the work",
+        "count": 4,
+        "density_per_1k": 0.1049786106080886,
+        "hits": [
+          {
+            "sentence_index": 448,
+            "text": "We were conceived in the heart of God, and for this reason \u201ceach of us is the result of a thought of God.",
+            "span": "is the result of a thought of God.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 702,
+            "text": "As he made his way throughout the land, he often stopped to contemplate the beauty sown by his Father, and invited his disciples to perceive a divine message in things: \u201cLift up your eyes, and see how the fields are already white for harvest\u201d ( Jn 4:35). \u201cThe kingdom of God is like a grain of mustar",
+            "span": "is the greatest of plants\u201d ( Mt 13:31-32).",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 1046,
+            "text": "A consumerist vision of human beings, encouraged by the mechanisms of today\u2019s globalized economy, has a levelling effect on cultures, diminishing the immense variety which is the heritage of all humanity.",
+            "span": "is the heritage of all humanity.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 1525,
+            "text": "In the face of the so-called culture of death, the family is the heart of the culture of life\u201d.",
+            "span": "is the heart of the culture of life\u201d.",
+            "note": "gnomic frame"
+          }
+        ]
+      },
+      "manifesto_cadence": {
+        "label": "Manifesto Cadence",
+        "severity_note": "3+ parallel sentences with same anaphoric head; earned when each escalates/restricts/reveals, unearned when parallel substitutes for development",
+        "count": 3,
+        "density_per_1k": 0.07873395795606644,
+        "hits": [
+          {
+            "sentence_index": 102,
+            "text": "I will begin by briefly reviewing several aspects of the present ecological crisis, with the aim of drawing on the results of the best scientific research available today, letting them touch us deeply and provide a concrete foundation for the ethical and spiritual itinerary that follows. // I will then consider some principles drawn from the Judaeo-Christian tradition which can render our commitment to the environment more coherent. // I will then attempt to get to the roots of the present situa",
+            "span": "3 sentences with anaphoric head 'i will'",
+            "note": "run length 3"
+          },
+          {
+            "sentence_index": 628,
+            "text": "Praised be you, my Lord, through Sister Moon and the stars, in heaven you formed them clear and precious and beautiful. // Praised be you, my Lord, through Brother Wind, and through the air, cloudy and serene, and every kind of weather through whom you give sustenance to your creatures. // Praised be you, my Lord, through Sister Water, who is very useful and humble and precious and chaste. // Praised be you, my Lord, through Brother Fire, through whom you light the night, and he is beautiful and",
+            "span": "4 sentences with anaphoric head 'praised be'",
+            "note": "run length 4"
+          },
+          {
+            "sentence_index": 1525,
+            "text": "In the face of the so-called culture of death, the family is the heart of the culture of life\u201d. // In the family we first learn how to show love and respect for life; we are taught the proper use of things, order and cleanliness, respect for the local ecosystem and care for all creatures. // In the family we receive an integral education, which enables us to grow harmoniously in personal maturity. // In the family we learn to ask without demanding, to say \u201cthank you\u201d as an expression of genuine ",
+            "span": "4 sentences with anaphoric head 'in the'",
+            "note": "run length 4"
+          }
+        ]
+      },
+      "triplet": {
+        "label": "Triplet",
+        "severity_note": "3- or 4-item comma-and lists; classical figure but at high density reads as rhythmic fill",
+        "count": 23,
+        "density_per_1k": 0.6036270109965095,
+        "hits": [
+          {
+            "sentence_index": 32,
+            "text": "He observed that the world cannot be analyzed by isolating only one of its aspects, since \u201cthe book of nature is one and indivisible\u201d, and includes the environment, life, sexuality, the family, social relations, and so forth.",
+            "span": "life, sexuality, the family, social relations, and so forth",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 49,
+            "text": "He has repeatedly stated this firmly and persuasively, challenging us to acknowledge our sins against creation: \u201cFor human beings\u2026 to destroy the biological diversity of God\u2019s creation; for human beings to degrade the integrity of the earth by causing changes in its climate, by stripping the earth o",
+            "span": "s waters, its land, its air, and its life",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 66,
+            "text": "He shows us just how inseparable the bond is between concern for nature, justice for the poor, commitment to society, and interior peace.",
+            "span": "for the poor, commitment to society, and interior peace",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 293,
+            "text": "Nowadays, for example, we are conscious of the disproportionate and unruly growth of many cities, which have become unhealthy to live in, not only because of pollution caused by toxic emissions but also as a result of urban chaos, poor transportation, and visual pollution and noise.",
+            "span": "of urban chaos, poor transportation, and visual pollution and",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 296,
+            "text": "We were not meant to be inundated by cement, asphalt, glass and metal, and deprived of physical contact with nature.",
+            "span": "inundated by cement, asphalt, glass and metal, and deprived of physical",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 518,
+            "text": "Praise him, you highest heavens, and you waters above the heavens!",
+            "span": "Praise him, you highest heavens, and you waters above",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 629,
+            "text": "Praised be you, my Lord, through Brother Wind, and through the air, cloudy and serene, and every kind of weather through whom you give sustenance to your creatures.",
+            "span": "Praised be you, my Lord, through Brother Wind, and through the air",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 686,
+            "text": "That means that apart from the ownership of property, rural people must have access to means of technical education, credit, insurance, and markets\u201d.",
+            "span": "of technical education, credit, insurance, and markets",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 926,
+            "text": "The loss of jobs also has a negative impact on the economy \u201cthrough the progressive erosion of social capital: the network of relationships of trust, dependability, and respect for rules, all of which are indispensable for any form of civil coexistence\u201d.",
+            "span": "relationships of trust, dependability, and respect for rules",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 959,
+            "text": "Genetic mutations, in fact, have often been, and continue to be, caused by nature itself.",
+            "span": "Genetic mutations, in fact, have often been, and continue to be",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1002,
+            "text": "Recognizing the reasons why a given area is polluted requires a study of the workings of society, its economy, its behaviour patterns, and the ways it grasps reality.",
+            "span": "workings of society, its economy, its behaviour patterns, and the ways it",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1013,
+            "text": "We need only recall how ecosystems interact in dispersing carbon dioxide, purifying water, controlling illnesses and epidemics, forming soil, breaking down waste, and in many other ways which we overlook or simply do not know about.",
+            "span": "illnesses and epidemics, forming soil, breaking down waste, and in many other",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1034,
+            "text": "Thus, for example, drug use in affluent societies creates a continual and growing demand for products imported from poorer regions, where behaviour is corrupted, lives are destroyed, and the environment continues to deteriorate.",
+            "span": "behaviour is corrupted, lives are destroyed, and the environment continues",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1291,
+            "text": "These would include favouring forms of industrial production with maximum energy efficiency and diminished use of raw materials, removing from the market products which are less energy efficient or more polluting, improving transport systems, and encouraging the construction and repair of buildings ",
+            "span": "or more polluting, improving transport systems, and encouraging the construction",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1293,
+            "text": "Agriculture in poorer regions can be improved through investment in rural infrastructures, a better organization of local or national markets, systems of irrigation, and the development of techniques of sustainable agriculture.",
+            "span": "or national markets, systems of irrigation, and the development of",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1378,
+            "text": "It could generate intelligent and profitable ways of reusing, revamping and recycling, and it could also improve the energy efficiency of cities.",
+            "span": "ways of reusing, revamping and recycling, and it could also",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1412,
+            "text": "If in a given region the state does not carry out its responsibilities, some business groups can come forward in the guise of benefactors, wield real power, and consider themselves exempt from certain rules, to the point of tolerating different forms of organized crime, human trafficking, the drug t",
+            "span": "guise of benefactors, wield real power, and consider themselves exempt",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1426,
+            "text": "If we reason only within the confines of the latter, little room would be left for aesthetic sensibility, poetry, or even reason\u2019s ability to grasp the ultimate meaning and purpose of things.",
+            "span": "for aesthetic sensibility, poetry, or even reason",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1438,
+            "text": "This should spur religions to dialogue among themselves for the sake of protecting nature, defending the poor, and building networks of respect and fraternity.",
+            "span": "of protecting nature, defending the poor, and building networks of",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1474,
+            "text": "No system can completely suppress our openness to what is good, true and beautiful, or our God-given ability to respond to his grace at work deep in our hearts.",
+            "span": "what is good, true and beautiful, or our God",
+            "note": "3- or 4-item comma-separated list"
+          }
+        ]
+      },
+      "professional_parallel_stack": {
+        "label": "Professional-Parallel Stack",
+        "severity_note": "3+ adjacent paragraphs with same opening clause structure ('A X may Y', 'A Z may Y'); performs comprehensiveness without differentiating",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "false_balance": {
+        "label": "False-Balance Construction",
+        "severity_note": "'while reasonable people may disagree', both-sidesing without specifying the disagreement",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "hedge_and_affirm": {
+        "label": "Hedge-and-Affirm",
+        "severity_note": "'while X is generally true, in some cases Y' performs caution while saying nothing definite",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "recommendation_template": {
+        "label": "Recommendation Template",
+        "severity_note": "'DC must commit to', 'we urge X', generic-actor + modal + generic-verb without specifying action",
+        "count": 1,
+        "density_per_1k": 0.02624465265202215,
+        "hits": [
+          {
+            "sentence_index": 917,
+            "text": "It follows that, in the reality of today\u2019s global society, it is essential that \u201cwe continue to prioritize the goal of access to steady employment for everyone\u201d, no matter the limited interests of business and dubious economic reasoning.",
+            "span": "it is essential that",
+            "note": "recommendation-template frame"
+          }
+        ]
+      },
+      "authority_laundering": {
+        "label": "Authority Laundering",
+        "severity_note": "'research has shown', 'experts agree' without naming the research or the experts",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      }
+    }
+  },
+  "claim_license": {
+    "task_surface": "craft_restoration",
+    "licenses": "A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.",
+    "does_not_license": "An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.",
+    "comparison_set": {
+      "target_words": 38103,
+      "baseline_words": 0,
+      "has_baseline": false,
+      "n_patterns_reported": 10
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.",
+      "The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.",
+      "Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis)."
+    ],
+    "references": [
+      "references/aic-flags.md",
+      "references/source-triage.md"
+    ]
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** craft restoration\n\n**Reports:** A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.\n\n**Does NOT report:** An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.\n\n### Comparison context\n\n- **baseline words:** 0\n- **has baseline:** False\n- **n patterns reported:** 10\n- **target words:** 38103\n\n### Caveats\n\n- Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.\n- The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.\n- Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis).\n\n### References\n\n- references/aic-flags.md\n- references/source-triage.md",
+  "warnings": [],
+  "ai_status": null
+}

@@ -1,0 +1,169 @@
+{
+  "task": "tier4_binoculars_and_per_token_surprisal",
+  "model_pair": {
+    "scorer": "openai-community/gpt2 (124M)",
+    "observer": "distilgpt2 (82M)"
+  },
+  "scoring_notes": [
+    "Run on CPU (torch 2.12.0 cpu). Default model pair (tinyllama/gpt2) too large for available disk space.",
+    "Binoculars truncations applied to keep each run under the 45s per-bash-call timeout.",
+    "Magnifica, Fratelli, Laudato Si, Lumen Fidei, Dilexit Nos: first 10,000 words used for binoculars.",
+    "Laudate Deum (~7.1k words) scored in full.",
+    "Surprisal audit (gpt2) run on first 18,000 words for Magnifica, Fratelli, Laudato Si; full text for shorter docs.",
+    "GPT2 chunks 1024-token context windows; both audits aggregate over all chunks.",
+    "Note: gpt2 is a 2019 base model with lower lexical coverage than RLHF-tuned models. Per Stylometry-to-the-People SPEC, mean_surprisal_bits typical band for gpt2 is 5.0-6.0; <3.5 is 'flat' (AI-likely). The 6-7 vs 4-5 bits/token heuristic in the task statement applies to larger modern base models, not gpt2."
+  ],
+  "documents": {
+    "dilexit-nos-en": {
+      "surprisal_gpt2": {
+        "mean_surprisal_bits": 4.681517890721049,
+        "sd_surprisal_bits": 4.041236142727061,
+        "autocorr_lag1": -0.06886761143180506,
+        "n_tokens_scored": 36300,
+        "band": "typical",
+        "flags": []
+      },
+      "binoculars_gpt2_vs_distilgpt2": {
+        "scorer_log_perplexity_bits": 4.6407479958536495,
+        "observer_log_perplexity_bits": 4.9589161536049655,
+        "perplexity_ratio": 0.9358391737436378,
+        "scorer_series_length": 13051,
+        "verdict_band": "uncalibrated",
+        "caveats": [
+          "no_calibrated_thresholds_supplied"
+        ]
+      }
+    },
+    "fratelli-tutti-en": {
+      "surprisal_gpt2": {
+        "mean_surprisal_bits": 4.956437955193349,
+        "sd_surprisal_bits": 4.169020937319983,
+        "autocorr_lag1": -0.11974418976331533,
+        "n_tokens_scored": 22151,
+        "band": "typical",
+        "flags": []
+      },
+      "binoculars_gpt2_vs_distilgpt2": {
+        "scorer_log_perplexity_bits": 4.939742937318193,
+        "observer_log_perplexity_bits": 5.234842447993606,
+        "perplexity_ratio": 0.9436278142834044,
+        "scorer_series_length": 12374,
+        "verdict_band": "uncalibrated",
+        "caveats": [
+          "no_calibrated_thresholds_supplied"
+        ]
+      }
+    },
+    "laudate-deum-en": {
+      "surprisal_gpt2": {
+        "mean_surprisal_bits": 4.806291762399233,
+        "sd_surprisal_bits": 4.123630304234968,
+        "autocorr_lag1": -0.05164213805957783,
+        "n_tokens_scored": 8735,
+        "band": "typical",
+        "flags": []
+      },
+      "binoculars_gpt2_vs_distilgpt2": {
+        "scorer_log_perplexity_bits": 4.806291762399233,
+        "observer_log_perplexity_bits": 5.160305510199654,
+        "perplexity_ratio": 0.9313967463552901,
+        "scorer_series_length": 8734,
+        "verdict_band": "uncalibrated",
+        "caveats": [
+          "no_calibrated_thresholds_supplied"
+        ]
+      }
+    },
+    "laudato-si-en": {
+      "surprisal_gpt2": {
+        "mean_surprisal_bits": 4.90843033280838,
+        "sd_surprisal_bits": 4.082354618810633,
+        "autocorr_lag1": -0.10566284884473982,
+        "n_tokens_scored": 21854,
+        "band": "typical",
+        "flags": []
+      },
+      "binoculars_gpt2_vs_distilgpt2": {
+        "scorer_log_perplexity_bits": 4.922182533430584,
+        "observer_log_perplexity_bits": 5.224103619970729,
+        "perplexity_ratio": 0.9422061451105297,
+        "scorer_series_length": 11932,
+        "verdict_band": "uncalibrated",
+        "caveats": [
+          "no_calibrated_thresholds_supplied"
+        ]
+      }
+    },
+    "lumen-fidei-en": {
+      "surprisal_gpt2": {
+        "mean_surprisal_bits": 4.659619771618529,
+        "sd_surprisal_bits": 3.9113493737453005,
+        "autocorr_lag1": -0.09707339940039805,
+        "n_tokens_scored": 22734,
+        "band": "typical",
+        "flags": []
+      },
+      "binoculars_gpt2_vs_distilgpt2": {
+        "scorer_log_perplexity_bits": 4.726093414405923,
+        "observer_log_perplexity_bits": 5.196040250523823,
+        "perplexity_ratio": 0.9095567367726752,
+        "scorer_series_length": 12241,
+        "verdict_band": "uncalibrated",
+        "caveats": [
+          "no_calibrated_thresholds_supplied"
+        ]
+      }
+    },
+    "magnifica-humanitas-en": {
+      "surprisal_gpt2": {
+        "mean_surprisal_bits": 4.84592067826728,
+        "sd_surprisal_bits": 4.188527830140187,
+        "autocorr_lag1": -0.12136856487519153,
+        "n_tokens_scored": 21891,
+        "band": "typical",
+        "flags": []
+      },
+      "binoculars_gpt2_vs_distilgpt2": {
+        "scorer_log_perplexity_bits": 4.859798816679637,
+        "observer_log_perplexity_bits": 5.2056046425272395,
+        "perplexity_ratio": 0.93357047843731,
+        "scorer_series_length": 12164,
+        "verdict_band": "uncalibrated",
+        "caveats": [
+          "no_calibrated_thresholds_supplied"
+        ]
+      }
+    }
+  },
+  "comparison": {
+    "francis_baselines_mean_surprisal_bits_gpt2": {
+      "mean": 4.8024595425481085,
+      "min": 4.659619771618529,
+      "max": 4.956437955193349,
+      "stdev": 0.13227237916888954,
+      "per_doc": {
+        "dilexit-nos-en": 4.681517890721049,
+        "fratelli-tutti-en": 4.956437955193349,
+        "laudate-deum-en": 4.806291762399233,
+        "laudato-si-en": 4.90843033280838,
+        "lumen-fidei-en": 4.659619771618529
+      }
+    },
+    "magnifica_mean_surprisal_bits_gpt2": 4.84592067826728,
+    "magnifica_z_score_vs_baselines": 0.3285730247860674,
+    "francis_baselines_perplexity_ratio_gpt2_distilgpt2": {
+      "mean": 0.9325253232531074,
+      "min": 0.9095567367726752,
+      "max": 0.9436278142834044,
+      "stdev": 0.0137549525145485,
+      "per_doc": {
+        "dilexit-nos-en": 0.9358391737436378,
+        "fratelli-tutti-en": 0.9436278142834044,
+        "laudate-deum-en": 0.9313967463552901,
+        "laudato-si-en": 0.9422061451105297,
+        "lumen-fidei-en": 0.9095567367726752
+      }
+    },
+    "magnifica_perplexity_ratio_gpt2_distilgpt2": 0.93357047843731
+  }
+}

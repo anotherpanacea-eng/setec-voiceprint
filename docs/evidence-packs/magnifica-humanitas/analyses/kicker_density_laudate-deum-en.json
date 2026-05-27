@@ -1,0 +1,949 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "smoothing_diagnosis",
+  "tool": "kicker_density",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/laudate-deum-en.txt",
+    "words": 7094
+  },
+  "baseline": null,
+  "results": {
+    "signal_path": "aic_8_9.kicker_density",
+    "family": "aic-9-closure-inflation",
+    "value": 0.08602150537634409,
+    "spacing_variance": 5.736267244886862,
+    "polarity": "\u2191",
+    "status": "provisional",
+    "task_surface": "smoothing_diagnosis",
+    "claim_license": "voice_diagnostic",
+    "paragraphs": [
+      {
+        "paragraph_index": 0,
+        "final_sentence": "APOSTOLIC EXHORTATION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 1,
+        "final_sentence": "LAUDATE DEUM",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='M'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 2,
+        "final_sentence": "OF THE HOLY FATHER FRANCIS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 3,
+        "final_sentence": "TO ALL PEOPLE OF GOOD WILL ON THE CLIMATE CRISIS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 4,
+        "final_sentence": "How can we not admire this tenderness of Jesus for all the beings that accompany us along the way!",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=19 > 15",
+          "non_period_final='!'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 5,
+        "final_sentence": "We will feel its effects in the areas of healthcare, sources of employment, access to resources, housing, forced migrations, etc.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 6,
+        "final_sentence": "And to express bluntly that this is no longer a secondary or ideological question, but a drama that harms us all, the African bishops stated that climate change makes manifest \u201ca tragic and striking example of structural sin\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 7,
+        "final_sentence": "For this reason, and because the situation is now even more pressing, I have wished to share these pages with you.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 8,
+        "final_sentence": "The Global Climate Crisis",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 9,
+        "final_sentence": "If it should rise above 2 degrees, the icecaps of Greenland and a large part of Antarctica will melt completely, with immensely grave consequences for everyone.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 10,
+        "final_sentence": "Resistance and confusion",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 11,
+        "final_sentence": "The rise in the sea level and the melting of glaciers can be easily perceived by an individual in his or her lifetime, and probably in a few years many populations will have to move their homes because of these facts.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=41 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 12,
+        "final_sentence": "At the same time, if we speak of a global phenomenon, we cannot confuse this with sporadic events explained in good part by local factors.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 13,
+        "final_sentence": "When we speak of climate change, we are referring to a global reality \u2013 and constant local variations \u2013 that persists for several decades.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 14,
+        "final_sentence": "How can we forget that Africa, home to more than half of the world\u2019s poorest people, is responsible for a minimal portion of historic emissions?",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=26 > 15",
+          "non_period_final='?'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 15,
+        "final_sentence": "This demands that politicians and business leaders should even now be concerning themselves with it.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 16,
+        "final_sentence": "Human causes",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 17,
+        "final_sentence": "More than 42% of total net emissions since the year 1850 were produced after 1990.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 18,
+        "final_sentence": "The glaciers are receding, the snow cover is diminishing and the sea level is constantly rising.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 19,
+        "final_sentence": "Regrettably, the climate crisis is not exactly a matter that interests the great economic powers, whose concern is with the greatest profit possible at minimal cost and in the shortest amount of time.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 20,
+        "final_sentence": "The change in average surface temperatures cannot be explained except as the result of the increase of greenhouse gases.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 21,
+        "final_sentence": "Damages and risks",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 22,
+        "final_sentence": "This is one of the many signs that the other creatures of this world have stopped being our companions along the way and have become instead our victims.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 23,
+        "final_sentence": "We barely have time to prevent even more tragic damage.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 24,
+        "final_sentence": "But it is certain that it continues to be a possibility, if we take into account phenomena already in motion that \u201csensitize\u201d the climate, like the reduction of ice sheets, changes in ocean currents, deforestation in tropical rainforests and the melting of permafrost in Russia, etc.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=46 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 25,
+        "final_sentence": "What is being asked of us is nothing other than a certain responsibility for the legacy we will leave behind, once we pass from this world.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 26,
+        "final_sentence": "This allows me to reiterate two convictions that I repeat over and over again: \u201cEverything is connected\u201d and \u201cNo one is saved alone\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 27,
+        "final_sentence": "A Growing Technocratic Paradigm",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='m'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 28,
+        "final_sentence": "As a logical consequence, it then becomes easy \u201cto accept the idea of infinite or unlimited growth, which proves so attractive to economists, financiers and experts in technology\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 29,
+        "final_sentence": "In this way, the technocratic paradigm monstrously feeds upon itself.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 30,
+        "final_sentence": "Everything that exists ceases to be a gift for which we should be thankful, esteem and cherish, and instead becomes a slave, prey to any whim of the human mind and its capacities.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 31,
+        "final_sentence": "It is extremely risky for a small part of humanity to have it\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 32,
+        "final_sentence": "Rethinking our use of power",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='r'"
+        ]
+      },
+      {
+        "paragraph_index": 33,
+        "final_sentence": "It is not strange that so great a power in such hands is capable of destroying life, while the mentality proper to the technocratic paradigm blinds us and does not permit us to see this extremely grave problem of present-day humanity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=42 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 34,
+        "final_sentence": "For \u201cwe are part of nature, included in it and thus in constant interaction with it\u201d, and thus \u201cwe [do] not look at the world from without but from within\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 35,
+        "final_sentence": "Human life, intelligence and freedom are elements of the nature that enriches our planet, part of its internal workings and its equilibrium.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 36,
+        "final_sentence": "In any event, the indispensable need to move beyond that paradigm, so damaging and destructive, will not be found in a denial of the human being, but include the interaction of natural systems \u201cwith social systems\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 37,
+        "final_sentence": "We need lucidity and honesty in order to recognize in time that our power and the progress we are producing are turning against us.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 38,
+        "final_sentence": "The ethical goad",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 39,
+        "final_sentence": "Yet in reality there does not seem to be any true interest in the future of these people, since they are not clearly told that the project will result in the clearing of their lands, a decline in the quality of their lives, a desolate and less habitable landscape lacking in life, the joy of community and hope for the future; in addition to the global damage that eventually compromises many other people as well.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=75 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 40,
+        "final_sentence": "It could be said that this is an extreme example, but in these cases there is no room for speaking of \u201clesser\u201d damages, for it is precisely the amassing of damages considered tolerable that has brought us to the situation in which we now find ourselves.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=46 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 41,
+        "final_sentence": "In recent years, we can note that, astounded and excited by the promises of any number of false prophets, the poor themselves at times fall prey to the illusion of a world that is not being built for them.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 42,
+        "final_sentence": "In this perverse logic, why should they care about the damage done to our common home, if they feel securely shielded by the financial resources that they have earned by their abilities and effort?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 43,
+        "final_sentence": "And what is the ultimate meaning of all my work and effort?\u201d",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 44,
+        "final_sentence": "The Weakness of International Politics",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 45,
+        "final_sentence": "For there to be solid and lasting advances, I would insist that, \u201cpreference should be given to multilateral agreements between States\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 46,
+        "final_sentence": "In this way, there could come about a multilateralism that is not dependent on changing political conditions or the interests of a certain few, and possesses a stable efficacy.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 47,
+        "final_sentence": "For \u201cthe actual strategies developed worldwide in the wake of [those crises] fostered greater individualism, less integration and increased freedom for the truly powerful, who always find a way to escape unscathed\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 48,
+        "final_sentence": "Reconfiguring multilateralism",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 49,
+        "final_sentence": "In this way, the principle of subsidiarity is applied also to the global-local relationship.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 50,
+        "final_sentence": "For this reason, I reiterate that \u201cunless citizens control political power \u2013 national, regional and municipal \u2013 it will not be possible to control damage to the environment\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 51,
+        "final_sentence": "It is another way of encouraging multilateralism for the sake of resolving the real problems of humanity, securing before all else respect for the dignity of persons, in such a way that ethics will prevail over local or contingent interests.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 52,
+        "final_sentence": "The very fact that answers to problems can come from any country, however little, ends up presenting multilateralism as an inevitable process.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 53,
+        "final_sentence": "Still, it has not succeeded in generating a model of multilateral diplomacy capable of responding to the new configuration of the world; yet should it be able to reconfigure itself, it must be part of the solution, because the experience of centuries cannot be cast aside either.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 54,
+        "final_sentence": "It is a matter of establishing global and effective rules that can permit \u201cproviding for\u201d this global safeguarding.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 55,
+        "final_sentence": "It is no longer helpful for us to support institutions in order to preserve the rights of the more powerful without caring for those of all.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 56,
+        "final_sentence": "Climate Conferences: Progress and Failures",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 57,
+        "final_sentence": "The deadline was the year 2012, but this, clearly, was not achieved.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 58,
+        "final_sentence": "The Protocol actually took effect in 2005.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 59,
+        "final_sentence": "This question was the subject of important discussions at various Conferences.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 60,
+        "final_sentence": "It also provides for a certain flexibility in the case of developing countries.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 61,
+        "final_sentence": "This makes it difficult to achieve a more objective (quantitative) evaluation of the real results.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 62,
+        "final_sentence": "Proposals tending to ensure a rapid and effective transition to alternative and less polluting forms of energy made no progress.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 63,
+        "final_sentence": "There was an evident openness to recognizing the fact that combustible fuels still provide 80% of the world\u2019s energy, and that their use continues to increase.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 64,
+        "final_sentence": "Yet here too, many points remained imprecise, above all the concrete responsibility of the countries that have to contribute.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 65,
+        "final_sentence": "Those who will have to suffer the consequences of what we are trying to hide will not forget this failure of conscience and responsibility\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 66,
+        "final_sentence": "What to Expect from COP28 in Dubai?",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "non_period_final='?'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 67,
+        "final_sentence": "To say that there is nothing to hope for would be suicidal, for it would mean exposing all humanity, especially the poorest, to the worst impacts of climate change.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 68,
+        "final_sentence": "This Conference can represent a change of direction, showing that everything done since 1992 was in fact serious and worth the effort, or else it will be a great disappointment and jeopardize whatever good has been achieved thus far.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 69,
+        "final_sentence": "Consequently, whatever is being done risks being seen only as a ploy to distract attention.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=15 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 70,
+        "final_sentence": "Although the measures that we can take now are costly, the cost will be all the more burdensome the longer we wait.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 71,
+        "final_sentence": "To suppose that all problems in the future will be able to be solved by new technical interventions is a form of homicidal pragmatism, like pushing a snowball down a hill.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 72,
+        "final_sentence": "But in reality they are filling a space left empty by society as a whole, which ought to exercise a healthy \u201cpressure\u201d, since every family ought to realize that the future of their children is at stake.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=37 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 73,
+        "final_sentence": "That is not what has happened so far, and only a process of this sort can enable international politics to recover its credibility, since only in this concrete manner will it be possible to reduce significantly carbon dioxide levels and to prevent even greater evils over time.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 74,
+        "final_sentence": "To the powerful, I can only repeat this question: \u201cWhat would induce anyone, at this stage, to hold on to power, only to be remembered for their inability to take action when it was urgent and necessary to do so?\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=40 > 15",
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 75,
+        "final_sentence": "Spiritual Motivations",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 76,
+        "final_sentence": "I encourage my brothers and sisters of other religions to do the same, since we know that authentic faith not only gives strength to the human heart, but also transforms life, transfigures our goals and sheds light on our relationship to others and with creation as a whole.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=48 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 77,
+        "final_sentence": "In the light of faith",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 78,
+        "final_sentence": "Hence, \u201cresponsibility for God\u2019s earth means that human beings, endowed with intelligence, must respect the laws of nature and the delicate equilibria existing between the creatures of this world\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 79,
+        "final_sentence": "Along this path of wisdom, it is not a matter of indifference to us that so many species are disappearing and that the climate crisis endangers the life of many other beings.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 80,
+        "final_sentence": "As he made his way throughout the land, he often stopped to contemplate the beauty sown by his Father, and invited his disciples to perceive a divine message in things\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 81,
+        "final_sentence": "The world sings of an infinite Love: how can we fail to care for it?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='?'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 82,
+        "final_sentence": "Journeying in communion and commitment",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 83,
+        "final_sentence": "Nonetheless, the technocratic paradigm can isolate us from the world that surrounds us and deceive us by making us forget that the entire world is a \u201ccontact zone\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 84,
+        "final_sentence": "For \u201cas part of the universe\u2026 all of us are linked by unseen bonds and together form a kind of universal family, a sublime communion which fills us with a sacred, affectionate and humble respect\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=35 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 85,
+        "final_sentence": "Let us stop thinking, then, of human beings as autonomous, omnipotent and limitless, and begin to think of ourselves differently, in a humbler but more fruitful way.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 86,
+        "final_sentence": "At the same time, I cannot deny that it is necessary to be honest and recognize that the most effective solutions will not come from individual efforts alone, but above all from major political decisions on the national and international level.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=41 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 87,
+        "final_sentence": "Yet what is important is something less quantitative: the need to realize that there are no lasting changes without cultural changes, without a maturing of lifestyles and convictions within societies, and there are no cultural changes without personal changes.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=39 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 88,
+        "final_sentence": "Let us realize, then, that even though this does not immediately produce a notable effect from the quantitative standpoint, we are helping to bring about large processes of transformation rising from deep within society.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 89,
+        "final_sentence": "As a result, along with indispensable political decisions, we would be making progress along the way to genuine care for one another.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 90,
+        "final_sentence": "For when human beings claim to take God\u2019s place, they become their own worst enemies.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=16 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 91,
+        "final_sentence": "Given in Rome, at the Basilica of Saint John Lateran, on 4 October, the Feast of Saint Francis of Assisi, in the year 2023, the eleventh of my Pontificate.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 92,
+        "final_sentence": "FRANCIS",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='S'"
+        ]
+      }
+    ],
+    "diagnostics": {
+      "total_paragraphs": 93,
+      "kicker_count": 8,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy"
+    }
+  },
+  "claim_license": {
+    "task_surface": "smoothing_diagnosis",
+    "licenses": "AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.",
+    "does_not_license": "An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.",
+    "comparison_set": {
+      "total_paragraphs": 93,
+      "kicker_count": 8,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy",
+      "baseline_source": null
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.",
+      "Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.",
+      "Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** AI-prose smoothing diagnosis\n\n**Reports:** AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.\n\n**Does NOT report:** An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.\n\n### Comparison context\n\n- **baseline source:** None\n- **kicker count:** 8\n- **proper noun detection:** spacy\n- **total paragraphs:** 93\n- **word limit:** 15\n\n### Caveats\n\n- Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.\n- Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.\n- Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance.",
+  "warnings": [],
+  "ai_status": null
+}

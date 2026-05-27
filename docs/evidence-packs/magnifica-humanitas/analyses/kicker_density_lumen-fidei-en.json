@@ -1,0 +1,1171 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "smoothing_diagnosis",
+  "tool": "kicker_density",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/lumen-fidei-en.txt",
+    "words": 18490
+  },
+  "baseline": null,
+  "results": {
+    "signal_path": "aic_8_9.kicker_density",
+    "family": "aic-9-closure-inflation",
+    "value": 0.017699115044247787,
+    "spacing_variance": 0.0,
+    "polarity": "\u2191",
+    "status": "provisional",
+    "task_surface": "smoothing_diagnosis",
+    "claim_license": "voice_diagnostic",
+    "paragraphs": [
+      {
+        "paragraph_index": 0,
+        "final_sentence": "ENCYCLICAL LETTER LUMEN FIDEI OF THE SUPREME PONTIFF FRANCIS TO THE BISHOPS PRIESTS AND DEACONS CONSECRATED PERSONS AND THE LAY FAITHFUL ON FAITH",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=23 > 15",
+          "non_period_final='H'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 1,
+        "final_sentence": "Those who believe, see; they see with a light that illumines their entire journey, for it comes from the risen Christ, the morning star which never sets.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 2,
+        "final_sentence": "An illusory light?",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 3,
+        "final_sentence": "Faith would thus be the illusion of light, an illusion which blocks the path of a liberated humanity to its future.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 4,
+        "final_sentence": "Yet in the absence of light everything becomes confused; it is impossible to tell good from evil, or the road to our destination from other roads which take us in endless circles, going nowhere.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 5,
+        "final_sentence": "A light to be recovered",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 6,
+        "final_sentence": "It is this light of faith that I would now like to consider, so that it can grow and enlighten the present, becoming a star to brighten the horizon of our journey at a time when mankind is particularly in need of light.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 7,
+        "final_sentence": "For those early Christians, faith, as an encounter with the living God revealed in Christ, was indeed a \"mother\", for it had brought them to the light and given birth within them to divine life, a new experience and a luminous vision of existence for which they were prepared to bear public witness to the end.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=56 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 8,
+        "final_sentence": "It clearly showed how faith enriches life in all its dimensions.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 9,
+        "final_sentence": "The Successor of Peter, yesterday, today and tomorrow, is always called to strengthen his brothers and sisters in the priceless treasure of that faith which God has given as a light for humanity\u2019s path.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 10,
+        "final_sentence": "What is the origin of this powerful light which brightens the journey of a successful and fruitful life?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 11,
+        "final_sentence": "WE HAVE BELIEVED IN LOVE (cf. 1 Jn 4:16)",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "non_period_final=')'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 12,
+        "final_sentence": "Abraham, our father in faith",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='h'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 13,
+        "final_sentence": "Faith is our response to a word which engages us personally, to a \"Thou\" who calls us by name.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 14,
+        "final_sentence": "We see how faith, as remembrance of the future, memoria futuri , is thus closely bound up with hope.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 15,
+        "final_sentence": "As Saint Augustine explains: \"Man is faithful when he believes in God and his promises; God is faithful when he grants to man what he has promised\".",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 16,
+        "final_sentence": "Heb 11:19; Rom 4:21).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 17,
+        "final_sentence": "The faith of Israel",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='l'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 18,
+        "final_sentence": "God\u2019s light comes to us through the account of his self-revelation, and thus becomes capable of illuminating our passage through time by recalling his gifts and demonstrating how he fulfils his promises.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 19,
+        "final_sentence": "Herein lies the paradox: by constantly turning towards the Lord, we discover a sure path which liberates us from the dissolution imposed upon us by idols.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 20,
+        "final_sentence": "Faith is God\u2019s free gift, which calls for humility and the courage to trust and to entrust; it enables us to see the luminous path leading to the encounter of God and humanity: the history of salvation.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 21,
+        "final_sentence": "The fullness of Christian faith",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='h'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 22,
+        "final_sentence": "In the love of God revealed in Jesus, faith perceives the foundation on which all reality and its final destiny rest.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 23,
+        "final_sentence": "This love, which did not recoil before death in order to show its depth, is something I can believe in; Christ\u2019s total self-gift overcomes every suspicion and enables me to entrust myself to him completely.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=37 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 24,
+        "final_sentence": "Christians, on the contrary, profess their faith in God\u2019s tangible and powerful love which really does act in history and determines its final destiny: a love that can be encountered, a love fully revealed in Christ\u2019s passion, death and resurrection.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=42 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 25,
+        "final_sentence": "We \"believe in\" Jesus when we personally welcome him into our lives and journey towards him, clinging to him in love and following in his footsteps along the way.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 26,
+        "final_sentence": "This leads us, as Christians, to live our lives in this world with ever greater commitment and intensity.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 27,
+        "final_sentence": "Salvation by faith",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 28,
+        "final_sentence": "As Saint Paul puts it: \"By grace you have been saved through faith, and this is not your own doing; it is the gift of God\" ( Eph 2:8).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 29,
+        "final_sentence": "Faith knows that God has drawn close to us, that Christ has been given to us as a great gift which inwardly transforms us, dwells within us and thus bestows on us the light that illumines the origin and the end of life.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=43 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 30,
+        "final_sentence": "Without being conformed to him in love, without the presence of the Spirit, it is impossible to confess him as Lord (cf. 1 Cor 12:3).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 31,
+        "final_sentence": "The ecclesial form of faith",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 32,
+        "final_sentence": "For those who have been transformed in this way, a new way of seeing opens up, faith becomes light for their eyes.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=22 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 33,
+        "final_sentence": "Is 7:9)",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=')'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 34,
+        "final_sentence": "Faith and truth",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 35,
+        "final_sentence": "From the context we know that Augustine was concerned to show that this trustworthy truth of God is, as the Bible makes clear, his own faithful presence throughout history, his ability to hold together times and ages, and to gather into one the scattered strands of our lives.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 36,
+        "final_sentence": "But precisely because of its intrinsic link to truth, faith is instead able to offer a new light, superior to the king\u2019s calculations, for it sees further into the distance and takes into account the hand of God, who remains faithful to his covenant and his promises.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 37,
+        "final_sentence": "It is a question about the origin of all that is, in whose light we can glimpse the goal and thus the meaning of our common path.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 38,
+        "final_sentence": "Knowledge of the truth and love",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 39,
+        "final_sentence": "Faith\u2019s understanding is born when we receive the immense love of God which transforms us inwardly and enables us to see reality with new eyes.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 40,
+        "final_sentence": "Love is seen as an experience associated with the world of fleeting emotions, no longer with truth.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 41,
+        "final_sentence": "Without truth, love is incapable of establishing a firm bond; it cannot liberate our isolated ego or redeem it from the fleeting moment in order to create life and bear fruit.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 42,
+        "final_sentence": "The two eyes, says William, are faith-filled reason and love, which then become one in rising to the contemplation of God, when our understanding becomes \"an understanding of enlightened love\".",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=31 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 43,
+        "final_sentence": "Faith-knowledge sheds light not only on the destiny of one particular people, but the entire history of the created world, from its origins to its consummation.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 44,
+        "final_sentence": "Faith as hearing and sight",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 45,
+        "final_sentence": "The experience of hearing can thus help to bring out more clearly the bond between knowledge and love.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 46,
+        "final_sentence": "From this standpoint, the biblical understanding of knowledge would be antithetical to the Greek understanding, inasmuch as the latter linked knowledge to sight in its attempt to attain a comprehensive understanding of reality.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 47,
+        "final_sentence": "Sight provides a vision of the entire journey and allows it to be situated within God\u2019s overall plan; without this vision, we would be left only with unconnected parts of an unknown whole.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 48,
+        "final_sentence": "Jn 20:14) and wanting to cling to him, is asked to contemplate him as he ascends to the Father, and finally to her full confession before the disciples: \"I have seen the Lord!\" ( Jn 20:18).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=37 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 49,
+        "final_sentence": "With their own eyes they saw the risen Jesus and they believed; in a word, they were able to peer into the depths of what they were seeing and to confess their faith in the Son of God, seated at the right hand of the Father.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=46 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 50,
+        "final_sentence": "Only when we are configured to Jesus do we receive the eyes needed to see him.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=16 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 51,
+        "final_sentence": "The dialogue between faith and reason",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 52,
+        "final_sentence": "In this circular movement, the light of faith illumines all our human relationships, which can then be lived in union with the gentle love of Christ.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 53,
+        "final_sentence": "The realization that God is light provided Augustine with a new direction in life and enabled him to acknowledge his sinfulness and to turn towards the good.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 54,
+        "final_sentence": "In this way, the personal God of the Bible appeared to him: a God who is able to speak to us, to come down to dwell in our midst and to accompany our journey through history, making himself known in the time of hearing and response.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=46 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 55,
+        "final_sentence": "Not because we will be able to possess all the light, which will always be inexhaustible, but because we will enter wholly into that light.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 56,
+        "final_sentence": "Far from making us inflexible, the security of faith sets us on a journey; it enables witness and dialogue with all.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 57,
+        "final_sentence": "By stimulating wonder before the profound mystery of creation, faith broadens the horizons of reason to shed greater light on the world which discloses itself to scientific investigation.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 58,
+        "final_sentence": "Faith and the search for God",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='d'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 59,
+        "final_sentence": "God is light and he can be found also by those who seek him with a sincere heart.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 60,
+        "final_sentence": "The more Christians immerse themselves in the circle of Christ\u2019s light, the more capable they become of understanding and accompanying the path of every man and woman towards God.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 61,
+        "final_sentence": "Any-one who sets off on the path of doing good to others is already drawing near to God, is already sustained by his help, for it is characteristic of the divine light to brighten our eyes whenever we walk towards the fullness of love.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=45 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 62,
+        "final_sentence": "Faith and theology",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 63,
+        "final_sentence": "Theology thus demands the humility to be \"touched\" by God, admitting its own limitations before the mystery, while striving to investigate, with the discipline proper to reason, the inexhaustible riches of this mystery.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 64,
+        "final_sentence": "On the other hand, because it draws its life from faith, theology cannot consider the magisterium of the Pope and the bishops in communion with him as something extrinsic, a limitation of its freedom, but rather as one of its internal, constitutive dimensions, for the magisterium ensures our contact with the primordial source and thus provides the certainty of attaining to the word of Christ in all its integrity.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=69 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 65,
+        "final_sentence": "I DELIVERED TO YOU WHAT I ALSO RECEIVED (cf. 1 Cor 15:3)",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "non_period_final=')'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 66,
+        "final_sentence": "The Church, mother of our faith",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='h'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 67,
+        "final_sentence": "Christians, in their poverty, plant a seed so rich that it becomes a great tree, capable of filling the world with its fruit.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 68,
+        "final_sentence": "The love which is the Holy Spirit and which dwells in the Church unites every age and makes us contemporaries of Jesus, thus guiding us along our pilgrimage of faith.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 69,
+        "final_sentence": "Tertullian puts this well when he describes the catechumens who, \"after the cleansing which gives new birth\" are welcomed into the house of their mother and, as part of a new family, pray the Our Father together with their brothers and sisters.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=42 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 70,
+        "final_sentence": "The sacraments and the transmission of faith",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 71,
+        "final_sentence": "In this way the Church, in her doctrine, life and worship, perpetuates and transmits to every generation all that she herself is, all that she believes\".",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 72,
+        "final_sentence": "The awakening of faith is linked to the dawning of a new sacramental sense in our lives as human beings and as Christians, in which visible and material realities are seen to point beyond themselves to the mystery of the eternal.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=41 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 73,
+        "final_sentence": "Baptism is something we receive.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=5 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 74,
+        "final_sentence": "It is the road of preparation for baptism, for the transformation of our whole life in Christ.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 75,
+        "final_sentence": "The waters of baptism are indeed faithful and trustworthy, for they flow with the power of Christ\u2019s love, the source of our assurance in the journey of life.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 76,
+        "final_sentence": "Thus, along with life, children are given a fundamental orientation and assured of a good future; this orientation will be further strengthened in the sacrament of Confirmation with the seal of the Holy Spirit.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 77,
+        "final_sentence": "The bread and wine are changed into the body and blood of Christ, who becomes present in his passover to the Father: this movement draws us, body and soul, into the movement of all creation towards its fulfilment in God.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=40 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 78,
+        "final_sentence": "All the truths in which we believe point to the mystery of the new life of faith as a journey of communion with the living God.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 79,
+        "final_sentence": "Faith, prayer and the Decalogue",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='e'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 80,
+        "final_sentence": "From him who is light from light, the only-begotten Son of the Father, we come to know God and can thus kindle in others the desire to draw near to him.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 81,
+        "final_sentence": "Mt 5-7).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 82,
+        "final_sentence": "The Church\u2019s catechesis has traditionally been structured around these four elements; this includes the Catechism of the Catholic Church, which is a fundamental aid for that unitary act with which the Church communicates the entire content of her faith: \"all that she herself is, and all that she believes\".",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=50 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 83,
+        "final_sentence": "The unity and integrity of faith",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='h'"
+        ]
+      },
+      {
+        "paragraph_index": 84,
+        "final_sentence": "Saint Leo the Great could say: \"If faith is not one, then it is not faith\".",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=16 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 85,
+        "final_sentence": "They possess a unity which enriches us because it is given to us and makes us one.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 86,
+        "final_sentence": "For this reason, he says, there is no difference in the faith of \"those able to discourse of it at length\" and \"those who speak but little\", between the greater and the less: the first cannot increase the faith, nor the second diminish it.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=44 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 87,
+        "final_sentence": "By professing the same faith, we stand firm on the same rock, we are transformed by the same Spirit of love, we radiate one light and we have a single insight into reality.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 88,
+        "final_sentence": "Faith is thus shown to be universal, catholic, because its light expands in order to illumine the entire cosmos and all of history.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 89,
+        "final_sentence": "Thanks to the Church\u2019s magisterium, this counsel can come to us in its integrity, and with it the joy of being able to follow it fully.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 90,
+        "final_sentence": "Heb 11:16)",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=')'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 91,
+        "final_sentence": "Faith and the common good",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='d'"
+        ]
+      },
+      {
+        "paragraph_index": 92,
+        "final_sentence": "The God who is himself reliable gives us a city which is reliable.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 93,
+        "final_sentence": "The hands of faith are raised up to heaven, even as they go about building in charity a city based on relationships in which the love of God is laid as a foundation.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 94,
+        "final_sentence": "Faith and the family",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 95,
+        "final_sentence": "Heb 11:11).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 96,
+        "final_sentence": "It assures us that this love is trustworthy and worth embracing, for it is based on God\u2019s faithfulness which is stronger than our every weakness.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 97,
+        "final_sentence": "A light for life in society",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='y'"
+        ]
+      },
+      {
+        "paragraph_index": 98,
+        "final_sentence": "Faith teaches us to see that every man and woman represents a blessing for me, that the light of God\u2019s face shines on me through the faces of my brothers and sisters.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 99,
+        "final_sentence": "Man loses his place in the universe, he is cast adrift in nature, either renouncing his proper moral responsibility or else presuming to be a sort of absolute judge, endowed with an unlimited power to manipulate the world around him.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=40 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 100,
+        "final_sentence": "From a purely anthropological standpoint, unity is superior to conflict; rather than avoiding conflict, we need to confront it in an effort to resolve and move beyond it, to make it a link in a chain, as part of a progress towards unity.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 101,
+        "final_sentence": "If it possesses a creative light for each new moment of history, it is because it sets every event in relationship to the origin and destiny of all things in the Father.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 102,
+        "final_sentence": "Consolation and strength amid suffering",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='g'"
+        ]
+      },
+      {
+        "paragraph_index": 103,
+        "final_sentence": "Even death is illumined and can be experienced as the ultimate call to faith, the ultimate \"Go forth from your land\" ( Gen 12:1), the ultimate \"Come!\" spoken by the Father, to whom we abandon ourselves in the confidence that he will keep us steadfast even in our final passage.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=50 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 104,
+        "final_sentence": "Christ is the one who, having endured suffering, is \"the pioneer and perfecter of our faith\" ( Heb 12:2).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 105,
+        "final_sentence": "The dynamic of faith, hope and charity (cf. 1 Th 1:3; 1 Cor 13:13) thus leads us to embrace the concerns of all men and women on our journey towards that city \"whose architect and builder is God\" ( Heb 11:10), for \"hope does not disappoint\" ( Rom 5:5).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=51 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 106,
+        "final_sentence": "Space hardens processes, whereas time propels towards the future and encourages us to go forward in hope.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 107,
+        "final_sentence": "Blessed is she who believed ( Lk 1:45)",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "non_period_final=')'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 108,
+        "final_sentence": "The Mother of the Lord is the perfect icon of faith; as Saint Elizabeth would say: \"Blessed is she who believed\" ( Lk 1:45).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 109,
+        "final_sentence": "In her the faith journey of the Old Testament was thus taken up into the following of Christ, transformed by him and entering into the gaze of the incarnate Son of God.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 110,
+        "final_sentence": "Gal 4:4).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 111,
+        "final_sentence": "Let us turn in prayer to Mary, Mother of the Church and Mother of our faith.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=16 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 112,
+        "final_sentence": "And may this light of faith always increase in us, until the dawn of that undying day which is Christ himself, your Son, our Lord!",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=25 > 15",
+          "non_period_final='!'",
+          "contains_propn (spacy)"
+        ]
+      }
+    ],
+    "diagnostics": {
+      "total_paragraphs": 113,
+      "kicker_count": 2,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy"
+    }
+  },
+  "claim_license": {
+    "task_surface": "smoothing_diagnosis",
+    "licenses": "AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.",
+    "does_not_license": "An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.",
+    "comparison_set": {
+      "total_paragraphs": 113,
+      "kicker_count": 2,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy",
+      "baseline_source": null
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.",
+      "Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.",
+      "Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** AI-prose smoothing diagnosis\n\n**Reports:** AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.\n\n**Does NOT report:** An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.\n\n### Comparison context\n\n- **baseline source:** None\n- **kicker count:** 2\n- **proper noun detection:** spacy\n- **total paragraphs:** 113\n- **word limit:** 15\n\n### Caveats\n\n- Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.\n- Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.\n- Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance.",
+  "warnings": [],
+  "ai_status": null
+}

@@ -1,0 +1,419 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "craft_restoration",
+  "tool": "aic_pattern_audit",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "texts/fratelli-tutti-en.txt",
+    "words": 38494
+  },
+  "baseline": null,
+  "results": {
+    "patterns": {
+      "negation_hedge": {
+        "label": "Negation Hedge",
+        "severity_note": "'Not X.' / 'Not X. Not Y.' sentence-initial cognitive sorting (earned) or narrator hedge (unearned)",
+        "count": 1,
+        "density_per_1k": 0.02597807450511768,
+        "hits": [
+          {
+            "sentence_index": 1782,
+            "text": "Not even the majority of the social body may violate these rights, by going against the minority\u201d. 274.",
+            "span": "Not even the majority of the social body may violate these rights, by going against the minority\u201d.",
+            "note": "sentence-initial negation followed by affirming sentence"
+          }
+        ]
+      },
+      "correctio": {
+        "label": "Disguised Correctio",
+        "severity_note": "'not X, but Y' inline + 'It is not X. It is Y' frame; cuts on payoff test if affirm repeats negate",
+        "count": 46,
+        "density_per_1k": 1.1949914272354134,
+        "hits": [
+          {
+            "sentence_index": 15,
+            "text": "Unconcerned for the hardships and dangers involved, Francis went to meet the Sultan with the same attitude that he instilled in his disciples: if they found themselves \u201camong the Saracens and other nonbelievers\u201d, without renouncing their own identity they were not to \u201cengage in arguments or disputes",
+            "span": "not to \u201cengage in arguments or disputes, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 22,
+            "text": "Indeed, \u201conly the man who approaches others, not to draw them into his own life, but to help them become ever more fully themselves, can truly be called a father\u201d.",
+            "span": "not to draw them into his own life, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 37,
+            "text": "The following pages do not claim to offer a complete teaching on fraternal love, but rather to consider its universal scope, its openness to every man and woman.",
+            "span": "not claim to offer a complete teaching on fraternal love, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 118,
+            "text": "In this way, \u201cwhat is thrown away are not only food and dispensable objects, but often human beings themselves\u201d.",
+            "span": "not only food and dispensable objects, but o",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 219,
+            "text": "If only this immense sorrow may not prove useless, but enable us to take a step forward towards a new style of life.",
+            "span": "not prove useless, but e",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 263,
+            "text": "Digital campaigns of hatred and destruction, for their part, are not \u2013 as some would have us believe \u2013 a positive form of mutual support, but simply an association of individuals united against a perceived common enemy. \u201cDigital media can also expose people to the risk of addiction, isolation and a ",
+            "span": "not \u2013 as some would have us believe \u2013 a positive form of mutual support, but s",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 538,
+            "text": "He asks us not to decide who is close enough to be our neighbour, but rather that we ourselves become neighbours to all.",
+            "span": "not to decide who is close enough to be our neighbour, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 728,
+            "text": "Not only by providing for their basic needs, but by enabling them to give the best of themselves, even though their performance may be less than optimum, their pace slow or their efficiency limited.",
+            "span": "Not only by providing for their basic needs, but b",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 765,
+            "text": "Solidarity is a word that is not always well received; in certain situations, it has become a dirty word, a word that dare not be said.",
+            "span": "that is not a",
+            "note": "'It is not X. It is Y' frame"
+          },
+          {
+            "sentence_index": 785,
+            "text": "The riches we possess are not our own, but theirs as well\u201d.",
+            "span": "not our own, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 801,
+            "text": "Development must not aim at the amassing of wealth by a few, but must ensure \u201chuman rights \u2013 personal and social, economic and political, including the rights of nations and of peoples\u201d.",
+            "span": "not aim at the amassing of wealth by a few, but m",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 812,
+            "text": "Seen from the standpoint not only of the legitimacy of private property and the rights of its citizens, but also of the first principle of the common destination of goods, we can then say that each country also belongs to the foreigner, inasmuch as a territory\u2019s goods must not be denied to a needy p",
+            "span": "not only of the legitimacy of private property and the rights of its citizens, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 824,
+            "text": "Indeed, justice requires recognizing and respecting not only the rights of individuals, but also social rights and the rights of peoples.",
+            "span": "not only the rights of individuals, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 845,
+            "text": "For \u201cit is not a case of implementing welfare programmes from the top down, but rather of undertaking a journey together, through these four actions, in order to build cities and countries that, while preserving their respective cultural and religious identity, are open to differences and know how t",
+            "span": "not a case of implementing welfare programmes from the top down, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 962,
+            "text": "Other cultures are not \u201cenemies\u201d from which we need to protect ourselves, but differing reflections of the inexhaustible richness of human life.",
+            "span": "not \u201cenemies\u201d from which we need to protect ourselves, but d",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 967,
+            "text": "A living culture, enriched by elements from other places, does not import a mere carbon copy of those new elements, but integrates them in its own unique way.",
+            "span": "not import a mere carbon copy of those new elements, but i",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 975,
+            "text": "For a healthy relationship between love of one\u2019s native land and a sound sense of belonging to our larger human family, it is helpful to keep in mind that global society is not the sum total of different countries, but rather the communion that exists among them.",
+            "span": "not the sum total of different countries, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1031,
+            "text": "And that is not something automatic, but rather a slow, difficult process\u2026 of advancing towards a common project\u201d.",
+            "span": "not something automatic, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1041,
+            "text": "In this way, it does not deny its proper identity, but is open to being mobilized, challenged, broadened and enriched by others, and thus to further growth and development.",
+            "span": "not deny its proper identity, but i",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 1056,
+            "text": "In a genuinely developed society, work is an essential dimension of social life, for it is not only a means of earning one\u2019s daily bread, but also of personal growth, the building of healthy relationships, self-expression and the exchange of gifts.",
+            "span": "not only a means of earning one\u2019s daily bread, but a",
+            "note": "inline 'not X, but Y'"
+          }
+        ]
+      },
+      "pseudo_aphorism": {
+        "label": "Pseudo-Aphorism",
+        "severity_note": "gnomic generalization ('X as Y', 'is the Y of Z', 'There is a kind of'); often has real image right after that does the work",
+        "count": 5,
+        "density_per_1k": 0.1298903725255884,
+        "hits": [
+          {
+            "sentence_index": 188,
+            "text": "Rather, it is closeness; it is the culture of encounter.",
+            "span": "is the culture of encounter.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 442,
+            "text": "That is the meaning of dignity.",
+            "span": "is the meaning of dignity.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 456,
+            "text": "Here, all our distinctions, labels and masks fall away: it is the moment of truth.",
+            "span": "is the moment of truth.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 1171,
+            "text": "Every commitment inspired by the Church\u2019s social doctrine is \u201cderived from charity, which according to the teaching of Jesus is the synthesis of the entire Law (cf.",
+            "span": "is the synthesis of the entire Law (cf.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 1397,
+            "text": "215. \u201cLife, for all its confrontations, is the art of encounter\u201d.",
+            "span": "is the art of encounter\u201d.",
+            "note": "gnomic frame"
+          }
+        ]
+      },
+      "manifesto_cadence": {
+        "label": "Manifesto Cadence",
+        "severity_note": "3+ parallel sentences with same anaphoric head; earned when each escalates/restricts/reveals, unearned when parallel substitutes for development",
+        "count": 4,
+        "density_per_1k": 0.10391229802047072,
+        "hits": [
+          {
+            "sentence_index": 217,
+            "text": "If only this may prove not to be just another tragedy of history from which we learned nothing. // If only we might keep in mind all those elderly persons who died for lack of respirators, partly as a result of the dismantling, year after year, of healthcare systems. // If only this immense sorrow may not prove useless, but enable us to take a step forward towards a new style of life. // If only we might rediscover once for all that we need one another, and that in this way our human family can ",
+            "span": "4 sentences with anaphoric head 'if only'",
+            "note": "run length 4"
+          },
+          {
+            "sentence_index": 1491,
+            "text": "Truth means telling families torn apart by pain what happened to their missing relatives. // Truth means confessing what happened to minors recruited by cruel and violent people. // Truth means recognizing the pain of women who are victims of violence and abuse\u2026 Every act of violence committed against a human being is a wound in humanity\u2019s flesh; every violent death diminishes us as people\u2026 Violence leads to more violence, hatred to more hatred, death to more death.",
+            "span": "3 sentences with anaphoric head 'truth means'",
+            "note": "run length 3"
+          },
+          {
+            "sentence_index": 1709,
+            "text": "Let us not remain mired in theoretical discussions, but touch the wounded flesh of the victims. // Let us look once more at all those civilians whose killing was considered \u201ccollateral damage\u201d. // Let us ask the victims themselves. // Let us think of the refugees and displaced, those who suffered the effects of atomic radiation or chemical attacks, the mothers who lost their children, and the boys and girls maimed or deprived of their childhood. // Let us hear the true stories of these victims o",
+            "span": "5 sentences with anaphoric head 'let us'",
+            "note": "run length 5"
+          },
+          {
+            "sentence_index": 1870,
+            "text": "\u201cIn the name of God, who has created all human beings equal in rights, duties and dignity, and who has called them to live together as brothers and sisters, to fill the earth and make known the values of goodness, love and peace; // \u201cIn the name of innocent human life that God has forbidden to kill, affirming that whoever kills a person is like one who kills the whole of humanity, and that whoever saves a person is like one who saves the whole of humanity; // \u201cIn the name of the poor, the destit",
+            "span": "11 sentences with anaphoric head 'in the'",
+            "note": "run length 11"
+          }
+        ]
+      },
+      "triplet": {
+        "label": "Triplet",
+        "severity_note": "3- or 4-item comma-and lists; classical figure but at high density reads as rhythmic fill",
+        "count": 20,
+        "density_per_1k": 0.5195614901023536,
+        "hits": [
+          {
+            "sentence_index": 32,
+            "text": "In this case, I have felt particularly encouraged by the Grand Imam Ahmad Al-Tayyeb, with whom I met in Abu Dhabi, where we declared that \u201cGod has created all human beings equal in rights, duties and dignity, and has called them to live together as brothers and sisters\u201d.",
+            "span": "equal in rights, duties and dignity, and has called them",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 148,
+            "text": "We should also recognize that \u201ceven though the international community has adopted numerous agreements aimed at ending slavery in all its forms, and has launched various strategies to combat this phenomenon, millions of people today \u2013 children, women and men of all ages \u2013 are deprived of freedom and",
+            "span": "Whether by coercion, or deception, or by physical or",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 207,
+            "text": "The pain, uncertainty and fear, and the realization of our own limitations, brought on by the pandemic have only made it all the more urgent that we rethink our styles of life, our relationships, the organization of our societies and, above all, the meaning of our existence.",
+            "span": "The pain, uncertainty and fear, and the realization of",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 245,
+            "text": "For Christians, this way of thinking and acting is unacceptable, since it sets certain political preferences above deep convictions of our faith: the inalienable dignity of each human person regardless of origin, race or religion, and the supreme law of fraternal love.",
+            "span": "regardless of origin, race or religion, and the supreme law",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 344,
+            "text": "What do you read there?\u2019 He answered, \u2018You shall love the Lord your God with all your heart, and with all your soul, and with all your strength, and with all your mind; and your neighbour as yourself.\u2019 And he said to him, \u2018You have given the right answer; do this, and you will live.\u2019 But wanting to ",
+            "span": "hands of robbers, who stripped him, beat him, and went away",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 382,
+            "text": "\u201cWhen you gather the grapes of your vineyard, do not glean what is left; it shall be for the sojourner, the orphan, and the widow.",
+            "span": "for the sojourner, the orphan, and the widow",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 478,
+            "text": "There are many ways to pass by at a safe distance: we can retreat inwards, ignore others, or be indifferent to their plight.",
+            "span": "can retreat inwards, ignore others, or be indifferent to",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 575,
+            "text": "Still, there are those who appear to feel encouraged or at least permitted by their faith to support varieties of narrow and violent nationalism, xenophobia and contempt, and even the mistreatment of those who are different.",
+            "span": "and violent nationalism, xenophobia and contempt, and even the mistreatment",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 645,
+            "text": "Racism is a virus that quickly mutates and, instead of disappearing, goes into hiding, and lurks in waiting.",
+            "span": "quickly mutates and, instead of disappearing, goes into hiding, and lurks in waiting",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 678,
+            "text": "Free of every label and position, he was able to interrupt his journey, change his plans, and unexpectedly come to the aid of an injured person who needed his help.",
+            "span": "interrupt his journey, change his plans, and unexpectedly come to",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1066,
+            "text": "Charity, on the other hand, unites both dimensions \u2013 the abstract and the institutional \u2013 since it calls for an effective process of historical change that embraces everything: institutions, law, technology, experience, professional expertise, scientific analysis, administrative procedures, and so f",
+            "span": "experience, professional expertise, scientific analysis, administrative procedures, and so forth",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1204,
+            "text": "The politician, on the other hand, builds a bridge, and that too is an act of charity.",
+            "span": "the other hand, builds a bridge, and that too is",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1274,
+            "text": "Yet beyond this, those who love, and who no longer view politics merely as a quest for power, \u201cmay be sure that none of our acts of love will be lost, nor any of our acts of sincere concern for others.",
+            "span": "Yet beyond this, those who love, and who no longer",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1390,
+            "text": "The intellect can investigate the reality of things through reflection, experience and dialogue, and come to recognize in that reality, which transcends it, the basis of certain universal moral demands.",
+            "span": "things through reflection, experience and dialogue, and come to recognize",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1539,
+            "text": "The Latin American Bishops have observed that \u201conly the closeness that makes us friends can enable us to appreciate deeply the values of the poor today, their legitimate desires, and their own manner of living the faith.",
+            "span": "the poor today, their legitimate desires, and their own manner",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1557,
+            "text": "Yet there is a risk that an inadequate understanding and presentation of these profound convictions can lead to fatalism, apathy and injustice, or even intolerance and violence.",
+            "span": "lead to fatalism, apathy and injustice, or even intolerance and",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1566,
+            "text": "Some texts are very clear in this regard: we are told to admonish our opponents \u201cwith gentleness\u201d ( 2 Tim 2:25) and encouraged \u201cto speak evil of no one, to avoid quarreling, to be gentle, and to show every courtesy to everyone.",
+            "span": "of no one, to avoid quarreling, to be gentle, and to show every",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1772,
+            "text": "In the words of the Bishops of India, \u201cthe goal of dialogue is to establish friendship, peace and harmony, and to share spiritual and moral values and experiences in a spirit of truth and love\u201d.",
+            "span": "to establish friendship, peace and harmony, and to share spiritual",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1870,
+            "text": "\u201cIn the name of God, who has created all human beings equal in rights, duties and dignity, and who has called them to live together as brothers and sisters, to fill the earth and make known the values of goodness, love and peace;",
+            "span": "equal in rights, duties and dignity, and who has called",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 1897,
+            "text": "May we recognize the goodness and beauty that you have sown in each of us, and thus forge bonds of unity, common projects, and shared dreams.",
+            "span": "bonds of unity, common projects, and shared dreams",
+            "note": "3- or 4-item comma-separated list"
+          }
+        ]
+      },
+      "professional_parallel_stack": {
+        "label": "Professional-Parallel Stack",
+        "severity_note": "3+ adjacent paragraphs with same opening clause structure ('A X may Y', 'A Z may Y'); performs comprehensiveness without differentiating",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "false_balance": {
+        "label": "False-Balance Construction",
+        "severity_note": "'while reasonable people may disagree', both-sidesing without specifying the disagreement",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "hedge_and_affirm": {
+        "label": "Hedge-and-Affirm",
+        "severity_note": "'while X is generally true, in some cases Y' performs caution while saying nothing definite",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "recommendation_template": {
+        "label": "Recommendation Template",
+        "severity_note": "'DC must commit to', 'we urge X', generic-actor + modal + generic-verb without specifying action",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "authority_laundering": {
+        "label": "Authority Laundering",
+        "severity_note": "'research has shown', 'experts agree' without naming the research or the experts",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      }
+    }
+  },
+  "claim_license": {
+    "task_surface": "craft_restoration",
+    "licenses": "A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.",
+    "does_not_license": "An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.",
+    "comparison_set": {
+      "target_words": 38494,
+      "baseline_words": 0,
+      "has_baseline": false,
+      "n_patterns_reported": 10
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.",
+      "The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.",
+      "Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis)."
+    ],
+    "references": [
+      "references/aic-flags.md",
+      "references/source-triage.md"
+    ]
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** craft restoration\n\n**Reports:** A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.\n\n**Does NOT report:** An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.\n\n### Comparison context\n\n- **baseline words:** 0\n- **has baseline:** False\n- **n patterns reported:** 10\n- **target words:** 38494\n\n### Caveats\n\n- Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.\n- The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.\n- Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis).\n\n### References\n\n- references/aic-flags.md\n- references/source-triage.md",
+  "warnings": [],
+  "ai_status": null
+}

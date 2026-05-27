@@ -1,0 +1,3144 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "smoothing_diagnosis",
+  "tool": "kicker_density",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/dilexit-nos-en.txt",
+    "words": 27982
+  },
+  "baseline": null,
+  "results": {
+    "signal_path": "aic_8_9.kicker_density",
+    "family": "aic-9-closure-inflation",
+    "value": 0.058823529411764705,
+    "spacing_variance": 19.241690337878936,
+    "polarity": "\u2191",
+    "status": "provisional",
+    "task_surface": "smoothing_diagnosis",
+    "claim_license": "voice_diagnostic",
+    "paragraphs": [
+      {
+        "paragraph_index": 0,
+        "final_sentence": "ENCYCLICAL LETTER DILEXIT NOS OF THE HOLY FATHER FRANCIS ON THE HUMAN AND DIVINE LOVE OF THE HEART OF JESUS CHRIST",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=21 > 15",
+          "non_period_final='T'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 1,
+        "final_sentence": "Because of Jesus, \u201cwe have come to know and believe in the love that God has for us\u201d ( 1 Jn 4:16).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 2,
+        "final_sentence": "CHAPTER ONE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 3,
+        "final_sentence": "THE IMPORTANCE OF THE HEART",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='T'"
+        ]
+      },
+      {
+        "paragraph_index": 4,
+        "final_sentence": "Yet living as we do in an age of superficiality, rushing frenetically from one thing to another without really knowing why, and ending up as insatiable consumers and slaves to the mechanisms of a market unconcerned about the deeper meaning of our lives, all of us need to rediscover the importance of the heart.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=54 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 5,
+        "final_sentence": "WHAT DO WE MEAN BY \u201cTHE HEART\u201d?",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 6,
+        "final_sentence": "From ancient times, then, there has been an appreciation of the fact that human beings are not simply a sum of different skills, but a unity of body and soul with a coordinating centre that provides a backdrop of meaning and direction to all that a person experiences.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=48 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 7,
+        "final_sentence": "Yet, beyond and in spite of this, something was happening deep within them: \u201cWere not our hearts burning within us while he was talking to us on the road?\u201d (Lk 24:32).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 8,
+        "final_sentence": "Only when Samson opened his heart to her, did she realize \u201cthat he had told her his whole secret\u201d ( Judg 16:18).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 9,
+        "final_sentence": "False appearances and untruths ultimately leave us empty-handed.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 10,
+        "final_sentence": "In the dialect we spoke, those cookies were called \u2018lies\u2019\u2026 My grandmother explained why: \u2018Like lies, they look big, but are empty inside; they are false, unreal\u2019\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=27 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 11,
+        "final_sentence": "All these questions lead us back to the heart.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 12,
+        "final_sentence": "RETURNING TO THE HEART",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='T'"
+        ]
+      },
+      {
+        "paragraph_index": 13,
+        "final_sentence": "No room is left for the heart.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=7 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 14,
+        "final_sentence": "The failure to make room for the heart, as distinct from our human powers and passions viewed in isolation from one another, has resulted in a stunting of the idea of a personal centre, in which love, in the end, is the one reality that can unify all the others.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=50 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 15,
+        "final_sentence": "At the end of our lives, that alone will matter.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 16,
+        "final_sentence": "Hence, if the heart is not alive, man remains a stranger to himself\u201d. []",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final=']'"
+        ]
+      },
+      {
+        "paragraph_index": 17,
+        "final_sentence": "The will desires the greater good that the heart recognizes, while the imagination and emotions are themselves guided by the beating of the heart.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 18,
+        "final_sentence": "That is not the case with the heart.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=8 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 19,
+        "final_sentence": "The word \u201cheart\u201d evokes the inmost core of our person, and thus it enables us to understand ourselves in our integrity and not merely under one isolated aspect.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 20,
+        "final_sentence": "The \u2018heart\u2019 listens in a non-metaphoric way to \u2018the silent voice\u2019 of being, allowing itself to be tempered and determined by it\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 21,
+        "final_sentence": "THE HEART UNITES THE FRAGMENTS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 22,
+        "final_sentence": "As Heidegger puts it, to be open to the divine we need to build a \u201cguest house\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 23,
+        "final_sentence": "We become ourselves only to the extent that we acquire the ability to acknowledge others, while only those who can acknowledge and accept themselves are then able to encounter others.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 24,
+        "final_sentence": "What Mary \u201ckept\u201d was not only her memory of what she had seen and heard, but also those aspects of it that she did not yet understand; these nonetheless remained present and alive in her memory, waiting to be \u201cput together\u201d in her heart.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=44 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 25,
+        "final_sentence": "The fork, the joke, the window, the ball, the shoebox, the book, the bird, the flower: all of these live on as precious memories \u201ckept\u201d deep in our heart.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 26,
+        "final_sentence": "In the deepest fibre of our being, we were made to love and to be loved.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 27,
+        "final_sentence": "To see these elderly women weep, and not feel that this is something intolerable, is a sign of a world that has grown heartless.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=24 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 28,
+        "final_sentence": "It follows that, in contemplating the meaning of our lives, perhaps the most decisive question we can ask is, \u201cDo I have a heart?\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "non_period_final='\u201d'"
+        ]
+      },
+      {
+        "paragraph_index": 29,
+        "final_sentence": "FIRE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 30,
+        "final_sentence": "It is not about intellectual concepts that need to be put into practice in our daily lives, as if affectivity and practice were merely the effects of \u2013 and dependent upon \u2013 the data of knowledge.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=34 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 31,
+        "final_sentence": "Accepting his friendship is a matter of the heart; it is what constitutes us as persons in the fullest sense of that word.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=23 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 32,
+        "final_sentence": "So fill it with Thee, that neither the events of the day nor the circumstances of the time may have power to ruffle it, but that in Thy love and Thy fear it may have peace\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 33,
+        "final_sentence": "Only the heart is capable of setting our other powers and passions, and our entire person, in a stance of reverence and loving obedience before the Lord.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 34,
+        "final_sentence": "THE WORLD CAN CHANGE, BEGINNING WITH THE HEART",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='T'"
+        ]
+      },
+      {
+        "paragraph_index": 35,
+        "final_sentence": "Our hearts, united with the heart of Christ, are capable of working this social miracle.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 36,
+        "final_sentence": "It explains that human beings \u201cby their interior life, transcend the entire material universe; they experience this deep interiority when they enter into their own heart, where God, who probes the heart, awaits them, and where they decide their own destiny in the sight of God\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=46 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 37,
+        "final_sentence": "There, in that heart, we truly come at last to know ourselves and we learn how to love.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=18 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 38,
+        "final_sentence": "May he pour out the treasures of his light and love, so that our world, which presses forward despite wars, socio-economic disparities and uses of technology that threaten our humanity, may regain the most important and necessary thing of all: its heart.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=43 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 39,
+        "final_sentence": "CHAPTER TWO",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='O'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 40,
+        "final_sentence": "ACTIONS AND WORDS OF LOVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 41,
+        "final_sentence": "It stands at the origin of our faith, as the wellspring that refreshes and enlivens our Christian beliefs.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 42,
+        "final_sentence": "ACTIONS THAT REFLECT THE HEART",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='T'"
+        ]
+      },
+      {
+        "paragraph_index": 43,
+        "final_sentence": "Let us now turn to the place where our faith can encounter this truth: the word of God.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 44,
+        "final_sentence": "The Son of God became incarnate and \u201cemptied himself, taking the form of a slave\u201d ( Phil 2:7).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 45,
+        "final_sentence": "Christ shows that God is closeness, compassion and tender love.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 46,
+        "final_sentence": "In his compassion, God does not love us with words; he comes forth to meet us and, by his closeness, he shows us the depth of his tender love\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 47,
+        "final_sentence": "When the Pharisees criticized him for his closeness to people deemed base or sinful, Jesus replied, \u201cI desire mercy, not sacrifice\u201d ( Mt 9:13).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 48,
+        "final_sentence": "Jesus always finds a way to be present in your life, so that you can encounter him.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 49,
+        "final_sentence": "JESUS\u2019 GAZE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 50,
+        "final_sentence": "So it was when, \u201cas he walked by the Sea of Galilee, he saw two brothers... and as he went from there, he saw two other brothers\u201d ( Mt 4:18, 21).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=31 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 51,
+        "final_sentence": "To Nathanael, standing apart and busy about his own affairs, he could say, \u201cI saw you under the fig tree before Philip called you\u201d ( Jn 1:48).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 52,
+        "final_sentence": "How reassuring it is to know that, even if others are not aware of our good intentions or actions, Jesus sees them and regards them highly.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 53,
+        "final_sentence": "Our Lady carefully pondered the things she had experienced; she \u201ctreasured them\u2026 in her heart\u201d ( Lk 2:19, 51) and, with Saint Joseph, she taught Jesus from his earliest years to be attentive in this same way.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=37 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 54,
+        "final_sentence": "JESUS\u2019 WORDS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 55,
+        "final_sentence": "In this sense, he could say to his disciples, \u201cAbide in me\u201d ( Jn 15:4).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 56,
+        "final_sentence": "It is clear that Jesus was not indifferent to the daily cares and concerns of people, such as their weariness or hunger: \u201cI have compassion for this crowd... they have nothing to eat... they will faint on the way, and some of them have come from a great distance\u201d ( Mk 8:2-3).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=53 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 57,
+        "final_sentence": "This inner turmoil finds its most powerful expression in his cry from the cross: \u201cMy God, my God, why have you forsaken me?\u201d ( Mk 15:34).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 58,
+        "final_sentence": "At a time when many were seeking salvation, prosperity or security elsewhere, Paul, moved by the Spirit, was able to see farther and to marvel at the greatest and most essential thing of all: \u201cChrist loved me\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=37 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 59,
+        "final_sentence": "Now, after considering Christ and seeing how his actions and words grant us insight into his heart, let us turn to the Church\u2019s reflection on the holy mystery of the Lord\u2019s Sacred Heart.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 60,
+        "final_sentence": "CHAPTER THREE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 61,
+        "final_sentence": "THIS IS THE HEART THAT HAS LOVED SO GREATLY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 62,
+        "final_sentence": "More than any other part of his body, the heart of Jesus is \u201cthe natural sign and symbol of his boundless love\u201d. [8]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=23 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 63,
+        "final_sentence": "WORSHIPING CHRIST",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='T'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 64,
+        "final_sentence": "We venerate that image, yet our worship is directed solely to the living Christ, in his divinity and his plenary humanity, so that we may be embraced by his human and divine love.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 65,
+        "final_sentence": "Any act of love or worship of his heart is thus \u201creally and truly given to Christ himself\u201d, [0] since it spontaneously refers back to him and is \u201ca symbol and a tender image of the infinite love of Jesus Christ\u201d. [1]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=42 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 66,
+        "final_sentence": "The same Christ who loved us to the very end, opening wide his arms on the cross, who then rose from the dead and now lives among us in glory.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 67,
+        "final_sentence": "VENERATING HIS IMAGE",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='E'"
+        ]
+      },
+      {
+        "paragraph_index": 68,
+        "final_sentence": "It was not devised at a desk or designed by an artist; it is \u201cno imaginary symbol, but a real symbol which represents the centre, the source from which salvation flowed for all humanity\u201d. [2]",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=35 > 15",
+          "non_period_final=']'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 69,
+        "final_sentence": "In the course of history, the heart has taken on unique symbolic value that is more than merely conventional.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 70,
+        "final_sentence": "In this way, his summons to a personal relationship of encounter and dialogue will become all the more meaningful. [3] The venerable image portraying Christ holding out his loving heart also shows him looking directly at us, inviting us to encounter, dialogue and trust; it shows his strong hands capable of supporting us and his lips that speak personally to each of us.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=63 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 71,
+        "final_sentence": "The image of the heart should lead us to contemplate Christ in all the beauty and richness of his humanity and divinity.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 72,
+        "final_sentence": "Rather, \u201cthrough these images that we kiss, and before which we kneel and uncover our heads, we are adoring Christ\u201d. [4]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=21 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 73,
+        "final_sentence": "Standing before the image, we stand before Christ, and in his presence, \u201clove pauses, contemplates mystery, and enjoys it in silence\u201d. [5]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=22 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 74,
+        "final_sentence": "A more abstract or stylized form of devotion would not necessarily be more faithful to the Gospel, for in this eloquent and tangible sign we see how God willed to reveal himself and to draw close to us.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 75,
+        "final_sentence": "A LOVE THAT IS TANGIBLE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 76,
+        "final_sentence": "And the heart is the symbol of that love.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 77,
+        "final_sentence": "The image of his heart of flesh helps us to do precisely this.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=13 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 78,
+        "final_sentence": "Indeed, \u201cthe heart of Jesus Christ, hypostatically united to the divine Person of the Word, beyond doubt throbbed with love and every other tender affection\u201d. [6]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=26 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 79,
+        "final_sentence": "Saint Basil emphasized that the Lord\u2019s incarnation was not something fanciful, and that \u201cthe Lord possessed our natural affections\u201d. [7] Saint John Chrysostom pointed to an example: \u201cHad he not possessed our nature, he would not have experienced sadness from time to time\u201d. [8] Saint Ambrose stated that \u201cin taking a soul, he took on the passions of the soul\u201d. [9] For Saint Augustine, our human affections, which Christ assumed, are now open to the life of grace: \u201cThe Lord Jesus assumed these affections of our human weakness, as he did the flesh of our human weakness, not out of necessity, but consciously and freely... lest any who feel grief and sorrow amid the trials of life should think themselves separated from his grace\u201d. [0] Finally, Saint John Damascene viewed the genuine affections shown by Christ in his humanity as proof that he assumed our nature in its entirety in order to redeem and transform it in its entirety: Christ, then, assumed all that is part of human nature, so that all might be sanctified. [1]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=177 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 80,
+        "final_sentence": "Reason and logic took other directions\u201d. [2]",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=']'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 81,
+        "final_sentence": "A THREEFOLD LOVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 82,
+        "final_sentence": "Thus, we can contemplate and encounter the infinite in the finite, the invisible and ineffable mystery in the human heart of Jesus the Nazarene\u201d. [3]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=25 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 83,
+        "final_sentence": "Finally, \u201cit is a symbol also of his sensible love\u201d. [4]",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=']'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 84,
+        "final_sentence": "For \u201cby faith, through which we believe that the human and divine nature were united in the Person of Christ, we can see the closest bonds between the tender love of the physical heart of Jesus and the twofold spiritual love, namely human and divine\u201d. [5]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=46 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 85,
+        "final_sentence": "It is precisely in his human love, and not apart from it, that we encounter his divine love: we discover \u201cthe infinite in the finite\u201d. [6]",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=26 > 15",
+          "non_period_final=']'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 86,
+        "final_sentence": "From ancient times, the Church has taught that we are to \u201cadore one and the same Christ, the Son of God and of man, consisting of and in two inseparable and undivided natures\u201d. [7] And we do so \u201cwith one act of adoration\u2026 inasmuch as the Word became flesh\u201d. [8] Christ is in no way \u201cworshipped in two natures, whereby two acts of worship are introduced\u201d; instead, we venerate \u201cby one act of worship God the Word made flesh, together with his own flesh\u201d. [9]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=85 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 87,
+        "final_sentence": "Christ is the wounded stag, wounded when we fail to let ourselves be touched by his love, who descends to the streams of water to quench his thirst and is comforted whenever we turn to him:",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=36 > 15",
+          "non_period_final=':'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 88,
+        "final_sentence": "\u201c Return, dove!",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='!'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 89,
+        "final_sentence": "The wounded stag",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='g'"
+        ]
+      },
+      {
+        "paragraph_index": 90,
+        "final_sentence": "is in sight on the hill,",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final=','"
+        ]
+      },
+      {
+        "paragraph_index": 91,
+        "final_sentence": "cooled by the breeze of your flight \u201d. [2]",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=']'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 92,
+        "final_sentence": "TRINITARIAN PERSPECTIVES",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 93,
+        "final_sentence": "As source and fullness, the Father is ultimately the one to be glorified. [3]",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 94,
+        "final_sentence": "In this sense, Saint John Paul II could say that, \u201cthe whole of the Christian life is like a great pilgrimage to the house of the Father\u201d. [4] This too was the experience of Saint Ignatius of Antioch on his path to martyrdom: \u201cIn me there is left no spark of desire for mundane things, but only a murmur of living water that whispers within me, \u2018Come to the Father\u2019\u201d. [5]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=71 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 95,
+        "final_sentence": "Jesus\u2019 life among us was a journey of response to the constant call of his human heart to come to the Father. [7]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=23 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 96,
+        "final_sentence": "In his human heart, he had rejoiced at hearing the Father say to him: \u201cYou are my Son, the Beloved; with you I am well pleased\u201d ( Mk 1:11).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=29 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 97,
+        "final_sentence": "His last words, full of trust, were, \u201cFather, into your hands I commend my spirit\u201d ( Lk 23:46).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 98,
+        "final_sentence": "He alone can cause our human hearts to draw strength from that fullness, step by step\u201d. [3]",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=17 > 15",
+          "non_period_final=']'",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 99,
+        "final_sentence": "Father!\u2019\u201d ( Rom 8:15).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 100,
+        "final_sentence": "For this reason, the liturgy, through the enlivening work of the Spirit, always addresses the Father from the risen heart of Christ.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 101,
+        "final_sentence": "RECENT TEACHINGS OF THE MAGISTERIUM",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='M'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 102,
+        "final_sentence": "In recent centuries, this spirituality has gradually taken on the specific form of devotion to the Sacred Heart of Jesus.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=20 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 103,
+        "final_sentence": "At the end of the nineteenth century, Leo XIII encouraged us to consecrate ourselves to the Sacred Heart, thus uniting our call to union with Christ and our wonder before the magnificence of his infinite love. [9] Some thirty years later, Pius XI presented this devotion as a \u201csumma\u201d of the experience of Christian faith. [0] Pius XII went on to declare that adoration of the Sacred Heart expresses in an outstanding way, as a sublime synthesis, the worship we owe to Jesus Christ. [1]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=85 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 104,
+        "final_sentence": "The men and women of the third millennium need the heart of Christ in order to know God and to know themselves; they need it to build the civilization of love\u201d. [2]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=32 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 105,
+        "final_sentence": "All of us, when we pause in silence, need to feel not only the beating of our own heart, but deeper still, the beating of a trustworthy presence, perceptible with faith\u2019s senses and yet much more real: the presence of Christ, the heart of the world\u201d. [3]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=48 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 106,
+        "final_sentence": "FURTHER REFLECTIONS AND RELEVANCE FOR OUR TIMES",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 107,
+        "final_sentence": "Pius XII made it clear that the Church does not claim that, \u201cwe must contemplate and adore in the heart of Jesus a \u2018formal\u2019 image, that is, a perfect and absolute sign of his divine love, for the essence of this love can in no way be adequately expressed by any created image whatsoever\u201d. [4]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=55 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 108,
+        "final_sentence": "At the same time, however, we should be mindful that, as Pius XII pointed out, this devotion cannot be said \u201cto owe its origin to private revelations\u201d. [7]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=28 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 109,
+        "final_sentence": "Amid the frenetic pace of today\u2019s world and our obsession with free time, consumption and diversion, cell phones and social media, we forget to nourish our lives with the strength of the Eucharist.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 110,
+        "final_sentence": "When we carry it out with devotion, in union with many of our brothers and sisters and discover in the Eucharist the immense love of the heart of Christ, we \u201cadore, together with the Church, the sign and manifestation of the divine love that went so far as to love, through the heart of the incarnate Word, the human race\u201d. [8]",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=61 > 15",
+          "non_period_final=']'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 111,
+        "final_sentence": "Pius XII described as \u201cfalse mysticism\u201d [9] the elitist attitude of those groups that saw God as so sublime, separate and distant that they regarded affective expressions of popular piety as dangerous and in need of ecclesiastical oversight.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 112,
+        "final_sentence": "I hope this will also appeal to today\u2019s sensitivities and thus help us to confront the dualisms, old and new, to which this devotion offers an effective response.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 113,
+        "final_sentence": "This too is the expression of an illusory and disembodied otherworldliness.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 114,
+        "final_sentence": "For there we find the whole Gospel, a synthesis of the truths of our faith, all that we adore and seek in faith, all that responds to our deepest needs.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 115,
+        "final_sentence": "No other words are needed.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=5 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 116,
+        "final_sentence": "In the following chapters, we will emphasize two essential aspects that contemporary devotion to the Sacred Heart needs to combine, so that it can continue to nourish us and bring us closer to the Gospel: personal spiritual experience and communal missionary commitment.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=42 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 117,
+        "final_sentence": "CHAPTER FOUR",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='R'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 118,
+        "final_sentence": "A LOVE THAT GIVES ITSELF AS DRINK",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='K'"
+        ]
+      },
+      {
+        "paragraph_index": 119,
+        "final_sentence": "By reading several texts from the Old and the New Testaments, we will gain insight into the word of God that has guided the great spiritual pilgrimage of his people down the ages.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 120,
+        "final_sentence": "A GOD WHO THIRSTS FOR LOVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 121,
+        "final_sentence": "This water would bestow on God\u2019s people the fullness of life, like a fountain flowing from the Temple and bringing a wealth of life and salvation in its wake. \u201cI saw on the bank of the river a great many trees on the one side and on the other\u2026 and wherever that river goes, every living creature will live\u2026 and when that river enters the sea, its waters will become fresh; everything will live where the river goes\u201d ( Ezek 47:7-9).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=83 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 122,
+        "final_sentence": "It included a rite of offering water each morning, which became most solemn on the final day of the festival, when a great procession took place towards the Temple, the altar was circled seven times and the water was offered to God amid loud cries of joy.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=47 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 123,
+        "final_sentence": "The dawn of the messianic era was described as a fountain springing up for the people: \u201cI will pour out a spirit of compassion and supplication on the house of David and the inhabitants of Jerusalem, and they shall look on him whom they have pierced\u2026 On that day, a fountain shall be opened for the house of David and the inhabitants of Jerusalem, to cleanse them from sin and impurity\u201d ( Zech 12:10; 13:1).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=76 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 124,
+        "final_sentence": "The open fountain is the wounded side of Christ.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 125,
+        "final_sentence": "That fulfilment was to come on the cross, in the blood and water that flowed from the Lord\u2019s side.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=20 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 126,
+        "final_sentence": "The Book of Revelation takes up the prophecies of the pierced one and the fountain: \u201cevery eye will see him, even those who pierced him\u201d ( Rev 1:7); \u201cLet everyone who is thirsty come; let anyone who wishes take the water of life as a gift\u201d ( Rev 22:17).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=49 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 127,
+        "final_sentence": "Let us now recall some of his words:",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final=':'"
+        ]
+      },
+      {
+        "paragraph_index": 128,
+        "final_sentence": "\u201cBecause you are precious in my sight and honoured, I love you\u201d ( Is 43:4).",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 129,
+        "final_sentence": "See, I have inscribed you on the palms of my hands\u201d ( Is 49:15-16).",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 130,
+        "final_sentence": "\u201cFor the mountains may depart, and the hills be removed, but my steadfast love shall not depart from you, and my covenant of peace shall not be removed\u201d ( Is 54:10).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=31 > 15",
+          "contains_digit"
+        ]
+      },
+      {
+        "paragraph_index": 131,
+        "final_sentence": "\u201cI have loved you with an everlasting love; therefore I have continued my faithfulness to you\u201d ( Jer 31:3).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 132,
+        "final_sentence": "\u201cThe Lord, your God, is in your midst, a warrior who gives you victory; he will rejoice over you with gladness, he will renew you in his love; he will exult over you with loud singing\u201d ( Zeph 3:17).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=39 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 133,
+        "final_sentence": "Hos 11:9), and it was to find its most sublime expression in Christ, his definitive Word of love.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 134,
+        "final_sentence": "As Saint John Paul II pointed out, \u201cthe essential elements of devotion [to the Sacred Heart] belong in a permanent fashion to the spirituality of the Church throughout her history; for since the beginning, the Church has looked to the heart of Christ pierced on the Cross\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=47 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 135,
+        "final_sentence": "ECHOES OF THE WORD IN HISTORY",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='Y'"
+        ]
+      },
+      {
+        "paragraph_index": 136,
+        "final_sentence": "Drink of Christ, for from his side flows living water\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 137,
+        "final_sentence": "As Saint Jerome explains, a person capable of contemplation \u201cdoes not delight in the beauty of that stream of water, but drinks of the living water flowing from the side of the Lord\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 138,
+        "final_sentence": "The wounds inflicted on his body have disclosed to us the secrets of his heart; they enable us to contemplate the great mystery of his compassion\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 139,
+        "final_sentence": "Happy those who, having plunged into those depths, have been hidden by you in the recess of your heart\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=19 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 140,
+        "final_sentence": "He presents the heart of Christ as the source of the sacraments and of grace, and urges that our contemplation of that heart become a relationship between friends, a personal encounter of love.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 141,
+        "final_sentence": "This was permitted by divine Providence so that, in the blood and water flowing from that wound, the price of our salvation might flow from the hidden wellspring of his heart, enabling the Church\u2019s sacraments to confer the life of grace and thus to be, for those who live in Christ, like a cup filled from the living fount springing up to life eternal\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=65 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 142,
+        "final_sentence": "Bonaventure then asks us to take another step, in order that our access to grace not be seen as a kind of magic or neo-platonic emanation, but rather as a direct relationship with Christ, a dwelling in his heart, so that whoever drinks from that source becomes a friend of Christ, a loving heart. \u201cRise up, then, O soul who are a friend of Christ, and be the dove that nests in the cleft in the rock; be the sparrow that finds a home and constantly watches over it; be the turtledove that hides the offspring of its chaste love in that most holy cleft\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=106 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 143,
+        "final_sentence": "THE SPREAD OF DEVOTION TO THE HEART OF CHRIST",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='T'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 144,
+        "final_sentence": "This notwithstanding, the Church today rejects nothing of the good that the Holy Spirit has bestowed on us down the centuries, for she knows that it will always be possible to discern a clearer and deeper meaning in certain aspects of that devotion, and to gain new insights over the course of time.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=53 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 145,
+        "final_sentence": "Saint Gertrude and Saint Mechtilde have been considered among \u201cthe most intimate confidants of the Sacred Heart\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=17 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 146,
+        "final_sentence": "Saint Catherine of Siena wrote that the Lord\u2019s sufferings are impossible for us to comprehend, but the open heart of Christ enables us to have a lively personal encounter with his boundless love. \u201cI wished to reveal to you the secret of my heart, allowing you to see it open, so that you can understand that I have loved you so much more than I could have proved to you by the suffering that I once endured\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=78 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 147,
+        "final_sentence": "Devotion to the heart of Christ slowly passed beyond the walls of the monasteries to enrich the spirituality of saintly teachers, preachers and founders of religious congregations, who then spread it to the farthest reaches of the earth.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 148,
+        "final_sentence": "Following this, between the years 1670 and 1671, the bishops of Coutances, Evreux, Bayeux, Lisieux and Rouen authorized the celebration of the feast for their respective dioceses\u201d.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=27 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 149,
+        "final_sentence": "SAINT FRANCIS DE SALES",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 150,
+        "final_sentence": "We see this expressed in his letter to Saint Jane Francis de Chantal: \u201cI am certain that we will remain no longer in ourselves\u2026 but dwell forever in the Lord\u2019s wounded side, for apart from him not only can we do nothing, but even if we were able, we would lack the desire to do anything\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=57 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 151,
+        "final_sentence": "Surely they will be there too; for even if our hearts have no love, they nonetheless possess a desire for love and the beginnings of love\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=26 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 152,
+        "final_sentence": "Let us remain here, in this holy abode\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=8 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 153,
+        "final_sentence": "And to do so with a love marked by perfect and absolute trust, abandoning themselves to grace and to the care of the eternal love that divine Providence feels for them\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=31 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 154,
+        "final_sentence": "For this reason, when looking for a symbol to convey his vision of spiritual life, Francis de Sales concluded: \u201cI have thought, dear Mother, if you agree, that we should take as our emblem a single heart pierced by two arrows, the whole enclosed in a crown of thorns\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=49 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 155,
+        "final_sentence": "A NEW DECLARATION OF LOVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 156,
+        "final_sentence": "Jesus said: \u201cMy divine Heart is so inflamed with love for men, and for you in particular, that, no longer able to contain in itself the flames of its ardent charity, it must pour them out through you and be manifested to them, in order to enrich them with its precious treasures which I now reveal to you\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=58 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 157,
+        "final_sentence": "In subsequent appearances, that consoling message was reiterated: \u201cHe revealed to me the ineffable wonders of his pure love and to what extremes it had led him to love mankind\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 158,
+        "final_sentence": "More important than any individual detail is the core of the message handed on to us, which can be summed up in the words heard by Saint Margaret Mary: \u201cThis is the heart that so loved human beings that it has spared nothing, even to emptying and consuming itself in order to show them its love\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=56 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 159,
+        "final_sentence": "And so, this lovable heart being our all in all, we can say with Saint Paul that we no longer live our own lives, but it is he who lives within us\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 160,
+        "final_sentence": "In the first message that Saint Margaret Mary received, this invitation was expressed in vivid, fervent and loving terms. \u201cHe asked for my heart, which I asked him to take, which he did and then placed myself in his own adorable heart, from which he made me see mine like a little atom consumed in the fiery furnace of his own\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=61 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 161,
+        "final_sentence": "Then it was that I discovered the ineffable wonders of his pure love, with which he loves men to the utmost, yet receives from them only ingratitude and indifference\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 162,
+        "final_sentence": "SAINT CLAUDE DE LA COLOMBI\u00c8RE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 163,
+        "final_sentence": "Saint Claude played a special role in developing the understanding of devotion to the Sacred Heart and its meaning in the light of the Gospel.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 164,
+        "final_sentence": "He expressed this absolute confidence most eloquently in a celebrated prayer:",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final=':'"
+        ]
+      },
+      {
+        "paragraph_index": 165,
+        "final_sentence": "This confidence has never deceived anyone\u2026 I am sure, therefore, that I shall be eternally happy, since I firmly hope to be, and because it is from you, O God, that I hope for it\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 166,
+        "final_sentence": "I have already used it to help several persons\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 167,
+        "final_sentence": "I present myself anew to this heart free of anger, free of bitterness, filled instead with genuine compassion towards its enemies\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 168,
+        "final_sentence": "SAINT CHARLES DE FOUCAULD AND SAINT THERESE OF THE CHILD JESUS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 169,
+        "final_sentence": "In the following chapter, we will return to them, in order to illustrate the distinctively missionary dimension that each of them brought to the devotion.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=25 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 170,
+        "final_sentence": "Iesus Caritas",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 171,
+        "final_sentence": "That was the essential thing, and centred on devotion to the heart of Jesus, in which he encountered unbounded mercy: \u201cLet us trust in the infinite mercy of the one whose heart you led me to know\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=37 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 172,
+        "final_sentence": "He was to become a hermit \u201cunder the name of the heart of Jesus\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 173,
+        "final_sentence": "His loving devotion to the heart of Jesus had a concrete effect on his style of life, and his Nazareth was nourished by his personal relationship with the heart of Christ.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=31 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 174,
+        "final_sentence": "Saint Therese of the Child Jesus",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 175,
+        "final_sentence": "Her devotion nonetheless took on certain distinctive traits with regard to the customary piety of that age.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 176,
+        "final_sentence": "I think that the Heart of my Spouse is mine alone, just as mine is his alone, and I speak to him then in the solitude of this delightful heart to heart, while waiting to contemplate him one day face to face\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=42 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 177,
+        "final_sentence": "135.In one of her poems, Therese voiced the meaning of her devotion, which had to do more with friendship and assurance than with trust in her sacrifices:",
+        "is_kicker": false,
+        "confidence": 0.0,
+        "reasons": [
+          "word_count=28 > 15",
+          "non_period_final=':'",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 178,
+        "final_sentence": "\u201cI need a heart burning with tenderness,",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final=','"
+        ]
+      },
+      {
+        "paragraph_index": 179,
+        "final_sentence": "Who will be my support forever,",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final=','"
+        ]
+      },
+      {
+        "paragraph_index": 180,
+        "final_sentence": "Who loves everything in me, even my weakness\u2026",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='\u2026'"
+        ]
+      },
+      {
+        "paragraph_index": 181,
+        "final_sentence": "And who never leaves me day or night\u2026",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='\u2026'"
+        ]
+      },
+      {
+        "paragraph_index": 182,
+        "final_sentence": "I must have a God who takes on my nature,",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=','",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 183,
+        "final_sentence": "And becomes my brother and is able to suffer! \u2026",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='\u2026'"
+        ]
+      },
+      {
+        "paragraph_index": 184,
+        "final_sentence": "I know well, all our righteousness",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 185,
+        "final_sentence": "Is worthless in your sight\u2026",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='\u2026'"
+        ]
+      },
+      {
+        "paragraph_index": 186,
+        "final_sentence": "So I, for my purgatory,",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final=','"
+        ]
+      },
+      {
+        "paragraph_index": 187,
+        "final_sentence": "Choose your burning love, O heart of my God!\u201d",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='\u201d'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 188,
+        "final_sentence": "The remembrance of my faults humbles me, draws me never to depend on my strength which is only weakness, but this remembrance speaks to me of mercy and love even more\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=31 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 189,
+        "final_sentence": "Yet this astute Doctor of the Church reduces them to silence and directly contradicts their reductive view in these clear words: \u201cIf I had committed all possible crimes, I would always have the same confidence; I feel that this whole multitude of offenses would be like a drop of water thrown into a fiery furnace\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=55 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 190,
+        "final_sentence": "It is confidence and nothing but confidence that must lead us to Love\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 191,
+        "final_sentence": "Let us read once again some of these deeply meaningful texts where she emphasizes this and presents it as a simple and rapid means of taking hold of the Lord \u201cby his heart\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 192,
+        "final_sentence": "However, she knows her dear little one will do it again on the next occasion, but this does not matter; if he takes her again by her heart, he will not be punished\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=33 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 193,
+        "final_sentence": "I see that it is sufficient to recognize one\u2019s nothingness and to abandon oneself like a child into God\u2019s arms\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 194,
+        "final_sentence": "He realizes, however, that more than once his son will fall into the same faults, but he is prepared to pardon him always, if his son always takes him by his heart\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=32 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 195,
+        "final_sentence": "RESONANCES WITHIN THE SOCIETY OF JESUS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 196,
+        "final_sentence": "I believe that the place of the Sacred Heart in the history of the Society of Jesus merits a few brief words.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 197,
+        "final_sentence": "Anyone who follows the Exercises can readily see that they involve a dialogue, heart to heart.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=16 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 198,
+        "final_sentence": "This interior contemplation is not the fruit of our understanding and effort, but is to be implored as a gift.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=20 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 199,
+        "final_sentence": "I continue to have this same conviction\u2026 In this devotion I encounter one of the deepest sources of my interior life\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 200,
+        "final_sentence": "For \u201cthe desire to \u2018know the Lord intimately\u2019 and to \u2018have a conversation\u2019 with him, heart to heart, is characteristic of the Ignatian spiritual and apostolic dynamism, thanks to the Spiritual Exercises, and this dynamism is wholly at the service of the love of the heart of God\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 201,
+        "final_sentence": "A BROAD CURRENT OF THE INTERIOR LIFE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 202,
+        "final_sentence": "Because the one who has nothing does it with greater love; and that is what God especially wants\u2026\u201d This means allowing one\u2019s heart to be united to that of Christ. \u201cWhat blessing should a Sister not hope for from God if she does her utmost to put her heart in the state of being united with the heart of our Lord!\u201d",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=62 > 15",
+          "non_period_final='\u201d'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 203,
+        "final_sentence": "Saint John Paul also spoke of the Sacred Heart in very personal terms, acknowledging that, \u201cit has spoken to me ever since my youth\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 204,
+        "final_sentence": "To all those who in any way are associated with these spaces of faith and charity I send my paternal blessing.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 205,
+        "final_sentence": "THE DEVOTION OF CONSOLATION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 206,
+        "final_sentence": "It is natural, then, that the faithful should wish to respond not only to this immense outpouring of love, but also to the suffering that the Lord chose to endure for the sake of that love.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 207,
+        "final_sentence": "With Jesus on the cross",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='s'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 208,
+        "final_sentence": "If we truly love the Lord, how could we not desire to console him?",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='?'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 209,
+        "final_sentence": "And so even now, in a wondrous yet true manner, we can and ought to console that Most Sacred Heart, which is continually wounded by the sins of thankless men\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=30 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 210,
+        "final_sentence": "Reasons of the heart",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='t'"
+        ]
+      },
+      {
+        "paragraph_index": 211,
+        "final_sentence": "We can also add the recognition of our own sins, which Jesus took upon his bruised shoulders, and our inadequacy in the face of that timeless love, which is always infinitely greater.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 212,
+        "final_sentence": "The more the faithful ponder all these things the more clearly they see that the sins of mankind, whenever they were committed, were the reason why Christ was delivered up to death\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 213,
+        "final_sentence": "The temporal distinctions that our minds employ appear incapable of embracing the fullness of this experience of faith, which is the basis both of our union with Christ in his suffering and of the strength, consolation and friendship that we enjoy with him in his risen life.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=47 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 214,
+        "final_sentence": "The devotion of consolation, then, is in no way ahistorical or abstract; it becomes flesh and blood in the Church\u2019s pilgrimage through history.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 215,
+        "final_sentence": "Compunction",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='n'"
+        ]
+      },
+      {
+        "paragraph_index": 216,
+        "final_sentence": "This experience proves purifying, for love needs the purification of tears that, in the end, leave us more desirous of God and less obsessed with ourselves.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=26 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 217,
+        "final_sentence": "Compunction, then, is not our work but a grace and, as such, it must be sought in prayer.\u201d It means, \u201casking for sorrow in company with Christ in his sorrow, for anguish with Christ in his anguish, for tears and a deep sense of pain at the great pains that Christ endured for my sake\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=55 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 218,
+        "final_sentence": "I also encourage everyone to consider whether there might be greater reasonableness, truth and wisdom in certain demonstrations of love that seek to console the Lord than in the cold, distant, calculated and nominal acts of love that are at times practised by those who claim to possess a more reflective, sophisticated and mature faith.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=55 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 219,
+        "final_sentence": "Consoled ourselves in order to console others",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 220,
+        "final_sentence": "In seeking to console him, we will find ourselves consoled.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 221,
+        "final_sentence": "As Saint Paul tells us, God offers us consolation \u201cso that we may be able to console those who are in any affliction, with the consolation by which we ourselves are consoled by God\u201d ( 2 Cor 1:4).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=38 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 222,
+        "final_sentence": "In this way, we come full circle: \u201cMy Father is glorified by this, that you bear much fruit\u201d ( Jn 15:8).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 223,
+        "final_sentence": "CHAPTER FIVE",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='E'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 224,
+        "final_sentence": "LOVE FOR LOVE",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='E'"
+        ]
+      },
+      {
+        "paragraph_index": 225,
+        "final_sentence": "The knowledge that we are loved, and our complete confidence in that love, in no way lessens our desire to respond generously, despite our frailty and our many shortcomings.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=29 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 226,
+        "final_sentence": "A LAMENT AND A REQUEST",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='T'"
+        ]
+      },
+      {
+        "paragraph_index": 227,
+        "final_sentence": "And this, he added, \u201cis more grievous to me than all that I endured in my Passion\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 228,
+        "final_sentence": "As my Predecessor Leo XIII pointed out, through the image of his Sacred Heart, the love of Christ \u201cmoves us to return love for love\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 229,
+        "final_sentence": "EXTENDING CHRIST\u2019S LOVE TO OUR BROTHERS AND SISTERS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 230,
+        "final_sentence": "The Scriptures make this patently clear:",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=':'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 231,
+        "final_sentence": "\u201cJust as you did it to one of the least of these my brethren, you did it to me\u201d ( Mt 25:40).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=22 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 232,
+        "final_sentence": "\u201cFor the whole law is summed up in a single commandment: \u2018You shall love your neighbour as yourself\u2019\u201d ( Gal 5:14).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 233,
+        "final_sentence": "Whoever does not love abides in death\u201d ( 1 Jn 3:14).",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 234,
+        "final_sentence": "\u201cThose who do not love a brother or sister whom they have seen, cannot love God whom they have not seen\u201d ( 1 Jn 4:20).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 235,
+        "final_sentence": "Saint Paul, for his part, urged his hearers to pray not for the strength to do good works, but \u201cto have the same mind among you that was in Christ Jesus\u201d ( Phil 2:5).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=34 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 236,
+        "final_sentence": "Julian did not achieve his objective, no doubt because underlying those works there was nothing comparable to the Christian charity that respected the unique dignity of each person.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=28 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 237,
+        "final_sentence": "It has given life to institutions that take care of those who find themselves in disadvantaged conditions, such as abandoned infants, orphans, the elderly who are left without assistance, the mentally ill, people with incurable diseases or severe deformities, and those living on the streets\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=45 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 238,
+        "final_sentence": "As we meditate on Christ\u2019s self-offering for the sake of all, we are naturally led to ask why we too should not be ready to give our lives for others: \u201cWe know love by this, that he laid down his life for us \u2013 and that we ought to lay down our lives for one another\u201d ( 1 Jn 3:16).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=61 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 239,
+        "final_sentence": "ECHOES IN THE HISTORY OF SPIRITUALITY",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='Y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 240,
+        "final_sentence": "Let us consider a few examples.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=6 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 241,
+        "final_sentence": "Being a fountain from which others can drink",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='k'"
+        ]
+      },
+      {
+        "paragraph_index": 242,
+        "final_sentence": "Origen wrote that Christ fulfils his promise by making fountains of fresh water well up within us: \u201cThe human soul, made in the image of God, can itself contain and pour forth wells, fountains and rivers\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 243,
+        "final_sentence": "Saint Thomas Aquinas thus maintained that whenever someone \u201chastens to share various gifts of grace received from God, living water flows from his heart\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 244,
+        "final_sentence": "Although \u201cthe sacrifice offered on the cross in loving obedience renders most abundant and infinite satisfaction for the sins of mankind\u201d, the Church, born of the heart of Christ, prolongs and bestows, in every time and place, the fruits of that one redemptive passion, which lead men and women to direct union with the Lord.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=55 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 245,
+        "final_sentence": "In this way, Christ displays his glory in and through our littleness.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 246,
+        "final_sentence": "Fraternity and mysticism",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='m'"
+        ]
+      },
+      {
+        "paragraph_index": 247,
+        "final_sentence": "Sweetness conquers sweetness, as one nail drives out another\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=9 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 248,
+        "final_sentence": "Precisely because of this, we must do the same with our brothers and sisters, never tiring of putting up with them\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 249,
+        "final_sentence": "Allowing himself to be shaped by the heart of Christ, he sought to shelter the whole of suffering humanity in his fraternal heart: \u201cOur heart, like that of Jesus, must embrace all men and women\u201d. \u201cThe love of the heart of Jesus for men and women, the love that he demonstrated in his passion, this is what we need to have for all human beings\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=65 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 250,
+        "final_sentence": "That will not happen if we treat people harshly or sharply\u201d.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=11 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 251,
+        "final_sentence": "REPARATION: BUILDING ON THE RUINS",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='S'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 252,
+        "final_sentence": "The question has been much discussed, but Saint John Paul II has given us a clear response that can guide Christians today towards a spirit of reparation more closely attuned to the Gospels.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 253,
+        "final_sentence": "The social significance of reparation to the heart of Christ",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='t'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 254,
+        "final_sentence": "Amid the devastation wrought by evil, the heart of Christ desires that we cooperate with him in restoring goodness and beauty to our world.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 255,
+        "final_sentence": "It is our response to the love of the heart of Jesus, which teaches us to love in turn.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 256,
+        "final_sentence": "They need the life, the fire and the light that radiate from the heart of Christ.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=16 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 257,
+        "final_sentence": "Mending wounded hearts",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 258,
+        "final_sentence": "If each of us considers his or her own sins and their effect on others, we will realize that repairing the harm done to this world also calls for a desire to mend wounded hearts where the deepest harm was done, and the hurt is most painful.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=47 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 259,
+        "final_sentence": "Yet the intention to make amends, and to do so in a concrete way, is essential for the process of reconciliation and a return to peace of heart\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=28 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 260,
+        "final_sentence": "The beauty of asking forgiveness",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='s'"
+        ]
+      },
+      {
+        "paragraph_index": 261,
+        "final_sentence": "There has to be an inward desire that finds expression in our outward actions. \u201cReparation, if it is to be Christian, to touch the offended person\u2019s heart and not be a simple act of commutative justice, presupposes two demanding things: acknowledging our guilt and asking forgiveness\u2026 It is from the honest acknowledgment of the wrong done to our brother or sister, and from the profound and sincere realization that love has been compromised, that the desire to make amends arises\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=81 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 262,
+        "final_sentence": "On the contrary, it demands that we stop deceiving ourselves and acknowledge our past for what it is, marred by sin, especially in those cases when we caused hurt to our brothers and sisters. \u201cSelf-accusation is part of Christian wisdom\u2026 It is pleasing to the Lord, because the Lord accepts a contrite heart\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=54 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 263,
+        "final_sentence": "Even if the irreparable cannot be completely repaired, love can always be reborn, making the hurt bearable\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=17 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 264,
+        "final_sentence": "There occurs a sort of reversal, where the natural tendency to be indulgent with ourselves and inflexible with others is overturned and, by God\u2019s grace, we become strict with ourselves and merciful towards others\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 265,
+        "final_sentence": "REPARATION: AN EXTENSION OF THE HEART OF CHRIST",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='T'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 266,
+        "final_sentence": "There is another, complementary, approach to reparation, which allows us to set it in an even more direct relationship with the heart of Christ, without excluding the aspect of concrete commitment to our brothers and sisters.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 267,
+        "final_sentence": "Or when, confronted with rejection by his people, he says, \u201cMy heart recoils within me; my compassion grows warm and tender\u201d ( Hos 11:8).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=24 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 268,
+        "final_sentence": "When God\u2019s power is revealed in the weakness of our human freedom, \u201conly faith can discern it\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 269,
+        "final_sentence": "Since the Lord, who can do all things, desired in his divine freedom to require our cooperation, reparation can be understood as our removal of the obstacles we place before the expansion of Christ\u2019s love in the world by our lack of trust, gratitude and self-sacrifice.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=48 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 270,
+        "final_sentence": "An Oblation to Love",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 271,
+        "final_sentence": "So great an emphasis on God\u2019s justice might eventually lead to the notion that Christ\u2019s sacrifice was somehow incomplete or only partly efficacious, or that his mercy was not sufficiently powerful.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=33 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 272,
+        "final_sentence": "It seems to me that if you were to find souls offering themselves as victims of holocaust to your love, you would consume them rapidly; it seems to me, too, that you would be happy not to hold back the waves of infinite tenderness within you\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=46 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 273,
+        "final_sentence": "In her words, \u201ceven his justice (and perhaps this even more so than the others) seems to me clothed in love\u201d.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=21 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 274,
+        "final_sentence": "The two aspects were inseparably united.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=6 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 275,
+        "final_sentence": "Later, to Maurice Belli\u00e8re she wrote, \u201cHow I would like to make you understand the tenderness of the heart of Jesus, what he expects from you!\u201d",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=26 > 15",
+          "non_period_final='\u201d'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 276,
+        "final_sentence": "Integrity and Harmony",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='y'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 277,
+        "final_sentence": "In this way, we offer the healing power of the heart of Christ new ways of expressing itself.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=18 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 278,
+        "final_sentence": "We thus complete in our flesh \u201cwhat is lacking in Christ\u2019s afflictions for the sake of his body, that is, the Church\u201d ( Col 1:24); and Christ himself prolongs through us the effects of his complete and loving self-oblation.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=41 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 279,
+        "final_sentence": "When he said, \u201cLearn from me, for I am gentle and humble in heart\u201d ( Mt 11:29), he showed us that \u201cto make himself known, he needs our littleness, our self-abasement\u201d.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=32 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 280,
+        "final_sentence": "How can we fail to see the magnificent harmony present in all this?",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='?'"
+        ]
+      },
+      {
+        "paragraph_index": 281,
+        "final_sentence": "Consequently, the reparation we offer to the heart of Christ is directed ultimately to the Father, who is pleased to see us united to Christ whenever we offer ourselves through him, with him and in him.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 282,
+        "final_sentence": "BRINGING LOVE TO THE WORLD",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='D'"
+        ]
+      },
+      {
+        "paragraph_index": 283,
+        "final_sentence": "For this reason, we should conclude this chapter by recalling the missionary dimension of our love for the heart of Christ.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=21 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 284,
+        "final_sentence": "As a result, \u201cthrough the witness of Christians, love will be poured into human hearts, to build up the body of Christ which is the Church, and to build a society of justice, peace and fraternity\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=36 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 285,
+        "final_sentence": "Saint Vincent de Paul put this nicely when he invited his disciples to pray to the Lord for \u201cthis spirit, this heart that causes us to go everywhere, this heart of the Son of God, the heart of our Lord, that disposes us to go as he went\u2026 he sends us, like [the apostles], to bring fire everywhere\u201d.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=58 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 286,
+        "final_sentence": "For the greatest danger in mission is that, amid all the things we say and do, we fail to bring about a joyful encounter with the love of Christ who embraces us and saves us.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=35 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 287,
+        "final_sentence": "We can take as an example the words with which Dante Alighieri sought to express this logic of love:",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=19 > 15",
+          "non_period_final=':'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 288,
+        "final_sentence": "\u201cIo dico che, pensando al suo valore",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='e'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 289,
+        "final_sentence": "amor si dolce si mi si fa sentire,",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final=','",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 290,
+        "final_sentence": "che s\u2019io allora non perdessi ardire",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='e'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 291,
+        "final_sentence": "farei parlando innamorar la gente\u201d .",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 292,
+        "final_sentence": "With immense respect for their freedom and dignity, the lover simply waits for them to inquire about the love that has filled his or her life with such great joy.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=30 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 293,
+        "final_sentence": "For a heart that loves, this is not a duty but an irrepressible need: \u201cWoe to me if I do not proclaim the Gospel!\u201d ( 1 Cor 9:16). \u201cWithin me there is something like a burning fire shut up in my bones; I am weary with holding it in, and I cannot\u201d ( Jer 20:9).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=55 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 294,
+        "final_sentence": "In communion of service",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='e'"
+        ]
+      },
+      {
+        "paragraph_index": 295,
+        "final_sentence": "He himself said, \u201cBy this everyone will know that you are my disciples, if you have love for one another\u201d ( Jn 13:35).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 296,
+        "final_sentence": "What a beautiful encounter that can be!",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "non_period_final='!'"
+        ]
+      },
+      {
+        "paragraph_index": 297,
+        "final_sentence": "He speaks to the world in a language that at times has no need of words.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=16 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 298,
+        "final_sentence": "He has promised, and he will do it: \u201cFor I am with you always, to the end of the age\u201d ( Mt 28:20).",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=23 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 299,
+        "final_sentence": "Keep experiencing the joy born of our efforts to share the love of Christ with others.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=16 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 300,
+        "final_sentence": "CONCLUSION",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "non_period_final='N'",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 301,
+        "final_sentence": "For it is by drinking of that same love that we become capable of forging bonds of fraternity, of recognizing the dignity of each human being, and of working together to care for our common home.",
+        "is_kicker": false,
+        "confidence": 0.75,
+        "reasons": [
+          "word_count=36 > 15"
+        ]
+      },
+      {
+        "paragraph_index": 302,
+        "final_sentence": "Christ\u2019s love can give a heart to our world and revive love wherever we think that the ability to love has been definitively lost.",
+        "is_kicker": false,
+        "confidence": 0.5,
+        "reasons": [
+          "word_count=25 > 15",
+          "contains_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 303,
+        "final_sentence": "For his love alone can bring about a new humanity.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=10 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 304,
+        "final_sentence": "May he be blessed forever.",
+        "is_kicker": true,
+        "confidence": 1.0,
+        "reasons": [
+          "word_count=5 <= 15",
+          "sentence_final_period",
+          "no_digits",
+          "no_propn (spacy)"
+        ]
+      },
+      {
+        "paragraph_index": 305,
+        "final_sentence": "Given in Rome, at Saint Peter\u2019s, on 24 October of the year 2024, the twelfth of my Pontificate.",
+        "is_kicker": false,
+        "confidence": 0.25,
+        "reasons": [
+          "word_count=19 > 15",
+          "contains_digit",
+          "contains_propn (spacy)"
+        ]
+      }
+    ],
+    "diagnostics": {
+      "total_paragraphs": 306,
+      "kicker_count": 18,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy"
+    }
+  },
+  "claim_license": {
+    "task_surface": "smoothing_diagnosis",
+    "licenses": "AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.",
+    "does_not_license": "An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.",
+    "comparison_set": {
+      "total_paragraphs": 306,
+      "kicker_count": 18,
+      "word_limit": 15,
+      "proper_noun_detection": "spacy",
+      "baseline_source": null
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.",
+      "Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.",
+      "Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** AI-prose smoothing diagnosis\n\n**Reports:** AIC-9 closure-inflation signal: the proportion of paragraphs whose final sentence is kicker-shaped \u2014 short, declarative, generalizable, period-final. Reports the density value, inter-kicker spacing variance, per-paragraph diagnostics naming which endings triggered the call, and (when supplied) an elevation factor against a register-typical baseline.\n\n**Does NOT report:** An AI-provenance verdict. Aphoristic essayists (Borges, Bacon, La Rochefoucauld) and contemporary literary fiction use kicker shape as genre signature, not as a tell. The detector reports density relative to a register-typical baseline (when supplied); elevation is evidence, not certainty. The shipped band thresholds are heuristic pending corpus calibration.\n\n### Comparison context\n\n- **baseline source:** None\n- **kicker count:** 18\n- **proper noun detection:** spacy\n- **total paragraphs:** 306\n- **word limit:** 15\n\n### Caveats\n\n- Sentence boundaries come from `paragraph_parser`'s regex split. Abbreviation-heavy prose may produce spurious or missed boundaries; pre-tokenizing via spaCy and using `classify_with_pretokenized` tightens the call.\n- Proper-noun detection prefers spaCy POS tagging; regex fallback flags title-cased common nouns and may mistag rare proper nouns. The reported `proper_noun_detection` field names which path ran.\n- Closure-inflation is a discourse habit, not a content verdict. Source triage (earned vs. unearned) is the writer's call per instance.",
+  "warnings": [],
+  "ai_status": null
+}

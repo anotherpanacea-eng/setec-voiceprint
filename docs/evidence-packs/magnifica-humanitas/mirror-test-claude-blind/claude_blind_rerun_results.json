@@ -1,0 +1,46 @@
+{
+  "magnifica": {
+    "W1_par7_Babel": {
+      "word_jaccard": 0.113,
+      "tfidf_cosine": 0.6256,
+      "pos_bigram_cosine": 0.8002
+    },
+    "W2_par10_BabelSyndrome": {
+      "word_jaccard": 0.1387,
+      "tfidf_cosine": 0.6281,
+      "pos_bigram_cosine": 0.7746
+    },
+    "W3_par100_GenuinelyHelpful": {
+      "word_jaccard": 0.1366,
+      "tfidf_cosine": 0.5691,
+      "pos_bigram_cosine": 0.8913
+    },
+    "W4_par107_Alignment": {
+      "word_jaccard": 0.18,
+      "tfidf_cosine": 0.5501,
+      "pos_bigram_cosine": 0.8582
+    }
+  },
+  "dilexit": {
+    "C1_par7": {
+      "word_jaccard": 0.0616,
+      "tfidf_cosine": 0.2389,
+      "pos_bigram_cosine": 0.719
+    },
+    "C2_par10": {
+      "word_jaccard": 0.1534,
+      "tfidf_cosine": 0.5599,
+      "pos_bigram_cosine": 0.8261
+    },
+    "C3_par100": {
+      "word_jaccard": 0.1206,
+      "tfidf_cosine": 0.3455,
+      "pos_bigram_cosine": 0.6345
+    },
+    "C4_par107": {
+      "word_jaccard": 0.1633,
+      "tfidf_cosine": 0.6008,
+      "pos_bigram_cosine": 0.7277
+    }
+  }
+}

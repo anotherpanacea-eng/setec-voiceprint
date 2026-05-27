@@ -1,0 +1,824 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "smoothing_diagnosis",
+  "tool": "bigram_diff",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "Writing/stylometry sequence/magnifica-humanitas/texts/magnifica-humanitas-en.txt",
+    "words": 42054
+  },
+  "baseline": {
+    "n_files": 5,
+    "words": 0,
+    "files_loaded": [
+      "Writing/stylometry sequence/magnifica-humanitas/baseline_only/dilexit-nos-en.txt",
+      "Writing/stylometry sequence/magnifica-humanitas/baseline_only/fratelli-tutti-en.txt",
+      "Writing/stylometry sequence/magnifica-humanitas/baseline_only/laudate-deum-en.txt",
+      "Writing/stylometry sequence/magnifica-humanitas/baseline_only/laudato-si-en.txt",
+      "Writing/stylometry sequence/magnifica-humanitas/baseline_only/lumen-fidei-en.txt"
+    ]
+  },
+  "results": {
+    "target_bigrams": 42054,
+    "target_unique": 201,
+    "smoothing_alpha": 1.0,
+    "min_count": 1,
+    "diffs": {
+      "pooled": {
+        "kl_total": 0.05363956470481653,
+        "rows": [
+          {
+            "bigram": "ADJ-NOUN",
+            "target_prob": 0.061481695743317,
+            "baseline_prob": 0.049705883941786315,
+            "delta": 0.011775811801530686,
+            "log2_ratio": 0.306740315792964,
+            "kl_contrib": 0.018858914767791987,
+            "target_count": 2599,
+            "baseline_count": 7148
+          },
+          {
+            "bigram": "NOUN-CCONJ",
+            "target_prob": 0.02461632570299717,
+            "baseline_prob": 0.018362462442055756,
+            "delta": 0.006253863260941413,
+            "log2_ratio": 0.422855897519716,
+            "kl_contrib": 0.010409158498778522,
+            "target_count": 1040,
+            "baseline_count": 2640
+          },
+          {
+            "bigram": "PROPN-PROPN",
+            "target_prob": 0.011019412442455854,
+            "baseline_prob": 0.0057639088135038995,
+            "delta": 0.005255503628951955,
+            "log2_ratio": 0.9349278841313206,
+            "kl_contrib": 0.010302355959195599,
+            "target_count": 465,
+            "baseline_count": 828
+          },
+          {
+            "bigram": "ADP-PRON",
+            "target_prob": 0.0118943442522646,
+            "baseline_prob": 0.02027449458766931,
+            "delta": -0.00838015033540471,
+            "log2_ratio": -0.7693902140392539,
+            "kl_contrib": -0.009151392070106429,
+            "target_count": 502,
+            "baseline_count": 2915
+          },
+          {
+            "bigram": "ADP-NOUN",
+            "target_prob": 0.033318350189743606,
+            "baseline_prob": 0.02783918904013312,
+            "delta": 0.005479161149610487,
+            "log2_ratio": 0.2591997792992734,
+            "kl_contrib": 0.008636109015797446,
+            "target_count": 1408,
+            "baseline_count": 4003
+          },
+          {
+            "bigram": "NOUN-ADP",
+            "target_prob": 0.06439025284078932,
+            "baseline_prob": 0.05896707237072179,
+            "delta": 0.005423180470067533,
+            "log2_ratio": 0.12693274677860664,
+            "kl_contrib": 0.008173231658850368,
+            "target_count": 2722,
+            "baseline_count": 8480
+          },
+          {
+            "bigram": "NOUN-PUNCT",
+            "target_prob": 0.06788998008002431,
+            "baseline_prob": 0.06249216436281659,
+            "delta": 0.005397815717207717,
+            "log2_ratio": 0.11952335453951218,
+            "kl_contrib": 0.008114438158785165,
+            "target_count": 2870,
+            "baseline_count": 8987
+          },
+          {
+            "bigram": "VERB-NOUN",
+            "target_prob": 0.015417718297170088,
+            "baseline_prob": 0.010749098080430874,
+            "delta": 0.0046686202167392134,
+            "log2_ratio": 0.5203736600123882,
+            "kl_contrib": 0.008022974499338363,
+            "target_count": 651,
+            "baseline_count": 1545
+          },
+          {
+            "bigram": "PRON-NOUN",
+            "target_prob": 0.007590625620232393,
+            "baseline_prob": 0.015171106969922587,
+            "delta": -0.0075804813496901935,
+            "log2_ratio": -0.9990356538857281,
+            "kl_contrib": -0.00758330562991063,
+            "target_count": 320,
+            "baseline_count": 2181
+          },
+          {
+            "bigram": "PUNCT-PUNCT",
+            "target_prob": 0.004114545186667919,
+            "baseline_prob": 0.014149038877540068,
+            "delta": -0.01003449369087215,
+            "log2_ratio": -1.781899184288375,
+            "kl_contrib": -0.007331704711841224,
+            "target_count": 173,
+            "baseline_count": 2034
+          },
+          {
+            "bigram": "DET-ADJ",
+            "target_prob": 0.028849103918017854,
+            "baseline_prob": 0.024321049892204176,
+            "delta": 0.004528054025813678,
+            "log2_ratio": 0.24632099956589662,
+            "kl_contrib": 0.007106140113666583,
+            "target_count": 1219,
+            "baseline_count": 3497
+          },
+          {
+            "bigram": "VERB-PRON",
+            "target_prob": 0.011137646470808388,
+            "baseline_prob": 0.016485194517271536,
+            "delta": -0.005347548046463148,
+            "log2_ratio": -0.5657265055028502,
+            "kl_contrib": -0.006300861817456582,
+            "target_count": 470,
+            "baseline_count": 2370
+          },
+          {
+            "bigram": "PUNCT-NOUN",
+            "target_prob": 0.01203622508628764,
+            "baseline_prob": 0.00850332941485568,
+            "delta": 0.00353289567143196,
+            "log2_ratio": 0.5012832580964598,
+            "kl_contrib": 0.006033558126436611,
+            "target_count": 508,
+            "baseline_count": 1222
+          },
+          {
+            "bigram": "ADP-ADJ",
+            "target_prob": 0.014944782183759955,
+            "baseline_prob": 0.011402665432022417,
+            "delta": 0.003542116751737538,
+            "log2_ratio": 0.3902707690318465,
+            "kl_contrib": 0.0058325116358694355,
+            "target_count": 631,
+            "baseline_count": 1639
+          },
+          {
+            "bigram": "PRON-AUX",
+            "target_prob": 0.014731960932725396,
+            "baseline_prob": 0.019273285027784394,
+            "delta": -0.004541324095058998,
+            "log2_ratio": -0.3876530156905015,
+            "kl_contrib": -0.005710889082605653,
+            "target_count": 622,
+            "baseline_count": 2771
+          },
+          {
+            "bigram": "PRON-VERB",
+            "target_prob": 0.01742769677916315,
+            "baseline_prob": 0.02173459186250148,
+            "delta": -0.004306895083338331,
+            "log2_ratio": -0.3186110871529228,
+            "kl_contrib": -0.005552657417380662,
+            "target_count": 736,
+            "baseline_count": 3125
+          },
+          {
+            "bigram": "CCONJ-NOUN",
+            "target_prob": 0.0126037484223798,
+            "baseline_prob": 0.009379387779754982,
+            "delta": 0.003224360642624817,
+            "log2_ratio": 0.4262872008087532,
+            "kl_contrib": 0.005372816634674024,
+            "target_count": 532,
+            "baseline_count": 1348
+          },
+          {
+            "bigram": "VERB-DET",
+            "target_prob": 0.02073824957303408,
+            "baseline_prob": 0.01740992279133191,
+            "delta": 0.0033283267817021678,
+            "log2_ratio": 0.2523843225604986,
+            "kl_contrib": 0.005234009069580755,
+            "target_count": 876,
+            "baseline_count": 2503
+          },
+          {
+            "bigram": "PUNCT-VERB",
+            "target_prob": 0.010404595495022682,
+            "baseline_prob": 0.0076481295824539835,
+            "delta": 0.002756465912568698,
+            "log2_ratio": 0.444042005486109,
+            "kl_contrib": 0.004620077449881607,
+            "target_count": 439,
+            "baseline_count": 1099
+          },
+          {
+            "bigram": "CCONJ-ADJ",
+            "target_prob": 0.008536497847052658,
+            "baseline_prob": 0.005993352670977526,
+            "delta": 0.002543145176075132,
+            "log2_ratio": 0.5102810464331375,
+            "kl_contrib": 0.004356013054268256,
+            "target_count": 360,
+            "baseline_count": 861
+          },
+          {
+            "bigram": "VERB-ADP",
+            "target_prob": 0.0236704534761769,
+            "baseline_prob": 0.0264972901161207,
+            "delta": -0.0028268366399437986,
+            "log2_ratio": -0.16275747712610672,
+            "kl_contrib": -0.0038525432902134353,
+            "target_count": 1000,
+            "baseline_count": 3810
+          },
+          {
+            "bigram": "SCONJ-PRON",
+            "target_prob": 0.004847596162453625,
+            "baseline_prob": 0.008357319687372465,
+            "delta": -0.0035097235249188395,
+            "log2_ratio": -0.7857708058741033,
+            "kl_contrib": -0.003809099543123396,
+            "target_count": 204,
+            "baseline_count": 1201
+          },
+          {
+            "bigram": "PART-VERB",
+            "target_prob": 0.016481824552342886,
+            "baseline_prob": 0.019335860625277198,
+            "delta": -0.002854036072934312,
+            "log2_ratio": -0.23040302021041958,
+            "kl_contrib": -0.0037974621554380476,
+            "target_count": 696,
+            "baseline_count": 2780
+          },
+          {
+            "bigram": "PUNCT-ADJ",
+            "target_prob": 0.006337344919695542,
+            "baseline_prob": 0.004213424564515453,
+            "delta": 0.002123920355180089,
+            "log2_ratio": 0.5888852425779668,
+            "kl_contrib": 0.003731968900335155,
+            "target_count": 267,
+            "baseline_count": 605
+          },
+          {
+            "bigram": "CCONJ-DET",
+            "target_prob": 0.005982642834637943,
+            "baseline_prob": 0.003900546577051416,
+            "delta": 0.0020820962575865266,
+            "log2_ratio": 0.6171066357100954,
+            "kl_contrib": 0.0036919285923385295,
+            "target_count": 252,
+            "baseline_count": 560
+          },
+          {
+            "bigram": "PUNCT-PRON",
+            "target_prob": 0.010404595495022682,
+            "baseline_prob": 0.013182593538484489,
+            "delta": -0.0027779980434618073,
+            "log2_ratio": -0.34141335580582405,
+            "kl_contrib": -0.003552267863757853,
+            "target_count": 439,
+            "baseline_count": 1895
+          },
+          {
+            "bigram": "PRON-PUNCT",
+            "target_prob": 0.0037834899072808257,
+            "baseline_prob": 0.007251817464999538,
+            "delta": -0.003468327557718712,
+            "log2_ratio": -0.938625014913886,
+            "kl_contrib": -0.003551278270648002,
+            "target_count": 159,
+            "baseline_count": 1042
+          },
+          {
+            "bigram": "PUNCT-ADV",
+            "target_prob": 0.00593534922329693,
+            "baseline_prob": 0.004171707499520248,
+            "delta": 0.0017636417237766816,
+            "log2_ratio": 0.5086949110424993,
+            "kl_contrib": 0.003019281945151199,
+            "target_count": 250,
+            "baseline_count": 599
+          },
+          {
+            "bigram": "PRON-ADJ",
+            "target_prob": 0.0038780771299628523,
+            "baseline_prob": 0.006521768827583453,
+            "delta": -0.0026436916976206007,
+            "log2_ratio": -0.7499218067487804,
+            "kl_contrib": -0.002908254608012867,
+            "target_count": 163,
+            "baseline_count": 937
+          },
+          {
+            "bigram": "PUNCT-DET",
+            "target_prob": 0.009387782851190896,
+            "baseline_prob": 0.007627271049956381,
+            "delta": 0.0017605118012345156,
+            "log2_ratio": 0.2996175016158955,
+            "kl_contrib": 0.0028127440435863644,
+            "target_count": 396,
+            "baseline_count": 1096
+          },
+          {
+            "bigram": "VERB-ADJ",
+            "target_prob": 0.0076615660372439135,
+            "baseline_prob": 0.00595163560598232,
+            "delta": 0.0017099304312615934,
+            "log2_ratio": 0.3643531127310205,
+            "kl_contrib": 0.00279151543406409,
+            "target_count": 323,
+            "baseline_count": 855
+          },
+          {
+            "bigram": "DET-PROPN",
+            "target_prob": 0.00844191062437063,
+            "baseline_prob": 0.006737306996725345,
+            "delta": 0.0017046036276452854,
+            "log2_ratio": 0.3253975157232649,
+            "kl_contrib": 0.0027469767451280395,
+            "target_count": 356,
+            "baseline_count": 968
+          },
+          {
+            "bigram": "CCONJ-VERB",
+            "target_prob": 0.00822908937333607,
+            "baseline_prob": 0.006577391580910393,
+            "delta": 0.0016516977924256777,
+            "log2_ratio": 0.32321722883207454,
+            "kl_contrib": 0.0026597834630611578,
+            "target_count": 347,
+            "baseline_count": 945
+          },
+          {
+            "bigram": "ADV-PUNCT",
+            "target_prob": 0.00733051075785682,
+            "baseline_prob": 0.005701333216011091,
+            "delta": 0.0016291775418457288,
+            "log2_ratio": 0.3626143998782479,
+            "kl_contrib": 0.002658148759261291,
+            "target_count": 309,
+            "baseline_count": 819
+          },
+          {
+            "bigram": "PRON-PRON",
+            "target_prob": 0.0031450261541771467,
+            "baseline_prob": 0.00531892678688838,
+            "delta": -0.002173900632711233,
+            "log2_ratio": -0.7580631642463023,
+            "kl_contrib": -0.002384128478072907,
+            "target_count": 132,
+            "baseline_count": 764
+          },
+          {
+            "bigram": "NOUN-VERB",
+            "target_prob": 0.012130812308969665,
+            "baseline_prob": 0.010616994041279392,
+            "delta": 0.0015138182676902728,
+            "log2_ratio": 0.19230080220066667,
+            "kl_contrib": 0.002332764938360588,
+            "target_count": 512,
+            "baseline_count": 1526
+          },
+          {
+            "bigram": "SCONJ-NOUN",
+            "target_prob": 0.002790324069119547,
+            "baseline_prob": 0.001626966534812753,
+            "delta": 0.0011633575343067942,
+            "log2_ratio": 0.7782481104218283,
+            "kl_contrib": 0.0021715644342568344,
+            "target_count": 117,
+            "baseline_count": 233
+          },
+          {
+            "bigram": "PUNCT-ADP",
+            "target_prob": 0.006290051308354529,
+            "baseline_prob": 0.007974913258249753,
+            "delta": -0.0016848619498952243,
+            "log2_ratio": -0.3423970417096299,
+            "kl_contrib": -0.002153694960182378,
+            "target_count": 265,
+            "baseline_count": 1146
+          },
+          {
+            "bigram": "ADJ-ADJ",
+            "target_prob": 0.0050840642191586904,
+            "baseline_prob": 0.003796253914563404,
+            "delta": 0.0012878103045952864,
+            "log2_ratio": 0.4214057627542056,
+            "kl_contrib": 0.0021424539601659328,
+            "target_count": 214,
+            "baseline_count": 545
+          },
+          {
+            "bigram": "PRON-ADP",
+            "target_prob": 0.0035233750449052527,
+            "baseline_prob": 0.00531892678688838,
+            "delta": -0.0017955517419831271,
+            "log2_ratio": -0.5941771285441381,
+            "kl_contrib": -0.0020935088669658767,
+            "target_count": 148,
+            "baseline_count": 764
+          }
+        ]
+      },
+      "mean": {
+        "kl_total": 0.05898667847025109,
+        "rows": [
+          {
+            "bigram": "ADJ-NOUN",
+            "target_prob": 0.0618014797947671,
+            "baseline_prob": 0.049075546386883315,
+            "delta": 0.012725933407883784,
+            "log2_ratio": 0.33263705275117,
+            "kl_contrib": 0.02055746209459231,
+            "target_count": 2599
+          },
+          {
+            "bigram": "NOUN-CCONJ",
+            "target_prob": 0.024730104096020552,
+            "baseline_prob": 0.017387461303389525,
+            "delta": 0.007342642792631027,
+            "log2_ratio": 0.5082210084675242,
+            "kl_contrib": 0.012568358443186415,
+            "target_count": 1040
+          },
+          {
+            "bigram": "NOUN-PUNCT",
+            "target_prob": 0.06824557396690328,
+            "baseline_prob": 0.06149811607670139,
+            "delta": 0.006747457890201897,
+            "log2_ratio": 0.15019326794664753,
+            "kl_contrib": 0.010250025776983859,
+            "target_count": 2870
+          },
+          {
+            "bigram": "ADP-NOUN",
+            "target_prob": 0.03348075596076637,
+            "baseline_prob": 0.027279131074400935,
+            "delta": 0.006201624886365435,
+            "log2_ratio": 0.2955344120676047,
+            "kl_contrib": 0.009894715528444042,
+            "target_count": 1408
+          },
+          {
+            "bigram": "VERB-NOUN",
+            "target_prob": 0.015480094380297394,
+            "baseline_prob": 0.009939859167689365,
+            "delta": 0.005540235212608029,
+            "log2_ratio": 0.6391169511444237,
+            "kl_contrib": 0.009893590723763597,
+            "target_count": 651
+          },
+          {
+            "bigram": "PROPN-PROPN",
+            "target_prob": 0.011057210557355214,
+            "baseline_prob": 0.006081877779267397,
+            "delta": 0.004975332778087816,
+            "log2_ratio": 0.8623987480227749,
+            "kl_contrib": 0.009535724541287345,
+            "target_count": 465
+          },
+          {
+            "bigram": "ADP-PRON",
+            "target_prob": 0.011937031532886722,
+            "baseline_prob": 0.01963431311017188,
+            "delta": -0.0076972815772851574,
+            "log2_ratio": -0.7179330115254265,
+            "kl_contrib": -0.008569988997079343,
+            "target_count": 502
+          },
+          {
+            "bigram": "NOUN-ADP",
+            "target_prob": 0.06472629006477724,
+            "baseline_prob": 0.05945535013550565,
+            "delta": 0.0052709399292715925,
+            "log2_ratio": 0.12254517704273087,
+            "kl_contrib": 0.007931894675307279,
+            "target_count": 2722
+          },
+          {
+            "bigram": "PRON-NOUN",
+            "target_prob": 0.007609263491083085,
+            "baseline_prob": 0.015017175292701896,
+            "delta": -0.007407911801618812,
+            "log2_ratio": -0.9807847441077557,
+            "kl_contrib": -0.007463049545950411,
+            "target_count": 320
+          },
+          {
+            "bigram": "PUNCT-PUNCT",
+            "target_prob": 0.004113758534241685,
+            "baseline_prob": 0.01385764023139789,
+            "delta": -0.009743881697156204,
+            "log2_ratio": -1.7521525875241362,
+            "kl_contrib": -0.007207932660221066,
+            "target_count": 173
+          },
+          {
+            "bigram": "CCONJ-NOUN",
+            "target_prob": 0.012650399891425784,
+            "baseline_prob": 0.008786265156186837,
+            "delta": 0.003864134735238946,
+            "log2_ratio": 0.5258610470781991,
+            "kl_contrib": 0.006652352532863099,
+            "target_count": 532
+          },
+          {
+            "bigram": "PUNCT-NOUN",
+            "target_prob": 0.012079705204594534,
+            "baseline_prob": 0.008280560632931873,
+            "delta": 0.0037991445716626607,
+            "log2_ratio": 0.5447848939014541,
+            "kl_contrib": 0.006580840918245876,
+            "target_count": 508
+          },
+          {
+            "bigram": "DET-ADJ",
+            "target_prob": 0.028986535301970286,
+            "baseline_prob": 0.024900815335058286,
+            "delta": 0.004085719966912,
+            "log2_ratio": 0.21918991980413807,
+            "kl_contrib": 0.006353556348238684,
+            "target_count": 1219
+          },
+          {
+            "bigram": "PRON-AUX",
+            "target_prob": 0.014790504967042968,
+            "baseline_prob": 0.019877720952377807,
+            "delta": -0.005087215985334839,
+            "log2_ratio": -0.4264810477791884,
+            "kl_contrib": -0.006307870055527775,
+            "target_count": 622
+          },
+          {
+            "bigram": "ADP-ADJ",
+            "target_prob": 0.015004515474604685,
+            "baseline_prob": 0.011350584668435623,
+            "delta": 0.0036539308061690617,
+            "log2_ratio": 0.4026301195915668,
+            "kl_contrib": 0.006041269859953599,
+            "target_count": 631
+          },
+          {
+            "bigram": "VERB-PRON",
+            "target_prob": 0.01117610528377839,
+            "baseline_prob": 0.016154141019796,
+            "delta": -0.004978035736017608,
+            "log2_ratio": -0.531486522045247,
+            "kl_contrib": -0.005939949327286885,
+            "target_count": 470
+          },
+          {
+            "bigram": "CCONJ-ADJ",
+            "target_prob": 0.008560421302468499,
+            "baseline_prob": 0.005425983550476098,
+            "delta": 0.0031344377519924,
+            "log2_ratio": 0.6577971269126538,
+            "kl_contrib": 0.005631020537925656,
+            "target_count": 360
+          },
+          {
+            "bigram": "PUNCT-VERB",
+            "target_prob": 0.010438957979954694,
+            "baseline_prob": 0.007215576708188681,
+            "delta": 0.0032233812717660133,
+            "log2_ratio": 0.5327910963430147,
+            "kl_contrib": 0.005561783866818723,
+            "target_count": 439
+          },
+          {
+            "bigram": "VERB-DET",
+            "target_prob": 0.02083035706934035,
+            "baseline_prob": 0.017423702004955084,
+            "delta": 0.003406655064385266,
+            "log2_ratio": 0.2576363847728188,
+            "kl_contrib": 0.005366657888871777,
+            "target_count": 876
+          },
+          {
+            "bigram": "PRON-VERB",
+            "target_prob": 0.0175013047294914,
+            "baseline_prob": 0.02124872823739514,
+            "delta": -0.0037474235079037396,
+            "log2_ratio": -0.2799140171781503,
+            "kl_contrib": -0.004898860512690899,
+            "target_count": 736
+          },
+          {
+            "bigram": "CCONJ-DET",
+            "target_prob": 0.00599229521172788,
+            "baseline_prob": 0.0037760788712151165,
+            "delta": 0.0022162163405127634,
+            "log2_ratio": 0.6662198015491951,
+            "kl_contrib": 0.00399218572678154,
+            "target_count": 252
+          },
+          {
+            "bigram": "PUNCT-ADJ",
+            "target_prob": 0.00634897939099741,
+            "baseline_prob": 0.004148647234989728,
+            "delta": 0.0022003321560076818,
+            "log2_ratio": 0.6138837067541582,
+            "kl_contrib": 0.003897535002651248,
+            "target_count": 267
+          },
+          {
+            "bigram": "SCONJ-PRON",
+            "target_prob": 0.004850905838065382,
+            "baseline_prob": 0.008376229995782376,
+            "delta": -0.003525324157716994,
+            "log2_ratio": -0.7880468811966299,
+            "kl_contrib": -0.0038227412166659484,
+            "target_count": 204
+          },
+          {
+            "bigram": "VERB-ADP",
+            "target_prob": 0.02377894628463514,
+            "baseline_prob": 0.026544865875273202,
+            "delta": -0.0027659195906380614,
+            "log2_ratio": -0.15874806547394518,
+            "kl_contrib": -0.003774861721694685,
+            "target_count": 1000
+          },
+          {
+            "bigram": "PUNCT-PRON",
+            "target_prob": 0.010438957979954694,
+            "baseline_prob": 0.013309260820152,
+            "delta": -0.0028703028401973057,
+            "log2_ratio": -0.3504527391551229,
+            "kl_contrib": -0.0036583614180003515,
+            "target_count": 439
+          },
+          {
+            "bigram": "PUNCT-ADV",
+            "target_prob": 0.005944737321158609,
+            "baseline_prob": 0.003938492396855556,
+            "delta": 0.0020062449243030524,
+            "log2_ratio": 0.5939695726773218,
+            "kl_contrib": 0.003530993086327505,
+            "target_count": 250
+          },
+          {
+            "bigram": "CCONJ-VERB",
+            "target_prob": 0.008251295013768239,
+            "baseline_prob": 0.006175393368708535,
+            "delta": 0.0020759016450597034,
+            "log2_ratio": 0.41808952499809604,
+            "kl_contrib": 0.0034497800129255213,
+            "target_count": 347
+          },
+          {
+            "bigram": "PRON-PUNCT",
+            "target_prob": 0.0037808533002567893,
+            "baseline_prob": 0.007063667675292993,
+            "delta": -0.0032828143750362033,
+            "log2_ratio": -0.9017055972032003,
+            "kl_contrib": -0.003409216583045739,
+            "target_count": 159
+          },
+          {
+            "bigram": "PART-VERB",
+            "target_prob": 0.016550146918105985,
+            "baseline_prob": 0.01902749073152204,
+            "delta": -0.002477343813416053,
+            "log2_ratio": -0.2012412932652875,
+            "kl_contrib": -0.0033305729695301605,
+            "target_count": 696
+          },
+          {
+            "bigram": "VERB-ADJ",
+            "target_prob": 0.0076806003269369915,
+            "baseline_prob": 0.005752819834768543,
+            "delta": 0.0019277804921684488,
+            "log2_ratio": 0.4169497895019799,
+            "kl_contrib": 0.0032024246895652167,
+            "target_count": 323
+          },
+          {
+            "bigram": "AUX-VERB",
+            "target_prob": 0.01704950476908333,
+            "baseline_prob": 0.019027804801098044,
+            "delta": -0.001978300032014716,
+            "log2_ratio": -0.15837929603059459,
+            "kl_contrib": -0.0027002885629976827,
+            "target_count": 717
+          },
+          {
+            "bigram": "ADV-PUNCT",
+            "target_prob": 0.007347695092952095,
+            "baseline_prob": 0.005723215350761559,
+            "delta": 0.0016244797421905363,
+            "log2_ratio": 0.3604658671895723,
+            "kl_contrib": 0.002648593283525542,
+            "target_count": 309
+          },
+          {
+            "bigram": "ADJ-CCONJ",
+            "target_prob": 0.006515432007989857,
+            "baseline_prob": 0.004936049324173925,
+            "delta": 0.0015793826838159317,
+            "log2_ratio": 0.4005040294678756,
+            "kl_contrib": 0.00260945677292391,
+            "target_count": 274
+          },
+          {
+            "bigram": "ADJ-ADJ",
+            "target_prob": 0.0050886952909117355,
+            "baseline_prob": 0.003641276207950644,
+            "delta": 0.0014474190829610917,
+            "log2_ratio": 0.48285162573826557,
+            "kl_contrib": 0.0024570847941033877,
+            "target_count": 214
+          },
+          {
+            "bigram": "PRON-ADJ",
+            "target_prob": 0.0038759690813953305,
+            "baseline_prob": 0.005999450219255205,
+            "delta": -0.0021234811378598745,
+            "log2_ratio": -0.6302732379178013,
+            "kl_contrib": -0.002442919583000321,
+            "target_count": 163
+          },
+          {
+            "bigram": "PUNCT-DET",
+            "target_prob": 0.009416463332715373,
+            "baseline_prob": 0.007897014105768043,
+            "delta": 0.0015194492269473298,
+            "log2_ratio": 0.25387804193426056,
+            "kl_contrib": 0.0023906332728555403,
+            "target_count": 396
+          },
+          {
+            "bigram": "PRON-PRON",
+            "target_prob": 0.0031388217775716342,
+            "baseline_prob": 0.0052757785477060065,
+            "delta": -0.0021369567701343723,
+            "log2_ratio": -0.7491608933663736,
+            "kl_contrib": -0.0023514825270033943,
+            "target_count": 132
+          },
+          {
+            "bigram": "NOUN-VERB",
+            "target_prob": 0.012174820985733076,
+            "baseline_prob": 0.010662596925812068,
+            "delta": 0.0015122240599210086,
+            "log2_ratio": 0.19134170350457133,
+            "kl_contrib": 0.0023295509872733712,
+            "target_count": 512
+          },
+          {
+            "bigram": "NUM-PUNCT",
+            "target_prob": 0.008013505560921884,
+            "baseline_prob": 0.009666147574179275,
+            "delta": -0.001652642013257391,
+            "log2_ratio": -0.2705075235345392,
+            "kl_contrib": -0.0021677135441152376,
+            "target_count": 337
+          },
+          {
+            "bigram": "PUNCT-ADP",
+            "target_prob": 0.00630142150042814,
+            "baseline_prob": 0.007996020802478715,
+            "delta": -0.0016945993020505753,
+            "log2_ratio": -0.34360491103589164,
+            "kl_contrib": -0.002165199374054266,
+            "target_count": 265
+          }
+        ]
+      }
+    }
+  },
+  "claim_license": {
+    "task_surface": "smoothing_diagnosis",
+    "licenses": "Per-POS-bigram diff between a target text and a comparison cluster. Reports the top diverging bigrams (both directions) plus a KL total per aggregation strategy (pooled counts, per-file mean, or both).",
+    "does_not_license": "An authorship verdict. POS-bigram divergence reflects register, genre conventions, syntactic style, and deliberate craft choice as much as drift. The audit surfaces structural patterns; the writer adjudicates whether each is symptomatic.",
+    "comparison_set": {
+      "target_bigrams": 42054,
+      "n_cluster_files": 5,
+      "smoothing_alpha": 1.0,
+      "min_count": 1
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Requires spaCy + en_core_web_sm for POS tagging.",
+      "Laplace smoothing affects pooled-counts mode; per-file mean does not smooth. Compare both before drawing conclusions about KL magnitude."
+    ],
+    "references": []
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** AI-prose smoothing diagnosis\n\n**Reports:** Per-POS-bigram diff between a target text and a comparison cluster. Reports the top diverging bigrams (both directions) plus a KL total per aggregation strategy (pooled counts, per-file mean, or both).\n\n**Does NOT report:** An authorship verdict. POS-bigram divergence reflects register, genre conventions, syntactic style, and deliberate craft choice as much as drift. The audit surfaces structural patterns; the writer adjudicates whether each is symptomatic.\n\n### Comparison context\n\n- **min count:** 1\n- **n cluster files:** 5\n- **smoothing alpha:** 1.0\n- **target bigrams:** 42054\n\n### Caveats\n\n- Requires spaCy + en_core_web_sm for POS tagging.\n- Laplace smoothing affects pooled-counts mode; per-file mean does not smooth. Compare both before drawing conclusions about KL magnitude.",
+  "warnings": [],
+  "ai_status": null
+}

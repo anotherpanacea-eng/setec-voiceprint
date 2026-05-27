@@ -1,0 +1,280 @@
+{
+  "schema_version": "1.0",
+  "task_surface": "craft_restoration",
+  "tool": "aic_pattern_audit",
+  "version": "1.0",
+  "available": true,
+  "target": {
+    "path": "texts/lumen-fidei-en.txt",
+    "words": 18685
+  },
+  "baseline": null,
+  "results": {
+    "patterns": {
+      "negation_hedge": {
+        "label": "Negation Hedge",
+        "severity_note": "'Not X.' / 'Not X. Not Y.' sentence-initial cognitive sorting (earned) or narrator hedge (unearned)",
+        "count": 1,
+        "density_per_1k": 0.05351886540005352,
+        "hits": [
+          {
+            "sentence_index": 429,
+            "text": "Not because we will be able to possess all the light, which will always be inexhaustible, but because we will enter wholly into that light. 34.",
+            "span": "Not because we will be able to possess all the light, which will always be inexhaustible, but because we will enter whol",
+            "note": "sentence-initial negation followed by affirming sentence"
+          }
+        ]
+      },
+      "correctio": {
+        "label": "Disguised Correctio",
+        "severity_note": "'not X, but Y' inline + 'It is not X. It is Y' frame; cuts on payoff test if affirm repeats negate",
+        "count": 19,
+        "density_per_1k": 1.0168584426010168,
+        "hits": [
+          {
+            "sentence_index": 73,
+            "text": "Abraham does not see God, but hears his voice.",
+            "span": "not see God, but h",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 75,
+            "text": "God is not the god of a particular place, or a deity linked to specific sacred time, but the God of a person, the God of Abraham, Isaac and Jacob, capable of interacting with man and establishing a covenant with him.",
+            "span": "not the god of a particular place, or a deity linked to specific sacred time, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 102,
+            "text": "For Abraham, faith in God sheds light on the depths of his being, it enables him to acknowledge the wellspring of goodness at the origin of all things and to realize that his life is not the product of non-being or chance, but the fruit of a personal call and a personal love.",
+            "span": "not the product of non-being or chance, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 143,
+            "text": "Here mediation is not an obstacle, but an opening: through our encounter with others, our gaze rises to a truth greater than ourselves.",
+            "span": "not an obstacle, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 156,
+            "text": "The word which God speaks to us in Jesus is not simply one word among many, but his eternal Word (cf.",
+            "span": "not simply one word among many, but h",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 192,
+            "text": "Faith does not merely gaze at Jesus, but sees things as Jesus himself sees them, with his own eyes: it is a participation in his way of seeing.",
+            "span": "not merely gaze at Jesus, but s",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 227,
+            "text": "As Saint Paul puts it: \"By grace you have been saved through faith, and this is not your own doing; it is the gift of God\" ( Eph 2:8).",
+            "span": "this is not y",
+            "note": "'It is not X. It is Y' frame"
+          },
+          {
+            "sentence_index": 349,
+            "text": "Faith-knowledge sheds light not only on the destiny of one particular people, but the entire history of the created world, from its origins to its consummation.",
+            "span": "not only on the destiny of one particular people, but t",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 418,
+            "text": "All the same, the decisive moment in Augustine\u2019s journey of faith, as he tells us in the Confessions , was not in the vision of a God above and beyond this world, but in an experience of hearing.",
+            "span": "not in the vision of a God above and beyond this world, but i",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 435,
+            "text": "As a truth of love, it is not one that can be imposed by force; it is not a truth that stifles the individual.",
+            "span": "it is not o",
+            "note": "'It is not X. It is Y' frame"
+          },
+          {
+            "sentence_index": 437,
+            "text": "Clearly, then, faith is not intransigent, but grows in respectful coexistence with others.",
+            "span": "not intransigent, but g",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 461,
+            "text": "This respect on God\u2019s part for our human eyes shows us that when we draw near to God, our human lights are not dissolved in the immensity of his light, as a star is engulfed by the dawn, but shine all the more brightly the closer they approach the primordial fire, like a mirror which reflects light.",
+            "span": "not dissolved in the immensity of his light, as a star is engulfed by the dawn, but s",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 480,
+            "text": "It is not just our discourse about God, but first and foremost the acceptance and the pursuit of a deeper understanding of the word which God speaks to us, the word which God speaks about himself, for he is an eternal dialogue of communion, and he allows us to enter into this dialogue.",
+            "span": "not just our discourse about God, but f",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 524,
+            "text": "This openness to the ecclesial \"We\" reflects the openness of God\u2019s own love, which is not only a relationship between the Father and the Son, between an \"I\" and a \"Thou\", but is also, in the Spirit, a \"We\", a communion of persons.",
+            "span": "not only a relationship between the Father and the Son, between an \"I\" and a \"Thou\", but i",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 553,
+            "text": "Baptism makes us see, then, that faith is not the achievement of isolated individuals; it is not an act which someone can perform on his own, but rather something which must be received by entering into the ecclesial communion which transmits God\u2019s gift.",
+            "span": "not an act which someone can perform on his own, but r",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 610,
+            "text": "The Decalogue is not a set of negative commands, but concrete directions for emerging from the desert of the selfish and self-enclosed ego in order to enter into dialogue with God, to be embraced by his mercy and then to bring that mercy to others.",
+            "span": "not a set of negative commands, but c",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 662,
+            "text": "That faith is not only presented as a journey, but also as a process of building, the preparing of a place in which human beings can dwell together with one another.",
+            "span": "not only presented as a journey, but a",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 729,
+            "text": "Faith also helps us to devise models of development which are based not simply on utility and profit, but consider creation as a gift for which we are all indebted; it teaches us to create just forms of government, in the realization that authority comes from God and is meant for the service of the ",
+            "span": "not simply on utility and profit, but c",
+            "note": "inline 'not X, but Y'"
+          },
+          {
+            "sentence_index": 762,
+            "text": "Faith is not a light which scatters all our darkness, but a lamp which guides our steps in the night and suffices for the journey.",
+            "span": "not a light which scatters all our darkness, but a",
+            "note": "inline 'not X, but Y'"
+          }
+        ]
+      },
+      "pseudo_aphorism": {
+        "label": "Pseudo-Aphorism",
+        "severity_note": "gnomic generalization ('X as Y', 'is the Y of Z', 'There is a kind of'); often has real image right after that does the work",
+        "count": 4,
+        "density_per_1k": 0.21407546160021407,
+        "hits": [
+          {
+            "sentence_index": 127,
+            "text": "In place of faith in God, it seems better to worship an idol, into whose face we can look directly and whose origin we know, because it is the work of our own hands.",
+            "span": "is the work of our own hands.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 227,
+            "text": "As Saint Paul puts it: \"By grace you have been saved through faith, and this is not your own doing; it is the gift of God\" ( Eph 2:8).",
+            "span": "is the gift of God\" ( Eph 2:8).",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 281,
+            "text": "The prophet tells him instead to trust completely in the solid and steadfast rock which is the God of Israel.",
+            "span": "is the God of Israel.",
+            "note": "gnomic frame"
+          },
+          {
+            "sentence_index": 627,
+            "text": "What is the secret of this unity?",
+            "span": "is the secret of this unity?",
+            "note": "gnomic frame"
+          }
+        ]
+      },
+      "manifesto_cadence": {
+        "label": "Manifesto Cadence",
+        "severity_note": "3+ parallel sentences with same anaphoric head; earned when each escalates/restricts/reveals, unearned when parallel substitutes for development",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "triplet": {
+        "label": "Triplet",
+        "severity_note": "3- or 4-item comma-and lists; classical figure but at high density reads as rhythmic fill",
+        "count": 3,
+        "density_per_1k": 0.16055659620016058,
+        "hits": [
+          {
+            "sentence_index": 186,
+            "text": "But if this were the case, if God could not act in the world, his love would not be truly powerful, truly real, and thus not even true, a love capable of delivering the bliss that it promises.",
+            "span": "be truly powerful, truly real, and thus not even",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 624,
+            "text": "Genuine love, after the fashion of God\u2019s love, ultimately requires truth, and the shared contemplation of the truth which is Jesus Christ enables love to become deep and enduring.",
+            "span": "s love, ultimately requires truth, and the shared contemplation",
+            "note": "3- or 4-item comma-separated list"
+          },
+          {
+            "sentence_index": 680,
+            "text": "Faith makes us appreciate the architecture of human relationships because it grasps their ultimate foundation and definitive destiny in God, in his love, and thus sheds light on the art of building; as such it becomes a service to the common good.",
+            "span": "destiny in God, in his love, and thus sheds light",
+            "note": "3- or 4-item comma-separated list"
+          }
+        ]
+      },
+      "professional_parallel_stack": {
+        "label": "Professional-Parallel Stack",
+        "severity_note": "3+ adjacent paragraphs with same opening clause structure ('A X may Y', 'A Z may Y'); performs comprehensiveness without differentiating",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "false_balance": {
+        "label": "False-Balance Construction",
+        "severity_note": "'while reasonable people may disagree', both-sidesing without specifying the disagreement",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "hedge_and_affirm": {
+        "label": "Hedge-and-Affirm",
+        "severity_note": "'while X is generally true, in some cases Y' performs caution while saying nothing definite",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "recommendation_template": {
+        "label": "Recommendation Template",
+        "severity_note": "'DC must commit to', 'we urge X', generic-actor + modal + generic-verb without specifying action",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      },
+      "authority_laundering": {
+        "label": "Authority Laundering",
+        "severity_note": "'research has shown', 'experts agree' without naming the research or the experts",
+        "count": 0,
+        "density_per_1k": 0.0,
+        "hits": []
+      }
+    }
+  },
+  "claim_license": {
+    "task_surface": "craft_restoration",
+    "licenses": "A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.",
+    "does_not_license": "An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.",
+    "comparison_set": {
+      "target_words": 18685,
+      "baseline_words": 0,
+      "has_baseline": false,
+      "n_patterns_reported": 10
+    },
+    "length_range_words": null,
+    "register_match": [],
+    "language_match": [],
+    "fpr_target": null,
+    "confidence_interval_95": null,
+    "additional_caveats": [
+      "Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.",
+      "The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.",
+      "Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis)."
+    ],
+    "references": [
+      "references/aic-flags.md",
+      "references/source-triage.md"
+    ]
+  },
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** craft restoration\n\n**Reports:** A density report for named rhetorical patterns (Disguised Correctio, Manifesto Cadence, Triplet, Pseudo-Aphorism, and the nonfiction parallel set: False-Balance, Hedge-and-Affirm, Recommendation Template, Authority Laundering). For each pattern the report names per-1000-word density in the target and (when a baseline is supplied) the density in the baseline plus the per-1000-word delta. Per-instance hits are surfaced for source triage.\n\n**Does NOT report:** An authorship verdict. Pattern density is voice-coherence evidence and Layer B/C source-triage input, not authorship certification. Each detector is a regex / structural heuristic with known false-positive modes (the script's docstring lists the v1 limitations); 'earned vs. unearned' per instance is the writer's call. Heuristic thresholds are anchored to single-author case studies, not corpus calibration.\n\n### Comparison context\n\n- **baseline words:** 0\n- **has baseline:** False\n- **n patterns reported:** 10\n- **target words:** 18685\n\n### Caveats\n\n- Markdown blockquotes are stripped by default to keep quoted passages from inflating density. Pass `--keep-quotes` to disable. Plain-text quoted material still requires manual handling.\n- The correctio detector matches the explicit `not X, but Y` inline form and the `It is not X. It is Y` two-sentence frame. Subtler multi-sentence correctios are not yet captured.\n- Abstraction Shielding and Indefinite-Pronoun Gesture are deferred to v2 (need NER / contextual analysis).\n\n### References\n\n- references/aic-flags.md\n- references/source-triage.md",
+  "warnings": [],
+  "ai_status": null
+}

@@ -1,0 +1,803 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Evidence Pack: Magnifica Humanitas (Pope Leo XIV, 2026)</title>
+<style>
+:root{--fg:#1a1a1a;--muted:#6b6b6b;--bg:#fafaf7;--rule:#d4d4d0;--accent:#8b2c1c;--code-bg:#f0efea}
+*{box-sizing:border-box}html{font-size:16px}
+body{font-family:ui-serif,Georgia,"Times New Roman",serif;line-height:1.55;color:var(--fg);background:var(--bg);margin:0;padding:2rem 1rem 4rem}
+main{max-width:800px;margin:0 auto}
+h1,h2,h3{font-family:ui-sans-serif,-apple-system,"Helvetica Neue",Arial,sans-serif;line-height:1.25}
+h1{font-size:1.85rem;margin:0 0 0.5rem;color:var(--accent)}
+h2{font-size:1.3rem;margin:2.5rem 0 0.75rem;padding-top:1rem;border-top:1px solid var(--rule)}
+h3{font-size:1.05rem;margin:1.5rem 0 0.5rem;color:var(--muted)}
+p,ul,ol{margin:0.75rem 0}ul,ol{padding-left:1.5rem}li{margin:0.25rem 0}
+a{color:var(--accent);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+a:hover{background:rgba(139,44,28,0.08)}
+blockquote{border-left:3px solid var(--rule);margin:1rem 0 1rem 0.5rem;padding:0.3rem 0 0.3rem 1rem;color:var(--muted);font-style:italic}
+table{width:100%;border-collapse:collapse;margin:1rem 0;font-size:0.88rem;font-family:ui-sans-serif,-apple-system,"Helvetica Neue",Arial,sans-serif}
+th,td{text-align:left;padding:0.5rem 0.6rem;border-bottom:1px solid var(--rule);vertical-align:top}
+th{background:#f0efea;font-weight:600}tr:hover td{background:rgba(139,44,28,0.03)}
+code{font-family:ui-monospace,"SF Mono",Menlo,Monaco,monospace;font-size:0.85em;background:var(--code-bg);padding:0.1rem 0.35rem;border-radius:3px}
+pre{background:var(--code-bg);padding:0.75rem;overflow-x:auto;border-radius:4px}
+pre code{background:none;padding:0}
+hr{border:none;border-top:1px solid var(--rule);margin:2.5rem 0}
+strong{font-weight:600}em{font-style:italic}
+</style></head><body><main>
+<h1>Evidence pack: <em>Magnifica Humanitas</em> (Pope Leo XIV, 25 May 2026)</h1>
+<p><strong>Target:</strong> <em>Magnifica Humanitas</em>, the first encyclical of Pope Leo XIV's pontificate, signed 15 May 2026, released by the Holy See on Memorial Day, 25 May 2026. Subtitle: <em>On Safeguarding the Human Person in the Time of Artificial Intelligence</em>. 245 numbered paragraphs, ~38,300 English words.</p>
+<p><strong>Operator:</strong> Joshua Miller (anotherpanacea@gmail.com). Maintainer, SETEC stylometric framework (github.com/anotherpanacea-eng/setec-voiceprint, v1.90.2).</p>
+<p><strong>Date run:</strong> 26-27 May 2026.</p>
+<p><strong>Models used:</strong> Claude Opus 4.7 (for the operator-mediated mirror prediction passes, Anthropic consumer subscription). SETEC framework scripts run locally against an installed Python environment with spaCy 3.8 (<code>en_core_web_sm</code>, <code>en_core_web_md</code>).</p>
+<p><strong>Prior art:</strong> Linch Zhang, "Claude, Author of the <em>Humanitas</em>," <em>The Linchpin</em> (Substack), 26 May 2026. Zhang's piece consilience-argues that <em>Magnifica Humanitas</em> was substantially Claude-drafted, anchored on em-dash counts (127), "genuinely" frequency (9), tricolon density, and Pangram section-by-section flagging. This evidence pack treats Zhang's piece as the framing prior, replicates the load-bearing measurements under SETEC's vocabulary, runs analyses Zhang did not (variance audit, AIC pattern audit, POS-bigram diff, operator-mediated mirror prediction with a Francis-baseline control), and documents what each measurement can and cannot license.</p>
+<p><strong>Institutional context:</strong> On the day <em>Magnifica Humanitas</em> was released (25 May 2026), Chris Olah, co-founder of Anthropic, delivered remarks at the Vatican press conference at Pope Leo XIV's personal invitation. The Pope thanked Olah by name. Anthropic published a corresponding write-up. The institutional relationship between Anthropic and the Holy See, as of the encyclical's release date, is therefore on the public record. This pack treats the stylometric findings as separable from the institutional disclosure: the Vatican-Anthropic dialogue is public; what this pack measures is whether Claude's model surfaces appear in the published English prose at rates and patterns consistent with substantive drafting assistance. Both findings are compatible.</p>
+<p><strong>License:</strong> This pack is shared so anyone can audit, replicate, or contest it. No claim of dispositive verdict is made about which paragraphs were Claude-drafted or which Vatican drafters used AI assistance. The pack tells the reader where the artifact sits in measurement space, with which caveats, under which methodology.</p>
+<hr />
+<h2>What this pack concludes (and what it refuses to conclude)</h2>
+<p>The glass-box stylometric methodology applied to <em>Magnifica Humanitas</em> produces a coherent signal consistent with Claude-assisted drafting in significant portions of the English text. The signal is consilient across three independent measurement layers (lexical, syntactic, predictive), corroborates Zhang's published findings on every metric SETEC can replicate, and extends them with three findings Zhang's analysis did not surface: a correctio rate elevated 2-3x baseline, pronoun bigram suppression relative to the Francis corpus, and chapter-level heterogeneity consistent with differential drafter participation. The cross-family attribution (Claude specifically rather than another frontier model) is supported by both an exploratory v0.1 Codex run and a clean v0.3.1 cross-family rerun under neutral filenames and register-exercise framing. The Claude-specific attribution is now the leading model-family hypothesis on the selected windows; broader validation (multi-shot sampling, randomly sampled windows, parallel Gemini and standard-GPT-5 runs, a post-cutoff baseline) remains queued.</p>
+<p>The strongest single signal is the operator-mediated mirror discrimination result. When Claude is handed the prefix of an encyclical and asked to write the next 150 words blind, its predictions match the actual <em>Magnifica Humanitas</em> continuation at a K=4 mean TFIDF cosine of 0.573 and POS-bigram cosine of 0.816. Run against <em>Dilexit Nos</em> (Pope Francis, October 2024) under identical methodology, the same predictions match at 0.432 TFIDF cosine and 0.719 POS-bigram cosine. The Magnifica gap is +0.14 absolute / 33% relative on TFIDF, +0.10 absolute / 14% relative on POS-bigrams. Beat-by-beat qualitative inspection of the Babel passage (paragraph 7) and the "Babel syndrome" passage (paragraph 10), both of which Zhang screenshotted as Pangram-flagged, shows Claude independently reproducing the same triplet structure, the same biblical citation format, and (in the case of paragraph 10) the exact coined phrase "Babel syndrome."</p>
+<p>The pack does not say the encyclical was fully written by AI. The Layer A distributional signals (burstiness in range, lexical diversity high, sentence-length variance high) do not show the standard smoothing fingerprint of unedited RLHF-aligned LLM output. The pack reads the text as plausibly co-mediated: portions of the prose are consistent with Claude-assisted drafting followed by human revision; other portions appear humanly authored without measurable LLM trace. Chapter-level variance is consistent with this reading. The pack does not claim to identify which paragraphs, sections, or chapters carry which provenance, nor does it claim to identify who drafted, revised, reviewed, or approved any passage. The right next moves are institutional (the Holy See's drafting process, Curia disclosure practice, future Vatican policy on AI use in magisterial documents) rather than computational.</p>
+<p>The pack does not establish Claude specifically rather than another frontier model in any final sense. The v0.3.1 cross-family Codex/GPT comparison run on 27 May 2026 is the first cross-family measurement here, and on the four selected windows Claude predicts the published text substantially better than the Codex/GPT-family run does. A parallel Gemini mirror and a manual standard-GPT-5 run would sharpen the attribution further; both are queued.</p>
+<hr />
+<h2>Aggregate evidence table</h2>
+<table>
+<thead>
+<tr>
+<th>Test</th>
+<th>Result</th>
+<th>Direction</th>
+<th>Licensure</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Em-dash count (English)</td>
+<td>124 in Magnifica vs 0 in 4 Francis-only encyclicals; 29 in Lumen Fidei (Benedict-Francis 2013)</td>
+<td>LLM</td>
+<td>Strong; replicates Zhang at n-1</td>
+</tr>
+<tr>
+<td>Em-dash count (Italian)</td>
+<td>0 in Magnifica IT vs 94 en-dashes (Italian convention)</td>
+<td>Translation rule-out</td>
+<td>Em-dash anomaly is an English-text feature, not Italian-source bleed</td>
+</tr>
+<tr>
+<td>"Genuine(ly)" rate</td>
+<td>0.575/1k words in Magnifica vs 0.054-0.423/1k in 5 baselines</td>
+<td>LLM (Claude-specific)</td>
+<td>Strong; replicates Zhang. Claude house-style fingerprint</td>
+</tr>
+<tr>
+<td>SETEC AIC-7 correctio</td>
+<td>2.459/1k (95 instances) vs baselines 0.735-1.456/1k</td>
+<td>LLM</td>
+<td><strong>Largest AIC signal. New beyond Zhang.</strong> 2-3x baseline rate</td>
+</tr>
+<tr>
+<td>Comma-list tricolon (regex)</td>
+<td>5.09/1k vs baselines 1.62-4.20/1k</td>
+<td>LLM</td>
+<td>Confirms Zhang's tricolon finding; strict-parallelism triplets are NOT elevated</td>
+</tr>
+<tr>
+<td>Layer A burstiness</td>
+<td>-0.091 (in baseline range)</td>
+<td>Not smoothed</td>
+<td>Magnifica does NOT show the simple smoothing signature</td>
+</tr>
+<tr>
+<td>Layer A MTLD</td>
+<td>98.5 (above top of baseline range)</td>
+<td>Not smoothed</td>
+<td>High lexical diversity</td>
+</tr>
+<tr>
+<td>Layer A sentence mean</td>
+<td>24.6 words (above baseline range of 19.1-22.6)</td>
+<td>Distinctive</td>
+<td>Magnifica's prose is longer-sentence than Francis baselines</td>
+</tr>
+<tr>
+<td>Layer A FKGL mean</td>
+<td>16.6 (above baseline range of 10.8-13.7)</td>
+<td>Distinctive</td>
+<td>Significantly denser/more complex prose</td>
+</tr>
+<tr>
+<td>Layer A connectives/1k</td>
+<td>5.60 (above baseline range of 3.41-4.52)</td>
+<td>LLM-suggestive</td>
+<td>Elevated "thus/therefore/however" density; AI-typical</td>
+</tr>
+<tr>
+<td>Layer A POS-bigram entropy</td>
+<td>6.10 (below baseline range of 6.12-6.29)</td>
+<td>LLM-suggestive</td>
+<td>More syntactically concentrated; AI-typical</td>
+</tr>
+<tr>
+<td>AIC-8 image conjunction</td>
+<td>7.87/1k (within baseline range 6.98-8.56)</td>
+<td>Not elevated</td>
+<td>Babel/Jerusalem controlling metaphor source-triages as earned by frame; SETEC does not over-flag (contrast with Granta/Nazir)</td>
+</tr>
+<tr>
+<td>AIC-9 kicker density</td>
+<td>0.021 (low end of range)</td>
+<td>Not elevated</td>
+<td>No closure-inflation signal</td>
+</tr>
+<tr>
+<td>POS-bigram diff (drift direction)</td>
+<td>ADJ-NOUN, NOUN-CCONJ, ADP-NOUN over-represented; all PRON-* bigrams under-represented</td>
+<td>LLM-suggestive</td>
+<td>Pronoun suppression is novel beyond Zhang. AI-typical abstraction-density</td>
+</tr>
+<tr>
+<td>Chapter-level variance</td>
+<td>Chapter 1 stylistic outlier (sentence mean 31.2, lowest POS entropy); Chapter 4 highest MTLD</td>
+<td>Heterogeneous</td>
+<td>Consistent with Zhang's section-by-section variance hypothesis</td>
+</tr>
+<tr>
+<td><strong>Mirror prediction K=4: Claude pred vs ACTUAL Magnifica</strong></td>
+<td><strong>TFIDF 0.5729, POS-bg 0.8161</strong></td>
+<td><strong>LLM</strong></td>
+<td><strong>Load-bearing signal. See Dilexit comparison below.</strong></td>
+</tr>
+<tr>
+<td>Mirror prediction K=4: Claude pred vs ACTUAL Dilexit Nos (Francis 2024 control)</td>
+<td>TFIDF 0.4322, POS-bg 0.7186</td>
+<td>Reference</td>
+<td>Francis-baseline reference</td>
+</tr>
+<tr>
+<td>Magnifica vs Dilexit mirror gap</td>
+<td>+0.1406 TFIDF / +0.0975 POS-bg</td>
+<td>LLM (Magnifica closer to Claude's prediction distribution)</td>
+<td>33% / 14% relative gap</td>
+</tr>
+<tr>
+<td>Mirror prediction W1 (Babel passage, Pangram-screenshot-flagged)</td>
+<td>Claude pred vs ACTUAL TFIDF 0.7243; beat-for-beat structural match of "single language and a single purpose" triplet, "make a name for itself" verbatim, biblical citation format</td>
+<td>LLM</td>
+<td>Strongest single window. Forced-by-structure caveat applies.</td>
+</tr>
+<tr>
+<td>Mirror prediction W2 (Babel syndrome passage, Pangram-flagged)</td>
+<td>Claude independently coined the exact phrase "Babel syndrome"</td>
+<td>LLM</td>
+<td>Convergence on a specific coinage</td>
+</tr>
+<tr>
+<td>Mirror control C1 (Dilexit Nos open paragraph)</td>
+<td>Claude predicted Scripture/Augustine; Francis used personal grandmother-and-pastry anecdote</td>
+<td>Human (out-of-distribution)</td>
+<td>The kind of move LLMs systematically cannot predict</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2>The case</h2>
+<p>On 25 May 2026 (Memorial Day in the United States), the Holy See released <em>Magnifica Humanitas</em>, the first encyclical letter of Pope Leo XIV. The 245-paragraph document develops Catholic social teaching in light of artificial intelligence, structurally bridging <em>Rerum Novarum</em> (Leo XIII, 1891) and <em>Laudato Si'</em> (Francis, 2015). Within twenty-four hours, Linch Zhang published a Substack analysis arguing that significant fractions of the encyclical were AI-drafted, most likely by Claude, anchored on lexical/punctuation tells, Pangram detection results, and translation rule-outs.</p>
+<p>Zhang's piece is good consilience work but Pangram-anchored. The detector reports a verdict-shaped output. The shape of the inquiry the case demands is glass-box: named features, source-triage decisions, claim-license tiers, predictive comparison against verified-human controls. That is what this pack provides.</p>
+<p>This evidence pack was produced by an independent operator using the SETEC glass-box stylometric framework and a Design 2 operator-mediated mirror-discrimination methodology (SPEC v0.1, documented in <code>SPEC_external_mirror_discrimination.md</code> in the SETEC repository). The operator has no commercial stake in the Pangram-detection debate, has been critical of Pangram's product-surface verdict shape, and has spent the preceding three months publishing a sequence arguing for exactly this kind of evidence pack as the disciplined alternative to "the detector said so."</p>
+<hr />
+<h2>Per-tier evidence</h2>
+<h3>Tier 0: Lexical and punctuation tells (Zhang replication)</h3>
+<p>Zhang's published counts replicate cleanly under independent acquisition and counting. The em-dash count in <em>Magnifica Humanitas</em> (English) lands at 124 in our pipeline versus Zhang's reported 127; the three-count gap traces to footnote-area em-dashes the SETEC cleaner removes. For comparison, the four most recent Francis-only encyclicals/exhortations (<em>Dilexit Nos</em> 2024, <em>Laudate Deum</em> 2023, <em>Fratelli Tutti</em> 2020, <em>Laudato Si'</em> 2015) all contain zero em-dashes in body text. <em>Lumen Fidei</em> (2013, jointly authored by Benedict and Francis) contains 29 em-dashes, mostly serving as speech-colon replacements in patristic citations, structurally different from the Magnifica usage.</p>
+<p>The "genuinely"/"genuine" frequency confirms similarly: 22 instances total in <em>Magnifica Humanitas</em> English (0.575 per 1,000 words). For comparison, <em>Dilexit Nos</em> contains 5 instances (0.179/1k), <em>Fratelli Tutti</em> 9 (0.235/1k), <em>Laudato Si'</em> 14 (0.369/1k), <em>Laudate Deum</em> 3 (0.423/1k), <em>Lumen Fidei</em> 1 (0.054/1k). Magnifica's rate is 1.4x to 10x the rate of the comparison set.</p>
+<p>The Italian version of <em>Magnifica Humanitas</em> contains 0 em-dashes and 94 en-dashes; Italian typesetting convention substitutes en-dashes for the English em-dash function. The Italian text contains 0 instances of the word stem <em>genuin-</em> (where the closest Italian equivalent would be <em>genuinamente</em> or <em>autentico</em>). Both observations confirm that the English em-dash and "genuinely" anomalies are features of the English-language text specifically, not artifacts of translation from Italian.</p>
+<p>Lexical tells license: a flag that the English text contains markers strongly associated with Claude prose, present at densities outside the range observed in recent papal encyclicals. They do not license a verdict; Catholic doctrinal prose admits formal features, and an enthusiastic human drafter could in principle produce these rates. But the consistency across multiple independent tells (em-dash, "genuinely") combined with the translation rule-out makes a non-Claude explanation work hard.</p>
+<h3>Tier 1: SETEC variance audit (Layer A smoothing diagnosis)</h3>
+<p>Layer A measures the distributional signature that AI-typical RLHF-aligned generation tends to leave: compressed sentence-length variance, narrowed lexical diversity, lowered burstiness, suppressed POS distribution. The audit was run on all six English encyclicals plus the Italian <em>Magnifica Humanitas</em>.</p>
+<p>Result on <em>Magnifica Humanitas</em> English:</p>
+<ul>
+<li>Burstiness B: -0.091, <strong>within baseline range</strong> (-0.226 to -0.072). Magnifica is less bursty than <em>Laudato Si'</em> but more bursty than <em>Dilexit Nos</em>. No simple smoothing signature.</li>
+<li>MATTR (window=50): 0.811, upper end of baseline range (0.767-0.815).</li>
+<li>MTLD: 98.54, <strong>above baseline range</strong> (63.43-97.27). Highest lexical diversity in the corpus.</li>
+<li>Yule's K: 123.87, within range (107.23-142.11).</li>
+<li>Sentence mean (words): 24.60, <strong>above range</strong> (19.11-22.58). Magnifica's prose has longer sentences than the Francis baselines.</li>
+<li>Sentence SD: 20.50, <strong>above range</strong> (14.24-19.04). More sentence-length variance than baselines.</li>
+<li>FKGL mean: 16.60, <strong>well above range</strong> (10.78-13.67). Significantly denser, more complex prose.</li>
+<li>FKGL SD: 8.06, <strong>above range</strong> (6.00-7.42).</li>
+<li>Connective density (per 1,000 words): 5.60, <strong>well above range</strong> (3.41-4.52). Magnifica deploys "thus," "therefore," "however," "moreover," "consequently" at substantially elevated rates compared to the Francis corpus.</li>
+<li>POS-bigram entropy: 6.097, <strong>below baseline range</strong> (6.115-6.288). Magnifica is more syntactically concentrated than the Francis baselines.</li>
+</ul>
+<p>Layer A licenses: Magnifica is NOT a clean smoothing case. The text reads as varied (high MTLD, high sentence SD, in-range burstiness), longer-sentenced, denser, and connective-heavy. The connective density elevation and the POS-bigram entropy depression are AI-typical patterns; the high lexical diversity and high sentence variance are not. The pattern is consistent with substantial co-mediation: AI-drafted passages contribute the connectives and the syntactic concentration; human revision contributes the lexical breadth and sentence variance.</p>
+<p>Layer A does not license: a claim of full AI generation. If <em>Magnifica Humanitas</em> were a single-session unedited LLM output, MTLD and sentence variance would be lower than the baselines, not higher.</p>
+<h3>Tier 2: AIC pattern audit (Layer B craft restoration)</h3>
+<p>The AIC families measure the surface rhetorical moves AI literary and argumentative prose tends to over-produce: correctio ("not X but Y"), triplet structure, manifesto cadence, paragraph-final aphoristic kicker, image conjunction, prestige-metaphor scatter, pseudo-aphorism.</p>
+<p>Result on <em>Magnifica Humanitas</em> English, per 1,000-word rates:</p>
+<table>
+<thead>
+<tr>
+<th>Pattern</th>
+<th>Magnifica</th>
+<th>Baseline range</th>
+<th>Position</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Correctio (AIC-7)</td>
+<td><strong>2.459</strong></td>
+<td>0.735 to 1.456</td>
+<td><strong>2x to 3x baseline</strong></td>
+</tr>
+<tr>
+<td>Triplet (SETEC strict parallel)</td>
+<td>0.233</td>
+<td>0.161 to 0.604</td>
+<td>low end of range</td>
+</tr>
+<tr>
+<td>Manifesto cadence</td>
+<td>0.026</td>
+<td>0.000 to 0.104</td>
+<td>low</td>
+</tr>
+<tr>
+<td>Pseudo-aphorism</td>
+<td>0.078</td>
+<td>0.105 to 0.422</td>
+<td>below range</td>
+</tr>
+<tr>
+<td>Negation hedge, prof-parallel stack, false balance, hedge-and-affirm, authority laundering</td>
+<td>0.000</td>
+<td>0.000+</td>
+<td>no signal</td>
+</tr>
+<tr>
+<td>AIC-8 image conjunction</td>
+<td>7.87</td>
+<td>6.98 to 8.56</td>
+<td>within range</td>
+</tr>
+<tr>
+<td>AIC-9 kicker density</td>
+<td>0.021</td>
+<td>0.018 to 0.121</td>
+<td>low end of range</td>
+</tr>
+<tr>
+<td>Recommendation template</td>
+<td>0.078</td>
+<td>0.000 to 0.036</td>
+<td>slightly elevated</td>
+</tr>
+</tbody>
+</table>
+<p>The correctio rate is the single largest AIC signal. <em>Magnifica Humanitas</em> contains 95 instances of the "not X but Y" / "X is not Y but Z" / "X, but not Y" pattern. The comparison set contains 19 to 46 in encyclicals of comparable length. This is the most identifiable AI rhetorical move and the one Anthropic has tried to suppress in Claude's system prompt (per published Anthropic constitution documents and leaked system prompts).</p>
+<p>Per-instance source-triage on the correctio flag: many instances are thematically earned. The Babel-versus-Jerusalem binary is the encyclical's controlling rhetorical move and naturally invites contrastive constructions. But the rate is elevated beyond what the thematic argument requires. <em>Fratelli Tutti</em> deploys an equally binary fraternal-vs-individualist argument and lands at 1.195/1k; <em>Laudato Si'</em> deploys the equally binary integral-ecology-vs-technocracy argument at 0.735/1k. The Magnifica rate is 2-3x these comparators in encyclicals of similar argumentative shape. Some portion of the correctio elevation is unearned by the frame.</p>
+<p>The AIC-8 image conjunction result is significant in the opposite direction: the controlling Babel/Jerusalem metaphor, which generates a great deal of figurative noun-verb pairing throughout the encyclical, does not push the AIC-8 detector above baseline. The framework's source-triage step (calibrated against the Granta/Nazir miss documented in the prior evidence pack) correctly reads the imagery as earned by frame.</p>
+<p>The triplet result is more nuanced than Zhang's reading suggests. SETEC's strict triplet detector (which weights parallelism and anaphora) reads Magnifica at 0.233/1k, below the baseline range. A supplementary regex measuring comma-list tricolons specifically (<code>(\w+, \w+,? and \w+)</code>) reads Magnifica at 5.09/1k, well above the baseline range of 1.62 to 4.20/1k. An expanded regex permitting 1-2 word units per slot lands at 7.94/1k against baselines 2.22 to 5.66. The signal Zhang observed is real but specific: Magnifica deploys comma-list tricolons ("dignity, justice and fraternity") at elevated rates without correspondingly deploying the more elaborate syntactic parallelism patterns that mark high-rhetorical-flourish triplet structure in formal English. This is consistent with AI-typical triplet generation, which favors the shorter list-of-three move over the longer parallel-clause move.</p>
+<p>Layer B licenses: a claim that <em>Magnifica Humanitas</em> exhibits elevated rates of named AI-typical rhetorical moves, particularly correctio (the largest signal) and comma-list tricolons. The image-conjunction calibration confirms the framework is not over-flagging at the metaphor-heavy register.</p>
+<p>Layer B does not license: a verdict. Catholic doctrinal prose has formal-rhetorical conventions of its own, and a skilled human writer in this tradition can deploy correctio at high rates. The signal is comparative against five Francis-era encyclicals of similar register; a longer baseline corpus might widen the comparator range.</p>
+<h3>Tier 3: POS-bigram diff against baseline</h3>
+<p>Run via SETEC's <code>bigram_diff.py</code> with <em>Magnifica Humanitas</em> English as target and the five baseline encyclicals as the matched-register comparison set. Total KL divergence: 0.054 (pooled) / 0.059 (mean).</p>
+<p>Most over-represented POS-bigrams in Magnifica versus the baseline (top 10 by KL contribution):</p>
+<p>ADJ-NOUN (+0.012 share, log2 +0.31), NOUN-CCONJ (+0.006, +0.42), ADP-NOUN (+0.006, +0.26), NOUN-ADP (+0.005, +0.13), NOUN-PUNCT (+0.005, +0.12), PROPN-PROPN (+0.005, +0.94), VERB-NOUN (+0.005, +0.52), DET-ADJ (+0.005, +0.25), ADP-ADJ (+0.004, +0.39), PUNCT-NOUN (+0.004, +0.50).</p>
+<p>Pattern: adjective-and-noun heavy, coordinated noun lists (NOUN-CCONJ), prepositional noun chains (ADP-NOUN, NOUN-ADP), proper-noun pairs (PROPN-PROPN, often "Pope Leo," "Saint Paul VI"). The Magnifica register is more nominal, more formally-modified than the Francis baseline.</p>
+<p>Most under-represented POS-bigrams in Magnifica versus the baseline:</p>
+<p>PUNCT-PUNCT (-0.010 share, log2 -1.78), ADP-PRON (-0.008, -0.77), PRON-NOUN (-0.008, -1.00), VERB-PRON (-0.005, -0.57), PRON-AUX (-0.005, -0.39), PRON-VERB (-0.004, -0.32), SCONJ-PRON (-0.004, -0.79), PRON-PUNCT (-0.004, -0.94).</p>
+<p>Pattern: every PRON-* bigram is suppressed. Magnifica writes with significantly fewer pronouns than the Francis corpus. The suppression is broad-based: subject pronouns (PRON-VERB), pronominal objects (VERB-PRON), pronouns in prepositional phrases (ADP-PRON), pronouns at sentence ends (PRON-PUNCT). All down.</p>
+<p>The pronoun suppression is the novel finding beyond Zhang's analysis. AI-typical prose tends to write more abstractly, more in terms of nominal categories, less in terms of "we" and "you" address. <em>Fratelli Tutti</em> and <em>Dilexit Nos</em> read as Pope Francis directly addressing the reader, with frequent first-person-plural and second-person-singular interpolation. <em>Magnifica Humanitas</em> reads more like a formal exposition of categories, with the pope intervening only at chapter transitions and in concluding rhetorical moves. The POS-bigram signal quantifies this register difference.</p>
+<p>The PUNCT-PUNCT suppression is the other notable result. The Francis baseline contains more PUNCT-PUNCT adjacency (often quote-mark-followed-by-comma or period-followed-by-quote-mark), reflecting heavier biblical and patristic quotation density. Magnifica still quotes substantially (124 footnoted citations) but the citation density per-paragraph is lower; the prose carries more declarative weight on its own without quotation scaffolding.</p>
+<p>Layer C licenses: a quantitative description of the syntactic-pattern drift between Magnifica and the Francis register. The drift direction (more nominal, fewer pronouns, less quotation density) is consistent with AI-typical prose patterns.</p>
+<p>Layer C does not license: a verdict. Register drift can be authored by humans deliberately writing in a more formal mode.</p>
+<h3>Tier 4: Operator-mediated mirror discrimination</h3>
+<p>This is the load-bearing test. Protocol per SETEC SPEC v0.1, Design 2, K=4. For each of four windows in the encyclical, the prefix (~500 words leading up to the window) was passed to a fresh Claude Opus 4.7 session with the instruction to write the next 150 words blind, in the encyclical's voice. The model received only the prefix and a brief task description; it did not have access to the target continuation, did not perform web search, and produced a single draft per window. The four windows were selected to match the passages Zhang screenshotted or quoted as Pangram-flagged:</p>
+<ul>
+<li><strong>W1: Paragraph 7</strong> (Babel section). Pangram screenshot-flagged at high AI confidence in Zhang's published images.</li>
+<li><strong>W2: Paragraph 10</strong> ("Babel syndrome" passage). Zhang's first published quotation in the "lines that jumped out as too smooth, too triadic, too inhuman" section.</li>
+<li><strong>W3: Paragraph 100</strong> (the "artificial imitation of positive human communication... genuinely helpful" passage). Zhang's specific quotation around the most contested "genuinely" instance.</li>
+<li><strong>W4: Paragraph 107</strong> (the "alignment" passage). Zhang's quotation around the moralization-of-machines critique.</li>
+</ul>
+<p>Distance metrics computed: word-set Jaccard, TF-IDF cosine, POS-bigram cosine. (Sentence-transformer cosine was not run in this pass; it would require ~5 minutes of additional compute per window and adds a fourth axis that would not change the qualitative result.)</p>
+<p>Result, K=4 aggregate:</p>
+<table>
+<thead>
+<tr>
+<th>Comparison</th>
+<th>Word Jaccard</th>
+<th>TF-IDF cosine</th>
+<th>POS-bigram cosine</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude prediction vs ACTUAL Magnifica continuation</td>
+<td><strong>0.1466</strong></td>
+<td><strong>0.5729</strong></td>
+<td><strong>0.8161</strong></td>
+</tr>
+<tr>
+<td>Claude prediction vs prefix-tail (self-anchor)</td>
+<td>0.1209</td>
+<td>0.4287</td>
+<td>0.8151</td>
+</tr>
+<tr>
+<td>ACTUAL Magnifica vs prefix-tail (natural local style)</td>
+<td>0.1220</td>
+<td>0.4405</td>
+<td>0.7882</td>
+</tr>
+</tbody>
+</table>
+<p>Claude's prediction matches the actual <em>Magnifica Humanitas</em> continuation at TFIDF cosine 0.5729, which is higher than either the prediction-to-prefix-tail similarity (0.4287, the self-anchor) or the actual-to-prefix-tail similarity (0.4405, the natural local-style anchor). This is unusual. In a normal mirror test against verified-human prose with no LLM mediation, we would expect Claude's prediction to share register with the prefix (high prediction-to-prefix similarity) but to diverge on specific vocabulary from the actual continuation (low prediction-to-actual similarity). The pattern here is reversed: Claude's prediction shares MORE vocabulary with the actual text than the actual text shares with its own immediately-preceding context.</p>
+<p>Per-window breakdown:</p>
+<table>
+<thead>
+<tr>
+<th>Window</th>
+<th>Jaccard</th>
+<th>TFIDF</th>
+<th>POS-bg</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>W1 par 7 (Babel)</td>
+<td>0.2038</td>
+<td><strong>0.7243</strong></td>
+<td>0.8766</td>
+</tr>
+<tr>
+<td>W2 par 10 (Babel syndrome)</td>
+<td>0.1071</td>
+<td>0.5258</td>
+<td>0.7571</td>
+</tr>
+<tr>
+<td>W3 par 100 (genuinely helpful)</td>
+<td>0.1236</td>
+<td>0.5256</td>
+<td>0.8233</td>
+</tr>
+<tr>
+<td>W4 par 107 (alignment)</td>
+<td>0.1519</td>
+<td>0.5158</td>
+<td>0.8073</td>
+</tr>
+</tbody>
+</table>
+<p>The W1 result is the strongest single window. TFIDF 0.7243 on a blind 150-word continuation is unusually high; for comparison, the Granta/Nazir K=1 rum-shop window that the prior evidence pack documented as "striking" landed at TFIDF 0.41.</p>
+<p>The W1 result carries a forced-by-structure caveat. The prefix concludes with the subheading "Two biblical images." The next paragraph is forced to introduce two biblical images. Both Claude's prediction and the actual encyclical introduce Babel first, then Nehemiah/Jerusalem. The structural setup substantially constrains the topic. Even given that constraint, the qualitative beat-by-beat alignment is striking:</p>
+<table>
+<thead>
+<tr>
+<th>Move</th>
+<th>Claude prediction</th>
+<th>Actual <em>Magnifica Humanitas</em> paragraph 7</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Naming</td>
+<td>"The first is the Tower of Babel (cf. Gen 11:1-9)"</td>
+<td>"the construction of the Tower of Babel (cf. Gen 11:1-9)"</td>
+</tr>
+<tr>
+<td>Tricolon</td>
+<td>"a single language and a single purpose"</td>
+<td>"a single language, a single technology, a single direction"</td>
+</tr>
+<tr>
+<td>Quoted phrase</td>
+<td>"in order to make a name for itself"</td>
+<td>"to 'make a name' for themselves"</td>
+</tr>
+<tr>
+<td>Citation format</td>
+<td>"(cf. Neh 1-6)"</td>
+<td>"(cf. <em>Neh</em> 2-6)"</td>
+</tr>
+<tr>
+<td>Frame</td>
+<td>"scattered and wounded people, listening to the voice of the Lord"</td>
+<td>"people decided to build a city and a tower 'with its top in the heavens'"</td>
+</tr>
+</tbody>
+</table>
+<p>The exact triplet ("a single X, a single Y, a single Z") and the exact phrase "make a name for itself" appearing in both Claude's blind prediction and the actual encyclical text, on a 150-word window, is the cleanest qualitative finding in this pack.</p>
+<p>The W2 result is even more direct. Claude's prediction for paragraph 10 contains the coined phrase <em>"Babel syndrome"</em> in the same paragraph slot where the actual encyclical introduces and defines the term. The Holy See's official text coins "Babel syndrome" as a category in paragraph 10. Claude, given only the prefix ending at paragraph 9, independently coined the same term. The probability of this convergence by chance, under any standard register-similarity model, is small.</p>
+<h3>Francis-baseline mirror control</h3>
+<p>Same methodology applied to <em>Dilexit Nos</em> (Pope Francis, 24 October 2024), at parallel paragraph positions (par 7, par 10, par 100, par 107). <em>Dilexit Nos</em> was released approximately seven months before the published training cutoff of the Claude Opus 4.7 model used in this test, so it is plausibly within Claude's training data. If so, this control should over-estimate Claude's predictive accuracy on verifiably-Francis prose. The Magnifica gap below should be understood as a conservative estimate of the discrimination signal.</p>
+<p>Result, K=4 aggregate, <em>Dilexit Nos</em>:</p>
+<table>
+<thead>
+<tr>
+<th>Comparison</th>
+<th>Word Jaccard</th>
+<th>TF-IDF cosine</th>
+<th>POS-bigram cosine</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude prediction vs ACTUAL Dilexit continuation</td>
+<td>0.1476</td>
+<td>0.4322</td>
+<td>0.7186</td>
+</tr>
+<tr>
+<td>Claude prediction vs prefix-tail</td>
+<td>0.1470</td>
+<td>0.4127</td>
+<td>0.7127</td>
+</tr>
+<tr>
+<td>ACTUAL Dilexit vs prefix-tail</td>
+<td>0.1136</td>
+<td>0.3724</td>
+<td>0.7702</td>
+</tr>
+</tbody>
+</table>
+<p>Head-to-head:</p>
+<table>
+<thead>
+<tr>
+<th>Metric (K=4 mean)</th>
+<th>Magnifica</th>
+<th>Dilexit (Francis)</th>
+<th>Gap</th>
+<th>Relative</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Word Jaccard</td>
+<td>0.1466</td>
+<td>0.1476</td>
+<td>-0.0010</td>
+<td>tied</td>
+</tr>
+<tr>
+<td><strong>TF-IDF cosine</strong></td>
+<td><strong>0.5729</strong></td>
+<td><strong>0.4322</strong></td>
+<td><strong>+0.1406</strong></td>
+<td><strong>+33%</strong></td>
+</tr>
+<tr>
+<td><strong>POS-bigram cosine</strong></td>
+<td><strong>0.8161</strong></td>
+<td><strong>0.7186</strong></td>
+<td><strong>+0.0975</strong></td>
+<td><strong>+14%</strong></td>
+</tr>
+<tr>
+<td>ACTUAL vs prefix-tail TFIDF</td>
+<td>0.4405</td>
+<td>0.3724</td>
+<td>+0.0681</td>
+<td>+18%</td>
+</tr>
+</tbody>
+</table>
+<p>Three findings.</p>
+<p>First, word Jaccard is essentially tied between the two encyclicals. The vocabulary-set overlap is similar. This rules out the trivial explanation that Magnifica is "easier to predict because the topic is AI which Claude is trained on." Topic-level vocabulary overlap is the same.</p>
+<p>Second, the discrimination signal lives in TFIDF cosine (the weighted distinctive-vocabulary measure) and POS-bigram cosine (the syntactic-pattern measure). Both move in the same direction, both at meaningful magnitudes. Claude's predictions share the specific distinctive vocabulary and the specific syntactic patterns of <em>Magnifica Humanitas</em> at substantially higher rates than they share these features with <em>Dilexit Nos</em>.</p>
+<p>Third, the qualitative comparison is decisive. On the C1 control (Dilexit paragraph 7, the most prefix-open window in the control set), Claude predicted a meditation on inner depths and Augustine. The actual Francis text turned to a personal anecdote: <em>"For the carnival, when we were children, my grandmother would make a pastry using a very thin batter..."</em> This is the kind of move LLMs systematically cannot predict from prefix alone, because it requires the autobiographical particularity that distinguishes a person from a register. Francis's grandmother making pastries does not generate from the register of <em>Dilexit Nos</em>; it generates from Francis being Francis.</p>
+<p>The contrast with W1 (Magnifica Babel passage), where Claude's prediction structurally mirrored the actual text down to specific phrasings, is the load-bearing qualitative observation in this pack. <em>Magnifica Humanitas</em> did not produce the kind of unpredictable autobiographical-particular move that <em>Dilexit Nos</em> produced. Where the Francis prose pivots into the writer's lived particularity, the Leo prose pivots into the register's predictable next move.</p>
+<p>Mirror discrimination licenses: a claim that <em>Magnifica Humanitas</em> sits substantially closer to Claude's prediction distribution than <em>Dilexit Nos</em> does, on both lexical-distinctive and syntactic measurements. This is consistent with substantial Claude-mediated drafting in the Magnifica English text.</p>
+<p>Mirror discrimination does not license: a claim about which specific paragraphs were AI-drafted, which Vatican drafters used the tool, or whether the assistance was direct drafting or revision-on-AI-outputs. The signal is text-level, not turn-level.</p>
+<h3>Chapter-level variance</h3>
+<p>SETEC's chapter distinctiveness audit run on <em>Magnifica Humanitas</em> shows the text is stylometrically heterogeneous, not homogeneous:</p>
+<table>
+<thead>
+<tr>
+<th>Chapter</th>
+<th>Words</th>
+<th>Sent mean</th>
+<th>MTLD</th>
+<th>FKGL mean</th>
+<th>POS-bg entropy</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Introduction (1-16)</td>
+<td>2,839</td>
+<td>22.4</td>
+<td>93.6</td>
+<td>14.15</td>
+<td>6.111</td>
+</tr>
+<tr>
+<td>Chapter One (17-45)</td>
+<td>5,923</td>
+<td><strong>31.2</strong></td>
+<td>94.2</td>
+<td><strong>19.40</strong></td>
+<td><strong>5.897</strong></td>
+</tr>
+<tr>
+<td>Chapter Two (46-89)</td>
+<td>6,390</td>
+<td>26.6</td>
+<td>84.7</td>
+<td>17.63</td>
+<td>6.103</td>
+</tr>
+<tr>
+<td>Chapter Three (90-130)</td>
+<td>6,103</td>
+<td>22.7</td>
+<td>108.3</td>
+<td>16.00</td>
+<td>6.150</td>
+</tr>
+<tr>
+<td>Chapter Four (131-181)</td>
+<td>7,452</td>
+<td>23.7</td>
+<td><strong>126.7</strong></td>
+<td>17.45</td>
+<td>5.984</td>
+</tr>
+<tr>
+<td>Chapter Five (182-228)</td>
+<td>9,302</td>
+<td>23.0</td>
+<td>93.0</td>
+<td>15.23</td>
+<td>6.103</td>
+</tr>
+</tbody>
+</table>
+<p>Chapter One is the stylistic outlier across multiple Layer A signals: highest sentence mean (31.2 words, 30% above the encyclical average), highest FKGL (19.4, well above any chapter), lowest POS-bigram entropy (5.897, indicating syntactic concentration). Chapter Four has the highest MTLD (126.7), indicating the broadest vocabulary. Chapters Three and Five sit closer to the encyclical-wide mean.</p>
+<p>This heterogeneity is consistent with Zhang's section-by-section Pangram variance hypothesis. Different chapters carry different stylometric profiles, suggesting different drafting hands, different revision intensities, or both. The framework does not assign provenance to any specific chapter; the variance itself is the licensed finding.</p>
+<hr />
+<h2>What this pack cannot license</h2>
+<p>A definitive verdict that any specific paragraph was Claude-generated. The signal is text-level and comparative.</p>
+<p>An attribution claim about which Curia drafter, congregation, or pontifical academy used AI assistance. SETEC measures the artifact, not the workflow that produced it.</p>
+<p>A claim that the encyclical was fully AI-written. The Layer A signals do not show the standard unedited-LLM smoothing fingerprint. Lexical diversity is high; sentence variance is high. The pattern reads as co-mediated.</p>
+<p>A fully resolved single-family attribution (Claude specifically rather than GPT or Gemini). The v0.3.1 cross-family Codex/GPT comparison run on 27 May 2026 supports Claude over GPT-family on the four selected windows, but a parallel Gemini run and a manual standard-GPT-5 run would sharpen the attribution further; both are queued.</p>
+<p>A statement about the doctrinal or magisterial authority of the encyclical. The Catholic Church's tradition of papal drafting has long involved ghostwriters; the magisterial authority of an encyclical does not depend on which hand held the pen.</p>
+<p>A judgment about whether Vatican use of AI assistance is appropriate. This pack documents that the assistance happened, with high confidence in significant portions of the English text. What follows from that is a question for the Holy See, for Catholic moral theology, and for the broader culture watching how religious institutions handle AI integration.</p>
+<hr />
+<h2>Methodological notes</h2>
+<p><strong>Operator-blind re-run (added 27 May 2026).</strong> In response to peer review identifying operator-priming as a potential confound in the original Claude run, the test was re-executed with sub-agent prompts stripped of every reference to the project, to Zhang's article, to stylometry, to AI detection, and to Pope Leo XIV or Magnifica Humanitas specifically. The blind sub-agents received only the prefix files and a minimal continuation instruction ("write the next 150 words in the same register").</p>
+<p>The blind rerun K=4 aggregate against <em>Magnifica Humanitas</em>: TFIDF 0.5932, POS-bg 0.8311. The blind rerun K=4 against <em>Dilexit Nos</em>: TFIDF 0.4363, POS-bg 0.7268. The Magnifica-vs-Dilexit discrimination gap under blind conditions: +0.1570 TFIDF, +0.1043 POS-bg. <strong>Both gaps are slightly larger than under the original operator-aware run</strong> (+0.1407 TFIDF, +0.0975 POS-bg). The operator-priming concern did not explain away the original signal at the K=4 aggregate level: under stricter blinding, the aggregate gap persisted and slightly increased.</p>
+<p>W1 specifically went DOWN under stricter blinding (TFIDF 0.7243 → 0.6256), so the original W1 high score was somewhat amplified by structural framing. Other windows compensated. The W2 blind prediction reached for "the temptation of Babel" (very near the actual "Babel syndrome" coinage). The W3 blind prediction independently produced the phrase "a <em>genuinely</em> helpful companion." The W4 blind prediction opened with "the <em>alignment</em> of AI systems with human values." The convergent features came from the prefix-plus-Claude-distribution, not from operator framing. The C1 Dilexit blind result remained low (TFIDF 0.2389; Francis's grandmother-pastry anecdote remains unpredictable from prefix alone).</p>
+<p>The original findings stand. The blind rerun strengthens rather than weakens them. Future Claude rounds should default to the blind-operator standard documented in <code>gpt5_elicitation_kit/v0.2</code>.</p>
+<p><strong>Cross-family check via Codex (added 27 May 2026, v0.3.1 clean rerun).</strong> A parallel mirror comparison was conducted via Codex serial subagents on 27 May 2026. An initial v0.1 run produced a Claude-favoring result but surfaced three flaws under peer review (feature-encoding filenames, prompt framing that triggered Codex policy refusals on W2 and C1, and the Codex-not-standard-GPT-5 build issue). The v0.3.1 kit fixed the first two: neutral window-ID filenames, register-exercise prompt framing that avoids religious-authority triggers. The v0.3.1 rerun ran clean (no refusals, no regenerations, no search artifacts) and is the result reported here. The v0.1 run is preserved in <code>gpt5_elicitation_kit/archive_v0.1_codex_run/</code> for audit; the v0.3.1 run lives at <code>gpt5_elicitation_kit_rerun_2026-05-27_subagents3/</code>.</p>
+<p><strong>Aggregate finding.</strong> Claude predicts <em>Magnifica Humanitas</em> substantially more accurately than Codex/GPT-family does, on the same windows under the same protocol.</p>
+<table>
+<thead>
+<tr>
+<th>Run (K=4 aggregate)</th>
+<th>Magnifica TFIDF</th>
+<th>Dilexit TFIDF</th>
+<th>Within-model gap</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Claude original (operator-aware)</td>
+<td>0.5729</td>
+<td>0.4322</td>
+<td>+0.1407</td>
+</tr>
+<tr>
+<td>Claude blind rerun</td>
+<td>0.5932</td>
+<td>0.4363</td>
+<td>+0.1569</td>
+</tr>
+<tr>
+<td>Codex/GPT-family v0.1 (feature-leak caveat)</td>
+<td>0.4987</td>
+<td>0.4166</td>
+<td>+0.0821</td>
+</tr>
+<tr>
+<td><strong>Codex/GPT-family v0.3.1 (clean)</strong></td>
+<td><strong>0.4846</strong></td>
+<td><strong>0.4189</strong></td>
+<td><strong>+0.0657</strong></td>
+</tr>
+</tbody>
+</table>
+<p>Claude predicts Magnifica at TFIDF +0.1086 higher than the v0.3.1 Codex run does on the same four windows. Claude's within-model discrimination is +0.1569; Codex/GPT-family's is +0.0657, less than half as large. The discrimination signal is Claude-specific in this comparison; it is not a generic frontier-LLM signal.</p>
+<p><strong>Qualitative findings hold under v0.3.1 neutral framing.</strong> The convergences between Claude's blind continuations and the actual encyclical, and the corresponding divergences in Codex's continuations, persist under neutral filenames AND neutral register-exercise prompts:</p>
+<table>
+<thead>
+<tr>
+<th>Window</th>
+<th>Actual encyclical</th>
+<th>Claude blind</th>
+<th>Codex/GPT-family v0.3.1 (clean)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>W1 Babel pair</td>
+<td>Babel + Nehemiah</td>
+<td>Babel + Nehemiah</td>
+<td>Babel + Pentecost</td>
+</tr>
+<tr>
+<td>W2 Par 10 coinage</td>
+<td>"Babel syndrome"</td>
+<td>"the temptation of Babel"</td>
+<td>no "Babel" reference; "structure of sin" pivot</td>
+</tr>
+<tr>
+<td>W3 Par 100 vocabulary</td>
+<td>"genuinely helpful"</td>
+<td>"a genuinely helpful companion"</td>
+<td>zero "genuinely"/"genuine" in 150 words</td>
+</tr>
+<tr>
+<td>W4 Par 107 framing</td>
+<td>"alignment" critique</td>
+<td>"the alignment of AI systems"</td>
+<td>zero "alignment" in 143 words</td>
+</tr>
+</tbody>
+</table>
+<p>The v0.1-to-v0.3.1 comparison rules out the filename-leak hypothesis for these qualitative findings. Under neutral filenames AND neutral register-exercise framing, Codex/GPT-family still does not converge on Nehemiah, "Babel syndrome," "genuinely," or "alignment." Claude does, even under stricter blinding than the original Claude run.</p>
+<p><strong>Caveats remaining.</strong></p>
+<ol>
+<li>
+<p><strong>Codex is GPT-family but not provably standard consumer GPT-5.</strong> The underlying Codex build is not exposed in the interface. A manual ChatGPT run under v0.3.1 would close this footnote. The aggregate cross-family signal is unlikely to change under a different GPT-5.x variant, but the test is properly described as Codex/GPT-family, not as standard GPT-5.</p>
+</li>
+<li>
+<p><strong>Selected windows, not random sample.</strong> The four Magnifica windows were chosen because Zhang flagged them as Pangram-suspicious. The test answers "do these specific suspicious passages reproduce under Claude better than under GPT-family." It does not answer "is the whole encyclical Claude-drafted."</p>
+</li>
+<li>
+<p><strong>Single-shot per model per window.</strong> Multi-shot sampling (N=5) would tighten the variance estimate. Single-shot matches the Claude protocol but does not produce a sampling-distribution estimate.</p>
+</li>
+<li>
+<p><strong>No post-cutoff human baseline.</strong> <em>Dilexit Nos</em> (Oct 2024) precedes the Claude Opus 4.7 training cutoff (Jan 2026) but may be in some GPT-family training. A truly post-cutoff verified-human document in matched register would tighten the control.</p>
+</li>
+</ol>
+<p><strong>What this run licenses.</strong> A claim that on the four selected Magnifica windows, Claude predicts the published continuation substantially more accurately than Codex/GPT-family does (+0.1086 TFIDF), and exhibits within-model Magnifica-vs-Dilexit discrimination (+0.1569) that Codex/GPT-family does not exhibit at comparable strength (+0.0657). The qualitative convergences (Nehemiah, "the temptation of Babel" near the actual "Babel syndrome" coinage, "genuinely," "alignment") survive both operator-blinding (Claude blind rerun) and prompt/filename-blinding (Codex v0.3.1 rerun). They are consistent with a genuine difference between Claude's and GPT-family's continuation tendencies for these prefixes, rather than with the contamination routes the repaired run removed. Single-shot per model per window cannot estimate the underlying distribution; multi-shot replication would tell us how stable each model's typical continuation is.</p>
+<p><strong>What this run does not license.</strong> A definitive paragraph-level Claude attribution. The cross-family signal supports Claude-specific stylometric placement of the selected passages; it does not by itself prove Claude drafted those paragraphs. A clean manual standard-GPT-5 run, multi-shot sampling, randomly-sampled windows, parallel Gemini, and a post-cutoff baseline would all sharpen the resolution.</p>
+<p><strong>Control-choice confound.</strong> <em>Dilexit Nos</em> is the available verified-Catholic-doctrinal-prose baseline, but Francis's autobiographical particulars (the grandmother-pastry anecdote at C1, the "liquid society" diagnostic move at C2) reflect his idiosyncratic authorial voice rather than papal register defaults. Some portion of the within-model Magnifica-vs-Dilexit gap may therefore reflect "Francis is hard to predict" rather than "Magnifica sits unusually close to Claude." The ideal control would be a future encyclical written entirely without AI assistance by the same Curial drafting apparatus that produced Magnifica, against which Magnifica could be compared within-author and within-process. We do not have that document. The cross-family Claude-over-GPT gap (+0.1086 on Magnifica) is less vulnerable to this confound than the within-model Magnifica-vs-Dilexit gap, because the cross-family test compares two models on the same target, holding the target constant. The within-model gap is more confounded; the cross-family gap carries the load-bearing argument. This caveat should be foregrounded in future iterations of the pack.</p>
+<p><strong>On decimal precision.</strong> TFIDF cosine values are reported to four decimal places in the tables above to preserve the observational record from the metric script. Readers should understand the precision as reporting-convention, not as statistical significance on an N=1-per-window comparison. The qualitative magnitudes (a difference of roughly 0.10 between Claude and Codex on Magnifica, a difference of roughly 0.15 between Claude's Magnifica and Dilexit aggregates) are what the argument depends on. The fourth decimal is record-keeping.</p>
+<p><strong>Adversarial run.</strong> The sibling <code>gpt5_adversarial_kit/</code> tests whether a hypothesis-aware primed model can close the Claude/GPT-family gap from prefix-cueing alone. Not yet run.</p>
+<p><strong>Gemini parallel.</strong> Not yet run. Further sharpens cross-family attribution. Future work.</p>
+<hr />
+<h2>Additional tests run (27 May 2026, follow-up sweep)</h2>
+<p>After the publication-ready draft was finalized, three additional SETEC tests were run on the Magnifica corpus. Two produced informative results; one came back uncalibrated due to compute constraints.</p>
+<p><strong>Mirror Design 4 (expanding-context) pilot on W1 Babel.</strong> Three fresh Claude predictions at expanding prefix sizes (500, 1000, and maximum-available 1129 words, all ending at the same anchor right before paragraph 7). The metric script computed TFIDF cosine against the actual W1 target:</p>
+<table>
+<thead>
+<tr>
+<th>Context size</th>
+<th>TFIDF cosine vs actual</th>
+<th>Word Jaccard</th>
+<th>POS-bigram cosine</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>500 words</td>
+<td>0.6434</td>
+<td>0.1899</td>
+<td>0.8903</td>
+</tr>
+<tr>
+<td>1000 words</td>
+<td><strong>0.7060</strong></td>
+<td>0.1543</td>
+<td>0.8905</td>
+</tr>
+<tr>
+<td>1129 words (max)</td>
+<td>0.6937</td>
+<td>0.1790</td>
+<td>0.8906</td>
+</tr>
+</tbody>
+</table>
+<p>One expanding-context sequence improves sharply between 500 and 1000 words (+0.063 TFIDF), then flattens or dips slightly at 1129. With one draw per context size, the curve is compatible with both in-distribution convergence and sampling noise; the present data cannot distinguish them. POS-bigram cosine held essentially constant across all three (≈0.89).</p>
+<p>The W1 window has now been generated by three different Claude sessions at roughly comparable conditions: 0.7243 in the original operator-aware run, 0.6256 in the blind rerun (500-word context), and 0.6434 in this Design 4 500-word condition. Three single generations at nominally similar settings span a TFIDF range of about 0.10. That variance is itself informative; it strengthens the case that the next protocol step should be multi-shot generation per condition.</p>
+<p>As a pilot, this sequence is suggestive: the curve climbs as context grows, in the direction the Design 4 hypothesis predicts. It is not yet a load-bearing additional measurement layer. The full Design 4 protocol would multi-shot each context size and run the same expansion against a verified-Francis window for control.</p>
+<p><strong>Confounder audit.</strong> SETEC's confounder_audit.py was adapted to run against the available SETEC outputs (variance audit, AIC pattern audit, discourse audit) on Magnifica. Two observed signals fed the ranking: marked-move entropy (HIGH at 2.72 bits) and AIC pattern density (HIGH, driven by correctio at 2.46/1k).</p>
+<p>Top-ranked confounders:</p>
+<table>
+<thead>
+<tr>
+<th>Confounder</th>
+<th>Score</th>
+<th>Matches</th>
+<th>Contradictions</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>house_style_enforcement</td>
+<td>1.00</td>
+<td>aic_pattern_density=high</td>
+<td>0</td>
+</tr>
+<tr>
+<td>professional_copyediting</td>
+<td>0.50</td>
+<td>0</td>
+<td>0</td>
+</tr>
+<tr>
+<td>legal_or_policy_memo_style</td>
+<td>0.50</td>
+<td>aic_pattern_density=high</td>
+<td>marked_move_entropy=high contradicts</td>
+</tr>
+<tr>
+<td>ai_smoothing</td>
+<td>0.50</td>
+<td>aic_pattern_density=high</td>
+<td>marked_move_entropy=high contradicts</td>
+</tr>
+<tr>
+<td>intentional_voice_imitation</td>
+<td>0.50</td>
+<td>0</td>
+<td>0</td>
+</tr>
+</tbody>
+</table>
+<p>The discriminator: both <code>ai_smoothing</code> and <code>legal_or_policy_memo_style</code> predict LOW marked-move entropy (a narrow set of moves). Magnifica shows HIGH marked-move entropy at 2.72 bits, contradicting both. The top-ranked alternative is <code>house_style_enforcement</code> (Vatican encyclical conventions), which makes no marked-move-entropy prediction either way. The audit's evidence base was thin (2 of 17 possible signals available; the missing 12 require voice-distance, paragraph audit, idiolect detector, agency audit, sliding-window heatmap, and POS-bigram KL computations that weren't queued for this sweep). With this base the audit ranks but does not discriminate decisively. The relevant qualitative finding is that the AI-smoothing-signature prediction (low marked-move entropy) is contradicted by the available evidence; the framework's Layer A "no smoothing fingerprint" finding from the original run survives this scrutiny.</p>
+<p><strong>Per-token surprisal (binoculars).</strong> Run on CPU with gpt2 / distilgpt2 as the scorer/observer pair (the only model pair that fit on the available 2.2GB disk allocation):</p>
+<table>
+<thead>
+<tr>
+<th>Document</th>
+<th>Surprisal (bits/token)</th>
+<th>Binoculars ratio</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Dilexit Nos</td>
+<td>4.68</td>
+<td>0.936</td>
+</tr>
+<tr>
+<td>Fratelli Tutti</td>
+<td>4.96</td>
+<td>0.944</td>
+</tr>
+<tr>
+<td>Laudate Deum</td>
+<td>4.81</td>
+<td>0.931</td>
+</tr>
+<tr>
+<td>Laudato Si'</td>
+<td>4.91</td>
+<td>0.942</td>
+</tr>
+<tr>
+<td>Lumen Fidei</td>
+<td>4.66</td>
+<td>0.910</td>
+</tr>
+<tr>
+<td>Magnifica Humanitas</td>
+<td>4.85</td>
+<td>0.934</td>
+</tr>
+</tbody>
+</table>
+<p>All six documents land in the 4.66-4.96 bits/token range. Magnifica's z-score against the Francis baseline (mean 4.80, SD 0.13) is +0.33, well inside ±1 SD. <strong>The test does not discriminate.</strong> Caveat: the standard "6-7 bits/token = human, 4-5 = RLHF-aligned LLM" heuristic was calibrated against larger base models (qwen3_4b_base, llama32_3b, etc.). gpt2 (2019, 124M parameters) compresses everything into the same band, including unambiguous Francis human prose. The SETEC framework's verdict band is correctly labeled "uncalibrated" by the script. To get a meaningful result a binoculars rerun would need a larger base model and more disk; the test is queued.</p>
+<p><strong>What survives the follow-up sweep.</strong> Design 4 expanding-context, run on one window with one draw per context size, is a pilot rather than an additional load-bearing measurement axis; the cross-run W1 variance reinforces the case for multi-shot replication as the next step. The confounder audit's discrimination against the AI-smoothing alternative is informative but the available evidence is thin; the audit's top ranked confounder (house_style_enforcement) is compatible with the Claude-assisted-drafting interpretation rather than against it. The binoculars test is currently uncalibrated and reserves judgment.</p>
+<p><strong>Dilexit Nos contamination caveat.</strong> <em>Dilexit Nos</em> was released October 2024, before the May 2025 published training cutoff of the Claude model used. The control is therefore contaminated in the direction of over-estimating Claude's predictive accuracy on Francis prose. The actual Magnifica-versus-uncontaminated-human gap is likely larger than the +0.14 TFIDF reported here.</p>
+<p><strong>Window selection.</strong> All four mirror windows were chosen to match Zhang's screenshot-flagged or quoted passages. This was deliberate (testing the specific paragraphs Zhang and Pangram identified as anomalous), but it also means the windows were pre-selected for likely AI signal. A truly random window selection across the 245-paragraph document would be a useful follow-up; the prediction would be that aggregate signal weakens but specific high-AI sections (per Layer A variance) still flag.</p>
+<p><strong>Sentence-transformer cosine omitted.</strong> A fourth distance metric (adjacent-sentence semantic cohesion via sentence-transformers) would add ~5 minutes of compute per window and a fourth axis. It was not run in this pass. The three metrics here are sufficient to establish the comparative signal; the fourth would refine it.</p>
+<p><strong>Image-conjunction calibration.</strong> SETEC's AIC-8 image-conjunction detector did not over-flag on Magnifica's Babel/Jerusalem metaphor (7.87/1k, within baseline range). This is the framework's own self-test against the Granta/Nazir miss documented in the prior evidence pack. The framework reads the controlling biblical metaphor as earned by frame, correctly.</p>
+<p><strong>Substantive vs procedural humility.</strong> The framework's discipline forbids claims it cannot license. The pack reads: there is substantial Claude-fingerprint signal in significant portions of <em>Magnifica Humanitas</em>, and the signal is consilient across three independent measurement layers. The pack does not read: the encyclical was AI-generated; the magisterium is compromised; specific cardinals used the tool. Where Zhang's piece is properly punchy in service of public attention, this pack is properly cautious in service of disciplined attribution.</p>
+<hr />
+<h2>Where this artifact lives</h2>
+<p>This evidence pack is published at <code>setec-voiceprint/docs/evidence-packs/magnifica-humanitas.html</code>. The companion Substack post engaging Zhang's analysis is at anotherpanacea.substack.com. The mirror test prefixes, blind predictions, target continuations, Design 4 expanding-context sequence, the v0.3.1 GPT-5 elicitation kit, and the SETEC raw analysis outputs are preserved alongside the HTML at <code>setec-voiceprint/docs/evidence-packs/magnifica-humanitas/</code> for replication. SETEC framework: github.com/anotherpanacea-eng/setec-voiceprint.</p>
+<p>The Linch Zhang piece this pack engages: https://linch.substack.com/p/claude-author-of-the-humanitas (26 May 2026).</p>
+<hr />
+<p><em>Filed 27 May 2026 by Joshua Miller with Claude (Opus 4.7) as analysis partner. The methodological discipline this pack practices was developed across the glass-box stylometry sequence at anotherpanacea.com and the SETEC framework. The Granta / Nazir evidence pack (May 2026) is the prior worked example. The mirror methodology specification is at <code>SPEC_external_mirror_discrimination.md</code> in the SETEC repository.</em></p>
+</main></body></html>

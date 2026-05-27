@@ -1,0 +1,17 @@
+{
+  "ctx500": {
+    "word_jaccard": 0.1899,
+    "tfidf_cosine": 0.6434,
+    "pos_bigram_cosine": 0.8903
+  },
+  "ctx1000": {
+    "word_jaccard": 0.1543,
+    "tfidf_cosine": 0.706,
+    "pos_bigram_cosine": 0.8905
+  },
+  "ctx1500": {
+    "word_jaccard": 0.179,
+    "tfidf_cosine": 0.6937,
+    "pos_bigram_cosine": 0.8906
+  }
+}
