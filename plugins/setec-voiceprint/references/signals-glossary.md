@@ -41,6 +41,7 @@ Each entry block carries the signal's metadata on a single line:
 - [Stance / modality signals (7)](#stance-modality-signals)
 - [Bigram-KL signals (1)](#bigram-kl-signals)
 - [Repetition signals (2)](#repetition-signals)
+- [Narrative-decision signals (33)](#narrative-decision-signals)
 - [Totals](#totals)
 
 ---
@@ -483,6 +484,74 @@ Maximum occurrences of a word in any 300-token sliding window. Diagnostic for co
 
 ---
 
+## Narrative-decision signals
+
+Discourse-level narrative-decision features from Russell et al. 2026 ("StoryScope", arXiv:2604.03136v4). Distinct from the texture-level AIC families above: these score *what* the story decides to do, not *how* the prose phrases it. Computed via an LLM judge (pluggable backend; default reads pre-computed values from a JSON manifest) over the whole document at once. Length floor 2000 tokens; degrades silently on shorter prose and on non-fiction registers. Polarity arrows below reflect the *paper's* reported direction on long-form fiction; the 2026-05-28 cross-corpus polarity check is the audit step that confirms or inverts each one on register-specific corpora.
+
+Full surface spec at `references/narrative-decision-audit-spec.md`. Schema at `scripts/narrative_feature_schema.py` (importable; carries paper-reported human / AI group means for every signal). Audit at `scripts/narrative_decision_audit.py`. Polarity check at `scripts/calibration/narrative_polarity_audit.py`.
+
+The 30 features produce 33 signals because three categorical features ("Subplot Integration", "Reference Explicitness", "Dominant Emotional Expression") carry both an AI-elevated option and a human-elevated option (paper Table 12). Signal paths follow the form `narrative.<bundle>.<feature_key>[.<option>]`.
+
+### AI-elevated: thematic over-determination (6)
+
+- `narrative.thematic_over_determination.thematic_explicitness_and_moralizing` · narrative-decision · ↑ · **literature_anchored** · Russell et al. 2026 Table 12 (H=3.28, AI=3.94)
+- `narrative.thematic_over_determination.moral_philosophical_weighting` · narrative-decision · ↑ · **literature_anchored** · (H=3.26, AI=3.68)
+- `narrative.thematic_over_determination.thematic_unity` · narrative-decision · ↑ · **literature_anchored** · (H=4.41, AI=4.74)
+- `narrative.thematic_over_determination.narratorial_thematic_commentary.yes` · narrative-decision · ↑ · **literature_anchored** · (H=52%, AI=77%)
+- `narrative.thematic_over_determination.dialogue_function.philosophical_debate` · narrative-decision · ↑ · **literature_anchored** · (H=34%, AI=59%)
+- `narrative.thematic_over_determination.reference_explicitness.implicit_echoes` · narrative-decision · ↑ · **literature_anchored** · (H=50%, AI=72%)
+
+### AI-elevated: sensory & embodied performativity (6)
+
+- `narrative.sensory_embodied_performativity.dominant_emotional_expression.embodied_metaphors` · narrative-decision · ↑ · **literature_anchored** · (H=38%, AI=81%)
+- `narrative.sensory_embodied_performativity.setting_as_psychological_mirror` · narrative-decision · ↑ · **literature_anchored** · (H=3.58, AI=4.07)
+- `narrative.sensory_embodied_performativity.environmental_ecological_emphasis` · narrative-decision · ↑ · **literature_anchored** · (H=2.83, AI=3.21)
+- `narrative.sensory_embodied_performativity.dominant_sensory_modalities.olfactory` · narrative-decision · ↑ · **literature_anchored** · (H=57%, AI=82%)
+- `narrative.sensory_embodied_performativity.sensory_density` · narrative-decision · ↑ · **literature_anchored** · (H=3.66, AI=3.93)
+- `narrative.sensory_embodied_performativity.depth_of_interior_access` · narrative-decision · ↑ · **literature_anchored** · (H=3.67, AI=3.93)
+
+### AI-elevated: structural streamlining (8)
+
+- `narrative.structural_streamlining.continuity_of_main_causal_chain` · narrative-decision · ↑ · **literature_anchored** · (H=3.92, AI=4.20)
+- `narrative.structural_streamlining.spatial_granularity_level` · narrative-decision · ↑ · **literature_anchored** · (H=2.27, AI=2.53)
+- `narrative.structural_streamlining.agency_in_resolution.protagonist_choice` · narrative-decision · ↑ · **literature_anchored** · (H=46%, AI=69%)
+- `narrative.structural_streamlining.character_introduction.external_description` · narrative-decision · ↑ · **literature_anchored** · (H=30%, AI=52%)
+- `narrative.structural_streamlining.subplot_integration.no_subplots` · narrative-decision · ↑ · **literature_anchored** · (H=57%, AI=79%)
+- `narrative.structural_streamlining.mode_of_resolution.resolved_internally` · narrative-decision · ↑ · **literature_anchored** · (H=27%, AI=47%)
+- `narrative.structural_streamlining.opening_spatial_grounding` · narrative-decision · ↑ · **literature_anchored** · (H=2.12, AI=2.33)
+- `narrative.structural_streamlining.pre_threat_character_investment` · narrative-decision · ↑ · **literature_anchored** · (H=2.76, AI=2.99)
+
+### Human-elevated: intertextual richness (2)
+
+- `narrative.intertextual_richness.intertextual_strategy_types.explicit_named` · narrative-decision · ↓ · **literature_anchored** · (H=47%, AI=24%)
+- `narrative.intertextual_richness.reference_explicitness.balanced_mix` · narrative-decision · ↓ · **literature_anchored** · (H=37%, AI=16%)
+
+### Human-elevated: reader engagement (2)
+
+- `narrative.reader_engagement.fourth_wall_permeability` · narrative-decision · ↓ · **literature_anchored** · (H=0.67, AI=0.39; 0–3 ordinal)
+- `narrative.reader_engagement.frequency_of_direct_reader_address` · narrative-decision · ↓ · **literature_anchored** · (H=0.28, AI=0.07; 0–2 ordinal)
+
+### Human-elevated: temporal complexity (4)
+
+- `narrative.temporal_complexity.depth_of_recontextualization_after_surprise` · narrative-decision · ↓ · **literature_anchored** · (H=3.28, AI=2.95)
+- `narrative.temporal_complexity.degree_of_chronological_discontinuity` · narrative-decision · ↓ · **literature_anchored** · (H=2.40, AI=2.12)
+- `narrative.temporal_complexity.nonlinear_framing_for_delayed_disclosure` · narrative-decision · ↓ · **literature_anchored** · (H=1.96, AI=1.68)
+- `narrative.temporal_complexity.anachrony_intensity` · narrative-decision · ↓ · **literature_anchored** · (H=2.58, AI=2.31)
+
+### Human-elevated: narrative diversity (5)
+
+- `narrative.narrative_diversity.location_variety_scope` · narrative-decision · ↓ · **literature_anchored** · (H=1.34, AI=1.08; 0–3 ordinal)
+- `narrative.narrative_diversity.dialogue_to_narration_proportion` · narrative-decision · ↓ · **literature_anchored** · (H=2.95, AI=2.70)
+- `narrative.narrative_diversity.subplot_integration.thematically_parallel` · narrative-decision · ↓ · **literature_anchored** · (H=42%, AI=21%)
+- `narrative.narrative_diversity.moral_polarity_toward_protagonist.ambivalent_or_mixed` · narrative-decision · ↓ · **literature_anchored** · (H=59%, AI=38%)
+- `narrative.narrative_diversity.dominant_emotional_expression.explicit_labels` · narrative-decision · ↓ · **literature_anchored** · (H=29%, AI=8%)
+
+### Aggregate
+
+- `narrative.aggregate.literature_anchored_score` · narrative-decision · ↓ · **literature_anchored** · mean over all evaluated signals in human-z-units (1.0 = paper's human mean; 0.0 = paper's AI mean). Lower scores are more AI-like. Verdict band ships as `uncalibrated`; per-corpus thresholds via operator-side polarity check.
+
+---
+
 ## Totals
 
 | Family | Count |
@@ -504,18 +573,19 @@ Maximum occurrences of a word in any 300-token sliding window. Diagnostic for co
 | stance-modality | 7 |
 | bigram-kl | 1 |
 | repetition | 2 |
-| **TOTAL** | **56** |
+| narrative-decision | 33 (+1 aggregate) |
+| **TOTAL** | **90** |
 
-## Calibration-status distribution (v1.66.0)
+## Calibration-status distribution (v1.66.0 + ND v0.1.0)
 
 | Status | Count | Notes |
 |---|---|---|
 | calibrated | 0 | Per Stylometry-to-the-people policy; no corpus-derived thresholds shipped as load-bearing defaults |
-| literature_anchored | 6 | mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl |
+| literature_anchored | 40 | 6 prior (mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl) + 34 from the narrative-decision family (33 per-signal + aggregate), anchored to Russell et al. 2026 |
 | empirically_oriented | 8 | The six 2026-05-10 EditLens-measured variance signals + pos_bigram_entropy + Burrows Delta + per_feature_cosine |
 | heuristic | 41 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints |
 | structural_only | 1 | function_word_ratio |
-| **TOTAL** | **56** |
+| **TOTAL** | **90** |
 
 ## Related references
 

@@ -1,0 +1,44 @@
+# Replication-pipeline dependencies for the StoryScope replication
+# (Russell et al. 2026, arXiv:2604.03136v4) inside SETEC.
+#
+# Install on demand:
+#   pip install -r requirements-replication.txt
+#
+# These are required by `plugins/setec-voiceprint/scripts/replication/`
+# only. The Surface 6 single-doc audit (`narrative_decision_audit.py`)
+# and the cross-corpus polarity check
+# (`calibration/narrative_polarity_audit.py`) run without any of
+# these — they're pure Python over the existing framework.
+#
+# See `plugins/setec-voiceprint/references/narrative-decision-
+# replication-spec.md` for the per-stage dependency map.
+
+# Stage C1 / C2 — XGBoost classifier training. Paper hyperparams
+# (n_est=420/500, depth=8/7, lambda=2.0/1.0) are documented in
+# `train_xgboost.py`. Operators using the L2 quick-start (analytics
+# on the paper's released feature manifest) need this.
+xgboost>=2.0
+
+# Stage C3 — SHAP analysis. Used for the per-feature importance
+# decomposition that drives the core / fingerprint / noise role
+# assignment (paper §2.2).
+shap>=0.45
+
+# Stage C analytics — array math + tabular IO. scikit-learn already
+# in `requirements.txt`; numpy / pandas pinned here for the
+# replication-specific helpers (LDA in C4, k-NN distances in C5).
+numpy>=1.24
+pandas>=2.0
+
+# Stage B4 — embedding-based feature deduplication. The default
+# backend is the framework's `embedding_backend.py` which wraps
+# sentence-transformers; pinned here so operators get it without
+# uncommenting the optional line in the root requirements.txt.
+sentence-transformers>=2.7
+
+# Optional: SDKs for the reference LLM-judge adapters that ship in
+# `scripts/narrative_judge.py` and the A1/A2/B1/B2/B3/B5 stage
+# scripts. Operators install only the ones they intend to use.
+# anthropic>=0.30
+# openai>=1.30
+# google-genai>=0.5
