@@ -1,0 +1,2001 @@
+# SETEC Voiceprint capabilities manifest
+# Single source of truth for every user-facing script in
+# the framework. Hand-edited; do not let it drift from the
+# linter at tools/check_capabilities_drift.py.
+#
+# Status vocabulary:
+#   - todo: auto-seeded; hand-curated fields missing
+#   - heuristic: shipped, not yet calibrated
+#   - empirically_oriented: local experimentation
+#   - literature_anchored: peer-reviewed anchor
+#   - calibrated: corpus-tested with FPR/TPR metrics
+#   - structural_only: feeds downstream signals, not user-facing
+#
+# Schema version: 0.1.0  (seeded 2026-05-28)
+schema_version: "0.1.0"
+entries:
+  - id: acquire_blog
+    script_path: plugins/setec-voiceprint/scripts/acquire_blog.py
+    surface: voice_coherence_acquisition
+    status: todo
+    family: TODO
+    purpose: "pull a single author's blog or Substack archive."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: acquisition
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - bs4
+        - feedparser
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: acquire_blogger_takeout
+    script_path: plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py
+    surface: voice_coherence_acquisition
+    status: todo
+    family: TODO
+    purpose: "import Google Takeout Blogger exports."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: acquire_corpus_template
+    script_path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
+    surface: voice_coherence_acquisition
+    status: todo
+    family: TODO
+    purpose: "scaffold for a new acquisition script."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: acquire_magazine
+    script_path: plugins/setec-voiceprint/scripts/acquire_magazine.py
+    surface: voice_coherence_acquisition
+    status: todo
+    family: TODO
+    purpose: "pull literary-horror short fiction from online magazines."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: acquisition
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - bs4
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: acquisition_core
+    script_path: plugins/setec-voiceprint/scripts/acquisition_core.py
+    surface: voice_coherence_acquisition
+    status: todo
+    family: TODO
+    purpose: "shared helpers for impostor-corpus acquisition."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: acquisition
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - bs4
+        - dateutil
+        - requests
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: adversarial_robustness_card
+    script_path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "per-signal robustness card."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: aesthetic_authority_audit
+    script_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "compound AIC-8 + AIC-9 audit."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: agency_abstraction_audit
+    script_path: plugins/setec-voiceprint/scripts/agency_abstraction_audit.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "agency-loss / abstraction-drift detector."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: aic_pattern_audit
+    script_path: plugins/setec-voiceprint/scripts/aic_pattern_audit.py
+    surface: craft_restoration
+    status: heuristic
+    family: aic-7-discourse-leak
+    purpose: >
+      Layer B / Layer C named-pattern density audit. Counts the
+      rhetorical patterns AI prose over-produces (correctio,
+      pseudo-aphorism, manifesto cadence, triplet, professional-
+      parallel stack, false balance, hedge-and-affirm, recommendation
+      template, authority laundering) at per-thousand-word density,
+      optionally vs. a baseline corpus.
+    use_when:
+      - Target prose feels "smooth" or "professional" in a way that signals over-production
+      - You want surface evidence to complement Tier 1 variance audit
+      - You're doing source triage on a manuscript and want flagged sentences for adjudication
+    do_not_use_when:
+      - You need a binary AI verdict — the audit reports density, the writer adjudicates per instance
+      - Target is a technical / legal register where parallel-stack patterns are expected
+      - Length floor 400 tokens
+    inputs:
+      target: prose text file (UTF-8)
+      optional:
+        - --baseline-dir for relative density comparison
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .aic.json
+        - .aic.md
+    compute:
+      tier: core
+      cost_note: regex + optional spaCy; no API costs
+      length_floor_words: 400
+    registers:
+      - blog_essay
+      - long_form_journalism
+      - literary_fiction
+    dependencies:
+      python: []
+    examples:
+      - description: Count all named patterns
+        cmd: "python3 plugins/setec-voiceprint/scripts/aic_pattern_audit.py target.md"
+      - description: Single pattern with baseline comparison
+        cmd: "python3 plugins/setec-voiceprint/scripts/aic_pattern_audit.py target.md --baseline-dir baseline/ --pattern correctio"
+    references:
+      - plugins/setec-voiceprint/references/aic-flags.md
+      - plugins/setec-voiceprint/references/source-triage.md
+
+  - id: baseline_discovery
+    script_path: plugins/setec-voiceprint/scripts/baseline_discovery.py
+    surface: setup
+    status: todo
+    family: TODO
+    purpose: "locate the user's existing baselines folder."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: before_after_restoration
+    script_path: plugins/setec-voiceprint/scripts/before_after_restoration.py
+    surface: craft_restoration
+    status: todo
+    family: TODO
+    purpose: "Cathedral upgrade #7 v2."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: bigram_diff
+    script_path: plugins/setec-voiceprint/scripts/bigram_diff.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "bigram_diff.py Per-bigram POS-bigram diff: single target document vs. a comparison cluster."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: binoculars_audit
+    script_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
+    surface: binoculars_discrimination
+    status: literature_anchored
+    family: binoculars
+    purpose: >
+      Two-model perplexity comparison (Hans et al. 2024). Scores a
+      target against a scorer LLM + observer LLM pair; lower ratios
+      indicate the target is more predictable under the scorer than
+      the observer — a known signal for AI-generated text. v1 uses
+      perplexity-ratio; v2 uses true cross-perplexity when tokenizers
+      align.
+    use_when:
+      - You want a discrimination-evidence signal that's close to the published 95% AUC condition
+      - You have access to a scorer + observer pair (default tinyllama + gpt2)
+      - Target ≥ 50 tokens
+    do_not_use_when:
+      - You need a binary verdict — ships uncalibrated by default
+      - Target is in the scorer's or observer's training set (memorization biases the score)
+      - You can't install the surprisal tier (transformers + torch, ~2 GB)
+    inputs:
+      target: prose text file (UTF-8)
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .binoculars.json
+        - .binoculars.md
+    compute:
+      tier: surprisal
+      cost_note: One-time ~600 MB tinyllama + ~500 MB gpt2 download; CPU inference acceptable
+      length_floor_words: 50
+    registers:
+      - all_fiction
+      - all_nonfiction
+    dependencies:
+      python: []
+    examples:
+      - description: Default scorer/observer pair
+        cmd: "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt"
+      - description: Custom scorer pair
+        cmd: "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --scorer falcon-7b --observer falcon-7b-instruct"
+    references:
+      - plugins/setec-voiceprint/references/signals-glossary.md
+
+  - id: binoculars_calibrate
+    script_path: plugins/setec-voiceprint/scripts/binoculars_calibrate.py
+    surface: calibration
+    status: todo
+    family: TODO
+    purpose: "Binoculars threshold calibration."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: calibration_drift_monitor
+    script_path: plugins/setec-voiceprint/scripts/calibration_drift_monitor.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "infrastructure-drift detector (paired-release schedule Release 9, Trustworthiness Tier 2/3)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - nltk
+        - scipy
+        - spacy
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: calibration_survey
+    script_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
+    surface: smoothing_diagnosis_calibration
+    status: todo
+    family: TODO
+    purpose: "survey every COMPRESSION_HEURISTICS signal."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - atexit
+        - concurrent
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: chapter_distinctiveness_audit
+    script_path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "chapter_distinctiveness_audit.py Chapter-aware vocabulary repetition diagnostic."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: check_corpus
+    script_path: plugins/setec-voiceprint/scripts/check_corpus.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "check_corpus.py"
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: compose_evidence_pack
+    script_path: plugins/setec-voiceprint/scripts/external_mirror/compose_evidence_pack.py
+    surface: external_mirror_discrimination
+    status: todo
+    family: TODO
+    purpose: "Phase B step 3: compose evidence pack."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: confounder_audit
+    script_path: plugins/setec-voiceprint/scripts/confounder_audit.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "Layer D differential diagnosis."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: construction_signature_audit
+    script_path: plugins/setec-voiceprint/scripts/construction_signature_audit.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "interpretable syntactic-construction density audit (paired-release schedule Release 8, Surfaces Tier 3)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: controls_audit
+    script_path: plugins/setec-voiceprint/scripts/controls_audit.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "negative + positive controls for voice-distance comparison."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: dependency_check
+    script_path: plugins/setec-voiceprint/scripts/dependency_check.py
+    surface: setup
+    status: heuristic
+    family: setup
+    purpose: >
+      Survey the SETEC framework's five dependency tiers (core,
+      acquisition, ocr, calibration, surprisal) plus the optional
+      power-ups tier. Reports what's installed, what's missing, and
+      what the operator needs for the surface they're aiming at.
+    use_when:
+      - First-run after installing the plugin
+      - An ImportError or "module not found" error fires from any SETEC script
+      - Confirming readiness before running a calibration or replication batch
+    do_not_use_when:
+      - You only need to know one specific dep (just run the script and read the error)
+    inputs:
+      target: none (introspects the local Python env)
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .deps.json (when --json)
+    compute:
+      tier: core
+      cost_note: stdlib only
+      length_floor_words: null
+    registers:
+      - all_fiction
+      - all_nonfiction
+    dependencies:
+      python:
+        - spacy
+    examples:
+      - description: Survey all tiers
+        cmd: "python3 plugins/setec-voiceprint/scripts/dependency_check.py"
+      - description: Single-tier survey + install hints
+        cmd: "python3 plugins/setec-voiceprint/scripts/dependency_check.py --tier surprisal --suggest"
+    references:
+      - plugins/setec-voiceprint/skills/setup/SKILL.md
+
+  - id: discourse_move_signature
+    script_path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "typed discourse markers + move sequences."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: draft_history_analysis
+    script_path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "version-aware stylometric trajectory across multiple drafts (paired-release schedule Release 11, Trustworthiness Tier 3)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: evidentiary_conditions_gate
+    script_path: plugins/setec-voiceprint/scripts/evidentiary_conditions_gate.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "front-door evidentiary posture."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: fairness_dialect_guardrails
+    script_path: plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "linguistic-background caution surface (paired-release schedule Release 9, Trustworthiness Tier 1)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: function_word_grammar_audit
+    script_path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "function-word sequence grammar."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: general_imposters
+    script_path: plugins/setec-voiceprint/scripts/general_imposters.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "General Imposters attribution harness."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - scipy
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: generate_voice_report
+    script_path: plugins/setec-voiceprint/scripts/generate_voice_report.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "populate a voice insights report."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: idiolect_detector
+    script_path: plugins/setec-voiceprint/scripts/idiolect_detector.py
+    surface: voice_coherence
+    status: empirically_oriented
+    family: idiolect
+    purpose: >
+      Extract distinctive bigrams and trigrams from a writer's
+      baseline corpus that are characteristic enough to flag during
+      revision. Outputs a preservation list of phrases worth
+      protecting across edits (Dunning's G² for bigrams, PMI for
+      trigrams).
+    use_when:
+      - You're about to revise (or LLM-edit) a draft and want to know which phrasings to preserve
+      - The writer has a baseline corpus of ≥ 50K words
+      - You want to detect post-revision mimicry / cosplay (paired with mimicry_cosplay_audit)
+    do_not_use_when:
+      - The baseline is mixed-genre (idiolect signals cross-contaminate across registers)
+      - The baseline is under ~20K words (sparse n-grams produce false positives)
+    inputs:
+      target: optional prose text for post-revision survival check
+      required:
+        - --baseline-dir or --reference-manifest
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .idiolect.json
+        - .idiolect.md
+    compute:
+      tier: core
+      cost_note: scipy for G² / PMI; no API costs
+      length_floor_words: 20000
+    registers:
+      - all_fiction
+      - all_nonfiction
+    dependencies:
+      python:
+        - nltk
+        - scipy
+    examples:
+      - description: Build a preservation list from a writer's baseline
+        cmd: "python3 plugins/setec-voiceprint/scripts/idiolect_detector.py --reference-dir baseline/"
+    references:
+      - plugins/setec-voiceprint/references/signals-glossary.md
+
+  - id: kicker_density
+    script_path: plugins/setec-voiceprint/scripts/kicker_density.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "AIC-9 (Closure Inflation) detector."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - spacy
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: known_editor_profile
+    script_path: plugins/setec-voiceprint/scripts/known_editor_profile.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "learn an editorial transformation profile from before/after pairs (paired-release schedule Release 10, Trustworthiness Tier 3)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: length_bootstrap
+    script_path: plugins/setec-voiceprint/scripts/length_bootstrap.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "Length-matched bootstrap helpers (Phase 1 step 3 of the validation spine)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - numpy
+        - scipy
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: manifest_validator
+    script_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+    surface: validation
+    status: empirically_oriented
+    family: corpus-validation
+    purpose: >
+      Schema and integrity checks for `corpus_manifest.jsonl`.
+      Enforces the manifest enum vocabulary (label, ai_status,
+      language_status, use), checks required fields, and warns when
+      ESL-labeled entries land in `use: baseline` for voice-coherence
+      work (the language-status ratchet).
+    use_when:
+      - You're building a labeled corpus for calibration / validation
+      - You received a manifest from elsewhere and want to confirm it parses
+      - You're about to run a calibration sweep and need to gate inputs
+    do_not_use_when:
+      - The corpus has no manifest yet (use corpus_template.py to build one first)
+      - You're working with a single-file target (this is for collections)
+    inputs:
+      target: JSONL manifest file
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .manifest_validation.json
+    compute:
+      tier: core
+      cost_note: stdlib only
+      length_floor_words: null
+    registers:
+      - all_fiction
+      - all_nonfiction
+    dependencies:
+      python: []
+    examples:
+      - description: Validate a manifest
+        cmd: "python3 plugins/setec-voiceprint/scripts/manifest_validator.py corpus/manifest.jsonl"
+    references:
+      - plugins/setec-voiceprint/references/manifest-schema.md
+
+  - id: manuscript_audit
+    script_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "manuscript_audit.py Cross-chapter aggregate of Layer A distributional diagnostics."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: manuscript_bigram_diff
+    script_path: plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "manuscript_bigram_diff.py Per-bigram POS-bigram diff: corpus A aggregate vs. corpus B aggregate."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: manuscript_repetition_audit
+    script_path: plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "manuscript_repetition_audit.py Manuscript-wide vocabulary repetition diagnostic."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: mimicry_cosplay_audit
+    script_path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "detect lexical mimicry without syntactic conformity (paired-release schedule Release 10, Surfaces Tier 3)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: narrative_decision_audit
+    script_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
+    surface: narrative_decision_audit
+    status: literature_anchored
+    family: narrative-decision
+    purpose: >
+      Score a story's narrative decisions (themes, plot, pacing,
+      sensory register, reader engagement) against Russell et al.
+      2026's reported human / AI group means. Distinct from the
+      texture-level AIC families — these are discourse-level
+      decisions that require structural rewrites to remove.
+    use_when:
+      - Target is long-form fiction ≥ 2000 words
+      - You want evidence that survives LAMP-style stylistic rewriting
+      - You're stacking signals with Tier 1 / AIC / Binoculars
+    do_not_use_when:
+      - Target is an essay, op-ed, or under ~2000 words
+      - You need a binary verdict from one audit alone
+      - You don't have access to an LLM judge (or a pre-computed feature manifest)
+    inputs:
+      target: prose text file (UTF-8)
+      optional:
+        - --judge-manifest with pre-computed feature values
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .narrative.json
+        - .narrative.md
+    compute:
+      tier: api_llm
+      cost_note: $0.05–0.30 per doc via Anthropic / OpenAI / Gemini; free with --judge manifest
+      length_floor_words: 2000
+    registers:
+      - long_form_fiction
+    dependencies:
+      python: []
+    examples:
+      - description: Single-doc audit with pre-computed values
+        cmd: "python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt --judge manifest --judge-manifest features.json"
+      - description: Direct API spot-check
+        cmd: "python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt --judge anthropic --judge-model claude-sonnet-4-6"
+    references:
+      - plugins/setec-voiceprint/references/narrative-decision-audit-spec.md
+      - plugins/setec-voiceprint/references/narrative-decision-replication-spec.md
+      - plugins/setec-voiceprint/references/storyscope-prompts/
+
+  - id: paragraph_audit
+    script_path: plugins/setec-voiceprint/scripts/paragraph_audit.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "paragraph-level distributional diagnostic."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: pdf_extract
+    script_path: plugins/setec-voiceprint/scripts/pdf_extract.py
+    surface: voice_coherence_acquisition
+    status: todo
+    family: TODO
+    purpose: "extract plain text from a filtered PDF inventory."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: ocr
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - ocrmypdf
+        - pypdf
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: pdf_inventory
+    script_path: plugins/setec-voiceprint/scripts/pdf_inventory.py
+    surface: voice_coherence_acquisition
+    status: todo
+    family: TODO
+    purpose: "classify PDFs in a library for impostor-corpus inclusion."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: ocr
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - concurrent
+        - fnmatch
+        - pypdf
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: phraseological_signature_audit
+    script_path: plugins/setec-voiceprint/scripts/phraseological_signature_audit.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "phrase-frame mining over the writer's reusable language frames (paired-release schedule Release 11, Surfaces Tier 3)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: pov_voice_profile
+    script_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "Per-POV-character voiceprints (cathedral #6 sub-item, completes upgrade #6)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: prestige_metaphor
+    script_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "AIC-8 prestige-metaphor detector."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - nltk
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: punctuation_cadence_audit
+    script_path: plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "punctuation rhythm + interruption-grammar audit."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: register_classifier
+    script_path: plugins/setec-voiceprint/scripts/register_classifier.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "heuristic register / genre detection."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: repetition_audit
+    script_path: plugins/setec-voiceprint/scripts/repetition_audit.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "repetition_audit.py Vocabulary repetition diagnostic."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: restoration_packet
+    script_path: plugins/setec-voiceprint/scripts/restoration_packet.py
+    surface: craft_restoration
+    status: heuristic
+    family: restoration
+    purpose: >
+      Translate Surface 1 / 2 diagnostic JSON into bounded
+      revision-safe prompt packets. Reads variance_audit /
+      voice_distance / idiolect / AIC outputs and classifies each
+      signal as direct / translated / investigate-first / avoid-direct
+      per the metric-targetability taxonomy. The aggregate divergence
+      and overall distances are explicitly `avoid_direct` to resist
+      metric-gaming.
+    use_when:
+      - You have Surface 1 / 2 diagnostics for a draft and want a structured revision plan
+      - You're handing the draft to an LLM editor and need guardrails on what it can target
+      - You want the post-check loop wired (before_after_restoration completes the cycle)
+    do_not_use_when:
+      - You don't have diagnostic JSON yet — run variance_audit / voice_distance first
+      - You want the LLM to free-rewrite (this script's job is to constrain, not free)
+    inputs:
+      target: one or more diagnostic JSON files
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .restoration_packet.json
+        - .restoration_packet.md
+    compute:
+      tier: core
+      cost_note: stdlib only; no API costs at packet-build time
+      length_floor_words: null
+    registers:
+      - all_fiction
+      - all_nonfiction
+    dependencies:
+      python: []
+    examples:
+      - description: Build a packet from a variance audit
+        cmd: "python3 plugins/setec-voiceprint/scripts/restoration_packet.py target.variance.json"
+    references:
+      - plugins/setec-voiceprint/references/metric-targeted-restoration.md
+
+  - id: train_xgboost
+    script_path: plugins/setec-voiceprint/scripts/replication/train_xgboost.py
+    surface: calibration
+    status: todo
+    family: TODO
+    purpose: "Stage C1 (binary) + C2 (multiclass)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - xgboost
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: semantic_preservation_check
+    script_path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
+    surface: craft_restoration
+    status: todo
+    family: TODO
+    purpose: "semantic guardrails over the before / after restoration pair (paired-release schedule Release 8, Trustworthiness Tier 3)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: semantic_trajectory_audit
+    script_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "paired-release Release 12."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - numpy
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: shard_runner
+    script_path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
+    surface: calibration
+    status: todo
+    family: TODO
+    purpose: "sharded calibration orchestrator."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: sliding_window_heatmap
+    script_path: plugins/setec-voiceprint/scripts/sliding_window_heatmap.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "render variance_audit sliding-window output as a heatmap."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: stance_modality_audit
+    script_path: plugins/setec-voiceprint/scripts/stance_modality_audit.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "typed stance / modality / epistemic posture."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: surface_disagreement_resolver
+    script_path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
+    surface: validation
+    status: todo
+    family: TODO
+    purpose: "cross-surface interpretation meta-layer."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: surprisal_audit
+    script_path: plugins/setec-voiceprint/scripts/surprisal_audit.py
+    surface: smoothing_diagnosis
+    status: todo
+    family: TODO
+    purpose: "standalone causal-LM surprisal audit."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: surprisal
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: validation_harness
+    script_path: plugins/setec-voiceprint/scripts/validation_harness.py
+    surface: validation
+    status: empirically_oriented
+    family: validation
+    purpose: >
+      Empirical validation harness for SETEC task-surface outputs.
+      Computes FPR / TPR / AUC / AUPRC with Wilson / Clopper-Pearson
+      CIs against a labeled manifest, enforces prompt-level grouping,
+      and refuses to mix scores across task surfaces because the
+      surfaces answer different questions.
+    use_when:
+      - You have a labeled corpus (with valid `corpus_manifest.jsonl`) and want to measure how SETEC signals behave on it
+      - You're calibrating thresholds for an operator-specific corpus
+      - You want CIs alongside point estimates (the framework's default)
+    do_not_use_when:
+      - The manifest is unvalidated — run manifest_validator first
+      - The corpus is mixed-state (ai_status) without slicing — the harness refuses to pool
+      - You want a single surface metric to be authoritative — the harness intentionally surfaces all surfaces
+    inputs:
+      target: corpus manifest JSONL
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .validation.json
+        - .validation.md
+    compute:
+      tier: core
+      cost_note: scikit-learn + statsmodels for CIs; no API costs
+      length_floor_words: null
+    registers:
+      - all_fiction
+      - all_nonfiction
+    dependencies:
+      python:
+        - sklearn
+        - statsmodels
+    examples:
+      - description: Validate against a labeled corpus
+        cmd: "python3 plugins/setec-voiceprint/scripts/validation_harness.py corpus/manifest.jsonl"
+    references:
+      - plugins/setec-voiceprint/references/manifest-schema.md
+      - plugins/setec-voiceprint/references/calibration-findings-2026-05-10.md
+
+  - id: variance_audit
+    script_path: plugins/setec-voiceprint/scripts/variance_audit.py
+    surface: smoothing_diagnosis
+    status: empirically_oriented
+    family: tier1-variance
+    purpose: >
+      Layer A distributional diagnostic for AI-prose smoothing. Computes
+      sentence-length variance, lexical diversity (MATTR / MTLD / Yule's
+      K / Shannon), reading-level spread (FKGL SD), and POS-bigram /
+      surprisal signals; reports per-signal values with operator-side
+      band calls.
+    use_when:
+      - First pass on any prose where you want distributional evidence of mode-collapse
+      - You have a baseline corpus (the writer's own prior work or a register match)
+      - Target is ≥ 200 words for Tier 1; ≥ 500 for Tier 2/3; ≥ 2000 for Tier 4 surprisal
+    do_not_use_when:
+      - Target is ESL writing without a matched ESL baseline (the 2026-05-10 EditLens finding shows polarity inverts on ESL student writing)
+      - You want a single AI/human verdict — variance_audit reports values, not a label
+      - Target is under 200 words (Tier 1 length floor)
+    inputs:
+      target: prose text file (UTF-8)
+      optional:
+        - --baseline-dir pointing at a corpus of comparable register
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .variance.json
+        - .variance.md
+    compute:
+      tier: surprisal
+      cost_note: >
+        Tier 1 is stdlib + tokenization. Tier 2/3 need spaCy +
+        en_core_web_sm. Tier 4 surprisal needs transformers + a small
+        causal LM (default tinyllama, ~600 MB); the --tier4 flag opts in.
+      length_floor_words: 200
+    registers:
+      - literary_fiction
+      - blog_essay
+      - academic_philosophy
+      - long_form_journalism
+    dependencies:
+      python:
+        - nltk
+        - numpy
+        - sentence_transformers
+        - sklearn
+        - spacy
+        - textstat
+    examples:
+      - description: Whole-document smoothing diagnosis
+        cmd: "python3 plugins/setec-voiceprint/scripts/variance_audit.py target.md"
+      - description: Layer A + Layer B (with AIC-8/9 detectors)
+        cmd: "python3 plugins/setec-voiceprint/scripts/variance_audit.py target.md --aic8 --aic9"
+    references:
+      - plugins/setec-voiceprint/references/signals-glossary.md
+      - plugins/setec-voiceprint/references/distributional-diagnostics.md
+      - plugins/setec-voiceprint/references/calibration-findings-2026-05-10.md
+
+  - id: voice_distance
+    script_path: plugins/setec-voiceprint/scripts/voice_distance.py
+    surface: voice_coherence
+    status: empirically_oriented
+    family: voice-distance
+    purpose: >
+      Compare a target text against a specific writer's (or
+      register's) baseline using classic stylometric feature families
+      — Burrows Delta on function words, per-feature cosine distance,
+      POS-bigram comparison. Answers "how far has this draft drifted
+      from this writer's prior voice?"
+    use_when:
+      - You have a baseline of the writer's prior prose (≥ 20K words for tight bounds)
+      - You suspect voice drift across drafts / time / register
+      - You want to identify which feature families drove the drift (Delta + per-family cosine)
+    do_not_use_when:
+      - You don't have a writer-specific baseline (use variance_audit against a register baseline instead)
+      - The baseline is mixed-state (some pre-AI, some AI-assisted) without slicing by ai_status
+      - Target is under ~2000 words (Burrows Delta is noisy below that)
+    inputs:
+      target: prose text file (UTF-8)
+      required:
+        - --baseline-dir pointing at the writer's prior work
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .voice_distance.json
+        - .voice_distance.md
+    compute:
+      tier: core
+      cost_note: stdlib + spaCy; no API costs
+      length_floor_words: 2000
+    registers:
+      - all_fiction
+      - all_nonfiction
+    dependencies:
+      python: []
+    examples:
+      - description: Voice-drift comparison against a baseline
+        cmd: "python3 plugins/setec-voiceprint/scripts/voice_distance.py target.md --baseline-dir baseline/"
+    references:
+      - plugins/setec-voiceprint/references/signals-glossary.md
+      - plugins/setec-voiceprint/references/stylometry-oracle.md
+
+  - id: voice_drift_tracker
+    script_path: plugins/setec-voiceprint/scripts/voice_drift_tracker.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "time-drift surface (cathedral #6 sub-item)."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: voice_profile
+    script_path: plugins/setec-voiceprint/scripts/voice_profile.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "voice_profile.py Produce a private, human-readable stylometric profile from a writer/register baseline corpus."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python: []
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
+  - id: voice_validation_harness
+    script_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
+    surface: voice_coherence
+    status: todo
+    family: TODO
+    purpose: "Surface 2 sibling to validation_harness.py."
+    use_when:
+      - TODO
+    do_not_use_when:
+      - TODO
+    inputs:
+      target: TODO
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - TODO
+    compute:
+      tier: core
+      cost_note: TODO
+      length_floor_words: null
+    registers:
+      - TODO
+    dependencies:
+      python:
+        - sklearn
+    examples: []
+    references: []
+    _seeded_at: "2026-05-28"
+
