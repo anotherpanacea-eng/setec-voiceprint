@@ -73,6 +73,18 @@ These scripts produce structured evidence about a target text's proximity to LLM
 
 What Surface 5 cannot answer: "Is this AI" as a binary verdict. Hans et al. 2024 reports ~95% AUC on Binoculars under matched conditions, but those conditions do not generalize without per-corpus calibration. The framework provides the methodology; the operator provides the comparator.
 
+### Surface 6: Narrative-decision audit (uncalibrated by default)
+
+These scripts implement the 30 core narrative-decision features from Russell et al. 2026 (StoryScope, arXiv:2604.03136v4): discourse-level features (thematic over-determination, sensory/embodied performativity, structural streamlining, reader engagement, temporal complexity, narrative diversity, intertextual richness) applied via a pluggable LLM judge. Distinct from the texture-level AIC families on Surface 4: these score *what* a story decides to do, not *how* the prose phrases it. The paper reports they survive LAMP-style stylistic rewriting that defeats AIC- and surprisal-style detectors (95.5 → 93.9 macro-F1 after edits), so this surface is complementary to, not a replacement for, Surfaces 1 / 4 / 5.
+
+| Script | Scope | Use when |
+|---|---|---|
+| `narrative_decision_audit.py` | Single document, 30-feature narrative-decision audit | Running the StoryScope core-feature audit on a target prose document. Reports per-signal contributions in human-z-units relative to the paper's reported means and an aggregate literature-anchored score. Ships with no default thresholds. |
+| `narrative_judge.py` | Pluggable judge backend module | Imported by `narrative_decision_audit.py`. Backends: `manifest` (default; reads pre-computed values from JSON), `mock` (test), `anthropic` / `openai` / `gemini` (API; SDK + credentials required). |
+| `calibration/narrative_polarity_audit.py` | Cross-corpus polarity check from JSONL of judged stories | Per-corpus polarity verification + calibration-findings document, parallel to `polarity_audit.py` for Tier-1 variance. Pure Python; LLM judge cost lives in the manifest-construction step outside this script. |
+
+Full surface spec at `references/narrative-decision-audit-spec.md`; feature schema at `narrative_feature_schema.py` (importable). What Surface 6 cannot answer: the same thing Surfaces 4 and 5 can't — a binary AI/human verdict. Narrative-decision features survive surface edits but the paper's reported group means are anchored to long-form fiction (mean 4,753 words) on the Books3-derived corpus; cross-register generalization requires the operator-side polarity check.
+
 ### Surface tag in script output
 
 Most user-facing scripts declare a `TASK_SURFACE` module constant and carry the value as a top-level `task_surface` field in JSON output (and the surface near the header in markdown reports). The field tells downstream consumers which question the output is answering. The table below names the value vocabulary with representative scripts per value — it's a partial overview of where each value originates, not an exhaustive script enumeration. Inner pipeline modules (e.g., `calibration/calibrate_thresholds.py`, `calibration/polarity_audit.py`, `calibration/slice_bakeoff_v2.py`, `calibration/cross_polarity_audit.py`) feed into the user-facing scripts above them and don't always carry their own `task_surface` tag; their outputs are routed through whichever caller emits the envelope.
@@ -87,6 +99,7 @@ Most user-facing scripts declare a `TASK_SURFACE` module constant and carry the 
 | `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass), `restoration_packet.py` (metric-targeted revision packets), `before_after_restoration.py` (post-check loop); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`, and `references/metric-targeted-restoration.md` | 4 |
 | `binoculars_discrimination` | `binoculars_audit.py` | 5 |
 | `external_mirror_discrimination` | `external_mirror/compose_evidence_pack.py` (Phase B emitter; the rest of `external_mirror/` chains into this via `workflow.py`) | 5 |
+| `narrative_decision_audit` | `narrative_decision_audit.py` (the 30 core narrative-decision features from Russell et al. 2026 / StoryScope) | 6 |
 | `voice_coherence_acquisition` | `acquire_blog.py`, `acquire_blogger_takeout.py`, `acquire_magazine.py`, `acquire_corpus_template.py`, `acquisition_core.py` (impostor-pool corpus acquisition, feeding Surface 2 baselines) | 2 (acquisition) |
 | `setup` | `baseline_discovery.py`, `dependency_check.py` (first-run + sync-location helpers) | — |
 

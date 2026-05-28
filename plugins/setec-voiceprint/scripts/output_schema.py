@@ -57,6 +57,7 @@ VALID_TASK_SURFACES = frozenset({
     "metric_targeted_restoration",
     "external_mirror_discrimination",
     "binoculars_discrimination",
+    "narrative_decision_audit",
 })
 
 

@@ -4,7 +4,24 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
-_(Empty. Future work lands here, gets versioned on commit.)_
+**Surface 6: narrative-decision audit (StoryScope literature anchor).** Adds the Russell et al. 2026 *StoryScope* (arXiv:2604.03136v4) 30 core narrative-decision features as a new SETEC surface, distinct from the texture-level AIC families on Surface 4. The paper reports these features survive LAMP-style stylistic rewriting that defeats AIC- and surprisal-style detectors (95.5 → 93.9 macro-F1 after edits), so the surface is positioned as complementary to Surfaces 1 / 4 / 5, not a replacement. Ships uncalibrated by default per the Stylometry-to-the-people policy.
+
+### Added
+
+- **`plugins/setec-voiceprint/scripts/narrative_feature_schema.py`** — the 30 core narrative-decision features as a typed data structure, encoded verbatim from the paper's Table 12 (30 features, 33 signals, 7 interpretive bundles). Carries paper-reported human / AI group means as `literature_anchored` provenance. Import-time self-check guards against transcription errors (count, leaning ↔ gap-sign consistency, dimension / bundle membership, option-vocabulary integrity).
+- **`plugins/setec-voiceprint/scripts/narrative_judge.py`** — pluggable LLM-judge interface. Backends: `manifest` (default; reads pre-computed values from a JSON file so the LLM choice and cost live outside the audit, per operator-side discipline), `mock` (deterministic, for tests), `anthropic` / `openai` / `gemini` (lazy-imported API adapters for single-doc spot-checks). Emits a SHA-256 prompt fingerprint for provenance.
+- **`plugins/setec-voiceprint/scripts/narrative_decision_audit.py`** — Surface 6 audit. Runs the judge, validates emitted values, computes per-signal contributions in human-z-units relative to the paper's reported means (1.0 = paper's human mean, 0.0 = paper's AI mean), aggregates by bundle, emits the standard SETEC JSON envelope. Verdict band defaults to `uncalibrated`; operators supply `--threshold-low` / `--threshold-high` after running the polarity check. Register gate at 2,000-word floor with dialogue-presence sanity check.
+- **`plugins/setec-voiceprint/scripts/calibration/narrative_polarity_audit.py`** — cross-corpus polarity check for the new surface, mirroring `polarity_audit.py` for Tier-1 variance. Consumes a JSONL manifest of judged stories, computes per-signal direction-aware AUC with Hanley-McNeil approximate CIs, emits a `calibration-findings-*.md` document parallel to the 2026-05-10 EditLens and 2026-05-11 MAGE precedents. Pure Python; LLM cost lives in the manifest-construction step.
+- **`plugins/setec-voiceprint/references/narrative-decision-audit-spec.md`** — full surface spec: claims this licenses, anti-goals, architecture, the 33-signal scoring model, register gating policy, the recommended target corpora for the v0.1 polarity run (EditLens essays + a Books3-style fiction slice).
+- **`plugins/setec-voiceprint/scripts/tests/test_narrative_feature_schema.py`** — pins schema invariants (30 features, 33 signals, exactly 3 dual-leaning features, leaning-sign consistency, response-option vocabularies, scale / binary canonical encodings).
+- **`plugins/setec-voiceprint/scripts/tests/test_narrative_decision_audit.py`** — pins per-stage math (encoding, signal target values, contribution sign matches paper leaning, aggregate score in human-z-units, threshold-band routing, register warning) plus end-to-end envelope shape.
+
+### Changed
+
+- **`plugins/setec-voiceprint/scripts/claim_license.py`** — `TASK_SURFACE_LABELS` gains `narrative_decision_audit` so the new surface's claim_license blocks render the right label.
+- **`plugins/setec-voiceprint/scripts/output_schema.py`** — `VALID_TASK_SURFACES` frozenset adds `narrative_decision_audit`. Existing tests that assert a subset is present still pass.
+- **`plugins/setec-voiceprint/references/signals-glossary.md`** — adds a new "Narrative-decision signals (33)" section enumerating every signal with its paper anchor, plus an aggregate scorer entry. Family total updated: 56 → 90 signals; status distribution updated: literature_anchored 6 → 40 (the 34 ND family entries are literature-anchored to the StoryScope paper).
+- **`plugins/setec-voiceprint/scripts/README.md`** — adds a Surface 6 section (uncalibrated by default, parallel to Surface 5 layout), the new task-surface tag in the routing table, and a brief note that Surface 6 is complementary to Surfaces 1 / 4 / 5 rather than a replacement.
 
 ## [1.106.1] - 2026-05-19
 
