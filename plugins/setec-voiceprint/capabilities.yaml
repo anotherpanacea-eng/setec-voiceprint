@@ -11,8 +11,23 @@
 #   - calibrated: corpus-tested with FPR/TPR metrics
 #   - structural_only: feeds downstream signals, not user-facing
 #
-# Schema version: 0.1.0  (seeded 2026-05-28)
-schema_version: "0.1.0"
+# dependencies vocabulary (v0.2.0):
+#   - python:          required Python packages. Their absence means
+#                      the audit's PRIMARY use case won't run. The
+#                      --available filter gates on this list.
+#   - python_optional: graceful-degradation packages. Their absence
+#                      means a non-primary feature falls back (e.g.,
+#                      sentence_transformers → TF-IDF, textstat →
+#                      stdlib FKGL approximation, NLTK → regex
+#                      tokenizer). The audit still runs; --available
+#                      reports them as missing-but-not-blocking.
+#   - sdks_optional:   third-party API SDKs (anthropic, openai,
+#                      google-genai). Informational only.
+#
+# Schema version: 0.2.0  (capabilities manifest v0.2 — added
+# python_optional to fix --available false-negatives on graceful-
+# degradation audits.)
+schema_version: "0.2.0"
 entries:
   - id: acquire_blog
     script_path: plugins/setec-voiceprint/scripts/acquire_blog.py
@@ -282,7 +297,11 @@ entries:
       - long_form_journalism
       - literary_fiction
     dependencies:
+      # Regex detectors are stdlib only; spaCy improves sentence
+      # segmentation and is used by some pattern checks when present.
       python: []
+      python_optional:
+        - spacy
     examples:
       - description: Count all named patterns
         cmd: "python3 plugins/setec-voiceprint/scripts/aic_pattern_audit.py target.md"
@@ -411,7 +430,13 @@ entries:
       - all_fiction
       - all_nonfiction
     dependencies:
-      python: []
+      # Tier 4 perplexity scoring is the audit's only path. No
+      # graceful degradation — without transformers + torch the
+      # audit cannot run.
+      python:
+        - transformers
+        - torch
+      python_optional: []
     examples:
       - description: Default scorer/observer pair
         cmd: "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt"
@@ -707,7 +732,12 @@ entries:
       - all_fiction
       - all_nonfiction
     dependencies:
-      python:
+      # dependency_check itself is stdlib only — it surveys *other*
+      # tiers including spaCy. Listing spaCy as required would be
+      # circular (you'd need spaCy installed to check whether you
+      # have spaCy installed).
+      python: []
+      python_optional:
         - spacy
     examples:
       - description: Survey all tiers
@@ -949,9 +979,12 @@ entries:
       - all_fiction
       - all_nonfiction
     dependencies:
+      # G²/PMI math requires scipy; NLTK's Brown corpus is an optional
+      # convenience for the --reference-corpus brown shortcut.
       python:
-        - nltk
         - scipy
+      python_optional:
+        - nltk
     examples:
       - description: Build a preservation list from a writer's baseline
         cmd: "python3 plugins/setec-voiceprint/scripts/idiolect_detector.py --reference-dir baseline/"
@@ -1077,7 +1110,10 @@ entries:
       - all_fiction
       - all_nonfiction
     dependencies:
+      # Pure stdlib. Manifest schema is enforced via hand-rolled
+      # JSON validators; no dep blocks the audit.
       python: []
+      python_optional: []
     examples:
       - description: Validate a manifest
         cmd: "python3 plugins/setec-voiceprint/scripts/manifest_validator.py corpus/manifest.jsonl"
@@ -1231,7 +1267,16 @@ entries:
     registers:
       - long_form_fiction
     dependencies:
+      # Judge interface is pluggable; --judge manifest mode runs on
+      # stdlib alone. API judges need their respective SDKs at
+      # invocation time, but any one suffices (or none, with the
+      # manifest backend) so all three are optional.
       python: []
+      python_optional: []
+      sdks_optional:
+        - anthropic
+        - openai
+        - google-genai
     examples:
       - description: Single-doc audit with pre-computed values
         cmd: "python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt --judge manifest --judge-manifest features.json"
@@ -1535,7 +1580,9 @@ entries:
       - all_fiction
       - all_nonfiction
     dependencies:
+      # Pure stdlib JSON munging.
       python: []
+      python_optional: []
     examples:
       - description: Build a packet from a variance audit
         cmd: "python3 plugins/setec-voiceprint/scripts/restoration_packet.py target.variance.json"
@@ -1802,9 +1849,14 @@ entries:
       - all_fiction
       - all_nonfiction
     dependencies:
+      # sklearn for ROC / PR / confusion matrix; statsmodels for the
+      # Wilson / Clopper-Pearson / Jeffreys CIs the harness reports
+      # alongside point estimates. No graceful degradation — without
+      # these the harness can't produce its primary outputs.
       python:
         - sklearn
         - statsmodels
+      python_optional: []
     examples:
       - description: Validate against a labeled corpus
         cmd: "python3 plugins/setec-voiceprint/scripts/validation_harness.py corpus/manifest.jsonl"
@@ -1853,13 +1905,17 @@ entries:
       - academic_philosophy
       - long_form_journalism
     dependencies:
-      python:
-        - nltk
-        - numpy
-        - sentence_transformers
-        - sklearn
-        - spacy
-        - textstat
+      # Tier 1 variance signals run on stdlib alone. Everything below
+      # is opt-in tier work that degrades gracefully when missing.
+      python: []
+      python_optional:
+        - spacy             # Tier 2 (POS-bigram entropy, MDD)
+        - sklearn           # Tier 3 cohesion via TF-IDF fallback
+        - sentence_transformers  # Tier 3 cohesion calibrated
+        - textstat          # tightens FKGL; stdlib approximation fallback
+        - nltk              # NLTK sentence tokenization; regex fallback
+        - numpy             # vectorized stats; stdlib fallback for small docs
+        - transformers      # Tier 4 surprisal; only with --tier4
     examples:
       - description: Whole-document smoothing diagnosis
         cmd: "python3 plugins/setec-voiceprint/scripts/variance_audit.py target.md"
@@ -1906,7 +1962,11 @@ entries:
       - all_fiction
       - all_nonfiction
     dependencies:
+      # Function-word Burrows Delta is computable from stdlib alone;
+      # the per-feature cosine paths benefit from spaCy.
       python: []
+      python_optional:
+        - spacy
     examples:
       - description: Voice-drift comparison against a baseline
         cmd: "python3 plugins/setec-voiceprint/scripts/voice_distance.py target.md --baseline-dir baseline/"

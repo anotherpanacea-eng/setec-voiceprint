@@ -121,14 +121,33 @@ def is_installed(module_name: str) -> bool:
         return False
 
 
-def entry_available(entry: dict[str, Any]) -> tuple[bool, list[str]]:
-    """Return (available, missing). Available means every required
-    Python dep listed in `dependencies.python` resolves with
-    importlib. The `dependencies.sdks_optional` list is informational
-    and never blocks availability."""
-    deps = (entry.get("dependencies") or {}).get("python") or []
-    missing = [d for d in deps if not is_installed(d)]
-    return (len(missing) == 0, missing)
+def entry_available(
+    entry: dict[str, Any],
+) -> tuple[bool, list[str], list[str]]:
+    """Return ``(available, missing_required, missing_optional)``.
+
+    *Available* means every dep in ``dependencies.python`` (required)
+    resolves via importlib. The audit may not exercise every feature
+    (some Tier 2/3 paths may degrade) but its primary use case runs.
+
+    Optional deps live in ``dependencies.python_optional`` —
+    graceful-degradation imports the script falls back from
+    (sentence_transformers → TF-IDF, textstat → stdlib FKGL
+    approximation, NLTK → regex tokenization, etc.). Missing
+    optional deps do NOT block availability but are reported so
+    operators see what they're missing.
+
+    ``dependencies.sdks_optional`` (third-party SDKs like anthropic,
+    openai, google-genai) is informational only; see entries that
+    use those (e.g., narrative_decision_audit) for the per-audit
+    discipline.
+    """
+    deps_block = entry.get("dependencies") or {}
+    required = deps_block.get("python") or []
+    optional = deps_block.get("python_optional") or []
+    missing_required = [d for d in required if not is_installed(d)]
+    missing_optional = [d for d in optional if not is_installed(d)]
+    return (len(missing_required) == 0, missing_required, missing_optional)
 
 
 # ---------- filtering ----------------------------------------------
@@ -169,7 +188,7 @@ def filter_entries(
             if lf is not None and lf > length_floor_max:
                 continue
         if available_only:
-            ok, _ = entry_available(e)
+            ok, _, _ = entry_available(e)
             if not ok:
                 continue
         out.append(e)
@@ -249,10 +268,15 @@ def render_show(entry: dict[str, Any]) -> str:
             f"{compute['length_floor_words']:,} words"
         )
     parts.append(f"- **script:** `{entry.get('script_path')}`")
-    ok, missing = entry_available(entry)
+    ok, missing_req, missing_opt = entry_available(entry)
     parts.append(f"- **available locally:** {ok}")
-    if missing:
-        parts.append(f"  - **missing deps:** {missing}")
+    if missing_req:
+        parts.append(f"  - **missing required deps:** {missing_req}")
+    if missing_opt:
+        parts.append(
+            f"  - **missing optional deps (graceful degradation):** "
+            f"{missing_opt}"
+        )
     parts.append("")
     purpose = entry.get("purpose") or ""
     parts.append("## Purpose")
@@ -414,7 +438,7 @@ def recommend(
         if entry.get("status") == "todo":
             continue
         if available_only:
-            ok, _ = entry_available(entry)
+            ok, _, _ = entry_available(entry)
             if not ok:
                 continue
         score = len(keywords)
@@ -443,10 +467,18 @@ def render_recommend(
     lines.append("")
     for i, (entry_id, entry, keywords) in enumerate(results, 1):
         compute = entry.get("compute") or {}
-        ok, missing = entry_available(entry)
-        avail = "✔ available" if ok else (
-            f"⚠ missing: {', '.join(missing)}" if missing else "—"
-        )
+        ok, missing_req, missing_opt = entry_available(entry)
+        if ok and not missing_opt:
+            avail = "✔ available"
+        elif ok:
+            avail = (
+                f"✔ available (optional deps absent: "
+                f"{', '.join(missing_opt)})"
+            )
+        else:
+            avail = (
+                f"⚠ missing required: {', '.join(missing_req)}"
+            )
         lines.append(f"## {i}. `{entry_id}` — {avail}")
         lines.append("")
         purpose = (entry.get("purpose") or "").strip()

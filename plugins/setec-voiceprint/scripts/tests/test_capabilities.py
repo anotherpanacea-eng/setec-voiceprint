@@ -37,7 +37,10 @@ def _manifest() -> dict:
 
 def test_manifest_loads_and_has_entries():
     m = _manifest()
-    assert m.get("schema_version") == "0.1.0"
+    # Schema v0.2.0 split dependencies into required (python) +
+    # optional (python_optional) to fix --available false-negatives
+    # on graceful-degradation audits like variance_audit.
+    assert m.get("schema_version") == "0.2.0"
     assert isinstance(m.get("entries"), list)
     assert len(m["entries"]) > 30
 
@@ -195,29 +198,87 @@ def test_recommend_excludes_todo_entries():
 # ---------- availability ------------------------------------------
 
 def test_entry_available_for_stdlib_only():
-    """An entry whose dependencies.python is empty is always
-    available (no missing deps)."""
+    """An entry whose required dependencies.python is empty is always
+    available (no missing required deps)."""
     m = _manifest()
     for e in m["entries"]:
         if e.get("status") == "todo":
             continue
-        deps = (e.get("dependencies") or {}).get("python") or []
-        if not deps:
-            ok, missing = cap.entry_available(e)
-            assert ok is True
-            assert missing == []
+        required = (e.get("dependencies") or {}).get("python") or []
+        if not required:
+            ok, missing_req, _ = cap.entry_available(e)
+            assert ok is True, (
+                f"{e['id']} reported unavailable with empty required "
+                f"deps: missing_req={missing_req}"
+            )
+            assert missing_req == []
 
 
-def test_entry_available_reports_missing():
-    """A synthetic entry with a deliberately fake dep reports
-    missing."""
+def test_entry_available_reports_missing_required():
+    """A synthetic entry with a deliberately fake required dep
+    reports missing-required and available=False."""
     fake_entry = {
         "id": "fake",
         "dependencies": {"python": ["zzz_definitely_not_installed"]},
     }
-    ok, missing = cap.entry_available(fake_entry)
+    ok, missing_req, missing_opt = cap.entry_available(fake_entry)
     assert ok is False
-    assert "zzz_definitely_not_installed" in missing
+    assert "zzz_definitely_not_installed" in missing_req
+    assert missing_opt == []
+
+
+def test_entry_available_optional_does_not_block():
+    """Missing optional deps surface in missing_optional but do not
+    flip available to False. This is the regression that motivated
+    the v0.2 schema split — variance_audit's Tier 2/3/4 work runs
+    on optional deps but its Tier 1 primary use case is stdlib only.
+    """
+    fake_entry = {
+        "id": "fake_graceful",
+        "dependencies": {
+            "python": [],  # no required deps
+            "python_optional": ["zzz_optional_missing"],
+        },
+    }
+    ok, missing_req, missing_opt = cap.entry_available(fake_entry)
+    assert ok is True, (
+        "missing optional dep must not flip availability to False"
+    )
+    assert missing_req == []
+    assert "zzz_optional_missing" in missing_opt
+
+
+def test_entry_available_mixed_required_and_optional():
+    """Required missing + optional missing: available=False and both
+    lists populated independently."""
+    fake_entry = {
+        "id": "fake_mixed",
+        "dependencies": {
+            "python": ["zzz_required_missing"],
+            "python_optional": ["zzz_optional_missing"],
+        },
+    }
+    ok, missing_req, missing_opt = cap.entry_available(fake_entry)
+    assert ok is False
+    assert missing_req == ["zzz_required_missing"]
+    assert missing_opt == ["zzz_optional_missing"]
+
+
+def test_variance_audit_available_when_only_optional_deps_missing():
+    """Regression: pre-v0.2, variance_audit was unavailable on any
+    machine without sentence_transformers + textstat + nltk
+    installed, even though its Tier 1 primary path is stdlib-only.
+    Post-v0.2, the curated entry lists nothing as required so it
+    reports available even with no extra deps installed."""
+    m = _manifest()
+    entry = next(
+        e for e in m["entries"] if e["id"] == "variance_audit"
+    )
+    ok, missing_req, _ = cap.entry_available(entry)
+    assert ok is True, (
+        f"variance_audit should be available with stdlib alone; "
+        f"got missing_req={missing_req}"
+    )
 
 
 # ---------- show + render -----------------------------------------
