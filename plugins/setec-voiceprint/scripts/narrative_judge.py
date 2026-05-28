@@ -298,24 +298,34 @@ def _api_judge_anthropic(
             "`pip install anthropic` first."
         ) from exc
 
-    client = anthropic.Anthropic()  # ANTHROPIC_API_KEY from env
+    try:
+        client = anthropic.Anthropic()  # ANTHROPIC_API_KEY from env
+    except Exception as exc:  # noqa: BLE001
+        raise JudgeError(
+            f"anthropic client construction failed: {exc}"
+        ) from exc
 
     def _run(story_text: str) -> JudgeResult:
-        msg = client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system_preamble,
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"{user_prompt}\n\n# Story text\n\n"
-                        f"{story_text}"
-                    ),
-                },
-            ],
-        )
+        try:
+            msg = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_preamble,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{user_prompt}\n\n# Story text\n\n"
+                            f"{story_text}"
+                        ),
+                    },
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise JudgeError(
+                f"anthropic provider call failed: {exc}"
+            ) from exc
         text = "".join(
             block.text
             for block in msg.content
@@ -359,25 +369,35 @@ def _api_judge_openai(
             "`pip install openai` first."
         ) from exc
 
-    client = OpenAI()  # OPENAI_API_KEY from env
+    try:
+        client = OpenAI()  # OPENAI_API_KEY from env
+    except Exception as exc:  # noqa: BLE001
+        raise JudgeError(
+            f"openai client construction failed: {exc}"
+        ) from exc
 
     def _run(story_text: str) -> JudgeResult:
-        resp = client.chat.completions.create(
-            model=model,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            response_format={"type": "json_object"},
-            messages=[
-                {"role": "system", "content": system_preamble},
-                {
-                    "role": "user",
-                    "content": (
-                        f"{user_prompt}\n\n# Story text\n\n"
-                        f"{story_text}"
-                    ),
-                },
-            ],
-        )
+        try:
+            resp = client.chat.completions.create(
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                response_format={"type": "json_object"},
+                messages=[
+                    {"role": "system", "content": system_preamble},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"{user_prompt}\n\n# Story text\n\n"
+                            f"{story_text}"
+                        ),
+                    },
+                ],
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise JudgeError(
+                f"openai provider call failed: {exc}"
+            ) from exc
         text = resp.choices[0].message.content or ""
         try:
             payload = _extract_json(text)
@@ -425,31 +445,41 @@ def _api_judge_gemini(
             "gemini backend requires GOOGLE_API_KEY or "
             "GEMINI_API_KEY in the environment."
         )
-    client = genai.Client(api_key=api_key)
+    try:
+        client = genai.Client(api_key=api_key)
+    except Exception as exc:  # noqa: BLE001
+        raise JudgeError(
+            f"gemini client construction failed: {exc}"
+        ) from exc
 
     def _run(story_text: str) -> JudgeResult:
-        resp = client.models.generate_content(
-            model=model,
-            contents=[
-                {
-                    "role": "user",
-                    "parts": [
-                        {
-                            "text": (
-                                f"{system_preamble}\n\n"
-                                f"{user_prompt}\n\n# Story text\n\n"
-                                f"{story_text}"
-                            ),
-                        },
-                    ],
+        try:
+            resp = client.models.generate_content(
+                model=model,
+                contents=[
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": (
+                                    f"{system_preamble}\n\n"
+                                    f"{user_prompt}\n\n"
+                                    f"# Story text\n\n{story_text}"
+                                ),
+                            },
+                        ],
+                    },
+                ],
+                config={
+                    "temperature": temperature,
+                    "max_output_tokens": max_tokens,
+                    "response_mime_type": "application/json",
                 },
-            ],
-            config={
-                "temperature": temperature,
-                "max_output_tokens": max_tokens,
-                "response_mime_type": "application/json",
-            },
-        )
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise JudgeError(
+                f"gemini provider call failed: {exc}"
+            ) from exc
         text = resp.text or ""
         try:
             payload = _extract_json(text)

@@ -274,6 +274,49 @@ def test_threshold_args_produce_calibrated_band():
         )
 
 
+def test_reversed_thresholds_rejected():
+    """PR #128 review (P2): --threshold-low > --threshold-high used
+    to silently mislabel scores because verdict_band_from_thresholds
+    checked `< low` first. main() must reject swapped pairs."""
+    with tempfile.TemporaryDirectory() as td:
+        target = Path(td) / "story.txt"
+        target.write_text(
+            "He walked. \"Hi,\" she said.\n" * 200, encoding="utf-8",
+        )
+        rc = nda.main([
+            str(target),
+            "--judge", "mock",
+            "--threshold-low", "10.0",
+            "--threshold-high", "-10.0",
+            "--out", str(Path(td) / "o.json"),
+            "--out-md", str(Path(td) / "o.md"),
+        ])
+        assert rc != 0, (
+            "reversed thresholds should be rejected at CLI"
+        )
+
+
+def test_only_one_threshold_rejected():
+    """PR #128 review (P2): supplying only one of --threshold-low /
+    --threshold-high is meaningless — the band can't be computed.
+    Require them together."""
+    with tempfile.TemporaryDirectory() as td:
+        target = Path(td) / "story.txt"
+        target.write_text(
+            "He walked. \"Hi,\" she said.\n" * 200, encoding="utf-8",
+        )
+        rc = nda.main([
+            str(target),
+            "--judge", "mock",
+            "--threshold-low", "-1.0",
+            "--out", str(Path(td) / "o.json"),
+            "--out-md", str(Path(td) / "o.md"),
+        ])
+        assert rc != 0, (
+            "supplying only one threshold should be rejected"
+        )
+
+
 def test_register_warning_fires_below_floor():
     with tempfile.TemporaryDirectory() as td:
         target = Path(td) / "tiny.txt"

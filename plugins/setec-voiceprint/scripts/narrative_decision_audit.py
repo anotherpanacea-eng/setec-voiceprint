@@ -677,6 +677,34 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
+    # Threshold-pair validation. The verdict-band logic checks
+    # `score < threshold_low` first, so a swapped pair would silently
+    # mislabel most scores as ai_likely. Require both thresholds
+    # together so the band is well-defined and require low < high so
+    # the band ordering matches the semantics in --help.
+    if (args.threshold_low is None) != (args.threshold_high is None):
+        print(
+            "error: --threshold-low and --threshold-high must be "
+            "supplied together (or both omitted, in which case the "
+            "verdict band stays 'uncalibrated').",
+            file=sys.stderr,
+        )
+        return 1
+    if (
+        args.threshold_low is not None
+        and args.threshold_high is not None
+        and args.threshold_low >= args.threshold_high
+    ):
+        print(
+            f"error: --threshold-low ({args.threshold_low}) must be "
+            f"strictly less than --threshold-high "
+            f"({args.threshold_high}). Scores below threshold_low "
+            f"surface 'ai_likely'; above threshold_high "
+            f"'human_likely'.",
+            file=sys.stderr,
+        )
+        return 1
+
     target_path = Path(args.target)
     if not target_path.exists():
         print(

@@ -263,7 +263,21 @@ class SignalCell:
     notes: list[str] = field(default_factory=list)
 
 
-def per_signal_polarity(rows: list[Row]) -> list[SignalCell]:
+def per_signal_polarity(
+    rows: list[Row],
+    *,
+    min_class_n: int = 20,
+) -> list[SignalCell]:
+    """Compute per-signal direction-aware AUC + polarity verdict.
+
+    Cells with fewer than ``min_class_n`` rows in either class get
+    verdict ``chance`` regardless of where the (degenerate) CI lands,
+    because Hanley-McNeil SE collapses to zero on perfect separation
+    in tiny samples and would otherwise emit a spuriously confident
+    ``matches`` / ``inverted`` label. The note still records the
+    actual da_AUC and the under-floor sample sizes so operators can
+    see the underlying numbers.
+    """
     out: list[SignalCell] = []
     by_label = {"human": [], "ai": []}
     for r in rows:
@@ -312,12 +326,17 @@ def per_signal_polarity(rows: list[Row]) -> list[SignalCell]:
                 continue
             da = direction_aware_auc(raw_auc, sig.leaning)
             se = hanley_mcneil_se(da, n_pos, n_neg)
-            verdict = polarity_verdict(da, se)
-            if n_pos < 20 or n_neg < 20:
+            if n_pos < min_class_n or n_neg < min_class_n:
+                verdict = "chance"
                 notes.append(
-                    f"low sample (n_ai={n_pos}, n_human={n_neg}); "
-                    f"verdict noisy"
+                    f"below min_class_n={min_class_n} (n_ai={n_pos}, "
+                    f"n_human={n_neg}); verdict forced to chance to "
+                    f"avoid spurious confidence from "
+                    f"Hanley-McNeil SE collapse on small samples; "
+                    f"raw da_AUC={da:.3f}"
                 )
+            else:
+                verdict = polarity_verdict(da, se)
             out.append(SignalCell(
                 feature_key=feat.key,
                 feature_label=feat.label,
@@ -374,6 +393,7 @@ def build_report(
     counts: dict[str, int],
     cells: list[SignalCell],
     aggregate: dict[str, Any],
+    min_class_n: int = 20,
 ) -> dict[str, Any]:
     by_verdict: dict[str, list[SignalCell]] = {
         "matches": [], "inverted": [], "chance": [], "unavailable": [],
@@ -383,6 +403,7 @@ def build_report(
     return {
         "corpus_name": corpus_name,
         "manifest_path": str(manifest_path),
+        "min_class_n": min_class_n,
         "n_rows": {
             "human": sum(1 for r in rows if r.label == "human"),
             "ai": sum(1 for r in rows if r.label == "ai"),
@@ -593,7 +614,28 @@ def main(argv: list[str] | None = None) -> int:
         default="ai_generated",
         help="Manifest `label` value treated as AI (default ai_generated).",
     )
+    parser.add_argument(
+        "--min-class-n",
+        type=int,
+        default=20,
+        help=(
+            "Per-signal minimum sample size per class. Cells below "
+            "this floor get verdict 'chance' regardless of the "
+            "(degenerate) CI, because Hanley-McNeil SE collapses to "
+            "zero on perfect separation in tiny samples and would "
+            "otherwise emit spuriously confident matches/inverted "
+            "labels (default 20)."
+        ),
+    )
     args = parser.parse_args(argv)
+
+    if args.min_class_n < 1:
+        print(
+            f"error: --min-class-n must be at least 1 "
+            f"(got {args.min_class_n})",
+            file=sys.stderr,
+        )
+        return 2
 
     rows, counts = load_manifest(
         args.manifest,
@@ -606,7 +648,22 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    cells = per_signal_polarity(rows)
+    n_human = sum(1 for r in rows if r.label == "human")
+    n_ai = sum(1 for r in rows if r.label == "ai")
+    if n_human == 0 or n_ai == 0:
+        present = (
+            f"human={n_human}, ai={n_ai}"
+        )
+        print(
+            f"error: polarity audit requires at least one row in "
+            f"each class; got {present}. Check --human-label "
+            f"(currently {args.human_label!r}) and --ai-label "
+            f"(currently {args.ai_label!r}) against the labels "
+            f"actually present in the manifest.",
+            file=sys.stderr,
+        )
+        return 2
+    cells = per_signal_polarity(rows, min_class_n=args.min_class_n)
     aggregate = aggregate_scorer_auc(rows)
     report = build_report(
         corpus_name=args.corpus_name,
@@ -615,6 +672,7 @@ def main(argv: list[str] | None = None) -> int:
         counts=counts,
         cells=cells,
         aggregate=aggregate,
+        min_class_n=args.min_class_n,
     )
     args.out_json.write_text(
         json.dumps(report, indent=2, default=str),
