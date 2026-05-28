@@ -259,8 +259,23 @@ def render_yaml(seeds: list[Seed]) -> str:
     out.append("#   - calibrated: corpus-tested with FPR/TPR metrics")
     out.append("#   - structural_only: feeds downstream signals, not user-facing")
     out.append("#")
-    out.append(f"# Schema version: 0.1.0  (seeded {today})")
-    out.append("schema_version: \"0.1.0\"")
+    out.append("# dependencies vocabulary (v0.2.0):")
+    out.append("#   - python:          required Python packages. Their absence means")
+    out.append("#                      the audit's PRIMARY use case won't run. The")
+    out.append("#                      --available filter gates on this list.")
+    out.append("#   - python_optional: graceful-degradation packages. Their absence")
+    out.append("#                      means a non-primary feature falls back. The")
+    out.append("#                      seeder cannot tell which auto-extracted deps")
+    out.append("#                      have fallbacks (the script's try/except guards")
+    out.append("#                      live behind ast.walk), so EVERY auto-extracted")
+    out.append("#                      dep lands in `python` (the strict default).")
+    out.append("#                      During hand-curation, demote any dep whose")
+    out.append("#                      absence the script handles gracefully.")
+    out.append("#   - sdks_optional:   third-party API SDKs (anthropic, openai,")
+    out.append("#                      google-genai). Informational only.")
+    out.append("#")
+    out.append(f"# Schema version: 0.2.0  (seeded {today})")
+    out.append("schema_version: \"0.2.0\"")
     out.append("entries:")
     for seed in sorted(seeds, key=lambda s: s.id):
         out.append(f"  - id: {seed.id}")
@@ -292,6 +307,12 @@ def render_yaml(seeds: list[Seed]) -> str:
                 out.append(f"        - {dep}")
         else:
             out.append("      python: []")
+        # v0.2.0: emit python_optional as an empty list so the schema
+        # shape is consistent across seeded and hand-curated entries.
+        # Operators populate it during curation by demoting any
+        # auto-extracted dep whose absence the script handles
+        # gracefully (try/except ImportError → HAS_X flag → fallback).
+        out.append("      python_optional: []")
         out.append("    examples: []")
         out.append("    references: []")
         out.append(f"    _seeded_at: \"{today}\"")

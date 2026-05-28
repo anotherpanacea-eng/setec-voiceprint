@@ -1849,14 +1849,20 @@ entries:
       - all_fiction
       - all_nonfiction
     dependencies:
-      # sklearn for ROC / PR / confusion matrix; statsmodels for the
-      # Wilson / Clopper-Pearson / Jeffreys CIs the harness reports
-      # alongside point estimates. No graceful degradation — without
-      # these the harness can't produce its primary outputs.
-      python:
-        - sklearn
-        - statsmodels
-      python_optional: []
+      # validation_harness has stdlib fallbacks for both ranking
+      # metrics (fallback_roc_auc / fallback_average_precision with
+      # method=stdlib_fallback) and proportion intervals
+      # (wilson_interval, ci_method=stdlib:wilson). The full feature
+      # set — sklearn's precision-recall curves, statsmodels'
+      # Clopper-Pearson / Jeffreys / Agresti-Coull intervals — needs
+      # both deps, but the harness's primary use case runs without
+      # either (operators see ci_method=stdlib:wilson and
+      # method=stdlib_fallback in their output and know which path
+      # ran). Demoted from required → optional per PR #129 review.
+      python: []
+      python_optional:
+        - sklearn       # tightens ROC / PR / confusion matrix; stdlib fallback otherwise
+        - statsmodels   # adds Clopper-Pearson / Jeffreys CIs; Wilson stdlib fallback otherwise
     examples:
       - description: Validate against a labeled corpus
         cmd: "python3 plugins/setec-voiceprint/scripts/validation_harness.py corpus/manifest.jsonl"

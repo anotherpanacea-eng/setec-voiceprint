@@ -178,7 +178,7 @@ def test_duplicate_id_detected():
             "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
         )
         _write_yaml(manifest, {
-            "schema_version": "0.1.0",
+            "schema_version": "0.2.0",
             "entries": [
                 {
                     "id": "narrative_decision_audit",
@@ -199,6 +199,50 @@ def test_duplicate_id_detected():
         report = ccd.check_drift(manifest)
         kinds = {v.kind for v in report.violations}
         assert "duplicate_id" in kinds
+
+
+def test_duplicate_script_path_detected():
+    """Regression for PR #129 review: two entries with different ids
+    but the same script_path used to silently collide in the
+    by_script_path index, dropping the first entry from every
+    downstream check. The manifest is one-source-of-truth per
+    script, so duplicate script_paths are themselves drift to
+    surface."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        real_script = (
+            "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+        )
+        _write_yaml(manifest, {
+            "schema_version": "0.2.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": real_script,
+                    "surface": "narrative_decision_audit",
+                    "status": "todo",
+                    "compute": {"tier": "api_llm"},
+                },
+                {
+                    "id": "narrative_decision_audit_v2",
+                    "script_path": real_script,  # same path, different id
+                    "surface": "narrative_decision_audit",
+                    "status": "todo",
+                    "compute": {"tier": "api_llm"},
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "duplicate_script_path" in kinds, (
+            f"expected duplicate_script_path; got {kinds}"
+        )
+        # The original duplicate_id check should NOT fire here — the
+        # ids are distinct. This pins that the two checks are
+        # independent and a duplicate script_path can land alone.
+        assert "duplicate_id" not in kinds
 
 
 def test_cli_exits_zero_on_clean_repo():

@@ -197,9 +197,17 @@ def check_drift(
     manifest_entries = entries(manifest)
     report.scanned_entries = len(manifest_entries)
 
-    # Build manifest-side index: script_path → entry
+    # Build manifest-side index: script_path → entry. Per PR #129
+    # review, two entries claiming the same script_path silently
+    # collided here because we just overwrote the dict — we'd then
+    # only check the second entry against source state and the first
+    # would vanish from every downstream check. The manifest is meant
+    # to be one source of truth per script, so a duplicate script_path
+    # is itself a drift bug to surface. Detect first, then build the
+    # index from a deduplicated view.
     by_script_path: dict[str, dict] = {}
     seen_ids: set[str] = set()
+    seen_paths: dict[str, str] = {}  # script_path → first id that claimed it
     for entry in manifest_entries:
         eid = entry.get("id") or "(no id)"
         if eid in seen_ids:
@@ -211,7 +219,23 @@ def check_drift(
         seen_ids.add(eid)
         sp = entry.get("script_path")
         if sp:
-            by_script_path[sp] = entry
+            if sp in seen_paths:
+                report.violations.append(Violation(
+                    kind="duplicate_script_path",
+                    where=sp,
+                    detail=(
+                        f"script_path is claimed by multiple entries "
+                        f"({seen_paths[sp]!r} and {eid!r}); the "
+                        f"manifest is one-source-of-truth per script, "
+                        f"so consolidate or remove the duplicate"
+                    ),
+                ))
+                # Don't overwrite the index — the first claim wins
+                # for downstream checks. Operators see the conflict
+                # in the violation list.
+            else:
+                seen_paths[sp] = eid
+                by_script_path[sp] = entry
 
     # Check 1: orphan scripts (TASK_SURFACE-bearing source not in manifest)
     for path, surface in source_surfaces.items():
