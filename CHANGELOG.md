@@ -4,6 +4,38 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+**Surface 6 replication scaffold (StoryScope full pipeline).** Companion to the v0.1 Surface 6 audit. Wires the analytics layer (Stage C1 / C2 binary + 6-way XGBoost training with prompt-bootstrap CIs) and the feature-deduplication stage (B4, embedding-based single-linkage clustering matching the paper's procedure), and stubs the LLM-driven stages (A1–A3, B1–B3, B5) with a canonical pattern in `stages/a1_prompt_extraction.py` plus a `stub_template.py` operators specialize per stage. An orchestrator (`pipeline.py`) chains the stages with per-stage checkpoints + input SHA-256 verification. Spec doc enumerates three replication levels (L1 audit-only, L2 evaluation-replication, L3 full induction) with per-stage cost estimates.
+
+### Added (replication scaffold)
+
+- **`plugins/setec-voiceprint/scripts/replication/`** — new package containing the StoryScope replication pipeline.
+  - `manifest_format.py` — shared dataclasses (`PromptRow`, `StoryRow`, `FeatureRow`, `StageSidecar`) + JSONL IO + SHA-256 helpers. Sidecar manifest format documented inline.
+  - `train_xgboost.py` — Stage C1 (binary human-vs-AI) + C2 (6-way authorship attribution). Paper-default hyperparams (binary: n_est=420, depth=8, λ=2.0, scale_pos_weight=5.0; multiclass: n_est=500, depth=7, λ=1.0). Encoder honors the bundled 30-core-feature schema; operators with the paper's full 304-feature taxonomy supply `--feature-schema-json` for v0.2. Prompt-level grouped splits, prompt-bootstrap macro-F1 CIs, scratch-implemented AUPRC + per-class F1 + confusion matrix (no sklearn dependency for metrics). Emits the standard SETEC envelope with `task_surface="calibration"`.
+  - `feature_dedup.py` — Stage B4. Embedding-based single-linkage clustering at cosine threshold 0.85 (paper's value); default embedding via the framework's existing `embedding_backend.py` (mxbai-embed-large-v1). Operators wanting the paper's F2LLM-4B pass `--embedding-model f2llm-4b`. Cluster representative = feature nearest the cluster centroid in cosine distance. `--no-embed` fallback uses token-Jaccard for offline smoke-tests.
+  - `pipeline.py` — orchestrator. Chains stages via subprocess invocations; per-stage `<output_dir>/<stage_id>/` checkpoints; raises `NotImplementedError` for stub stages with a clear pointer to the canonical pattern.
+  - `stages/a1_prompt_extraction.py` — Stage A1 implementation (extract writing prompts from human stories). Uses the paper's verbatim prompt from `prompts_display/prompt_generation.md`. Canonical pattern for the other LLM-driven stages.
+  - `stages/stub_template.py` — stub harness for A2 / B1 / B2 / B3 / B5. Documents the per-stage specialization checklist.
+- **`plugins/setec-voiceprint/references/narrative-decision-replication-spec.md`** — full pipeline spec: three replication levels (L1 / L2 / L3), eight-stage map (A1–A3, B1–B5, C1–C8), per-stage costs and judge models, checkpoint manifest format, recommended quick-start.
+- **`plugins/setec-voiceprint/references/storyscope-prompts/`** — vendored prompts from the paper's TeX source (`prompt_generation.md`, `story_generation_example.md`, `template.md`); README documents the not-vendored prompts (comparative analysis, feature discovery, feature assignment) that operators fetch from the paper's GitHub repo.
+- **`requirements-replication.txt`** — top-level deps file for replication: `xgboost`, `shap`, `numpy`, `pandas`, `sentence-transformers`. Optional SDK pins commented out (operators install only the providers they use).
+- **`plugins/setec-voiceprint/scripts/tests/test_replication_core.py`** — 19 tests covering manifest IO, encoding (one-hot + multi-hot + numeric), metrics math (macro-F1, AUPRC, per-class F1, confusion matrix, prompt-bootstrap CI), prompt-level split determinism, and feature-dedup clustering math (single-linkage, cluster representative, end-to-end no-embed smoke test).
+
+**PR #128 review fixes (4 × P2).** Hardening from the first review pass on the v0.1 Surface 6 audit:
+
+### Fixed (PR #128 review)
+
+- **`plugins/setec-voiceprint/scripts/calibration/narrative_polarity_audit.py`** — (1) Per-signal `--min-class-n` floor (default 20) prevents spurious confident verdicts on tiny manifests where Hanley-McNeil SE collapses to zero on perfect separation; cells below the floor get `chance` with an explanatory note. (2) `main()` now rejects one-class manifests (human-only or AI-only rows) at the CLI level rather than writing reports of 33 unavailable cells and exiting 0. Surfaces the failure mode of a wrong `--ai-label` or filtered corpus.
+- **`plugins/setec-voiceprint/scripts/narrative_decision_audit.py`** — `main()` rejects (a) supplying only one of `--threshold-low` / `--threshold-high` (band is undefined) and (b) `--threshold-low >= --threshold-high` (would silently mislabel scores `ai_likely` because `verdict_band_from_thresholds` checks `< low` first).
+- **`plugins/setec-voiceprint/scripts/narrative_judge.py`** — Provider-side exceptions from `client.messages.create()` (anthropic), `client.chat.completions.create()` (openai), and `client.models.generate_content()` (gemini) are now wrapped as `JudgeError` so `main()`'s error-handling block fires the documented `error: judge execution failed` path rather than propagating raw SDK tracebacks. Client construction failures are likewise wrapped.
+
+### Added (PR #128 review)
+
+- `plugins/setec-voiceprint/scripts/tests/test_narrative_polarity_audit.py` — 6 tests covering min_class_n behavior, one-class CLI rejection, report's min_class_n surfacing, and the `--min-class-n < 1` validation.
+- `plugins/setec-voiceprint/scripts/tests/test_narrative_judge_api_errors.py` — 3 tests planting fake SDK modules in `sys.modules` and verifying each adapter repackages simulated provider failures as `JudgeError`.
+- `plugins/setec-voiceprint/scripts/tests/test_narrative_decision_audit.py` — two new tests for reversed-threshold rejection and single-threshold rejection.
+
+---
+
 **Surface 6: narrative-decision audit (StoryScope literature anchor).** Adds the Russell et al. 2026 *StoryScope* (arXiv:2604.03136v4) 30 core narrative-decision features as a new SETEC surface, distinct from the texture-level AIC families on Surface 4. The paper reports these features survive LAMP-style stylistic rewriting that defeats AIC- and surprisal-style detectors (95.5 → 93.9 macro-F1 after edits), so the surface is positioned as complementary to Surfaces 1 / 4 / 5, not a replacement. Ships uncalibrated by default per the Stylometry-to-the-people policy.
 
 ### Added
