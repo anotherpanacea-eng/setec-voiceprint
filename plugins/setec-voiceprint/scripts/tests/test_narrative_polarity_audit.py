@@ -203,6 +203,84 @@ def test_min_class_n_below_one_rejected():
         assert rc != 0
 
 
+# ---------- perf fix: index pivot replaces inner recompute --------
+
+def test_index_target_values_matches_per_signal_contributions():
+    """The pivot helper used by per_signal_polarity must produce the
+    same target_value mapping as iterating per_signal_contributions
+    directly. This pins behavioral equivalence between the v0.1
+    O(S²·N) loop and the v0.2 O(S·N) pivot — the perf fix can't be
+    allowed to drift the numbers."""
+    from narrative_decision_audit import per_signal_contributions
+    rows = _make_rows(n_human=2, n_ai=2)
+    for r in rows:
+        pivoted = npa._index_target_values(r)
+        # Direct path: build the (feature_key, option) -> target_value
+        # map from per_signal_contributions and compare.
+        direct: dict[tuple, float] = {}
+        for c in per_signal_contributions(r.values):
+            if c.target_value is None:
+                continue
+            direct[(c.feature_key, c.option)] = c.target_value
+        assert pivoted == direct, (
+            f"pivot diverged from direct: extra in pivot="
+            f"{set(pivoted) - set(direct)}; missing in pivot="
+            f"{set(direct) - set(pivoted)}"
+        )
+
+
+def test_per_signal_polarity_results_stable_under_pivot():
+    """End-to-end equivalence check: per_signal_polarity output
+    against a fixed manifest should be deterministic and stable
+    across re-runs (the pivot doesn't introduce ordering nondeterminism
+    or partial coverage drift)."""
+    rows = _make_rows(n_human=25, n_ai=25)
+    cells_a = npa.per_signal_polarity(rows, min_class_n=20)
+    cells_b = npa.per_signal_polarity(rows, min_class_n=20)
+    assert len(cells_a) == len(cells_b)
+    for a, b in zip(cells_a, cells_b):
+        assert a.feature_key == b.feature_key
+        assert a.option == b.option
+        assert a.n_pos == b.n_pos
+        assert a.n_neg == b.n_neg
+        assert a.raw_auc == b.raw_auc
+        assert a.da_auc == b.da_auc
+        assert a.verdict == b.verdict
+
+
+def test_per_signal_polarity_calls_pivot_once_per_row():
+    """Pin the perf fix at the call-count level instead of wall-time
+    (which is dominated by the inner Mann-Whitney's O(N²) at small N
+    and is unreliable). The fix is real iff per_signal_contributions
+    runs exactly N times per call (one per row), not N·S times. We
+    monkeypatch the imported reference inside narrative_polarity_audit
+    to count calls.
+    """
+    rows = _make_rows(n_human=20, n_ai=20)
+    n_rows = len(rows)
+    call_count = {"n": 0}
+    real = npa.per_signal_contributions
+
+    def counted(values):
+        call_count["n"] += 1
+        return real(values)
+
+    npa.per_signal_contributions = counted  # type: ignore
+    try:
+        npa.per_signal_polarity(rows, min_class_n=20)
+    finally:
+        npa.per_signal_contributions = real  # type: ignore
+
+    # Pre-fix: 33 signals × 40 rows = 1,320 calls. Post-fix: 40 calls
+    # (one per row, via _index_target_values). Allow a small constant
+    # overhead for any future bookkeeping calls.
+    assert call_count["n"] <= n_rows + 2, (
+        f"per_signal_contributions called {call_count['n']} times "
+        f"for {n_rows} rows; expected ~{n_rows} (one per row). "
+        f"Did the O(S²·N) loop come back?"
+    )
+
+
 if __name__ == "__main__":
     import traceback
     for name, fn in sorted(globals().items()):

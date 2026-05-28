@@ -263,6 +263,26 @@ class SignalCell:
     notes: list[str] = field(default_factory=list)
 
 
+def _index_target_values(
+    row: Row,
+) -> dict[tuple[str, str | None], float]:
+    """Build a (feature_key, option) → target_value lookup for one row.
+
+    Computes per_signal_contributions once and pivots the result so
+    the per-signal loop can index in O(1). This is the perf fix for
+    the prior O(S²·N) per-signal-polarity loop, where contributions
+    for ALL signals were recomputed inside every (feat × sig × row)
+    iteration. The new shape is O(S·N): each row's contributions are
+    built exactly once.
+    """
+    out: dict[tuple[str, str | None], float] = {}
+    for c in per_signal_contributions(row.values):
+        if c.target_value is None:
+            continue
+        out[(c.feature_key, c.option)] = c.target_value
+    return out
+
+
 def per_signal_polarity(
     rows: list[Row],
     *,
@@ -279,29 +299,23 @@ def per_signal_polarity(
     see the underlying numbers.
     """
     out: list[SignalCell] = []
-    by_label = {"human": [], "ai": []}
+    by_label: dict[str, list[Row]] = {"human": [], "ai": []}
     for r in rows:
         by_label[r.label].append(r)
+    # Pivot once: per-row (feature_key, option) → target_value.
+    # Replaces the inner per_signal_contributions recompute that
+    # otherwise ran S times per row (~33× redundant work).
+    indexed_ai = [_index_target_values(r) for r in by_label["ai"]]
+    indexed_human = [_index_target_values(r) for r in by_label["human"]]
     for feat in CORE_FEATURES:
         for sig in feat.signals:
-            # Per-row signal target-value (numeric). Reuses the same
-            # encoding the per-doc audit uses.
-            pos_scores: list[float] = []  # ai
-            neg_scores: list[float] = []  # human
-            for r in by_label["ai"]:
-                contribs = per_signal_contributions(r.values)
-                for c in contribs:
-                    if c.feature_key == feat.key and c.option == sig.option:
-                        if c.target_value is not None:
-                            pos_scores.append(c.target_value)
-                        break
-            for r in by_label["human"]:
-                contribs = per_signal_contributions(r.values)
-                for c in contribs:
-                    if c.feature_key == feat.key and c.option == sig.option:
-                        if c.target_value is not None:
-                            neg_scores.append(c.target_value)
-                        break
+            key = (feat.key, sig.option)
+            pos_scores: list[float] = [
+                idx[key] for idx in indexed_ai if key in idx
+            ]
+            neg_scores: list[float] = [
+                idx[key] for idx in indexed_human if key in idx
+            ]
             n_pos = len(pos_scores)
             n_neg = len(neg_scores)
             raw_auc = auc_mannwhitney(pos_scores, neg_scores)
