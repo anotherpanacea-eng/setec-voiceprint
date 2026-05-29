@@ -4,7 +4,7 @@
 **For:** APODICTIC's consumer-list expansion to cover Surface 6 (narrative-decision audit) and its calibration sidecar.
 **Triggered by:** Russell et al. 2026 *StoryScope* (arXiv:2604.03136v4) integration into SETEC v1.107.0+ (PRs #128, #129). The framework now ships a sixth task surface with the same `schema_version: "1.0"` envelope as the existing five.
 
-**Status:** integration spec. Documents the consumer-pinning contract for `narrative_decision_audit` (currently `handoff: experimental` in `capabilities.yaml`); not yet a formal commitment from APODICTIC's side. SETEC has stabilized the envelope and the per-signal contributions shape — the experimental flag covers the aggregate-score math (whose design questions are noted in §C.1) and the option to swap in a 10-aspect-prompt judge pipeline in v0.2. The canonical query for APODICTIC's pinned surface is `capabilities.py list --consumer apodictic`.
+**Status:** integration spec. Documents the consumer-pinning contract for `narrative_decision_audit` (currently `handoff: experimental` in `capabilities.yaml`); not yet a formal commitment from APODICTIC's side. SETEC has stabilized the envelope and the per-signal contributions shape — the experimental flag covers the aggregate-score math (whose design questions are noted in §C.1) and the option to swap in a 10-aspect-prompt judge pipeline in v0.2. The canonical query for APODICTIC's *contract-stable* pinned surface is `capabilities.py list --consumer apodictic --handoff stable`; the broader *consumer-listed* set (which also returns `narrative_decision_audit` because it carries `consumers: [apodictic]` even though its handoff is experimental) is `capabilities.py list --consumer apodictic`.
 
 ---
 
@@ -19,9 +19,11 @@ PR #128 added a new SETEC task surface — `narrative_decision_audit` — that s
 
 This document splits that surface into **three integration tiers** for APODICTIC and proposes which to pin against.
 
-## Tier A — runtime envelope endpoints (recommended consumer list)
+## Tier A — runtime endpoints (one envelope + one non-envelope sidecar)
 
-Two new envelopes are eligible for APODICTIC's `schema_version: "1.0"` consumer list. Both ship with the same `target/baseline/results/claim_license` shape APODICTIC already parses for variance_audit, voice_distance, etc.
+Only `narrative_decision_audit` (§A.1) is a runtime *envelope* endpoint eligible for APODICTIC's `schema_version: "1.0"` consumer list — it ships the same `target/baseline/results/claim_license` shape APODICTIC already parses for variance_audit, voice_distance, etc., and has a `handoff: experimental` entry in the capabilities manifest.
+
+`narrative_polarity_audit` (§A.2) is documented in this tier for *adjacency* — it produces structured polarity evidence APODICTIC's verdict layer may want to read alongside A.1 — but it is **not** a runtime envelope endpoint and **not** currently a manifest entry. The "not pin-able" framing in §A.2 governs; it is included here for completeness, not as a pin target. Treat A.2 as informational until either the envelope-wrapping or manifest-entry gating work in §A.2 lands.
 
 ### A.1 `narrative_decision_audit`
 
