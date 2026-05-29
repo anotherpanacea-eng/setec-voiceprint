@@ -324,6 +324,98 @@ def check_drift(
                     ),
                 ))
 
+    # Check 5 (v0.3.0): handoff: stable entries must carry a
+    # non-empty `references` list so consumers can find the
+    # integration spec the entry's stable-contract promise points
+    # at. Without this gate, an entry can claim "pin against me"
+    # without any document describing what to pin to.
+    for entry in manifest_entries:
+        if entry.get("handoff") != "stable":
+            continue
+        eid = entry.get("id") or "(no id)"
+        refs = entry.get("references") or []
+        if not refs:
+            report.violations.append(Violation(
+                kind="stable_without_references",
+                where=eid,
+                detail=(
+                    "handoff is 'stable' but `references` is empty. "
+                    "Add at least one path to an integration spec "
+                    "or surface doc (typically the audit's own spec "
+                    "doc in references/) so downstream consumers "
+                    "can find what they're pinning against."
+                ),
+            ))
+
+    # Check 6 (v0.3.0): handoff/consumers shape validation. Catches
+    # typos like `handoff: stabel` that pre-fix passed cleanly
+    # because the stable_without_references check only inspects
+    # entries whose handoff value is literally "stable" — anything
+    # else falls through. The downstream consequence is
+    # `capabilities.py list --handoff stable --consumer apodictic`
+    # silently dropping a pinned surface.
+    valid_handoff = frozenset({"stable", "experimental", "internal", "none"})
+    for entry in manifest_entries:
+        eid = entry.get("id") or "(no id)"
+        handoff = entry.get("handoff")
+        if handoff is None:
+            # Missing handoff field. Pre-v0.3 manifests don't carry
+            # the field; flag as drift so they get seeded.
+            report.violations.append(Violation(
+                kind="missing_handoff",
+                where=eid,
+                detail=(
+                    "v0.3.0 entries must declare a `handoff` field. "
+                    "Default to `handoff: none` if you don't intend "
+                    "this entry as a consumer surface, then promote "
+                    "during curation. Run `seed_capabilities.py` to "
+                    "regenerate the field shape."
+                ),
+            ))
+        elif handoff not in valid_handoff:
+            report.violations.append(Violation(
+                kind="invalid_handoff",
+                where=eid,
+                detail=(
+                    f"handoff value {handoff!r} is not in the legal "
+                    f"vocabulary {sorted(valid_handoff)!r}. Did you "
+                    f"mean `stable`? A typo here silently drops the "
+                    f"entry from `capabilities.py list --handoff "
+                    f"stable` queries."
+                ),
+            ))
+        consumers = entry.get("consumers")
+        if consumers is None:
+            report.violations.append(Violation(
+                kind="missing_consumers",
+                where=eid,
+                detail=(
+                    "v0.3.0 entries must declare a `consumers` field "
+                    "(empty list `[]` is fine for entries with no "
+                    "named downstream integrations)."
+                ),
+            ))
+        elif not isinstance(consumers, list):
+            report.violations.append(Violation(
+                kind="invalid_consumers_type",
+                where=eid,
+                detail=(
+                    f"`consumers` must be a list of strings; got "
+                    f"{type(consumers).__name__}. A scalar here "
+                    f"silently dropped the entry from `--consumer X` "
+                    f"filters because the filter does an `in` check."
+                ),
+            ))
+        elif any(not isinstance(c, str) for c in consumers):
+            report.violations.append(Violation(
+                kind="invalid_consumers_type",
+                where=eid,
+                detail=(
+                    "`consumers` must contain only strings; got "
+                    f"mixed types: {[type(c).__name__ for c in consumers]}"
+                ),
+            ))
+
     return report
 
 

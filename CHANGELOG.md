@@ -4,6 +4,36 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+**Two PR #130 review followups: handoff vocabulary validation + polarity-audit envelope misrepresentation.** Both surfaced by the reviewer probing the v0.3 contract before merge.
+
+- **Linter catches `handoff` typos and shape errors.** Pre-fix, only `handoff: stable` entries got linted (for the `references` requirement); anything else fell through. A typo like `handoff: stabel` on `variance_audit` passed cleanly and made `capabilities.py list --handoff stable --consumer apodictic` silently drop the entry from APODICTIC's pinned surface. New violation kinds: `invalid_handoff` (value not in {stable, experimental, internal, none}), `missing_handoff` (pre-v0.3 entries without the field), `missing_consumers` (likewise), and `invalid_consumers_type` (scalar string instead of list — silently broke the `--consumer X` filter's `in` check). 3 new tests pin the typo, the missing field, and the scalar-consumers case.
+- **APODICTIC handoff spec §A.2 rewritten.** Pre-fix, the spec documented `narrative_polarity_audit` as `task_surface: calibration` + `schema_version: 1.0` + envelope-compatible — but the script declares no `TASK_SURFACE` constant, doesn't call `output_schema.build_output()`, and is not in the capabilities manifest. APODICTIC code following the prior spec would have looked for envelope fields that don't exist. Rewritten as "non-envelope calibration sidecar" with the actual top-level JSON shape (`corpus_name`, `n_rows`, `signal_summary`, `cells`, no envelope wrapper) and an explicit "not pin-able" framing. Open question 1 updated: A.2 is no longer a pin candidate; it'd take a separate piece of work (either envelope wrapping or a manifest entry with explicit `handoff: experimental`) before it could become one.
+
+Plugin version 1.109.0 → 1.109.1 (fix).
+
+**Capabilities manifest v0.3 + APODICTIC handoff spec for Surface 6.** Makes the consumer-pinning contract explicit and queryable. Pre-v0.3, every script emitting `schema_version: "1.0"` was implicitly a consumer surface, but some were intentional (variance_audit, voice_distance, the named consumer list from the 1.85/1.86 CHANGELOG waves) and some were accidental (baseline_discovery: "rarely consumed downstream, so the envelope omission has the smallest blast radius"). v0.3 surfaces the distinction as a queryable field so APODICTIC (and future consumers) know what to pin against.
+
+### Added (handoff surface)
+
+- **Schema v0.3.0 — `handoff` posture and `consumers` list.** Every manifest entry gains two new fields:
+  - `handoff` ∈ {`stable`, `experimental`, `internal`, `none`}. `stable` = pin against; SETEC's `schema_version` + semver discipline the contract, breaking changes bump to 2.0.0. `experimental` = consumer surface but contract may evolve before stabilization (use for new surfaces in their first release cycle). `internal` = emits the envelope but is operator-side tooling (`dependency_check`, `manifest_validator`); not for consumers. `none` = not a consumer surface (research scaffolds, helpers, replication stages); default for auto-seeded entries.
+  - `consumers` = free-list of named downstream integrations (`apodictic`, `ultrareview`, `external_integrations`). The list is documentation, not enforcement; new consumers added without schema change. Replaces the ad-hoc consumer-naming that previously lived only in CHANGELOG prose (1.85/1.86 release notes).
+- **`capabilities.py list --handoff <posture> --consumer <name>`** — the canonical query APODICTIC's verdict layer runs to find its pinned surface (`list --consumer apodictic --handoff stable` returns the contract-stable subset). `show ID` surfaces `handoff posture` and `named consumers` when populated.
+- **`tools/seed_capabilities.py`** emits `schema_version: "0.3.0"` plus `handoff: none` + `consumers: []` on every auto-seeded entry; header-comment block documents both vocabularies.
+- **`tools/check_capabilities_drift.py`** gains `stable_without_references` check: a `handoff: stable` entry without `references` would be promising consumers a contract with no integration spec to pin to. Catches the gap before it ships.
+- **Phase A+ curation (10 entries promoted):** `variance_audit`, `aic_pattern_audit`, `voice_distance`, `idiolect_detector`, `validation_harness`, `restoration_packet` → `handoff: stable` + `consumers: [apodictic]` (matches the named consumer list from the 1.85/1.86 CHANGELOG waves). `narrative_decision_audit` → `handoff: experimental` + `consumers: [apodictic]` (new surface, contract may evolve before stabilization — design notes in the APODICTIC handoff spec §C.1). `binoculars_audit` → `handoff: experimental` + `consumers: []` (envelope-shipped but no documented consumer yet). `dependency_check`, `manifest_validator` → `handoff: internal` + `consumers: []`. 54 auto-seeded entries stay `handoff: none`.
+- **`plugins/setec-voiceprint/references/apodictic-handoff-storyscope.md`** — first integration spec under the new contract. Documents Surface 6 (narrative_decision_audit) integration: runtime envelope endpoints (Tier A), vocabulary surfaces (Tier B — importable `narrative_feature_schema` types), and explicit do-not-pin surfaces (Tier C — aggregate score, judge prompts, replication scaffold). Cross-linked from `narrative_decision_audit`'s references list.
+- **9 new tests:**
+  - `test_capabilities.py`: 6 new tests covering `--handoff` filter for stable/experimental/internal, `--consumer apodictic` filter, composition of the two filters, and `show` surfacing the new fields (with the empty-consumers omission case).
+  - `test_check_capabilities_drift.py`: 3 new tests for the `stable_without_references` check — fires when expected, doesn't fire when references present, doesn't fire on experimental entries.
+  - `test_seed_capabilities.py`: schema version pin bumped to v0.3.0; new `test_seeder_emits_handoff_and_consumers_on_every_entry` pins the default field shape.
+
+### Changed (gitignore convention)
+
+- **`plugins/setec-voiceprint/references/_drafts/`** added to `.gitignore`. Draft spec docs (handoff specs awaiting consumer-side decisions, etc.) can live there on disk without polluting the working tree. Established as part of moving the APODICTIC handoff doc to a first-class reference.
+
+Plugin version 1.108.2 → 1.109.0 (feat).
+
 **Three PR #129 review followups: validation_harness misclassification + seeder schema drift + drift linter duplicate-path gap.** Each one a real correctness bug, each surfaced by a reviewer probing the v0.2 schema change shipped earlier in the same PR.
 
 - **validation_harness re-curated from required → optional deps.** Pre-fix, the curated entry claimed sklearn + statsmodels as required, so `capabilities.py list --available` hid the harness on stdlib-only machines. The script actually carries `HAS_SKLEARN` / `HAS_STATSMODELS` flags + `fallback_roc_auc` / `fallback_average_precision` / `wilson_interval` stdlib paths and emits `method=stdlib_fallback` / `ci_method=stdlib:wilson` in its output when those deps are absent. Both demoted to `python_optional`; required list is now empty.
