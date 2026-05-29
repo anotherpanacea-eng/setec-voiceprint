@@ -4,6 +4,13 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+**Two PR #130 review followups: handoff vocabulary validation + polarity-audit envelope misrepresentation.** Both surfaced by the reviewer probing the v0.3 contract before merge.
+
+- **Linter catches `handoff` typos and shape errors.** Pre-fix, only `handoff: stable` entries got linted (for the `references` requirement); anything else fell through. A typo like `handoff: stabel` on `variance_audit` passed cleanly and made `capabilities.py list --handoff stable --consumer apodictic` silently drop the entry from APODICTIC's pinned surface. New violation kinds: `invalid_handoff` (value not in {stable, experimental, internal, none}), `missing_handoff` (pre-v0.3 entries without the field), `missing_consumers` (likewise), and `invalid_consumers_type` (scalar string instead of list — silently broke the `--consumer X` filter's `in` check). 3 new tests pin the typo, the missing field, and the scalar-consumers case.
+- **APODICTIC handoff spec §A.2 rewritten.** Pre-fix, the spec documented `narrative_polarity_audit` as `task_surface: calibration` + `schema_version: 1.0` + envelope-compatible — but the script declares no `TASK_SURFACE` constant, doesn't call `output_schema.build_output()`, and is not in the capabilities manifest. APODICTIC code following the prior spec would have looked for envelope fields that don't exist. Rewritten as "non-envelope calibration sidecar" with the actual top-level JSON shape (`corpus_name`, `n_rows`, `signal_summary`, `cells`, no envelope wrapper) and an explicit "not pin-able" framing. Open question 1 updated: A.2 is no longer a pin candidate; it'd take a separate piece of work (either envelope wrapping or a manifest entry with explicit `handoff: experimental`) before it could become one.
+
+Plugin version 1.109.0 → 1.109.1 (fix).
+
 **Capabilities manifest v0.3 + APODICTIC handoff spec for Surface 6.** Makes the consumer-pinning contract explicit and queryable. Pre-v0.3, every script emitting `schema_version: "1.0"` was implicitly a consumer surface, but some were intentional (variance_audit, voice_distance, the named consumer list from the 1.85/1.86 CHANGELOG waves) and some were accidental (baseline_discovery: "rarely consumed downstream, so the envelope omission has the smallest blast radius"). v0.3 surfaces the distinction as a queryable field so APODICTIC (and future consumers) know what to pin against.
 
 ### Added (handoff surface)

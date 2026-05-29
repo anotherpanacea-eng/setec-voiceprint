@@ -107,15 +107,16 @@ Two new envelopes are eligible for APODICTIC's `schema_version: "1.0"` consumer 
 
 **APODICTIC-side decision:** pin against this surface only if APODICTIC plans to surface narrative-level evidence to operators. The per-signal `contributions` block is the load-bearing payload; per-bundle aggregates are a convenience layer.
 
-### A.2 `narrative_polarity_audit` (calibration-side)
+### A.2 `narrative_polarity_audit` — non-envelope calibration sidecar
 
-  - **task_surface:** `calibration` (re-uses the existing surface ID — not a new one)
-  - **tool:** documented at `plugins/setec-voiceprint/scripts/calibration/narrative_polarity_audit.py`
-  - **schema_version:** `1.0` (envelope-compatible)
+  - **tool:** `plugins/setec-voiceprint/scripts/calibration/narrative_polarity_audit.py`
+  - **NOT envelope-compatible.** The script does not declare a `TASK_SURFACE` constant, does not call `output_schema.build_output()`, and does not emit a `schema_version: "1.0"` envelope. It emits a free-form *calibration-findings* JSON document modeled on `calibration-findings-2026-05-10.md` / `-2026-05-11-mage.md` for Tier-1 variance signals.
+  - **NOT in the capabilities manifest.** No entry currently exists for it. The script is an operator-side calibration utility consumed by SETEC's own findings-doc workflow, not by APODICTIC's runtime envelope-pinning machinery.
+  - **Not on the consumer-list contract.** Treat A.2 as informational rather than as a pin target; if APODICTIC wants this output stably, it'll need a separate piece of work either (a) adding a `TASK_SURFACE = "calibration"` + `build_output()` wrapper, or (b) adding it to the manifest with `handoff: experimental` and the actual shape documented below.
 
-**Why APODICTIC may want it:** the polarity audit produces per-signal direction-aware AUC + verdict (`matches` / `inverted` / `chance`) against an operator-labeled corpus. This is the structured evidence operators (and APODICTIC's verdict layer) consume to know which of the 33 signals' polarity survives on a given corpus — the same workflow that produced the 2026-05-10 EditLens and 2026-05-11 MAGE findings for Tier-1 variance signals.
+**Why APODICTIC may still want to read it:** the polarity audit produces per-signal direction-aware AUC + verdict (`matches` / `inverted` / `chance`) against an operator-labeled corpus. This is the structured evidence operators consume to know which of the 33 signals' polarity survives on a given corpus — the same workflow that produced the 2026-05-10 EditLens and 2026-05-11 MAGE findings for Tier-1 variance signals. APODICTIC's verdict layer could read this output to apply a per-signal confidence haircut to A.1 evidence, with the understanding that the shape may evolve without a `schema_version` bump.
 
-**Results-block shape:**
+**Actual JSON shape** (emitted by `build_report()`):
 
 ```jsonc
 {
@@ -129,7 +130,7 @@ Two new envelopes are eligible for APODICTIC's `schema_version: "1.0"` consumer 
   "signal_summary": {
     "matches": 18, "inverted": 6, "chance": 9, "unavailable": 0
   },
-  "cells": [                       // 33 entries — same row shape as the per-signal contributions in A.1
+  "cells": [                       // 33 entries — one per signal
     {
       "feature_key": "...",
       "feature_label": "...",
@@ -149,7 +150,9 @@ Two new envelopes are eligible for APODICTIC's `schema_version: "1.0"` consumer 
 }
 ```
 
-**APODICTIC-side decision:** pin against this output if APODICTIC's verdict layer wants to know which narrative-decision signals are corpus-trustworthy. The `cells[*].verdict` field is the load-bearing routing key; the `signal_summary` block summarizes corpus-wide polarity health.
+Note the absence of the `target/baseline/results/claim_license` envelope. The fields shown are *the* output, top-level. There is no `schema_version`, no `task_surface`, no `claim_license` block.
+
+**APODICTIC-side decision:** if APODICTIC wants this as a contract-stable input, file a request for either (a) envelope wrapping or (b) a manifest entry with explicit `handoff: experimental` framing. Until either lands, treat this section as a *description of an internal SETEC output APODICTIC could read with operator awareness that the shape may change*, not as a pin-able interface.
 
 ## Tier B — vocabulary surfaces (importable)
 
@@ -240,7 +243,7 @@ This is *not* a threshold, *not* a verdict, and *not* shipped per-signal in the 
 
 ## Open questions for APODICTIC
 
-  1. **Which surfaces to pin?** Tier A.1 alone, Tier A.1+A.2, or also Tier B?
+  1. **Which surfaces to pin?** Tier A.1 alone, or also Tier B? (Note: A.2 is not currently pin-able — it's a non-envelope sidecar; see §A.2 for the gating decision before it could become a pin target.)
   2. **Aggregate score posture?** Re-emit SETEC's aggregate, replace with APODICTIC-computed pool, or surface per-signal only?
   3. **Polarity-audit consumption?** Does APODICTIC's verdict layer want to read `signals_summary.inverted` as a confidence haircut on narrative-decision evidence?
   4. **Cross-tool vocabulary?** Adopt `narrative_feature_schema.CORE_FEATURES` as a shared vocabulary across both projects, or maintain APODICTIC's own taxonomy?
