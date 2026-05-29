@@ -31,6 +31,7 @@ Only `narrative_decision_audit` (§A.1) is a runtime *envelope* endpoint eligibl
   - **tool:** `narrative_decision_audit`
   - **script:** `plugins/setec-voiceprint/scripts/narrative_decision_audit.py`
   - **schema_version:** `1.0`
+  - **handoff posture:** `experimental` — envelope shape and `target/baseline/results/claim_license` block are committed; the aggregate-score math and judge-prompt pipeline (see §C.1, §C.2) may evolve before stabilization. Consumers welcome to pin, with the understanding that a future v0.2 may bump.
   - **calibration status:** `literature_anchored` (anchored to Russell et al. 2026 group means)
   - **ships uncalibrated:** verdict band defaults to `uncalibrated`; framework does not ship `--threshold-low` / `--threshold-high`
 
