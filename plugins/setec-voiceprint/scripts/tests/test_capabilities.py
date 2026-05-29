@@ -37,10 +37,10 @@ def _manifest() -> dict:
 
 def test_manifest_loads_and_has_entries():
     m = _manifest()
-    # Schema v0.2.0 split dependencies into required (python) +
-    # optional (python_optional) to fix --available false-negatives
-    # on graceful-degradation audits like variance_audit.
-    assert m.get("schema_version") == "0.2.0"
+    # Schema v0.3.0 added handoff posture (stable / experimental /
+    # internal / none) + consumers free-list to make the consumer-
+    # pinning contract explicit and queryable.
+    assert m.get("schema_version") == "0.3.0"
     assert isinstance(m.get("entries"), list)
     assert len(m["entries"]) > 30
 
@@ -91,6 +91,117 @@ def test_filter_by_surface():
     )
     assert len(out) == 1
     assert out[0]["id"] == "narrative_decision_audit"
+
+
+def test_filter_by_handoff_stable():
+    """v0.3.0: --handoff stable returns only the entries that have
+    been explicitly promoted for consumer pinning. Six entries are
+    currently stable per the Phase A curation (variance_audit,
+    voice_distance, idiolect_detector, aic_pattern_audit,
+    restoration_packet, validation_harness)."""
+    m = _manifest()
+    out = cap.filter_entries(m["entries"], handoff="stable")
+    ids = {e["id"] for e in out}
+    assert "variance_audit" in ids
+    assert "aic_pattern_audit" in ids
+    assert "narrative_decision_audit" not in ids  # experimental
+    assert "dependency_check" not in ids  # internal
+    # Every stable entry must carry a non-empty references list (the
+    # drift linter's stable_without_references check enforces this).
+    for e in out:
+        assert (e.get("references") or []), (
+            f"{e['id']} is handoff: stable but has empty references"
+        )
+
+
+def test_filter_by_handoff_experimental():
+    """v0.3.0: --handoff experimental returns the new-surface
+    entries whose envelope shape may evolve before 2.0.0."""
+    m = _manifest()
+    out = cap.filter_entries(m["entries"], handoff="experimental")
+    ids = {e["id"] for e in out}
+    assert "narrative_decision_audit" in ids
+    assert "binoculars_audit" in ids
+
+
+def test_filter_by_handoff_internal():
+    """v0.3.0: --handoff internal returns operator-side tooling."""
+    m = _manifest()
+    out = cap.filter_entries(m["entries"], handoff="internal")
+    ids = {e["id"] for e in out}
+    assert "dependency_check" in ids
+    assert "manifest_validator" in ids
+
+
+def test_filter_by_consumer_apodictic():
+    """v0.3.0: --consumer apodictic returns every audit that names
+    apodictic in its consumers list. This is the canonical query
+    APODICTIC's verdict layer runs to find its pinned surface."""
+    m = _manifest()
+    out = cap.filter_entries(m["entries"], consumer="apodictic")
+    ids = {e["id"] for e in out}
+    # Phase A consumer-list: the 6 stable + narrative_decision_audit
+    # (experimental) all name apodictic.
+    expected_subset = {
+        "variance_audit", "aic_pattern_audit", "voice_distance",
+        "idiolect_detector", "restoration_packet",
+        "validation_harness", "narrative_decision_audit",
+    }
+    assert expected_subset.issubset(ids), (
+        f"missing from --consumer apodictic: "
+        f"{expected_subset - ids}"
+    )
+
+
+def test_filter_by_consumer_unknown_returns_empty():
+    """A consumer name that no entry lists returns an empty result —
+    not an error. The list is documentation, not enforcement, so
+    operators can probe for hypothetical consumers."""
+    m = _manifest()
+    out = cap.filter_entries(m["entries"], consumer="nonexistent_consumer")
+    assert out == []
+
+
+def test_filter_handoff_and_consumer_compose():
+    """`--handoff stable --consumer apodictic` is the canonical
+    query APODICTIC uses to find its pin-against surface (entries
+    SETEC promises stability on AND names APODICTIC as a consumer)."""
+    m = _manifest()
+    out = cap.filter_entries(
+        m["entries"], handoff="stable", consumer="apodictic",
+    )
+    ids = {e["id"] for e in out}
+    # narrative_decision_audit is experimental, so excluded by
+    # handoff=stable even though it lists apodictic.
+    assert "narrative_decision_audit" not in ids
+    assert "variance_audit" in ids
+
+
+def test_show_surfaces_handoff_and_consumers():
+    """v0.3.0: `show` must surface handoff posture and the
+    named-consumers list when populated."""
+    m = _manifest()
+    entry = next(
+        e for e in m["entries"]
+        if e["id"] == "narrative_decision_audit"
+    )
+    md = cap.render_show(entry)
+    assert "handoff posture" in md.lower()
+    assert "experimental" in md
+    assert "apodictic" in md.lower()
+
+
+def test_show_omits_consumers_when_empty():
+    """`show` should NOT render the named-consumers line when the
+    list is empty (avoids `named consumers:` followed by nothing)."""
+    m = _manifest()
+    entry = next(
+        e for e in m["entries"]
+        if e["id"] == "dependency_check"
+    )
+    md = cap.render_show(entry)
+    # dependency_check is handoff: internal, consumers: []
+    assert "named consumers" not in md.lower()
 
 
 def test_filter_by_tier():

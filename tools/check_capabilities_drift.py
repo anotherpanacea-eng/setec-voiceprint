@@ -324,6 +324,29 @@ def check_drift(
                     ),
                 ))
 
+    # Check 5 (v0.3.0): handoff: stable entries must carry a
+    # non-empty `references` list so consumers can find the
+    # integration spec the entry's stable-contract promise points
+    # at. Without this gate, an entry can claim "pin against me"
+    # without any document describing what to pin to.
+    for entry in manifest_entries:
+        if entry.get("handoff") != "stable":
+            continue
+        eid = entry.get("id") or "(no id)"
+        refs = entry.get("references") or []
+        if not refs:
+            report.violations.append(Violation(
+                kind="stable_without_references",
+                where=eid,
+                detail=(
+                    "handoff is 'stable' but `references` is empty. "
+                    "Add at least one path to an integration spec "
+                    "or surface doc (typically the audit's own spec "
+                    "doc in references/) so downstream consumers "
+                    "can find what they're pinning against."
+                ),
+            ))
+
     return report
 
 

@@ -36,10 +36,11 @@ except ImportError:
     yaml = None
 
 
-def test_seeder_emits_v0_2_schema():
-    """The seeder's schema_version must match the committed manifest's.
-    Pre-fix it was hard-coded to 0.1.0 even though the committed
-    manifest was 0.2.0."""
+def test_seeder_emits_current_schema():
+    """The seeder's schema_version must match the committed
+    manifest's. Pre-v0.2 fix it was hard-coded to 0.1.0 even
+    though the committed manifest was 0.2.0. v0.3 bumped both
+    in lockstep — this test pins both sides together."""
     if yaml is None:
         return
     with tempfile.TemporaryDirectory() as td:
@@ -47,8 +48,8 @@ def test_seeder_emits_v0_2_schema():
         rc = sc.main(["--out", str(out_path)])
         assert rc == 0
         data = yaml.safe_load(out_path.read_text(encoding="utf-8"))
-        assert data["schema_version"] == "0.2.0", (
-            f"seeder must emit schema_version 0.2.0 to match the "
+        assert data["schema_version"] == "0.3.0", (
+            f"seeder must emit schema_version 0.3.0 to match the "
             f"committed manifest's schema; got "
             f"{data['schema_version']!r}. If the manifest schema is "
             f"bumped, update render_yaml's schema_version literal "
@@ -56,6 +57,39 @@ def test_seeder_emits_v0_2_schema():
             f"shape and reintroduces the bugs the bump was meant to "
             f"fix."
         )
+
+
+def test_seeder_emits_handoff_and_consumers_on_every_entry():
+    """v0.3.0: every seeded entry must include `handoff` and
+    `consumers` fields, defaulting to `none` and `[]` respectively
+    so operators see the slots during hand-curation."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        out_path = Path(td) / "capabilities.yaml"
+        rc = sc.main(["--out", str(out_path)])
+        assert rc == 0
+        data = yaml.safe_load(out_path.read_text(encoding="utf-8"))
+        for entry in data["entries"]:
+            assert "handoff" in entry, (
+                f"{entry.get('id')}: handoff field missing. The "
+                f"seeder must emit handoff: none by default so "
+                f"operators see the slot during hand-curation."
+            )
+            assert entry["handoff"] == "none", (
+                f"{entry.get('id')}: auto-seeded entries must "
+                f"default to handoff: none (got "
+                f"{entry['handoff']!r}); operator promotes during "
+                f"curation."
+            )
+            assert "consumers" in entry, (
+                f"{entry.get('id')}: consumers field missing."
+            )
+            assert entry["consumers"] == [], (
+                f"{entry.get('id')}: auto-seeded entries must "
+                f"default to consumers: [] (got "
+                f"{entry['consumers']!r})."
+            )
 
 
 def test_seeder_emits_python_optional_on_every_entry():

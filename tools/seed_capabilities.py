@@ -274,8 +274,28 @@ def render_yaml(seeds: list[Seed]) -> str:
     out.append("#   - sdks_optional:   third-party API SDKs (anthropic, openai,")
     out.append("#                      google-genai). Informational only.")
     out.append("#")
-    out.append(f"# Schema version: 0.2.0  (seeded {today})")
-    out.append("schema_version: \"0.2.0\"")
+    out.append("# handoff posture vocabulary (v0.3.0):")
+    out.append("#   - stable:       pin against this. SETEC's schema_version +")
+    out.append("#                   semver discipline the contract. Breaking changes")
+    out.append("#                   bump to 2.0.0.")
+    out.append("#   - experimental: designed as a consumer surface but contract")
+    out.append("#                   may evolve before 2.0.0. Consumers welcome to")
+    out.append("#                   pin, with the understanding that the envelope")
+    out.append("#                   shape may shift.")
+    out.append("#   - internal:     emits the standard envelope but is operator-side")
+    out.append("#                   tooling (dependency_check, manifest_validator);")
+    out.append("#                   downstream consumers shouldn't depend on it.")
+    out.append("#   - none:         not a consumer surface (research scaffolds,")
+    out.append("#                   helper modules, replication stages).")
+    out.append("#")
+    out.append("# consumers (v0.3.0):")
+    out.append("#   Free-list of named downstream integrations that pin against")
+    out.append("#   this entry. Known values today: `apodictic`, `ultrareview`,")
+    out.append("#   `external_integrations`. New consumers can be added without")
+    out.append("#   schema change.")
+    out.append("#")
+    out.append(f"# Schema version: 0.3.0  (seeded {today})")
+    out.append("schema_version: \"0.3.0\"")
     out.append("entries:")
     for seed in sorted(seeds, key=lambda s: s.id):
         out.append(f"  - id: {seed.id}")
@@ -313,6 +333,12 @@ def render_yaml(seeds: list[Seed]) -> str:
         # auto-extracted dep whose absence the script handles
         # gracefully (try/except ImportError → HAS_X flag → fallback).
         out.append("      python_optional: []")
+        # v0.3.0: handoff defaults to `none` for auto-seeded entries.
+        # Operators promote during curation by setting `stable` /
+        # `experimental` / `internal` and populating `consumers` with
+        # the named downstream integrations that pin against the entry.
+        out.append("    handoff: none")
+        out.append("    consumers: []")
         out.append("    examples: []")
         out.append("    references: []")
         out.append(f"    _seeded_at: \"{today}\"")

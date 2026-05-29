@@ -245,6 +245,111 @@ def test_duplicate_script_path_detected():
         assert "duplicate_id" not in kinds
 
 
+def test_stable_handoff_requires_references():
+    """v0.3.0: handoff: stable entries must carry a non-empty
+    `references` list so consumers can find the integration spec.
+    A stable entry with empty references trips
+    stable_without_references."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        real_script = (
+            "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+        )
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": real_script,
+                    "surface": "narrative_decision_audit",
+                    "status": "heuristic",
+                    "family": "narrative-decision",
+                    "use_when": ["short story"],
+                    "do_not_use_when": ["essay"],
+                    "handoff": "stable",
+                    "consumers": ["apodictic"],
+                    "references": [],  # empty — should trip
+                    "compute": {"tier": "api_llm"},
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "stable_without_references" in kinds, (
+            f"expected stable_without_references; got {kinds}"
+        )
+
+
+def test_stable_handoff_with_references_passes():
+    """v0.3.0: a stable entry WITH references should not trip
+    stable_without_references (it may trip other checks, but not
+    this one)."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        real_script = (
+            "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+        )
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": real_script,
+                    "surface": "narrative_decision_audit",
+                    "status": "heuristic",
+                    "family": "narrative-decision",
+                    "use_when": ["short story"],
+                    "do_not_use_when": ["essay"],
+                    "handoff": "stable",
+                    "consumers": ["apodictic"],
+                    "references": ["plugins/setec-voiceprint/references/narrative-decision-audit-spec.md"],
+                    "compute": {"tier": "api_llm"},
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "stable_without_references" not in kinds
+
+
+def test_experimental_handoff_does_not_require_references():
+    """The stable_without_references check only applies to
+    handoff: stable. Experimental entries are allowed empty
+    references (interface may evolve before stabilization)."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        real_script = (
+            "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+        )
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": real_script,
+                    "surface": "narrative_decision_audit",
+                    "status": "heuristic",
+                    "family": "narrative-decision",
+                    "use_when": ["short story"],
+                    "do_not_use_when": ["essay"],
+                    "handoff": "experimental",  # not stable
+                    "consumers": [],
+                    "references": [],  # empty is OK for experimental
+                    "compute": {"tier": "api_llm"},
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "stable_without_references" not in kinds
+
+
 def test_cli_exits_zero_on_clean_repo():
     """Running the linter CLI with no args on the committed manifest
     should exit 0."""

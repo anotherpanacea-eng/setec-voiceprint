@@ -24,15 +24,41 @@
 #   - sdks_optional:   third-party API SDKs (anthropic, openai,
 #                      google-genai). Informational only.
 #
-# Schema version: 0.2.0  (capabilities manifest v0.2 — added
-# python_optional to fix --available false-negatives on graceful-
-# degradation audits.)
-schema_version: "0.2.0"
+# handoff posture vocabulary (v0.3.0):
+#   - stable:       pin against this. SETEC's schema_version + semver
+#                   discipline the contract. Breaking changes bump to
+#                   2.0.0. Entries with handoff: stable MUST carry
+#                   non-empty `references` (drift linter enforces).
+#   - experimental: designed as a consumer surface but contract may
+#                   evolve before 2.0.0. Consumers welcome to pin,
+#                   with the understanding that the envelope shape
+#                   may shift. Use for new surfaces in their first
+#                   release cycle.
+#   - internal:     emits the standard envelope but is operator-side
+#                   tooling (dependency_check, manifest_validator);
+#                   downstream consumers shouldn't depend on it.
+#   - none:         not a consumer surface (research scaffolds,
+#                   helper modules, replication stages). Default for
+#                   auto-seeded entries.
+#
+# consumers (v0.3.0):
+#   Free-list of named downstream integrations that pin against this
+#   entry. Known values today: `apodictic`, `ultrareview`,
+#   `external_integrations`. New consumers can be added without
+#   schema change; the list is documentation, not enforcement.
+#
+# Schema version: 0.3.0  (capabilities manifest v0.3 — added handoff
+# posture + consumers list. Makes the consumer-pinning contract
+# explicit and queryable; documents which audits are designed for
+# downstream handoff vs. which are operator-side or research-only.)
+schema_version: "0.3.0"
 entries:
   - id: acquire_blog
     script_path: plugins/setec-voiceprint/scripts/acquire_blog.py
     surface: voice_coherence_acquisition
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "pull a single author's blog or Substack archive."
     use_when:
@@ -63,6 +89,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/acquire_blogger_takeout.py
     surface: voice_coherence_acquisition
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "import Google Takeout Blogger exports."
     use_when:
@@ -91,6 +119,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/acquire_corpus_template.py
     surface: voice_coherence_acquisition
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "scaffold for a new acquisition script."
     use_when:
@@ -119,6 +149,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/acquire_magazine.py
     surface: voice_coherence_acquisition
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "pull literary-horror short fiction from online magazines."
     use_when:
@@ -148,6 +180,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/acquisition_core.py
     surface: voice_coherence_acquisition
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "shared helpers for impostor-corpus acquisition."
     use_when:
@@ -179,6 +213,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/adversarial_robustness_card.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "per-signal robustness card."
     use_when:
@@ -207,6 +243,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/aesthetic_authority_audit.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "compound AIC-8 + AIC-9 audit."
     use_when:
@@ -235,6 +273,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/agency_abstraction_audit.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "agency-loss / abstraction-drift detector."
     use_when:
@@ -263,6 +303,9 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/aic_pattern_audit.py
     surface: craft_restoration
     status: heuristic
+    handoff: stable
+    consumers:
+      - apodictic
     family: aic-7-discourse-leak
     purpose: >
       Layer B / Layer C named-pattern density audit. Counts the
@@ -315,6 +358,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/baseline_discovery.py
     surface: setup
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "locate the user's existing baselines folder."
     use_when:
@@ -343,6 +388,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/before_after_restoration.py
     surface: craft_restoration
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "Cathedral upgrade #7 v2."
     use_when:
@@ -371,6 +418,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/bigram_diff.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "bigram_diff.py Per-bigram POS-bigram diff: single target document vs. a comparison cluster."
     use_when:
@@ -399,6 +448,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
     surface: binoculars_discrimination
     status: literature_anchored
+    handoff: experimental
+    consumers: []
     family: binoculars
     purpose: >
       Two-model perplexity comparison (Hans et al. 2024). Scores a
@@ -449,6 +500,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/binoculars_calibrate.py
     surface: calibration
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "Binoculars threshold calibration."
     use_when:
@@ -477,6 +530,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/calibration_drift_monitor.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "infrastructure-drift detector (paired-release schedule Release 9, Trustworthiness Tier 2/3)."
     use_when:
@@ -508,6 +563,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
     surface: smoothing_diagnosis_calibration
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "survey every COMPRESSION_HEURISTICS signal."
     use_when:
@@ -538,6 +595,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "chapter_distinctiveness_audit.py Chapter-aware vocabulary repetition diagnostic."
     use_when:
@@ -566,6 +625,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/check_corpus.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "check_corpus.py"
     use_when:
@@ -594,6 +655,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/external_mirror/compose_evidence_pack.py
     surface: external_mirror_discrimination
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "Phase B step 3: compose evidence pack."
     use_when:
@@ -622,6 +685,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/confounder_audit.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "Layer D differential diagnosis."
     use_when:
@@ -650,6 +715,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/construction_signature_audit.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "interpretable syntactic-construction density audit (paired-release schedule Release 8, Surfaces Tier 3)."
     use_when:
@@ -678,6 +745,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/controls_audit.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "negative + positive controls for voice-distance comparison."
     use_when:
@@ -706,6 +775,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/dependency_check.py
     surface: setup
     status: heuristic
+    handoff: internal
+    consumers: []
     family: setup
     purpose: >
       Survey the SETEC framework's five dependency tiers (core,
@@ -751,6 +822,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "typed discourse markers + move sequences."
     use_when:
@@ -779,6 +852,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/draft_history_analysis.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "version-aware stylometric trajectory across multiple drafts (paired-release schedule Release 11, Trustworthiness Tier 3)."
     use_when:
@@ -807,6 +882,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/evidentiary_conditions_gate.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "front-door evidentiary posture."
     use_when:
@@ -835,6 +912,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "linguistic-background caution surface (paired-release schedule Release 9, Trustworthiness Tier 1)."
     use_when:
@@ -863,6 +942,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/function_word_grammar_audit.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "function-word sequence grammar."
     use_when:
@@ -891,6 +972,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/general_imposters.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "General Imposters attribution harness."
     use_when:
@@ -920,6 +1003,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/generate_voice_report.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "populate a voice insights report."
     use_when:
@@ -948,6 +1033,9 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/idiolect_detector.py
     surface: voice_coherence
     status: empirically_oriented
+    handoff: stable
+    consumers:
+      - apodictic
     family: idiolect
     purpose: >
       Extract distinctive bigrams and trigrams from a writer's
@@ -995,6 +1083,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/kicker_density.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "AIC-9 (Closure Inflation) detector."
     use_when:
@@ -1024,6 +1114,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/known_editor_profile.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "learn an editorial transformation profile from before/after pairs (paired-release schedule Release 10, Trustworthiness Tier 3)."
     use_when:
@@ -1052,6 +1144,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/length_bootstrap.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "Length-matched bootstrap helpers (Phase 1 step 3 of the validation spine)."
     use_when:
@@ -1082,6 +1176,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/manifest_validator.py
     surface: validation
     status: empirically_oriented
+    handoff: internal
+    consumers: []
     family: corpus-validation
     purpose: >
       Schema and integrity checks for `corpus_manifest.jsonl`.
@@ -1124,6 +1220,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "manuscript_audit.py Cross-chapter aggregate of Layer A distributional diagnostics."
     use_when:
@@ -1152,6 +1250,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/manuscript_bigram_diff.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "manuscript_bigram_diff.py Per-bigram POS-bigram diff: corpus A aggregate vs. corpus B aggregate."
     use_when:
@@ -1180,6 +1280,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/manuscript_repetition_audit.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "manuscript_repetition_audit.py Manuscript-wide vocabulary repetition diagnostic."
     use_when:
@@ -1208,6 +1310,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "detect lexical mimicry without syntactic conformity (paired-release schedule Release 10, Surfaces Tier 3)."
     use_when:
@@ -1236,6 +1340,9 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
     surface: narrative_decision_audit
     status: literature_anchored
+    handoff: experimental
+    consumers:
+      - apodictic
     family: narrative-decision
     purpose: >
       Score a story's narrative decisions (themes, plot, pacing,
@@ -1286,11 +1393,14 @@ entries:
       - plugins/setec-voiceprint/references/narrative-decision-audit-spec.md
       - plugins/setec-voiceprint/references/narrative-decision-replication-spec.md
       - plugins/setec-voiceprint/references/storyscope-prompts/
+      - plugins/setec-voiceprint/references/apodictic-handoff-storyscope.md
 
   - id: paragraph_audit
     script_path: plugins/setec-voiceprint/scripts/paragraph_audit.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "paragraph-level distributional diagnostic."
     use_when:
@@ -1319,6 +1429,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/pdf_extract.py
     surface: voice_coherence_acquisition
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "extract plain text from a filtered PDF inventory."
     use_when:
@@ -1349,6 +1461,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/pdf_inventory.py
     surface: voice_coherence_acquisition
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "classify PDFs in a library for impostor-corpus inclusion."
     use_when:
@@ -1380,6 +1494,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/phraseological_signature_audit.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "phrase-frame mining over the writer's reusable language frames (paired-release schedule Release 11, Surfaces Tier 3)."
     use_when:
@@ -1408,6 +1524,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "Per-POV-character voiceprints (cathedral #6 sub-item, completes upgrade #6)."
     use_when:
@@ -1436,6 +1554,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/prestige_metaphor.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "AIC-8 prestige-metaphor detector."
     use_when:
@@ -1465,6 +1585,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "punctuation rhythm + interruption-grammar audit."
     use_when:
@@ -1493,6 +1615,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/register_classifier.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "heuristic register / genre detection."
     use_when:
@@ -1521,6 +1645,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/repetition_audit.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "repetition_audit.py Vocabulary repetition diagnostic."
     use_when:
@@ -1549,6 +1675,9 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/restoration_packet.py
     surface: craft_restoration
     status: heuristic
+    handoff: stable
+    consumers:
+      - apodictic
     family: restoration
     purpose: >
       Translate Surface 1 / 2 diagnostic JSON into bounded
@@ -1593,6 +1722,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/replication/train_xgboost.py
     surface: calibration
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "Stage C1 (binary) + C2 (multiclass)."
     use_when:
@@ -1622,6 +1753,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
     surface: craft_restoration
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "semantic guardrails over the before / after restoration pair (paired-release schedule Release 8, Trustworthiness Tier 3)."
     use_when:
@@ -1650,6 +1783,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/semantic_trajectory_audit.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "paired-release Release 12."
     use_when:
@@ -1679,6 +1814,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/calibration/shard_runner.py
     surface: calibration
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "sharded calibration orchestrator."
     use_when:
@@ -1707,6 +1844,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/sliding_window_heatmap.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "render variance_audit sliding-window output as a heatmap."
     use_when:
@@ -1735,6 +1874,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/stance_modality_audit.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "typed stance / modality / epistemic posture."
     use_when:
@@ -1763,6 +1904,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
     surface: validation
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "cross-surface interpretation meta-layer."
     use_when:
@@ -1791,6 +1934,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/surprisal_audit.py
     surface: smoothing_diagnosis
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "standalone causal-LM surprisal audit."
     use_when:
@@ -1819,6 +1964,9 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/validation_harness.py
     surface: validation
     status: empirically_oriented
+    handoff: stable
+    consumers:
+      - apodictic
     family: validation
     purpose: >
       Empirical validation harness for SETEC task-surface outputs.
@@ -1874,6 +2022,9 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/variance_audit.py
     surface: smoothing_diagnosis
     status: empirically_oriented
+    handoff: stable
+    consumers:
+      - apodictic
     family: tier1-variance
     purpose: >
       Layer A distributional diagnostic for AI-prose smoothing. Computes
@@ -1936,6 +2087,9 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/voice_distance.py
     surface: voice_coherence
     status: empirically_oriented
+    handoff: stable
+    consumers:
+      - apodictic
     family: voice-distance
     purpose: >
       Compare a target text against a specific writer's (or
@@ -1984,6 +2138,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/voice_drift_tracker.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "time-drift surface (cathedral #6 sub-item)."
     use_when:
@@ -2012,6 +2168,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/voice_profile.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "voice_profile.py Produce a private, human-readable stylometric profile from a writer/register baseline corpus."
     use_when:
@@ -2040,6 +2198,8 @@ entries:
     script_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
     surface: voice_coherence
     status: todo
+    handoff: none
+    consumers: []
     family: TODO
     purpose: "Surface 2 sibling to validation_harness.py."
     use_when:

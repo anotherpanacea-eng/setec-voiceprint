@@ -163,6 +163,8 @@ def filter_entries(
     length_floor_max: int | None = None,
     available_only: bool = False,
     include_todo: bool = False,
+    handoff: str | None = None,
+    consumer: str | None = None,
 ) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for e in entries_list:
@@ -175,6 +177,12 @@ def filter_entries(
             continue
         if status is not None and s != status:
             continue
+        if handoff is not None and e.get("handoff") != handoff:
+            continue
+        if consumer is not None:
+            consumers = e.get("consumers") or []
+            if consumer not in consumers:
+                continue
         if tier is not None and (
             (e.get("compute") or {}).get("tier") != tier
         ):
@@ -258,6 +266,13 @@ def render_show(entry: dict[str, Any]) -> str:
     parts.append(f"- **surface:** `{entry.get('surface')}`")
     parts.append(f"- **family:** {entry.get('family')}")
     parts.append(f"- **status:** {entry.get('status')}")
+    handoff = entry.get("handoff") or "none"
+    parts.append(f"- **handoff posture:** {handoff}")
+    consumers = entry.get("consumers") or []
+    if consumers:
+        parts.append(
+            f"- **named consumers:** {', '.join(consumers)}"
+        )
     compute = entry.get("compute") or {}
     parts.append(f"- **compute tier:** {compute.get('tier')}")
     if compute.get("cost_note"):
@@ -524,6 +539,8 @@ def cmd_list(args) -> int:
         length_floor_max=args.length_floor_max,
         available_only=args.available,
         include_todo=args.include_todo,
+        handoff=args.handoff,
+        consumer=args.consumer,
     )
     fmt = args.format
     if fmt == "table":
@@ -601,6 +618,24 @@ def main(argv: list[str] | None = None) -> int:
     p_list.add_argument(
         "--include-todo", action="store_true",
         help="Include entries that are still TODO.",
+    )
+    p_list.add_argument(
+        "--handoff", default=None,
+        choices=("stable", "experimental", "internal", "none"),
+        help=(
+            "Filter by downstream-handoff posture. `stable` = "
+            "pin against; `experimental` = consumer surface but "
+            "contract may evolve; `internal` = operator-side, not "
+            "for consumers; `none` = not a consumer surface."
+        ),
+    )
+    p_list.add_argument(
+        "--consumer", default=None,
+        help=(
+            "Filter to entries explicitly named in their "
+            "`consumers` list (e.g., `apodictic`, `ultrareview`). "
+            "Free-form: any consumer name in the manifest matches."
+        ),
     )
     p_list.add_argument(
         "--format",
