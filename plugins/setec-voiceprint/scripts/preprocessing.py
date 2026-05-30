@@ -397,21 +397,30 @@ CSS_AT_RE = re.compile(
 CSS_BLOCK_OPEN_RE = re.compile(
     r"^\s*[\.\#\&\*\>\+A-Za-z][\w\-\.\#\:\,\s\>\+\&\*\[\]=\"']*\s*\{"
 )
-# A real CSS rule block carries at least one ``property: value``
-# declaration. The opener regex above is permissive (it allows
-# whitespace and prose punctuation before the ``{``), so on a single-line
-# document it also matches prose that merely contains a ``{...}`` template
-# placeholder (e.g. ``{date}``, ``{substep}``). These guards confirm the
-# balanced block is actually CSS — a declaration found INSIDE the braces —
-# before css_rule_block strips it. Without the gate, any single-line doc
-# containing a ``{...}`` placeholder is stripped in full (strip_ratio 1.0).
-#
-# The declaration may end with ``;`` OR run to the end of the brace
-# content: CSS allows the final declaration before ``}`` to omit the
-# trailing semicolon (``.note { color: red }``), so the terminator is
-# ``(?:;|$)`` against the extracted inner text — not a required ``;``.
+# A real CSS rule block has a *selector* before the ``{`` and one or more
+# ``property: value`` *declarations* inside it. The opener regex above is
+# permissive (it allows whitespace and prose punctuation before the
+# ``{``), so on a single-line document it also matches prose that merely
+# contains a ``{...}`` template placeholder — ``{date}``, ``{substep}``,
+# or a colon-bearing one like ``{date:%Y-%m-%d}`` / ``{key: value}``.
+# ``_looks_like_css_block`` (below) gates the strip on BOTH a CSS-looking
+# selector AND a CSS declaration list, so those placeholders are kept.
+# Without the gate, any single-line doc containing a ``{...}`` is stripped
+# in full (strip_ratio 1.0).
 CSS_BRACE_INNER_RE = re.compile(r"\{([^{}]*)\}")
-CSS_DECL_RE = re.compile(r"[A-Za-z-]+\s*:\s*[^;{}]+(?:;|$)")
+# One CSS declaration: ``property: value``. The trailing ``;`` is the
+# separator (stripped before matching); CSS lets the final declaration
+# before ``}`` omit it, so this matches a single ``prop: value`` with no
+# semicolon (``.note { color: red }``).
+_CSS_DECL_RE = re.compile(r"^-?[A-Za-z][\w-]*\s*:\s*[^;{}]+$")
+# ``%`` immediately followed by a letter is a strftime/printf format
+# directive (``%Y``) — a template placeholder, not a CSS value (CSS
+# percentages are digits + ``%``, e.g. ``50%``). Rejects ``{date:%Y-%m-%d}``.
+_CSS_FORMAT_DIRECTIVE_RE = re.compile(r"%[A-Za-z]")
+# Structural CSS-selector chars (class/id/universal/attribute/combinator)
+# or a ``:pseudo`` — present in real selectors, absent from a prose prefix
+# such as ``Published on`` in ``Published on {date:%Y-%m-%d}``.
+_CSS_SELECTOR_STRUCT_RE = re.compile(r"[.#*\[\]>~+]|:[A-Za-z-]")
 JSON_START_RE = re.compile(r"^\s*\{\s*$")
 JSON_KEY_RE = re.compile(r'^\s*"[^"\n]+"\s*:')
 # ASCII table: a pipe-row OR a +---+---+ separator. The block-level
@@ -451,6 +460,61 @@ def _consume_balanced_block(
         if saw_open and depth <= 0 and "}" in lines[idx]:
             return idx + 1
     return None
+
+
+def _is_css_declaration_list(inner: str) -> bool:
+    """True if ``inner`` (text between ``{`` and ``}``) is a non-empty list
+    of CSS ``property: value`` declarations.
+
+    The final ``;`` is optional. Any value carrying a format directive
+    (``%Y``) is rejected, so a strftime/template placeholder like
+    ``{date:%Y-%m-%d}`` does not read as CSS.
+    """
+    decls = [part.strip() for part in inner.split(";")]
+    decls = [d for d in decls if d]
+    if not decls:
+        return False
+    for d in decls:
+        if not _CSS_DECL_RE.match(d):
+            return False
+        value = d.split(":", 1)[1]
+        if _CSS_FORMAT_DIRECTIVE_RE.search(value):
+            return False
+    return True
+
+
+def _looks_like_css_selector(selector: str) -> bool:
+    """True if ``selector`` (text before the ``{``) plausibly is a CSS
+    selector rather than a prose prefix.
+
+    Real selectors carry a structural char (``. # * [ ] > ~ +`` or a
+    ``:pseudo``) or are a single bare token (a type selector). A multi-word
+    prefix with no structural char — e.g. ``Published on`` in
+    ``Published on {date:%Y-%m-%d}`` — is prose, not a selector.
+    """
+    sel = selector.strip()
+    if not sel:
+        return False
+    if _CSS_SELECTOR_STRUCT_RE.search(sel):
+        return True
+    return len(sel.split()) == 1
+
+
+def _looks_like_css_block(removed: str) -> bool:
+    """Gate for css_rule_block: strip a balanced ``{...}`` only when the
+    selector looks like CSS AND the brace content is a CSS declaration
+    list. Both gates are required so a prose line that merely contains a
+    ``{name: value}`` or ``{date:%Y-%m-%d}`` placeholder is preserved.
+    """
+    head = removed.split("{", 1)[0]
+    head_lines = head.splitlines()
+    selector = head_lines[-1] if head_lines else head
+    if not _looks_like_css_selector(selector):
+        return False
+    return any(
+        _is_css_declaration_list(inner)
+        for inner in CSS_BRACE_INNER_RE.findall(removed)
+    )
 
 
 def _strip_line_groups(
@@ -498,14 +562,12 @@ def _strip_line_groups(
             end = _consume_balanced_block(lines, i, max_lines=50)
             if end is not None:
                 removed = "".join(lines[i:end])
-                # Only strip if the balanced block is genuinely CSS: at
-                # least one ``property: value;`` declaration INSIDE the
-                # braces. Bare ``{token}`` placeholders in prose have none,
-                # so they fall through to be kept as normal text.
-                if any(
-                    CSS_DECL_RE.search(inner)
-                    for inner in CSS_BRACE_INNER_RE.findall(removed)
-                ):
+                # Only strip a genuine CSS rule block: a CSS-looking
+                # selector before the brace AND a CSS declaration list
+                # inside it. Prose carrying a ``{token}`` /
+                # ``{date:%Y-%m-%d}`` / ``{key: value}`` placeholder fails
+                # one of those gates and is kept as normal text.
+                if _looks_like_css_block(removed):
                     out.append(_record_strip(
                         removed, "css_rule_block", counts, snippets,
                         collect_stripped=collect_stripped,

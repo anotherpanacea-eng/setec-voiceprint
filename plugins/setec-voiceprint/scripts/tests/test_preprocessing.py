@@ -113,6 +113,30 @@ def test_css_block_without_trailing_semicolon_is_stripped() -> None:
         assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
 
 
+def test_colon_format_placeholders_in_prose_are_not_stripped() -> None:
+    """Prose carrying a colon-bearing brace placeholder must be preserved.
+
+    Regression for the review finding that accepting a declaration at
+    end-of-inner (``(?:;|$)``) re-exposed ``{key: value}`` /
+    ``{date:%Y-%m-%d}`` as CSS. The selector + declaration-list gate keeps
+    these: a multi-word prose prefix is not a CSS selector, and a ``%Y``
+    format directive is not a CSS value.
+    """
+    cases = [
+        "Published on {date:%Y-%m-%d} by the editorial desk.",
+        "Deploy to {server: prod} after the smoke tests pass.",
+        "The build ran at {time:%H:%M:%S} and then exited cleanly.",
+    ]
+    for raw in cases:
+        cleaned, meta = strip_non_prose(raw)
+        assert cleaned.strip() == raw.strip(), (
+            "prose with a colon/format placeholder should be preserved, "
+            f"got: {cleaned!r}"
+        )
+        assert meta["tokens_stripped"] == 0
+        assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) == 0
+
+
 def test_allow_non_prose_is_a_noop_with_metadata() -> None:
     raw = CONTAMINATED.read_text(encoding="utf-8")
     cleaned, meta = strip_non_prose(raw, allow_non_prose=True)
