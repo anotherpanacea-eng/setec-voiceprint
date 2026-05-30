@@ -53,6 +53,130 @@ def test_css_rule_blocks_are_stripped_and_attributed() -> None:
     )
 
 
+def test_brace_placeholders_in_prose_are_not_stripped() -> None:
+    """css_rule_block must not fire on prose that merely contains a
+    ``{token}`` template placeholder.
+
+    Regression for the empirical MAGE failure mode: single-line documents
+    (wikiHow-style steps with ``{substep}`` markers, or articles ending
+    ``... on {date}``) were matched by the permissive opener regex and
+    stripped in full (strip_ratio 1.0) despite containing no CSS.
+    """
+    cases = [
+        "Just be careful not to overdo it. You may not be ready yet, so "
+        "try going about things differently. {substepad1} {substepad2}",
+        'Imperialism is defined as "A policy of extending a country\'s '
+        'power." It was a major cause of World War I. More by Kaleb on {date}',
+    ]
+    for raw in cases:
+        cleaned, meta = strip_non_prose(raw)
+        assert cleaned.strip() == raw.strip(), (
+            "prose with a brace placeholder should be preserved, got: "
+            f"{cleaned!r}"
+        )
+        assert meta["tokens_stripped"] == 0
+        assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) == 0
+
+
+def test_single_line_real_css_is_still_stripped() -> None:
+    """The declaration gate must not regress detection of genuine CSS,
+    including a rule block that shares a single line with prose."""
+    raw = (
+        "Here is the widget styling we used. "
+        ".reading-mode-toggle { font-size: 14px; color: rgb(0,0,0); } "
+        "Back to the article."
+    )
+    cleaned, meta = strip_non_prose(raw)
+    assert ".reading-mode-toggle" not in cleaned
+    assert "font-size" not in cleaned
+    assert meta["tokens_stripped"] > 0
+    assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
+
+
+def test_css_block_without_trailing_semicolon_is_stripped() -> None:
+    """CSS allows the final declaration before ``}`` to omit the trailing
+    semicolon. Such blocks are still valid CSS and must still be stripped.
+
+    Regression for the review finding on the brace-placeholder fix: an
+    earlier `CSS_DECL_RE` required a `;`, which would have skipped valid
+    blocks like `.note { color: red }`.
+    """
+    cases = [
+        ".note { color: red }",
+        "Intro text. .note { color: red } and more prose.",
+        ".box {\n  margin: 0;\n  color: blue\n}",
+    ]
+    for raw in cases:
+        cleaned, meta = strip_non_prose(raw)
+        assert "color" not in cleaned, f"CSS not stripped: {cleaned!r}"
+        assert meta["tokens_stripped"] > 0
+        assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
+
+
+def test_colon_format_placeholders_in_prose_are_not_stripped() -> None:
+    """Prose carrying a colon-bearing brace placeholder must be preserved.
+
+    Regression for the review finding that accepting a declaration at
+    end-of-inner (``(?:;|$)``) re-exposed ``{key: value}`` /
+    ``{date:%Y-%m-%d}`` as CSS. The selector + declaration-list gate keeps
+    these: a multi-word prose prefix is not a CSS selector, and a ``%Y``
+    format directive is not a CSS value.
+    """
+    cases = [
+        "Published on {date:%Y-%m-%d} by the editorial desk.",
+        "Deploy to {server: prod} after the smoke tests pass.",
+        "The build ran at {time:%H:%M:%S} and then exited cleanly.",
+        # Single bare token before the brace -- a prose word, not an HTML
+        # type selector (review follow-up: `Status {server: prod}`).
+        "Status {server: prod}",
+        "Status {server: prod} is healthy.",
+    ]
+    for raw in cases:
+        cleaned, meta = strip_non_prose(raw)
+        assert cleaned.strip() == raw.strip(), (
+            "prose with a colon/format placeholder should be preserved, "
+            f"got: {cleaned!r}"
+        )
+        assert meta["tokens_stripped"] == 0
+        assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) == 0
+
+
+def test_bare_tag_selector_css_is_stripped() -> None:
+    """A real bare *type* selector (``body { ... }``) is still recognized
+    as CSS even with no structural selector char -- the HTML-tag check
+    must not over-reject genuine element-selector rules."""
+    raw = "body { margin: 0; color: blue }"
+    cleaned, meta = strip_non_prose(raw)
+    assert "margin" not in cleaned
+    assert "color" not in cleaned
+    assert meta["tokens_stripped"] > 0
+    assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
+
+
+def test_punctuated_prose_prefixes_are_not_stripped() -> None:
+    """Prose whose prefix merely *contains* a selector char (``#``, ``+``,
+    ``[``) must not read as CSS.
+
+    Regression for the review finding that a selector char anywhere in the
+    prefix, plus an arbitrary ``name: value``, let prose be stripped. The
+    trailing-token selector check (``#123`` is not a valid id) and the
+    known-CSS-property requirement (``status`` / ``mode`` / ``enabled`` are
+    not CSS properties) keep these.
+    """
+    cases = [
+        "Issue #123 {status: open} was filed yesterday.",
+        "C++ {mode: fast} is the build flag we used.",
+        "Option [x] {enabled: true} toggles the feature.",
+    ]
+    for raw in cases:
+        cleaned, meta = strip_non_prose(raw)
+        assert cleaned.strip() == raw.strip(), (
+            f"punctuated prose prefix should be preserved, got: {cleaned!r}"
+        )
+        assert meta["tokens_stripped"] == 0
+        assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) == 0
+
+
 def test_allow_non_prose_is_a_noop_with_metadata() -> None:
     raw = CONTAMINATED.read_text(encoding="utf-8")
     cleaned, meta = strip_non_prose(raw, allow_non_prose=True)
