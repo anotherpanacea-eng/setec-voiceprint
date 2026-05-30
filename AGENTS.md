@@ -31,6 +31,32 @@ Most cycles are:
 5. **Fix.** The writing agent applies the fixes, runs tests, commits.
 6. **Merge.** Via PR + merge commit. See below.
 
+## Long-running surfaces: belt, suspenders, buttons
+
+SETEC is glass-box stylometry for commodity, local hardware — there is no
+large cloud compute to fall back on, and the calibration host is
+device-unstable (the WSL2 + ROCm path has documented host hangs). So any
+process that runs longer than a few minutes MUST be:
+
+- **Recoverable (belt).** Sharded, so a crash loses at most one shard's
+  work — never the whole run.
+- **Visible (suspenders).** Emit progress to stdout/disk while running, so
+  an operator can see where it is and estimate completion.
+- **Continuable (buttons).** Checkpoint partial results to disk and support
+  `--resume`, so a killed or hung run picks up where it left off.
+
+This is a standing requirement at the project's current stage, not a
+per-feature nicety. The reference implementations are `shard_runner`
+(per-shard claim + cache + SIGTERM-safe checkpointing) and the calibration
+aggregate (a partial survey flushed after each signal completes). When you
+add or touch a surface that loads a full corpus into one process, hold it
+to all three before merging, and audit existing surfaces against them.
+
+Known gap as of this writing: `validation_harness`'s metrics/bootstrap
+phase is visible+continuable in its *scoring* step but neither in its
+*bootstrap* step (single-threaded, silent, uncheckpointed). Treat that as
+the worked example of what this section is guarding against.
+
 ## PRs and merges
 
 **Default to PR-per-release with a merge commit.** This makes the
