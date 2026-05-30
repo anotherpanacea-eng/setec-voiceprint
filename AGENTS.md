@@ -31,6 +31,44 @@ Most cycles are:
 5. **Fix.** The writing agent applies the fixes, runs tests, commits.
 6. **Merge.** Via PR + merge commit. See below.
 
+## Long-running surfaces: belt, suspenders, buttons
+
+SETEC is glass-box stylometry for commodity, local hardware — there is no
+large cloud compute to fall back on, and the calibration host is
+device-unstable (the WSL2 + ROCm path has documented host hangs). So any
+process that runs longer than a few minutes MUST be:
+
+- **Recoverable (belt).** Sharded, so a crash loses at most one shard's
+  work — never the whole run.
+- **Visible (suspenders).** Emit progress to stdout/disk while running, so
+  an operator can see where it is and estimate completion.
+- **Continuable (buttons).** Checkpoint partial results to disk and support
+  `--resume`, so a killed or hung run picks up where it left off.
+
+This is a standing requirement at the project's current stage, not a
+per-feature nicety. The reference implementations are `shard_runner`
+(per-shard claim + cache + SIGTERM-safe checkpointing) and the calibration
+aggregate (a partial survey flushed after each signal completes). When you
+add or touch a surface that loads a full corpus into one process, hold it
+to all three before merging.
+
+Worked example — `validation_harness` straddles the line:
+
+- Its *scoring* phase is compliant: progress logging plus an incremental
+  scored-records cache with `--resume`.
+- Its *metrics/bootstrap* phase honors none of the three — single-threaded
+  (not recoverable), silent (not visible), and uncheckpointed (not
+  continuable). A host hang loses the entire bootstrap with nothing to
+  resume.
+
+**Audit backlog** — full-corpus single-process surfaces to bring into
+compliance (tracked in #133):
+
+- `validation_harness` metrics/bootstrap phase — the worked example above.
+- single-process `check_corpus` / `corpus_hygiene` at corpus scale.
+- the standalone `calibration_survey.py` CLI (the bake-off driver).
+- any other surface that loads a full corpus into one process.
+
 ## PRs and merges
 
 **Default to PR-per-release with a merge commit.** This makes the
