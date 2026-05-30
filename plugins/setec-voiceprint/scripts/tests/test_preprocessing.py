@@ -153,6 +153,30 @@ def test_bare_tag_selector_css_is_stripped() -> None:
     assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
 
 
+def test_punctuated_prose_prefixes_are_not_stripped() -> None:
+    """Prose whose prefix merely *contains* a selector char (``#``, ``+``,
+    ``[``) must not read as CSS.
+
+    Regression for the review finding that a selector char anywhere in the
+    prefix, plus an arbitrary ``name: value``, let prose be stripped. The
+    trailing-token selector check (``#123`` is not a valid id) and the
+    known-CSS-property requirement (``status`` / ``mode`` / ``enabled`` are
+    not CSS properties) keep these.
+    """
+    cases = [
+        "Issue #123 {status: open} was filed yesterday.",
+        "C++ {mode: fast} is the build flag we used.",
+        "Option [x] {enabled: true} toggles the feature.",
+    ]
+    for raw in cases:
+        cleaned, meta = strip_non_prose(raw)
+        assert cleaned.strip() == raw.strip(), (
+            f"punctuated prose prefix should be preserved, got: {cleaned!r}"
+        )
+        assert meta["tokens_stripped"] == 0
+        assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) == 0
+
+
 def test_allow_non_prose_is_a_noop_with_metadata() -> None:
     raw = CONTAMINATED.read_text(encoding="utf-8")
     cleaned, meta = strip_non_prose(raw, allow_non_prose=True)

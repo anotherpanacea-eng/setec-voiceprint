@@ -417,10 +417,14 @@ _CSS_DECL_RE = re.compile(r"^-?[A-Za-z][\w-]*\s*:\s*[^;{}]+$")
 # directive (``%Y``) — a template placeholder, not a CSS value (CSS
 # percentages are digits + ``%``, e.g. ``50%``). Rejects ``{date:%Y-%m-%d}``.
 _CSS_FORMAT_DIRECTIVE_RE = re.compile(r"%[A-Za-z]")
-# Structural CSS-selector chars (class/id/universal/attribute/combinator)
-# or a ``:pseudo`` — present in real selectors, absent from a prose prefix
-# such as ``Published on`` in ``Published on {date:%Y-%m-%d}``.
-_CSS_SELECTOR_STRUCT_RE = re.compile(r"[.#*\[\]>~+]|:[A-Za-z-]")
+# A simple CSS selector token (the run adjacent to the ``{``): a class or
+# id. CSS idents start with a letter, ``_`` or ``-`` -- never a digit -- so
+# ``.note`` / ``#nav`` match but ``#123`` does not. We validate the trailing
+# token (`_looks_like_css_selector`) rather than "a selector char anywhere
+# in the prefix", so prose like ``Issue #123`` / ``C++`` is not mistaken for
+# a selector.
+_CSS_CLASS_ID_RE = re.compile(r"[.#]-?[A-Za-z_][\w-]*")
+_CSS_TYPE_RE = re.compile(r"[A-Za-z][\w-]*")
 # Known HTML element names. A bare single-token selector (no structural
 # char) is a CSS *type* selector only if it names a real element, which
 # accepts ``body { ... }`` while rejecting a lone prose word like
@@ -435,6 +439,43 @@ _HTML_TAG_NAMES = frozenset(
     br wbr sub sup time details summary dialog menu caption col colgroup
     iframe link meta style script title base object embed param track data
     output progress meter ruby rt rp bdi bdo del ins template slot map area
+    """.split()
+)
+# Known CSS property names (common subset). A declaration list reads as CSS
+# only if at least one property is recognized here, is a custom property
+# (``--x``), or is vendor-prefixed (``-webkit-x``). This rejects
+# ``{status: open}`` / ``{mode: fast}`` / ``{enabled: true}`` -- whose
+# "properties" are ordinary words -- while accepting real rules.
+_CSS_PROPERTY_NAMES = frozenset(
+    """
+    color background background-color background-image background-position
+    background-repeat background-size background-attachment background-clip
+    margin margin-top margin-right margin-bottom margin-left
+    padding padding-top padding-right padding-bottom padding-left
+    border border-top border-right border-bottom border-left border-width
+    border-style border-color border-radius border-collapse border-spacing
+    outline outline-color outline-style outline-width box-shadow box-sizing
+    font font-family font-size font-weight font-style font-variant
+    line-height letter-spacing word-spacing text-align text-decoration
+    text-transform text-indent text-overflow text-shadow white-space
+    vertical-align direction writing-mode
+    display position top right bottom left float clear visibility
+    overflow overflow-x overflow-y z-index opacity clip
+    width height min-width min-height max-width max-height
+    flex flex-direction flex-wrap flex-flow flex-grow flex-shrink flex-basis
+    justify-content align-items align-self align-content order gap row-gap
+    column-gap grid grid-template grid-template-columns grid-template-rows
+    grid-column grid-row grid-area grid-gap place-items place-content
+    transform transform-origin transition transition-property
+    transition-duration transition-timing-function transition-delay
+    animation animation-name animation-duration animation-timing-function
+    animation-delay animation-iteration-count animation-direction
+    animation-fill-mode animation-play-state
+    cursor content list-style list-style-type list-style-position
+    list-style-image table-layout caption-side empty-cells
+    pointer-events user-select object-fit object-position
+    fill stroke stroke-width filter backdrop-filter mix-blend-mode
+    will-change resize appearance accent-color caret-color
     """.split()
 )
 JSON_START_RE = re.compile(r"^\s*\{\s*$")
@@ -478,47 +519,75 @@ def _consume_balanced_block(
     return None
 
 
-def _is_css_declaration_list(inner: str) -> bool:
-    """True if ``inner`` (text between ``{`` and ``}``) is a non-empty list
-    of CSS ``property: value`` declarations.
+def _is_css_property(name: str) -> bool:
+    """True if ``name`` is a recognized CSS property: a common known
+    property, a custom property (``--x``), or a vendor-prefixed one
+    (``-webkit-x``). Ordinary words (``status``, ``mode``, ``enabled``)
+    are not -- which is what keeps prose placeholders from reading as CSS.
+    """
+    name = name.strip().lower()
+    if name in _CSS_PROPERTY_NAMES:
+        return True
+    if name.startswith("--"):
+        return True
+    return bool(re.match(r"-[a-z]+-[a-z][a-z-]*\Z", name))
 
-    The final ``;`` is optional. Any value carrying a format directive
-    (``%Y``) is rejected, so a strftime/template placeholder like
-    ``{date:%Y-%m-%d}`` does not read as CSS.
+
+def _is_css_declaration_list(inner: str) -> bool:
+    """True if ``inner`` (text between ``{`` and ``}``) is a CSS declaration
+    list: every part is a ``property: value`` pair (final ``;`` optional),
+    no value carries a format directive (``%Y`` marks a strftime/template
+    placeholder), AND at least one property is a recognized CSS property.
+
+    The recognized-property requirement is what rejects ``{status: open}``
+    / ``{key: value}`` -- syntactically ``name: value`` but not CSS.
     """
     decls = [part.strip() for part in inner.split(";")]
     decls = [d for d in decls if d]
     if not decls:
         return False
+    saw_property = False
     for d in decls:
         if not _CSS_DECL_RE.match(d):
             return False
-        value = d.split(":", 1)[1]
+        prop, _, value = d.partition(":")
         if _CSS_FORMAT_DIRECTIVE_RE.search(value):
             return False
-    return True
+        if _is_css_property(prop):
+            saw_property = True
+    return saw_property
 
 
 def _looks_like_css_selector(selector: str) -> bool:
-    """True if ``selector`` (text before the ``{``) plausibly is a CSS
-    selector rather than a prose prefix.
+    """True if the simple selector immediately before the ``{`` is a
+    plausible CSS selector rather than a prose token.
 
-    Real selectors carry a structural char (``. # * [ ] > ~ +`` or a
-    ``:pseudo``) or are a single bare token (a type selector). A multi-word
-    prefix with no structural char — e.g. ``Published on`` in
-    ``Published on {date:%Y-%m-%d}`` — is prose, not a selector.
+    Validates the LAST whitespace-delimited token (the simple selector
+    adjacent to the brace), not "a selector char somewhere in the prefix"
+    -- so prose like ``Issue #123``, ``C++``, or ``Published on`` is
+    rejected even though it contains ``#`` / ``+`` / etc.
+
+    Accepted: a class/id (``.x`` / ``#x``), the universal selector, an
+    attribute selector (``[attr]``), a pseudo (``:hover``), or a bare type
+    selector that names a real HTML element (``body``).
     """
     sel = selector.strip()
     if not sel:
         return False
-    if _CSS_SELECTOR_STRUCT_RE.search(sel):
+    last = sel.split()[-1]  # the simple selector adjacent to the brace
+    if _CSS_CLASS_ID_RE.match(last):
         return True
-    # A bare single token is a CSS *type* selector only if it names a real
-    # HTML element. This rejects single-word prose prefixes (``Status`` in
-    # ``Status {server: prod}``) while still accepting ``body { ... }``.
-    if len(sel.split()) != 1:
-        return False
-    return sel.lower() in _HTML_TAG_NAMES
+    if last[0] in "*[:":
+        return True
+    # A type selector, optionally followed by a class/id/pseudo/attribute
+    # (``input[type=...]``, ``a.note``): the leading element name must be a
+    # real HTML tag, and anything after it must be selector punctuation.
+    m = _CSS_TYPE_RE.match(last)
+    if m:
+        rest = last[m.end():]
+        if not rest or rest[0] in ".#:[":
+            return m.group(0).lower() in _HTML_TAG_NAMES
+    return False
 
 
 def _looks_like_css_block(removed: str) -> bool:
