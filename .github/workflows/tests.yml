@@ -1,0 +1,46 @@
+name: tests
+
+# Core-tier CI: runs the stdlib + spaCy + scikit-learn/statsmodels test
+# suite on every PR and push to main. The Tier-4 surprisal / embedding
+# tiers need torch (GPU wheels unavailable on GitHub-hosted runners), so
+# those tests skip here (skipif on missing torch) and run on the local
+# GPU host instead. See plugins/setec-voiceprint/scripts/calibration/
+# RUNBOOK_tier4_install.md.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install core dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r plugins/setec-voiceprint/requirements.txt
+          # pypdf: hard-imported by test_pdf_inventory_extract.py (no
+          # importorskip guard), so it must be present for collection.
+          pip install pypdf pytest
+          # spaCy Tier-2/Tier-3 model (not on PyPI).
+          python -m spacy download en_core_web_sm
+
+      - name: Run test suite
+        run: |
+          pytest plugins/setec-voiceprint/scripts/tests -q -rs
