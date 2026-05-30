@@ -88,6 +88,10 @@ run_phase_a() {
     for s in "${PHASE_A_SIGNALS[@]}"; do
         signal_flags+=(--signal "${s}")
     done
+    # Remove any stale survey from a prior run first, so the post-failure
+    # "-s ${out}" check below reflects THIS run: a leftover file must not
+    # mask a real failure (e.g. exit 1 with no new survey) as a no-verdict.
+    rm -f "${out}"
     local rc=0
     python "${SURVEY_SCRIPT}" \
         "${SHARED_FLAGS[@]}" \
@@ -133,6 +137,10 @@ run_phase_b() {
     for s in "${PHASE_B_SIGNALS[@]}"; do
         signal_flags+=(--signal "${s}")
     done
+    # Remove any stale survey from a prior run first, so the post-failure
+    # "-s ${out}" check below reflects THIS run: a leftover file must not
+    # mask a real failure (e.g. exit 1 with no new survey) as a no-verdict.
+    rm -f "${out}"
     local rc=0
     python "${SURVEY_SCRIPT}" \
         "${SHARED_FLAGS[@]}" \
