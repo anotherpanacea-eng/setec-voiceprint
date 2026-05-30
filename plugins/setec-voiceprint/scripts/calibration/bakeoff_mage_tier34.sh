@@ -88,13 +88,20 @@ run_phase_a() {
     for s in "${PHASE_A_SIGNALS[@]}"; do
         signal_flags+=(--signal "${s}")
     done
-    python "${SURVEY_SCRIPT}" \
+    if ! python "${SURVEY_SCRIPT}" \
         "${SHARED_FLAGS[@]}" \
         --tier3 --no-tier4 \
         --embedding-model "${model}" \
         "${signal_flags[@]}" \
         --records-cache "${cache}" \
         --out "${out}"
+    then
+        :
+    else
+        echo "[bake-off] calibration_survey exited nonzero -- small-N" \
+             "no-verdict gates are expected at this subsample size;" \
+             "survey/cache were still written. Continuing." >&2
+    fi
 }
 
 # -----------------------------------------------------------------
@@ -116,13 +123,20 @@ run_phase_b() {
     for s in "${PHASE_B_SIGNALS[@]}"; do
         signal_flags+=(--signal "${s}")
     done
-    python "${SURVEY_SCRIPT}" \
+    if ! python "${SURVEY_SCRIPT}" \
         "${SHARED_FLAGS[@]}" \
         --no-tier3 --tier4 \
         --surprisal-model "${model}" \
         "${signal_flags[@]}" \
         --records-cache "${cache}" \
         --out "${out}"
+    then
+        :
+    else
+        echo "[bake-off] calibration_survey exited nonzero -- small-N" \
+             "no-verdict gates are expected at this subsample size;" \
+             "survey/cache were still written. Continuing." >&2
+    fi
 }
 
 # -----------------------------------------------------------------
