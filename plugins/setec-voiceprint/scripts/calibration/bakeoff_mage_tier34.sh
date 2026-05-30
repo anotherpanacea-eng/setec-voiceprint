@@ -88,20 +88,30 @@ run_phase_a() {
     for s in "${PHASE_A_SIGNALS[@]}"; do
         signal_flags+=(--signal "${s}")
     done
-    if ! python "${SURVEY_SCRIPT}" \
+    local rc=0
+    python "${SURVEY_SCRIPT}" \
         "${SHARED_FLAGS[@]}" \
         --tier3 --no-tier4 \
         --embedding-model "${model}" \
         "${signal_flags[@]}" \
         --records-cache "${cache}" \
-        --out "${out}"
-    then
-        :
-    else
-        echo "[bake-off] calibration_survey exited nonzero -- small-N" \
-             "no-verdict gates are expected at this subsample size;" \
-             "survey/cache were still written. Continuing." >&2
+        --out "${out}" || rc=$?
+    if [[ "${rc}" -eq 0 ]]; then
+        return 0
     fi
+    # calibration_survey returns 1 for "no signal passes all gates" but
+    # writes the survey JSON first; that no-verdict is expected at this 5K
+    # subsample, so continue. Anything else -- exit 2 (bad args), a
+    # propagated scoring failure, or an exit-1 arg-validation SystemExit
+    # that wrote no survey -- is a real failure: abort the bake-off.
+    if [[ "${rc}" -eq 1 && -s "${out}" ]]; then
+        echo "[Phase A / ${model}] calibration_survey exited 1 with a survey" \
+             "written (expected 'no all-gates-pass' verdict at 5K). Continuing." >&2
+        return 0
+    fi
+    echo "[Phase A / ${model}] calibration_survey FAILED (exit ${rc}; no usable" \
+         "survey at ${out}); aborting bake-off." >&2
+    return "${rc}"
 }
 
 # -----------------------------------------------------------------
@@ -123,20 +133,27 @@ run_phase_b() {
     for s in "${PHASE_B_SIGNALS[@]}"; do
         signal_flags+=(--signal "${s}")
     done
-    if ! python "${SURVEY_SCRIPT}" \
+    local rc=0
+    python "${SURVEY_SCRIPT}" \
         "${SHARED_FLAGS[@]}" \
         --no-tier3 --tier4 \
         --surprisal-model "${model}" \
         "${signal_flags[@]}" \
         --records-cache "${cache}" \
-        --out "${out}"
-    then
-        :
-    else
-        echo "[bake-off] calibration_survey exited nonzero -- small-N" \
-             "no-verdict gates are expected at this subsample size;" \
-             "survey/cache were still written. Continuing." >&2
+        --out "${out}" || rc=$?
+    if [[ "${rc}" -eq 0 ]]; then
+        return 0
     fi
+    # See run_phase_a: tolerate only the exit-1 no-verdict (survey written),
+    # abort on any other failure.
+    if [[ "${rc}" -eq 1 && -s "${out}" ]]; then
+        echo "[Phase B / ${model}] calibration_survey exited 1 with a survey" \
+             "written (expected 'no all-gates-pass' verdict at 5K). Continuing." >&2
+        return 0
+    fi
+    echo "[Phase B / ${model}] calibration_survey FAILED (exit ${rc}; no usable" \
+         "survey at ${out}); aborting bake-off." >&2
+    return "${rc}"
 }
 
 # -----------------------------------------------------------------
