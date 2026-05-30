@@ -246,6 +246,13 @@ class SurprisalBackend:
     revision: str | None = None
     deterministic: bool = True
     dtype: str = "auto"
+    # Explicit device override. When ``None``, ``_load`` auto-detects
+    # (cuda > mps > cpu), with the ``SETEC_SURPRISAL_DEVICE`` env var as a
+    # middle fallback. Pin a specific device by passing e.g. ``"cuda:1"``
+    # (a second GPU) or ``"privateuseone:1"`` (a DirectML GPU on Windows).
+    # Mirrors ``EmbeddingBackend.device`` / the embedding side's
+    # ``--embedding-device``.
+    device: str | None = None
     _model: Any = field(default=None, repr=False, init=False, compare=False)
     _tokenizer: Any = field(default=None, repr=False, init=False, compare=False)
     _alias: str | None = field(default=None, repr=False, init=False, compare=False)
@@ -370,7 +377,18 @@ class SurprisalBackend:
         except ImportError:
             self._device = None
         else:
-            if torch.cuda.is_available():
+            import os
+            # Device precedence: explicit ``device`` field > the
+            # ``SETEC_SURPRISAL_DEVICE`` env var > cuda > mps > cpu. Both
+            # overrides are no-ops when unset, so the prior auto-detect
+            # behavior is preserved exactly. The env var is the operator
+            # surface until a ``--surprisal-device`` CLI flag is threaded
+            # through (mirrors ``EmbeddingBackend.device`` /
+            # ``--embedding-device``).
+            _override = self.device or os.environ.get("SETEC_SURPRISAL_DEVICE")
+            if _override:
+                self._device = torch.device(_override)
+            elif torch.cuda.is_available():
                 self._device = torch.device("cuda")
             elif (
                 hasattr(torch.backends, "mps")
