@@ -37,7 +37,9 @@ jobs:
           pip install -r plugins/setec-voiceprint/requirements.txt
           # pypdf: hard-imported by test_pdf_inventory_extract.py (no
           # importorskip guard), so it must be present for collection.
-          pip install pypdf pytest
+          # click: spaCy's `download` CLI imports it directly, and recent
+          # typer no longer pulls it in transitively.
+          pip install pypdf pytest click
           # spaCy Tier-2/Tier-3 model (not on PyPI).
           python -m spacy download en_core_web_sm
 
