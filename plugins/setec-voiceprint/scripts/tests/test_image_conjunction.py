@@ -319,6 +319,7 @@ def test_density_threshold_tuning_changes_count():
     )
 
 
+@_skip_no_vectors
 def test_density_empty_input(mock_concreteness_and_embeddings):
     """Empty input returns zero density with valid schema."""
     fake_nlp = mock.MagicMock()

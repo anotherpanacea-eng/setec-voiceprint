@@ -67,11 +67,18 @@ class _StubBackend:
         deterministic: bool = True,
         *,
         vectors=None,
+        dtype=None,
+        device=None,
     ):
         self._vectors = vectors
         self.model_id = model_id
         self.revision = revision
         self.deterministic = deterministic
+        # The real EmbeddingBackend grew `dtype` and `device` kwargs;
+        # accept and record them so the CLI path (which passes both)
+        # constructs the stub without a TypeError.
+        self.dtype = dtype
+        self.device = device
 
     def encode(self, texts):
         import numpy as np

@@ -127,8 +127,13 @@ def test_commit_sha_exists_reraises_on_url_error():
 def test_ssl_context_uses_certifi_when_available():
     """The fetcher prefers certifi's bundle when it's importable.
     Inject a fake certifi module that points at /etc/ssl/cert.pem
-    (which exists on the test host) and verify the context is
-    built from it."""
+    (present on macOS/BSD hosts) and verify the context is built
+    from it. Skipped where that path is absent (e.g. Ubuntu CI,
+    which ships /etc/ssl/certs/ca-certificates.crt instead)."""
+    import os
+    if not os.path.exists("/etc/ssl/cert.pem"):
+        import pytest as _pytest
+        _pytest.skip("/etc/ssl/cert.pem absent on this host (e.g. Ubuntu CI)")
     fg._SSL_CONTEXT_CACHE = None  # reset cache for this test
 
     fake_certifi = type(sys)("certifi")
