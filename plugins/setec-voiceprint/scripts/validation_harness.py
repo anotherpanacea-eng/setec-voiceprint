@@ -586,6 +586,41 @@ def _bootstrap_ci_cached(
     return result
 
 
+def _metrics_records_fingerprint(records: Sequence[dict[str, Any]]) -> str:
+    """SHA-256 over the metric-relevant fields of the scored records.
+
+    The bootstrap CIs are a pure function of these fields, so the
+    fingerprint ties a ``--metrics-cache`` entry to the exact records being
+    summarized. It changes whenever the manifest *content*, the
+    positive/negative label mapping, the preprocessing/strip or tier flags,
+    the MATTR window, or scorer behavior changes the scores / labels /
+    per-signal values — drift the coarse meta keys (path, counts, resamples)
+    would miss, silently reusing stale CIs. Order-independent: records are
+    sorted by id first.
+    """
+    h = hashlib.sha256()
+    for r in sorted(records, key=lambda x: str(x.get("id", ""))):
+        canon = json.dumps(
+            {
+                "id": r.get("id"),
+                "label": r.get("label"),
+                "score": r.get("score"),
+                "usable": r.get("usable_for_metrics"),
+                "per_signal": r.get("per_signal_scores"),
+                "ai_status": r.get("ai_status"),
+                "register": r.get("register"),
+                "length_bucket": r.get("length_bucket"),
+                "language_status": r.get("language_status"),
+                "adversarial_class": r.get("adversarial_class"),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        h.update(canon.encode("utf-8"))
+        h.update(b"\x00")
+    return "sha256:" + h.hexdigest()
+
+
 def ranking_metrics(
     records: Sequence[dict[str, Any]],
     *,
@@ -1962,12 +1997,27 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                 "manifest_path": str(args.manifest),
                 "use_filter": args.use,
                 "n_scored_records": len(usable),
+                # The load-bearing gate: a hash of the exact scored records
+                # the CIs summarize. Invalidates the cache on any change to
+                # manifest content, label mapping, strip/tier flags, MATTR
+                # window, or scorer behavior — not just the path.
+                "records_fingerprint": _metrics_records_fingerprint(records),
+                # Mirrored scoring args for legibility (subsumed by the
+                # fingerprint, but useful when auditing a cache file).
+                "positive_statuses": sorted(positive_statuses),
+                "negative_statuses": sorted(negative_statuses),
+                "do_tier2": not args.no_tier2,
+                "do_tier3": not args.no_tier3,
+                "mattr_window": args.mattr_window,
                 "metric_bootstrap_resamples": args.metric_bootstrap_resamples,
                 "confidence_level": args.confidence_level,
                 "seed": args.seed,
                 "sklearn": bool(HAS_SKLEARN),
             },
-            flush_every=int(getattr(args, "metrics_cache_flush_every", 20)),
+            # Default 1: flush after every completed CI so a SIGTERM / host
+            # hang resumes from the last completed CI (issue #132 acceptance).
+            # Each CI is minutes at MAGE scale, so per-CI flush I/O is noise.
+            flush_every=int(getattr(args, "metrics_cache_flush_every", 1)),
             refresh=bool(getattr(args, "refresh_metrics_cache", False)),
         )
 
@@ -2265,11 +2315,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--metrics-cache-flush-every",
         type=int,
-        default=20,
+        default=1,
         help=(
             "Write --metrics-cache atomically every N completed CIs "
-            "(default 20). Lower it for very large corpora where each "
-            "CI is minutes of bootstrap and crash exposure is high. "
+            "(default 1 = after every CI, so a SIGTERM/hang resumes from "
+            "the last completed CI). Each CI is minutes of bootstrap at "
+            "MAGE scale, so per-CI flush I/O is negligible; raise it only "
+            "for tiny-corpus runs where flush I/O would dominate. "
             "Ignored when --metrics-cache is unset."
         ),
     )

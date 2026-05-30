@@ -23,7 +23,11 @@ try:
 except ImportError:  # pragma: no cover
     pytest = None
 
-from validation_harness import build_slices, _MetricsCheckpoint
+from validation_harness import (
+    build_slices,
+    _MetricsCheckpoint,
+    _metrics_records_fingerprint,
+)
 
 
 def _records(n: int = 40) -> list[dict]:
@@ -121,6 +125,51 @@ def test_refresh_discards_existing_cache(tmp_path) -> None:
     build_slices(recs, ckpt=ck2, **_KW)
     assert ck2.summary()["reused"] == 0
     assert ck2.summary()["computed"] > 0
+
+
+def test_metrics_cache_resumes_from_in_progress_partial(tmp_path) -> None:
+    """flush_every=1 writes an in_progress partial after every CI, and a
+    fresh checkpoint resumes from it -- the #132 acceptance that a SIGTERM
+    mid-metrics resumes from the last completed CI, not just a clean
+    'complete' finish."""
+    import json
+    cache = tmp_path / "m.json"
+    meta = {"v": 1}
+    ck = _MetricsCheckpoint(cache, meta, flush_every=1, refresh=False)
+    ck.put("k1", {"available": True, "ci_low": 0.1})
+    ck.put("k2", {"available": True, "ci_low": 0.2})
+    # Simulate a crash before the final 'complete' flush: the on-disk file
+    # is an in_progress partial that already holds both CIs.
+    on_disk = json.loads(cache.read_text(encoding="utf-8"))
+    assert on_disk["status"] == "in_progress"
+    assert set(on_disk["entries"]) == {"k1", "k2"}
+    # A fresh checkpoint resumes both from the partial.
+    ck2 = _MetricsCheckpoint(cache, meta, flush_every=1, refresh=False)
+    assert ck2.get("k1") == {"available": True, "ci_low": 0.1}
+    assert ck2.get("k2") == {"available": True, "ci_low": 0.2}
+
+
+def test_records_fingerprint_invalidates_on_data_change() -> None:
+    """The fingerprint changes when the scored data changes, so a stale
+    --metrics-cache at the same path is not silently reused (review P2)."""
+    recs = _records()
+    fp1 = _metrics_records_fingerprint(recs)
+    # Same records, reordered -> identical (order-independent).
+    assert _metrics_records_fingerprint(list(reversed(recs))) == fp1
+    # Changed score -> different.
+    mutated = [dict(r) for r in recs]
+    mutated[0]["score"] = mutated[0]["score"] + 0.123
+    assert _metrics_records_fingerprint(mutated) != fp1
+    # Flipped label (label-mapping change) -> different.
+    mutated2 = [dict(r) for r in recs]
+    mutated2[0]["label"] = 1 - mutated2[0]["label"]
+    assert _metrics_records_fingerprint(mutated2) != fp1
+    # Changed per-signal value (tier/mattr/strip drift) -> different.
+    mutated3 = [dict(r) for r in recs]
+    ps = dict(mutated3[0]["per_signal_scores"])
+    ps["yules_k"] = ps["yules_k"] + 0.5
+    mutated3[0]["per_signal_scores"] = ps
+    assert _metrics_records_fingerprint(mutated3) != fp1
 
 
 if __name__ == "__main__":  # pragma: no cover
