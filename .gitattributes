@@ -1,0 +1,4 @@
+# Shell scripts must be LF even when checked out on Windows with
+# core.autocrlf=true. A CRLF-terminated *.sh breaks bash/WSL with
+# "$'\r': command not found" / "set: pipefail: invalid option name".
+*.sh text eol=lf
