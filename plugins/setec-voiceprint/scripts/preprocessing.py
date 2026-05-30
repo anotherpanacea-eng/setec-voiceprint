@@ -421,6 +421,22 @@ _CSS_FORMAT_DIRECTIVE_RE = re.compile(r"%[A-Za-z]")
 # or a ``:pseudo`` — present in real selectors, absent from a prose prefix
 # such as ``Published on`` in ``Published on {date:%Y-%m-%d}``.
 _CSS_SELECTOR_STRUCT_RE = re.compile(r"[.#*\[\]>~+]|:[A-Za-z-]")
+# Known HTML element names. A bare single-token selector (no structural
+# char) is a CSS *type* selector only if it names a real element, which
+# accepts ``body { ... }`` while rejecting a lone prose word like
+# ``Status`` in ``Status {server: prod}``.
+_HTML_TAG_NAMES = frozenset(
+    """
+    html head body div span p a ul ol li dl dt dd table thead tbody tfoot
+    tr td th h1 h2 h3 h4 h5 h6 header footer main nav section article aside
+    figure figcaption img picture video audio source canvas svg button input
+    textarea select option optgroup label form fieldset legend b i u s em
+    strong small mark code pre kbd samp var blockquote q cite abbr address hr
+    br wbr sub sup time details summary dialog menu caption col colgroup
+    iframe link meta style script title base object embed param track data
+    output progress meter ruby rt rp bdi bdo del ins template slot map area
+    """.split()
+)
 JSON_START_RE = re.compile(r"^\s*\{\s*$")
 JSON_KEY_RE = re.compile(r'^\s*"[^"\n]+"\s*:')
 # ASCII table: a pipe-row OR a +---+---+ separator. The block-level
@@ -497,7 +513,12 @@ def _looks_like_css_selector(selector: str) -> bool:
         return False
     if _CSS_SELECTOR_STRUCT_RE.search(sel):
         return True
-    return len(sel.split()) == 1
+    # A bare single token is a CSS *type* selector only if it names a real
+    # HTML element. This rejects single-word prose prefixes (``Status`` in
+    # ``Status {server: prod}``) while still accepting ``body { ... }``.
+    if len(sel.split()) != 1:
+        return False
+    return sel.lower() in _HTML_TAG_NAMES
 
 
 def _looks_like_css_block(removed: str) -> bool:

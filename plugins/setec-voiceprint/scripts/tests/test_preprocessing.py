@@ -126,6 +126,10 @@ def test_colon_format_placeholders_in_prose_are_not_stripped() -> None:
         "Published on {date:%Y-%m-%d} by the editorial desk.",
         "Deploy to {server: prod} after the smoke tests pass.",
         "The build ran at {time:%H:%M:%S} and then exited cleanly.",
+        # Single bare token before the brace -- a prose word, not an HTML
+        # type selector (review follow-up: `Status {server: prod}`).
+        "Status {server: prod}",
+        "Status {server: prod} is healthy.",
     ]
     for raw in cases:
         cleaned, meta = strip_non_prose(raw)
@@ -135,6 +139,18 @@ def test_colon_format_placeholders_in_prose_are_not_stripped() -> None:
         )
         assert meta["tokens_stripped"] == 0
         assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) == 0
+
+
+def test_bare_tag_selector_css_is_stripped() -> None:
+    """A real bare *type* selector (``body { ... }``) is still recognized
+    as CSS even with no structural selector char -- the HTML-tag check
+    must not over-reject genuine element-selector rules."""
+    raw = "body { margin: 0; color: blue }"
+    cleaned, meta = strip_non_prose(raw)
+    assert "margin" not in cleaned
+    assert "color" not in cleaned
+    assert meta["tokens_stripped"] > 0
+    assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
 
 
 def test_allow_non_prose_is_a_noop_with_metadata() -> None:
