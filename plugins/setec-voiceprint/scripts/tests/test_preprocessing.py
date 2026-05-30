@@ -53,6 +53,46 @@ def test_css_rule_blocks_are_stripped_and_attributed() -> None:
     )
 
 
+def test_brace_placeholders_in_prose_are_not_stripped() -> None:
+    """css_rule_block must not fire on prose that merely contains a
+    ``{token}`` template placeholder.
+
+    Regression for the empirical MAGE failure mode: single-line documents
+    (wikiHow-style steps with ``{substep}`` markers, or articles ending
+    ``... on {date}``) were matched by the permissive opener regex and
+    stripped in full (strip_ratio 1.0) despite containing no CSS.
+    """
+    cases = [
+        "Just be careful not to overdo it. You may not be ready yet, so "
+        "try going about things differently. {substepad1} {substepad2}",
+        'Imperialism is defined as "A policy of extending a country\'s '
+        'power." It was a major cause of World War I. More by Kaleb on {date}',
+    ]
+    for raw in cases:
+        cleaned, meta = strip_non_prose(raw)
+        assert cleaned.strip() == raw.strip(), (
+            "prose with a brace placeholder should be preserved, got: "
+            f"{cleaned!r}"
+        )
+        assert meta["tokens_stripped"] == 0
+        assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) == 0
+
+
+def test_single_line_real_css_is_still_stripped() -> None:
+    """The declaration gate must not regress detection of genuine CSS,
+    including a rule block that shares a single line with prose."""
+    raw = (
+        "Here is the widget styling we used. "
+        ".reading-mode-toggle { font-size: 14px; color: rgb(0,0,0); } "
+        "Back to the article."
+    )
+    cleaned, meta = strip_non_prose(raw)
+    assert ".reading-mode-toggle" not in cleaned
+    assert "font-size" not in cleaned
+    assert meta["tokens_stripped"] > 0
+    assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
+
+
 def test_allow_non_prose_is_a_noop_with_metadata() -> None:
     raw = CONTAMINATED.read_text(encoding="utf-8")
     cleaned, meta = strip_non_prose(raw, allow_non_prose=True)

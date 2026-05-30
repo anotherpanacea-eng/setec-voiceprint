@@ -397,6 +397,16 @@ CSS_AT_RE = re.compile(
 CSS_BLOCK_OPEN_RE = re.compile(
     r"^\s*[\.\#\&\*\>\+A-Za-z][\w\-\.\#\:\,\s\>\+\&\*\[\]=\"']*\s*\{"
 )
+# A real CSS rule block carries at least one ``property: value;``
+# declaration. The opener regex above is permissive (it allows
+# whitespace and prose punctuation before the ``{``), so on a single-line
+# document it also matches prose that merely contains a ``{...}`` template
+# placeholder (e.g. ``{date}``, ``{substep}``). These guards confirm the
+# balanced block is actually CSS — a declaration found INSIDE the braces —
+# before css_rule_block strips it. Without the gate, any single-line doc
+# containing a ``{...}`` placeholder is stripped in full (strip_ratio 1.0).
+CSS_BRACE_INNER_RE = re.compile(r"\{([^{}]*)\}")
+CSS_DECL_RE = re.compile(r"[A-Za-z-]+\s*:\s*[^;{}]+;")
 JSON_START_RE = re.compile(r"^\s*\{\s*$")
 JSON_KEY_RE = re.compile(r'^\s*"[^"\n]+"\s*:')
 # ASCII table: a pipe-row OR a +---+---+ separator. The block-level
@@ -483,12 +493,20 @@ def _strip_line_groups(
             end = _consume_balanced_block(lines, i, max_lines=50)
             if end is not None:
                 removed = "".join(lines[i:end])
-                out.append(_record_strip(
-                    removed, "css_rule_block", counts, snippets,
-                    collect_stripped=collect_stripped,
-                ))
-                i = end
-                continue
+                # Only strip if the balanced block is genuinely CSS: at
+                # least one ``property: value;`` declaration INSIDE the
+                # braces. Bare ``{token}`` placeholders in prose have none,
+                # so they fall through to be kept as normal text.
+                if any(
+                    CSS_DECL_RE.search(inner)
+                    for inner in CSS_BRACE_INNER_RE.findall(removed)
+                ):
+                    out.append(_record_strip(
+                        removed, "css_rule_block", counts, snippets,
+                        collect_stripped=collect_stripped,
+                    ))
+                    i = end
+                    continue
 
         if "json_block" in active and JSON_START_RE.match(line):
             end = _consume_balanced_block(lines, i, max_lines=200)
