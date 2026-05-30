@@ -50,12 +50,24 @@ per-feature nicety. The reference implementations are `shard_runner`
 (per-shard claim + cache + SIGTERM-safe checkpointing) and the calibration
 aggregate (a partial survey flushed after each signal completes). When you
 add or touch a surface that loads a full corpus into one process, hold it
-to all three before merging, and audit existing surfaces against them.
+to all three before merging.
 
-Known gap as of this writing: `validation_harness`'s metrics/bootstrap
-phase is visible+continuable in its *scoring* step but neither in its
-*bootstrap* step (single-threaded, silent, uncheckpointed). Treat that as
-the worked example of what this section is guarding against.
+Worked example — `validation_harness` straddles the line:
+
+- Its *scoring* phase is compliant: progress logging plus an incremental
+  scored-records cache with `--resume`.
+- Its *metrics/bootstrap* phase honors none of the three — single-threaded
+  (not recoverable), silent (not visible), and uncheckpointed (not
+  continuable). A host hang loses the entire bootstrap with nothing to
+  resume.
+
+**Audit backlog** — full-corpus single-process surfaces to bring into
+compliance (tracked in #133):
+
+- `validation_harness` metrics/bootstrap phase — the worked example above.
+- single-process `check_corpus` / `corpus_hygiene` at corpus scale.
+- the standalone `calibration_survey.py` CLI (the bake-off driver).
+- any other surface that loads a full corpus into one process.
 
 ## PRs and merges
 
