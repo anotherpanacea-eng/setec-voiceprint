@@ -397,7 +397,7 @@ CSS_AT_RE = re.compile(
 CSS_BLOCK_OPEN_RE = re.compile(
     r"^\s*[\.\#\&\*\>\+A-Za-z][\w\-\.\#\:\,\s\>\+\&\*\[\]=\"']*\s*\{"
 )
-# A real CSS rule block carries at least one ``property: value;``
+# A real CSS rule block carries at least one ``property: value``
 # declaration. The opener regex above is permissive (it allows
 # whitespace and prose punctuation before the ``{``), so on a single-line
 # document it also matches prose that merely contains a ``{...}`` template
@@ -405,8 +405,13 @@ CSS_BLOCK_OPEN_RE = re.compile(
 # balanced block is actually CSS — a declaration found INSIDE the braces —
 # before css_rule_block strips it. Without the gate, any single-line doc
 # containing a ``{...}`` placeholder is stripped in full (strip_ratio 1.0).
+#
+# The declaration may end with ``;`` OR run to the end of the brace
+# content: CSS allows the final declaration before ``}`` to omit the
+# trailing semicolon (``.note { color: red }``), so the terminator is
+# ``(?:;|$)`` against the extracted inner text — not a required ``;``.
 CSS_BRACE_INNER_RE = re.compile(r"\{([^{}]*)\}")
-CSS_DECL_RE = re.compile(r"[A-Za-z-]+\s*:\s*[^;{}]+;")
+CSS_DECL_RE = re.compile(r"[A-Za-z-]+\s*:\s*[^;{}]+(?:;|$)")
 JSON_START_RE = re.compile(r"^\s*\{\s*$")
 JSON_KEY_RE = re.compile(r'^\s*"[^"\n]+"\s*:')
 # ASCII table: a pipe-row OR a +---+---+ separator. The block-level

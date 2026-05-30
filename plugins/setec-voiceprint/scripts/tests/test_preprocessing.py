@@ -93,6 +93,26 @@ def test_single_line_real_css_is_still_stripped() -> None:
     assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
 
 
+def test_css_block_without_trailing_semicolon_is_stripped() -> None:
+    """CSS allows the final declaration before ``}`` to omit the trailing
+    semicolon. Such blocks are still valid CSS and must still be stripped.
+
+    Regression for the review finding on the brace-placeholder fix: an
+    earlier `CSS_DECL_RE` required a `;`, which would have skipped valid
+    blocks like `.note { color: red }`.
+    """
+    cases = [
+        ".note { color: red }",
+        "Intro text. .note { color: red } and more prose.",
+        ".box {\n  margin: 0;\n  color: blue\n}",
+    ]
+    for raw in cases:
+        cleaned, meta = strip_non_prose(raw)
+        assert "color" not in cleaned, f"CSS not stripped: {cleaned!r}"
+        assert meta["tokens_stripped"] > 0
+        assert meta["tokens_stripped_by_rule"].get("css_rule_block", 0) > 0
+
+
 def test_allow_non_prose_is_a_noop_with_metadata() -> None:
     raw = CONTAMINATED.read_text(encoding="utf-8")
     cleaned, meta = strip_non_prose(raw, allow_non_prose=True)
