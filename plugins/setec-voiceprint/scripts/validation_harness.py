@@ -470,12 +470,165 @@ def paired_bootstrap_ci(
     }
 
 
+class _MetricsCheckpoint:
+    """Per-CI checkpoint for the metrics/bootstrap phase (issue #132).
+
+    Each ``paired_bootstrap_ci`` call is an independent, deterministic
+    unit — its seed is derived stably from the slice/signal plus
+    ``--seed`` — so a completed CI can be cached and reused verbatim on a
+    later run. That makes the metrics phase **recoverable** (a crash
+    loses at most one CI, not the whole bootstrap), **visible** (each CI
+    logs on completion), and **continuable** (``--resume`` via the
+    on-disk partial). It mirrors the scoring phase's
+    ``_save_scored_records_cache`` discipline (atomic tmp+replace,
+    status in_progress/complete, minimal compat gate).
+
+    With no cache path the harness never constructs one and the metrics
+    path is byte-for-byte unchanged.
+    """
+
+    def __init__(self, path, meta, *, flush_every, refresh):
+        self.path = path
+        self.meta = meta
+        self.flush_every = max(1, int(flush_every))
+        self.entries: dict[str, Any] = {}
+        self._since_flush = 0
+        self._fresh = 0
+        self._reused = 0
+        if path is not None and path.exists() and not refresh:
+            try:
+                cached = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                cached = None
+            if isinstance(cached, dict) and cached.get("meta") == meta:
+                loaded = cached.get("entries")
+                if isinstance(loaded, dict):
+                    self.entries = loaded
+                    sys.stderr.write(
+                        f"Resuming metrics from cache: {len(self.entries)} "
+                        f"CI(s) already computed ({path}).\n"
+                    )
+            elif isinstance(cached, dict):
+                sys.stderr.write(
+                    "Metrics cache present but incompatible (meta mismatch);"
+                    " recomputing all CIs.\n"
+                )
+
+    def get(self, key):
+        return self.entries.get(key)
+
+    def mark_reused(self):
+        self._reused += 1
+
+    def put(self, key, value):
+        self.entries[key] = value
+        self._fresh += 1
+        self._since_flush += 1
+        sys.stderr.write(
+            f"  metrics: computed [{key}] ({len(self.entries)} CI(s) total)\n"
+        )
+        if self._since_flush >= self.flush_every:
+            self.flush(status="in_progress")
+            self._since_flush = 0
+
+    def summary(self):
+        return {"computed": self._fresh, "reused": self._reused}
+
+    def flush(self, *, status):
+        if self.path is None:
+            return
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_suffix(self.path.suffix + ".tmp")
+        payload = {
+            "status": status,
+            "tool": "validation_harness",
+            "meta": self.meta,
+            "entries": self.entries,
+        }
+        with tmp.open("w", encoding="utf-8") as fh:
+            json.dump(payload, fh, default=str)
+        tmp.replace(self.path)
+
+
+def _bootstrap_ci_cached(
+    ckpt,
+    key,
+    labels,
+    scores,
+    metric_fn,
+    *,
+    n_resamples,
+    confidence_level,
+    seed,
+):
+    """Checkpoint-aware wrapper around ``paired_bootstrap_ci``.
+
+    Returns the cached CI if the checkpoint already holds ``key``;
+    otherwise computes it, stores it (flushing per the checkpoint's
+    cadence), and returns it. With ``ckpt=None`` this is a direct
+    pass-through, so behavior is identical when no metrics cache is set.
+    """
+    if ckpt is not None:
+        hit = ckpt.get(key)
+        if hit is not None:
+            ckpt.mark_reused()
+            return hit
+    result = paired_bootstrap_ci(
+        labels,
+        scores,
+        metric_fn,
+        n_resamples=n_resamples,
+        confidence_level=confidence_level,
+        seed=seed,
+    )
+    if ckpt is not None:
+        ckpt.put(key, result)
+    return result
+
+
+def _metrics_records_fingerprint(records: Sequence[dict[str, Any]]) -> str:
+    """SHA-256 over the metric-relevant fields of the scored records.
+
+    The bootstrap CIs are a pure function of these fields, so the
+    fingerprint ties a ``--metrics-cache`` entry to the exact records being
+    summarized. It changes whenever the manifest *content*, the
+    positive/negative label mapping, the preprocessing/strip or tier flags,
+    the MATTR window, or scorer behavior changes the scores / labels /
+    per-signal values — drift the coarse meta keys (path, counts, resamples)
+    would miss, silently reusing stale CIs. Order-independent: records are
+    sorted by id first.
+    """
+    h = hashlib.sha256()
+    for r in sorted(records, key=lambda x: str(x.get("id", ""))):
+        canon = json.dumps(
+            {
+                "id": r.get("id"),
+                "label": r.get("label"),
+                "score": r.get("score"),
+                "usable": r.get("usable_for_metrics"),
+                "per_signal": r.get("per_signal_scores"),
+                "ai_status": r.get("ai_status"),
+                "register": r.get("register"),
+                "length_bucket": r.get("length_bucket"),
+                "language_status": r.get("language_status"),
+                "adversarial_class": r.get("adversarial_class"),
+            },
+            sort_keys=True,
+            default=str,
+        )
+        h.update(canon.encode("utf-8"))
+        h.update(b"\x00")
+    return "sha256:" + h.hexdigest()
+
+
 def ranking_metrics(
     records: Sequence[dict[str, Any]],
     *,
     bootstrap_resamples: int,
     confidence_level: float,
     seed: int | None,
+    ckpt=None,
+    ckpt_label: str = "",
 ) -> dict[str, Any]:
     usable = scored_records(records)
     labels = [int(r["label"]) for r in usable]
@@ -505,7 +658,9 @@ def ranking_metrics(
         out["average_precision"] = fallback_average_precision(labels, scores)
         out["method"] = "stdlib_fallback"
         average_precision_fn = fallback_average_precision
-    out["roc_auc_ci"] = paired_bootstrap_ci(
+    out["roc_auc_ci"] = _bootstrap_ci_cached(
+        ckpt,
+        f"{ckpt_label}|ranking|roc_auc",
         labels,
         scores,
         fallback_roc_auc,
@@ -513,7 +668,9 @@ def ranking_metrics(
         confidence_level=confidence_level,
         seed=seed,
     )
-    out["average_precision_ci"] = paired_bootstrap_ci(
+    out["average_precision_ci"] = _bootstrap_ci_cached(
+        ckpt,
+        f"{ckpt_label}|ranking|average_precision",
         labels,
         scores,
         average_precision_fn,
@@ -730,6 +887,8 @@ def per_signal_ranking_metrics(
     bootstrap_resamples: int,
     confidence_level: float,
     seed: int | None,
+    ckpt=None,
+    ckpt_label: str = "",
 ) -> dict[str, Any]:
     """Run ranking metrics per Layer A signal.
 
@@ -806,13 +965,15 @@ def per_signal_ranking_metrics(
         # the signal name so reruns are reproducible per signal and
         # different signals don't share the same resampling realization.
         per_signal_seed = derive_seed(seed, "per_signal", name)
-        signal_block["roc_auc_ci"] = paired_bootstrap_ci(
+        signal_block["roc_auc_ci"] = _bootstrap_ci_cached(
+            ckpt, f"{ckpt_label}|signal:{name}|roc_auc",
             labels, scores, fallback_roc_auc,
             n_resamples=bootstrap_resamples,
             confidence_level=confidence_level,
             seed=per_signal_seed,
         )
-        signal_block["average_precision_ci"] = paired_bootstrap_ci(
+        signal_block["average_precision_ci"] = _bootstrap_ci_cached(
+            ckpt, f"{ckpt_label}|signal:{name}|average_precision",
             labels, scores, average_precision_fn,
             n_resamples=bootstrap_resamples,
             confidence_level=confidence_level,
@@ -880,6 +1041,8 @@ def metric_block(
     metric_bootstrap_resamples: int,
     seed: int | None,
     include_per_signal: bool = False,
+    ckpt=None,
+    ckpt_label: str = "",
 ) -> dict[str, Any]:
     counts = Counter(str(r.get("ai_status", "unknown")) for r in records)
     labels = Counter(
@@ -897,6 +1060,8 @@ def metric_block(
             bootstrap_resamples=metric_bootstrap_resamples,
             confidence_level=confidence_level,
             seed=seed,
+            ckpt=ckpt,
+            ckpt_label=ckpt_label,
         ),
     }
     tm = threshold_metrics(
@@ -918,6 +1083,8 @@ def metric_block(
             bootstrap_resamples=metric_bootstrap_resamples,
             confidence_level=confidence_level,
             seed=seed,
+            ckpt=ckpt,
+            ckpt_label=ckpt_label,
         )
     return block
 
@@ -966,6 +1133,7 @@ def build_slices(
     ci_method: str,
     metric_bootstrap_resamples: int,
     seed: int | None,
+    ckpt=None,
 ) -> dict[str, Any]:
     slices: dict[str, Any] = {
         "overall": metric_block(
@@ -976,6 +1144,8 @@ def build_slices(
             metric_bootstrap_resamples=metric_bootstrap_resamples,
             seed=seed,
             include_per_signal=True,
+            ckpt=ckpt,
+            ckpt_label="overall",
         ),
         "by_register": {},
         "by_length_bucket": {},
@@ -998,6 +1168,8 @@ def build_slices(
                 ci_method=ci_method,
                 metric_bootstrap_resamples=metric_bootstrap_resamples,
                 seed=derive_seed(seed, slice_name, key),
+                ckpt=ckpt,
+                ckpt_label=f"{slice_name}/{key}",
             )
     return slices
 
@@ -1812,6 +1984,43 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             "fpr_target": None,
         }
 
+    metrics_cache_path = (
+        Path(args.metrics_cache).expanduser()
+        if getattr(args, "metrics_cache", None)
+        else None
+    )
+    metrics_ckpt = None
+    if metrics_cache_path is not None:
+        metrics_ckpt = _MetricsCheckpoint(
+            metrics_cache_path,
+            {
+                "manifest_path": str(args.manifest),
+                "use_filter": args.use,
+                "n_scored_records": len(usable),
+                # The load-bearing gate: a hash of the exact scored records
+                # the CIs summarize. Invalidates the cache on any change to
+                # manifest content, label mapping, strip/tier flags, MATTR
+                # window, or scorer behavior — not just the path.
+                "records_fingerprint": _metrics_records_fingerprint(records),
+                # Mirrored scoring args for legibility (subsumed by the
+                # fingerprint, but useful when auditing a cache file).
+                "positive_statuses": sorted(positive_statuses),
+                "negative_statuses": sorted(negative_statuses),
+                "do_tier2": not args.no_tier2,
+                "do_tier3": not args.no_tier3,
+                "mattr_window": args.mattr_window,
+                "metric_bootstrap_resamples": args.metric_bootstrap_resamples,
+                "confidence_level": args.confidence_level,
+                "seed": args.seed,
+                "sklearn": bool(HAS_SKLEARN),
+            },
+            # Default 1: flush after every completed CI so a SIGTERM / host
+            # hang resumes from the last completed CI (issue #132 acceptance).
+            # Each CI is minutes at MAGE scale, so per-CI flush I/O is noise.
+            flush_every=int(getattr(args, "metrics_cache_flush_every", 1)),
+            refresh=bool(getattr(args, "refresh_metrics_cache", False)),
+        )
+
     slices = build_slices(
         records,
         threshold=threshold,
@@ -1819,7 +2028,15 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         ci_method=args.ci_method,
         metric_bootstrap_resamples=args.metric_bootstrap_resamples,
         seed=args.seed,
+        ckpt=metrics_ckpt,
     )
+    if metrics_ckpt is not None:
+        metrics_ckpt.flush(status="complete")
+        _ck = metrics_ckpt.summary()
+        sys.stderr.write(
+            f"Metrics complete: {_ck['computed']} CI(s) computed, "
+            f"{_ck['reused']} reused from cache.\n"
+        )
 
     warnings: list[str] = []
     if not HAS_SKLEARN:
@@ -2076,6 +2293,44 @@ def main(argv: Sequence[str] | None = None) -> int:
             "invalidate cached records but won't be caught by the "
             "minimal compatibility check (manifest path + use "
             "filter + tier flags)."
+        ),
+    )
+    parser.add_argument(
+        "--metrics-cache",
+        default=None,
+        help=(
+            "Path to a JSON checkpoint for the metrics/bootstrap phase "
+            "(issue #132). Optional. When set, each per-slice / "
+            "per-signal bootstrap CI is written atomically as it "
+            "completes and reused on a later run, so a crashed or hung "
+            "metrics phase RESUMES instead of recomputing every CI from "
+            "scratch — and each CI logs as it lands (visible). "
+            "Compatibility is gated on (manifest, use filter, n scored "
+            "records, resamples, confidence, seed, sklearn availability);"
+            " pass --refresh-metrics-cache or a fresh path after a change "
+            "the check won't catch. Independent of --scored-records-cache "
+            "(scoring vs metrics are separate phases)."
+        ),
+    )
+    parser.add_argument(
+        "--metrics-cache-flush-every",
+        type=int,
+        default=1,
+        help=(
+            "Write --metrics-cache atomically every N completed CIs "
+            "(default 1 = after every CI, so a SIGTERM/hang resumes from "
+            "the last completed CI). Each CI is minutes of bootstrap at "
+            "MAGE scale, so per-CI flush I/O is negligible; raise it only "
+            "for tiny-corpus runs where flush I/O would dominate. "
+            "Ignored when --metrics-cache is unset."
+        ),
+    )
+    parser.add_argument(
+        "--refresh-metrics-cache",
+        action="store_true",
+        help=(
+            "Discard any existing --metrics-cache and recompute all "
+            "bootstrap CIs from scratch."
         ),
     )
     args = parser.parse_args(argv)
