@@ -181,6 +181,9 @@ def make_args(source: str, **overrides) -> argparse.Namespace:
         topic_match="medium",
         consent_status="fair_use_research",
         era=None,
+        corpus_role="impostor",
+        ai_status="pre_ai_human",
+        use=None,
         segment="chapter",
         min_words=50,
         languages=["en"],
@@ -332,6 +335,39 @@ def test_end_to_end_emits_impostor_manifest(tmp_path):
     assert errors == []
 
 
+def test_identity_baseline_mode(tmp_path):
+    src = _two_book_corpus(tmp_path / "corpus")
+    output_dir = tmp_path / "ai-prose-baselines-private" / "identity" / "me"
+    args = make_args(
+        str(src), output_dir=str(output_dir),
+        emit_manifest=str(output_dir / "draft_manifest.jsonl"),
+        corpus_role="identity_baseline", persona="my_pen_name",
+        ai_status="ai_assisted", impostor_for=[],
+    )
+    assert ep.run(args) == 0
+    entries = read_manifest(output_dir / "draft_manifest.jsonl")
+    assert len(entries) == 4
+    for e in entries:
+        assert e["corpus_role"] == "identity_baseline"
+        assert e["use"] == ["voice_profile"]
+        assert e["persona"] == "my_pen_name"        # single persona, not per-book
+        assert e["ai_status"] == "ai_assisted"
+        assert "impostor_for" not in e               # impostor-only fields omitted
+
+
+def test_identity_mode_requires_persona(tmp_path):
+    src = _two_book_corpus(tmp_path / "corpus")
+    out = tmp_path / "ai-prose-baselines-private" / "id"
+    args = make_args(str(src), output_dir=str(out),
+                     emit_manifest=str(out / "m.jsonl"),
+                     corpus_role="identity_baseline", persona=None, impostor_for=[])
+    try:
+        ep.run(args)
+        assert False, "identity_baseline without --persona should exit"
+    except SystemExit:
+        pass
+
+
 def test_min_words_floor_drops_short_chapters(tmp_path):
     src = tmp_path / "corpus"
     src.mkdir()
@@ -388,14 +424,14 @@ def test_privacy_guard_blocks_non_private_output(tmp_path):
         pass
 
 
-def test_argparse_requires_impostor_for():
-    parser = ep.build_arg_parser()
+def test_impostor_mode_requires_impostor_for(tmp_path):
+    src = _two_book_corpus(tmp_path / "corpus")
+    out = tmp_path / "ai-prose-baselines-private" / "p"
+    args = make_args(str(src), output_dir=str(out),
+                     emit_manifest=str(out / "m.jsonl"),
+                     corpus_role="impostor", impostor_for=[])
     try:
-        parser.parse_args([
-            "somedir",
-            "--register", "literary_horror",
-            "--consent-status", "fair_use_research",
-        ])
-        assert False, "argparse should reject missing --impostor-for"
+        ep.run(args)
+        assert False, "impostor mode without --impostor-for should exit"
     except SystemExit:
         pass

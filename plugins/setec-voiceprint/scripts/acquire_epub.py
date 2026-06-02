@@ -94,6 +94,9 @@ class ProcessOptions:
     persona: str | None  # None => derive per-book from author
     impostor_for: list[str]
     register: str
+    corpus_role: str
+    use: list[str]
+    ai_status: str
     register_match: str
     topic_match: str
     consent_status: str
@@ -504,6 +507,7 @@ def emit_piece(
     entry = ac.compose_manifest_entry(
         piece, text_path=text_path,
         manifest_relative_to=options.manifest_path.parent,
+        corpus_role=options.corpus_role, use=options.use, ai_status=options.ai_status,
     )
     ac.append_manifest_entry(options.manifest_path, entry)
     summary.acquired += 1
@@ -527,10 +531,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--persona",
                    help="Force a single persona slug for every entry. "
                         "Omit to derive per-book from the author.")
-    p.add_argument("--impostor-for", nargs="+", required=True,
-                   help="Persona slug(s) this impostor pool serves.")
+    p.add_argument("--impostor-for", nargs="*", default=[],
+                   help="Persona slug(s) this impostor pool serves "
+                        "(required when --corpus-role impostor).")
     p.add_argument("--register", required=True,
                    help="Manifest register; e.g. literary_horror.")
+    p.add_argument("--corpus-role", choices=["impostor", "identity_baseline"],
+                   default="impostor",
+                   help="impostor pool (default) or the writer's own identity baseline.")
+    p.add_argument("--ai-status",
+                   choices=["pre_ai_human", "ai_assisted", "ai_edited", "ai_generated",
+                            "ai_generated_from_outline", "mixed", "unknown"],
+                   default="pre_ai_human",
+                   help="AI-involvement label for the emitted entries.")
+    p.add_argument("--use", nargs="+", default=None,
+                   help="Manifest use tags (default: voice_impostor / voice_profile).")
     p.add_argument("--register-match", choices=["high", "medium", "low"],
                    default="high")
     p.add_argument("--topic-match", choices=["high", "medium", "low"],
@@ -580,13 +595,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def parse_options(args: argparse.Namespace) -> ProcessOptions:
-    persona = args.persona  # may be None => derive per-book
+    persona = args.persona  # may be None => derive per-book (impostor mode)
+    corpus_role = args.corpus_role
+    if corpus_role == "impostor" and not args.impostor_for:
+        raise SystemExit("acquire_epub: --impostor-for is required with --corpus-role impostor")
+    if corpus_role == "identity_baseline" and not persona:
+        raise SystemExit("acquire_epub: --persona is required with --corpus-role identity_baseline")
+    use = args.use or (["voice_impostor"] if corpus_role == "impostor" else ["voice_profile"])
     dir_slug = persona or "pool"
     if args.output_dir:
         output_dir = Path(args.output_dir).expanduser()
-    else:
+    elif corpus_role == "impostor":
         output_dir = ac.default_output_dir(register=args.register,
                                            author_slug=dir_slug)
+    else:
+        output_dir = ac.resolve_baselines_dir() / "identity" / args.register / dir_slug
     if args.emit_manifest:
         manifest_path = Path(args.emit_manifest).expanduser()
     else:
@@ -596,6 +619,9 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
         persona=persona,
         impostor_for=list(args.impostor_for or []),
         register=args.register,
+        corpus_role=corpus_role,
+        use=list(use),
+        ai_status=args.ai_status,
         register_match=args.register_match,
         topic_match=args.topic_match,
         consent_status=args.consent_status,
