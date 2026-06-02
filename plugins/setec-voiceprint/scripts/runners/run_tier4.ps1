@@ -164,8 +164,18 @@ try:
 except Exception as e:
     print("SETEC_GPU_INDEX=cpu"); print("probe: torch import failed: %r" % (e,)); sys.exit(0)
 if (not torch.cuda.is_available()) or torch.cuda.device_count() == 0:
-    print("SETEC_GPU_INDEX=cpu"); sys.exit(0)
-best_i, best_score, best_desc = -1, None, ""
+    print("SETEC_GPU_INDEX=cpu"); print("probe: no CUDA/ROCm device visible"); sys.exit(0)
+
+def is_integrated(name, arch):
+    # APUs/integrated parts (RDNA2/3 iGPU = gfx103x, older APUs = gfx90c/gfx902)
+    # frequently fault on kernel launch under ROCm-on-Windows. Only a discrete
+    # card is a safe auto pick.
+    low = name.lower()
+    if ("(tm) graphics" in low) or ("integrated" in low):
+        return True
+    return arch.startswith("gfx103") or arch.startswith("gfx90c") or arch.startswith("gfx902")
+
+best_i, best_mem, best_desc = -1, -1, ""   # only DISCRETE candidates considered
 for i in range(torch.cuda.device_count()):
     try:
         p = torch.cuda.get_device_properties(i)
@@ -173,15 +183,20 @@ for i in range(torch.cuda.device_count()):
         mem = int(getattr(p, "total_memory", 0))
     except Exception as e:
         print("probe: dev %d props failed: %r" % (i, e)); continue
-    score = float(mem); low = name.lower()
-    # APUs/integrated parts (RDNA2/3 iGPU) frequently fault on kernel launch under
-    # ROCm-on-Windows; push them to the bottom so a discrete card wins.
-    if ("(tm) graphics" in low) or ("integrated" in low): score -= 1e15
-    if arch.startswith("gfx103") or arch.startswith("gfx90c"): score -= 1e15
-    if (best_score is None) or (score > best_score):
-        best_i, best_score, best_desc = i, score, "%s [%s, %.1fGB]" % (name, arch, mem/1024**3)
-print("SETEC_GPU_INDEX=%d" % best_i)
-print("probe: selected physical device %d = %s" % (best_i, best_desc))
+    if is_integrated(name, arch):
+        print("probe: device %d = %s [%s] looks integrated; not auto-selecting" % (i, name, arch))
+        continue
+    if mem > best_mem:
+        best_i, best_mem, best_desc = i, mem, "%s [%s, %.1fGB]" % (name, arch, mem/1024**3)
+if best_i < 0:
+    # No discrete GPU among the visible devices. Do NOT fall back to a known-
+    # crashy integrated GPU -- signal CPU and let the runner force it. The user
+    # can still target a specific device explicitly with -GpuIndex.
+    print("SETEC_GPU_INDEX=cpu")
+    print("probe: no discrete GPU found; use -GpuIndex N to force a device, else CPU")
+else:
+    print("SETEC_GPU_INDEX=%d" % best_i)
+    print("probe: selected physical device %d = %s" % (best_i, best_desc))
 '@
         $probePath = Join-Path ([System.IO.Path]::GetTempPath()) ("setec_gpu_probe_{0}.py" -f $PID)
         [System.IO.File]::WriteAllText($probePath, $probe, [System.Text.UTF8Encoding]::new($false))
@@ -191,7 +206,15 @@ print("probe: selected physical device %d = %s" % (best_i, best_desc))
         $desc = $probeOut | Where-Object { $_ -match '^probe: selected' } | Select-Object -Last 1
         if (-not $line) { throw "GPU auto-detect failed (no SETEC_GPU_INDEX in probe output). Pass -GpuIndex or -Cpu." }
         $val = ($line -split '=')[-1].Trim()
-        if ($val -eq 'cpu') { $GpuIndex = -1; Say "device     : no GPU detected -> CPU" }
+        if ($val -eq 'cpu') {
+            # No discrete GPU to auto-select. Force CPU by hiding ALL devices --
+            # otherwise the backend would still grab a visible (crashy) iGPU as
+            # cuda:0. Pass -GpuIndex N to override and target a device explicitly.
+            Say "device     : no discrete GPU auto-detected -> CPU (pass -GpuIndex N to force one)"
+            $env:CUDA_VISIBLE_DEVICES = '-1'
+            $env:HIP_VISIBLE_DEVICES  = ''
+            $GpuIndex = -1
+        }
         else { $GpuIndex = [int]$val; if ($desc) { Say "device     : auto -> $desc (physical index $GpuIndex)" } }
     }
     else {

@@ -66,11 +66,17 @@ target and output dir.
 On a box with both an integrated GPU (AMD APU) and a discrete card, the iGPU is
 often **device 0**. Under ROCm-on-Windows it enumerates fine but **faults on
 kernel launch** (`0xC0000005` access violation) — so a naive `torch.device("cuda")`
-crashes. The runner probes device properties (safe — no kernel), picks the device
-with the most VRAM that is *not* an APU (name contains `(TM) Graphics`, or arch
-`gfx103x`/`gfx90c`), and masks everything else via `HIP_VISIBLE_DEVICES` /
-`CUDA_VISIBLE_DEVICES` so the chosen card becomes `cuda:0`. Override with
-`-GpuIndex N` (physical index) or `-Cpu`.
+crashes. The runner probes device properties (safe — no kernel), and picks the
+*discrete* device with the most VRAM — explicitly excluding APUs/iGPUs (name
+contains `(TM) Graphics`, or arch `gfx103x` / `gfx90c` / `gfx902`) — then masks
+everything else via `HIP_VISIBLE_DEVICES` / `CUDA_VISIBLE_DEVICES` so the chosen
+card becomes `cuda:0`.
+
+If **no discrete GPU** is visible (e.g. an APU-only host, or one where every
+visible device matches the integrated heuristic), auto-detect does **not** fall
+back to the crashy integrated GPU — it forces **CPU** (hiding all devices) so the
+backend can't grab the iGPU. Override either way with `-GpuIndex N` (target a
+specific physical device, even an iGPU, at your own risk) or `-Cpu`.
 
 ### 2. Validity gate (don't trust a silently-wrong backend)
 
