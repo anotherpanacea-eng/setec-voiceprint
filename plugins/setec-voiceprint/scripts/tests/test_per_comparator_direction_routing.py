@@ -210,28 +210,35 @@ def _minimal_audit_with_tier4(surprisal_sd_value: float) -> dict:
 
 class TestClassifyCompressionHonorsComparatorClass:
     """The point of the routing: classify_compression must produce
-    different compressed/not-compressed verdicts for
-    ``surprisal_sd`` depending on ``comparator_class``, because
-    surprisal_sd=2.0 is HIGH (compressed under MAGE direction
-    ``gt``) but should be NOT compressed under RAID direction
-    ``lt``."""
+    different verdicts for ``surprisal_sd`` depending on
+    ``comparator_class``. Post compression-polarity fix (2026-06-02) the
+    DEFAULT direction is the smoothing direction ``lt`` (smoothed = LOW
+    surprisal SD); the MAGE AI-detection direction ``gt`` is a
+    per-comparator override. So surprisal_sd=2.0 (HIGH) is NOT compressed
+    by default / under RAID, but IS compressed under
+    ``comparator_class="mage"``."""
 
     def test_default_direction_used_when_no_comparator_class(self):
-        """surprisal_sd=2.0 > threshold=1.5 with default direction
-        ``gt`` → compressed. Pre-1.98 callers see this unchanged."""
-        audit = _minimal_audit_with_tier4(surprisal_sd_value=2.0)
-        result = va.classify_compression(audit)
-        assert "surprisal_sd" in result["flagged_signals"]
+        """Default smoothing direction ``lt``: surprisal_sd=2.0 is NOT
+        < threshold=1.5 → NOT compressed; a LOW value IS."""
+        high = va.classify_compression(
+            _minimal_audit_with_tier4(surprisal_sd_value=2.0)
+        )
+        assert "surprisal_sd" not in high["flagged_signals"]
+        low = va.classify_compression(
+            _minimal_audit_with_tier4(surprisal_sd_value=0.5)
+        )
+        assert "surprisal_sd" in low["flagged_signals"]
 
-    def test_mage_explicit_matches_default(self):
-        """MAGE has no override on surprisal_sd, so explicit
-        ``comparator_class="mage"`` gives the same verdict as no
-        class. Pin this so a future override accidentally added to
-        MAGE surfaces here."""
+    def test_mage_override_differs_from_default(self):
+        """MAGE carries a ``gt`` AI-detection override on surprisal_sd,
+        so ``comparator_class="mage"`` flips the verdict on a HIGH value
+        relative to the smoothing default."""
         audit = _minimal_audit_with_tier4(surprisal_sd_value=2.0)
         default = va.classify_compression(audit)
         mage = va.classify_compression(audit, comparator_class="mage")
-        assert default["flagged_signals"] == mage["flagged_signals"]
+        assert "surprisal_sd" not in default["flagged_signals"]
+        assert "surprisal_sd" in mage["flagged_signals"]
 
     def test_raid_flips_surprisal_sd_verdict(self):
         """RAID override flips ``surprisal_sd`` direction from ``gt``
@@ -294,43 +301,42 @@ class TestThresholdsUsedBlockSurfaceComparatorRouting:
         audit = _minimal_audit_with_tier4(surprisal_sd_value=2.0)
         result = va.classify_compression(audit)
         sd_block = result["thresholds_used"]["surprisal_sd"]
-        assert sd_block["direction"] == "gt"
-        assert sd_block["direction_used"] == "gt"
+        assert sd_block["direction"] == "lt"
+        assert sd_block["direction_used"] == "lt"
 
     def test_thresholds_used_direction_used_reflects_resolution(self):
-        """Under ``comparator_class='raid'``, ``direction_used``
-        for surprisal_sd is ``lt`` while ``direction`` (the spec
-        default) stays ``gt``. Lets an audit consumer compute,
-        e.g., "which signals would have flipped under a different
-        comparator class" without re-running the audit."""
+        """Under ``comparator_class='mage'``, ``direction_used`` for
+        surprisal_sd is ``gt`` (the AI-detection override) while
+        ``direction`` (the spec smoothing default) stays ``lt``. Lets an
+        audit consumer compute which signals flip under a comparator
+        class without re-running the audit."""
         audit = _minimal_audit_with_tier4(surprisal_sd_value=2.0)
-        result = va.classify_compression(audit, comparator_class="raid")
+        result = va.classify_compression(audit, comparator_class="mage")
         sd_block = result["thresholds_used"]["surprisal_sd"]
-        assert sd_block["direction"] == "gt"  # spec default
-        assert sd_block["direction_used"] == "lt"  # resolved for RAID
-        assert sd_block["comparator_class"] == "raid"
-        assert sd_block["direction_by_comparator"] == {"raid": "lt"}
+        assert sd_block["direction"] == "lt"  # spec default (smoothing)
+        assert sd_block["direction_used"] == "gt"  # resolved for MAGE
+        assert sd_block["comparator_class"] == "mage"
+        assert sd_block["direction_by_comparator"] == {"mage": "gt", "raid": "lt"}
 
 
 # ---------- Registry empirical entry: surprisal_sd RAID ---------
 
 
 class TestSurprisalSdRaidOverrideShipped:
-    """Pin the one empirical override that ships in 1.98.0:
-    ``surprisal_sd`` has ``{"raid": "lt"}`` per the 2026-05-18
-    RAID 5K bake-off (4 globally_inverted verdicts under the
-    MAGE-direction registry).
+    """Pin the surprisal_sd per-comparator overrides. Post
+    compression-polarity fix (2026-06-02) the registry default is the
+    smoothing direction ``lt``; the MAGE AI-detection direction ``gt``
+    and the RAID ``lt`` are per-comparator overrides, so surprisal_sd
+    carries ``{"mage": "gt", "raid": "lt"}``.
 
-    Pin this contract everywhere it appears: variance_audit
-    registry, polarity_audit overrides table, slice_bakeoff_v2
-    overrides table. The three must stay in lockstep — a change
-    to one without the other two would let an audit / slicer /
-    polarity-audit pair disagree on what the right direction is
-    for the same (signal, comparator) pair."""
+    NOTE: the polarity_audit and slice_bakeoff_v2 mirror tables are NOT
+    yet reconciled to the new defaults / MAGE overrides — that lockstep
+    update is a tracked follow-up to the compression-polarity PR. The
+    mirror-table tests below still pin their pre-fix values."""
 
-    def test_variance_audit_registry_carries_raid_override(self):
+    def test_variance_audit_registry_carries_comparator_overrides(self):
         spec = va.COMPRESSION_HEURISTICS["surprisal_sd"]
-        assert spec.direction_by_comparator == {"raid": "lt"}
+        assert spec.direction_by_comparator == {"mage": "gt", "raid": "lt"}
 
     def test_polarity_audit_overrides_table_matches(self):
         assert (
@@ -344,28 +350,21 @@ class TestSurprisalSdRaidOverrideShipped:
             == {"raid": "lt"}
         )
 
-    def test_other_four_signals_have_no_override_yet(self):
-        """The other four MAGE-flipped signals
-        (adjacent_cosine_mean / adjacent_cosine_sd /
-        surprisal_mean / surprisal_acf_lag1) do NOT yet have
-        per-comparator entries in 1.98.0. The RAID polarity-audit
-        verdicts for those signals were ``comparator_dependent``
-        (per (judge × generator)) or ``mixed_noisy`` rather than
-        globally invertible, so they're deferred to the
-        per-(signal × judge × generator) follow-up.
-
-        Pin the absence so a future change that wires them in
-        without the corresponding sub-class taxonomy surfaces
-        here (and gets caught early)."""
-        for sig in (
-            "adjacent_cosine_mean", "adjacent_cosine_sd",
-            "surprisal_mean", "surprisal_acf_lag1",
-        ):
-            spec = va.COMPRESSION_HEURISTICS[sig]
-            assert spec.direction_by_comparator is None, (
-                f"signal {sig!r} unexpectedly gained a per-comparator "
-                f"override; if intentional, update this test docstring."
-            )
+    def test_surprisal_signals_carry_mage_overrides(self):
+        """Post compression-polarity fix: surprisal_mean and
+        surprisal_acf_lag1 gained MAGE AI-detection overrides on top of
+        their new smoothing defaults ({"mage": "gt"} and {"mage": "lt"}
+        respectively). The adjacent_cosine signals carry no registry
+        override — adjacent_cosine_mean is instead GATED from the
+        unbaselined band (see variance_audit._POLARITY_UNBASELINED_GATE),
+        and adjacent_cosine_sd keeps its single default direction."""
+        assert (va.COMPRESSION_HEURISTICS["surprisal_mean"]
+                .direction_by_comparator == {"mage": "gt"})
+        assert (va.COMPRESSION_HEURISTICS["surprisal_acf_lag1"]
+                .direction_by_comparator == {"mage": "lt"})
+        for sig in ("adjacent_cosine_mean", "adjacent_cosine_sd"):
+            assert va.COMPRESSION_HEURISTICS[sig].direction_by_comparator is None
+        assert "adjacent_cosine_mean" in va._POLARITY_UNBASELINED_GATE
 
 
 # ---------- Polarity audit + slicer mirrors --------------------
