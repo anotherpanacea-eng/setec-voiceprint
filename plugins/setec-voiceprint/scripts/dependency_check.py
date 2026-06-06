@@ -443,6 +443,31 @@ OPTIONAL_PYTHON_DEPS = [
         ),
         optional_in_tier=True,
     ),
+    # style_embedding note: voice_fingerprint.py (Surface
+    # authorship_embedding) loads a FROZEN STYLE ENCODER that is a
+    # DISTINCT download from the Tier-4 causal-LM scorers. The default
+    # LUAR encoder (rrivera1849/LUAR-MUD, Apache-2.0) loads through
+    # `transformers` directly with trust_remote_code=True (~0.5 GB);
+    # the optional Wegmann cross-check (AnnaWegmann/Style-Embedding,
+    # ~0.4 GB) loads through sentence-transformers. transformers
+    # itself lives on the surprisal tier; this note exists so the
+    # style-embedding consumer is discoverable and the extra
+    # weight-download footprint is surfaced before a run.
+    PythonDep(
+        name="transformers (style-embedding)",
+        import_name="transformers",
+        pip_name="transformers",
+        summary=(
+            "Loads the frozen style encoder for voice_fingerprint.py "
+            "(Surface authorship_embedding). Default LUAR "
+            "(rrivera1849/LUAR-MUD, Apache-2.0) loads via transformers "
+            "with trust_remote_code=True; a DISTINCT ~0.5-1.4 GB "
+            "model download from the Tier-4 surprisal scorers. The "
+            "--model wegmann cross-check additionally needs "
+            "sentence-transformers."
+        ),
+        optional_in_tier=True,
+    ),
 ]
 
 

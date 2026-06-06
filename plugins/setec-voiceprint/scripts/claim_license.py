@@ -59,6 +59,10 @@ TASK_SURFACE_LABELS = {
         "30-core-feature anchor)"
     ),
     "document_layout": "document structure / layout profile (non-voice)",
+    "authorship_embedding": (
+        "style-embedding voice fingerprint (LUAR / Wegmann learned "
+        "style manifold; cosine-similarity distribution, no verdict)"
+    ),
 }
 
 
