@@ -76,3 +76,17 @@ def test_readiness_subcheck_is_tolerant():
     has_gen = importlib.util.find_spec("gen_calibration_readiness") is not None
     if not has_gen:
         assert status == "skipped"
+
+
+def test_json_output_is_pure_json(capsys):
+    """[P2 regression] --json must emit ONLY a JSON object. The readiness
+    sub-check compares the rendered region directly instead of calling the
+    generator's --check (which prints a human status line), so no stray text
+    leaks onto stdout even once the generator is present."""
+    import json
+
+    rc = cdf.main(["--json"])
+    out = capsys.readouterr().out
+    parsed = json.loads(out)  # must not raise
+    assert "ok" in parsed and "readiness" in parsed
+    assert rc in (0, 1)

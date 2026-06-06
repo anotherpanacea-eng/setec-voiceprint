@@ -72,7 +72,13 @@ def changelog_coverage(manifest_path: Path, changelog_path: Path) -> list[str]:
 
 
 def readiness_freshness() -> tuple[str, str]:
-    """('ok'|'stale'|'skipped', detail). Tolerant of a missing generator/doc."""
+    """('ok'|'stale'|'skipped', detail). Tolerant of a missing generator/doc.
+
+    Compares the generated region directly rather than calling
+    ``gen_calibration_readiness.main(["--check"])`` — that helper writes a
+    human status line to stdout, which would corrupt this gate's own
+    ``--json`` output once the generator is present (P2, PR #145).
+    """
     tools_dir = str(REPO_ROOT / "tools")
     if tools_dir not in sys.path:
         sys.path.insert(0, tools_dir)
@@ -82,8 +88,9 @@ def readiness_freshness() -> tuple[str, str]:
         return ("skipped", "calibration-readiness generator not present on this branch")
     if not gcr.DEFAULT_DOC.exists():
         return ("skipped", "calibration-readiness.md not present on this branch")
-    rc = gcr.main(["--check"])
-    if rc == 0:
+    doc_text = gcr.DEFAULT_DOC.read_text(encoding="utf-8")
+    rendered = gcr.replace_region(doc_text, gcr.render_block(gcr.load_manifest()))
+    if rendered == doc_text:
         return ("ok", "calibration-readiness.md is up to date")
     return ("stale", "calibration-readiness.md is stale — run gen_calibration_readiness.py")
 
