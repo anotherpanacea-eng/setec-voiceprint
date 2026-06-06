@@ -180,6 +180,8 @@ The 537-post pre-AI WordPress archive cited in calibration runs is one example o
 
 A minimum-viable personal baseline is 3-5 files at 3,000+ words each in the relevant register. More is better. The per-genre baseline READMEs at `baselines/*/README.md` document compilation strategy for each register.
 
+For a per-capability map of what each tool needs to run, what corpus you must supply yourself, and how far to trust its output before you calibrate, see [`plugins/setec-voiceprint/references/calibration-readiness.md`](plugins/setec-voiceprint/references/calibration-readiness.md) — the "build your own runway" guide for users without the maintainer's private corpora.
+
 ## Stylometric tests
 
 SETEC computes 56 stylometric measurements across 14 families. Full per-signal inventory (paths, polarity, calibration status, definitions) at `plugins/setec-voiceprint/references/signals-glossary.md`. Headline summary by tier:
