@@ -108,6 +108,7 @@ _Generated from `capabilities.yaml` (schema 0.3.0) by `tools/gen_calibration_rea
 | `validation_harness` | Empirical (provisional) | No | labeled human/AI corpus + `corpus_manifest.jsonl` (required) | stdlib; opt: sklearn, statsmodels | CPU / stdlib (+ optional spaCy model) | — |
 | `manifest_validator` | Empirical (provisional) | No | a `corpus_manifest.jsonl` to validate (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `dependency_check` | Heuristic (uncalibrated) | Yes | nothing (introspects your local environment) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | — |
+| `pan_replay` | Empirical (provisional) | No | a `corpus_manifest.jsonl` to validate (required); to restrict obfuscation classes (optional); to restrict reported signals (optional) | stdlib; opt: spacy, sklearn | CPU / stdlib (+ optional spaCy model) | — |
 
 **Readiness legend.**
 - **Heuristic (uncalibrated)** — Shipped, not yet calibrated. Treat output as candidate-surfacing, not a score.
