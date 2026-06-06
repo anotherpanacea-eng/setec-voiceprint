@@ -286,16 +286,20 @@ class TestCompressionHeuristicsTier4:
             # Backward-compat: still reports as provisional (not calibrated)
             assert spec.provisional is True
 
-    def test_directions_post_1_95_match_polarity_audit_findings(self):
-        """v1.95.0 directions encode the 2026-05-18 MAGE 5K polarity
-        audit's four flip recommendations. Pre-1.95 SPEC §4.3 had:
+    def test_directions_post_polarity_fix(self):
+        """Post compression-polarity fix (2026-06-02): the registry
+        DEFAULT directions are the SMOOTHING directions (shared with the
+        standalone surprisal band via surprisal_backend.SMOOTHED_DIRECTION):
           surprisal_mean: lt; surprisal_sd: lt; surprisal_acf_lag1: gt
-        Post-1.95 (corrected against the curated-human comparator):
-          surprisal_mean: gt; surprisal_sd: gt; surprisal_acf_lag1: lt
-        """
-        assert va.COMPRESSION_HEURISTICS["surprisal_mean"].direction == "gt"
-        assert va.COMPRESSION_HEURISTICS["surprisal_sd"].direction == "gt"
-        assert va.COMPRESSION_HEURISTICS["surprisal_acf_lag1"].direction == "lt"
+        The 2026-05-18 MAGE 5K AI-detection directions (mean gt, sd gt,
+        acf lt) now live in each spec's direction_by_comparator['mage']
+        override, applied only when comparator_class='mage'."""
+        assert va.COMPRESSION_HEURISTICS["surprisal_mean"].direction == "lt"
+        assert va.COMPRESSION_HEURISTICS["surprisal_sd"].direction == "lt"
+        assert va.COMPRESSION_HEURISTICS["surprisal_acf_lag1"].direction == "gt"
+        assert va.COMPRESSION_HEURISTICS["surprisal_mean"].direction_by_comparator["mage"] == "gt"
+        assert va.COMPRESSION_HEURISTICS["surprisal_sd"].direction_by_comparator["mage"] == "gt"
+        assert va.COMPRESSION_HEURISTICS["surprisal_acf_lag1"].direction_by_comparator["mage"] == "lt"
 
     def test_weights_match_spec_4_3(self):
         """SPEC §4.3 weights: mean=1.5, sd=2.0 (heaviest Tier 4
@@ -892,11 +896,12 @@ class TestTier4AblationFamily:
             of the bands so all three Tier 4 signals fire
         """
         # COMPRESSION_HEURISTICS thresholds (read at runtime so the
-        # test stays in sync if the registry changes). Post-1.95.0
-        # directions per the MAGE 5K polarity audit:
-        #   surprisal_mean: gt — AI tends HIGHER (was lt pre-1.95)
-        #   surprisal_sd:   gt — AI tends HIGHER (was lt pre-1.95)
-        #   surprisal_acf_lag1: lt — AI tends LOWER (was gt pre-1.95)
+        # test stays in sync if the registry changes). Post compression-
+        # polarity fix (2026-06-02) the DEFAULT directions are the
+        # smoothing directions:
+        #   surprisal_mean: lt — smoothed = LOW mean
+        #   surprisal_sd:   lt — smoothed = LOW sd
+        #   surprisal_acf_lag1: gt — smoothed = HIGH lag-1 acf
         h = va.COMPRESSION_HEURISTICS
         sm = h["surprisal_mean"].value
         ssd = h["surprisal_sd"].value
@@ -924,13 +929,13 @@ class TestTier4AblationFamily:
                 "available": True,
                 "surprisal": {
                     "available": True,
-                    # Post-1.95: mean/sd are gt, so fire by being ABOVE
-                    # threshold. acf_lag1 is lt, so fires by being
-                    # BELOW threshold.
-                    "mean": sm + 0.5,         # above threshold (fires under gt)
-                    "sd": ssd + 0.3,          # above threshold (fires under gt)
+                    # Post-fix smoothing directions: mean/sd are lt, so
+                    # fire by being BELOW threshold; acf_lag1 is gt, so
+                    # fires by being ABOVE threshold.
+                    "mean": sm - 0.5,         # below threshold (fires under lt)
+                    "sd": ssd - 0.3,          # below threshold (fires under lt)
                     "autocorrelation": {
-                        "lag_1": sacf - 0.2,  # below threshold (fires under lt)
+                        "lag_1": sacf + 0.2,  # above threshold (fires under gt)
                     },
                     "provisional": True,
                     "calibration_anchor": "user-baseline-required",

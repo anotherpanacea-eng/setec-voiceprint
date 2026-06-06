@@ -2301,6 +2301,12 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
         value=0.60, direction="lt", weight=1.5, length_floor=200,
         status="empirically_oriented",
         provenance="mage_5k_polarity_audit_2026-05-18",
+        # Polarity corpus-unstable (ROADMAP cross-corpus inversion):
+        # standard theory says smoothed = HIGH cohesion ("gt"), but the
+        # MAGE audit oriented it "lt". Rather than assert a contested
+        # direction with no comparator, this signal is GATED OUT of the
+        # unbaselined band (see ``_POLARITY_UNBASELINED_GATE``). The "lt"
+        # default still applies when a comparator_class is supplied.
     ),
     "adjacent_cosine_sd": ThresholdSpec(
         status="empirically_oriented",
@@ -2328,55 +2334,56 @@ COMPRESSION_HEURISTICS: dict[str, ThresholdSpec] = {
     # ClaimLicense block downstream surfaces
     # calibration_anchor: user-baseline-required.
     #
-    # Direction semantics (post 1.95 — corrected against the 2026-05-18
-    # MAGE 5K polarity audit, see internal/polarity_audit_results/
-    # polarity_audit.md):
-    #   surprisal_mean (gt): AI prose tends HIGHER against the MAGE
-    #     curated-human comparator. The pre-1.95 ``lt`` direction was
-    #     inherited from DivEye's framing of LM-sampled prose vs
-    #     unscreened web text; against curated humans (essays /
-    #     stories / editorial-grade non-fiction), the relationship
-    #     inverts — AI prose carries HIGHER per-token surprisal than
-    #     the human comparator. Verified on all 6 Phase B models.
-    #   surprisal_sd (gt): Same flip as mean. AI prose has HIGHER
-    #     surprisal SD against curated humans, not lower. Verified
-    #     on all 6 Phase B models.
-    #   surprisal_acf_lag1 (lt): AI prose has LOWER lag-1 ACF.
-    #     Verified on all 6 Phase B models. The pre-1.95 ``gt``
-    #     reading (smooth local predictability ↑ in AI) was likewise
-    #     literature-anchored against a different comparator class
-    #     than MAGE provides.
+    # Direction semantics (compression-polarity fix, 2026-06-02; see the
+    # bug report SETEC_compression_polarity).
+    #
+    # The DEFAULT direction is now the SMOOTHING direction, shared with
+    # surprisal_audit.py's standalone band via the canonical
+    # ``surprisal_backend.SMOOTHED_DIRECTION`` (mean lt, sd lt, acf gt):
+    # smoothed prose has LOWER surprisal mean/SD and HIGHER lag-1 ACF.
+    # This is what an UNBASELINED run (no comparator_class) must assert,
+    # and it makes this integrator AGREE with the standalone band on the
+    # same numbers. Previously the defaults were the MAGE directions,
+    # which made the integrator flag high-variance / anti-smoothed prose
+    # as "smoothed" while the standalone band correctly called it typical.
+    #
+    # The 2026-05-18 MAGE 5K polarity audit found the OPPOSITE directions
+    # discriminate AI from the *curated-human* comparator (AI prose runs
+    # HIGHER surprisal mean/SD and LOWER ACF than curated humans). That is
+    # an AI-DETECTION polarity against one comparator class, NOT the
+    # smoothing default — so it is preserved as a per-comparator override
+    # keyed "mage", applied only when a caller passes
+    # comparator_class="mage". RAID (mixed-humans) keeps "lt" for
+    # surprisal_sd, which now equals the smoothing default. Only the
+    # ROUTING changed (default vs per-comparator); the MAGE/RAID empirical
+    # findings (all 6 Phase B models) are unchanged.
     "surprisal_mean": ThresholdSpec(
         signal_path="tier4.surprisal.mean",
-        value=3.5, direction="gt", weight=1.5, length_floor=300,
+        value=3.5, direction="lt", weight=1.5, length_floor=300,
         status="empirically_oriented",
         provenance="mage_5k_polarity_audit_2026-05-18",
+        direction_by_comparator={"mage": "gt"},
     ),
     "surprisal_sd": ThresholdSpec(
         signal_path="tier4.surprisal.sd",
-        value=1.5, direction="gt", weight=2.0, length_floor=300,
+        value=1.5, direction="lt", weight=2.0, length_floor=300,
         status="empirically_oriented",
         provenance="mage_5k_polarity_audit_2026-05-18",
-        # 1.98.0: RAID-style mixed-humans direction override. The
-        # 2026-05-18 RAID 5K bake-off ran polarity_audit on
-        # raid_5k_slice_analysis.csv under the post-MAGE registry
-        # directions (this PR's defaults) and returned 4
-        # ``globally_inverted`` verdicts -- all 4 are surprisal_sd
-        # rows. The fix for RAID is to flip surprisal_sd back to
-        # the pre-1.95 ``lt`` direction (it's "compressed when
-        # surprisal_sd is LOW" on mixed-humans, "compressed when
-        # surprisal_sd is HIGH" on curated-humans). The remaining
-        # RAID rows are ``comparator_dependent`` at the (judge ×
-        # generator) level -- finer than ``comparator_class`` --
-        # and deferred to a follow-up per-(signal × judge ×
-        # generator) routing extension.
-        direction_by_comparator={"raid": "lt"},
+        # Smoothing default "lt" (smoothed = LOW SD) == surprisal_audit's
+        # band and SMOOTHED_DIRECTION. MAGE curated-human AI-detection
+        # direction ("gt": AI > human SD) and RAID mixed-humans ("lt",
+        # == the new default) preserved as per-comparator overrides.
+        direction_by_comparator={"mage": "gt", "raid": "lt"},
     ),
     "surprisal_acf_lag1": ThresholdSpec(
         signal_path="tier4.surprisal.autocorrelation.lag_1",
-        value=0.30, direction="lt", weight=1.0, length_floor=500,
+        value=0.30, direction="gt", weight=1.0, length_floor=500,
         status="empirically_oriented",
         provenance="mage_5k_polarity_audit_2026-05-18",
+        # Smoothing default "gt" (smoothed = HIGH lag-1 ACF) ==
+        # surprisal_audit's smoothed_above and SMOOTHED_DIRECTION. MAGE
+        # AI-detection direction ("lt": AI < human ACF) as override.
+        direction_by_comparator={"mage": "lt"},
     ),
     # AIC-7 named-pattern density (v1.65.0). Per
     # `internal/SPEC_aic_8_9_implementation.md` Step 10 part 2.
@@ -2560,6 +2567,15 @@ POS_BIGRAM_KL_HEURISTIC: ThresholdSpec = ThresholdSpec(
 )
 
 
+# Signals whose smoothed-direction polarity is corpus-dependent (ROADMAP
+# cross-corpus inversion). With no ``comparator_class`` to pin the
+# direction, asserting either way is unjustified, so they are excluded from
+# the UNBASELINED band rather than flagged. When a comparator_class IS
+# supplied, normal per-comparator direction resolution applies and they
+# participate again. See the SETEC_compression_polarity bug report.
+_POLARITY_UNBASELINED_GATE: frozenset[str] = frozenset({"adjacent_cosine_mean"})
+
+
 def classify_compression(
     audit: dict[str, Any],
     *,
@@ -2608,6 +2624,14 @@ def classify_compression(
         if signal not in COMPRESSION_HEURISTICS:
             return
         spec = COMPRESSION_HEURISTICS[signal]
+        # Polarity gate: a signal whose direction is corpus-unstable is
+        # excluded from the band when no comparator_class is supplied
+        # (unbaselined run) — asserting a contested direction would
+        # re-introduce the polarity-inversion bug. With a comparator_class
+        # set, it participates via normal per-comparator resolution.
+        if comparator_class is None and signal in _POLARITY_UNBASELINED_GATE:
+            skipped.append(f"{signal} (polarity corpus-dependent; gated from unbaselined band)")
+            return
         # 1.100.0+: resolve direction through the full per-
         # (comparator × judge × generator) routing helper. The
         # fallback chain (most-specific to least-specific):

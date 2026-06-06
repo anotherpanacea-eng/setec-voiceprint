@@ -153,6 +153,28 @@ DEPRECATED_ALIASES: dict[str, str] = {
 DEFAULT_MODEL: str = "tinyllama"
 
 
+# Canonical smoothing-direction for the Tier-4 surprisal signals — the
+# single source of truth shared (by agreement, enforced in tests) between
+# surprisal_audit.py's standalone band and variance_audit.py's compression
+# integrator default. "Smoothed" prose (RLHF mode collapse / flattening)
+# has LOWER per-token surprisal mean, LOWER surprisal SD, and HIGHER lag-1
+# autocorrelation (longer runs of uniform predictability). So the direction
+# in which a value indicates smoothing is:
+#   surprisal_mean      smoothed when LOW   -> "lt"
+#   surprisal_sd        smoothed when LOW   -> "lt"
+#   surprisal_acf_lag1  smoothed when HIGH  -> "gt"
+# These match surprisal_audit.PROVISIONAL_BAND_THRESHOLDS (mean/sd
+# ``flat_below``; acf ``smoothed_above``). Comparator-specific AI-detection
+# polarities (e.g. the MAGE curated-human audit, where AI prose runs HIGHER
+# surprisal SD than the human comparator) are NOT this — they belong in a
+# ThresholdSpec.direction_by_comparator override, not the smoothing default.
+SMOOTHED_DIRECTION: dict[str, str] = {
+    "surprisal_mean": "lt",
+    "surprisal_sd": "lt",
+    "surprisal_acf_lag1": "gt",
+}
+
+
 class SurprisalBackendError(RuntimeError):
     """Raised when the surprisal backend cannot be loaded or used.
 
