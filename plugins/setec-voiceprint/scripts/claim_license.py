@@ -79,6 +79,10 @@ TASK_SURFACE_LABELS = {
         "cloud under a named model (discrimination evidence, "
         "uncalibrated, non-verdict)"
     ),
+    "rewriting_invariance": (
+        "rewriting-invariance distance under a named judge model + prompt "
+        "(discrimination evidence, uncalibrated, non-verdict)"
+    ),
 }
 
 
