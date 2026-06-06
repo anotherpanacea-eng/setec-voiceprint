@@ -73,10 +73,11 @@ def test_aliases_resolve_to_full_huggingface_ids():
 
 
 def test_alias_table_size():
-    """Nine core candidates as documented in the 2026-05-15 spec
-    revision; if this number changes, the spec's §4.1 candidate
-    table and this test should change together."""
-    assert len(sb.MODEL_ALIASES) == 9
+    """Ten core candidates: the nine from the 2026-05-15 spec revision
+    plus gpt2_medium, added in the Phase-B frontier scan. If this number
+    changes, the spec's §4.1 candidate table and this test should change
+    together."""
+    assert len(sb.MODEL_ALIASES) == 10
 
 
 def test_phi3_mini_removed_from_alias_table():

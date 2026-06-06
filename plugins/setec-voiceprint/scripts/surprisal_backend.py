@@ -107,6 +107,7 @@ from typing import Any
 # it is an optional comparator per spec §4.1, not a core-set member).
 MODEL_ALIASES: dict[str, str] = {
     "gpt2": "openai-community/gpt2",
+    "gpt2_medium": "openai-community/gpt2-medium",
     "llama32_1b": "meta-llama/Llama-3.2-1B",
     "llama32_3b": "meta-llama/Llama-3.2-3B",
     "olmo2_1b": "allenai/OLMo-2-0425-1B",

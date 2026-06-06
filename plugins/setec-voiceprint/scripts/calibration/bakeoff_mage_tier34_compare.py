@@ -30,7 +30,13 @@ from typing import Any
 PHASE_A_MODELS = ["mxbai", "gemma", "harrier", "minilm"]
 PHASE_A_SIGNALS = ["adjacent_cosine_mean", "adjacent_cosine_sd"]
 
-PHASE_B_MODELS = ["gpt2", "tinyllama", "llama32_1b"]
+PHASE_B_MODELS = [
+    "gpt2", "tinyllama", "llama32_1b",
+    # 2026-05-31 additions: within-family parameter scan (gpt2->gpt2_medium same
+    # tokenizer; llama32_1b->llama32_3b same family) + a modern long-context probe
+    # (qwen25_1_5b, 32K ctx) to measure what the gpt2/tinyllama context ceiling costs.
+    "gpt2_medium", "qwen25_1_5b", "llama32_3b",
+]
 PHASE_B_SIGNALS = [
     "surprisal_mean", "surprisal_sd", "surprisal_acf_lag1",
 ]
