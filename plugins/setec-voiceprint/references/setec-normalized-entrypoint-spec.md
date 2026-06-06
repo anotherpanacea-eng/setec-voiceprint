@@ -17,7 +17,7 @@ The consumer note references APODICTIC-side modules (`setec_runner.run_supplemen
 | Concern | SETEC location | State |
 |---|---|---|
 | Capabilities manifest | `plugins/setec-voiceprint/capabilities.yaml` (schema **v0.3.0**) + `capabilities.py` (`list` / `show`, `--handoff`, `--consumer`) | Exists. Has `id, script_path, surface, family, status, handoff, consumers, compute{tier}, dependencies, outputs{schema_version, artifacts}` per entry. |
-| Envelope builder | `output_schema.py` → `build_output()` (`SCHEMA_VERSION = "1.0"`) | Exists. 13 top-level keys (see §5). |
+| Envelope builder | `output_schema.py` → `build_output()` (`SCHEMA_VERSION = "1.0"`) | Exists. 12 fixed top-level keys + optional merged extras (see §5). |
 | Surface registry | `calibration/task_surfaces.py` (`TASK_REGISTRY`, `get_task`) + `shard_runner.py` (`--task`) | Exists for the *sharded* calibration surfaces; the consumer surfaces are per-script CLIs. |
 | Per-script CLIs | `variance_audit.py`, `voice_distance.py`, …, `narrative_decision_audit.py` | Each has its own argparse + `--json` (stdout) or `--json-out` (file). |
 | Version SOT | `.claude-plugin/plugin.json` (semver; `feat:`→MINOR, `fix/chore/docs:`→PATCH) | Current ≈ **1.109.x**. |
@@ -90,8 +90,8 @@ The consumer envelope and the private voice-cloning artifact are **two different
 
 ## 5. R4 — Version & compatibility semantics
 
-- `schema_version` (currently `"1.0"`, from `output_schema.SCHEMA_VERSION`) **is the contract**. Additive-only within the major; any breaking change to the 13-key envelope bumps it to `2.0` and is announced via the R1 manifest, never discovered by a consumer crash. (The CHANGELOG already commits to "Major version is reserved for breaking changes to the public CLI / JSON contract.")
-- The 13 envelope keys (`build_output()`): `schema_version, task_surface, tool, version, available, target, baseline, results, claim_license, claim_license_rendered, warnings, ai_status` (+ merged extras). `test_output_schema.py::REQUIRED_TOP_LEVEL_KEYS` is the pin.
+- `schema_version` (currently `"1.0"`, from `output_schema.SCHEMA_VERSION`) **is the contract**. Additive-only within the major; any breaking change to the 12-key envelope bumps it to `2.0` and is announced via the R1 manifest, never discovered by a consumer crash. (The CHANGELOG already commits to "Major version is reserved for breaking changes to the public CLI / JSON contract.")
+- The 12 fixed envelope keys (`build_output()`): `schema_version, task_surface, tool, version, available, target, baseline, results, claim_license, claim_license_rendered, warnings, ai_status` (plus any optional merged `extra` keys). `test_output_schema.py::REQUIRED_TOP_LEVEL_KEYS` is the pin.
 - `setec_version` (plugin.json) is independent of `schema_version`; per-surface `min_setec_version` (R1) gates feature availability. A surface below floor → R3 `version_floor`.
 - **Output-validity gate (from the posture note):** computational surfaces self-validate raw outputs against cheap bounds (surprisal ≤ log │vocab│; cosine ∈ [−1,1]; finite vectors) and emit R3 `internal_error` rather than an out-of-bounds number. Add bounds checks at the `build_output()` boundary so an invalid computation can never enter the envelope.
 
