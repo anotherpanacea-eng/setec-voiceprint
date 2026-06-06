@@ -74,6 +74,11 @@ TASK_SURFACE_LABELS = {
         "productive-roughness deviation vs the writer's own baseline "
         "(descriptive, strictly baseline-relative, non-verdict)"
     ),
+    "intrinsic_dimension": (
+        "intrinsic (PHD) dimension of the text's contextual-embedding "
+        "cloud under a named model (discrimination evidence, "
+        "uncalibrated, non-verdict)"
+    ),
 }
 
 

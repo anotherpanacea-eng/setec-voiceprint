@@ -65,6 +65,7 @@ VALID_TASK_SURFACES = frozenset({
     "authorship_embedding",
     "narratorial_distance",
     "productive_roughness",
+    "intrinsic_dimension",
 })
 
 
