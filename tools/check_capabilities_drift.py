@@ -239,7 +239,11 @@ def check_drift(
 
     # Check 1: orphan scripts (TASK_SURFACE-bearing source not in manifest)
     for path, surface in source_surfaces.items():
-        rel = str(path.relative_to(REPO_ROOT))
+        # .as_posix() (not str()) so the comparison key matches the manifest's
+        # forward-slash script_path values on Windows too; str(Path) yields
+        # backslashes there and would flag every script as an orphan. No-op on
+        # POSIX. (Same cross-platform path fix as build_baseline_metadata.)
+        rel = path.relative_to(REPO_ROOT).as_posix()
         if rel not in by_script_path:
             report.violations.append(Violation(
                 kind="orphan_script",

@@ -4,6 +4,12 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+**fix: normalize paths to POSIX form across platforms (two pre-existing Windows bugs).** Both were latent cross-platform bugs on `main`, not introduced by feature work; `str(Path)` yields backslashes on Windows where forward-slash is expected.
+- **`output_schema.build_baseline_metadata`** stringified `files_loaded` / `files_skipped` with `str(Path)`, making `test_output_schema.py::TestBaselineMetadata::test_paths_stringify` fail on Windows. Now `.as_posix()` — envelope paths are deterministic across platforms (no-op on POSIX, where CI-generated envelopes are unchanged; `\abs\x` → `/abs/x` on Windows).
+- **`tools/check_capabilities_drift.py` Check-1** compared `str(path.relative_to(REPO_ROOT))` against the manifest's forward-slash `script_path` keys, so on a Windows checkout every script was flagged as an `orphan_script` and the drift gate failed on a clean tree. Now `.as_posix()`. (This is the same one-line fix carried redundantly by PRs #156–159 / #161 / #162; consolidating it here means once this lands on `main` those duplicates dedupe to no-ops on rebase/merge.)
+
+_Tagged `fix` (→ PATCH). The `plugin.json` version bump is applied at merge, not pinned here — open PRs merge in an unknown order._
+
 **`explain.py` — plain-language explainer for an audit envelope (QoL).** Implements `specs/16-explain-mode.md`. A renderer *tool* (no `task_surface`, no manifest entry) that takes any SETEC `build_output` envelope (file or `-` for stdin) and prints a jargon-free summary: what the audit is, what it found (or why it couldn't), what you may conclude, what you may **not** conclude, and a suggested next step. Every line traces to an envelope field (chiefly its `claim_license` block) — it invents nothing and asserts no verdict; the next-step suggestion comes from a small surface-keyed rule table (unknown surfaces → a generic evidence-not-verdict line, so it's robust to surfaces added by in-flight PRs). Stdlib only. 8 tests in `test_explain.py`.
 
 _Tagged `feat` (→ MINOR). The `plugin.json` version bump is applied at merge, not pinned here — open PRs merge in an unknown order._
