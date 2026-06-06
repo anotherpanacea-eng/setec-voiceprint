@@ -2593,3 +2593,47 @@ entries:
         cmd: "python3 plugins/setec-voiceprint/scripts/formulaicity_audit.py target.md --phrases-file my.txt"
     references:
       - plugins/setec-voiceprint/specs/09-formulaicity-audit.md
+  - id: narratorial_distance_audit
+    script_path: plugins/setec-voiceprint/scripts/narratorial_distance_audit.py
+    surface: narratorial_distance
+    status: heuristic
+    handoff: experimental
+    consumers: []
+    family: voice-coherence
+    purpose: >
+      Descriptive narratorial-distance / free-indirect-discourse (FID) profile
+      for developmental editing of literary fiction: per-window pronoun
+      anchoring, perception/cognition-verb density, deictic anchoring (proximal
+      vs. distal), evaluative-adjective density, a heuristic FID score, an
+      overall close/distant distribution, and a distance trajectory across
+      document position. Adjacent to pov_voice_profile but NOT a voice-identity,
+      authorship, AI, or quality instrument — measurements only (no band, no
+      verdict); FID detection is heuristic, not a parse of literary intent.
+    use_when:
+      - You want to see where narration sits close to vs. distant from a character's consciousness, and how that moves across the text
+      - You're developmentally editing literary fiction and want an FID / narratorial-distance trajectory
+      - Target is long-form fiction >= 1500 words
+    do_not_use_when:
+      - You want any authorship, AI-provenance, or writing-quality inference (this surface refuses it)
+      - You want a literary-quality judgment (close and distant narration are both valid choices)
+      - Target is under 1500 words (the length floor)
+    inputs:
+      target: prose/markdown text file (UTF-8)
+      optional:
+        - --verb-lexicon to override the perception/cognition verb set
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: spacy
+      cost_note: spaCy en_core_web_sm POS/dep + lemma; CPU, no API costs.
+      length_floor_words: 1500
+    registers:
+      - all_fiction
+    dependencies:
+      python:
+        - spacy
+    examples: []
+    references: []
+    _seeded_at: "2026-06-06"

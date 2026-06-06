@@ -98,6 +98,7 @@ _Generated from `capabilities.yaml` (schema 0.3.0) by `tools/gen_calibration_rea
 | `document_layout_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `fast_detect_curvature` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `formulaicity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
+| `narratorial_distance_audit` | Heuristic (uncalibrated) | Yes | to override the perception/cognition verb set (optional) | req: spacy | CPU + spaCy model | 1500 |
 | `reference_ecology_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional); register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
 

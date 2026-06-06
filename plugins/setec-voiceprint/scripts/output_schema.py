@@ -63,6 +63,7 @@ VALID_TASK_SURFACES = frozenset({
     "narrative_decision_audit",
     "document_layout",
     "authorship_embedding",
+    "narratorial_distance",
 })
 
 
