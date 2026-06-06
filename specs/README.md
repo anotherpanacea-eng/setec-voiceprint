@@ -24,6 +24,13 @@ truth for each contract.
 | [`07-document-layout-audit.md`](07-document-layout-audit.md) | **Built** (this round). Non-voice document structure / layout profile on a new `document_layout` surface — descriptive only, refuses voice/AI inference. |
 | [`08-reference-ecology-audit.md`](08-reference-ecology-audit.md) | **Built** (this round). Non-voice reference-ecology profile (citation/quote/attribution/link-domain breadth) on a new `reference_ecology` surface — descriptive, refuses voice/AI, flags topic-leakage. (07 = document-layout, in PR #148.) |
 | [`09-formulaicity-audit.md`](09-formulaicity-audit.md) | **Built** (this round). Non-voice phraseological-texture profile (stock-phrase density) on a new `formulaicity` surface — descriptive, explicitly NOT an AI signal or quality judgment. (07 = doc-layout #148, 08 = reference-ecology #149.) |
+| [`10-productive-roughness-audit.md`](10-productive-roughness-audit.md) | **Spec.** Strictly baseline-relative roughness profile (fragments, sentence-initial conjunctions, contractions). spaCy; box build. |
+| [`11-dialogue-voice-audit.md`](11-dialogue-voice-audit.md) | **Spec.** Per-character dialogue-voice profiling + cross-character divergence. spaCy; `voice_coherence`. |
+| [`12-narratorial-distance-audit.md`](12-narratorial-distance-audit.md) | **Spec.** Narratorial-distance / free-indirect-discourse profile + trajectory. spaCy. |
+| [`13-editlens-edit-magnitude.md`](13-editlens-edit-magnitude.md) | **Spec (research).** Clean-room edit-magnitude regressor; same-corpus calibrated estimate, never absolute "% AI." torch + corpus. |
+| [`14-intrinsic-dimension-phd.md`](14-intrinsic-dimension-phd.md) | **Spec (research).** PHD intrinsic-dimension discrimination signal — orthogonal topological axis. embeddings + TDA. |
+| [`15-raidar-rewriting-invariance.md`](15-raidar-rewriting-invariance.md) | **Spec (research).** Rewriting-invariance discrimination signal; reuses the LLM-judge plumbing. |
+| [`16-explain-mode.md`](16-explain-mode.md) | **Spec (stdlib, buildable in-sandbox).** Plain-language renderer over a single envelope; invents nothing. |
 | `_TEMPLATE.md` | Copy this to start a new spec. |
 
 Research-grade specs (EditLens-style edit-magnitude regressor, intrinsic-dimension/
