@@ -27,6 +27,19 @@ Proof of correctness a reviewer can read against the diff:
   TestNameRegression / TestNameReviewerReproduction
 -->
 
+## Docs freshness
+
+<!--
+If this PR adds or changes a capability, confirm the paper trail moved with it
+(see AGENTS.md → "Keeping docs current"). Delete this section for non-capability PRs.
+-->
+
+- [ ] `capabilities.yaml` entry added/updated (drift linter clean)
+- [ ] `CHANGELOG.md` line referencing the capability
+- [ ] `tools/gen_calibration_readiness.py` re-run + committed (matrix fresh)
+- [ ] `ROADMAP.md` status-reconciliation updated if shipped/left changed
+- [ ] `tools/check_docs_freshness.py` passes
+
 <!--
 See AGENTS.md for the full workflow and conventions.
 -->
