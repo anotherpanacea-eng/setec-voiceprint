@@ -1511,6 +1511,62 @@ entries:
       - plugins/setec-voiceprint/references/storyscope-prompts/
       - plugins/setec-voiceprint/references/apodictic-handoff-storyscope.md
 
+  - id: pan_replay
+    script_path: plugins/setec-voiceprint/scripts/calibration/pan_replay.py
+    surface: validation
+    status: empirically_oriented
+    handoff: internal
+    consumers: []
+    family: pan-obfuscation-replay
+    purpose: >
+      Replay SETEC's existing signals over PAN@CLEF obfuscation
+      fixtures (unicode / paraphrase / lang_switch / short) and emit a
+      per-(signal × obfuscation-class) robustness card: relative
+      change plus a stable / degraded / collapsed tag per cell. Reuses
+      the validation harness's audit_text + classify_compression
+      scoring and adversarial_robustness_card's output shape. Not a
+      detector; emits no aggregate robustness or accuracy score.
+    use_when:
+      - You have (clean, obfuscated) PAN fixture pairs and want to know which signals survive which obfuscation class
+      - You're prioritizing which SETEC signals need hardening against tokenizer / paraphrase / code-switch / short-text attacks
+      - You want an honesty-claim artifact ("signal S degrades by Δ under class C") rather than a robustness leaderboard
+    do_not_use_when:
+      - You want a single robustness or accuracy number — this surface refuses any aggregate score
+      - You want a provenance verdict for a document — it is not a detector
+      - You have not brought fixture pairs yet (real PAN data arrives via a PAN-account-gated, local-only fetcher)
+    inputs:
+      target: fixture directory containing a pairs.jsonl manifest of (clean, obfuscated) text pairs
+      optional:
+        - --classes to restrict obfuscation classes
+        - --signals to restrict reported signals
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - .pan_replay.json
+        - .pan_replay.md
+    compute:
+      tier: core
+      cost_note: stdlib + Tier 1-3 variance signals; CPU only, no model loads, no API costs
+      length_floor_words: null
+    registers:
+      - all_fiction
+      - all_nonfiction
+    dependencies:
+      # Orchestration over existing components; reuses the harness's
+      # optional deps (spaCy / sklearn for Tier 2-3) with the same
+      # graceful degradation. Nothing new is required.
+      python: []
+      python_optional:
+        - spacy
+        - sklearn
+    examples:
+      - description: Replay all classes present in a fixture dir
+        cmd: "python3 plugins/setec-voiceprint/scripts/calibration/pan_replay.py --fixtures fixtures/ --json"
+      - description: Restrict to the unicode and short classes
+        cmd: "python3 plugins/setec-voiceprint/scripts/calibration/pan_replay.py --fixtures fixtures/ --classes unicode,short"
+    references:
+      - plugins/setec-voiceprint/references/signals-glossary.md
+
   - id: paragraph_audit
     script_path: plugins/setec-voiceprint/scripts/paragraph_audit.py
     surface: smoothing_diagnosis
