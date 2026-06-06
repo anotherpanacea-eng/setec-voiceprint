@@ -4,6 +4,10 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+**`explain.py` — plain-language explainer for an audit envelope (QoL).** Implements `specs/16-explain-mode.md`. A renderer *tool* (no `task_surface`, no manifest entry) that takes any SETEC `build_output` envelope (file or `-` for stdin) and prints a jargon-free summary: what the audit is, what it found (or why it couldn't), what you may conclude, what you may **not** conclude, and a suggested next step. Every line traces to an envelope field (chiefly its `claim_license` block) — it invents nothing and asserts no verdict; the next-step suggestion comes from a small surface-keyed rule table (unknown surfaces → a generic evidence-not-verdict line, so it's robust to surfaces added by in-flight PRs). Stdlib only. 8 tests in `test_explain.py`.
+
+_Tagged `feat` (→ MINOR). The `plugin.json` version bump is applied at merge, not pinned here — open PRs merge in an unknown order._
+
 **`evidence_pack.py` — one-command evidence-pack bundler (QoL).** A reporting *tool* (not an audit — no `task_surface`, no manifest entry) that reads any number of SETEC `build_output` JSON envelopes and renders one combined evidence pack, Markdown (default) or a self-contained HTML page, grouped by target document. Each audit contributes its key results + its claim-license `Reports` / `Does NOT report` lines; warnings are aggregated. It computes nothing and asserts no verdict — bundling does not combine audits into a single score (SETEC refuses that by design). Malformed / non-SETEC JSON is skipped with a warning, not a crash. Stdlib only; includes a small controlled Markdown→HTML converter. 12 tests in `test_evidence_pack.py`.
 
 _Tagged `feat` (→ MINOR). The `plugin.json` version bump is applied at merge, not pinned here — open PRs merge in an unknown order._
