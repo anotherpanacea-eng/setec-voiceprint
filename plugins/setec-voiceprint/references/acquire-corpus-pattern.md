@@ -326,6 +326,8 @@ If you're using an LLM (Claude, GPT-4, etc.) to help you adapt the pattern to a 
 
 - **A custom CMS via API.** GET a paginated index, then GET each post by id. Use the `Fetcher` abstraction. Same as `acquire_blog.py` but the source-type detection branch is a new one.
 
+- **EPUB ebooks (shipped: `acquire_epub.py`).** Directory of `.epub` files. Discovery: read each book's OPF (`META-INF/container.xml` → package doc), yield one item per reading-order spine chapter. Extract: unzip the chapter XHTML, run through `acquisition_core.html_to_text`. Per-book author → persona; `era` from `dc:date`. MOBI/AZW are reported and skipped.
+
 ## See also
 
 - `scripts/acquire_corpus_template.py` — the scaffold script with `TODO(LLM)` markers.
@@ -333,5 +335,6 @@ If you're using an LLM (Claude, GPT-4, etc.) to help you adapt the pattern to a 
 - `scripts/acquire_blog.py` — the most general live-network acquisition example. Reads as a worked instance of this pattern.
 - `scripts/acquire_blogger_takeout.py` — the simplest local-source acquisition example.
 - `scripts/acquire_magazine.py` — a worked example of multiple per-source modules behind a uniform CLI.
+- `scripts/acquire_epub.py` — local-source EPUB ebooks; chapter-level discovery, multi-author pools (per-book persona), per-book `era` from OPF `dc:date`.
 - `references/manifest-schema.md` — the manifest contract the emitted entries have to satisfy.
 - `internal/2026-05-08-impostor-corpus-spec.md` — the spec the existing scripts were built from.
