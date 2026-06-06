@@ -2,9 +2,33 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-06-06)
+
+A full pass over the 1.42 → 1.109 CHANGELOG and the shipped script catalog, reconciling this document against the code. **Where the inline status markers further down conflict with this section, this section is authoritative** — many of them predate the work below. The plugin is at **1.109.x**; the framework has shipped well past the point most of this document describes.
+
+### Shipped since this roadmap was last current
+
+- **The entire paired-release spine (Releases 1–11) shipped** — every Tier-1/2/3 surface *and* every Tier-1/2/3 trustworthiness guardrail. On disk: `paragraph_audit`, `discourse_move_signature`, `agency_abstraction_audit`, `punctuation_cadence_audit`, `stance_modality_audit`, `function_word_grammar_audit`, `construction_signature_audit`, `phraseological_signature_audit`, `mimicry_cosplay_audit`; and `register_classifier`, `confounder_audit`, `surface_disagreement_resolver`, `evidentiary_conditions_gate`, `adversarial_robustness_card`, `controls_audit`, `calibration_drift_monitor`, `fairness_dialect_guardrails`, `semantic_preservation_check`, `known_editor_profile`, `draft_history_analysis`, plus source-of-smoothing localization and the revision-risk model inside `restoration_packet`.
+- **Release 12 (Semantic Trajectory Audit) is shipped as code** — `semantic_trajectory_audit.py` (~1,110 lines: SBERT windowing, trajectory/drift/autocorrelation/flatness stats, baseline-comparison mode, `--dtype/--device`, full test file). Its banding ships PROVISIONAL; **calibration is the only remaining R12 work** (see "What's left").
+- **Post-R12 items A, B, C all shipped.** (A) README "Why no verdict" section is live. (B) The Costa-derived authorship-state taxonomy shipped end-to-end — spec (`internal/SPEC_authorship_states.md`), `manifest_validator` `authorship_state` field, and B.3 per-state claim-license routing across all 10 `claim_license`-using scripts (waves 1–4). (C) The DivEye surprisal signal shipped — `surprisal_audit.py`, `surprisal_backend.py`, Tier-4 wiring in `variance_audit`, a dedicated `surprisal` dependency tier, and calibration-pipeline integration.
+- **The Phase 7+ "horizon" cross-perplexity surface shipped as Surface 5** — `binoculars_audit.py` + `binoculars_calibrate.py`, uncalibrated by default.
+- **A sixth surface that postdates this doc: narrative decision audit** — `narrative_decision_audit.py` + `narrative_judge.py` + `narrative_feature_schema.py` (Surface 6), plus `aesthetic_authority_audit.py` (AIC-8 prestige-metaphor + AIC-9 kicker composite).
+- **Calibration corpus fetchers shipped** — RAID, MAGE, Pangram EditLens, and Brysbaert concreteness norms, each with a `*_to_manifest.py` adapter; sharded calibration toolchain; per-comparator-class + per-(judge × generator) routing.
+- **A discoverability layer that postdates this doc** — `capabilities.py` manifest + query CLI + drift linter + the APODICTIC handoff contract (v0.3, in `Unreleased`).
+
+### What's left
+
+1. **R12 calibration — actionable now (not on Mac).** The trajectory *tool* is done; its PROVISIONAL bands need the §6.4 fixture suite run against a real baseline to anchor thresholds. This needs the SBERT/GPU calibration host — the "not on Mac" constraint.
+2. **Fiction impostor pool** (next concrete acquisition target — the EPUB-extraction tooling does not yet exist) → **fiction calibration spine** (six research-grade deliverables, gated on the pool).
+3. **AIC-8/9 calibration corpus** — detectors shipped; thresholds still `provisional`. Plus the standing 6-month AIC-8 embedding-model re-evaluation tickler.
+4. **Post-1.101 cascade, operator-blocked only** — E.1 per-GPU parallelism (justify-blocked), F.1 populate the 13 RAID `comparator_dependent` cells (data-blocked), F.3 + G.1–G.3 operator data work. All framework-side infrastructure (D, E.2, E.3, F.2) shipped.
+5. **Tier-4 / Release-13+ research items (both tracks converge here)** — Counterfactual editing sandbox, House-style vs. author-voice decomposition, Multi-author/multi-source segmentation, Transformation-profile learning. Interactive report UI remains indefinitely deferred.
+6. **Open architectural / calibration-against-labeled-corpus questions** — see the final section (configurable `COMPRESSION_HEURISTICS`, threshold calibration for the 0.7 directional-cluster and the 0.15/0.40 band fractions, the POS-bigram KL smoothing constant, the missing dosage signal).
+7. **2.0 horizon** — the Compression-of-Choice / Stylistic Choice Entropy refactor. Architectural, not a 1.x deliverable.
+
 ## Current state
 
-The framework ships a three-layer architecture (Layer A distributional diagnostics, Layer B AIC pattern flags, Layer C source triage), five task surfaces (smoothing diagnosis, voice coherence, validation + calibration, craft restoration, and Surface 5 discrimination evidence shipped uncalibrated by default — Binoculars two-model perplexity + the SETEC external-mirror methodology), a script catalog spanning all five surfaces (full per-script catalog at `plugins/setec-voiceprint/scripts/README.md`), and a reference-documentation tree under `plugins/setec-voiceprint/references/` (signals glossary + per-layer math + per-corpus calibration findings + craft-pattern references).
+The framework ships a three-layer architecture (Layer A distributional diagnostics, Layer B AIC pattern flags, Layer C source triage), six task surfaces (smoothing diagnosis, voice coherence, validation + calibration, craft restoration, Surface 5 discrimination evidence shipped uncalibrated by default — Binoculars two-model perplexity + the SETEC external-mirror methodology + Tier-4 surprisal — and Surface 6 narrative decision audit), a full interpretation/trustworthiness layer (confounder audit, register conditioning, evidentiary-conditions gate, surface-disagreement resolver, negative/positive controls, ablation, calibration-drift monitor, fairness guardrails) plus a capabilities discoverability layer, a script catalog spanning all surfaces (full per-script catalog at `plugins/setec-voiceprint/scripts/README.md`), and a reference-documentation tree under `plugins/setec-voiceprint/references/` (signals glossary + per-layer math + per-corpus calibration findings + craft-pattern references).
 
 What is shipped:
 
@@ -28,17 +52,17 @@ The substantive design moves the roadmap is organized around:
 
 1. **Manifest as law, not convenience.** Every tool reads from `corpus_manifest.jsonl`; no serious run uses loose directories. The manifest gets validation: missing files, bad labels, AI-contaminated baseline entries, register mismatches, privacy violations. Status: `manifest_validator.py` shipped; wiring into manifest-consuming scripts is the next step.
 
-2. **Length-matched bootstrap.** Instead of comparing a 300-word target to 8,000-word baseline files, sample hundreds of 300-word windows from the baseline and report where the target falls. Empirical percentiles replace noisy z-scores. Status: scoped, not yet built. Pairs with the sliding-window mode shipped in `variance_audit.py`.
+2. **Length-matched bootstrap.** Instead of comparing a 300-word target to 8,000-word baseline files, sample hundreds of 300-word windows from the baseline and report where the target falls. Empirical percentiles replace noisy z-scores. Status: **shipped** — `length_bootstrap.py` plus `--bootstrap` on `variance_audit.py` and `voice_distance.py` (see Phase 1 step 3 for detail). Per-family Burrows Delta bootstrap is the heavier follow-up.
 
-3. **Validation harness.** Labeled test set with known-human, known-AI, AI-edited, mixed, paraphrased, and human-revised-after-AI samples. Per-register thresholds with FPR/FNR/ROC/PR and confidence intervals. Status: MVP shipped for the smoothing-diagnosis surface; voice-coherence, adversarial-class expansion, and richer corpus fixtures remain roadmap.
+3. **Validation harness.** Labeled test set with known-human, known-AI, AI-edited, mixed, paraphrased, and human-revised-after-AI samples. Per-register thresholds with FPR/FNR/ROC/PR and confidence intervals. Status: **shipped** for smoothing-diagnosis (`validation_harness.py`) and voice-coherence (`voice_validation_harness.py`), with adversarial-class fixtures and per-signal robustness cards (`adversarial_robustness_card.py`). What remains is calibration breadth — more signals × more corpora.
 
 4. **Impostor baselines.** Compare the target writer against plausible other writers in matched registers. Without these, the voiceprint over-attributes register and topic to identity. Status: **shipped end-to-end.** Impostor-corpus schema (1.14.3), acquisition tooling for blogs / Blogger Takeout / online magazines / PDF libraries (1.15.0–1.19.0), and the General Imposters validation harness `scripts/general_imposters.py` (1.28.0) — given a target text and a candidate writer's identity baseline + impostor pool in matched register, the GI bootstrap reports the proportion of iterations the target falls closer to the candidate than to any impostor, with a Kestemont-2016-style gray-zone refusal in [0.20, 0.80]. Personal pre-AI baseline assembly is documented in `scripts/calibration/PROVENANCE_TEMPLATE.md` (1.29.0).
 
 5. **Sliding-window localization.** Whole-chapter distance is blunt. Cathedral version says "the drift is concentrated in paragraphs 12-19, mostly function words and sentence cohesion" with a heatmap. Status: **shipped** end-to-end. Sliding-window mode in `variance_audit.py` produces per-window band classifications; `sliding_window_heatmap.py` (1.29.0) renders them as a markdown localization map with sparkline, band tape, hot-zone summary, per-signal × per-window grid, and claim-license block.
 
-6. **Voice profile expansion.** Add idiolectic phrase extraction, collocations, sentence-shape distributions, readability spread, MTLD/MATTR/Yule ranges, time drift, POV-specific profiles, and a "do not normalize these phrases" preservation list. Status: core profile shipped in `voice_profile.py` with function-word, character-n-gram, punctuation cadence, paragraph/dialogue, and pronoun-modal-negation features. Idiolect extraction shipped as `idiolect_detector.py`. Time-drift tracking (`voice_drift_tracker.py`) is the active next pick — bounded code work on top of the existing `stylometry_core` primitives, no exotic borrow. POV-specific profiles (`pov_voice_profile.py`) follow.
+6. **Voice profile expansion.** Add idiolectic phrase extraction, collocations, sentence-shape distributions, readability spread, MTLD/MATTR/Yule ranges, time drift, POV-specific profiles, and a "do not normalize these phrases" preservation list. Status: core profile shipped in `voice_profile.py` with function-word, character-n-gram, punctuation cadence, paragraph/dialogue, and pronoun-modal-negation features. Idiolect extraction shipped as `idiolect_detector.py`. Time-drift tracking (`voice_drift_tracker.py`) and POV-specific profiles (`pov_voice_profile.py`) **both shipped.** Status: **shipped.**
 
-7. **Before/after restoration loop.** Run a draft, revise, rerun, and compare whether the changes restored voice or just gamed the metrics. Without this loop, the tool eventually teaches metric-chasing. Status: scoped, not yet built. Next scoped slice: metric-targeted restoration packets that translate diagnostic outputs into revision-safe prompt targets, then require a SETEC post-check.
+7. **Before/after restoration loop.** Run a draft, revise, rerun, and compare whether the changes restored voice or just gamed the metrics. Without this loop, the tool eventually teaches metric-chasing. Status: **shipped.** `before_after_restoration.py` runs the loop with a metric-gaming heuristic; `restoration_packet.py` translates diagnostic outputs into revision-safe prompt targets with a targetability taxonomy and a required SETEC post-check.
 
 8. **Privacy and packaging guards.** The system refuses to export private baselines, voice profiles, and idiolect preservation lists into publishable plugin folders. Status: `voice_profile.py` and `idiolect_detector.py` refuse output paths outside `ai-prose-baselines-private/` unless `--allow-public-output` is passed; `manifest_validator.py` enforces a privacy ratchet on `voice_profile`- and `idiolect`-tagged entries.
 
@@ -101,6 +125,8 @@ Targetability classes:
 Status: scoped. The first version should not rewrite prose; it should produce prompt packets and require a before/after SETEC post-check so the writer can see whether the revision restored the intended signal without damaging neighboring signals or idiolect.
 
 ### Phase 7+ horizon: local LLM cross-perplexity
+
+**Status (2026-06-06): shipped as Surface 5.** `binoculars_audit.py` + `binoculars_calibrate.py` ship the cross-perplexity surface (uncalibrated by default, operator-supplied thresholds), alongside the Tier-4 surprisal stack (`surprisal_audit.py` / `surprisal_backend.py`). What follows is the original horizon framing, kept for the design rationale.
 
 Classical stylometry is structurally blind to the homogeneous-mixing case where AI rewrites human ideas in AI's style: the surface form is fully AI, even though the underlying ideas are human, and any detector that operates on the surface form alone will score the entire text as AI. Hans et al. (Binoculars, ICML 2024) and Bao et al. (Fast-DetectGPT, ICLR 2024) show the cleanest current zero-shot detectors operate on cross-perplexity ratios between paired language models sharing a tokenizer.
 
@@ -233,7 +259,7 @@ These I'd not build as separate surfaces. The reasons are structural, not prefer
 
 ### Build order (concrete commitments only)
 
-When the toolchain returns to surface expansion, the order is:
+**Status (2026-06-06): items 1–9 shipped; item 10 (Semantic Trajectory Audit) shipped as code, threshold calibration pending.** The order, as originally committed:
 
 1. Paragraph Architecture Audit (Tier 1)
 2. Discourse Move Signature (Tier 1)
@@ -340,7 +366,7 @@ These are *not* on the roadmap, and the framework should resist building them ev
 
 ### Trustworthiness build order
 
-When the toolchain returns to trustworthiness work, the order is:
+**Status (2026-06-06): items 1–15 all shipped.** The Tier-4 research items below this list remain unbuilt. The order, as originally committed:
 
 1. Stylometric masking profiles (input layer; cheapest; preconditions for other Tier-1 calls)
 2. Register / genre conditioning (input gate; precondition for confounder audit and evidentiary gate)
@@ -392,7 +418,7 @@ This is the schedule once two near-term tracks have shipped: the calibration-bre
 | **9** ✅ | _(none — validation infrastructure)_ | **Calibration drift monitor + Fairness / dialect / multilingual guardrails** (shipped 1.39.0) | Validation infrastructure release. By this point the framework has enough surface area that infrastructure drift between releases needs explicit monitoring, and the linguistic-background caution surface needs to be visible at report level. |
 | **10** ✅ | **Mimicry / Style-Cosplay Audit** (Surfaces T3) (shipped 1.40.0) | **Known-editor profile** (Trust T3) (shipped 1.40.0) | Both address "smoothed-but-by-whom" from different angles: mimicry detects over-conspicuous imitation; known-editor learns what genuine human editing of this writer looks like. They make sense as a pair. |
 | **11** ✅ | **Phraseological Signature Audit** (Surfaces T3) (shipped 1.41.0) | **Draft-history analysis** (Trust T3) (shipped 1.41.0) | Phrase-frame mining is more interpretable across multiple drafts (which frames survived, which collapsed, which were introduced). Pairs naturally with version-aware analysis. |
-| **12** | Semantic Trajectory Audit (Surfaces T3) | _(none — research extensions land separately)_ | The trajectory surface is the heaviest dependency footprint (SBERT-class); ships when the framework adopts that posture. From here forward, releases get less paired and more research-driven. |
+| **12** ✅ (code) | **Semantic Trajectory Audit** (Surfaces T3) — `semantic_trajectory_audit.py` shipped; thresholds PROVISIONAL, §6.4 calibration pending | _(none — research extensions land separately)_ | The trajectory surface is the heaviest dependency footprint (SBERT-class). The tool is built; what remains is calibration on a GPU/SBERT host. From here forward, releases get less paired and more research-driven. |
 | **13+** | _(longer horizon)_ | Counterfactual editing sandbox + House-style decomposition + Multi-author segmentation + Transformation-profile learning | Tier-4 research items on both tracks. Each is independently shippable; none is on a near-term schedule. |
 
 ### What this schedule deliberately doesn't do
@@ -412,7 +438,9 @@ The 2.0 refactor target (Compression-of-Choice / Stylistic Choice Entropy) sits 
 
 A merged-and-verified prior-art survey on 2026-05-11 (three LLM passes — Claude / GPT / Gemini — reconciled against fetched URLs rather than pattern-match-on-citation-style) confirmed SETEC's novelty as a synthesis (no project hits 4+ SETEC features; `idiolect` by Andrea Nini is the single 3-feature ancestor) and surfaced three concrete additions worth capturing in the roadmap. Each is independently shippable; none is on a paired-release rhythm because the framework has moved past the R1–R12 schedule into research-driven territory.
 
-#### A. README "Why no verdict" docs section (smallest, ship anytime)
+#### A. README "Why no verdict" docs section (smallest, ship anytime) — ✅ SHIPPED
+
+**Status (2026-06-06): shipped.** The README carries a "Why no verdict" section. Original scoping kept below.
 
 **Finding.** The OpenClaw humanizer ecosystem (`openclaw/skills` archive, ~4,500 stars; `brandonwise/humanizer` as the substantive example with 136 tests including `calibration.test.js`, 29 pattern detectors, 500+ vocabulary terms in 3 tiers, platform-specific thresholds for LinkedIn/Reddit/etc.) is a mature adversarial complement to forensic detection tooling. Humanizer tools help users *avoid* detection — the inverse of SETEC's surfacing-evidence posture. The two ecosystems share vocabulary (delve / tapestry / em-dash overuse) but inverted purpose.
 
@@ -424,7 +452,9 @@ A merged-and-verified prior-art survey on 2026-05-11 (three LLM passes — Claud
 
 **Risks.** Minimal. Worth running past the maintainer for tone so the framing stays technical rather than slipping into evangelism.
 
-#### B. Costa 5-state authorship distinction (medium; spec + schema change)
+#### B. Costa 5-state authorship distinction (medium; spec + schema change) — ✅ SHIPPED
+
+**Status (2026-06-06): shipped end-to-end.** B.1 spec (`internal/SPEC_authorship_states.md`), B.2 `manifest_validator` `authorship_state` field, and B.3 per-state claim-license routing across all 10 `claim_license`-using scripts (waves 1–4, v1.49.0–v1.58.x). Original scoping kept below.
 
 **Finding.** Daniel Bruno Corvelo Costa's "Global Proof-of-Reality Infrastructure" submission (2026-03-17, non-normative public comment to the SEC Crypto Task Force; one-person proposal hosted on sec.gov, no regulatory standing, but conceptually substantive) proposes a 5-state authorship taxonomy more granular than SETEC's current binary-ish `ai_status` field. The states: human-authored unmodified / human-authored AI-modified / AI-generated from human inputs / fully AI-generated / multi-source composite — each with a different evidentiary weight under Costa's RCES (Reality Claim Evidence Sets) framing.
 
@@ -442,7 +472,9 @@ A merged-and-verified prior-art survey on 2026-05-11 (three LLM passes — Claud
 
 **Risks.** `multi_source_composite` is fuzzy; needs operational pinning in the spec. The new field overlaps semantically with `editing_status` and `ai_status`; orthogonality argument is load-bearing. Mapping existing corpora is lossy; the framework doesn't pretend to know.
 
-#### C. DivEye surprisal-distribution signal (largest; needs its own model-choice decision)
+#### C. DivEye surprisal-distribution signal (largest; needs its own model-choice decision) — ✅ SHIPPED
+
+**Status (2026-06-06): shipped.** `surprisal_backend.py` (pluggable causal-LM wrapper) + `surprisal_audit.py` (standalone audit, PROVISIONAL banding) + Tier-4 integration in `variance_audit.py` + a dedicated `surprisal` dependency tier + calibration-pipeline plumbing (`--surprisal-dtype`, per-comparator routing). Original scoping kept below.
 
 **Finding.** DivEye (IBM, Basani & Chen, TMLR 2026; also ICML DIG-BUG 2025; CC BY-NC-SA 4.0, GPL-3 incompatible) demonstrates state-of-the-art AI-prose discrimination using surprisal-distribution features at the input layer of a classifier — specifically, mean / variance / autocorrelation of per-token surprisal under a causal language model. LLM-generated prose tends to produce more uniformly-surprising tokens than human prose; humans cluster their surprise; LLMs flatten it. The signal is structurally orthogonal to every existing Tier 1 SETEC signal (which are lexical / syntactic / aggregate-distributional).
 
