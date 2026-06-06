@@ -21,6 +21,7 @@ truth for each contract.
 | [`04-pan-obfuscation-replay-harness.md`](04-pan-obfuscation-replay-harness.md) | **Ready.** Replay SETEC signals against PAN obfuscation fixtures. |
 | [`05-esl-fairness-slice.md`](05-esl-fairness-slice.md) | **Ready.** ESL/L2 + translated-text fairness slice in the validation harness. |
 | [`06-voice-matching-companion.md`](06-voice-matching-companion.md) | **Draft.** The generative inverse — a companion project that writes in an authorized author's voice using SETEC as a held-out fitness function. Defines SETEC's side of the contract; built in a separate repo (TBD). |
+| [`07-document-layout-audit.md`](07-document-layout-audit.md) | **Built** (this round). Non-voice document structure / layout profile on a new `document_layout` surface — descriptive only, refuses voice/AI inference. |
 | `_TEMPLATE.md` | Copy this to start a new spec. |
 
 Research-grade specs (EditLens-style edit-magnitude regressor, intrinsic-dimension/

@@ -120,6 +120,12 @@ spec→review→write→review→fix structure durable on GitHub and gives
 - **Tag from `main`** after the merge commit lands, not from the
   branch. Tag names follow the `v1.MAJOR.MINOR` convention enforced
   by `CHANGELOG.md`'s versioning preamble.
+- **Bump the version at merge, not in the PR.** Open PRs merge in an
+  unknown order, so a `plugin.json` version pinned inside a feature branch
+  collides or goes stale. A PR's CHANGELOG entry names its bump *class*
+  (`feat` → MINOR, `fix`/`docs`/`chore` → PATCH) but does **not** pin the
+  number or edit `plugin.json`; the merger sets `plugin.json` + the
+  `Plugin version X → Y` line when the merge commit lands, then tags.
 - **Auto-merge on dual agreement.** When both reviewing agents (Claude
   and Codex) agree a PR is ready — CI green and review threads resolved —
   merge it (merge commit) without waiting for a further human prompt. The

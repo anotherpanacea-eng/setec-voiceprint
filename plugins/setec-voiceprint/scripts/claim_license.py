@@ -56,6 +56,7 @@ TASK_SURFACE_LABELS = {
         "narrative-decision audit (Russell et al. 2026 / StoryScope "
         "30-core-feature anchor)"
     ),
+    "document_layout": "document structure / layout profile (non-voice)",
 }
 
 
