@@ -77,8 +77,6 @@ class ProcessOptions:
     impostor_for: list[str]
     register_match: str
     topic_match: str
-    since: _dt.date | None
-    until: _dt.date | None
     output_dir: Path
     manifest_path: Path
     max_items: int
@@ -364,6 +362,10 @@ def emit_piece(piece: ac.AcquiredPiece, item: ItemMeta, *,
         corpus_role=options.corpus_role, use=options.use,
         ai_status=item.extra.get("ai_status", options.ai_status),
     )
+    # compose_manifest_entry only emits `era` for impostor entries; preserve the
+    # operator's --era on identity_baseline entries too — it marks the pre/post-AI
+    # slice of the writer's own corpus, which smoothing-diagnosis relies on.
+    entry.setdefault("era", piece.era)
     ac.append_manifest_entry(options.manifest_path, entry)
     summary.acquired += 1
     sys.stderr.write(f"  acquired {text_path.name} ({piece.word_count} words)\n")
@@ -409,7 +411,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--window-words", type=int, default=2500)
     p.add_argument("--min-words", type=int, default=300)
 
-    p.add_argument("--since"); p.add_argument("--until")
     p.add_argument("--max-items", type=int, default=100000)
     p.add_argument("--output-dir")
     p.add_argument("--emit-manifest")
@@ -438,8 +439,6 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
         consent_status=args.consent_status, era=args.era,
         impostor_for=list(args.impostor_for or []),
         register_match=args.register_match, topic_match=args.topic_match,
-        since=ac.parse_iso_date(args.since) if args.since else None,
-        until=ac.parse_iso_date(args.until) if args.until else None,
         output_dir=output_dir, manifest_path=manifest_path,
         max_items=args.max_items, dry_run=args.dry_run,
         allow_non_prose=args.allow_non_prose, strip_rules=args.strip_rules,
@@ -492,7 +491,13 @@ def run(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    return run(build_arg_parser().parse_args(argv))
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    if args.corpus_role == "impostor" and not args.impostor_for:
+        parser.error(
+            "--impostor-for is required with --corpus-role impostor "
+            "(name the persona(s) this impostor pool serves)")
+    return run(args)
 
 
 if __name__ == "__main__":
