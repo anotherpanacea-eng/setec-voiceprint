@@ -481,6 +481,58 @@ def test_device_field_beats_env_var(
     assert str(b._device) == "meta"
 
 
+@_skip_no_torch
+def test_cpu_override_on_cuda_host_loads_fp32(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """[P2 regression] A cpu device override on a cuda host must yield
+    fp32 under ``auto`` dtype. The target device is resolved *before*
+    dtype selection, so the bf16/fp16 a bare ``torch.cuda.is_available()``
+    probe would pick is never loaded-then-moved-to-CPU."""
+    import torch  # type: ignore
+
+    monkeypatch.delenv("SETEC_SURPRISAL_DEVICE", raising=False)
+    # Simulate an Ampere+ CUDA host.
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        torch.cuda, "is_bf16_supported", lambda: True, raising=False,
+    )
+    fake = _fake_transformers_with_model()
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="auto", device="cpu")
+    b._load()
+
+    assert b._resolved_dtype_label == "fp32"
+    kwargs = fake.AutoModelForCausalLM.from_pretrained.call_args.kwargs
+    assert kwargs["torch_dtype"] == torch.float32
+    assert str(b._device) == "cpu"
+
+
+@_skip_no_torch
+def test_auto_dtype_on_cuda_host_without_override_still_bf16(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Control for the fix above: with no device override, ``auto`` on a
+    bf16-capable cuda host still loads bf16 — the device-first resolution
+    only redirects explicit cpu/mps overrides, not the normal cuda path."""
+    import torch  # type: ignore
+
+    monkeypatch.delenv("SETEC_SURPRISAL_DEVICE", raising=False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        torch.cuda, "is_bf16_supported", lambda: True, raising=False,
+    )
+    fake = _fake_transformers_with_model()
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="auto")
+    b._load()
+
+    assert b._resolved_dtype_label == "bf16"
+    assert str(b._device) == "cuda"
+
+
 # --------------- Empty / single-token input ---------------------
 
 

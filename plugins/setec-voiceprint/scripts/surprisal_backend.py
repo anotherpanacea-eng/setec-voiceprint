@@ -312,6 +312,41 @@ class SurprisalBackend:
                 None,
             )
 
+    def _select_device(self) -> Any:
+        """Resolve the target torch device for the forward pass.
+
+        Precedence: explicit ``device`` field > the
+        ``SETEC_SURPRISAL_DEVICE`` env var > cuda > mps > cpu. Both
+        overrides are no-ops when unset, so the prior auto-detect
+        behavior is preserved exactly (the env var is the operator
+        surface until a ``--surprisal-device`` CLI flag is threaded
+        through, mirroring ``EmbeddingBackend.device`` /
+        ``--embedding-device``).
+
+        Resolved here, *before* dtype selection, so that ``auto`` dtype
+        keys off the device we will actually run on — an explicit
+        cpu/mps override on a cuda host must yield fp32, not bf16/fp16.
+        Returns a ``torch.device`` or ``None`` when torch is unavailable
+        (stub/test paths), in which case the scoring path skips the move.
+        """
+        try:
+            import torch  # type: ignore
+        except ImportError:
+            return None
+        import os
+
+        override = self.device or os.environ.get("SETEC_SURPRISAL_DEVICE")
+        if override:
+            return torch.device(override)
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if (
+            hasattr(torch.backends, "mps")
+            and torch.backends.mps.is_available()
+        ):
+            return torch.device("mps")
+        return torch.device("cpu")
+
     def _load(self) -> tuple[Any, Any]:
         """Load the causal LM + tokenizer on demand.
 
@@ -345,6 +380,13 @@ class SurprisalBackend:
             self._tokenizer = AutoTokenizer.from_pretrained(
                 self.model_id, **kwargs,
             )
+            # Decide the *target device* before dtype resolution. The
+            # ``auto`` dtype rule keys off whether we will actually run
+            # on cuda, so an explicit ``device`` / ``SETEC_SURPRISAL_DEVICE``
+            # override of cpu/mps on a cuda host must yield fp32 — not the
+            # bf16/fp16 a bare ``torch.cuda.is_available()`` probe would
+            # pick. The model is moved onto this device after load.
+            self._device = self._select_device()
             # Resolve dtype + load model in the resolved precision. ``auto``
             # picks bf16 on supporting cuda (Ampere+), fp16 on older cuda
             # (V100/T4), fp32 on CPU/MPS. The resolved label is recorded
@@ -353,6 +395,9 @@ class SurprisalBackend:
             # ``dtype: bf16`` not ``dtype: auto``.
             resolved_torch_dtype, self._resolved_dtype_label = _resolve_dtype(
                 self.dtype,
+                cuda_available=(
+                    self._device is not None and self._device.type == "cuda"
+                ),
             )
             model_kwargs = dict(kwargs)
             model_kwargs["torch_dtype"] = resolved_torch_dtype
@@ -394,31 +439,10 @@ class SurprisalBackend:
         # silent CPU fallback that those errors used to produce is
         # the multi-day-rented-GPU bug. Surface real placement
         # failures as ``SurprisalBackendError``.
-        try:
-            import torch  # type: ignore
-        except ImportError:
-            self._device = None
-        else:
-            import os
-            # Device precedence: explicit ``device`` field > the
-            # ``SETEC_SURPRISAL_DEVICE`` env var > cuda > mps > cpu. Both
-            # overrides are no-ops when unset, so the prior auto-detect
-            # behavior is preserved exactly. The env var is the operator
-            # surface until a ``--surprisal-device`` CLI flag is threaded
-            # through (mirrors ``EmbeddingBackend.device`` /
-            # ``--embedding-device``).
-            _override = self.device or os.environ.get("SETEC_SURPRISAL_DEVICE")
-            if _override:
-                self._device = torch.device(_override)
-            elif torch.cuda.is_available():
-                self._device = torch.device("cuda")
-            elif (
-                hasattr(torch.backends, "mps")
-                and torch.backends.mps.is_available()
-            ):
-                self._device = torch.device("mps")
-            else:
-                self._device = torch.device("cpu")
+        # Move the model onto the device selected above (before dtype
+        # resolution). ``self._device`` is ``None`` only when torch is
+        # absent (stub/test paths) — skip the move there.
+        if self._device is not None:
             try:
                 self._model = self._model.to(self._device)
             except AttributeError:
