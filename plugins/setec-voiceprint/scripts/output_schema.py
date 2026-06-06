@@ -187,10 +187,15 @@ def build_baseline_metadata(
         "n_files": int(n_files),
         "words": int(words),
     }
+    # Stringify via POSIX form so envelope paths are deterministic across
+    # platforms: str(Path("/abs/x")) yields backslashes on Windows, but the
+    # JSON envelope is consumed cross-platform and pinned by downstream
+    # consumers. On POSIX str(Path) is already forward-slash, so this is a
+    # no-op there; on Windows it normalizes "\abs\x" -> "/abs/x".
     if files_loaded is not None:
-        block["files_loaded"] = [str(p) for p in files_loaded]
+        block["files_loaded"] = [Path(p).as_posix() for p in files_loaded]
     if files_skipped is not None:
-        block["files_skipped"] = [str(p) for p in files_skipped]
+        block["files_skipped"] = [Path(p).as_posix() for p in files_skipped]
     if register is not None:
         block["register"] = register
     if split is not None:
