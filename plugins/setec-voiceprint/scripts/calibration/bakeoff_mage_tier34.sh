@@ -126,7 +126,11 @@ run_phase_a() {
 # computed for free.
 
 PHASE_B_SIGNALS=(surprisal_mean surprisal_sd surprisal_acf_lag1)
-PHASE_B_MODELS=(gpt2 tinyllama llama32_1b)
+# Frontier scan additions (2026-05-31): gpt2_medium (within-tokenizer scan vs
+# gpt2), llama32_3b (within-family vs llama32_1b), qwen25_1_5b (modern 32K-ctx
+# probe). Must stay in sync with PHASE_B_MODELS in bakeoff_mage_tier34_compare.py
+# so the producer generates every survey the comparison report expects.
+PHASE_B_MODELS=(gpt2 tinyllama llama32_1b gpt2_medium qwen25_1_5b llama32_3b)
 
 run_phase_b() {
     local model="$1"
