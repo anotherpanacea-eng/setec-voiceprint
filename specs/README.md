@@ -20,6 +20,7 @@ truth for each contract.
 | [`03-fast-detectgpt-curvature.md`](03-fast-detectgpt-curvature.md) | **Ready.** Conditional-probability curvature detector (Surface 5 add). |
 | [`04-pan-obfuscation-replay-harness.md`](04-pan-obfuscation-replay-harness.md) | **Ready.** Replay SETEC signals against PAN obfuscation fixtures. |
 | [`05-esl-fairness-slice.md`](05-esl-fairness-slice.md) | **Ready.** ESL/L2 + translated-text fairness slice in the validation harness. |
+| [`06-voice-matching-companion.md`](06-voice-matching-companion.md) | **Draft.** The generative inverse — a companion project that writes in an authorized author's voice using SETEC as a held-out fitness function. Defines SETEC's side of the contract; built in a separate repo (TBD). |
 | `_TEMPLATE.md` | Copy this to start a new spec. |
 
 Research-grade specs (EditLens-style edit-magnitude regressor, intrinsic-dimension/
