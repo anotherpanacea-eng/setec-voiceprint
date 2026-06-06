@@ -95,6 +95,12 @@ spec→review→write→review→fix structure durable on GitHub and gives
 - **Tag from `main`** after the merge commit lands, not from the
   branch. Tag names follow the `v1.MAJOR.MINOR` convention enforced
   by `CHANGELOG.md`'s versioning preamble.
+- **Auto-merge on dual agreement.** When both reviewing agents (Claude
+  and Codex) agree a PR is ready — CI green and review threads resolved —
+  merge it (merge commit) without waiting for a further human prompt. The
+  maintainer gave standing approval for this case (2026-06-06). If only one
+  agent has reviewed, or a review comment is unresolved, hold for the
+  second opinion rather than self-merging.
 
 ### When to skip the PR
 
