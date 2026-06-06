@@ -647,6 +647,30 @@ class RunSummary:
 # --------------- Write + manifest emission ------------------------
 
 
+def _unique_stem(piece: AcquiredPiece, output_dir: Path) -> str:
+    """Return a collision-free filename stem for ``piece`` in ``output_dir``.
+
+    Content-identical pieces are filtered upstream (via
+    ``content_hash_already_present``), so an existing ``<stem>.txt`` here means a
+    *different* piece already claimed that stem — e.g. a long title truncated by
+    ``slugify`` past a chapter suffix, or two untitled pieces. Disambiguate
+    deterministically with a short content-hash suffix rather than silently
+    overwrite the earlier file.
+    """
+    base = piece.filename_stem()
+    if not (output_dir / f"{base}.txt").exists():
+        return base
+    # content_hash is "sha256:<hexdigest>"; take 8 hex chars (no ':' — keep the
+    # stem filesystem-safe, incl. Windows).
+    suffix = piece.content_hash.split(":")[-1][:8]
+    candidate = f"{base}-{suffix}"
+    n = 2
+    while (output_dir / f"{candidate}.txt").exists():
+        candidate = f"{base}-{suffix}-{n}"
+        n += 1
+    return candidate
+
+
 def write_piece(
     piece: AcquiredPiece,
     *,
@@ -659,13 +683,14 @@ def write_piece(
       - ``<output_dir>/<YYYY-MM-DD>_<title-slug>.txt``  (cleaned text)
       - ``<output_dir>/<YYYY-MM-DD>_<title-slug>.meta.json`` (sidecar)
 
-    Returns the (text_path, meta_path) tuple. Caller is responsible
-    for deduplication; this function will overwrite an existing file
-    silently (callers should call ``content_hash_already_present``
-    first).
+    Returns the (text_path, meta_path) tuple. Content-level dedup is the
+    caller's job (``content_hash_already_present``); this function additionally
+    guards against *stem* collisions — two different-content pieces whose
+    ``filename_stem()`` slugs coincide — by appending a short content-hash
+    suffix, so the second piece never silently clobbers the first.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
-    stem = piece.filename_stem()
+    stem = _unique_stem(piece, output_dir)
     text_path = output_dir / f"{stem}.txt"
     meta_path = output_dir / f"{stem}.meta.json"
     text_path.write_text(piece.cleaned_text, encoding="utf-8")
