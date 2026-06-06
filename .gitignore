@@ -26,6 +26,7 @@ internal/
 audits-private/
 output/
 runs/
+gi_runs/
 
 # Plugin or vendoring staging directories should live outside this repo;
 # this pattern is a fallback for stray files that haven't been relocated.

@@ -287,6 +287,87 @@ The MAGE result confirms the "Stylometry to the people" policy as load-bearing. 
 
 Full analysis in `references/calibration-findings-2026-05-11-mage.md`.
 
+## raid_full_smoothing_fpr0.01_2026-06-03
+
+> **[POLICY: AUDIT-ONLY]** Audit record under the "Stylometry to the people" policy stated at the top of this file. No threshold from this run is encoded in `COMPRESSION_HEURISTICS`. Recorded for reproducibility and for the three-corpus (EditLens / MAGE / RAID) polarity comparison the 2026-05-11 MAGE entry predicted. Full analysis lives in the run summaries under `ai-prose-baselines-private/gi_runs/` (not in the plugin tree): `raid_calib_strongpair_2026-06-03/VALIDATION_smoothing_polarity_2026-06-03.md`, `mage_harness_2026-06-03/MAGE_SUMMARY_2026-06-03.md`, `raid_adversarial_R7_2026-06-03/R7_SUMMARY_2026-06-03.md`, `raid_bakeoff_FG_2026-06-03/BAKEOFF_SUMMARY_2026-06-03.md`.
+
+- **Run type:** (a) `validation_harness.py` smoothing-diagnosis over Tier-1/2/3 signals on a clean de-duplicated RAID **Books** slice; (b) `calibration_survey.py --tier4` + `slice_bakeoff_v2.py --audit polarity` over the Tier-4 surprisal signals on a 9-generator RAID Books slice.
+- **Corpus:** RAID (Dugan et al., NAACL 2024; HF `liamdugan/raid`, rev `865cac74188466cb0c3b7574a10204007b57a459`), Books domain, attack=`none`.
+- **License:** Apache-2.0 / MIT (per dataset card); local-only per Stylometry-to-the-people; RAID-derived content not redistributed in framework artifacts.
+- **Manifests:** `gi_runs/raid_calib_strongpair_2026-06-03/raid_literary_manifest_harness.jsonl` (138 human + 146 machine, harness) and `gi_runs/raid_bakeoff_FG_2026-06-03/raid_bakeoff_manifest.jsonl` (150 human + 408 machine across 9 generators, bake-off).
+- **Calibration:** direction-aware FPR-target sweep at FPR ≤ `0.01`; per-(judge × generator) polarity audit at `min_n=30`, comparator-class `raid`, judge `tinyllama`.
+- **Split role:** calibration_only (validation slice; `--use validation`).
+- **CI method:** harness paired percentile bootstrap (2000 resamples, seed 7); bake-off Hanley-McNeil approximate CIs.
+- **SETEC commit:** main at 4.45.2-era working tree (transformers 4.45.2); harness run on the AMD ROCm desktop host.
+- **Date:** 2026-06-03
+
+### Per-signal results — Tier 1/2/3 (validation_harness, clean RAID Books)
+
+| signal | registry direction | raw AUC | da_AUC | polarity on RAID |
+|---|---|---:|---:|---|
+| `yules_k` | gt | 0.851 | **0.851** | matches |
+| `shannon_entropy` | lt | 0.099 | **0.901** | matches |
+| `mtld` | lt | 0.186 | **0.814** | matches |
+| `mattr` | lt | 0.197 | **0.803** | matches |
+| `burstiness_B` | lt | 0.193 | **0.807** | matches |
+| `fkgl_sd` | lt | 0.176 | **0.824** | matches |
+| `sentence_length_sd` | lt | 0.169 | **0.831** | matches |
+| `mdd_sd` | lt | 0.219 | **0.781** | matches |
+| `adjacent_cosine_sd` | lt | 0.444 | 0.556 | matches (weak) |
+| `connective_density` | gt | 0.348 | 0.348 | **inverted** |
+| `adjacent_cosine_mean` | lt (gated) | 0.755 | 0.245 | **inverted** (machine HIGHER cohesion) |
+
+Integrated compression_fraction ROC AUC = **0.810** on RAID Books (vs **0.357** on the MAGE general slice — inverted; see `mage_harness_2026-06-03`). At FPR 0.01 the integrated TPR is only ~6% (not accusation-grade; the Feizi operating point).
+
+### Per-signal results — Tier 4 surprisal (calibration_survey + slice_bakeoff_v2 polarity audit, judge=tinyllama)
+
+| signal | slicer-mirror direction | raw AUC (95% CI) | verdict | recommended |
+|---|---|---:|---|---|
+| `surprisal_sd` | lt | 0.123 [0.085, 0.160] | globally_consistent | keep `lt` |
+| `surprisal_mean` | gt | 0.146 [0.105, 0.186] | **globally_inverted** | flip → `lt` |
+| `surprisal_acf_lag1` | lt | 0.631 [0.581, 0.681] | **globally_inverted** | flip → `gt` |
+
+All three verdicts are **global** (4/4 generator cells agree) → the surprisal directions are **generator-independent** on RAID Books under a tinyllama judge.
+
+### Headline finding
+
+**0 of 11 signals earns a committed threshold** (policy invariant holds). RAID is the **third distinct polarity profile** the MAGE entry predicted: the variance/burstiness family (`burstiness_B`, `sentence_length_sd`, `fkgl_sd`) **matches** the registry on RAID (as on EditLens) but **inverts on MAGE**; the lexical family (`mattr`, `mtld`, `yules_k`, `shannon`) **matches** on both RAID and MAGE but **inverts on EditLens**. No two corpora share a polarity profile. `adjacent_cosine_mean` and `connective_density` invert on RAID — `adjacent_cosine_mean` is the gated, corpus-unstable signal (RAID da 0.245 vs MAGE da 0.607: opposite directions), confirming the `_POLARITY_UNBASELINED_GATE` decision.
+
+### Bake-off / mirror reconciliation (F-bis)
+
+The Tier-4 polarity audit **empirically confirms the open F-bis mirror reconciliation**: `slice_bakeoff_v2.SIGNAL_SPECS` / `polarity_audit.DEFAULT_REGISTRY_DIRECTIONS` still carry the pre-fix MAGE directions for `surprisal_mean` (`gt`) and `surprisal_acf_lag1` (`lt`); RAID data recommends flipping both — to `lt` and `gt` respectively — which is exactly the smoothing direction `COMPRESSION_HEURISTICS` / `surprisal_backend.SMOOTHED_DIRECTION` was already corrected to (2026-06-02 compression-polarity fix). The mirror flip now has operator data, not just the internal-consistency argument — and a **full 6-judge × 9-generator matrix** (2026-06-05) confirms it is **judge- and generator-independent**: `surprisal_mean` 6/6 globally_inverted (`gpt2`, `gpt2-medium`, `tinyllama`, `llama32_1b`, `qwen25_1_5b`, `llama32_3b`), `surprisal_sd` 6/6 consistent, `surprisal_acf_lag1` 4/4 discriminating judges inverted (the GPT-2 family at chance, non-contradicting). The residual comparator-dependence (the 13-cell question) lives in the Tier-3 signal **`adjacent_cosine_mean`**, which is generator-dependent in *strength* within RAID (per-generator minilm AUC 0.52–0.78, all inverted) and corpus-dependent in *direction* across corpora (RAID raw AUC 0.648 inverted vs MAGE 0.393 consistent) — vindicating its `_POLARITY_UNBASELINED_GATE` exclusion. Full matrix: `gi_runs/raid_bakeoff_FG_2026-06-03/BAKEOFF_SUMMARY_2026-06-03.md`.
+
+### Adversarial robustness (R7, same RAID Books slice)
+
+Per-attack integrated AUC: none 0.822 → synonym 0.842 → whitespace 0.818 → homoglyph 0.682 → paraphrase 0.623. The smoothing surface is **surface-robust but paraphrase-fragile** (−0.20 AUC under semantic paraphrase; not destroyed, stays > 0.5).
+
+### Implication for the framework
+
+The three-corpus polarity table (EditLens / MAGE / RAID) closes the cross-corpus prediction the MAGE entry left open and re-confirms the "Stylometry to the people" posture as load-bearing: no single corpus produces a generalizing threshold. The actionable framework follow-up is the F-bis mirror flip (now data-backed) and an explicit "paraphrase-fragile" caveat on the smoothing surface.
+
+## litprose_frontier_binoculars_multiscorer_2026-06-05
+
+> **[POLICY: AUDIT-ONLY]** Audit record under the "Stylometry to the people" policy at the top of this file. This is a **Binoculars cross-perplexity (Surface 5)** register-matched detection study, **not** a `COMPRESSION_HEURISTICS` threshold calibration: no value here is encoded in the registry, and no threshold is shipped as load-bearing. Recorded for reproducibility and for the scorer-robustness comparison. Full detail + JSON: `gi_runs/litprose_frontier_2026-06-05/` (`FRONTIER_SUMMARY_2026-06-05.md`, three `frontier_calibration_*n87*.json`).
+
+- **Register:** literary horror (fiction), register-matched (not RAID summaries / not MAGE).
+- **Corpus:** 125 human (litprose impostor-pool published literary-horror windows, 13 authors) + **87 machine** frontier continuations of source-disjoint human-author prompts — 20 Claude + 20 GPT-5.5 + 10 Gemini + 37 Muse Spark (operator-run). License: human windows local-only (impostor pool); machine class operator-generated.
+- **Scorers (Binoculars v2 cross-perplexity, score_version `binoculars_cross_perplexity_v2`):** Llama-3.2-3B/1B (strong; same family as Muse Spark = Llama 4/5), Qwen2.5-3B/0.5B (strong; cross-family to all four), gpt2-medium/gpt2 (weak; cross-family). 3 length regimes (native / lm3000 / lm1800), chunk 1000.
+- **Polarity gate:** matched — machine **lower** B (Hans/RAID direction) in all 3 regimes × 3 scorers × 4 generators (DA-AUC ≥ 0.5 throughout). No inversion (contrast: weak-base generators *do* invert — Addendum 5).
+
+### Headline — overall AUC (machine below human, native)
+Llama **0.963** · Qwen **0.934** · gpt2 **0.767**. Per-generator (Llama / Qwen / gpt2): Claude 0.982/0.961/0.683; Gemini 0.992/0.992/0.957; GPT-5.5 0.878/0.780/0.457; Muse Spark 0.992/0.988/0.929.
+
+### Findings
+- **Scorer STRENGTH, not Llama-specificity:** the size-matched cross-family Qwen pair tracks Llama; the weak gpt2 pair is the lone low outlier.
+- **Muse Spark family-match confound cleared:** Llama (same-family) 0.992 vs Qwen (cross-family, strong) 0.988 → inflation ≈ 0.004, negligible; genuinely highly detectable.
+- **GPT-5.5 best-evader / Gemini most robustly detectable**, consistent across families.
+
+### The novel
+B → **2nd pctile human (Llama)**, **4th pctile human (Qwen)**, ~70–75th pctile of the AI class under both strong scorers — **AI-shaped on the predictability axis**. Weak gpt2 reads it 40th-pctile-human, a poor-discrimination artifact (gpt2 cannot separate GPT at all). Converges with the stylometric "AI house style" finding on a calibrated, register-matched, multi-scorer axis.
+
+### Implication for the framework
+Surface 5 (Binoculars) cross-family robustness now demonstrated for *frontier* fiction: detection power is a function of scorer **strength**, and the register-matched frontier signal survives a strong cross-family check. Consistent with the "Stylometry to the people" posture — reported as an audit finding, no shipped threshold. AUDIT-ONLY; not encoded in `COMPRESSION_HEURISTICS`; no JSON ledger / `thresholds_calibrated.json` entry.
+
 ## Template for new entries
 
 When you populate a calibration run, format the entry like this:
