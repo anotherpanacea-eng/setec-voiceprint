@@ -4,6 +4,10 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+**`evidence_pack.py` — one-command evidence-pack bundler (QoL).** A reporting *tool* (not an audit — no `task_surface`, no manifest entry) that reads any number of SETEC `build_output` JSON envelopes and renders one combined evidence pack, Markdown (default) or a self-contained HTML page, grouped by target document. Each audit contributes its key results + its claim-license `Reports` / `Does NOT report` lines; warnings are aggregated. It computes nothing and asserts no verdict — bundling does not combine audits into a single score (SETEC refuses that by design). Malformed / non-SETEC JSON is skipped with a warning, not a crash. Stdlib only; includes a small controlled Markdown→HTML converter. 12 tests in `test_evidence_pack.py`.
+
+_Tagged `feat` (→ MINOR). The `plugin.json` version bump is applied at merge, not pinned here — open PRs merge in an unknown order._
+
 **`formulaicity_audit.py` — non-voice phraseological-texture profile (Surfaces Tier 5).** A new descriptive audit on a new `formulaicity` task surface: density of common generic/stock phrases (clichés, filler transitions, hedge boilerplate, corporate idiom) from a small, user-extensible built-in list (`--phrases-file` to override). Explicitly **not** an AI detector and **not** a quality judgment, per the roadmap's central guard — measurements only (no band, no verdict), and the claim-license refuses AI-provenance / voice / writing-quality inference, noting the list is illustrative + drifts and that many writers use these phrases legitimately. Stdlib only. Adds `formulaicity` to `output_schema.VALID_TASK_SURFACES` + `claim_license.TASK_SURFACE_LABELS` (additive). 13 tests in `test_formulaicity_audit.py` (`specs/09-formulaicity-audit.md`).
 
 _Tagged `feat` (→ MINOR). The `plugin.json` version bump is applied at merge, not pinned here — open PRs merge in an unknown order._
