@@ -15,6 +15,10 @@ _Tagged `feat` (→ MINOR). The `plugin.json` version bump is applied at merge, 
 
 Plugin version 1.109.0 → 1.109.1 (fix).
 
+**`reference_ecology_audit.py` — non-voice reference-ecology profile (Surfaces Tier 5).** A new descriptive audit on a new `reference_ecology` task surface: parenthetical / DOI / arXiv citation counts + `et al.`, footnote refs/defs, attribution constructions ("according to X" / "X argues"), quotation density (inline pairs + blockquotes), and external-link **domain breadth**. Ships under explicit **non-voice** claim-licensing — measurements only (no band, no verdict) — and flags the topic-leakage hazard: reference ecology shifts with subject matter, not authorial voice, so it must not be read as voice drift or an authorship signal. Stdlib only; regex over raw text. Adds `reference_ecology` to `output_schema.VALID_TASK_SURFACES` + `claim_license.TASK_SURFACE_LABELS` (additive). 15 tests in `test_reference_ecology_audit.py` (`specs/08-reference-ecology-audit.md`).
+
+_Tagged `feat` (→ MINOR). The `plugin.json` version bump is applied at merge, not pinned here — open PRs merge in an unknown order._
+
 **Capabilities manifest v0.3 + APODICTIC handoff spec for Surface 6.** Makes the consumer-pinning contract explicit and queryable. Pre-v0.3, every script emitting `schema_version: "1.0"` was implicitly a consumer surface, but some were intentional (variance_audit, voice_distance, the named consumer list from the 1.85/1.86 CHANGELOG waves) and some were accidental (baseline_discovery: "rarely consumed downstream, so the envelope omission has the smallest blast radius"). v0.3 surfaces the distinction as a queryable field so APODICTIC (and future consumers) know what to pin against.
 
 ### Added (handoff surface)
