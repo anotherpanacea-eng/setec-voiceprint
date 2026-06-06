@@ -405,6 +405,134 @@ def test_identifier_block_records_resolved_dtype_after_load(
     assert block["dtype_loaded"] == "fp32"
 
 
+# --------------- Device override --------------------------------
+
+
+def _fake_transformers_with_model():
+    """A transformers stand-in whose model records ``.to(device)``
+    without loading real weights, for device-resolution tests."""
+    fake = mock.MagicMock()
+    fake.AutoTokenizer.from_pretrained.return_value = mock.MagicMock(
+        pad_token=None, eos_token="<eos>",
+    )
+    fake_model = mock.MagicMock()
+    fake_model.to.return_value = fake_model
+    fake.AutoModelForCausalLM.from_pretrained.return_value = fake_model
+    return fake
+
+
+def test_default_device_is_none():
+    """Default device is ``None`` so ``_load`` auto-detects
+    (cuda > mps > cpu). Mirrors EmbeddingBackend's contract."""
+    b = sb.SurprisalBackend(model_id="tinyllama")
+    assert b.device is None
+
+
+def test_device_field_is_stored():
+    """An explicit device string is retained on the dataclass."""
+    b = sb.SurprisalBackend(model_id="tinyllama", device="cuda:1")
+    assert b.device == "cuda:1"
+
+
+@_skip_no_torch
+def test_device_field_overrides_autodetect(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """An explicit ``device`` wins over the auto-detect. Uses the
+    always-present ``meta`` device (no GPU required) so a pass proves
+    the override fired rather than the cpu fallback."""
+    monkeypatch.delenv("SETEC_SURPRISAL_DEVICE", raising=False)
+    monkeypatch.setitem(
+        sys.modules, "transformers", _fake_transformers_with_model(),
+    )
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="fp32", device="meta")
+    b._load()
+    assert str(b._device) == "meta"
+
+
+@_skip_no_torch
+def test_env_var_device_used_when_field_unset(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """``SETEC_SURPRISAL_DEVICE`` is honored when no ``device`` field
+    is set — the operator surface for the override until a
+    ``--surprisal-device`` CLI flag is wired through."""
+    monkeypatch.setenv("SETEC_SURPRISAL_DEVICE", "meta")
+    monkeypatch.setitem(
+        sys.modules, "transformers", _fake_transformers_with_model(),
+    )
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="fp32")
+    b._load()
+    assert str(b._device) == "meta"
+
+
+@_skip_no_torch
+def test_device_field_beats_env_var(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """When both are set, the explicit ``device`` field takes
+    precedence over the env var."""
+    monkeypatch.setenv("SETEC_SURPRISAL_DEVICE", "cpu")
+    monkeypatch.setitem(
+        sys.modules, "transformers", _fake_transformers_with_model(),
+    )
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="fp32", device="meta")
+    b._load()
+    assert str(b._device) == "meta"
+
+
+@_skip_no_torch
+def test_cpu_override_on_cuda_host_loads_fp32(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """[P2 regression] A cpu device override on a cuda host must yield
+    fp32 under ``auto`` dtype. The target device is resolved *before*
+    dtype selection, so the bf16/fp16 a bare ``torch.cuda.is_available()``
+    probe would pick is never loaded-then-moved-to-CPU."""
+    import torch  # type: ignore
+
+    monkeypatch.delenv("SETEC_SURPRISAL_DEVICE", raising=False)
+    # Simulate an Ampere+ CUDA host.
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        torch.cuda, "is_bf16_supported", lambda: True, raising=False,
+    )
+    fake = _fake_transformers_with_model()
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="auto", device="cpu")
+    b._load()
+
+    assert b._resolved_dtype_label == "fp32"
+    kwargs = fake.AutoModelForCausalLM.from_pretrained.call_args.kwargs
+    assert kwargs["torch_dtype"] == torch.float32
+    assert str(b._device) == "cpu"
+
+
+@_skip_no_torch
+def test_auto_dtype_on_cuda_host_without_override_still_bf16(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Control for the fix above: with no device override, ``auto`` on a
+    bf16-capable cuda host still loads bf16 — the device-first resolution
+    only redirects explicit cpu/mps overrides, not the normal cuda path."""
+    import torch  # type: ignore
+
+    monkeypatch.delenv("SETEC_SURPRISAL_DEVICE", raising=False)
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(
+        torch.cuda, "is_bf16_supported", lambda: True, raising=False,
+    )
+    fake = _fake_transformers_with_model()
+    monkeypatch.setitem(sys.modules, "transformers", fake)
+
+    b = sb.SurprisalBackend(model_id="tinyllama", dtype="auto")
+    b._load()
+
+    assert b._resolved_dtype_label == "bf16"
+    assert str(b._device) == "cuda"
+
+
 # --------------- Empty / single-token input ---------------------
 
 
