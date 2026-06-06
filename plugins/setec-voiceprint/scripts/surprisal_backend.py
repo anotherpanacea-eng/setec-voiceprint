@@ -153,6 +153,28 @@ DEPRECATED_ALIASES: dict[str, str] = {
 DEFAULT_MODEL: str = "tinyllama"
 
 
+# Canonical smoothing-direction for the Tier-4 surprisal signals — the
+# single source of truth shared (by agreement, enforced in tests) between
+# surprisal_audit.py's standalone band and variance_audit.py's compression
+# integrator default. "Smoothed" prose (RLHF mode collapse / flattening)
+# has LOWER per-token surprisal mean, LOWER surprisal SD, and HIGHER lag-1
+# autocorrelation (longer runs of uniform predictability). So the direction
+# in which a value indicates smoothing is:
+#   surprisal_mean      smoothed when LOW   -> "lt"
+#   surprisal_sd        smoothed when LOW   -> "lt"
+#   surprisal_acf_lag1  smoothed when HIGH  -> "gt"
+# These match surprisal_audit.PROVISIONAL_BAND_THRESHOLDS (mean/sd
+# ``flat_below``; acf ``smoothed_above``). Comparator-specific AI-detection
+# polarities (e.g. the MAGE curated-human audit, where AI prose runs HIGHER
+# surprisal SD than the human comparator) are NOT this — they belong in a
+# ThresholdSpec.direction_by_comparator override, not the smoothing default.
+SMOOTHED_DIRECTION: dict[str, str] = {
+    "surprisal_mean": "lt",
+    "surprisal_sd": "lt",
+    "surprisal_acf_lag1": "gt",
+}
+
+
 class SurprisalBackendError(RuntimeError):
     """Raised when the surprisal backend cannot be loaded or used.
 
@@ -246,6 +268,13 @@ class SurprisalBackend:
     revision: str | None = None
     deterministic: bool = True
     dtype: str = "auto"
+    # Explicit device override. When ``None``, ``_load`` auto-detects
+    # (cuda > mps > cpu), with the ``SETEC_SURPRISAL_DEVICE`` env var as a
+    # middle fallback. Pin a specific device by passing e.g. ``"cuda:1"``
+    # (a second GPU) or ``"privateuseone:1"`` (a DirectML GPU on Windows).
+    # Mirrors ``EmbeddingBackend.device`` / the embedding side's
+    # ``--embedding-device``.
+    device: str | None = None
     _model: Any = field(default=None, repr=False, init=False, compare=False)
     _tokenizer: Any = field(default=None, repr=False, init=False, compare=False)
     _alias: str | None = field(default=None, repr=False, init=False, compare=False)
@@ -370,7 +399,18 @@ class SurprisalBackend:
         except ImportError:
             self._device = None
         else:
-            if torch.cuda.is_available():
+            import os
+            # Device precedence: explicit ``device`` field > the
+            # ``SETEC_SURPRISAL_DEVICE`` env var > cuda > mps > cpu. Both
+            # overrides are no-ops when unset, so the prior auto-detect
+            # behavior is preserved exactly. The env var is the operator
+            # surface until a ``--surprisal-device`` CLI flag is threaded
+            # through (mirrors ``EmbeddingBackend.device`` /
+            # ``--embedding-device``).
+            _override = self.device or os.environ.get("SETEC_SURPRISAL_DEVICE")
+            if _override:
+                self._device = torch.device(_override)
+            elif torch.cuda.is_available():
                 self._device = torch.device("cuda")
             elif (
                 hasattr(torch.backends, "mps")
