@@ -54,6 +54,9 @@ TASK_SURFACE_LABELS = {
     "formulaicity": "formulaicity / phraseological-texture profile (non-voice)",
     "binoculars_discrimination": "Binoculars-style perplexity-ratio discrimination",
     "reference_ecology": "reference-ecology profile (non-voice; topic-bound)",
+    "discrimination_curvature": (
+        "Fast-DetectGPT conditional-curvature discrimination (Bao et al. 2024)"
+    ),
     "narrative_decision_audit": (
         "narrative-decision audit (Russell et al. 2026 / StoryScope "
         "30-core-feature anchor)"

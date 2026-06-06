@@ -59,6 +59,7 @@ VALID_TASK_SURFACES = frozenset({
     "formulaicity",
     "binoculars_discrimination",
     "reference_ecology",
+    "discrimination_curvature",
     "narrative_decision_audit",
     "document_layout",
     "authorship_embedding",
