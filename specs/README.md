@@ -23,6 +23,7 @@ truth for each contract.
 | [`06-voice-matching-companion.md`](06-voice-matching-companion.md) | **Draft.** The generative inverse — a companion project that writes in an authorized author's voice using SETEC as a held-out fitness function. Defines SETEC's side of the contract; built in a separate repo (TBD). |
 | [`07-document-layout-audit.md`](07-document-layout-audit.md) | **Built** (this round). Non-voice document structure / layout profile on a new `document_layout` surface — descriptive only, refuses voice/AI inference. |
 | [`08-reference-ecology-audit.md`](08-reference-ecology-audit.md) | **Built** (this round). Non-voice reference-ecology profile (citation/quote/attribution/link-domain breadth) on a new `reference_ecology` surface — descriptive, refuses voice/AI, flags topic-leakage. (07 = document-layout, in PR #148.) |
+| [`09-formulaicity-audit.md`](09-formulaicity-audit.md) | **Built** (this round). Non-voice phraseological-texture profile (stock-phrase density) on a new `formulaicity` surface — descriptive, explicitly NOT an AI signal or quality judgment. (07 = doc-layout #148, 08 = reference-ecology #149.) |
 | `_TEMPLATE.md` | Copy this to start a new spec. |
 
 Research-grade specs (EditLens-style edit-magnitude regressor, intrinsic-dimension/
