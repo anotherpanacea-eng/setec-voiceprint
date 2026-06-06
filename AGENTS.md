@@ -17,8 +17,9 @@ Most cycles are:
 
 1. **Spec.** The user (or an agent on the user's behalf) lays out what
    a release should do. For paired-release-schedule items this is
-   already encoded in `ROADMAP.md`; for ad-hoc work, the spec is
-   whatever the user types into chat.
+   already encoded in `ROADMAP.md`; for ad-hoc work, the spec is a
+   written brief — chat for trivial changes, a GitHub Issue once the
+   work is non-trivial. See "Where work comes from" below.
 2. **Spec review.** Either Claude or Codex (or both) reads the spec
    and surfaces gaps, dependency issues, or scope creep before
    writing starts.
@@ -30,6 +31,41 @@ Most cycles are:
    line; Claude reviews via `Skill: review` (see `~/.claude/skills/review`).
 5. **Fix.** The writing agent applies the fixes, runs tests, commits.
 6. **Merge.** Via PR + merge commit. See below.
+
+## Where work comes from: roadmap, briefs, and Issues
+
+Every change implements from a **written contract**, never from an
+unscoped instruction like "improve the release workflow." Agents are
+prone to plausible-adjacent work — reasonable-looking changes nobody
+asked for — and this repo's roadmap is rich enough with adjacent ideas
+to make that easy. The contract is the leash. It comes from one of
+three places, in order of formality:
+
+1. **A `ROADMAP.md` item.** Paired-release and cathedral-upgrade work
+   is already specified there. The roadmap entry *is* the brief; no
+   Issue is needed. Reference it in the PR.
+2. **A GitHub Issue** (`Task brief` template: Goal / Acceptance
+   criteria / Out of scope / Constraints). This is the home for
+   **non-trivial ad-hoc work** that isn't on the roadmap — exactly the
+   case that used to live only in chat and evaporate. The acceptance
+   criteria are what the *second* reviewer checks the diff against, so
+   write them concretely. The PR closes the Issue (`Closes #N`).
+3. **A chat brief**, for trivial changes (typo, one-line fix, fixture
+   regen) that also qualify for the direct-push path below.
+
+Roadmap and Issues do different jobs and should not duplicate each
+other: the roadmap is strategic and narrative ("where is this going,
+what's deferred, what's out of scope"); an Issue is a single bounded
+work order with a definition of done. A roadmap item becomes an Issue
+only when it's close enough to implement and needs acceptance criteria
+the roadmap doesn't carry.
+
+**Constraints belong in the contract, not just in the code.** This is a
+forensics framework where an uncalibrated threshold silently shipped as
+a default is a real failure mode. "Threshold stays provisional; no
+registry default until calibrated" is the kind of line that belongs in
+an Issue's acceptance criteria, where the reviewer will enforce it —
+not only in a code comment the review might skim past.
 
 ## Long-running surfaces: belt, suspenders, buttons
 
