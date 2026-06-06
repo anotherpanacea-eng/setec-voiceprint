@@ -65,6 +65,9 @@ TASK_SURFACE_LABELS = {
     "authorship_embedding": (
         "style-embedding voice fingerprint (LUAR / Wegmann learned "
         "style manifold; cosine-similarity distribution, no verdict)"
+    "narratorial_distance": (
+        "narratorial-distance / free-indirect-discourse profile "
+        "(voice-coherence family; descriptive, non-verdict)"
     ),
 }
 
