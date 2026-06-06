@@ -64,6 +64,7 @@ VALID_TASK_SURFACES = frozenset({
     "document_layout",
     "authorship_embedding",
     "narratorial_distance",
+    "productive_roughness",
 })
 
 
