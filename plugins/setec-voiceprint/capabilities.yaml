@@ -2150,6 +2150,7 @@ entries:
       - You have a labeled corpus (with valid `corpus_manifest.jsonl`) and want to measure how SETEC signals behave on it
       - You're calibrating thresholds for an operator-specific corpus
       - You want CIs alongside point estimates (the framework's default)
+      - You need a per-`language_status` ESL/L2 fairness slice — separate FPR/TPR/ROC for native vs non-native/L2/translated entries (on by default when any entry carries a non-`unknown` language_status; the harness refuses to publish a single aggregate FPR that pools native + non-native, surfacing the documented ESL false-positive failure mode rather than hiding it)
     do_not_use_when:
       - The manifest is unvalidated — run manifest_validator first
       - The corpus is mixed-state (ai_status) without slicing — the harness refuses to pool

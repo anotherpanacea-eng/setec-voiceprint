@@ -74,6 +74,35 @@ DEFAULT_NEGATIVE_STATUSES = ("pre_ai_human",)
 DEFAULT_METRIC_BOOTSTRAP_RESAMPLES = 2000
 DEFAULT_RECORDS_LIMIT = 100
 
+# ESL / L2 fairness slice (spec 05-esl-fairness-slice).
+#
+# `language_status` is the manifest field validated by
+# manifest_validator.ALLOWED_LANGUAGE_STATUS. The ESL slice reports
+# FPR/TPR/ROC per language background so SETEC can MEASURE — and refuse
+# to pool away — the documented non-native-English false-positive
+# failure mode (Liang et al., Patterns 2023: 61% of human TOEFL essays
+# flagged as AI). This slice is a fairness *measurement*, not a
+# verdict and not a correction.
+LANGUAGE_STATUS_VOCAB = (
+    "native",
+    "non_native_advanced",
+    "non_native_intermediate",
+    "learner",
+    "unknown",
+)
+# The non-native statuses whose FPR the field is most embarrassed by.
+NON_NATIVE_LANGUAGE_STATUSES = frozenset(
+    {"non_native_advanced", "non_native_intermediate", "learner"}
+)
+# Minimum scored records of the relevant class before a per-status rate
+# is treated as powered. A status with fewer negatives than this yields
+# an explicit "underpowered" caveat for FPR rather than a silent 0;
+# likewise positives for TPR. Chosen deliberately low (a fairness slice
+# is usually small) but non-zero so a single control can't masquerade
+# as a population FPR. Documented in the spec follow-up: the real
+# threshold is an operator-corpus calibration question.
+MIN_LANGUAGE_SLICE_CLASS_N = 5
+
 LENGTH_BUCKETS = (
     (0, 199, "lt_200"),
     (200, 499, "200_499"),
@@ -1174,6 +1203,298 @@ def build_slices(
     return slices
 
 
+# ---------- ESL / L2 fairness slice (spec 05) ----------
+
+
+def language_statuses_present(records: Sequence[dict[str, Any]]) -> set[str]:
+    """Distinct language_status values across all records (scored or
+    not). Used to decide whether the ESL slice is on-by-default and
+    whether the aggregate FPR pools native + non-native."""
+    return {str(r.get("language_status") or "unknown") for r in records}
+
+
+def has_non_unknown_language_status(records: Sequence[dict[str, Any]]) -> bool:
+    """True when any record carries a non-`unknown` language status.
+
+    This is the on-by-default trigger for the ESL slice per the spec
+    contract: the slice is on by default when any entry carries a
+    non-`unknown` language status. Manifests with no language status
+    (or all-`unknown`) leave the slice off and the prior report shape
+    intact (backward compat)."""
+    return any(
+        str(r.get("language_status") or "unknown") != "unknown"
+        for r in records
+    )
+
+
+def pooling_disposition(
+    records: Sequence[dict[str, Any]],
+    *,
+    slice_active: bool,
+) -> dict[str, Any]:
+    """Decide how the *aggregate* FPR may be reported given the language
+    backgrounds present, mirroring the existing FPR-target discipline.
+
+    The honesty claim SETEC already makes is that pooling native and
+    non-native FPR into one number masks the exact failure the field is
+    most embarrassed by. So:
+
+      * Only native (and/or unknown) present  -> annotate the aggregate
+        ``native-only`` (no non-native prose was pooled in).
+      * Native + non-native both present, slicing active -> the
+        aggregate is reported alongside the per-status slice that
+        decomposes it (``sliced``).
+      * Native + non-native both present, slicing NOT active -> REFUSE
+        to emit a single aggregate FPR, with an explicit message.
+      * No non-native and no native (all unknown / unlabeled) -> nothing
+        to annotate; the aggregate is reported as-is (``not_applicable``)
+        — this is the backward-compat path.
+
+    Returns a dict describing the disposition; ``refuse_aggregate_fpr``
+    is the load-bearing boolean the report/operating-point layer reads.
+    """
+    present = language_statuses_present(records)
+    non_native_present = bool(present & NON_NATIVE_LANGUAGE_STATUSES)
+    native_present = "native" in present
+    # Statuses that carry fairness signal (everything but unknown).
+    annotated_present = sorted(present - {"unknown"})
+
+    if not (native_present or non_native_present):
+        # Backward-compat: no language labels at all (or only unknown).
+        return {
+            "disposition": "not_applicable",
+            "refuse_aggregate_fpr": False,
+            "annotation": None,
+            "statuses_present": sorted(present),
+            "message": (
+                "No native/non-native language_status labels are present; "
+                "the aggregate is not language-pooled."
+            ),
+        }
+
+    if non_native_present and native_present:
+        if slice_active:
+            return {
+                "disposition": "sliced",
+                "refuse_aggregate_fpr": False,
+                "annotation": "pooled-but-sliced",
+                "statuses_present": annotated_present,
+                "message": (
+                    "Native and non-native entries are both present. The "
+                    "aggregate FPR pools them; read the per-language_status "
+                    "slice below, which decomposes it. SETEC does not treat "
+                    "the pooled aggregate as the fairness-relevant number."
+                ),
+            }
+        return {
+            "disposition": "refused",
+            "refuse_aggregate_fpr": True,
+            "annotation": None,
+            "statuses_present": annotated_present,
+            "message": (
+                "REFUSED: native and non-native language_status entries are "
+                "both present but the language_status slice is disabled. A "
+                "single aggregate FPR would pool the non-native "
+                "false-positive failure mode (Liang et al. 2023) into the "
+                "native rate and hide it. Re-run with the language_status "
+                "slice enabled (it is on by default) to publish per-status "
+                "FPR/TPR."
+            ),
+        }
+
+    if non_native_present and not native_present:
+        # Only non-native present: the aggregate IS the non-native rate.
+        return {
+            "disposition": "non_native_only",
+            "refuse_aggregate_fpr": False,
+            "annotation": "non-native-only",
+            "statuses_present": annotated_present,
+            "message": (
+                "Only non-native language_status entries are present; the "
+                "aggregate FPR is the non-native rate, not a pooled number."
+            ),
+        }
+
+    # native_present and not non_native_present.
+    return {
+        "disposition": "native_only",
+        "refuse_aggregate_fpr": False,
+        "annotation": "native-only",
+        "statuses_present": annotated_present,
+        "message": (
+            "Only native (or unlabeled) language_status entries are present; "
+            "the aggregate FPR is annotated native-only. It does NOT speak "
+            "to SETEC's false-positive rate on non-native / L2 / translated "
+            "prose, which is the documented failure mode (Liang et al. 2023)."
+        ),
+    }
+
+
+def _language_slice_rates(
+    records: Sequence[dict[str, Any]],
+    threshold: float | None,
+    *,
+    confidence_level: float,
+    ci_method: str,
+) -> dict[str, Any]:
+    """Compute FPR/TPR (with CIs) at the supplied threshold for one
+    language_status group. Returns explicit availability/underpowered
+    flags rather than a silent 0 when a class is empty or thin.
+
+    FPR needs negatives (controls); TPR needs positives. A status with
+    fewer than ``MIN_LANGUAGE_SLICE_CLASS_N`` records of the relevant
+    class is reported powered=False with a caveat — the rate value is
+    still computed when at least one record of the class exists (so the
+    number isn't hidden) but the consumer is told it is underpowered;
+    with zero records of the class the rate is None, never 0.
+    """
+    usable = scored_records(records)
+    n_pos = sum(1 for r in usable if r.get("label") == 1)
+    n_neg = sum(1 for r in usable if r.get("label") == 0)
+
+    out: dict[str, Any] = {
+        "n": len(records),
+        "n_scored": len(usable),
+        "n_positive": n_pos,
+        "n_negative": n_neg,
+        "fpr": None,
+        "tpr": None,
+    }
+
+    if threshold is None:
+        out["fpr_caveat"] = (
+            "No FPR target / threshold supplied; per-status FPR/TPR are "
+            "thresholded rates and require an operating point. Pass "
+            "--fpr-target to populate them."
+        )
+        out["tpr_caveat"] = out["fpr_caveat"]
+        return out
+
+    tm = threshold_metrics(
+        records,
+        threshold,
+        confidence_level=confidence_level,
+        ci_method=ci_method,
+    )
+    rates = (tm or {}).get("rates", {})
+    fpr_rate = rates.get("fpr")
+    tpr_rate = rates.get("tpr_recall")
+
+    # FPR: needs negatives. Zero negatives -> None + caveat (never 0).
+    if n_neg == 0:
+        out["fpr"] = None
+        out["fpr_caveat"] = (
+            "EMPTY/UNDERPOWERED: no scored negative (control / human) "
+            "records in this language_status slice; FPR is undefined here, "
+            "not 0. SETEC cannot license a false-positive-rate claim for "
+            "this language background without comparable controls."
+        )
+        out["fpr_powered"] = False
+    else:
+        out["fpr"] = fpr_rate
+        if n_neg < MIN_LANGUAGE_SLICE_CLASS_N:
+            out["fpr_caveat"] = (
+                f"UNDERPOWERED: only {n_neg} scored control record(s) in "
+                f"this language_status slice (< {MIN_LANGUAGE_SLICE_CLASS_N}). "
+                "The FPR point estimate is shown but its CI is wide; do not "
+                "use it for evaluative or disciplinary purposes."
+            )
+            out["fpr_powered"] = False
+        else:
+            out["fpr_powered"] = True
+
+    # TPR: needs positives. Zero positives -> None + caveat (never 0).
+    if n_pos == 0:
+        out["tpr"] = None
+        out["tpr_caveat"] = (
+            "EMPTY/UNDERPOWERED: no scored positive (AI) records in this "
+            "language_status slice; TPR is undefined here, not 0."
+        )
+        out["tpr_powered"] = False
+    else:
+        out["tpr"] = tpr_rate
+        if n_pos < MIN_LANGUAGE_SLICE_CLASS_N:
+            out["tpr_caveat"] = (
+                f"UNDERPOWERED: only {n_pos} scored positive record(s) in "
+                f"this language_status slice (< {MIN_LANGUAGE_SLICE_CLASS_N})."
+            )
+            out["tpr_powered"] = False
+        else:
+            out["tpr_powered"] = True
+
+    return out
+
+
+def build_language_status_slices(
+    records: Sequence[dict[str, Any]],
+    *,
+    threshold: float | None,
+    confidence_level: float,
+    ci_method: str,
+    metric_bootstrap_resamples: int,
+    seed: int | None,
+    ckpt=None,
+) -> dict[str, Any]:
+    """The ESL/L2 fairness slice (spec 05): per-language_status
+    ``{n, fpr, tpr, roc_auc, ci}`` plus explicit underpowered/empty
+    caveats and the pooling disposition for the aggregate.
+
+    This is a DEDICATED block, distinct from the generic
+    ``slices['by_language_status']`` metric_block table: it carries the
+    spec's exact contract shape and the don't-pool annotation, and it is
+    the surface the claim-license consults to decide whether per-status
+    evaluative use is licensed.
+
+    ``ckpt`` / seed reuse the same bootstrap-CI checkpoint plumbing as
+    the other slices so per-status ROC-AUC CIs are cached and
+    reproducible.
+    """
+    grouped = group_records(records, "language_status")
+    per_status: dict[str, Any] = {}
+    for status, group in grouped.items():
+        ranking = ranking_metrics(
+            group,
+            bootstrap_resamples=metric_bootstrap_resamples,
+            confidence_level=confidence_level,
+            seed=derive_seed(seed, "language_status_slice", status),
+            ckpt=ckpt,
+            ckpt_label=f"language_status_slice/{status}",
+        )
+        rates = _language_slice_rates(
+            group,
+            threshold,
+            confidence_level=confidence_level,
+            ci_method=ci_method,
+        )
+        status_block = {
+            "language_status": status,
+            "is_non_native": status in NON_NATIVE_LANGUAGE_STATUSES,
+            "n": rates["n"],
+            "n_scored": rates["n_scored"],
+            "n_positive": rates["n_positive"],
+            "n_negative": rates["n_negative"],
+            "fpr": rates["fpr"],
+            "tpr": rates["tpr"],
+            "roc_auc": ranking.get("roc_auc"),
+            # `ci` is the ROC-AUC bootstrap CI (the headline ranking
+            # metric for the slice). Per-rate (FPR/TPR) Wilson CIs ride
+            # inside the fpr/tpr proportion_interval dicts.
+            "ci": ranking.get("roc_auc_ci"),
+        }
+        for opt_key in (
+            "fpr_caveat",
+            "fpr_powered",
+            "tpr_caveat",
+            "tpr_powered",
+        ):
+            if opt_key in rates:
+                status_block[opt_key] = rates[opt_key]
+        if ranking.get("reason"):
+            status_block["roc_auc_caveat"] = ranking["reason"]
+        per_status[status] = status_block
+    return per_status
+
+
 # ---------- Report ----------
 
 
@@ -1204,6 +1525,101 @@ def _fmt_metric_ci(value: Any, ci: dict[str, Any] | None) -> str:
     return f"{_fmt(value)} [{_fmt(ci.get('ci_low'))}, {_fmt(ci.get('ci_high'))}]"
 
 
+def language_slice_license(result: dict[str, Any]) -> dict[str, Any]:
+    """Per-language_status licensing clause for the ESL/L2 fairness slice
+    (spec 05).
+
+    Licenses per-status performance where it is powered, and explicitly
+    REFUSES evaluative or disciplinary use when the validation set lacks
+    comparable language backgrounds — i.e. when a present language status
+    has an empty or underpowered control class, or when native and
+    non-native are pooled without slicing. Returns a structured dict the
+    report renders and the JSON envelope carries.
+    """
+    lang_slices = result.get("language_status_slices") or {}
+    pooling = result.get("language_pooling") or {}
+    slice_active = bool(result.get("language_slice_active"))
+
+    if not slice_active or not lang_slices:
+        # The slice is off. If native + non-native are nonetheless both
+        # present (operator disabled slicing on a mixed corpus), the
+        # don't-pool guard fired — surface that refusal in the license
+        # so evaluative/disciplinary use of the pooled aggregate is
+        # explicitly withheld, not silently allowed.
+        if pooling.get("refuse_aggregate_fpr"):
+            return {
+                "active": False,
+                "licenses": None,
+                "refuses": pooling.get("message"),
+                "pooling_disposition": pooling.get("disposition"),
+                "message": pooling.get("message"),
+            }
+        return {
+            "active": False,
+            "licenses": None,
+            "refuses": None,
+            "message": (
+                "No language_status slice was produced (no entries carried a "
+                "non-`unknown` language_status, or slicing was disabled). The "
+                "ESL/L2 fairness slice does not apply to this run."
+            ),
+        }
+
+    powered: list[str] = []
+    underpowered: list[str] = []
+    for status, block in sorted(lang_slices.items()):
+        if status == "unknown":
+            continue
+        # A status is "evaluable" only if its control class supports an
+        # FPR claim. fpr_powered is False/absent when empty or thin.
+        if block.get("fpr_powered") is True:
+            powered.append(status)
+        else:
+            underpowered.append(status)
+
+    refuses_parts: list[str] = []
+    if pooling.get("refuse_aggregate_fpr"):
+        refuses_parts.append(pooling.get("message", ""))
+    if underpowered:
+        refuses_parts.append(
+            "Evaluative or disciplinary use is REFUSED for these "
+            "language_status slices because their control class is "
+            "empty or underpowered: "
+            + ", ".join(f"`{s}`" for s in sorted(underpowered))
+            + ". An underpowered or empty slice is reported as an explicit "
+            "caveat, never as a silent 0 FPR — SETEC will not let a missing "
+            "L2 control set read as 'no false positives on non-native prose'."
+        )
+    if not any(b.get("is_non_native") for b in lang_slices.values()):
+        refuses_parts.append(
+            "No non-native / L2 / translated entries are present in this "
+            "validation set. The slice therefore licenses NOTHING about "
+            "SETEC's false-positive rate on non-native prose, which is the "
+            "documented failure mode (Liang et al., Patterns 2023: 61% of "
+            "human TOEFL essays flagged as AI)."
+        )
+
+    licenses_text = None
+    if powered:
+        licenses_text = (
+            "Per-language_status FPR/TPR/ROC for these powered slices: "
+            + ", ".join(f"`{s}`" for s in sorted(powered))
+            + ". Each is licensed only within its own language background; "
+            "the fairness comparison is across slices, never via the pooled "
+            "aggregate."
+        )
+
+    return {
+        "active": True,
+        "powered_statuses": sorted(powered),
+        "underpowered_statuses": sorted(underpowered),
+        "pooling_disposition": pooling.get("disposition"),
+        "licenses": licenses_text,
+        "refuses": " ".join(p for p in refuses_parts if p) or None,
+        "message": pooling.get("message"),
+    }
+
+
 def claim_license_block(result: dict[str, Any]) -> dict[str, Any]:
     operating_point = result.get("operating_point", {})
     fpr_target = operating_point.get("fpr_target")
@@ -1216,7 +1632,8 @@ def claim_license_block(result: dict[str, Any]) -> dict[str, Any]:
             f"FPR target {fpr_target} was supplied, but no threshold was "
             f"selected: {operating_point.get('reason', 'unavailable')}."
         )
-    return {
+    lang_license = language_slice_license(result)
+    block = {
         "licenses": (
             "This report describes how the evaluated SETEC surface performed "
             "on this manifest's labeled validation entries, in the reported "
@@ -1229,7 +1646,9 @@ def claim_license_block(result: dict[str, Any]) -> dict[str, Any]:
             "reported when an explicit FPR target is supplied."
         ),
         "operating_point": operating_text,
+        "language_status_slice": lang_license,
     }
+    return block
 
 
 def render_report(result: dict[str, Any]) -> str:
@@ -1343,6 +1762,16 @@ def render_report(result: dict[str, Any]) -> str:
         lines.append(f"- Empirical control FPR at threshold: `{_fmt(op.get('empirical_control_fpr'))}`")
     else:
         lines.append(f"- Threshold unavailable: {op.get('reason', 'no FPR target supplied')}")
+    if op.get("aggregate_fpr_refused"):
+        lines.append(
+            f"- **Aggregate FPR REFUSED (don't-pool guard):** "
+            f"{op.get('aggregate_fpr_refusal_reason')}"
+        )
+    elif op.get("aggregate_fpr_annotation"):
+        lines.append(
+            f"- **Aggregate FPR annotation:** `{op.get('aggregate_fpr_annotation')}` "
+            f"— {op.get('aggregate_fpr_annotation_reason')}"
+        )
     lines.append("")
 
     lines.append("## Overall Metrics")
@@ -1385,6 +1814,27 @@ def render_report(result: dict[str, Any]) -> str:
         lines.append("")
         lines.append(_render_metric_table(result["slices"][key]))
         lines.append("")
+
+    if result.get("language_slice_active"):
+        lines.append("## ESL / L2 Fairness Slice (language_status)")
+        lines.append("")
+        pooling = result.get("language_pooling") or {}
+        if pooling.get("message"):
+            lines.append(f"_{pooling['message']}_")
+            lines.append("")
+        lines.append(_render_language_status_table(
+            result.get("language_status_slices") or {}
+        ))
+        lines.append("")
+        lang_license = (result.get("claim_license") or {}).get(
+            "language_status_slice"
+        ) or {}
+        if lang_license.get("licenses"):
+            lines.append(f"- **Licenses:** {lang_license['licenses']}")
+        if lang_license.get("refuses"):
+            lines.append(f"- **Refuses:** {lang_license['refuses']}")
+        if lang_license.get("licenses") or lang_license.get("refuses"):
+            lines.append("")
 
     lines.append("## Records")
     lines.append("")
@@ -1457,6 +1907,35 @@ def _render_metric_table(blocks: dict[str, Any]) -> str:
             f"{_fmt_rate(rates.get('fpr'))} | "
             f"{_fmt_rate(rates.get('tpr_recall'))} | "
             f"{_fmt_rate(rates.get('precision'))} |"
+        )
+    return "\n".join(lines)
+
+
+def _render_language_status_table(per_status: dict[str, Any]) -> str:
+    """Render the ESL/L2 fairness slice: per-language_status
+    {n, fpr, tpr, roc_auc, ci} with explicit empty/underpowered caveats
+    (never a silent 0)."""
+    lines = [
+        "| language_status | non-native? | n | pos | neg | FPR | TPR | ROC AUC [CI] | Caveat |",
+        "|---|:--:|---:|---:|---:|---:|---:|---:|:--|",
+    ]
+    for status in sorted(per_status):
+        block = per_status[status]
+        caveats = [
+            block.get(k)
+            for k in ("fpr_caveat", "tpr_caveat", "roc_auc_caveat")
+            if block.get(k)
+        ]
+        caveat = "; ".join(caveats) or "--"
+        lines.append(
+            f"| `{status}` | "
+            f"{'yes' if block.get('is_non_native') else 'no'} | "
+            f"{block.get('n', 0)} | {block.get('n_positive', 0)} | "
+            f"{block.get('n_negative', 0)} | "
+            f"{_fmt_rate(block.get('fpr'))} | "
+            f"{_fmt_rate(block.get('tpr'))} | "
+            f"{_fmt_metric_ci(block.get('roc_auc'), block.get('ci'))} | "
+            f"{caveat} |"
         )
     return "\n".join(lines)
 
@@ -2030,6 +2509,74 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         seed=args.seed,
         ckpt=metrics_ckpt,
     )
+
+    # ESL / L2 fairness slice (spec 05). On by default when any entry
+    # carries a non-`unknown` language_status, unless the operator
+    # explicitly opted out (--no-language-status-slice) or in
+    # (--slice-by language_status). Manifests with no language status
+    # leave the slice off and the prior report shape intact.
+    slice_by = set(getattr(args, "slice_by", None) or [])
+    explicit_off = bool(getattr(args, "no_language_status_slice", False))
+    if explicit_off:
+        language_slice_active = False
+    elif "language_status" in slice_by:
+        language_slice_active = True
+    else:
+        language_slice_active = has_non_unknown_language_status(records)
+
+    language_pooling = pooling_disposition(
+        records, slice_active=language_slice_active
+    )
+    language_status_slices: dict[str, Any] = {}
+    if language_slice_active:
+        language_status_slices = build_language_status_slices(
+            records,
+            threshold=threshold,
+            confidence_level=args.confidence_level,
+            ci_method=args.ci_method,
+            metric_bootstrap_resamples=args.metric_bootstrap_resamples,
+            seed=args.seed,
+            ckpt=metrics_ckpt,
+        )
+
+    # "Don't pool" guard: when native + non-native are both present and
+    # slicing is disabled, the harness must NOT emit a single aggregate
+    # FPR (it would pool the non-native false-positive failure mode into
+    # the native rate and hide it). We annotate the operating point and
+    # strip the pooled aggregate FPR from the overall threshold metrics,
+    # leaving the explicit refusal in its place.
+    if language_pooling.get("refuse_aggregate_fpr"):
+        operating_point = dict(operating_point)
+        operating_point["aggregate_fpr_refused"] = True
+        operating_point["aggregate_fpr_refusal_reason"] = language_pooling.get(
+            "message"
+        )
+        overall_block = slices.get("overall") or {}
+        overall_tm = overall_block.get("threshold_metrics")
+        if isinstance(overall_tm, dict):
+            overall_tm["pooled_fpr_refused"] = True
+            overall_tm["pooled_fpr_refusal_reason"] = language_pooling.get(
+                "message"
+            )
+            overall_rates = overall_tm.get("rates")
+            if isinstance(overall_rates, dict) and "fpr" in overall_rates:
+                # Replace the pooled FPR with an explicit refusal marker
+                # so no consumer can read a single aggregate FPR.
+                overall_rates["fpr"] = {
+                    "value": None,
+                    "refused": True,
+                    "ci_method": "refused_pooled_language_status",
+                    "reason": language_pooling.get("message"),
+                }
+    elif language_pooling.get("annotation"):
+        operating_point = dict(operating_point)
+        operating_point["aggregate_fpr_annotation"] = language_pooling[
+            "annotation"
+        ]
+        operating_point["aggregate_fpr_annotation_reason"] = (
+            language_pooling.get("message")
+        )
+
     if metrics_ckpt is not None:
         metrics_ckpt.flush(status="complete")
         _ck = metrics_ckpt.summary()
@@ -2089,6 +2636,29 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             "validation entries. Treat thresholded rates as in-sample until "
             "a separate calibration/test split lands."
         )
+    # ESL/L2 fairness slice warnings (spec 05).
+    if language_pooling.get("refuse_aggregate_fpr"):
+        warnings.append(language_pooling.get("message", ""))
+    elif language_pooling.get("annotation") == "native-only":
+        warnings.append(
+            "Aggregate FPR is annotated native-only: no non-native / L2 / "
+            "translated entries are present, so the aggregate says nothing "
+            "about SETEC's false-positive rate on non-native prose (the "
+            "documented failure mode, Liang et al. 2023)."
+        )
+    if language_slice_active:
+        underpowered = sorted(
+            s for s, b in language_status_slices.items()
+            if s != "unknown" and b.get("fpr_powered") is not True
+        )
+        if underpowered:
+            warnings.append(
+                "Underpowered/empty language_status slice(s) "
+                + ", ".join(f"`{s}`" for s in underpowered)
+                + ": their FPR is reported as an explicit caveat, not a "
+                "silent 0. Evaluative/disciplinary use of those slices is "
+                "not licensed (see claim_license.language_status_slice)."
+            )
 
     result: dict[str, Any] = {
         "task_surface": TASK_SURFACE,
@@ -2115,6 +2685,12 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         },
         "records": records,
         "slices": slices,
+        # ESL / L2 fairness slice (spec 05): dedicated per-language_status
+        # {n, fpr, tpr, roc_auc, ci} block + the pooling disposition that
+        # governs whether the aggregate FPR may be published.
+        "language_slice_active": language_slice_active,
+        "language_pooling": language_pooling,
+        "language_status_slices": language_status_slices,
     }
     result["claim_license"] = claim_license_block(result)
     return result
@@ -2229,6 +2805,36 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=float,
         default=0.05,
         help="Strip-ratio fail threshold for --check-corpus (default 0.05).",
+    )
+    # ESL / L2 fairness slice (spec 05). The per-language_status FPR/TPR
+    # slice is ON BY DEFAULT when any entry carries a non-`unknown`
+    # language_status. --slice-by language_status forces it on even on
+    # an all-unknown manifest; --no-language-status-slice forces it off
+    # (and is what trips the "don't pool" refusal when native +
+    # non-native are both present).
+    parser.add_argument(
+        "--slice-by",
+        action="append",
+        choices=["language_status"],
+        default=None,
+        help=(
+            "Extra fairness slice(s) to force on. Currently only "
+            "`language_status` (the ESL/L2 slice). The language_status "
+            "slice is already on by default when any entry carries a "
+            "non-`unknown` language_status; this flag forces it on even "
+            "when all entries are `unknown`. Repeatable."
+        ),
+    )
+    parser.add_argument(
+        "--no-language-status-slice",
+        action="store_true",
+        help=(
+            "Disable the ESL/L2 language_status fairness slice. When "
+            "native and non-native entries are both present, this trips "
+            "the 'don't pool' guard: the harness REFUSES to emit a single "
+            "aggregate FPR (it would hide the non-native false-positive "
+            "failure mode) and reports an explicit refusal instead."
+        ),
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")
     parser.add_argument("--out", help="Write report to file instead of stdout.")
