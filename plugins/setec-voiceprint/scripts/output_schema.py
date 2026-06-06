@@ -67,6 +67,7 @@ VALID_TASK_SURFACES = frozenset({
     "productive_roughness",
     "intrinsic_dimension",
     "rewriting_invariance",
+    "edit_magnitude",
 })
 
 
