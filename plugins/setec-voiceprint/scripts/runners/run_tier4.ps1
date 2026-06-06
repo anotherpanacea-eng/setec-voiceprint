@@ -166,14 +166,21 @@ except Exception as e:
 if (not torch.cuda.is_available()) or torch.cuda.device_count() == 0:
     print("SETEC_GPU_INDEX=cpu"); print("probe: no CUDA/ROCm device visible"); sys.exit(0)
 
+# APU / integrated-only gfx arch IDs that fault on kernel launch under
+# ROCm-on-Windows. gfx103x is NOT uniformly integrated: gfx1030/1031/1032/1034
+# are discrete RDNA2 (RX 6000 series) and run fine -- only the APU parts in that
+# range are integrated (gfx1033 Van Gogh, gfx1035 Rembrandt, gfx1036 Raphael,
+# gfx1037 Mendocino). Plus the older gfx90c/gfx902 APUs. Match on these specific
+# IDs (prefix-tolerant of ROCm suffixes like ":xnack-") rather than the whole
+# gfx103* prefix, so known-good discrete cards aren't forced to CPU.
+_INTEGRATED_ARCHS = ("gfx1033", "gfx1035", "gfx1036", "gfx1037", "gfx90c", "gfx902")
+
 def is_integrated(name, arch):
-    # APUs/integrated parts (RDNA2/3 iGPU = gfx103x, older APUs = gfx90c/gfx902)
-    # frequently fault on kernel launch under ROCm-on-Windows. Only a discrete
-    # card is a safe auto pick.
     low = name.lower()
     if ("(tm) graphics" in low) or ("integrated" in low):
         return True
-    return arch.startswith("gfx103") or arch.startswith("gfx90c") or arch.startswith("gfx902")
+    arch = (arch or "").lower()
+    return any(arch.startswith(a) for a in _INTEGRATED_ARCHS)
 
 best_i, best_mem, best_desc = -1, -1, ""   # only DISCRETE candidates considered
 for i in range(torch.cuda.device_count()):
