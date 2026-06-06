@@ -69,6 +69,31 @@ compliance (tracked in #133):
 - the standalone `calibration_survey.py` CLI (the bake-off driver).
 - any other surface that loads a full corpus into one process.
 
+## Keeping docs current (the docs-freshness step)
+
+Shipping or changing a capability is not done until its paper trail moves with
+it. These travel together, and `tools/check_docs_freshness.py` gates the pair of
+them in CI:
+
+- **`capabilities.yaml`** — add/update the entry (the drift linter
+  `tools/check_capabilities_drift.py` enforces the surface/script match).
+- **`CHANGELOG.md`** — a line referencing the capability `id` (the freshness gate
+  fails CI if a curated capability has no changelog mention).
+- **Calibration-readiness matrix** — auto-derived; run
+  `python3 tools/gen_calibration_readiness.py` and commit any change (CI runs
+  `--check`).
+- **`ROADMAP.md`** — update the dated status-reconciliation section when what's
+  shipped/left changes.
+- **`references/signals-glossary.md`** — if a new signal was added.
+
+Before pushing capability work:
+
+```bash
+python3 tools/check_capabilities_drift.py     # manifest ↔ source
+python3 tools/gen_calibration_readiness.py     # refresh the matrix, then commit
+python3 tools/check_docs_freshness.py          # changelog coverage + matrix freshness
+```
+
 ## PRs and merges
 
 **Default to PR-per-release with a merge commit.** This makes the
