@@ -52,6 +52,7 @@ TASK_SURFACE_LABELS = {
     "metric_targeted_restoration": "metric-targeted restoration packets",
     "external_mirror_discrimination": "external-mirror discrimination",
     "binoculars_discrimination": "Binoculars-style perplexity-ratio discrimination",
+    "reference_ecology": "reference-ecology profile (non-voice; topic-bound)",
     "narrative_decision_audit": (
         "narrative-decision audit (Russell et al. 2026 / StoryScope "
         "30-core-feature anchor)"
