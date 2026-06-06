@@ -58,6 +58,7 @@ VALID_TASK_SURFACES = frozenset({
     "external_mirror_discrimination",
     "binoculars_discrimination",
     "narrative_decision_audit",
+    "document_layout",
 })
 
 

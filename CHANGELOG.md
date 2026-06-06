@@ -4,6 +4,10 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 
 ## Unreleased
 
+**`document_layout_audit.py` — non-voice document structure / layout profile (Surfaces Tier 5).** A new descriptive audit on a new `document_layout` task surface: heading cadence, section-length variance, list / blockquote / code / link / table usage, link density. Ships under explicit **non-voice** claim-licensing — emits measurements only (no band, no verdict) and refuses voice / authorship / AI-provenance / writing-quality inference, per the roadmap's "ship as its own non-voice audit, not as a voice tool" mandate (`specs/07-document-layout-audit.md`). Stdlib only (no model deps); operates on raw Markdown structure with code-fence content excluded from detection so a `# comment` or `- item` inside a fence isn't miscounted. Adds `document_layout` to `output_schema.VALID_TASK_SURFACES` + `claim_license.TASK_SURFACE_LABELS` (additive — the surface-parity test asserts only a subset). 14 tests in `test_document_layout_audit.py`.
+
+_Tagged `feat` (→ MINOR). The `plugin.json` version bump is applied at merge, not pinned here — open PRs merge in an unknown order, so the merger assigns the next version when the merge commit lands._
+
 **Two PR #130 review followups: handoff vocabulary validation + polarity-audit envelope misrepresentation.** Both surfaced by the reviewer probing the v0.3 contract before merge.
 
 - **Linter catches `handoff` typos and shape errors.** Pre-fix, only `handoff: stable` entries got linted (for the `references` requirement); anything else fell through. A typo like `handoff: stabel` on `variance_audit` passed cleanly and made `capabilities.py list --handoff stable --consumer apodictic` silently drop the entry from APODICTIC's pinned surface. New violation kinds: `invalid_handoff` (value not in {stable, experimental, internal, none}), `missing_handoff` (pre-v0.3 entries without the field), `missing_consumers` (likewise), and `invalid_consumers_type` (scalar string instead of list — silently broke the `--consumer X` filter's `in` check). 3 new tests pin the typo, the missing field, and the scalar-consumers case.
