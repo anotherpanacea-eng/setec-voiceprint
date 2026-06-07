@@ -116,6 +116,27 @@ def test_empty_calibration_unavailable(tmp_path):
     assert payload["available"] is False
 
 
+def test_malformed_json_list_clean_exit(tmp_path):
+    # A JSON list with a non-numeric entry must yield a clean exit 2, not a traceback.
+    f = tmp_path / "bad.txt"
+    f.write_text('[1, 2, "x"]', encoding="utf-8")
+    assert cg.main(["--calibration", str(f), "--score", "1.0", "--json"]) == 2
+
+
+def test_malformed_line_clean_exit(tmp_path):
+    f = tmp_path / "bad.txt"
+    f.write_text("1.0\nnot_a_number\n3.0", encoding="utf-8")
+    assert cg.main(["--calibration", str(f), "--score", "1.0", "--json"]) == 2
+
+
+def test_json_list_and_newline_parse_equal(tmp_path):
+    j = tmp_path / "a.json"
+    j.write_text("[1, 2, 3, 4, 5]", encoding="utf-8")
+    n = tmp_path / "b.txt"
+    n.write_text("1\n2\n3\n4\n5\n", encoding="utf-8")
+    assert cg.load_scores(j) == cg.load_scores(n) == [1.0, 2.0, 3.0, 4.0, 5.0]
+
+
 def test_deterministic():
     cal = [1.0, 2.0, 3.0, 4.0, 5.0]
     a = cg.gate_one_class(cal, 2.5, alpha=0.1,

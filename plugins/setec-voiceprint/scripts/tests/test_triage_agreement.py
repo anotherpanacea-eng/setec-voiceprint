@@ -102,6 +102,37 @@ def test_too_few_items_unavailable(tmp_path):
     assert payload["available"] is False
 
 
+def test_malformed_jsonl_line_dropped(tmp_path):
+    # 11 valid rows + one corrupt/truncated line must not crash the run.
+    f = tmp_path / "labels.jsonl"
+    good = "\n".join(json.dumps({"framework": "a", "human": "a"}) for _ in range(11))
+    f.write_text(good + '\n{"framework":"a", "human":', encoding="utf-8")
+    pairs, dropped = ta.load_pairs(f, framework_key="framework",
+                                   human_key="human", fmt="jsonl")
+    assert len(pairs) == 11
+    assert dropped >= 1
+    assert ta.main([str(f), "--json", "--out", str(tmp_path / "o.json")]) == 0
+
+
+def test_non_object_jsonl_row_dropped(tmp_path):
+    f = tmp_path / "labels.jsonl"
+    good = "\n".join(json.dumps({"framework": "a", "human": "a"}) for _ in range(11))
+    f.write_text(good + "\n[1, 2, 3]", encoding="utf-8")
+    pairs, dropped = ta.load_pairs(f, framework_key="framework",
+                                   human_key="human", fmt="jsonl")
+    assert len(pairs) == 11 and dropped >= 1
+
+
+def test_zero_label_kept_not_dropped(tmp_path):
+    # Integer 0 / string "0" are valid labels, NOT missing values.
+    f = tmp_path / "labels.jsonl"
+    f.write_text("\n".join(json.dumps({"framework": 0, "human": 1})
+                           for _ in range(11)), encoding="utf-8")
+    pairs, dropped = ta.load_pairs(f, framework_key="framework",
+                                   human_key="human", fmt="jsonl")
+    assert len(pairs) == 11 and dropped == 0
+
+
 def test_claim_license_refuses_ground_truth():
     dn = ta._claim_license().does_not_license.lower()
     assert "correct" in dn or "ground truth" in dn

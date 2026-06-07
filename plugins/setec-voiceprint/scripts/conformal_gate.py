@@ -48,22 +48,42 @@ DIRECTIONS = ("higher_is_nonconforming", "lower_is_nonconforming", "two_sided")
 
 
 def load_scores(path: Path) -> list[float]:
-    """Parse a JSON list or newline-delimited floats."""
+    """Parse a JSON list or newline-delimited floats.
+
+    Raises ``ValueError`` with a clear message on malformed input (a JSON list
+    with a non-numeric entry, or a non-numeric line) rather than letting a raw
+    conversion traceback escape — main() turns that into a clean exit.
+    """
     raw = path.read_text(encoding="utf-8").strip()
     if not raw:
         return []
+    # If the file is valid JSON *and* a list, commit to that interpretation —
+    # don't fall through to the line parser (which would then try to float()
+    # the JSON text itself and raise an uncaught error).
     try:
         data = json.loads(raw)
-        if isinstance(data, list):
+    except json.JSONDecodeError:
+        data = None
+    if isinstance(data, list):
+        try:
             return [float(x) for x in data]
-    except (json.JSONDecodeError, TypeError, ValueError):
-        pass
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"{path}: calibration is a JSON list with a non-numeric entry"
+            ) from exc
+    # Newline-delimited (or a single scalar) fallback.
     out: list[float] = []
-    for line in raw.splitlines():
+    for lineno, line in enumerate(raw.splitlines(), 1):
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        out.append(float(line.split(",")[0]))
+        token = line.split(",")[0]
+        try:
+            out.append(float(token))
+        except ValueError as exc:
+            raise ValueError(
+                f"{path}:{lineno}: cannot parse calibration score {token!r}"
+            ) from exc
     return out
 
 
@@ -249,7 +269,11 @@ def main(argv: list[str] | None = None) -> int:
         sys.stderr.write(f"Calibration file not found: {cal_path}\n")
         return 2
 
-    calibration = load_scores(cal_path)
+    try:
+        calibration = load_scores(cal_path)
+    except ValueError as exc:
+        sys.stderr.write(f"Could not read calibration scores: {exc}\n")
+        return 2
     if not calibration:
         payload = build_payload(
             {}, target_path=cal_path, available=False,
@@ -260,7 +284,11 @@ def main(argv: list[str] | None = None) -> int:
         if not pos_path.is_file():
             sys.stderr.write(f"Positive calibration file not found: {pos_path}\n")
             return 2
-        cal_pos = load_scores(pos_path)
+        try:
+            cal_pos = load_scores(pos_path)
+        except ValueError as exc:
+            sys.stderr.write(f"Could not read positive calibration scores: {exc}\n")
+            return 2
         if not cal_pos:
             payload = build_payload(
                 {}, target_path=cal_path, available=False,

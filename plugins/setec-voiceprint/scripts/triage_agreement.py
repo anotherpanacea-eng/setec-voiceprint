@@ -49,7 +49,8 @@ MIN_ITEMS = 10
 def load_pairs(path: Path, *, framework_key: str, human_key: str,
                fmt: str) -> tuple[list[tuple[str, str]], int]:
     """Return (pairs, n_dropped). Rows missing either key are dropped + counted."""
-    rows: list[dict[str, Any]] = []
+    rows: list[Any] = []
+    dropped = 0
     if fmt == "csv":
         with path.open("r", encoding="utf-8", newline="") as fh:
             rows = list(csv.DictReader(fh))
@@ -58,11 +59,19 @@ def load_pairs(path: Path, *, framework_key: str, human_key: str,
             line = line.strip()
             if not line:
                 continue
-            rows.append(json.loads(line))
+            # A corrupt/truncated line is realistic for a logged-decisions file;
+            # drop + count it (consistent with missing-key handling) rather than
+            # aborting the whole run with an uncaught JSONDecodeError.
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                dropped += 1
 
     pairs: list[tuple[str, str]] = []
-    dropped = 0
     for row in rows:
+        if not isinstance(row, dict):  # e.g. a JSON line that's a list/scalar
+            dropped += 1
+            continue
         f = row.get(framework_key)
         h = row.get(human_key)
         if f is None or h is None or f == "" or h == "":
