@@ -70,6 +70,10 @@ TASK_SURFACE_LABELS = {
         "narratorial-distance / free-indirect-discourse profile "
         "(voice-coherence family; descriptive, non-verdict)"
     ),
+    "productive_roughness": (
+        "productive-roughness deviation vs the writer's own baseline "
+        "(descriptive, strictly baseline-relative, non-verdict)"
+    ),
 }
 
 
