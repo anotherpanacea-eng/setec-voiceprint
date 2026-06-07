@@ -2,7 +2,7 @@
 """gen_calibration_readiness.py — derive the user-facing calibration/readiness
 matrix from the capabilities manifest.
 
-The manifest at `plugins/setec-voiceprint/capabilities.yaml` already carries,
+The manifest at `plugins/setec-voiceprint/capabilities.d/` already carries,
 per curated entry, everything needed to answer the question a new user (one
 *without* the maintainer's private baseline corpora) actually has: "for each
 capability, what does it need to run, what corpus do I have to bring myself,
@@ -52,7 +52,14 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = REPO_ROOT / "plugins" / "setec-voiceprint" / "capabilities.yaml"
+DEFAULT_MANIFEST = REPO_ROOT / "plugins" / "setec-voiceprint" / "capabilities.d"
+
+# Canonical dir-aware manifest loader from the plugin (tools -> plugin); it
+# re-injects schema_version from _meta.yaml, which this tool renders.
+_SCRIPTS_ROOT = REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
+if str(_SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_ROOT))
+from capabilities import load_manifest  # type: ignore  # noqa: E402
 DEFAULT_DOC = (
     REPO_ROOT
     / "plugins"
@@ -116,22 +123,7 @@ DISPLAY_ORDER = [
 ]
 
 
-def _load_yaml():
-    """Lazy PyYAML import (see capabilities.py / check_capabilities_drift.py)."""
-    try:
-        import yaml  # type: ignore
-
-        return yaml
-    except ImportError as exc:  # pragma: no cover - environment-dependent
-        raise ImportError(
-            "gen_calibration_readiness requires PyYAML to parse the manifest "
-            "(`pip install pyyaml`)"
-        ) from exc
-
-
-def load_manifest(path: Path = DEFAULT_MANIFEST) -> dict[str, Any]:
-    yaml = _load_yaml()
-    return yaml.safe_load(path.read_text(encoding="utf-8"))
+# load_manifest is imported from capabilities (canonical dir-aware loader).
 
 
 def _friendly_input(raw: str) -> str:
@@ -303,7 +295,7 @@ def render_block(manifest: dict[str, Any]) -> str:
 
     parts: list[str] = []
     parts.append(
-        f"_Generated from `capabilities.yaml` (schema "
+        f"_Generated from `capabilities.d/` (schema "
         f"{manifest.get('schema_version', '?')}) by "
         f"`tools/gen_calibration_readiness.py`. Do not edit this region by hand._"
     )

@@ -1,0 +1,50 @@
+entries:
+- id: reference_ecology_audit
+  script_path: plugins/setec-voiceprint/scripts/reference_ecology_audit.py
+  surface: reference_ecology
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: non-voice-structure
+  purpose: 'Descriptive reference-ecology profile of a document — citation style and
+    density (parenthetical / DOI / arXiv / et al.), footnote refs+defs, attribution
+    constructions, quotation density, and external-link domain breadth. A thematic/register
+    profile, NOT stylometry: emits measurements only (no band, no verdict) and refuses
+    voice/authorship/AI inference, with an explicit topic-leakage caveat (reference
+    ecology shifts with subject).
+
+    '
+  use_when:
+  - You want a profile of how a document cites, quotes, and links out
+  - You're comparing reference/citation conventions across documents or registers
+  - Target is >= 300 words
+  do_not_use_when:
+  - You want any voice, authorship, or AI-provenance inference (this surface refuses
+    it)
+  - You're treating citation/link patterns as a voice signal (they are topic-bound)
+  - Target is under 300 words (the length floor)
+  inputs:
+    target: prose/markdown text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout markdown report (default), --json envelope, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib only; no models, CPU-trivial.
+    length_floor_words: 300
+  registers:
+  - academic_philosophy
+  - blog_essay
+  - testimony_policy
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Reference-ecology profile to stdout
+    cmd: python3 plugins/setec-voiceprint/scripts/reference_ecology_audit.py target.md
+  - description: JSON envelope
+    cmd: python3 plugins/setec-voiceprint/scripts/reference_ecology_audit.py target.md
+      --json
+  references:
+  - plugins/setec-voiceprint/specs/08-reference-ecology-audit.md

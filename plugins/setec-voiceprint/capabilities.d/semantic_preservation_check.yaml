@@ -1,0 +1,31 @@
+entries:
+- id: semantic_preservation_check
+  script_path: plugins/setec-voiceprint/scripts/semantic_preservation_check.py
+  surface: craft_restoration
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: semantic guardrails over the before / after restoration pair (paired-release
+    schedule Release 8, Trustworthiness Tier 3).
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: core
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python: []
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'

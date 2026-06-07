@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """capabilities.py — query SETEC's capabilities manifest.
 
-The manifest at `plugins/setec-voiceprint/capabilities.yaml` is the
-single source of truth for what every user-facing script does, when
-to use it, when not to use it, and what compute it needs. This CLI
-queries the manifest from the command line and from the `/setec`
-skill.
+The manifest at `plugins/setec-voiceprint/capabilities.d/` (one
+`<id>.yaml` fragment per capability + `_meta.yaml`) is the single
+source of truth for what every user-facing script does, when to use
+it, when not to use it, and what compute it needs. This CLI queries
+the manifest from the command line and from the `/setec` skill.
 
 Subcommands
 -----------
@@ -64,7 +64,10 @@ from pathlib import Path
 from typing import Any
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
-MANIFEST_PATH = PLUGIN_ROOT / "capabilities.yaml"
+# Canonical layout is the drop-in fragment directory capabilities.d/: one
+# <id>.yaml per capability plus _meta.yaml for top-level keys (schema_version).
+# A single-file manifest is still accepted (legacy / test fixtures).
+MANIFEST_PATH = PLUGIN_ROOT / "capabilities.d"
 
 
 def _load_yaml():
@@ -86,13 +89,22 @@ def _load_yaml():
 # ---------- loading -------------------------------------------------
 
 def load_manifest(path: Path = MANIFEST_PATH) -> dict[str, Any]:
+    """Load the capabilities manifest from either the canonical fragment
+    directory (capabilities.d/) or a single YAML file (legacy / test
+    fixtures). A directory aggregates `_meta.yaml` (top-level keys such as
+    `schema_version`) with one entry per `<id>.yaml`, so parallel PRs add
+    independent fragment files instead of colliding on one manifest.
+
+    This is the single canonical loader; the repo tools import it rather than
+    re-implementing aggregation (dependency direction: tools -> plugin)."""
     if not path.exists():
         raise FileNotFoundError(
-            f"capabilities manifest missing at {path}; "
-            f"run `python3 tools/seed_capabilities.py --out {path}` "
-            f"to bootstrap"
+            f"capabilities manifest missing at {path}; expected the "
+            f"capabilities.d/ fragment directory"
         )
     yaml = _load_yaml()
+    if path.is_dir():
+        return _load_manifest_dir(path, yaml)
     with path.open("r", encoding="utf-8") as fh:
         data = yaml.safe_load(fh)
     if not isinstance(data, dict) or "entries" not in data:
@@ -100,6 +112,49 @@ def load_manifest(path: Path = MANIFEST_PATH) -> dict[str, Any]:
             f"{path}: manifest missing top-level `entries` key"
         )
     return data
+
+
+def _load_manifest_dir(path: Path, yaml: Any) -> dict[str, Any]:
+    """Aggregate a capabilities.d/ fragment directory into a single manifest
+    dict of the same shape the legacy single file produced."""
+    manifest: dict[str, Any] = {}
+    meta_path = path / "_meta.yaml"
+    if meta_path.exists():
+        meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) or {}
+        if not isinstance(meta, dict):
+            raise ValueError(f"{meta_path}: expected a mapping of top-level keys")
+        manifest.update(meta)
+    merged: list[dict[str, Any]] = []
+    for frag in sorted(path.glob("*.yaml")):
+        if frag.name == "_meta.yaml":
+            continue
+        doc = yaml.safe_load(frag.read_text(encoding="utf-8"))
+        if not isinstance(doc, dict) or "entries" not in doc:
+            raise ValueError(f"{frag}: fragment missing top-level `entries` key")
+        frag_entries = doc["entries"]
+        # The drop-in guarantee depends on one entry per file, keyed by
+        # filename: otherwise a fragment `foo.yaml` carrying `id: bar` (or two
+        # entries) would load green while breaking discoverability. Enforce it
+        # here — the only place that sees both filename and entry.
+        if not isinstance(frag_entries, list) or len(frag_entries) != 1:
+            n = len(frag_entries) if isinstance(frag_entries, list) else "non-list"
+            raise ValueError(
+                f"{frag}: a capabilities.d/ fragment must contain exactly one "
+                f"entry (found {n})"
+            )
+        entry = frag_entries[0]
+        if not isinstance(entry, dict) or entry.get("id") != frag.stem:
+            raise ValueError(
+                f"{frag}: fragment id {entry.get('id') if isinstance(entry, dict) else entry!r} "
+                f"must match the filename stem {frag.stem!r}"
+            )
+        merged.append(entry)
+    if not merged:
+        raise ValueError(
+            f"{path}: no capability fragments found (empty manifest)"
+        )
+    manifest["entries"] = merged
+    return manifest
 
 
 def entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:

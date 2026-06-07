@@ -1,0 +1,53 @@
+entries:
+- id: conformal_gate
+  script_path: plugins/setec-voiceprint/scripts/conformal_gate.py
+  surface: validation
+  status: heuristic
+  handoff: experimental
+  consumers: []
+  family: validation
+  purpose: 'A split-conformal abstention layer over any signal: given operator-supplied
+    calibration nonconformity scores and a target score, emit a distribution-free,
+    finite-sample conformal p-value and a prediction set at coverage 1-alpha. Turns
+    "the band reads uncalibrated" into "abstain, with a guaranteed error rate at this
+    operating point." A methodology wrapper, NOT a detector; an empty or full prediction
+    set is a licensed abstention. The p-value is NOT P(AI).
+
+    '
+  use_when:
+  - You have calibration nonconformity scores for a reference class and want a guaranteed-coverage
+    abstention on a target score
+  - You want to convert an uncalibrated signal into a finite-sample, distribution-free
+    decision
+  - You want a two-class prediction set (supply --calibration-positive)
+  do_not_use_when:
+  - You want an AI/human verdict (the conformal p-value is a membership statistic,
+    not P(AI))
+  - Your calibration scores are not exchangeable with the target (the guarantee fails)
+  - You have no calibration scores to supply
+  inputs:
+    required:
+    - --calibration nonconformity scores for the reference class (JSON list or newline-delimited)
+    - --score the target nonconformity score
+    optional:
+    - --calibration-positive nonconformity scores for a positive class (two-class
+      mode)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout markdown report (default), --json envelope, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib only; CPU-trivial.
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: One-class conformal gate at coverage 0.9
+    cmd: python3 plugins/setec-voiceprint/scripts/conformal_gate.py --calibration
+      human_scores.txt --score 4.2
+  - description: Two-class prediction set, two-sided nonconformity
+    cmd: python3 plugins/setec-voiceprint/scripts/conformal_gate.py --calibration
+      ref.txt --calibration-positive ai.txt --score 4.2 --direction two_sided --json
+  references:
+  - plugins/setec-voiceprint/specs/20-conformal-abstention-gate.md

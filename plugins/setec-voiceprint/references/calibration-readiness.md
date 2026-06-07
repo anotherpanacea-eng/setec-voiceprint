@@ -12,7 +12,7 @@ GPU for re-deriving thresholds) and
 baseline looks like). This document is the per-capability *readiness matrix* plus
 the recipe for assembling the corpus the framework deliberately does not ship.
 
-The readiness table below is **generated from `capabilities.yaml`** so it cannot
+The readiness table below is **generated from `capabilities.d/`** so it cannot
 drift from the code; the prose around it is hand-maintained.
 
 ## The framework ships methodology, not thresholds
@@ -82,7 +82,7 @@ each licenses before you bring your own labeled corpus:
 
 <!-- BEGIN GENERATED: tools/gen_calibration_readiness.py — do not edit by hand -->
 
-_Generated from `capabilities.yaml` (schema 0.3.0) by `tools/gen_calibration_readiness.py`. Do not edit this region by hand._
+_Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readiness.py`. Do not edit this region by hand._
 
 ### Evidence surfaces (run on a draft)
 
@@ -133,7 +133,7 @@ _Generated from `capabilities.yaml` (schema 0.3.0) by `tools/gen_calibration_rea
 The table above is regenerated from the capabilities manifest:
 
 ```bash
-# refresh the generated region after editing capabilities.yaml
+# refresh the generated region after editing capabilities.d/
 python3 tools/gen_calibration_readiness.py
 
 # CI / pre-commit: fail if the doc is stale (exit 1)

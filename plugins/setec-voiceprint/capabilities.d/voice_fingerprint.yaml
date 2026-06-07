@@ -1,0 +1,65 @@
+entries:
+- id: voice_fingerprint
+  script_path: plugins/setec-voiceprint/scripts/voice_fingerprint.py
+  surface: authorship_embedding
+  status: empirically_oriented
+  handoff: experimental
+  consumers: []
+  family: style-embedding
+  purpose: 'Same-author style-embedding surface. Embeds passages with a frozen style
+    encoder (LUAR default; Wegmann optional via sentence-transformers) and reports
+    the cosine-similarity DISTRIBUTION across windows — internal consistency (single),
+    consistency with a baseline voice centroid (two-corpus), or where the target''s
+    candidate-similarity falls relative to an impostor pool (n-way, descriptive).
+    Refuses any identity / AI verdict; ships PROVISIONAL with no threshold.
+
+    '
+  use_when:
+  - You want a learned-manifold complement to the scalar voice-coherence signals (voice_distance,
+    idiolect_detector)
+  - You want same-author-consistency evidence that needs no per-deployment training
+    and no threshold
+  - You want the embedding analogue of the general-imposters framing (target vs candidate
+    vs impostor pool)
+  do_not_use_when:
+  - You need an identity verdict ("same person" / "different author") — the surface
+    refuses it
+  - You need an AI-vs-human call — this surface does not discriminate provenance
+  - Windows are short (<~100 tokens) — style embeddings are fragile on short text;
+    read the distribution, not single windows
+  - You want a general-imposters win/loss proportion — use general_imposters.py (this
+    is descriptive only)
+  inputs:
+    target: prose text file (UTF-8)
+    optional:
+    - --baseline-dir for two-corpus / candidate corpus
+    - --impostor-dir for n-way impostor pool (requires --baseline-dir)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .voice_fingerprint.json
+  compute:
+    tier: optional
+    cost_note: loads a ~0.5–1.4 GB style encoder; CPU-feasible, GPU optional <2 GB
+      VRAM
+    length_floor_words: 500
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python:
+    - transformers
+    python_optional:
+    - sentence_transformers
+  examples:
+  - description: Single-document internal voice consistency
+    cmd: python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --json
+  - description: Two-corpus same-author-consistency evidence
+    cmd: python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --baseline-dir
+      prior_work/ --json
+  - description: N-way embedding analogue (target vs candidate vs impostors)
+    cmd: python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --baseline-dir
+      candidate/ --impostor-dir impostors/ --json
+  references:
+  - specs/02-voice-fingerprint-embedding.md
+  - plugins/setec-voiceprint/references/signals-glossary.md

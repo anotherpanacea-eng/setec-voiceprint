@@ -1,0 +1,31 @@
+entries:
+- id: acquire_magazine
+  script_path: plugins/setec-voiceprint/scripts/acquire_magazine.py
+  surface: voice_coherence_acquisition
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: pull literary-horror short fiction from online magazines.
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: acquisition
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python:
+    - bs4
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'

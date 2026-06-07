@@ -1,0 +1,58 @@
+entries:
+- id: narrative_decision_audit
+  script_path: plugins/setec-voiceprint/scripts/narrative_decision_audit.py
+  surface: narrative_decision_audit
+  status: literature_anchored
+  handoff: experimental
+  consumers:
+  - apodictic
+  family: narrative-decision
+  purpose: 'Score a story''s narrative decisions (themes, plot, pacing, sensory register,
+    reader engagement) against Russell et al. 2026''s reported human / AI group means.
+    Distinct from the texture-level AIC families — these are discourse-level decisions
+    that require structural rewrites to remove.
+
+    '
+  use_when:
+  - Target is long-form fiction ≥ 2000 words
+  - You want evidence that survives LAMP-style stylistic rewriting
+  - You're stacking signals with Tier 1 / AIC / Binoculars
+  do_not_use_when:
+  - Target is an essay, op-ed, or under ~2000 words
+  - You need a binary verdict from one audit alone
+  - You don't have access to an LLM judge (or a pre-computed feature manifest)
+  inputs:
+    target: prose text file (UTF-8)
+    optional:
+    - --judge-manifest with pre-computed feature values
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .narrative.json
+    - .narrative.md
+  compute:
+    tier: api_llm
+    cost_note: $0.05–0.30 per doc via Anthropic / OpenAI / Gemini; free with --judge
+      manifest
+    length_floor_words: 2000
+  registers:
+  - long_form_fiction
+  dependencies:
+    python: []
+    python_optional: []
+    sdks_optional:
+    - anthropic
+    - openai
+    - google-genai
+  examples:
+  - description: Single-doc audit with pre-computed values
+    cmd: python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt
+      --judge manifest --judge-manifest features.json
+  - description: Direct API spot-check
+    cmd: python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt
+      --judge anthropic --judge-model claude-sonnet-4-6
+  references:
+  - plugins/setec-voiceprint/references/narrative-decision-audit-spec.md
+  - plugins/setec-voiceprint/references/narrative-decision-replication-spec.md
+  - plugins/setec-voiceprint/references/storyscope-prompts/
+  - plugins/setec-voiceprint/references/apodictic-handoff-storyscope.md

@@ -8,7 +8,7 @@ sync with the manifest, so a shipped capability can't quietly skip its paper tra
 Checks:
 
   1. **CHANGELOG coverage.** Every curated (status != todo) entry in
-     capabilities.yaml must be referenced by `id` in CHANGELOG.md. Shipping or
+     each curated capability (capabilities.d/) must be referenced by `id` in CHANGELOG.md. Shipping or
      curating a capability without a changelog line is drift.
 
   2. **Generated-doc freshness.** If the calibration-readiness generator and its
@@ -41,25 +41,21 @@ from pathlib import Path
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = REPO_ROOT / "plugins" / "setec-voiceprint" / "capabilities.yaml"
+DEFAULT_MANIFEST = REPO_ROOT / "plugins" / "setec-voiceprint" / "capabilities.d"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 
-
-def _load_yaml():
-    try:
-        import yaml  # type: ignore
-
-        return yaml
-    except ImportError as exc:  # pragma: no cover - environment-dependent
-        raise ImportError(
-            "check_docs_freshness requires PyYAML (`pip install pyyaml`)"
-        ) from exc
+# Use the plugin's canonical manifest loader (dir-aware) rather than reading the
+# path directly — repointing DEFAULT_MANIFEST at the capabilities.d/ directory
+# would otherwise raise IsADirectoryError on a raw read.
+_SCRIPTS_ROOT = REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
+if str(_SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SCRIPTS_ROOT))
+from capabilities import load_manifest  # type: ignore  # noqa: E402
 
 
 def changelog_coverage(manifest_path: Path, changelog_path: Path) -> list[str]:
     """Return curated capability ids missing from the changelog."""
-    yaml = _load_yaml()
-    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest = load_manifest(manifest_path)
     changelog = changelog_path.read_text(encoding="utf-8")
     missing = []
     for entry in manifest.get("entries", []):

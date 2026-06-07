@@ -289,13 +289,12 @@ def test_fixture_path_cannot_escape_bundle(tmp_path):
 
 
 def test_capabilities_entry_present():
-    """capabilities.yaml carries a pan_replay entry on the validation
+    """capabilities.d/ carries a pan_replay entry on the validation
     surface with the spec's status / handoff / compute fields."""
-    yaml = pytest.importorskip("yaml") if pytest is not None else __import__("yaml")
-    manifest_path = (
-        REPO_ROOT / "plugins" / "setec-voiceprint" / "capabilities.yaml"
-    )
-    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    pytest.importorskip("yaml") if pytest is not None else __import__("yaml")
+    from capabilities import load_manifest  # type: ignore
+
+    manifest = load_manifest()  # canonical capabilities.d/ fragment directory
     entries = {e["id"]: e for e in manifest.get("entries", [])}
     assert "pan_replay" in entries
     entry = entries["pan_replay"]

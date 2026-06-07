@@ -1,0 +1,53 @@
+entries:
+- id: productive_roughness_audit
+  script_path: plugins/setec-voiceprint/scripts/productive_roughness_audit.py
+  surface: productive_roughness
+  status: heuristic
+  handoff: experimental
+  consumers: []
+  family: voice-coherence
+  purpose: 'Strictly baseline-relative productive-roughness deviation profile — fragment
+    rate, sentence-initial coordinating-conjunction rate, contraction rate, adjacent-word-repetition
+    rate, interjection/aside rate, very-short- sentence rate. Reports each as the
+    draft''s deviation (draft, baseline mean ± sd, z) from the WRITER''S OWN baseline,
+    never an absolute roughness or quality judgment.
+
+    '
+  use_when:
+  - You want to see how a draft's sentence-internal roughness deviates from a writer's
+    own stable pattern
+  - You have a writer-specific baseline corpus (their prior work) to compare against
+  - You suspect AI editing has sanded off (or amplified) a writer's productive roughness
+  do_not_use_when:
+  - You have no writer-specific baseline (the audit refuses to run on a single document)
+  - You want an absolute "too smooth / too rough" verdict or a quality score (this
+    surface refuses it)
+  - You want a voice-identity, authorship, or AI-provenance call
+  inputs:
+    target: draft prose/markdown text file (UTF-8)
+    required:
+    - writer-specific baseline directory (--baseline-dir)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout markdown report (default), --json envelope, or --out PATH
+  compute:
+    tier: spacy
+    cost_note: spaCy en_core_web_sm dependency parse; CPU, no GPU/LLM.
+    length_floor_words: 1000
+  registers:
+  - all_fiction
+  - blog_essay
+  dependencies:
+    python:
+    - spacy
+  examples:
+  - description: Baseline-relative roughness deviation to stdout
+    cmd: python3 plugins/setec-voiceprint/scripts/productive_roughness_audit.py draft.md
+      --baseline-dir baseline/
+  - description: JSON envelope
+    cmd: python3 plugins/setec-voiceprint/scripts/productive_roughness_audit.py draft.md
+      --baseline-dir baseline/ --json
+  references:
+  - plugins/setec-voiceprint/specs/10-productive-roughness-audit.md
+  _seeded_at: '2026-06-06'

@@ -1,0 +1,32 @@
+entries:
+- id: calibration_survey
+  script_path: plugins/setec-voiceprint/scripts/calibration/calibration_survey.py
+  surface: smoothing_diagnosis_calibration
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: survey every COMPRESSION_HEURISTICS signal.
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: core
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python:
+    - atexit
+    - concurrent
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'

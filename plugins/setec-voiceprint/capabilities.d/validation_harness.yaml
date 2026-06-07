@@ -1,0 +1,56 @@
+entries:
+- id: validation_harness
+  script_path: plugins/setec-voiceprint/scripts/validation_harness.py
+  surface: validation
+  status: empirically_oriented
+  handoff: stable
+  consumers:
+  - apodictic
+  family: validation
+  purpose: 'Empirical validation harness for SETEC task-surface outputs. Computes
+    FPR / TPR / AUC / AUPRC with Wilson / Clopper-Pearson CIs against a labeled manifest,
+    enforces prompt-level grouping, and refuses to mix scores across task surfaces
+    because the surfaces answer different questions.
+
+    '
+  use_when:
+  - You have a labeled corpus (with valid `corpus_manifest.jsonl`) and want to measure
+    how SETEC signals behave on it
+  - You're calibrating thresholds for an operator-specific corpus
+  - You want CIs alongside point estimates (the framework's default)
+  - You need a per-`language_status` ESL/L2 fairness slice — separate FPR/TPR/ROC
+    for native vs non-native/L2/translated entries (on by default when any entry carries
+    a non-`unknown` language_status; the harness refuses to publish a single aggregate
+    FPR that pools native + non-native, surfacing the documented ESL false-positive
+    failure mode rather than hiding it)
+  do_not_use_when:
+  - The manifest is unvalidated — run manifest_validator first
+  - The corpus is mixed-state (ai_status) without slicing — the harness refuses to
+    pool
+  - You want a single surface metric to be authoritative — the harness intentionally
+    surfaces all surfaces
+  inputs:
+    target: corpus manifest JSONL
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .validation.json
+    - .validation.md
+  compute:
+    tier: core
+    cost_note: scikit-learn + statsmodels for CIs; no API costs
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional:
+    - sklearn
+    - statsmodels
+  examples:
+  - description: Validate against a labeled corpus
+    cmd: python3 plugins/setec-voiceprint/scripts/validation_harness.py corpus/manifest.jsonl
+  references:
+  - plugins/setec-voiceprint/references/manifest-schema.md
+  - plugins/setec-voiceprint/references/calibration-findings-2026-05-10.md

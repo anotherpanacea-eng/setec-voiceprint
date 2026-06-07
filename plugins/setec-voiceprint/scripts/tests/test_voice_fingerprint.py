@@ -388,14 +388,13 @@ def test_window_strategy_parity(tmp_path: Path):
 
 
 def test_capabilities_entry_present():
-    """voice_fingerprint is in capabilities.yaml with the right
+    """voice_fingerprint is in capabilities.d/ with the right
     surface/status/handoff, and the repo passes the drift linter."""
-    yaml = pytest.importorskip("yaml")
+    pytest.importorskip("yaml")
+    from capabilities import load_manifest  # type: ignore
+
     repo_root = Path(__file__).resolve().parents[4]
-    manifest_path = (
-        repo_root / "plugins" / "setec-voiceprint" / "capabilities.yaml"
-    )
-    manifest = yaml.safe_load(manifest_path.read_text(encoding="utf-8"))
+    manifest = load_manifest()  # canonical capabilities.d/ fragment directory
     entries = {e["id"]: e for e in manifest["entries"]}
     assert "voice_fingerprint" in entries
     entry = entries["voice_fingerprint"]

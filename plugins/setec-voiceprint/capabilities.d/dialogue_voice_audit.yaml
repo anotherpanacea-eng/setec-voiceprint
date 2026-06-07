@@ -1,0 +1,56 @@
+entries:
+- id: dialogue_voice_audit
+  script_path: plugins/setec-voiceprint/scripts/dialogue_voice_audit.py
+  surface: voice_coherence
+  status: heuristic
+  handoff: experimental
+  consumers: []
+  family: voice-coherence
+  purpose: 'Per-character dialogue-voice profiling + cross-character divergence (Round
+    2 of pov_voice_profile, which profiles narration). Extracts quoted spans and tag-attributes
+    them to speakers ("said X" / "X asked"); unattributed dialogue is bucketed separately
+    and never force-attributed. Per character: contraction rate, mean turn length
+    + variance, dialogue-tag verb diversity, vocative rate, interruption / trailing-punctuation
+    rate, top function words + discourse markers. Reports a descriptive cross-character
+    divergence matrix + a list of the lowest-divergence pairs — NOT a verdict. Refuses
+    author-identity, AI-provenance, and quality inference.
+
+    '
+  use_when:
+  - Checking whether a multi-character draft keeps its characters voice-distinct in
+    dialogue
+  - Character-voice collapse is suspected (it surfaces in dialogue before narration)
+  - You want a per-character spoken-register profile to pair with pov_voice_profile's
+    narration layer
+  do_not_use_when:
+  - You want an author-identity, AI-provenance, or writing-quality verdict (the audit
+    refuses all three)
+  - The manuscript has little tagged dialogue (attribution is tag-heuristic, not coreference)
+  - Target is under 2000 words (the length floor)
+  inputs:
+    target: prose/markdown manuscript with quoted dialogue (UTF-8)
+    optional:
+    - --baseline-dir DIR (other chapters / a character's prior dialogue)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout markdown report (default), --json envelope, or --out PATH
+  compute:
+    tier: spacy
+    cost_note: CPU + en_core_web_sm; regex extraction, light per-turn tagging.
+    length_floor_words: 2000
+  registers:
+  - literary_fiction
+  - genre_fiction
+  dependencies:
+    python:
+    - spacy
+  examples:
+  - description: Dialogue-voice profile to stdout
+    cmd: python3 plugins/setec-voiceprint/scripts/dialogue_voice_audit.py manuscript.md
+  - description: JSON envelope with a baseline of other chapters
+    cmd: python3 plugins/setec-voiceprint/scripts/dialogue_voice_audit.py manuscript.md
+      --baseline-dir chapters/ --json
+  references:
+  - specs/11-dialogue-voice-audit.md
+  _seeded_at: '2026-06-06'

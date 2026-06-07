@@ -1,0 +1,55 @@
+entries:
+- id: crosslingual_voice_distance
+  script_path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
+  surface: voice_coherence
+  status: heuristic
+  handoff: experimental
+  consumers: []
+  family: voice-coherence
+  purpose: 'A language-agnostic, parser-free stylometric distance between a target
+    and a baseline corpus — character n-grams, punctuation profile, token-/sentence-
+    length distributions, and script statistics. No spaCy, no English assumption;
+    runs on any Unicode script with zero model dependencies. Honest about its ceiling:
+    language-agnostic, NOT language-aware (no morphology, no function-word list),
+    so it refuses morphology-dependent voice claims and refuses cross-language comparison
+    (the --lang tag is provenance).
+
+    '
+  use_when:
+  - You want a voice distance for non-English prose, or any language without an English
+    parser
+  - You have a register-matched, same-language baseline corpus and a target in the
+    same language
+  - Target is >= 500 words
+  do_not_use_when:
+  - You want an AI-provenance or authorship verdict (it produces a distance, not a
+    call)
+  - You want a morphology- or function-word-aware voice claim (use the English voice_distance
+    for those)
+  - Target and baseline are in different languages (cross-language comparison is meaningless)
+  - Target is under 500 words (the length floor)
+  inputs:
+    required:
+    - --baseline-dir register-matched same-language baseline corpus
+    - --lang language code shared by target and corpus (provenance)
+    target: prose/markdown text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout markdown report (default), --json envelope, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib only; no models, CPU-trivial.
+    length_floor_words: 500
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Spanish voice distance vs a same-language baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py target.txt
+      --baseline-dir baselines/es/ --lang es
+  - description: 4-grams, JSON envelope
+    cmd: python3 plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py target.txt
+      --baseline-dir baselines/es/ --lang es --char-ngram 4 --json
+  references:
+  - plugins/setec-voiceprint/specs/19-crosslingual-voice-distance.md

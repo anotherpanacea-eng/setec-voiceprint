@@ -16,7 +16,7 @@ python3 plugins/setec-voiceprint/scripts/capabilities.py recommend \
 python3 plugins/setec-voiceprint/scripts/capabilities.py show variance_audit
 ```
 
-The query tool reads `plugins/setec-voiceprint/capabilities.yaml` — the single source of truth for what every audit does, when to use it, when not to, and what compute tier it needs. The `/setec` slash command wraps this conversationally. Drift between the manifest and the source files is caught by `tools/check_capabilities_drift.py`.
+The query tool reads `plugins/setec-voiceprint/capabilities.d/` — the single source of truth for what every audit does, when to use it, when not to, and what compute tier it needs. The `/setec` slash command wraps this conversationally. Drift between the manifest and the source files is caught by `tools/check_capabilities_drift.py`.
 
 **Path convention.** Examples below name each script by bare filename (`python3 variance_audit.py ...`), assuming you are running them from this directory (`plugins/setec-voiceprint/scripts/`). Python's script argument is opened as a path relative to the current working directory, so the bare form requires you to be in that directory. From the repo root, prefix the script name with `plugins/setec-voiceprint/scripts/` (matching the top-level README's repo-root convention), or `cd plugins/setec-voiceprint/scripts/` first. If you've made the scripts executable and put the directory on `$PATH`, you can drop `python3` and invoke them directly as `variance_audit.py ...`.
 

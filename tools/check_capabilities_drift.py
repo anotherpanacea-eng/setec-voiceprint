@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check_capabilities_drift.py — guard against capability-manifest drift.
 
-The capabilities manifest at `plugins/setec-voiceprint/capabilities.yaml`
+The capabilities manifest at `plugins/setec-voiceprint/capabilities.d/`
 is the single source of truth for what every user-facing script in
 SETEC does. This linter ensures the manifest stays in sync with the
 source by checking three properties:
@@ -55,25 +55,18 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-def _load_yaml():
-    """Lazy PyYAML import (see capabilities.py for the same pattern)."""
-    try:
-        import yaml  # type: ignore
-        return yaml
-    except ImportError as exc:
-        raise ImportError(
-            "check_capabilities_drift requires PyYAML to parse the "
-            "manifest (`pip install pyyaml`)"
-        ) from exc
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = (
-    REPO_ROOT
-    / "plugins"
-    / "setec-voiceprint"
-    / "capabilities.yaml"
-)
 SCRIPTS_ROOT = REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
+DEFAULT_MANIFEST = REPO_ROOT / "plugins" / "setec-voiceprint" / "capabilities.d"
+
+# Aggregation lives in the plugin's manifest API (capabilities.py); this tool
+# imports the canonical loader rather than re-implementing dir aggregation.
+# Dependency direction: repo tools -> the plugin they tool (the plugin stays
+# self-contained). Re-exported as module-level names so callers/tests that use
+# `drift.load_manifest` / `drift.entries` keep working.
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+from capabilities import entries, load_manifest  # type: ignore  # noqa: E402
 
 SKIP_FILE_PATTERNS = [
     re.compile(r"^test_"),
@@ -148,18 +141,6 @@ def parse_task_surface(path: Path) -> str | None:
                 ):
                     return node.value.value
     return None
-
-
-# ---------- manifest scan -----------------------------------------
-
-def load_manifest(path: Path) -> dict[str, object]:
-    yaml = _load_yaml()
-    with path.open("r", encoding="utf-8") as fh:
-        return yaml.safe_load(fh)
-
-
-def entries(manifest: dict) -> list[dict]:
-    return list(manifest.get("entries") or [])
 
 
 # ---------- drift checks ------------------------------------------

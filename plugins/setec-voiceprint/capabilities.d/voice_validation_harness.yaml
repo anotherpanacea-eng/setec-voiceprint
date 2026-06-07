@@ -1,0 +1,31 @@
+entries:
+- id: voice_validation_harness
+  script_path: plugins/setec-voiceprint/scripts/voice_validation_harness.py
+  surface: voice_coherence
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: Surface 2 sibling to validation_harness.py.
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: core
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python:
+    - sklearn
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'

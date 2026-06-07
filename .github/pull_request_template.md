@@ -34,7 +34,7 @@ If this PR adds or changes a capability, confirm the paper trail moved with it
 (see AGENTS.md → "Keeping docs current"). Delete this section for non-capability PRs.
 -->
 
-- [ ] `capabilities.yaml` entry added/updated (drift linter clean)
+- [ ] `capabilities.d/<id>.yaml` fragment added/updated (one capability per file; drift linter clean)
 - [ ] New task surface → `scripts/claim_license_surfaces/<surface>.txt` fragment added (never edit a shared surface dict/list)
 - [ ] `CHANGELOG.md` line referencing the capability
 - [ ] `tools/gen_calibration_readiness.py` re-run + committed (matrix fresh)
