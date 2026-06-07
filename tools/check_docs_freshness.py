@@ -54,15 +54,28 @@ from capabilities import load_manifest  # type: ignore  # noqa: E402
 
 
 def changelog_coverage(manifest_path: Path, changelog_path: Path) -> list[str]:
-    """Return curated capability ids missing from the changelog."""
+    """Return curated capability ids missing from the changelog.
+
+    Coverage counts ``CHANGELOG.md`` **plus** the unreleased ``changelog.d/``
+    fragments (resolved next to the changelog), so a just-shipped capability is
+    covered by its fragment until a release assembles it into a version section.
+    Signature is unchanged (2-arg) — the fragment dir is derived, not a parameter
+    — so existing call sites and synthetic temp-changelog tests keep working.
+    """
     manifest = load_manifest(manifest_path)
-    changelog = changelog_path.read_text(encoding="utf-8")
+    covered = changelog_path.read_text(encoding="utf-8")
+    frag_dir = changelog_path.parent / "changelog.d"
+    if frag_dir.is_dir():
+        for frag in sorted(frag_dir.glob("*.md")):
+            if frag.name == "README.md":
+                continue
+            covered += "\n" + frag.read_text(encoding="utf-8")
     missing = []
     for entry in manifest.get("entries", []):
         if entry.get("status") == "todo":
             continue
         eid = entry.get("id", "")
-        if eid and eid not in changelog:
+        if eid and eid not in covered:
             missing.append(eid)
     return missing
 
@@ -91,13 +104,30 @@ def readiness_freshness() -> tuple[str, str]:
     return ("stale", "calibration-readiness.md is stale — run gen_calibration_readiness.py")
 
 
+def changelog_fragment_problems() -> list[str]:
+    """Malformed changelog.d/ fragments, validated with the SAME parser the
+    release assembler uses — so CI rejects a bad fragment at PR time instead of
+    only when `assemble_changelog.py` runs at release. Empty if the tool or the
+    dir is absent on this branch."""
+    tools_dir = str(REPO_ROOT / "tools")
+    if tools_dir not in sys.path:
+        sys.path.insert(0, tools_dir)
+    try:
+        import assemble_changelog as asm  # type: ignore
+    except ImportError:
+        return []
+    return asm.validate_fragments(CHANGELOG.parent / "changelog.d")
+
+
 def run(manifest_path: Path = DEFAULT_MANIFEST) -> dict[str, Any]:
     missing = changelog_coverage(manifest_path, CHANGELOG)
+    fragment_problems = changelog_fragment_problems()
     readiness_status, readiness_detail = readiness_freshness()
-    ok = (not missing) and readiness_status != "stale"
+    ok = (not missing) and (not fragment_problems) and readiness_status != "stale"
     return {
         "ok": ok,
         "changelog_missing": missing,
+        "changelog_fragment_problems": fragment_problems,
         "readiness": {"status": readiness_status, "detail": readiness_detail},
     }
 
@@ -125,6 +155,12 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {eid}")
     else:
         print("CHANGELOG coverage: ok (every curated capability is logged).")
+
+    problems = result.get("changelog_fragment_problems", [])
+    if problems:
+        print("changelog.d/ fragments: MALFORMED — the release assembler would reject these:")
+        for p in problems:
+            print(f"  - {p}")
 
     rs = result["readiness"]
     print(f"Readiness matrix: {rs['status']} — {rs['detail']}")
