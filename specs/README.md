@@ -35,6 +35,7 @@ truth for each contract.
 | [`18-triage-agreement.md`](18-triage-agreement.md) | **Built** (group W3). Framework-vs-human triage agreement (confusion, percent agreement, Cohen's κ, PABAK, bootstrap CI) on `validation`; measures concordance, not ground truth. stdlib. |
 | [`19-crosslingual-voice-distance.md`](19-crosslingual-voice-distance.md) | **Built** (group W5). Language-agnostic, parser-free voice distance (char n-grams, punctuation, length distributions, script stats) on `voice_coherence`; language-agnostic not language-aware. stdlib. |
 | [`20-conformal-abstention-gate.md`](20-conformal-abstention-gate.md) | **Built** (group W7). Split-conformal p-value + prediction set over operator calibration scores on `validation`; distribution-free finite-sample abstention. stdlib. |
+| [`21-attribution-refusal-lab.md`](21-attribution-refusal-lab.md) | **Spec (research; gated).** Refusal-curve lab for the no-verdict-about-the-person cluster (open-set attribution / demographic profiling / identity linkage). Ships strength-of-evidence, never an identity; the deliverable is the demonstration of the signal's limits + the untooled-LLM contrast. No surface ships. |
 | `_TEMPLATE.md` | Copy this to start a new spec. |
 
 Research-grade specs (EditLens-style edit-magnitude regressor, intrinsic-dimension/
