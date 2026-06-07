@@ -23,13 +23,24 @@ operator's choice, and the operator confirms its license at run time. The
 trainer refuses to proceed without an explicit ``--accept-noncommercial-free``
 attestation that the supplied corpus is not NC-encumbered.
 
-OPERATOR-RUNTIME GPU STEP — NOT part of the scaffold build/test
----------------------------------------------------------------
-A real fine-tune is a GPU job (RoBERTa-large is ~355M params). The trainer
-and its model + target-proxy are **injectable** so the SMOKE TEST runs on a
-tiny synthetic pair set WITHOUT downloading or fine-tuning a real model: the
-test passes a stub trainer + a deterministic stub target-proxy. Nothing in
-the build or test path loads transformers or torch.
+STATUS: SCAFFOLD — TRAINING LOOP NOT YET IMPLEMENTED
+----------------------------------------------------
+The concrete fine-tune (HF ``Trainer``) is **intentionally not wired**:
+``default_train_model`` raises ``TrainEditMagnitudeError`` even when torch +
+transformers are installed. So the CLI below does NOT yet produce a
+checkpoint — it parses arguments and builds the MSE examples, then exits with
+a clear "not implemented" error. This module ships as the calibration
+*scaffold* for `specs/13-editlens-edit-magnitude.md`: the orchestration,
+provenance writer, license gate, and injectable boundaries are real and
+tested; the GPU training loop is the operator's to implement (or inject via
+``train_model=``). Until then, ``edit_magnitude_audit.py --model`` has no
+checkpoint to read, so the inference audit runs uncalibrated (score only,
+no band).
+
+The trainer + its model + target-proxy are **injectable**, so the SMOKE TEST
+runs on a tiny synthetic pair set WITHOUT downloading or fine-tuning a real
+model: the test passes a stub trainer + a deterministic stub target-proxy.
+Nothing in the build or test path loads transformers or torch.
 
 PROVENANCE
 ----------
@@ -39,7 +50,7 @@ the target proxy, the achieved MSE, and the band cut-points — so the
 inference audit (`edit_magnitude_audit.py`) can surface the corpus context
 and the band is never read out of distribution.
 
-Usage (operator GPU run):
+Usage (operator GPU run — SCAFFOLD: see STATUS above; NOT yet operational):
 
     python3 scripts/calibration/train_edit_magnitude.py \\
         --pairs path/to/nonnc_pairs.jsonl \\
@@ -48,6 +59,11 @@ Usage (operator GPU run):
         --corpus-name my_editorial_pairs_2026 \\
         --out path/to/edit_magnitude_model \\
         --accept-noncommercial-free
+
+    With the training loop unimplemented this exits with a clear
+    "default_train_model not wired" error BEFORE writing a checkpoint.
+    Implement ``default_train_model`` (or pass ``train_model=``) to make it
+    real.
 
 Pairs file (JSONL), one object per line:
 
@@ -197,9 +213,13 @@ def default_train_model(
     # ``AutoModelForSequenceClassification.from_pretrained(base_model,
     # num_labels=1, problem_type="regression")``, and train with MSE.
     raise TrainEditMagnitudeError(
-        "default_train_model is the operator-runtime GPU path and is not "
-        "wired for offline execution; supply a calibrated checkpoint or "
-        "inject a train_model callable."
+        "SCAFFOLD: the edit-magnitude training loop (HF Trainer) is not "
+        "implemented. default_train_model intentionally raises rather than "
+        "fine-tuning, so this CLI cannot produce a checkpoint yet. Implement "
+        "the training loop here (build a regression dataset from `examples`, "
+        "tokenize with AutoTokenizer, load AutoModelForSequenceClassification "
+        "with num_labels=1, train with MSE) or inject a `train_model` "
+        "callable (as the smoke test does)."
     )
 
 

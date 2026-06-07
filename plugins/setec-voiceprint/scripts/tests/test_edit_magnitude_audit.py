@@ -255,3 +255,19 @@ def test_load_pairs_rejects_malformed(tmp_path):
     f.write_text('{"original": "x"}\n', encoding="utf-8")  # missing 'edited'
     with pytest.raises(tem.TrainEditMagnitudeError):
         tem.load_pairs(f)
+
+
+def test_default_train_model_is_unimplemented_scaffold(tmp_path):
+    """The training loop is an intentional scaffold: ``default_train_model``
+    must NEVER silently produce a model. It raises whether or not torch /
+    transformers are installed (ImportError branch without them; explicit
+    not-implemented raise with them), so the shipped CLI cannot fabricate a
+    checkpoint until an operator wires the loop or injects ``train_model``."""
+    with pytest.raises(tem.TrainEditMagnitudeError):
+        tem.default_train_model(
+            base_model="roberta-large",
+            examples=[{"id": "a", "text": "x y z", "target": 0.1}],
+            out_dir=tmp_path / "m",
+            epochs=1,
+            seed=0,
+        )
