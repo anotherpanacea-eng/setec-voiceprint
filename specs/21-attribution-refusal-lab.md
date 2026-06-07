@@ -1,4 +1,4 @@
-# 21-attribution-refusal-lab
+# 21-attribution-refusal-lab — research brief / anti-goal note (NOT a dispatchable spec)
 
 > A **refusal-curve laboratory** for the three person-identifying capabilities the
 > framework refuses to ship as verdicts — open-set author attribution, demographic
@@ -7,7 +7,8 @@
 > it is bullshit*, and plots an untooled LLM's confident attribution against that
 > curve. Strength-of-evidence only; never a name or a label.
 
-- **Status:** Spec (research). **Gated** on the strong-foil resourcing decision below — no surface ships from this brief.
+- **Type:** **Research brief / anti-goal note — NOT a dispatchable spec.** By design it carries no Contract / Test-contract (no task surface, CLI / harness entrypoint, JSON shape, claim-license, or `capabilities.d/` entry), so the `specs/01` spec→build→review loop does not apply to it as written. It records doctrine + a gated research agenda. It becomes builder-dispatchable only if **promoted** to a full spec carrying the contract the #177 review enumerates: reference / ground-truth data manifests, the public/private artifact boundary, acceptance metrics, the refusal/redaction tests (E3 non-leak rule below), and explicit go/no-go gates.
+- **Status:** Research brief — gated on the strong-foil resourcing decision below; nothing ships until promotion.
 - **Tier:** research-grade, multi-session. Mostly stdlib + the framework's existing Burrows-Delta / General-Imposters machinery; the LLM-contrast leg needs operator-side LLM access.
 - **GPU required:** no (the classical foil is CPU; an optional neural-embedding foil reuses the `authorship_embedding` surface's posture).
 - **License decision:** N/A — clean-room. Method is classical stylometry (Mosteller & Wallace 1963; Koppel/Schler/Argamon; Kestemont et al. 2016 GI). Ground-truth corpora are public shared tasks (PAN author-identification / author-profiling) + the Federalist set + held-out same-author pairs from owned corpora; no restricted artifact is vendored.
@@ -85,7 +86,32 @@ The three-way table is the publishable artifact: it shows the LLM's confidence i
 it matters. Repeat across the regimes E1/E2 map (pool size, topic drift, text
 length) to show *where* the LLM's bullshit is worst.
 
-## Output discipline & the two load-bearing constraints
+**E3 non-leak rule (safety boundary — testable; a precondition for E3 ever running).**
+E3 is the one experiment that must *prompt* the foil LLM to produce the very thing
+the framework refuses — a name, a demographic label, a same-person judgment. Those
+raw outputs are evidence to be **scored**, not artifacts to be kept. Without an
+explicit rule, a future lab could log or publish person-identifying material while
+still claiming the final SETEC output is strength-of-evidence only. The rule, stated
+as builder invariants:
+
+1. **Raw person-identifying outputs are private/redacted.** Every raw LLM (and foil)
+   identity/profile output — candidate name, demographic label, "same author as X" —
+   is written only to an access-controlled private store, never to any committed or
+   published artifact.
+2. **Public artifacts carry only aggregate categories.** Tables, figures, and
+   write-ups contain only aggregate error/confidence categories — correct / incorrect
+   / abstain counts, calibration bins, LR / odds *distributions* — and never a name,
+   a demographic label, or a same-person verdict for any individual.
+3. **A redaction test gates publication (go/no-go).** Before any artifact leaves the
+   lab, an automated scan asserts zero person-identifying tokens (candidate-set names,
+   demographic labels, "same author as …") in the public set; a hit **fails the
+   build**. This is the E3 analogue of the live-scan refusal, and it is a gate, not a
+   guideline.
+4. **Only the score leaves.** What the foil and the LLM *said* about a person stays
+   private; what leaves the lab is the scored outcome (right / wrong / abstain)
+   against ground truth.
+
+## Output discipline & load-bearing constraints
 
 - **Strength-of-evidence, never a name or a label.** LR / posterior odds /
   proximity-to-distribution with explicit uncertainty. Mosteller-Wallace, not
@@ -110,18 +136,23 @@ length) to show *where* the LLM's bullshit is worst.
 
 ## What ships from this brief
 
-**Nothing executable, in v1.** This brief registers **no** task surface, ships
-**no** script, and adds **no** `capabilities.d/` entry. Its outputs are: (1) the
-named anti-goal in ROADMAP, (2) this protocol, (3) — when resourced — a research
-write-up + reference-corpus manifests + a refusal-curve harness built from existing
-surfaces. The "build" step of the spec→review→build→review workflow is the lab
-itself and is deliberately deferred behind the strong-foil decision.
+**Nothing executable.** This brief registers **no** task surface, ships **no**
+script, and adds **no** `capabilities.d/` entry. Because it is a research brief and
+not a dispatchable spec, the `specs/01` spec→build→review loop does not apply to it
+as written. Its outputs are: (1) the named anti-goal in ROADMAP, (2) this protocol +
+the E3 non-leak rule. A future lab "build" requires **promotion to a full spec**
+first — one that adds the Contract / Test-contract the #177 review enumerated
+(reference / ground-truth data manifests, the public/private artifact boundary, the
+redaction test as a CI gate, acceptance metrics, go/no-go gates) — and is then still
+gated behind the strong-foil resourcing decision.
 
 ## Out of scope / non-goals
 
 - **No identity output.** No name, no demographic label, no "same person" verdict —
   only scored evidence strength with its limits.
 - **No live / unconsented population scan**, and no shipped harness capable of one.
+- **No retention or publication of raw person-identifying LLM/foil outputs** (the E3
+  non-leak rule); only scored outcomes and aggregate categories leave the lab.
 - **No demographic labels** even as an intermediate; E2 reports proximity-to-a-named-
   reference-distribution and its confound decomposition, not a per-author attribute.
 - **Not a replacement** for `general_imposters` (closed-set, in-scope) or the planned
@@ -134,8 +165,8 @@ itself and is deliberately deferred behind the strong-foil decision.
 - Whether the strong foil is the classical GI stack alone or also a neural-embedding
   foil (reusing `authorship_embedding`); the latter is a stronger foil and a heavier
   build.
-- Whether a README "What it isn't" line ("not an author de-anonymizer / demographic
-  profiler") should accompany the ROADMAP anti-goal, given the existing anti-goals'
-  "name the refusal where users see it" logic.
 - The consent/authorization record shape for E2/E3 owned corpora (a v2 of the
-  `voice_profile` privacy ratchet).
+  `voice_profile` privacy ratchet), and the exact form of the redaction-test scanner
+  that enforces the E3 non-leak rule.
+- (Decided 2026-06-07: a user-facing README "What it isn't" line is **not** added for
+  now — the refusal lives in ROADMAP + this brief.)
