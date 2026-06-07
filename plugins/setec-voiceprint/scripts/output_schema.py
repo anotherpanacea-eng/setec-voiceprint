@@ -41,35 +41,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from claim_license import ClaimLicense  # type: ignore
+from claim_license import ClaimLicense, TASK_SURFACE_LABELS  # type: ignore
 
 SCHEMA_VERSION = "1.0"
 
-# Canonical task surfaces; mirrors claim_license.TASK_SURFACE_LABELS
-# so callers that pass an unknown surface fail loudly.
-VALID_TASK_SURFACES = frozenset({
-    "smoothing_diagnosis",
-    "voice_coherence",
-    "voice_coherence_acquisition",
-    "validation",
-    "calibration",
-    "craft_restoration",
-    "metric_targeted_restoration",
-    "external_mirror_discrimination",
-    "formulaicity",
-    "binoculars_discrimination",
-    "reference_ecology",
-    "discrimination_curvature",
-    "narrative_decision_audit",
-    "document_layout",
-    "authorship_embedding",
-    "narratorial_distance",
-    "productive_roughness",
-    "intrinsic_dimension",
-    "rewriting_invariance",
-    "edit_magnitude",
-    "sound_texture",
-})
+# Canonical task surfaces — derived from
+# claim_license.TASK_SURFACE_LABELS (the single source of truth, itself
+# assembled from drop-in fragments) so an unknown surface fails loudly and
+# a new surface is registered in exactly one place (a fragment file).
+VALID_TASK_SURFACES = frozenset(TASK_SURFACE_LABELS)
 
 
 def build_output(

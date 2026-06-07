@@ -40,59 +40,29 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
-TASK_SURFACE_LABELS = {
-    "smoothing_diagnosis": "AI-prose smoothing diagnosis",
-    "voice_coherence": "voice-coherence comparison",
-    "voice_coherence_acquisition": "voice-coherence corpus acquisition",
-    "validation": "validation / labeled-corpus harness",
-    "calibration": "per-signal threshold calibration",
-    "craft_restoration": "craft restoration",
-    "metric_targeted_restoration": "metric-targeted restoration packets",
-    "external_mirror_discrimination": "external-mirror discrimination",
-    "formulaicity": "formulaicity / phraseological-texture profile (non-voice)",
-    "binoculars_discrimination": "Binoculars-style perplexity-ratio discrimination",
-    "reference_ecology": "reference-ecology profile (non-voice; topic-bound)",
-    "discrimination_curvature": (
-        "Fast-DetectGPT conditional-curvature discrimination (Bao et al. 2024)"
-    ),
-    "narrative_decision_audit": (
-        "narrative-decision audit (Russell et al. 2026 / StoryScope "
-        "30-core-feature anchor)"
-    ),
-    "document_layout": "document structure / layout profile (non-voice)",
-    "authorship_embedding": (
-        "style-embedding voice fingerprint (LUAR / Wegmann learned "
-        "style manifold; cosine-similarity distribution, no verdict)"
-    ),
-    "narratorial_distance": (
-        "narratorial-distance / free-indirect-discourse profile "
-        "(voice-coherence family; descriptive, non-verdict)"
-    ),
-    "productive_roughness": (
-        "productive-roughness deviation vs the writer's own baseline "
-        "(descriptive, strictly baseline-relative, non-verdict)"
-    ),
-    "intrinsic_dimension": (
-        "intrinsic (PHD) dimension of the text's contextual-embedding "
-        "cloud under a named model (discrimination evidence, "
-        "uncalibrated, non-verdict)"
-    ),
-    "rewriting_invariance": (
-        "rewriting-invariance distance under a named judge model + prompt "
-        "(discrimination evidence, uncalibrated, non-verdict)"
-    ),
-    "edit_magnitude": (
-        "edit-magnitude estimate relative to the corpus the model was "
-        "calibrated on (uncalibrated by default; NOT an absolute % AI)"
-    ),
-    "sound_texture": (
-        "sound-texture profile (alliteration / assonance / consonance "
-        "adjacency density + consonant-class profile) via an "
-        "orthographic-onset proxy (descriptive, non-verdict)"
-    ),
-}
+# ``TASK_SURFACE_LABELS`` is assembled at import from drop-in fragments
+# in ``claim_license_surfaces/`` — one file per surface: filename = the
+# surface key, contents = the human-readable label. A new audit registers
+# its surface by adding a fragment file there, never by editing a shared
+# dict, so parallel audit PRs don't collide on one insertion point.
+# Stdlib-only on purpose (this module is imported by ~every audit script).
+# See claim_license_surfaces/README.md.
+_SURFACE_LABEL_DIR = Path(__file__).resolve().parent / "claim_license_surfaces"
+
+
+def _load_surface_labels() -> dict[str, str]:
+    if not _SURFACE_LABEL_DIR.is_dir():
+        return {}
+    return {
+        frag.stem: frag.read_text(encoding="utf-8").rstrip("\n")
+        for frag in sorted(_SURFACE_LABEL_DIR.glob("*.txt"))
+    }
+
+
+TASK_SURFACE_LABELS: dict[str, str] = _load_surface_labels()
 
 
 @dataclass
