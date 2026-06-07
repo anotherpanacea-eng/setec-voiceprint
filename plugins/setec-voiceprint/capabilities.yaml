@@ -2603,6 +2603,54 @@ entries:
     references:
       - plugins/setec-voiceprint/specs/10-productive-roughness-audit.md
     _seeded_at: "2026-06-06"
+  - id: intrinsic_dimension_audit
+    script_path: plugins/setec-voiceprint/scripts/intrinsic_dimension_audit.py
+    surface: intrinsic_dimension
+    status: literature_anchored
+    handoff: experimental
+    consumers: []
+    family: discrimination-topology
+    purpose: >
+      Clean-room persistent-homology dimension (PHD) of a text's
+      contextual-embedding point cloud — a topological discrimination signal
+      reported in the literature as the single most orthogonal axis to
+      perplexity / lexical signals (Tulchinskii et al. 2023). Human prose tends
+      to a higher intrinsic dimension than AI prose. Emits the scalar PHD plus
+      sample size and the embedding-model id; uncalibrated (no band, no verdict)
+      and the claim-license refuses an AI/human verdict absent operator-supplied
+      thresholds.
+    use_when:
+      - You want a geometry-based discrimination axis orthogonal to perplexity / lexical signals
+      - You're assembling a multi-signal evidence pack and want a topological reading
+      - Target is >= 500 words (enough embedding units to fit the PHD scaling law)
+    do_not_use_when:
+      - You want an AI/human verdict (this surface ships uncalibrated and refuses one)
+      - You need values comparable across embedding models (PHD is embedding-model dependent)
+      - Target is short (too few embedding units destabilizes the scaling fit)
+    inputs:
+      target: prose text file (UTF-8)
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: surprisal
+      cost_note: embeddings; CPU-feasible but slow, GPU optional.
+      length_floor_words: 500
+    registers:
+      - blog_essay
+      - testimony_policy
+      - literary_fiction
+    dependencies:
+      python:
+        - transformers
+        - torch
+        - numpy
+        - scipy
+      python_optional: []
+    examples: []
+    references: []
+    _seeded_at: "2026-06-06"
   - id: reference_ecology_audit
     script_path: plugins/setec-voiceprint/scripts/reference_ecology_audit.py
     surface: reference_ecology
