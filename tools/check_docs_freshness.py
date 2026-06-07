@@ -54,15 +54,28 @@ from capabilities import load_manifest  # type: ignore  # noqa: E402
 
 
 def changelog_coverage(manifest_path: Path, changelog_path: Path) -> list[str]:
-    """Return curated capability ids missing from the changelog."""
+    """Return curated capability ids missing from the changelog.
+
+    Coverage counts ``CHANGELOG.md`` **plus** the unreleased ``changelog.d/``
+    fragments (resolved next to the changelog), so a just-shipped capability is
+    covered by its fragment until a release assembles it into a version section.
+    Signature is unchanged (2-arg) — the fragment dir is derived, not a parameter
+    — so existing call sites and synthetic temp-changelog tests keep working.
+    """
     manifest = load_manifest(manifest_path)
-    changelog = changelog_path.read_text(encoding="utf-8")
+    covered = changelog_path.read_text(encoding="utf-8")
+    frag_dir = changelog_path.parent / "changelog.d"
+    if frag_dir.is_dir():
+        for frag in sorted(frag_dir.glob("*.md")):
+            if frag.name == "README.md":
+                continue
+            covered += "\n" + frag.read_text(encoding="utf-8")
     missing = []
     for entry in manifest.get("entries", []):
         if entry.get("status") == "todo":
             continue
         eid = entry.get("id", "")
-        if eid and eid not in changelog:
+        if eid and eid not in covered:
             missing.append(eid)
     return missing
 

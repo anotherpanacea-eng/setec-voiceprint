@@ -119,8 +119,11 @@ them in CI:
   contents = label). Never edit a shared surface dict/list: `TASK_SURFACE_LABELS`
   and `output_schema.VALID_TASK_SURFACES` both derive from that fragment dir, so a
   fragment is the whole change — and parallel audit PRs can't collide on it (#170).
-- **`CHANGELOG.md`** — a line referencing the capability `id` (the freshness gate
-  fails CI if a curated capability has no changelog mention).
+- **`changelog.d/<slug>.md`** — drop a changelog fragment referencing the
+  capability `id` (a `### Added/Changed/Fixed` header + prose; never edit a shared
+  `## Unreleased` block). The freshness gate counts the `id` across `CHANGELOG.md`
+  *and* these fragments; `tools/assemble_changelog.py` cuts them into a version
+  section at release (#170).
 - **Calibration-readiness matrix** — auto-derived; run
   `python3 tools/gen_calibration_readiness.py` and commit any change (CI runs
   `--check`).
@@ -162,12 +165,15 @@ spec→review→write→review→fix structure durable on GitHub and gives
 - **Tag from `main`** after the merge commit lands, not from the
   branch. Tag names follow the `v1.MAJOR.MINOR` convention enforced
   by `CHANGELOG.md`'s versioning preamble.
-- **Bump the version at merge, not in the PR.** Open PRs merge in an
-  unknown order, so a `plugin.json` version pinned inside a feature branch
-  collides or goes stale. A PR's CHANGELOG entry names its bump *class*
-  (`feat` → MINOR, `fix`/`docs`/`chore` → PATCH) but does **not** pin the
-  number or edit `plugin.json`; the merger sets `plugin.json` + the
-  `Plugin version X → Y` line when the merge commit lands, then tags.
+- **Version + changelog are cut at release, not pinned in the PR.** Open PRs
+  merge in an unknown order, so a `plugin.json` version pinned in a feature
+  branch collides or goes stale. A PR ships a `changelog.d/<slug>.md` fragment
+  naming its change (and bump *class*: `feat` → MINOR, `fix`/`docs`/`chore` →
+  PATCH) but does **not** pin the number or edit `plugin.json`. At release, run
+  `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut
+  the accumulated fragments into a `## [X.Y.Z]` section, set `plugin.json`, then
+  tag from `main`. This is the existing accumulate-then-cut "consolidated
+  release" practice (see `## [1.111.0]`), now scripted and conflict-free.
 - **Auto-merge on dual agreement.** When both reviewing agents (Claude
   and Codex) agree a PR is ready — CI green and review threads resolved —
   merge it (merge commit) without waiting for a further human prompt. The
