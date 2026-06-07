@@ -66,6 +66,7 @@ VALID_TASK_SURFACES = frozenset({
     "narratorial_distance",
     "productive_roughness",
     "intrinsic_dimension",
+    "sound_texture",
 })
 
 

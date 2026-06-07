@@ -79,6 +79,11 @@ TASK_SURFACE_LABELS = {
         "cloud under a named model (discrimination evidence, "
         "uncalibrated, non-verdict)"
     ),
+    "sound_texture": (
+        "sound-texture profile (alliteration / assonance / consonance "
+        "adjacency density + consonant-class profile) via an "
+        "orthographic-onset proxy (descriptive, non-verdict)"
+    ),
 }
 
 

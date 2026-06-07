@@ -2742,6 +2742,189 @@ entries:
         cmd: "python3 plugins/setec-voiceprint/scripts/formulaicity_audit.py target.md --phrases-file my.txt"
     references:
       - plugins/setec-voiceprint/specs/09-formulaicity-audit.md
+  - id: sound_texture_audit
+    script_path: plugins/setec-voiceprint/scripts/sound_texture_audit.py
+    surface: sound_texture
+    status: heuristic
+    handoff: experimental
+    consumers: []
+    family: voice-coherence
+    purpose: >
+      Descriptive sound-texture profile of prose — alliteration / assonance /
+      consonance adjacency density and a consonant-class (plosive / fricative /
+      sibilant / nasal / liquid / glide) profile — via an orthographic-onset
+      proxy. The sonic layer the shipped suite (sentence-length variance only) is
+      blind to. NOT a phonetic transcription, NOT an AI detector, NOT a quality
+      judgment: measurements only (no band/verdict); the claim-license refuses
+      AI-provenance / voice-identity / quality inference. Optional baseline-dir
+      reports each metric as a deviation from the writer's own baseline.
+    use_when:
+      - You want a sonic-texture profile (alliteration / assonance / consonance / consonant-class) of a passage
+      - You're developmentally editing literary prose where sound is part of voice
+      - Target is >= 300 words
+    do_not_use_when:
+      - You want an AI-provenance call (this is explicitly NOT an AI signal)
+      - You want a writing-quality judgment or a voice/authorship inference
+      - You need a true phonetic transcription (this is an orthographic proxy, not phonemes)
+      - Target is under 300 words (the length floor)
+    inputs:
+      target: prose/markdown text file (UTF-8)
+      optional:
+        - --baseline-dir to report metrics as deviation from the writer's own baseline
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: core
+      cost_note: stdlib only; no models, CPU-trivial.
+      length_floor_words: 300
+    registers:
+      - literary_fiction
+      - blog_essay
+    dependencies:
+      python: []
+      python_optional: []
+    examples:
+      - description: Sound-texture profile to stdout
+        cmd: "python3 plugins/setec-voiceprint/scripts/sound_texture_audit.py target.md"
+      - description: Deviation vs the writer's own baseline
+        cmd: "python3 plugins/setec-voiceprint/scripts/sound_texture_audit.py target.md --baseline-dir baselines/personal/"
+    references:
+      - plugins/setec-voiceprint/specs/17-sound-texture-audit.md
+  - id: triage_agreement
+    script_path: plugins/setec-voiceprint/scripts/triage_agreement.py
+    surface: validation
+    status: heuristic
+    handoff: experimental
+    consumers: []
+    family: validation
+    purpose: >
+      Measures the agreement between the framework's surfaced candidates and an
+      operator's triage judgments on a labeled item set: confusion matrix, percent
+      agreement, Cohen's kappa, the prevalence-and-bias-adjusted kappa (PABAK), and
+      a seeded bootstrap CI on kappa. Closes the loop the framework keeps open on
+      principle ("source triage is judgment work"). Measures CONCORDANCE, not
+      correctness — it never decides who is right.
+    use_when:
+      - You have paired (framework, human) triage decisions and want the agreement as a number
+      - You want to know whether the framework's candidate-surfacing matches expert reads on a register
+      - You have at least 10 triaged items
+    do_not_use_when:
+      - You want a ground-truth verdict (kappa measures agreement, not correctness)
+      - You want to generalize beyond this (possibly non-representative) item set
+      - You have fewer than 10 items (kappa is meaningless at very small N)
+    inputs:
+      target: JSONL (default) or CSV of per-item framework + human triage labels
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: core
+      cost_note: stdlib only; bootstrap is seeded + deterministic.
+    dependencies:
+      python: []
+      python_optional: []
+    examples:
+      - description: Agreement statistics to stdout
+        cmd: "python3 plugins/setec-voiceprint/scripts/triage_agreement.py labels.jsonl"
+      - description: CSV input with a larger bootstrap
+        cmd: "python3 plugins/setec-voiceprint/scripts/triage_agreement.py labels.csv --format csv --bootstrap 5000"
+    references:
+      - plugins/setec-voiceprint/specs/18-triage-agreement.md
+  - id: crosslingual_voice_distance
+    script_path: plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py
+    surface: voice_coherence
+    status: heuristic
+    handoff: experimental
+    consumers: []
+    family: voice-coherence
+    purpose: >
+      A language-agnostic, parser-free stylometric distance between a target and a
+      baseline corpus — character n-grams, punctuation profile, token-/sentence-
+      length distributions, and script statistics. No spaCy, no English assumption;
+      runs on any Unicode script with zero model dependencies. Honest about its
+      ceiling: language-agnostic, NOT language-aware (no morphology, no
+      function-word list), so it refuses morphology-dependent voice claims and
+      refuses cross-language comparison (the --lang tag is provenance).
+    use_when:
+      - You want a voice distance for non-English prose, or any language without an English parser
+      - You have a register-matched, same-language baseline corpus and a target in the same language
+      - Target is >= 500 words
+    do_not_use_when:
+      - You want an AI-provenance or authorship verdict (it produces a distance, not a call)
+      - You want a morphology- or function-word-aware voice claim (use the English voice_distance for those)
+      - Target and baseline are in different languages (cross-language comparison is meaningless)
+      - Target is under 500 words (the length floor)
+    inputs:
+      required:
+        - --baseline-dir register-matched same-language baseline corpus
+        - --lang language code shared by target and corpus (provenance)
+      target: prose/markdown text file (UTF-8)
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: core
+      cost_note: stdlib only; no models, CPU-trivial.
+      length_floor_words: 500
+    dependencies:
+      python: []
+      python_optional: []
+    examples:
+      - description: Spanish voice distance vs a same-language baseline
+        cmd: "python3 plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py target.txt --baseline-dir baselines/es/ --lang es"
+      - description: 4-grams, JSON envelope
+        cmd: "python3 plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py target.txt --baseline-dir baselines/es/ --lang es --char-ngram 4 --json"
+    references:
+      - plugins/setec-voiceprint/specs/19-crosslingual-voice-distance.md
+  - id: conformal_gate
+    script_path: plugins/setec-voiceprint/scripts/conformal_gate.py
+    surface: validation
+    status: heuristic
+    handoff: experimental
+    consumers: []
+    family: validation
+    purpose: >
+      A split-conformal abstention layer over any signal: given operator-supplied
+      calibration nonconformity scores and a target score, emit a distribution-free,
+      finite-sample conformal p-value and a prediction set at coverage 1-alpha.
+      Turns "the band reads uncalibrated" into "abstain, with a guaranteed error
+      rate at this operating point." A methodology wrapper, NOT a detector; an empty
+      or full prediction set is a licensed abstention. The p-value is NOT P(AI).
+    use_when:
+      - You have calibration nonconformity scores for a reference class and want a guaranteed-coverage abstention on a target score
+      - You want to convert an uncalibrated signal into a finite-sample, distribution-free decision
+      - You want a two-class prediction set (supply --calibration-positive)
+    do_not_use_when:
+      - You want an AI/human verdict (the conformal p-value is a membership statistic, not P(AI))
+      - Your calibration scores are not exchangeable with the target (the guarantee fails)
+      - You have no calibration scores to supply
+    inputs:
+      required:
+        - --calibration nonconformity scores for the reference class (JSON list or newline-delimited)
+        - --score the target nonconformity score
+      optional:
+        - --calibration-positive nonconformity scores for a positive class (two-class mode)
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: core
+      cost_note: stdlib only; CPU-trivial.
+    dependencies:
+      python: []
+      python_optional: []
+    examples:
+      - description: One-class conformal gate at coverage 0.9
+        cmd: "python3 plugins/setec-voiceprint/scripts/conformal_gate.py --calibration human_scores.txt --score 4.2"
+      - description: Two-class prediction set, two-sided nonconformity
+        cmd: "python3 plugins/setec-voiceprint/scripts/conformal_gate.py --calibration ref.txt --calibration-positive ai.txt --score 4.2 --direction two_sided --json"
+    references:
+      - plugins/setec-voiceprint/specs/20-conformal-abstention-gate.md
   - id: narratorial_distance_audit
     script_path: plugins/setec-voiceprint/scripts/narratorial_distance_audit.py
     surface: narratorial_distance
