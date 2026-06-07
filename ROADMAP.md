@@ -594,6 +594,43 @@ The 2026-05-18 Tier-4 surprisal audit writeup against the *Conceptual Repair and
 
 **As of 2026-05-19.** The framework infrastructure for the post-1.101 cascade is closed: items D, E.2, E.3, F.2 all shipped (PRs #112, #117, #118, #119). The remaining items are operator-side data work (F.1, F.3, G.1/G.2/G.3) or operator-justify-blocked (E.1, where the sequential matrix needs to be empirically the bottleneck before parallelism is worth the `xargs -P` × `CUDA_VISIBLE_DEVICES` footgun). When operator data settles the 13 RAID `comparator_dependent` cells, F.1 is a single-PR five-line-table fix on the affected `direction_by_comparator_and_slice` specs — no further plumbing needed.
 
+## Capability-whitespace additions (2026-06-07)
+
+A capability-whitespace survey asked the inverse of every section above: not "what's the next signal / guardrail on the planned tracks," but *what could a tool like this do that is absent from both this roadmap and the `specs/` frontier brief?* The `specs/00` brief already saturates the detection / stylometry / neural-embedding frontier (LUAR/Wegmann, Fast-DetectGPT, intrinsic dimension, Raidar, watermark-key, the generative voice-matching companion). The genuine whitespace sits **off** those axes — in measurement dimensions outside lexis/syntax/distribution, in validating against humans rather than labeled corpora, in language-agnostic operation, and in the statistical-rigor layer under the abstention calls. Four such themes are adopted here. Each ships its flagship capability first (stdlib-only, laptop-trivial, **no verdict, PROVISIONAL/descriptive** by default, per "Stylometry to the people"); each names sibling work deferred behind it. Build contracts live in `specs/17`–`specs/20`.
+
+These four are independently shippable and do not sit on the R1–R12 paired-release rhythm — they are research-driven additions in the same idiom as the Post-R12 and Post-1.101 sections above.
+
+### W2. Non-lexical measurement axes — sound and affect
+
+Every one of the 56 shipped signals lives in lexical, syntactic, distributional, or surprisal space. Two orthogonal *measurement* axes are structurally absent:
+
+- **Sound-texture / phonological stylometry (flagship — `specs/17`, `sound_texture_audit.py`).** Alliteration, assonance, consonance density, and consonant-class (plosive / fricative / sibilant / nasal / liquid) profile. The suite measures sentence *rhythm* only by length variance; it never measures rhythm at the level of sound. Ships as an **orthographic-onset proxy** (stdlib, no pronunciation dictionary) with the claim-license stating plainly that it approximates sound from spelling and is not a phonetic transcription; a `cmudict`/`g2p` true-phoneme path is a noted optional enhancement. New descriptive `sound_texture` surface; baseline-relative comparison optional; no verdict. Cross-references "Stylometric surface expansion → Tier 4" (fiction-relevant craft surfaces).
+- **Affect / emotional-arc trajectory (sibling, deferred).** Reagan-style valence arcs over document position — a distinct axis from the shipped semantic-trajectory surface, which deliberately measures *topic* cohesion and stays on the "topic ≠ style" side of its boundary. Deferred behind the sound-texture flagship: a defensible valence lexicon and the "this measures affect, not style/quality" claim-language need design work before code, and the arc is most meaningful baseline-relative.
+
+### W3. Validation against humans, not just labeled corpora
+
+The framework's load-bearing thesis is that *source triage is judgment work, not algorithm* — yet nothing instruments that judgment.
+
+- **Human-judgment / inter-rater agreement (flagship — `specs/18`, `triage_agreement.py`).** Ingests operator triage labels (earned / unearned, or flag / clear) alongside the framework's surfaced candidates and reports the agreement between framework flags and human calls: confusion matrix, percent agreement, Cohen's κ, prevalence- and bias-adjusted κ (PABAK), and a seeded bootstrap CI on κ. Closes the loop the framework keeps open on principle, and gives the "most flags resolve as earned on triage" claim an *actual measured number* per corpus. New surface reuse: `validation`. Descriptive — reports agreement, not which side is right.
+- **Reader-perception / behavioral validation (sibling, deferred).** All current validation is text-intrinsic or corpus-label-based; nothing connects a "smoothed" measurement to whether prose actually *reads* flat to humans. A perception-study harness needs human subjects and an ethics/consent posture, so it is named and deferred, not built in-sandbox.
+
+### W5. First-class language-agnostic operation
+
+The pipeline is English-only (spaCy `en`). Multilingual appears **only** as a defensive caution (fairness guardrails) and a planned ESL/L2 *fairness fixture* slice (`specs/05`) — both about English written by L2 speakers, not about analyzing a non-English author's prose at all.
+
+- **Cross-lingual (parser-free) voice distance (flagship — `specs/19`, `crosslingual_voice_distance.py`).** The classical multilingual-attribution backbone: character n-gram profiles, punctuation profile, token-length and sentence-length distributions, whitespace/diacritic statistics — **no spaCy, no English assumption**, works on any Unicode script. Computes a target-vs-baseline distance with a required `--lang` provenance tag. Honest about its ceiling: it is language-*agnostic*, not language-*aware* (no morphology, no function-word list), so it refuses morphology-dependent voice claims. New surface reuse: `voice_coherence`. PROVISIONAL; descriptive. This is the door-opener; per-language function-word lists / non-English spaCy pipelines are the heavier follow-on.
+
+### W7. The statistical-rigor layer under the abstention calls
+
+The framework abstains a lot (GI gray zone, `uncalibrated` bands, evidentiary-posture labels) and reports bootstrap CIs — but the abstention itself has no formal coverage guarantee, and corpus construction is brute-force survey.
+
+- **Split-conformal abstention gate (flagship — `specs/20`, `conformal_gate.py`).** Given a calibration array of a signal's nonconformity scores on a labeled reference class and a target score, emit a distribution-free, finite-sample conformal p-value and a prediction *set* at coverage 1−α — turning "the band reads uncalibrated" into "abstain, with a guaranteed error rate at this operating point." A methodology wrapper over existing signals, not a new detector; reuses `validation`; refuses to become a verdict (an empty or full prediction set is a legitimate, licensed output). Stdlib only.
+- **Active-learning corpus construction; real-time in-editor "voice-drift meter"; style-space (UMAP/t-SNE) projection (siblings, deferred).** Each is a real "could": uncertainty-sampling to tell an operator which samples to label next; an incremental write-time drift readout distinct from the indefinitely-deferred interactive *report* UI; a static style-space projection of a draft among baseline + impostors. Named here so they don't drift; none is a near-term commitment.
+
+### What this group deliberately does not do
+
+It does not relax any anti-goal. The sound-texture and cross-lingual surfaces are descriptive and refuse voice/AI/quality verdicts; the agreement and conformal capabilities are about *characterizing and bounding* the framework's own calls, never about manufacturing a verdict the math doesn't entitle. Two capabilities the same survey surfaced — **defensive anti-cloning / voice-hardening** and **privacy-preserving / federated voice computation** — are the most on-theme gaps relative to the project's own SETEC premise, but they are larger, ethically load-bearing builds; they are recorded in the "Voice fingerprint risk surface" section's orbit and are **not** part of this group.
+
 ## Open architectural questions
 
 ### Layer A

@@ -87,6 +87,11 @@ TASK_SURFACE_LABELS = {
         "edit-magnitude estimate relative to the corpus the model was "
         "calibrated on (uncalibrated by default; NOT an absolute % AI)"
     ),
+    "sound_texture": (
+        "sound-texture profile (alliteration / assonance / consonance "
+        "adjacency density + consonant-class profile) via an "
+        "orthographic-onset proxy (descriptive, non-verdict)"
+    ),
 }
 
 

@@ -95,6 +95,7 @@ _Generated from `capabilities.yaml` (schema 0.3.0) by `tools/gen_calibration_rea
 | `restoration_packet` | Heuristic (uncalibrated) | Yes | diagnostic JSON from prior Surface 1/2 runs (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `binoculars_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `narrative_decision_audit` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 2000 |
+| `crosslingual_voice_distance` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required); language code shared by target and corpus (provenance) (required) | stdlib | CPU / stdlib (+ optional spaCy model) | 500 |
 | `dialogue_voice_audit` | Heuristic (uncalibrated) | Yes | register-matched personal baseline corpus (optional) | req: spacy | CPU + spaCy model | 2000 |
 | `document_layout_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `edit_magnitude_audit` | Heuristic (uncalibrated) | Yes | operator-calibrated model (--model PATH) (optional) | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 100 |
@@ -105,6 +106,7 @@ _Generated from `capabilities.yaml` (schema 0.3.0) by `tools/gen_calibration_rea
 | `productive_roughness_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | req: spacy | CPU + spaCy model | 1000 |
 | `reference_ecology_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `rewriting_invariance_audit` | Heuristic (uncalibrated) | Yes | MODEL (operator-supplied LLM model id used to rewrite) (required); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 50 |
+| `sound_texture_audit` | Heuristic (uncalibrated) | Yes | register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional); register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
 
 ### Runway & calibration tooling
@@ -114,7 +116,9 @@ _Generated from `capabilities.yaml` (schema 0.3.0) by `tools/gen_calibration_rea
 | `validation_harness` | Empirical (provisional) | No | labeled human/AI corpus + `corpus_manifest.jsonl` (required) | stdlib; opt: sklearn, statsmodels | CPU / stdlib (+ optional spaCy model) | — |
 | `manifest_validator` | Empirical (provisional) | No | a `corpus_manifest.jsonl` to validate (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `dependency_check` | Heuristic (uncalibrated) | Yes | nothing (introspects your local environment) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | — |
+| `conformal_gate` | Heuristic (uncalibrated) | No | nonconformity scores for the reference class (JSON list or newline-delimited) (required); the target nonconformity score (required); nonconformity scores for a positive class (two-class mode) (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `pan_replay` | Empirical (provisional) | No | a `corpus_manifest.jsonl` to validate (required); to restrict obfuscation classes (optional); to restrict reported signals (optional) | stdlib; opt: spacy, sklearn | CPU / stdlib (+ optional spaCy model) | — |
+| `triage_agreement` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 
 **Readiness legend.**
 - **Heuristic (uncalibrated)** — Shipped, not yet calibrated. Treat output as candidate-surfacing, not a score.

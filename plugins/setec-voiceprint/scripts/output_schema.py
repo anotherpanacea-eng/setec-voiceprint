@@ -68,6 +68,7 @@ VALID_TASK_SURFACES = frozenset({
     "intrinsic_dimension",
     "rewriting_invariance",
     "edit_magnitude",
+    "sound_texture",
 })
 
 
