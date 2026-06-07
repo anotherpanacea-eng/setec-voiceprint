@@ -2709,6 +2709,56 @@ entries:
     references:
       - specs/15-raidar-rewriting-invariance.md
     _seeded_at: "2026-06-06"
+  - id: edit_magnitude_audit
+    script_path: plugins/setec-voiceprint/scripts/edit_magnitude_audit.py
+    surface: edit_magnitude
+    status: heuristic
+    handoff: experimental
+    consumers: []
+    family: discrimination
+    purpose: >
+      Clean-room EditLens-style document-level edit-magnitude estimate — a
+      RoBERTa-family regressor trained with MSE against a BERTScore-style
+      similarity proxy between pre/post-edit pairs, framed as a SAME-CORPUS
+      calibrated estimate with explicit OOD caveats, never an absolute "% AI".
+      Uncalibrated by default (score only, no band); a calibrated model is
+      operator-supplied via --model and applies only to the corpus it was
+      calibrated on. The claim-license refuses an absolute %-AI / dosage claim,
+      cross-corpus generalization, and per-sentence localization, and states the
+      OOD-collapse caveat (degree estimation works in-distribution, collapses
+      toward binary out-of-distribution).
+    use_when:
+      - You have an operator-calibrated model for a SPECIFIC corpus and want a same-corpus edit-magnitude estimate
+      - You're assembling a multi-signal evidence pack and want a document-level magnitude reading
+      - You accept the in-distribution-only caveat
+    do_not_use_when:
+      - You want an absolute "% AI-edited" number (this surface refuses it by design)
+      - You have no same-corpus calibration (uncalibrated runs emit a score with no band)
+      - You need cross-corpus comparability or per-sentence localization
+    inputs:
+      target: prose/markdown text file (UTF-8)
+      optional:
+        - operator-calibrated model (--model PATH)
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: surprisal
+      cost_note: GPU fine-tune for calibration (RoBERTa-large ~355M); CPU inference with a calibrated model.
+      length_floor_words: 100
+    registers:
+      - blog_essay
+      - testimony_policy
+      - literary_fiction
+    dependencies:
+      python:
+        - transformers
+        - torch
+      python_optional: []
+    examples: []
+    references:
+      - plugins/setec-voiceprint/specs/13-editlens-edit-magnitude.md
   - id: reference_ecology_audit
     script_path: plugins/setec-voiceprint/scripts/reference_ecology_audit.py
     surface: reference_ecology

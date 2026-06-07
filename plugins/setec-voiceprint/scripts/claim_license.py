@@ -83,6 +83,10 @@ TASK_SURFACE_LABELS = {
         "rewriting-invariance distance under a named judge model + prompt "
         "(discrimination evidence, uncalibrated, non-verdict)"
     ),
+    "edit_magnitude": (
+        "edit-magnitude estimate relative to the corpus the model was "
+        "calibrated on (uncalibrated by default; NOT an absolute % AI)"
+    ),
 }
 
 
