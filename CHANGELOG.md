@@ -7,6 +7,26 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.112.0] - 2026-06-07
+
+### Added
+
+**Capability-whitespace group (ROADMAP "Capability-whitespace additions (2026-06-07)" W2/W3/W5/W7) — four stdlib-only, no-verdict capabilities off the detection/stylometry axes, each spec→review→build→review per `specs/01`.** A capability-whitespace survey asked the inverse of the planned tracks: what could a tool like this do that is absent from both the roadmap and the `specs/00` frontier brief? Four themes were adopted, each shipping its flagship (siblings deferred in the roadmap):
+- **`sound_texture_audit.py` (W2) — descriptive sound-texture profile on a new `sound_texture` surface** (`specs/17`). Alliteration / assonance / consonance adjacency density + a consonant-class (plosive / fricative / sibilant / nasal / liquid / glide) profile — the sonic layer the suite (sentence-length variance only) is blind to. Ships as an **orthographic-onset proxy** (stdlib, no pronunciation dictionary) and the claim-license says so: it reads sound off spelling, is NOT a phonetic transcription, NOT an AI detector, NOT a quality judgment (no band/verdict; refuses AI / voice-identity / quality inference). Optional `--baseline-dir` reports each metric as a deviation from the writer's own baseline. Adds `sound_texture` to `output_schema.VALID_TASK_SURFACES` + `claim_license.TASK_SURFACE_LABELS` (additive). 14 tests in `test_sound_texture_audit.py`.
+- **`triage_agreement.py` (W3) — framework-vs-human triage agreement on the existing `validation` surface** (`specs/18`). Ingests paired (framework, human) triage labels (JSONL/CSV) and reports confusion matrix, percent agreement, Cohen's κ, the prevalence-and-bias-adjusted κ (PABAK, for the "κ paradox"), and a seeded bootstrap CI on κ. Closes the loop the framework keeps open on principle ("source triage is judgment work") by giving that judgment a measured number per corpus. Measures **concordance, not correctness** — the claim-license refuses any inference that the framework or the human is right, and any generalization beyond the item set. Stdlib only. 12 tests in `test_triage_agreement.py`.
+- **`crosslingual_voice_distance.py` (W5) — language-agnostic, parser-free voice distance on the existing `voice_coherence` surface** (`specs/19`). Character n-grams + punctuation profile + token-/sentence-length distributions + script statistics — **no spaCy, no English assumption** — computing a Burrows-Delta-style + cosine distance vs a baseline corpus with a required `--lang` provenance tag. Honest about its ceiling: language-*agnostic*, not language-*aware*; the claim-license refuses morphology-/function-word-dependent voice claims and refuses cross-language comparison. Opens non-English operation, which the framework otherwise treats only as a fairness caution. Stdlib only. 11 tests in `test_crosslingual_voice_distance.py`.
+- **`conformal_gate.py` (W7) — split-conformal abstention gate on the existing `validation` surface** (`specs/20`). Given operator-supplied calibration nonconformity scores and a target score, emits a distribution-free, finite-sample conformal p-value + prediction set at coverage 1−α (one-class and two-class modes; `higher`/`lower`/`two_sided` nonconformity). Turns an `uncalibrated` band into a guaranteed-coverage abstention; an empty or full prediction set is a **licensed** output, and the p-value is NOT P(AI). A methodology wrapper over existing signals, not a detector. Stdlib only. 12 tests in `test_conformal_gate.py`.
+
+### Changed
+
+**Changelog moves to drop-in fragments (`changelog.d/`, #170 PR3).** Per-PR
+`<slug>.md` fragments replace hand-editing the shared `## Unreleased` block;
+`tools/assemble_changelog.py` cuts them into a `## [X.Y.Z]` section at release
+(idempotent, merge-order-independent). The docs-freshness gate now counts
+capability `id`s across `CHANGELOG.md` *and* the fragments. Completes the #170
+append-only-registry refactor (`claim_license_surfaces/`, `capabilities.d/`,
+`changelog.d/`).
+
 ## [1.111.0] - 2026-06-07
 
 _Consolidated MINOR release cutting the accumulated `Unreleased` wave (`plugin.json` 1.110.0 → 1.111.0). Bundles the Stylometry-Kit task surfaces — `authorship_embedding` (spec 02), `discrimination_curvature` (03), `intrinsic_dimension` (14), `rewriting_invariance` (15), `edit_magnitude` (13), `productive_roughness` (10), `narratorial_distance` (12), `dialogue_voice_audit` (11), plus the `pan_replay` (04) and ESL-fairness (05) validation work — alongside the QoL tools (`explain.py`, `evidence_pack.py`), the non-voice descriptive audits (`document_layout`, `reference_ecology`, `formulaicity`), local-manuscript / EPUB acquisition, the GPU-aware Tier-4 Windows runner, the capabilities-manifest v0.2/v0.3 layer, and the cross-platform `.as_posix()` fixes. Per-entry detail below; the inline "version bump applied at merge" notes are superseded by this single consolidated cut._
