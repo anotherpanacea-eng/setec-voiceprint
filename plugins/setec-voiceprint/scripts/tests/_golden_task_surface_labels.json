@@ -1,0 +1,23 @@
+{
+  "authorship_embedding": "style-embedding voice fingerprint (LUAR / Wegmann learned style manifold; cosine-similarity distribution, no verdict)",
+  "binoculars_discrimination": "Binoculars-style perplexity-ratio discrimination",
+  "calibration": "per-signal threshold calibration",
+  "craft_restoration": "craft restoration",
+  "discrimination_curvature": "Fast-DetectGPT conditional-curvature discrimination (Bao et al. 2024)",
+  "document_layout": "document structure / layout profile (non-voice)",
+  "edit_magnitude": "edit-magnitude estimate relative to the corpus the model was calibrated on (uncalibrated by default; NOT an absolute % AI)",
+  "external_mirror_discrimination": "external-mirror discrimination",
+  "formulaicity": "formulaicity / phraseological-texture profile (non-voice)",
+  "intrinsic_dimension": "intrinsic (PHD) dimension of the text's contextual-embedding cloud under a named model (discrimination evidence, uncalibrated, non-verdict)",
+  "metric_targeted_restoration": "metric-targeted restoration packets",
+  "narrative_decision_audit": "narrative-decision audit (Russell et al. 2026 / StoryScope 30-core-feature anchor)",
+  "narratorial_distance": "narratorial-distance / free-indirect-discourse profile (voice-coherence family; descriptive, non-verdict)",
+  "productive_roughness": "productive-roughness deviation vs the writer's own baseline (descriptive, strictly baseline-relative, non-verdict)",
+  "reference_ecology": "reference-ecology profile (non-voice; topic-bound)",
+  "rewriting_invariance": "rewriting-invariance distance under a named judge model + prompt (discrimination evidence, uncalibrated, non-verdict)",
+  "smoothing_diagnosis": "AI-prose smoothing diagnosis",
+  "sound_texture": "sound-texture profile (alliteration / assonance / consonance adjacency density + consonant-class profile) via an orthographic-onset proxy (descriptive, non-verdict)",
+  "validation": "validation / labeled-corpus harness",
+  "voice_coherence": "voice-coherence comparison",
+  "voice_coherence_acquisition": "voice-coherence corpus acquisition"
+}

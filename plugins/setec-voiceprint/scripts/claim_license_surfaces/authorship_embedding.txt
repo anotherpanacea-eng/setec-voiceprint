@@ -1,0 +1,1 @@
+style-embedding voice fingerprint (LUAR / Wegmann learned style manifold; cosine-similarity distribution, no verdict)

@@ -1,0 +1,1 @@
+intrinsic (PHD) dimension of the text's contextual-embedding cloud under a named model (discrimination evidence, uncalibrated, non-verdict)

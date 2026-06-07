@@ -35,6 +35,7 @@ If this PR adds or changes a capability, confirm the paper trail moved with it
 -->
 
 - [ ] `capabilities.yaml` entry added/updated (drift linter clean)
+- [ ] New task surface → `scripts/claim_license_surfaces/<surface>.txt` fragment added (never edit a shared surface dict/list)
 - [ ] `CHANGELOG.md` line referencing the capability
 - [ ] `tools/gen_calibration_readiness.py` re-run + committed (matrix fresh)
 - [ ] `ROADMAP.md` status-reconciliation updated if shipped/left changed

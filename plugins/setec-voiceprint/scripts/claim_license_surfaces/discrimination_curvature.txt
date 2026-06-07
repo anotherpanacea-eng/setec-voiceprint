@@ -1,0 +1,1 @@
+Fast-DetectGPT conditional-curvature discrimination (Bao et al. 2024)

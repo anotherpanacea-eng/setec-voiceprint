@@ -113,6 +113,11 @@ them in CI:
 
 - **`capabilities.yaml`** — add/update the entry (the drift linter
   `tools/check_capabilities_drift.py` enforces the surface/script match).
+- **Task-surface label** — if the work adds a new `TASK_SURFACE`, register it by
+  dropping `scripts/claim_license_surfaces/<surface>.txt` (filename = key,
+  contents = label). Never edit a shared surface dict/list: `TASK_SURFACE_LABELS`
+  and `output_schema.VALID_TASK_SURFACES` both derive from that fragment dir, so a
+  fragment is the whole change — and parallel audit PRs can't collide on it (#170).
 - **`CHANGELOG.md`** — a line referencing the capability `id` (the freshness gate
   fails CI if a curated capability has no changelog mention).
 - **Calibration-readiness matrix** — auto-derived; run
