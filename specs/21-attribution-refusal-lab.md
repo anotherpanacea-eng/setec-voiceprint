@@ -86,7 +86,8 @@ is worst.
 **E3 non-leak rule (safety boundary — testable; a precondition for E3 ever running).**
 E3 must *prompt* the foil/LLM to produce the very thing the framework refuses — a
 name, a demographic label, a same-person judgment. Those raw outputs are evidence to
-be **scored**, not artifacts to be kept. As builder invariants (enforced in code; see
+be **scored** and retained privately (see §Raw-output retention), not artifacts to
+**publish**. As builder invariants (enforced in code; see
 the Contract's redaction gate):
 
 1. **Raw person-identifying outputs are retained as private evidence only.** Every
