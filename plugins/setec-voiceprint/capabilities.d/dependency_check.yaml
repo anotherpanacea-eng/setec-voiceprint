@@ -1,0 +1,45 @@
+entries:
+- id: dependency_check
+  script_path: plugins/setec-voiceprint/scripts/dependency_check.py
+  surface: setup
+  status: heuristic
+  handoff: internal
+  consumers: []
+  family: setup
+  purpose: 'Survey the SETEC framework''s five dependency tiers (core, acquisition,
+    ocr, calibration, surprisal) plus the optional power-ups tier. Reports what''s
+    installed, what''s missing, and what the operator needs for the surface they''re
+    aiming at.
+
+    '
+  use_when:
+  - First-run after installing the plugin
+  - An ImportError or "module not found" error fires from any SETEC script
+  - Confirming readiness before running a calibration or replication batch
+  do_not_use_when:
+  - You only need to know one specific dep (just run the script and read the error)
+  inputs:
+    target: none (introspects the local Python env)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .deps.json (when --json)
+  compute:
+    tier: core
+    cost_note: stdlib only
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional:
+    - spacy
+  examples:
+  - description: Survey all tiers
+    cmd: python3 plugins/setec-voiceprint/scripts/dependency_check.py
+  - description: Single-tier survey + install hints
+    cmd: python3 plugins/setec-voiceprint/scripts/dependency_check.py --tier surprisal
+      --suggest
+  references:
+  - plugins/setec-voiceprint/skills/setup/SKILL.md

@@ -111,8 +111,9 @@ Shipping or changing a capability is not done until its paper trail moves with
 it. These travel together, and `tools/check_docs_freshness.py` gates the pair of
 them in CI:
 
-- **`capabilities.yaml`** — add/update the entry (the drift linter
-  `tools/check_capabilities_drift.py` enforces the surface/script match).
+- **`capabilities.d/`** — add/update the `<id>.yaml` fragment (one capability per
+  file; the drift linter `tools/check_capabilities_drift.py` enforces the
+  surface/script match). Never edit a shared manifest — fragments don't collide (#170).
 - **Task-surface label** — if the work adds a new `TASK_SURFACE`, register it by
   dropping `scripts/claim_license_surfaces/<surface>.txt` (filename = key,
   contents = label). Never edit a shared surface dict/list: `TASK_SURFACE_LABELS`

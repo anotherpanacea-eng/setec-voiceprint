@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """check_capabilities_drift.py — guard against capability-manifest drift.
 
-The capabilities manifest at `plugins/setec-voiceprint/capabilities.yaml`
+The capabilities manifest at `plugins/setec-voiceprint/capabilities.d/`
 is the single source of truth for what every user-facing script in
 SETEC does. This linter ensures the manifest stays in sync with the
 source by checking three properties:
@@ -55,25 +55,18 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-def _load_yaml():
-    """Lazy PyYAML import (see capabilities.py for the same pattern)."""
-    try:
-        import yaml  # type: ignore
-        return yaml
-    except ImportError as exc:
-        raise ImportError(
-            "check_capabilities_drift requires PyYAML to parse the "
-            "manifest (`pip install pyyaml`)"
-        ) from exc
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
-DEFAULT_MANIFEST = (
-    REPO_ROOT
-    / "plugins"
-    / "setec-voiceprint"
-    / "capabilities.yaml"
-)
 SCRIPTS_ROOT = REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
+DEFAULT_MANIFEST = REPO_ROOT / "plugins" / "setec-voiceprint" / "capabilities.d"
+
+# Aggregation lives in the plugin's manifest API (capabilities.py); this tool
+# imports the canonical loader rather than re-implementing dir aggregation.
+# Dependency direction: repo tools -> the plugin they tool (the plugin stays
+# self-contained). Re-exported as module-level names so callers/tests that use
+# `drift.load_manifest` / `drift.entries` keep working.
+if str(SCRIPTS_ROOT) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_ROOT))
+from capabilities import entries, load_manifest  # type: ignore  # noqa: E402
 
 SKIP_FILE_PATTERNS = [
     re.compile(r"^test_"),
@@ -150,18 +143,6 @@ def parse_task_surface(path: Path) -> str | None:
     return None
 
 
-# ---------- manifest scan -----------------------------------------
-
-def load_manifest(path: Path) -> dict[str, object]:
-    yaml = _load_yaml()
-    with path.open("r", encoding="utf-8") as fh:
-        return yaml.safe_load(fh)
-
-
-def entries(manifest: dict) -> list[dict]:
-    return list(manifest.get("entries") or [])
-
-
 # ---------- drift checks ------------------------------------------
 
 def check_drift(
@@ -187,9 +168,9 @@ def check_drift(
             kind="manifest_missing",
             where=str(manifest_path),
             detail=(
-                "manifest does not exist. Run "
-                "`python3 tools/seed_capabilities.py --out "
-                f"{manifest_path}` to bootstrap."
+                f"the capabilities.d/ directory is missing at {manifest_path}. "
+                "Restore it: one `<id>.yaml` fragment per capability plus "
+                "`_meta.yaml` (schema_version)."
             ),
         ))
         return report
@@ -250,9 +231,9 @@ def check_drift(
                 where=rel,
                 detail=(
                     f"script declares TASK_SURFACE={surface!r} but no "
-                    f"manifest entry references it. Run "
-                    f"`python3 tools/seed_capabilities.py --out "
-                    f"{manifest_path}` to add a seed entry."
+                    f"manifest entry references it. Add a "
+                    f"`plugins/setec-voiceprint/capabilities.d/<id>.yaml` "
+                    f"fragment for it (one entry; `id` = the filename stem)."
                 ),
             ))
 
@@ -372,8 +353,8 @@ def check_drift(
                     "v0.3.0 entries must declare a `handoff` field. "
                     "Default to `handoff: none` if you don't intend "
                     "this entry as a consumer surface, then promote "
-                    "during curation. Run `seed_capabilities.py` to "
-                    "regenerate the field shape."
+                    "during curation — edit the entry's "
+                    "`capabilities.d/<id>.yaml` fragment."
                 ),
             ))
         elif handoff not in valid_handoff:

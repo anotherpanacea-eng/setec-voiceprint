@@ -19,7 +19,7 @@ version: 1.0.0
 
 This skill is the answer to "what can this plugin do?" and "what
 should I run for *this* situation?" It reads the capabilities
-manifest at `plugins/setec-voiceprint/capabilities.yaml` (via
+manifest at `plugins/setec-voiceprint/capabilities.d/` (via
 `plugins/setec-voiceprint/scripts/capabilities.py`) and routes the
 user toward the right audit, with the right caveats, at the right
 compute tier.

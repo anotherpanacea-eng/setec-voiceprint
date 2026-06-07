@@ -1,0 +1,48 @@
+entries:
+- id: formulaicity_audit
+  script_path: plugins/setec-voiceprint/scripts/formulaicity_audit.py
+  surface: formulaicity
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: non-voice-structure
+  purpose: 'Descriptive phraseological-texture profile — density of common generic/stock
+    phrases (clichés, filler transitions, hedge boilerplate, corporate idiom) from
+    a small, user-extensible built-in list. NOT an AI detector and NOT a quality judgment:
+    measurements only (no band/verdict), and the claim-license refuses AI-provenance
+    / voice / quality inference.
+
+    '
+  use_when:
+  - You want a texture profile of how stock/generic a document's phrasing is
+  - You're comparing formulaicity across documents or registers
+  - Target is >= 300 words
+  do_not_use_when:
+  - You want an AI-provenance call (this is explicitly NOT an AI signal)
+  - You want a writing-quality judgment or a voice/authorship inference
+  - Target is under 300 words (the length floor)
+  inputs:
+    target: prose/markdown text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout markdown report (default), --json envelope, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib only; no models, CPU-trivial.
+    length_floor_words: 300
+  registers:
+  - blog_essay
+  - testimony_policy
+  - technical_documentation
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Formulaicity profile to stdout
+    cmd: python3 plugins/setec-voiceprint/scripts/formulaicity_audit.py target.md
+  - description: With a custom phrase list
+    cmd: python3 plugins/setec-voiceprint/scripts/formulaicity_audit.py target.md
+      --phrases-file my.txt
+  references:
+  - plugins/setec-voiceprint/specs/09-formulaicity-audit.md

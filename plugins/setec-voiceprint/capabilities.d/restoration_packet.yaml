@@ -1,0 +1,46 @@
+entries:
+- id: restoration_packet
+  script_path: plugins/setec-voiceprint/scripts/restoration_packet.py
+  surface: craft_restoration
+  status: heuristic
+  handoff: stable
+  consumers:
+  - apodictic
+  family: restoration
+  purpose: 'Translate Surface 1 / 2 diagnostic JSON into bounded revision-safe prompt
+    packets. Reads variance_audit / voice_distance / idiolect / AIC outputs and classifies
+    each signal as direct / translated / investigate-first / avoid-direct per the
+    metric-targetability taxonomy. The aggregate divergence and overall distances
+    are explicitly `avoid_direct` to resist metric-gaming.
+
+    '
+  use_when:
+  - You have Surface 1 / 2 diagnostics for a draft and want a structured revision
+    plan
+  - You're handing the draft to an LLM editor and need guardrails on what it can target
+  - You want the post-check loop wired (before_after_restoration completes the cycle)
+  do_not_use_when:
+  - You don't have diagnostic JSON yet — run variance_audit / voice_distance first
+  - You want the LLM to free-rewrite (this script's job is to constrain, not free)
+  inputs:
+    target: one or more diagnostic JSON files
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .restoration_packet.json
+    - .restoration_packet.md
+  compute:
+    tier: core
+    cost_note: stdlib only; no API costs at packet-build time
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Build a packet from a variance audit
+    cmd: python3 plugins/setec-voiceprint/scripts/restoration_packet.py target.variance.json
+  references:
+  - plugins/setec-voiceprint/references/metric-targeted-restoration.md

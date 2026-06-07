@@ -1,0 +1,30 @@
+entries:
+- id: punctuation_cadence_audit
+  script_path: plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py
+  surface: voice_coherence
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: punctuation rhythm + interruption-grammar audit.
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: core
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python: []
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'

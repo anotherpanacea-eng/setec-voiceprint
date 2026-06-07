@@ -1,0 +1,31 @@
+entries:
+- id: phraseological_signature_audit
+  script_path: plugins/setec-voiceprint/scripts/phraseological_signature_audit.py
+  surface: voice_coherence
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: phrase-frame mining over the writer's reusable language frames (paired-release
+    schedule Release 11, Surfaces Tier 3).
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: core
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python: []
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'

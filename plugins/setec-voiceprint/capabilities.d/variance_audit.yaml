@@ -1,0 +1,66 @@
+entries:
+- id: variance_audit
+  script_path: plugins/setec-voiceprint/scripts/variance_audit.py
+  surface: smoothing_diagnosis
+  status: empirically_oriented
+  handoff: stable
+  consumers:
+  - apodictic
+  family: tier1-variance
+  purpose: 'Layer A distributional diagnostic for AI-prose smoothing. Computes sentence-length
+    variance, lexical diversity (MATTR / MTLD / Yule''s K / Shannon), reading-level
+    spread (FKGL SD), and POS-bigram / surprisal signals; reports per-signal values
+    with operator-side band calls.
+
+    '
+  use_when:
+  - First pass on any prose where you want distributional evidence of mode-collapse
+  - You have a baseline corpus (the writer's own prior work or a register match)
+  - Target is ≥ 200 words for Tier 1; ≥ 500 for Tier 2/3; ≥ 2000 for Tier 4 surprisal
+  do_not_use_when:
+  - Target is ESL writing without a matched ESL baseline (the 2026-05-10 EditLens
+    finding shows polarity inverts on ESL student writing)
+  - You want a single AI/human verdict — variance_audit reports values, not a label
+  - Target is under 200 words (Tier 1 length floor)
+  inputs:
+    target: prose text file (UTF-8)
+    optional:
+    - --baseline-dir pointing at a corpus of comparable register
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .variance.json
+    - .variance.md
+  compute:
+    tier: surprisal
+    cost_note: 'Tier 1 is stdlib + tokenization. Tier 2/3 need spaCy + en_core_web_sm.
+      Tier 4 surprisal needs transformers + a small causal LM (default tinyllama,
+      ~600 MB); the --tier4 flag opts in.
+
+      '
+    length_floor_words: 200
+  registers:
+  - literary_fiction
+  - blog_essay
+  - academic_philosophy
+  - long_form_journalism
+  dependencies:
+    python: []
+    python_optional:
+    - spacy
+    - sklearn
+    - sentence_transformers
+    - textstat
+    - nltk
+    - numpy
+    - transformers
+  examples:
+  - description: Whole-document smoothing diagnosis
+    cmd: python3 plugins/setec-voiceprint/scripts/variance_audit.py target.md
+  - description: Layer A + Layer B (with AIC-8/9 detectors)
+    cmd: python3 plugins/setec-voiceprint/scripts/variance_audit.py target.md --aic8
+      --aic9
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
+  - plugins/setec-voiceprint/references/distributional-diagnostics.md
+  - plugins/setec-voiceprint/references/calibration-findings-2026-05-10.md

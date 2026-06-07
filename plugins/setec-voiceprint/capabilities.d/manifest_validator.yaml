@@ -1,0 +1,42 @@
+entries:
+- id: manifest_validator
+  script_path: plugins/setec-voiceprint/scripts/manifest_validator.py
+  surface: validation
+  status: empirically_oriented
+  handoff: internal
+  consumers: []
+  family: corpus-validation
+  purpose: 'Schema and integrity checks for `corpus_manifest.jsonl`. Enforces the
+    manifest enum vocabulary (label, ai_status, language_status, use), checks required
+    fields, and warns when ESL-labeled entries land in `use: baseline` for voice-coherence
+    work (the language-status ratchet).
+
+    '
+  use_when:
+  - You're building a labeled corpus for calibration / validation
+  - You received a manifest from elsewhere and want to confirm it parses
+  - You're about to run a calibration sweep and need to gate inputs
+  do_not_use_when:
+  - The corpus has no manifest yet (use corpus_template.py to build one first)
+  - You're working with a single-file target (this is for collections)
+  inputs:
+    target: JSONL manifest file
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .manifest_validation.json
+  compute:
+    tier: core
+    cost_note: stdlib only
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Validate a manifest
+    cmd: python3 plugins/setec-voiceprint/scripts/manifest_validator.py corpus/manifest.jsonl
+  references:
+  - plugins/setec-voiceprint/references/manifest-schema.md

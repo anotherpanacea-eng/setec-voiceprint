@@ -1,0 +1,31 @@
+entries:
+- id: mimicry_cosplay_audit
+  script_path: plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py
+  surface: voice_coherence
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: detect lexical mimicry without syntactic conformity (paired-release schedule
+    Release 10, Surfaces Tier 3).
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: core
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python: []
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'

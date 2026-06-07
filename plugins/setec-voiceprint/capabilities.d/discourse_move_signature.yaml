@@ -1,0 +1,30 @@
+entries:
+- id: discourse_move_signature
+  script_path: plugins/setec-voiceprint/scripts/discourse_move_signature.py
+  surface: smoothing_diagnosis
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: typed discourse markers + move sequences.
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: core
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python: []
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'

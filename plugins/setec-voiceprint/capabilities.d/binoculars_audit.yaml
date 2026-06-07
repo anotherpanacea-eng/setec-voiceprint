@@ -1,0 +1,51 @@
+entries:
+- id: binoculars_audit
+  script_path: plugins/setec-voiceprint/scripts/binoculars_audit.py
+  surface: binoculars_discrimination
+  status: literature_anchored
+  handoff: experimental
+  consumers: []
+  family: binoculars
+  purpose: 'Two-model perplexity comparison (Hans et al. 2024). Scores a target against
+    a scorer LLM + observer LLM pair; lower ratios indicate the target is more predictable
+    under the scorer than the observer — a known signal for AI-generated text. v1
+    uses perplexity-ratio; v2 uses true cross-perplexity when tokenizers align.
+
+    '
+  use_when:
+  - You want a discrimination-evidence signal that's close to the published 95% AUC
+    condition
+  - You have access to a scorer + observer pair (default tinyllama + gpt2)
+  - Target ≥ 50 tokens
+  do_not_use_when:
+  - You need a binary verdict — ships uncalibrated by default
+  - Target is in the scorer's or observer's training set (memorization biases the
+    score)
+  - You can't install the surprisal tier (transformers + torch, ~2 GB)
+  inputs:
+    target: prose text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .binoculars.json
+    - .binoculars.md
+  compute:
+    tier: surprisal
+    cost_note: One-time ~600 MB tinyllama + ~500 MB gpt2 download; CPU inference acceptable
+    length_floor_words: 50
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python:
+    - transformers
+    - torch
+    python_optional: []
+  examples:
+  - description: Default scorer/observer pair
+    cmd: python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt
+  - description: Custom scorer pair
+    cmd: python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --scorer
+      falcon-7b --observer falcon-7b-instruct
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md

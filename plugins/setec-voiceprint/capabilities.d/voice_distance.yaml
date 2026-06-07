@@ -1,0 +1,53 @@
+entries:
+- id: voice_distance
+  script_path: plugins/setec-voiceprint/scripts/voice_distance.py
+  surface: voice_coherence
+  status: empirically_oriented
+  handoff: stable
+  consumers:
+  - apodictic
+  family: voice-distance
+  purpose: 'Compare a target text against a specific writer''s (or register''s) baseline
+    using classic stylometric feature families — Burrows Delta on function words,
+    per-feature cosine distance, POS-bigram comparison. Answers "how far has this
+    draft drifted from this writer''s prior voice?"
+
+    '
+  use_when:
+  - You have a baseline of the writer's prior prose (≥ 20K words for tight bounds)
+  - You suspect voice drift across drafts / time / register
+  - You want to identify which feature families drove the drift (Delta + per-family
+    cosine)
+  do_not_use_when:
+  - You don't have a writer-specific baseline (use variance_audit against a register
+    baseline instead)
+  - The baseline is mixed-state (some pre-AI, some AI-assisted) without slicing by
+    ai_status
+  - Target is under ~2000 words (Burrows Delta is noisy below that)
+  inputs:
+    target: prose text file (UTF-8)
+    required:
+    - --baseline-dir pointing at the writer's prior work
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .voice_distance.json
+    - .voice_distance.md
+  compute:
+    tier: core
+    cost_note: stdlib + spaCy; no API costs
+    length_floor_words: 2000
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional:
+    - spacy
+  examples:
+  - description: Voice-drift comparison against a baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/voice_distance.py target.md --baseline-dir
+      baseline/
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
+  - plugins/setec-voiceprint/references/stylometry-oracle.md

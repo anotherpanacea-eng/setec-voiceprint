@@ -1,0 +1,32 @@
+entries:
+- id: length_bootstrap
+  script_path: plugins/setec-voiceprint/scripts/length_bootstrap.py
+  surface: smoothing_diagnosis
+  status: todo
+  handoff: none
+  consumers: []
+  family: TODO
+  purpose: Length-matched bootstrap helpers (Phase 1 step 3 of the validation spine).
+  use_when:
+  - TODO
+  do_not_use_when:
+  - TODO
+  inputs:
+    target: TODO
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - TODO
+  compute:
+    tier: core
+    cost_note: TODO
+    length_floor_words: null
+  registers:
+  - TODO
+  dependencies:
+    python:
+    - numpy
+    - scipy
+  examples: []
+  references: []
+  _seeded_at: '2026-05-28'
