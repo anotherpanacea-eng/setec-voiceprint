@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -264,6 +265,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
+
+    # The conformal coverage guarantee (coverage = 1 - alpha) is only defined
+    # for alpha in the open interval (0, 1); outside it the prediction set and
+    # the "coverage" it claims are meaningless (e.g. alpha=2.0 -> coverage=-1.0).
+    if not (math.isfinite(args.alpha) and 0.0 < args.alpha < 1.0):
+        sys.stderr.write(
+            f"--alpha must be a finite value in the open interval (0, 1); "
+            f"got {args.alpha}\n"
+        )
+        return 2
+    if not math.isfinite(args.score):
+        sys.stderr.write(f"--score must be a finite number; got {args.score}\n")
+        return 2
+
     cal_path = Path(args.calibration).expanduser()
     if not cal_path.is_file():
         sys.stderr.write(f"Calibration file not found: {cal_path}\n")

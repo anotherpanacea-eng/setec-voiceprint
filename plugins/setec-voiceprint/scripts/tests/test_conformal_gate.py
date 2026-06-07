@@ -148,6 +148,33 @@ def test_deterministic():
     assert a == b
 
 
+def _exit_code(args):
+    """Run main, normalizing an argparse SystemExit to its exit code.
+
+    Some invalid values (e.g. '-inf') are rejected by argparse before main's
+    own validation runs; both paths must reject with code 2.
+    """
+    try:
+        return cg.main(args)
+    except SystemExit as exc:
+        return exc.code
+
+
+def test_invalid_alpha_rejected(tmp_path):
+    f = tmp_path / "cal.txt"
+    f.write_text("\n".join(str(x) for x in range(1, 51)), encoding="utf-8")
+    for bad in ("2.0", "0", "1", "-0.1", "nan", "inf"):
+        assert _exit_code(["--calibration", str(f), "--score", "25",
+                           "--alpha", bad, "--json"]) == 2
+
+
+def test_non_finite_score_rejected(tmp_path):
+    f = tmp_path / "cal.txt"
+    f.write_text("\n".join(str(x) for x in range(1, 51)), encoding="utf-8")
+    for bad in ("nan", "inf", "-inf"):
+        assert _exit_code(["--calibration", str(f), "--score", bad, "--json"]) == 2
+
+
 def test_cli_one_class_envelope(tmp_path):
     f = tmp_path / "cal.txt"
     f.write_text("\n".join(str(x) for x in range(1, 51)), encoding="utf-8")

@@ -107,6 +107,31 @@ def test_too_short_unavailable(tmp_path):
     assert payload["available"] is False
 
 
+def test_empty_baseline_files_unavailable(tmp_path):
+    # A baseline dir of whitespace-only files must NOT read as available
+    # (would otherwise produce a distance against zero vectors, baseline.words==0).
+    bdir = tmp_path / "b"
+    bdir.mkdir()
+    (bdir / "blank1.txt").write_text("   \n\n  \t\n", encoding="utf-8")
+    (bdir / "blank2.txt").write_text("", encoding="utf-8")
+    target = tmp_path / "t.txt"
+    target.write_text(A_TEXT, encoding="utf-8")
+    out = tmp_path / "o.json"
+    assert cvd.main([str(target), "--baseline-dir", str(bdir), "--lang", "en",
+                     "--json", "--out", str(out)]) == 0
+    payload = json.loads(out.read_text())
+    assert payload["available"] is False
+
+
+def test_load_baseline_skips_empty(tmp_path):
+    bdir = tmp_path / "b"
+    bdir.mkdir()
+    (bdir / "good.txt").write_text(A_TEXT, encoding="utf-8")
+    (bdir / "blank.txt").write_text("   \n", encoding="utf-8")
+    texts, loaded, words = cvd._load_baseline(str(bdir))
+    assert len(texts) == 1 and words > 0
+
+
 def test_deterministic():
     a = cvd.compute_distance(B_TEXT, [A_TEXT, B_TEXT], n=3, top_k=150)
     b = cvd.compute_distance(B_TEXT, [A_TEXT, B_TEXT], n=3, top_k=150)

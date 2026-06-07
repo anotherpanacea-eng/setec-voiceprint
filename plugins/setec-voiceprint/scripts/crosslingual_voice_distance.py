@@ -181,9 +181,12 @@ def _load_baseline(baseline_dir: str) -> tuple[list[str], list[Path], int]:
     words = 0
     for f in files:
         t = f.read_text(encoding="utf-8", errors="ignore")
+        n = count_words(t)
+        if n == 0:  # skip empty / whitespace-only / non-word files
+            continue
         texts.append(t)
         loaded.append(f)
-        words += count_words(t)
+        words += n
     return texts, loaded, words
 
 
@@ -305,7 +308,10 @@ def main(argv: list[str] | None = None) -> int:
             "floor for a meaningful distance."
         )
     if not baseline_texts:
-        warnings.append(f"No .txt/.md baseline files found in {args.baseline_dir}.")
+        warnings.append(
+            f"No usable (non-empty) .txt/.md baseline files found in "
+            f"{args.baseline_dir}."
+        )
 
     if word_count < LENGTH_FLOOR_WORDS or not baseline_texts:
         payload = build_payload(
