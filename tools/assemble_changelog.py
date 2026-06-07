@@ -50,41 +50,63 @@ class FragmentError(RuntimeError):
     pass
 
 
+def _parse_fragment(frag: Path) -> tuple[str, str]:
+    """Validate + parse one fragment → (category, body). Raises FragmentError.
+    Shared by the assembler and the docs-freshness gate so CI rejects a
+    malformed fragment at PR time instead of only at release time."""
+    text = frag.read_text(encoding="utf-8")
+    m = _HEADER_RE.search(text)
+    if not m:
+        raise FragmentError(
+            f"{frag}: missing a `### Added/Changed/Fixed` category header"
+        )
+    # One-header-per-fragment, header-first — otherwise extra headers or leading
+    # prose are silently swallowed/dropped (body = everything after the first
+    # header), a quiet data-loss path.
+    if len(_HEADER_RE.findall(text)) != 1:
+        raise FragmentError(
+            f"{frag}: exactly one category header per fragment "
+            f"(found {len(_HEADER_RE.findall(text))}; split into separate files)"
+        )
+    if text[: m.start()].strip():
+        raise FragmentError(
+            f"{frag}: the category header must be the first non-blank line "
+            f"(prose precedes it and would be dropped)"
+        )
+    category = m.group(1)
+    if category not in CATEGORY_ORDER:
+        raise FragmentError(
+            f"{frag}: unknown category {category!r}; expected one of {CATEGORY_ORDER}"
+        )
+    body = text[m.end():].strip("\n")
+    if not body.strip():
+        raise FragmentError(f"{frag}: fragment has a header but no body")
+    return category, body
+
+
+def fragment_files(frag_dir: Path):
+    """The fragment files in a changelog.d/ dir (excludes README.md)."""
+    return [f for f in sorted(frag_dir.glob("*.md")) if f.name != "README.md"]
+
+
+def validate_fragments(frag_dir: Path) -> list[str]:
+    """Non-raising sibling of discover_fragments for CI gates: return one problem
+    string per malformed fragment (empty list = all valid, or dir absent)."""
+    problems: list[str] = []
+    if not frag_dir.is_dir():
+        return problems
+    for frag in fragment_files(frag_dir):
+        try:
+            _parse_fragment(frag)
+        except FragmentError as exc:
+            problems.append(str(exc))
+    return problems
+
+
 def discover_fragments(frag_dir: Path) -> list[tuple[str, str, str]]:
     """Return [(slug, category, body)] for every fragment, sorted by (category
     order, slug) so output is deterministic and merge-order-independent."""
-    out: list[tuple[str, str, str]] = []
-    for frag in sorted(frag_dir.glob("*.md")):
-        if frag.name == "README.md":
-            continue
-        text = frag.read_text(encoding="utf-8")
-        m = _HEADER_RE.search(text)
-        if not m:
-            raise FragmentError(
-                f"{frag}: missing a `### Added/Changed/Fixed` category header"
-            )
-        # Enforce one-header-per-fragment, header-first — otherwise extra headers
-        # or leading prose are silently swallowed/dropped (body is everything
-        # after the first header), a quiet data-loss path.
-        if len(_HEADER_RE.findall(text)) != 1:
-            raise FragmentError(
-                f"{frag}: exactly one category header per fragment "
-                f"(found {len(_HEADER_RE.findall(text))}; split into separate files)"
-            )
-        if text[: m.start()].strip():
-            raise FragmentError(
-                f"{frag}: the category header must be the first non-blank line "
-                f"(prose precedes it and would be dropped)"
-            )
-        category = m.group(1)
-        if category not in CATEGORY_ORDER:
-            raise FragmentError(
-                f"{frag}: unknown category {category!r}; expected one of {CATEGORY_ORDER}"
-            )
-        body = text[m.end():].strip("\n")
-        if not body.strip():
-            raise FragmentError(f"{frag}: fragment has a header but no body")
-        out.append((frag.stem, category, body))
+    out = [(f.stem, *_parse_fragment(f)) for f in fragment_files(frag_dir)]
     out.sort(key=lambda t: (CATEGORY_ORDER.index(t[1]), t[0]))
     return out
 

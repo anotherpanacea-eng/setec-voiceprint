@@ -130,3 +130,34 @@ def test_freshness_counts_fragment_coverage(tmp_path):
     # Add a fragment naming it → covered.
     _frag(fdir, "feat.md", "### Added\n\nships `frag_only_cap`\n")
     assert cdf.changelog_coverage(manifest, cl) == []
+
+
+def test_validate_fragments_flags_malformed(tmp_path):
+    fdir = tmp_path / "changelog.d"
+    fdir.mkdir()
+    assert asm.validate_fragments(fdir) == []  # empty dir ok
+    _frag(fdir, "ok.md", "### Added\n\nfine\n")
+    _frag(fdir, "two.md", "### Added\n\na\n\n### Fixed\n\nb\n")  # two headers
+    _frag(fdir, "lead.md", "intro\n\n### Added\n\nbody\n")  # leading prose
+    problems = asm.validate_fragments(fdir)
+    assert len(problems) == 2  # the two malformed, not the good one
+
+
+def test_gate_rejects_malformed_fragment_even_when_coverage_satisfied(tmp_path, monkeypatch):
+    """The reviewer's P2: a malformed fragment whose text satisfies coverage must
+    still fail the freshness gate (else CI passes but the release assembler
+    rejects it later)."""
+    fdir, cl = _setup(tmp_path)
+    manifest = tmp_path / "m.yaml"
+    manifest.write_text(
+        "schema_version: '0.3.0'\nentries:\n"
+        "  - id: cap_z\n    surface: validation\n    status: heuristic\n",
+        encoding="utf-8",
+    )
+    # Malformed (two headers) but mentions cap_z → raw-text coverage IS satisfied.
+    _frag(fdir, "bad.md", "### Added\n\nships `cap_z`\n\n### Fixed\n\noops\n")
+    monkeypatch.setattr(cdf, "CHANGELOG", cl)
+    assert cdf.changelog_coverage(manifest, cl) == []  # coverage alone passes
+    result = cdf.run(manifest)
+    assert result["changelog_fragment_problems"]  # but the gate catches it
+    assert result["ok"] is False
