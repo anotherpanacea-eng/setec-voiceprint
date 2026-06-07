@@ -89,9 +89,11 @@ name, a demographic label, a same-person judgment. Those raw outputs are evidenc
 be **scored**, not artifacts to be kept. As builder invariants (enforced in code; see
 the Contract's redaction gate):
 
-1. **Raw person-identifying outputs are private/redacted.** Every raw foil/LLM
-   identity/profile output is written only to an access-controlled private store,
-   never to any committed or published artifact (including the envelope).
+1. **Raw person-identifying outputs are retained as private evidence only.** Every
+   raw foil/LLM identity/profile output is written **only** to the access-controlled
+   `--private-store`, under the **retained-private-evidence** policy in the Contract
+   (§Raw-output retention) — never to any committed or published artifact, and never
+   to the envelope.
 2. **Public artifacts carry only aggregate categories** — correct / incorrect /
    abstain counts, calibration bins, LR / odds *distributions* — and never a name, a
    demographic label, or a same-person verdict for any individual.
@@ -106,10 +108,13 @@ the Contract's redaction gate):
 - **task_surface:** existing **`validation`** (no new surface; no person-identifying
   surface).
 - **Entrypoint / CLI (the harness, not an audit):**
-  `python3 scripts/attribution_refusal_lab.py --experiment {e1,e2,e3} --manifest LAB_MANIFEST --foil {gi,embedding} [--llm MODEL] [--private-store DIR] [--seed N] [--json] [--out PATH]`.
-  `--llm` is required for `e3`; `--private-store` (an access-controlled dir) is
-  required whenever raw identity outputs are produced (e3); `--redaction-gate` is
-  **on by default and cannot be disabled** for any non-private write.
+  `python3 scripts/attribution_refusal_lab.py --experiment {e1,e2,e3} --manifest LAB_MANIFEST --foil {gi,embedding} [--llm MODEL] [--private-store DIR] [--retention-days N] [--purge] [--seed N] [--json] [--out PATH]`.
+  `--llm` is required for `e3`. **`--private-store DIR` and `--retention-days N` are
+  both required for `e3`** (raw identity outputs are retained there under
+  §Raw-output retention); the store must be access-controlled (see that section).
+  `--purge` runs the deletion step (removes retained raw outputs past their TTL).
+  `--redaction-gate` is **on by default and cannot be disabled** for any non-private
+  write.
 - **Lab-manifest schema** (the data manifests). JSONL, one row per corpus role,
   validated by a `validate_lab_manifest()` (mirroring `manifest_validator`):
   - `path`, `role` ∈ {`target`, `candidate_pool`, `group_reference`, `control`,
@@ -140,7 +145,25 @@ the Contract's redaction gate):
   generalization beyond the held-out / consented reference; and — when the
   foil-strength gate fails — any "debunk" reading of the null. *Caveats:* held-out
   ground truth; the result is conditioned on the foil's strength (see the gate); the
-  redaction gate governs every public artifact.
+  redaction gate governs every public artifact; raw foil/LLM identity outputs are
+  retained as private evidence under a bounded deletion policy (§Raw-output
+  retention) and are never published.
+- **Raw-output retention (the one rule — *retained private evidence*).** Resolves the
+  policy the #177 review flagged. Raw foil/LLM person-identifying outputs (candidate
+  names, demographic labels, same-person judgments) **are retained as private
+  evidence** — written only to the access-controlled `--private-store` — for
+  reproducibility and audit. The store is **access-controlled**: restricted
+  permissions (not world-readable), outside the repo and git-ignored, and the harness
+  **refuses** a store path that is world-readable or inside the working tree (same
+  ratchet shape as `voice_profile` refusing public output paths). Retention is
+  **bounded and documented**: `--retention-days N` is required; each raw artifact
+  records its write time; `--purge` deletes raw outputs past their TTL; and the
+  retention window + access policy are written to the run's PROVENANCE entry. Raw
+  outputs are **never** written to a public/committed artifact or the envelope — only
+  the *score* and aggregate categories leave the lab (the redaction gate enforces
+  this independently of retention). *This is the single retention rule; the build PR
+  does not infer a lifetime — raw names/labels live in the private store for exactly
+  `--retention-days`, then `--purge` removes them.*
 - **Capabilities posture (for the build):** a `capabilities.d/attribution_refusal_lab.yaml`
   fragment — `surface: validation`, `status: heuristic`, `handoff: none` (research
   scaffold), `family: validation`, `compute: {tier: core}` for E1/E2 and `{tier:
@@ -189,8 +212,17 @@ Three gates, each a hard refusal (not a warning), plus per-experiment acceptance
   pure topic → `residual_after_controls ≈ 0`.
 - `test_e3_contrast_with_stub_llm` — deterministic stub LLM + stub foil; **no** real
   LLM call; aggregate contrast computed.
-- `test_private_store_required` — producing raw identity outputs without a
-  `--private-store` (or to a public path) is refused.
+- `test_e3_requires_private_store_and_retention` — an `e3` run missing
+  `--private-store` *or* `--retention-days` is refused (`available=False` / nonzero).
+- `test_private_store_must_be_access_controlled` — a world-readable store path, or one
+  inside the repo / working tree, is refused (the `voice_profile`-style ratchet).
+- `test_raw_outputs_only_in_private_store` — after an `e3` run, raw identity outputs
+  exist **only** under the private store; the `--out` artifact and the envelope
+  contain none.
+- `test_purge_deletes_past_ttl` — `--purge` removes raw outputs older than
+  `--retention-days`, and leaves within-TTL outputs intact.
+- `test_retention_policy_recorded_in_provenance` — the run records `retention_days` +
+  the access policy in its PROVENANCE entry.
 - `test_claim_license_refuses_identity_and_live` — `does_not_license` names identity /
   label and live / unconsented population.
 - `test_envelope_shape_validates`; `test_deterministic` (E1/E2 seeded; E3 stubbed).
@@ -220,8 +252,12 @@ that names a person.
 - **No identity output.** No name, no demographic label, no "same person" verdict —
   only scored evidence strength + aggregate categories.
 - **No live / unconsented population scan**, and no shipped harness capable of one.
-- **No retention or publication of raw person-identifying outputs** (the E3 non-leak
-  rule); only scored outcomes and aggregate categories leave the lab.
+- **No raw person-identifying output *leaves the lab*.** Raw outputs are *retained*
+  only as private evidence in the access-controlled `--private-store` under the
+  §Raw-output retention policy (bounded `--retention-days` TTL + access/audit +
+  `--purge`); only scored outcomes and aggregate categories are ever published or
+  returned in the envelope. (Retention is private and policy-bounded, not zero — the
+  #177 review's resolved rule.)
 - **No demographic labels** even as an intermediate public artifact; E2 reports
   proximity-to-a-named-reference-distribution and its confound decomposition, not a
   per-author attribute.
