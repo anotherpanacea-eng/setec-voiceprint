@@ -79,6 +79,14 @@ TASK_SURFACE_LABELS = {
         "cloud under a named model (discrimination evidence, "
         "uncalibrated, non-verdict)"
     ),
+    "rewriting_invariance": (
+        "rewriting-invariance distance under a named judge model + prompt "
+        "(discrimination evidence, uncalibrated, non-verdict)"
+    ),
+    "edit_magnitude": (
+        "edit-magnitude estimate relative to the corpus the model was "
+        "calibrated on (uncalibrated by default; NOT an absolute % AI)"
+    ),
     "sound_texture": (
         "sound-texture profile (alliteration / assonance / consonance "
         "adjacency density + consonant-class profile) via an "

@@ -2651,6 +2651,114 @@ entries:
     examples: []
     references: []
     _seeded_at: "2026-06-06"
+  - id: rewriting_invariance_audit
+    script_path: plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py
+    surface: rewriting_invariance
+    status: heuristic
+    handoff: experimental
+    consumers: []
+    family: discrimination
+    purpose: >
+      Raidar-style rewriting-invariance discrimination evidence: prompt an LLM
+      to "rewrite to improve clarity," then measure how much it changed the
+      text (edit-distance / token-overlap) averaged over N trials. Low change ⇒
+      more AI-like, high ⇒ more human-like. A paraphrase-robust axis orthogonal
+      to perplexity. Uncalibrated: emits the distance + provenance only (no
+      band, no verdict); strongly dependent on the judge model + exact prompt
+      (both pinned in provenance). Clean-room implementation of the published
+      idea (Mao et al., ICLR 2024) — no Raidar repo code/data vendored.
+    use_when:
+      - You want a discrimination signal that survives paraphrase attacks on perplexity detectors
+      - You have an operator-supplied LLM (API key or local instruct model) to do the rewriting
+      - You're stacking signals and want an axis orthogonal to surprisal / Binoculars
+    do_not_use_when:
+      - You want an AI/human verdict (this surface is uncalibrated and ships no threshold)
+      - You cannot pin a single judge model + prompt (the distance is meaningless without them)
+      - You can't absorb per-call LLM cost (each trial is a billed rewrite; cost scales with --n)
+    inputs:
+      target: prose text file (UTF-8)
+      required:
+        - --judge MODEL (operator-supplied LLM model id used to rewrite)
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: api_llm
+      cost_note: >
+        N billed LLM rewrite calls per audit (one per trial); cost scales with
+        --n and target length. Operator supplies the LLM SDK + key.
+      length_floor_words: 50
+    registers:
+      - blog_essay
+      - long_form_fiction
+      - testimony_policy
+    dependencies:
+      # The rewrite client is pluggable/injectable. The reference backend uses
+      # the operator's LLM SDK (e.g. anthropic) at invocation time; the audit
+      # core itself is stdlib, so dependencies.python is empty.
+      python: []
+      python_optional: []
+      sdks_optional:
+        - anthropic
+    examples:
+      - description: Rewriting-invariance audit (markdown report)
+        cmd: "python3 plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py target.txt --judge claude-sonnet-4-6"
+      - description: JSON envelope, 5 trials
+        cmd: "python3 plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py target.txt --judge claude-sonnet-4-6 --n 5 --json"
+    references:
+      - specs/15-raidar-rewriting-invariance.md
+    _seeded_at: "2026-06-06"
+  - id: edit_magnitude_audit
+    script_path: plugins/setec-voiceprint/scripts/edit_magnitude_audit.py
+    surface: edit_magnitude
+    status: heuristic
+    handoff: experimental
+    consumers: []
+    family: discrimination
+    purpose: >
+      Clean-room EditLens-style document-level edit-magnitude estimate — a
+      RoBERTa-family regressor trained with MSE against a BERTScore-style
+      similarity proxy between pre/post-edit pairs, framed as a SAME-CORPUS
+      calibrated estimate with explicit OOD caveats, never an absolute "% AI".
+      Uncalibrated by default (score only, no band); a calibrated model is
+      operator-supplied via --model and applies only to the corpus it was
+      calibrated on. The claim-license refuses an absolute %-AI / dosage claim,
+      cross-corpus generalization, and per-sentence localization, and states the
+      OOD-collapse caveat (degree estimation works in-distribution, collapses
+      toward binary out-of-distribution).
+    use_when:
+      - You have an operator-calibrated model for a SPECIFIC corpus and want a same-corpus edit-magnitude estimate
+      - You're assembling a multi-signal evidence pack and want a document-level magnitude reading
+      - You accept the in-distribution-only caveat
+    do_not_use_when:
+      - You want an absolute "% AI-edited" number (this surface refuses it by design)
+      - You have no same-corpus calibration (uncalibrated runs emit a score with no band)
+      - You need cross-corpus comparability or per-sentence localization
+    inputs:
+      target: prose/markdown text file (UTF-8)
+      optional:
+        - operator-calibrated model (--model PATH)
+    outputs:
+      schema_version: "1.0"
+      artifacts:
+        - stdout markdown report (default), --json envelope, or --out PATH
+    compute:
+      tier: surprisal
+      cost_note: GPU fine-tune for calibration (RoBERTa-large ~355M); CPU inference with a calibrated model.
+      length_floor_words: 100
+    registers:
+      - blog_essay
+      - testimony_policy
+      - literary_fiction
+    dependencies:
+      python:
+        - transformers
+        - torch
+      python_optional: []
+    examples: []
+    references:
+      - plugins/setec-voiceprint/specs/13-editlens-edit-magnitude.md
   - id: reference_ecology_audit
     script_path: plugins/setec-voiceprint/scripts/reference_ecology_audit.py
     surface: reference_ecology
