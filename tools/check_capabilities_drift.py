@@ -168,9 +168,9 @@ def check_drift(
             kind="manifest_missing",
             where=str(manifest_path),
             detail=(
-                "manifest does not exist. Run "
-                "`python3 tools/seed_capabilities.py --out "
-                f"{manifest_path}` to bootstrap."
+                f"the capabilities.d/ directory is missing at {manifest_path}. "
+                "Restore it: one `<id>.yaml` fragment per capability plus "
+                "`_meta.yaml` (schema_version)."
             ),
         ))
         return report
@@ -231,9 +231,9 @@ def check_drift(
                 where=rel,
                 detail=(
                     f"script declares TASK_SURFACE={surface!r} but no "
-                    f"manifest entry references it. Run "
-                    f"`python3 tools/seed_capabilities.py --out "
-                    f"{manifest_path}` to add a seed entry."
+                    f"manifest entry references it. Add a "
+                    f"`plugins/setec-voiceprint/capabilities.d/<id>.yaml` "
+                    f"fragment for it (one entry; `id` = the filename stem)."
                 ),
             ))
 
@@ -353,8 +353,8 @@ def check_drift(
                     "v0.3.0 entries must declare a `handoff` field. "
                     "Default to `handoff: none` if you don't intend "
                     "this entry as a consumer surface, then promote "
-                    "during curation. Run `seed_capabilities.py` to "
-                    "regenerate the field shape."
+                    "during curation — edit the entry's "
+                    "`capabilities.d/<id>.yaml` fragment."
                 ),
             ))
         elif handoff not in valid_handoff:
