@@ -62,6 +62,19 @@ def test_generator_knows_the_nine_surfaces():
     assert gen.surfaces() == ALL_SURFACES
 
 
+def test_fixtures_dir_holds_only_known_goldens():
+    """Privacy defense-in-depth: the .gitignore negation re-includes every
+    ``*.json`` under contract_fixtures/, escaping the ``*_voice_profile.json``
+    privacy ratchet. Assert the directory contains ONLY the nine known,
+    sentinelized goldens, so a stray real voice-clone artifact dropped here
+    can never be committed past the ratchet."""
+    present = sorted(p.stem for p in FIXTURES_DIR.glob("*.json"))
+    assert present == ALL_SURFACES, (
+        "unexpected .json under contract_fixtures/ (privacy-ratchet escape "
+        f"risk): {sorted(set(present) ^ set(ALL_SURFACES))}"
+    )
+
+
 def test_generator_check_passes_on_committed_tree():
     """(a) The committed goldens are consistent with build_output."""
     problems = gen.check_all()
