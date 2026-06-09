@@ -85,6 +85,97 @@ class Violation:
         return f"  {self.kind}: {self.where}\n    {self.detail}"
 
 
+# R1 (normalized-entrypoint) field bundle. The presence of `min_setec_version`
+# is the bundle marker: a fragment carrying it is a subprocess consumer surface
+# and MUST carry the rest of the bundle in valid form. Fragments WITHOUT
+# `min_setec_version` are exempt (reference-tagged / internal entries are left
+# untouched).
+_R1_BUNDLE_MARKER = "min_setec_version"
+_VALID_JSON_DELIVERY = frozenset({"stdout", "file"})
+_VALID_INPUT_TYPES = frozenset(
+    {"path", "string", "int", "float", "enum", "bool"}
+)
+# Conservative semver: MAJOR.MINOR.PATCH with optional -prerelease/+build. Good
+# enough to catch a fat-fingered floor like "1.86" or "v1.86.0" without pulling
+# in a packaging dep.
+_SEMVER_RE = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
+
+
+def validate_r1_bundle(entry: dict) -> list[str]:
+    """Return a list of human-readable problems with `entry`'s R1 field bundle.
+
+    An entry is subject to the bundle iff it carries `min_setec_version` (the
+    marker). When present, the FULL bundle is required and validated:
+
+      * `min_setec_version` — a valid semver string.
+      * `json_delivery` — one of {stdout, file}.
+      * `inputs` — a non-empty list of mappings, each with `flag`, `type`, and
+        `required`; `type` in the legal vocabulary; `values` (a non-empty list)
+        present iff `type == "enum"`.
+
+    Entries WITHOUT the marker return `[]` (exempt). This is a pure validator
+    (no side effects) so both the drift linter and the seeder can reuse it."""
+    if _R1_BUNDLE_MARKER not in entry:
+        return []
+    problems: list[str] = []
+
+    floor = entry.get("min_setec_version")
+    if not isinstance(floor, str) or not _SEMVER_RE.match(floor):
+        problems.append(
+            f"min_setec_version must be a valid semver string "
+            f"(MAJOR.MINOR.PATCH); got {floor!r}"
+        )
+
+    delivery = entry.get("json_delivery")
+    if delivery not in _VALID_JSON_DELIVERY:
+        problems.append(
+            f"json_delivery must be one of {sorted(_VALID_JSON_DELIVERY)!r}; "
+            f"got {delivery!r}"
+        )
+
+    inputs = entry.get("inputs")
+    if not isinstance(inputs, list) or not inputs:
+        problems.append(
+            f"inputs must be a non-empty list of mappings; got "
+            f"{type(inputs).__name__ if inputs is not None else None!r}"
+        )
+    else:
+        for i, item in enumerate(inputs):
+            if not isinstance(item, dict):
+                problems.append(
+                    f"inputs[{i}] must be a mapping; got "
+                    f"{type(item).__name__}"
+                )
+                continue
+            for key in ("flag", "type", "required"):
+                if key not in item:
+                    problems.append(
+                        f"inputs[{i}] missing required key {key!r}"
+                    )
+            itype = item.get("type")
+            if itype is not None and itype not in _VALID_INPUT_TYPES:
+                problems.append(
+                    f"inputs[{i}].type {itype!r} not in "
+                    f"{sorted(_VALID_INPUT_TYPES)!r}"
+                )
+            has_values = "values" in item
+            if itype == "enum":
+                vals = item.get("values")
+                if not isinstance(vals, list) or not vals:
+                    problems.append(
+                        f"inputs[{i}] has type 'enum' but `values` is not a "
+                        f"non-empty list; got {vals!r}"
+                    )
+            elif has_values:
+                problems.append(
+                    f"inputs[{i}] carries `values` but type is "
+                    f"{itype!r} (values is only valid for type 'enum')"
+                )
+    return problems
+
+
 @dataclass
 class Report:
     violations: list[Violation] = field(default_factory=list)
@@ -399,6 +490,22 @@ def check_drift(
                     "`consumers` must contain only strings; got "
                     f"mixed types: {[type(c).__name__ for c in consumers]}"
                 ),
+            ))
+
+    # Check 7 (R1 normalized-entrypoint): any fragment carrying the
+    # `min_setec_version` bundle marker must carry the WHOLE bundle in valid
+    # form (min_setec_version semver + json_delivery in {stdout,file} +
+    # structured inputs[]). Fragments without the marker are exempt — this
+    # leaves reference-tagged / internal entries untouched. The check triggers
+    # on bundle PRESENCE, not on handoff/consumers, so an entry can be
+    # handoff: stable without the bundle and vice versa.
+    for entry in manifest_entries:
+        eid = entry.get("id") or "(no id)"
+        for problem in validate_r1_bundle(entry):
+            report.violations.append(Violation(
+                kind="invalid_r1_bundle",
+                where=eid,
+                detail=problem,
             ))
 
     return report

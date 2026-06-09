@@ -6,6 +6,8 @@ entries:
   handoff: stable
   consumers:
   - apodictic
+  min_setec_version: "1.86.0"
+  json_delivery: stdout
   family: idiolect
   purpose: 'Extract distinctive bigrams and trigrams from a writer''s baseline corpus
     that are characteristic enough to flag during revision. Outputs a preservation
@@ -22,9 +24,34 @@ entries:
   - The baseline is mixed-genre (idiolect signals cross-contaminate across registers)
   - The baseline is under ~20K words (sparse n-grams produce false positives)
   inputs:
-    target: optional prose text for post-revision survival check
-    required:
-    - --baseline-dir or --reference-manifest
+  - flag: --target-dir
+    type: path
+    required: false
+  - flag: --manifest
+    type: path
+    required: false
+  - flag: --reference-dir
+    type: path
+    required: false
+  - flag: --reference-manifest
+    type: path
+    required: false
+  - flag: --reference-corpus
+    type: enum
+    required: false
+    values:
+    - brown
+  - flag: --keyness-method
+    type: enum
+    required: false
+    values:
+    - log_likelihood
+    - chi_square
+    - pmi
+    - fisher_exact
+  - flag: --json
+    type: bool
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:

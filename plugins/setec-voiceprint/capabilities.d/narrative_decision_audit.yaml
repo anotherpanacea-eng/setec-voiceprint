@@ -6,6 +6,8 @@ entries:
   handoff: experimental
   consumers:
   - apodictic
+  min_setec_version: "1.107.0"
+  json_delivery: stdout
   family: narrative-decision
   purpose: 'Score a story''s narrative decisions (themes, plot, pacing, sensory register,
     reader engagement) against Russell et al. 2026''s reported human / AI group means.
@@ -22,9 +24,27 @@ entries:
   - You need a binary verdict from one audit alone
   - You don't have access to an LLM judge (or a pre-computed feature manifest)
   inputs:
-    target: prose text file (UTF-8)
-    optional:
-    - --judge-manifest with pre-computed feature values
+  - flag: target
+    type: path
+    required: true
+  - flag: --judge
+    type: enum
+    required: false
+    values:
+    - manifest
+    - mock
+    - anthropic
+    - openai
+    - gemini
+  - flag: --judge-manifest
+    type: path
+    required: false
+  - flag: --judge-model
+    type: string
+    required: false
+  - flag: --json
+    type: bool
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:

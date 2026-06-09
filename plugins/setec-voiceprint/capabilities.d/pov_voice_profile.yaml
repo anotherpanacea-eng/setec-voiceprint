@@ -3,8 +3,11 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
   surface: voice_coherence
   status: todo
-  handoff: none
-  consumers: []
+  handoff: stable
+  consumers:
+  - apodictic
+  min_setec_version: "1.86.0"
+  json_delivery: file
   family: TODO
   purpose: 'Per-POV-character voiceprints (cathedral #6 sub-item, completes upgrade
     #6).'
@@ -13,7 +16,15 @@ entries:
   do_not_use_when:
   - TODO
   inputs:
-    target: TODO
+  - flag: --manifest
+    type: path
+    required: true
+  - flag: --out
+    type: path
+    required: false
+  - flag: --json-out
+    type: path
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:
@@ -27,5 +38,7 @@ entries:
   dependencies:
     python: []
   examples: []
-  references: []
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
+  - plugins/setec-voiceprint/references/stylometry-oracle.md
   _seeded_at: '2026-05-28'

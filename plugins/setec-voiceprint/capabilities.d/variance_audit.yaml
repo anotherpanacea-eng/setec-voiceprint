@@ -6,6 +6,8 @@ entries:
   handoff: stable
   consumers:
   - apodictic
+  min_setec_version: "1.86.0"
+  json_delivery: stdout
   family: tier1-variance
   purpose: 'Layer A distributional diagnostic for AI-prose smoothing. Computes sentence-length
     variance, lexical diversity (MATTR / MTLD / Yule''s K / Shannon), reading-level
@@ -23,9 +25,15 @@ entries:
   - You want a single AI/human verdict — variance_audit reports values, not a label
   - Target is under 200 words (Tier 1 length floor)
   inputs:
-    target: prose text file (UTF-8)
-    optional:
-    - --baseline-dir pointing at a corpus of comparable register
+  - flag: input
+    type: path
+    required: true
+  - flag: --baseline-dir
+    type: path
+    required: false
+  - flag: --json
+    type: bool
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:

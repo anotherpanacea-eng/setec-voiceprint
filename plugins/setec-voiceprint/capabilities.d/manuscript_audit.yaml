@@ -3,8 +3,11 @@ entries:
   script_path: plugins/setec-voiceprint/scripts/manuscript_audit.py
   surface: smoothing_diagnosis
   status: todo
-  handoff: none
-  consumers: []
+  handoff: stable
+  consumers:
+  - apodictic
+  min_setec_version: "1.86.0"
+  json_delivery: stdout
   family: TODO
   purpose: manuscript_audit.py Cross-chapter aggregate of Layer A distributional diagnostics.
   use_when:
@@ -12,7 +15,18 @@ entries:
   do_not_use_when:
   - TODO
   inputs:
-    target: TODO
+  - flag: manuscript
+    type: path
+    required: false
+  - flag: --chapter-dir
+    type: path
+    required: false
+  - flag: --baseline-dir
+    type: path
+    required: false
+  - flag: --json
+    type: bool
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:
@@ -26,5 +40,7 @@ entries:
   dependencies:
     python: []
   examples: []
-  references: []
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
+  - plugins/setec-voiceprint/references/distributional-diagnostics.md
   _seeded_at: '2026-05-28'

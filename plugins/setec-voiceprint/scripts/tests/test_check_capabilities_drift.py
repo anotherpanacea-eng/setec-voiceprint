@@ -450,6 +450,151 @@ def test_experimental_handoff_does_not_require_references():
         assert "stable_without_references" not in kinds
 
 
+# ---------- R1 field-bundle linting -------------------------------
+
+_REAL_SCRIPT = (
+    "plugins/setec-voiceprint/scripts/narrative_decision_audit.py"
+)
+
+
+def _entry_with_bundle(**overrides) -> dict:
+    """A minimal curated entry carrying the R1 bundle. Overrides let each
+    test mutate exactly one bundle field to isolate the failure mode."""
+    entry = {
+        "id": "narrative_decision_audit",
+        "script_path": _REAL_SCRIPT,
+        "surface": "narrative_decision_audit",
+        "status": "todo",
+        "handoff": "experimental",
+        "consumers": ["apodictic"],
+        "compute": {"tier": "api_llm"},
+        "min_setec_version": "1.86.0",
+        "json_delivery": "stdout",
+        "inputs": [
+            {"flag": "target", "type": "path", "required": True},
+        ],
+    }
+    entry.update(overrides)
+    return entry
+
+
+def test_r1_bundle_missing_json_delivery_fails():
+    """(c) a fragment carrying min_setec_version but missing json_delivery
+    trips invalid_r1_bundle."""
+    if yaml is None:
+        return
+    entry = _entry_with_bundle()
+    del entry["json_delivery"]
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0", "entries": [entry],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_r1_bundle" in kinds, (
+            f"expected invalid_r1_bundle; got {kinds}"
+        )
+
+
+def test_r1_bundle_missing_inputs_fails():
+    """(c) a fragment carrying min_setec_version but missing inputs trips
+    invalid_r1_bundle."""
+    if yaml is None:
+        return
+    entry = _entry_with_bundle()
+    del entry["inputs"]
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0", "entries": [entry],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_r1_bundle" in kinds
+
+
+def test_r1_bundle_bad_semver_fails():
+    """min_setec_version must be a valid semver; '1.86' (two components)
+    trips the bundle check."""
+    if yaml is None:
+        return
+    entry = _entry_with_bundle(min_setec_version="1.86")
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0", "entries": [entry],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_r1_bundle" in kinds
+
+
+def test_r1_bundle_enum_requires_values():
+    """An inputs[] entry of type 'enum' must carry a non-empty values list."""
+    if yaml is None:
+        return
+    entry = _entry_with_bundle(inputs=[
+        {"flag": "--judge", "type": "enum", "required": False},  # no values
+    ])
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0", "entries": [entry],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_r1_bundle" in kinds
+
+
+def test_r1_bundle_complete_passes():
+    """A complete, valid bundle does NOT trip invalid_r1_bundle (it may trip
+    other checks, but not this one)."""
+    if yaml is None:
+        return
+    entry = _entry_with_bundle()
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0", "entries": [entry],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_r1_bundle" not in kinds
+
+
+def test_fragment_without_marker_is_bundle_exempt():
+    """(d) a fragment WITHOUT min_setec_version is not required to carry the
+    bundle — no invalid_r1_bundle violation even with no json_delivery /
+    inputs. This is what keeps the ~73 reference-tagged / internal entries
+    untouched."""
+    if yaml is None:
+        return
+    entry = {
+        "id": "narrative_decision_audit",
+        "script_path": _REAL_SCRIPT,
+        "surface": "narrative_decision_audit",
+        "status": "todo",
+        "handoff": "none",
+        "consumers": [],
+        "compute": {"tier": "api_llm"},
+        # no min_setec_version, no json_delivery, no inputs
+    }
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0", "entries": [entry],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "invalid_r1_bundle" not in kinds
+
+
+def test_validate_r1_bundle_exempts_unmarked_entry():
+    """The validator unit returns [] for an entry with no marker."""
+    assert ccd.validate_r1_bundle({"id": "x"}) == []
+
+
 def test_cli_exits_zero_on_clean_repo():
     """Running the linter CLI with no args on the committed manifest
     should exit 0."""
