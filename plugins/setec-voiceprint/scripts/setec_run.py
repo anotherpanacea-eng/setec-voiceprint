@@ -235,6 +235,73 @@ def _wrap_script_failure(
     )
 
 
+def _extract_envelope(stdout: str) -> dict[str, Any] | None:
+    """Recover the schema_version 1.0 envelope from a surface's stdout.
+
+    Fast path (unchanged behavior for clean stdout): ``json.loads(stdout)``
+    over the WHOLE buffer — a surface that prints exactly one JSON object and
+    nothing else parses here, byte-for-byte as before.
+
+    Robust path: a surface may emit a non-JSON preamble on stdout before the
+    envelope — a model-download / progress line (e.g.
+    ``Downloading model...``), an NLTK ``[nltk_data]`` notice, etc. Such a
+    preamble made the whole-buffer parse fail and mislabeled a SUCCESSFUL run
+    as ``internal_error``. The dispatcher's target script prints the envelope
+    as a single top-level JSON OBJECT, so we scan the buffer for balanced
+    ``{...}`` blocks (respecting strings/escapes so braces inside JSON string
+    values don't confuse the matcher) and return the LAST one that parses as a
+    dict carrying ``schema_version`` — the envelope's defining key. The last
+    such block is the most robust choice: any preamble objects a tool might
+    print precede the real envelope, which is emitted last.
+
+    Returns the parsed envelope dict, or ``None`` if no valid envelope object
+    is found (the caller then raises ``internal_error``)."""
+    # Fast path: clean single-object stdout. Confirm it is the envelope shape
+    # (a dict with schema_version) so a surface that prints a bare non-envelope
+    # JSON value doesn't slip through as a "success".
+    try:
+        whole = json.loads(stdout)
+    except json.JSONDecodeError:
+        whole = None
+    if isinstance(whole, dict) and "schema_version" in whole:
+        return whole
+
+    # Robust path: scan for balanced top-level {...} blocks and keep the last
+    # one that parses as an envelope-shaped dict.
+    found: dict[str, Any] | None = None
+    depth = 0
+    start = -1
+    in_string = False
+    escaped = False
+    for i, ch in enumerate(stdout):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}":
+            if depth > 0:
+                depth -= 1
+                if depth == 0 and start >= 0:
+                    block = stdout[start : i + 1]
+                    try:
+                        obj = json.loads(block)
+                    except json.JSONDecodeError:
+                        obj = None
+                    if isinstance(obj, dict) and "schema_version" in obj:
+                        found = obj  # keep scanning; prefer the LAST match
+    return found
+
+
 def _run_stdout_surface(
     surface: str,
     entry: dict[str, Any],
@@ -248,14 +315,18 @@ def _run_stdout_surface(
     proc = _run_subprocess(cmd)
     if proc.returncode != 0:
         return _wrap_script_failure(surface, proc)
-    try:
-        envelope = json.loads(proc.stdout)
-    except json.JSONDecodeError as exc:
+    # Parse robustly: a clean single-object stdout takes the fast path
+    # (unchanged); a non-JSON preamble (model-download / progress line) before
+    # the envelope is tolerated by extracting the envelope object from stdout.
+    # Only genuine garbage (no envelope object at all) is an internal_error.
+    envelope = _extract_envelope(proc.stdout)
+    if envelope is None:
         return _error(
             surface=surface,
             reason=(
-                f"{surface}: script exited 0 but stdout was not a parseable "
-                f"JSON envelope ({exc}); stderr: {(proc.stderr or '').strip()}"
+                f"{surface}: script exited 0 but stdout carried no parseable "
+                f"schema_version envelope (after tolerating any non-JSON "
+                f"preamble); stderr: {(proc.stderr or '').strip()}"
             ),
             reason_category="internal_error",
             exit_code=EXIT_INTERNAL,

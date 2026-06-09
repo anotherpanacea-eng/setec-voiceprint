@@ -229,6 +229,124 @@ def test_unparseable_stdout_wrapped_as_internal_error(manifest, monkeypatch):
     assert env["reason_category"] == "internal_error"
 
 
+# ---- SHOULD-FIX 3: robust stdout envelope parse ------------------------
+# A surface may emit a non-JSON preamble on stdout (a model-download /
+# progress line, an NLTK [nltk_data] notice) BEFORE the envelope. The
+# whole-buffer json.loads then failed and a SUCCESSFUL run was mislabeled
+# internal_error. The dispatcher now tolerates the preamble: it extracts the
+# schema_version envelope object from stdout. Clean single-object stdout is
+# unchanged (fast path); pure garbage is still internal_error.
+
+def _success_envelope_json():
+    """A minimal-but-valid schema_version 1.0 success envelope, serialized
+    the way a stdout surface emits it (pretty, multi-line)."""
+    env = build_output(
+        task_surface="smoothing_diagnosis", tool="variance_audit",
+        version="9.9.9", target_path="x.md", target_words=2480,
+        baseline=None, results={"tier1": {"mtld": 92.5}},
+        claim_license=ClaimLicense(
+            task_surface="smoothing_diagnosis", licenses="x",
+            does_not_license="y",
+        ),
+    )
+    return json.dumps(env, indent=2)
+
+
+def test_preamble_before_envelope_is_parsed_as_success(manifest, monkeypatch):
+    import subprocess
+
+    envelope_json = _success_envelope_json()
+    polluted = "Downloading model...\nresolving shards: 100%\n" + envelope_json
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(cmd, 0, stdout=polluted, stderr="")
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_OK == 0, env
+    # The re-emitted envelope is exactly the surface's envelope — clean 12-key
+    # success, no R3 error keys, no preamble residue.
+    assert set(env.keys()) == REQUIRED_TOP_LEVEL_KEYS
+    assert env["available"] is True
+    assert env["tool"] == "variance_audit"
+    assert env["results"]["tier1"]["mtld"] == 92.5
+    assert "reason_category" not in env
+
+
+def test_pure_garbage_stdout_is_internal_error(manifest, monkeypatch):
+    import subprocess
+
+    # No envelope object anywhere — not even an unrelated JSON object — so the
+    # extractor returns None and the run is an internal_error (the SHOULD-FIX
+    # explicitly preserves this behavior for genuinely-broken stdout).
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout="Downloading model...\nstill not json\n", stderr="",
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_INTERNAL == 1
+    assert env["reason_category"] == "internal_error"
+
+
+class TestExtractEnvelope:
+    """Unit pins for the _extract_envelope helper (the parse robustness)."""
+
+    def _env_str(self):
+        return _success_envelope_json()
+
+    def test_clean_single_object_fast_path(self):
+        s = self._env_str()
+        env = setec_run._extract_envelope(s)
+        assert env is not None and env["schema_version"] == "1.0"
+
+    def test_preamble_then_envelope(self):
+        s = "Downloading model... [████] 100%\n" + self._env_str()
+        env = setec_run._extract_envelope(s)
+        assert env is not None and env["tool"] == "variance_audit"
+
+    def test_no_envelope_returns_none(self):
+        assert setec_run._extract_envelope("just some log lines\n") is None
+        # A non-envelope JSON object (no schema_version) is NOT an envelope.
+        assert setec_run._extract_envelope('{"hello": "world"}') is None
+        # A bare JSON value (list) is not an envelope object either.
+        assert setec_run._extract_envelope("[1, 2, 3]") is None
+
+    def test_braces_inside_json_strings_do_not_confuse_matcher(self):
+        # The envelope's reason/claim text could contain literal braces; the
+        # balanced-brace scan must respect JSON string quoting + escapes.
+        env = build_output(
+            task_surface="smoothing_diagnosis", tool="variance_audit",
+            version="9.9.9", target_path="x.md", target_words=10,
+            baseline=None,
+            results={"note": 'has a brace } and a quote \\" inside {nested}'},
+            claim_license=ClaimLicense(
+                task_surface="smoothing_diagnosis", licenses="x",
+                does_not_license="y",
+            ),
+        )
+        s = "preamble line\n" + json.dumps(env, indent=2)
+        got = setec_run._extract_envelope(s)
+        assert got is not None
+        assert got["results"]["note"] == 'has a brace } and a quote \\" inside {nested}'
+
+    def test_last_envelope_object_wins(self):
+        # If the buffer somehow carries two envelope-shaped objects, the LAST
+        # one (the real trailing envelope) is chosen over an earlier preamble
+        # object.
+        first = json.dumps({"schema_version": "1.0", "tool": "preamble"})
+        second = self._env_str()
+        env = setec_run._extract_envelope(first + "\n" + second)
+        assert env is not None and env["tool"] == "variance_audit"
+
+
 # ---- R2 stdout surface: real smoke (variance_audit) --------------------
 
 def test_variance_audit_stdout_smoke(manifest, tmp_path):
