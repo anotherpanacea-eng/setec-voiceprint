@@ -176,6 +176,29 @@ def test_cosine_zero_vector_returns_zero():
     assert sta._cosine(a, b) == 0.0
 
 
+def test_cosine_clamps_float_epsilon_overshoot(monkeypatch):
+    # R4 review: cosine range is enforced at the computing surface. Force the
+    # exact float-epsilon failure mode — a normalized dot product that lands
+    # just ABOVE 1.0 — by shrinking the denominator (np.linalg.norm) by an ulp
+    # so dot/(‖a‖‖b‖) > 1.0 before the clamp. The clamp must pin it to 1.0.
+    import numpy as np
+    v = np.array([1.0, 0.0, 0.0])
+    real_norm = np.linalg.norm
+
+    def shrunk_norm(x, *a, **k):
+        return real_norm(x, *a, **k) * (1.0 - 1e-12)  # denom too small → >1
+
+    monkeypatch.setattr(np.linalg, "norm", shrunk_norm)
+    s = sta._cosine(v, v)
+    # Without the clamp this would be ~1.000000000002; the clamp pins it.
+    assert s == 1.0
+    assert s <= 1.0
+    # Negative side: antiparallel vectors must not undershoot -1.0.
+    s2 = sta._cosine(v, np.array([-1.0, 0.0, 0.0]))
+    assert s2 == -1.0
+    assert s2 >= -1.0
+
+
 def test_adjacent_cosine_series_on_orthogonal_embeddings():
     """Orthogonal one-hot embeddings → all adjacent cosines == 0."""
     backend = _StubBackend()

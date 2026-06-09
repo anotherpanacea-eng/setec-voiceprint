@@ -9,9 +9,10 @@ Pins (spec §2/§3/§4/§5):
     ``reason_category`` + exit code + ``available: false`` envelope;
   * the pov_voice_profile file->stdout projection emits a valid stdout
     envelope (the consumer never touches ``--json-out``);
-  * the R4 validator rejects NaN/inf and an out-of-range cosine similarity
-    and (through build_output) turns it into an OutputValidityError that the
-    dispatcher would wrap as an internal_error envelope.
+  * the R4 validator rejects NaN/inf (any numeric leaf) and a negative raw
+    surprisal/entropy, excludes z-scores/derivations, leaves cosine RANGE to
+    the computing surface, and (through build_output) turns a violation into
+    an OutputValidityError that the dispatcher wraps as an internal_error.
 """
 
 from __future__ import annotations
@@ -355,11 +356,17 @@ class TestR4ValidityGate:
         with pytest.raises(OutputValidityError, match="not finite"):
             validate_results_bounds({"some_metric": float("inf")})
 
-    def test_out_of_range_cosine_similarity_rejected(self):
-        with pytest.raises(OutputValidityError, match="cosine similarity"):
-            validate_results_bounds({"adjacent_cosine": 1.7})
-        with pytest.raises(OutputValidityError, match="cosine similarity"):
-            validate_results_bounds({"cosine_similarity": -1.01})
+    def test_cosine_range_not_checked_at_build_gate(self):
+        # R4 review: the cosine RANGE arm was removed (it leaf-matched and
+        # essentially never fired on the real nested stat-dict shape). Range
+        # is now clamped at the computing surface; the build gate only keeps
+        # the unconditional NaN/inf check for cosines. A cosine value just
+        # outside [-1, 1] (the float-epsilon mode) is NOT rejected here.
+        validate_results_bounds({"adjacent_cosine": 1.0000000002})  # no raise
+        validate_results_bounds({"cosine_similarity": 1.7})         # no raise
+        # But a NaN cosine is still caught (the real corruption mode).
+        with pytest.raises(OutputValidityError, match="not finite"):
+            validate_results_bounds({"adjacent_cosine": float("nan")})
 
     def test_negative_surprisal_rejected(self):
         with pytest.raises(OutputValidityError, match="surprisal"):
@@ -369,9 +376,34 @@ class TestR4ValidityGate:
         with pytest.raises(OutputValidityError, match="probability"):
             validate_results_bounds({"token_probability": 1.5})
 
-    def test_cosine_distance_is_not_bounded_as_similarity(self):
-        # A DISTANCE can legitimately exceed 1; only SIMILARITY is [-1, 1].
-        validate_results_bounds({"cosine_distance": 1.4})  # no raise
+    def test_zscored_entropy_below_baseline_passes(self):
+        # BLOCKER 1: function_word_grammar_audit / stance_modality_audit emit a
+        # baseline_comparison block of z-scored entropies that are signed and
+        # routinely NEGATIVE (target entropy below baseline mean). A z-score is
+        # a standardization, not a raw entropy, so the >= 0 surprisal check
+        # must NOT fire on it. This mirrors the real emit shape.
+        validate_results_bounds({
+            "baseline_comparison": {
+                "available": True,
+                "z_function_bigram_entropy": -2.3,
+                "z_preposition_entropy": -0.8,
+                "z_subordinator_entropy": -1.1,
+                "z_stance_entropy": -3.0,
+            }
+        })  # no raise
+        # A genuinely-negative RAW surprisal/entropy is STILL rejected.
+        with pytest.raises(OutputValidityError, match="surprisal"):
+            validate_results_bounds({"surprisal_bits": -0.5})
+        with pytest.raises(OutputValidityError, match="surprisal/entropy"):
+            validate_results_bounds({"shannon_entropy_bits": -0.1})
+
+    def test_zscored_entropy_nan_still_rejected(self):
+        # The finiteness check is unconditional: a NaN z-score is still caught
+        # even though its range is left unchecked.
+        with pytest.raises(OutputValidityError, match="not finite"):
+            validate_results_bounds(
+                {"baseline_comparison": {"z_stance_entropy": float("nan")}}
+            )
 
     def test_log_probability_is_not_treated_as_probability(self):
         # Regression: fast_detect_curvature emits actual_log_prob_sum_nats
@@ -400,9 +432,12 @@ class TestR4ValidityGate:
         validate_results_bounds({"available": True, "windowed": False})
 
     def test_nested_and_list_values_checked(self):
-        # A list under a similarity key inherits the bound.
-        with pytest.raises(OutputValidityError, match="cosine similarity"):
-            validate_results_bounds({"adjacent_cosine": [0.2, 0.4, 2.0]})
+        # A numeric in a list under a surprisal key inherits the bound.
+        with pytest.raises(OutputValidityError, match="surprisal"):
+            validate_results_bounds({"surprisal_bits": [4.2, 3.1, -2.0]})
+        # A NaN anywhere in a list is caught unconditionally.
+        with pytest.raises(OutputValidityError, match="not finite"):
+            validate_results_bounds({"adjacent_cosine": [0.2, float("nan")]})
         # Nested dict.
         with pytest.raises(OutputValidityError, match="not finite"):
             validate_results_bounds({"tier1": {"mtld": float("nan")}})
@@ -416,20 +451,45 @@ class TestR4ValidityGate:
         })
 
     def test_build_output_rejects_out_of_bounds_via_gate(self):
+        # A NaN anywhere in results trips the gate through build_output.
         with pytest.raises(OutputValidityError):
             build_output(
                 task_surface="smoothing_diagnosis", tool="t", version="0",
                 target_path="x", target_words=10, baseline=None,
-                results={"tier3": {"adjacent_cosine": 1.9}},
+                results={"tier3": {"adjacent_cosine": float("nan")}},
                 claim_license=self._lic(),
             )
+        # A negative raw surprisal likewise.
+        with pytest.raises(OutputValidityError):
+            build_output(
+                task_surface="smoothing_diagnosis", tool="t", version="0",
+                target_path="x", target_words=10, baseline=None,
+                results={"surprisal_bits": -1.0},
+                claim_license=self._lic(),
+            )
+
+    def test_build_output_passes_zscored_entropy(self):
+        # BLOCKER 1 end-to-end: a below-baseline z-scored entropy must NOT
+        # crash the build_output path the audits use.
+        env = build_output(
+            task_surface="smoothing_diagnosis", tool="t", version="0",
+            target_path="x", target_words=10, baseline=None,
+            results={"baseline_comparison": {
+                "available": True, "z_function_bigram_entropy": -2.3}},
+            claim_license=self._lic(),
+        )
+        assert env["available"] is True
+        assert (
+            env["results"]["baseline_comparison"]["z_function_bigram_entropy"]
+            == -2.3
+        )
 
     def test_build_output_can_bypass_gate(self):
         # validate_bounds=False is the documented escape hatch.
         env = build_output(
             task_surface="smoothing_diagnosis", tool="t", version="0",
             target_path="x", target_words=10, baseline=None,
-            results={"tier3": {"adjacent_cosine": 1.9}},
+            results={"surprisal_bits": -1.0},
             claim_license=self._lic(), validate_bounds=False,
         )
         assert env["available"] is True
@@ -440,7 +500,7 @@ class TestR4ValidityGate:
         env = build_output(
             task_surface="smoothing_diagnosis", tool="t", version="0",
             target_path="x", target_words=0, baseline=None,
-            results={"adjacent_cosine": 99.0}, claim_license=None,
+            results={"surprisal_bits": -99.0}, claim_license=None,
             available=False, warnings=["short"],
         )
         assert env["available"] is False
