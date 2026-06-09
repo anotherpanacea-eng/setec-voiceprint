@@ -450,6 +450,137 @@ def test_experimental_handoff_does_not_require_references():
         assert "stable_without_references" not in kinds
 
 
+# ---------- Check 8: handoff: stable must not be status: todo ------
+
+
+def test_stable_todo_entry_detected():
+    """R1 build-review follow-up: a handoff: stable entry that is
+    still status: todo trips stable_is_todo. This is the exact
+    incoherence the 5 promoted consumer surfaces had — `emit`
+    advertised them as stable while `list --handoff stable` hid
+    them as todo."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": _REAL_SCRIPT,
+                    "surface": "narrative_decision_audit",
+                    "status": "todo",  # incoherent with handoff: stable
+                    "family": "TODO",
+                    "use_when": ["TODO"],
+                    "do_not_use_when": ["TODO"],
+                    "handoff": "stable",
+                    "consumers": ["apodictic"],
+                    "references": ["plugins/setec-voiceprint/references/x.md"],
+                    "compute": {"tier": "api_llm"},
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "stable_is_todo" in kinds, (
+            f"expected stable_is_todo; got {kinds}"
+        )
+
+
+def test_curated_stable_entry_passes_check8():
+    """A handoff: stable entry with a real status and fully-filled
+    family/purpose/use_when does not trip stable_is_todo."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": _REAL_SCRIPT,
+                    "surface": "narrative_decision_audit",
+                    "status": "heuristic",
+                    "family": "narrative-decision",
+                    "purpose": "A real, curated purpose.",
+                    "use_when": ["short story"],
+                    "do_not_use_when": ["essay"],
+                    "handoff": "stable",
+                    "consumers": ["apodictic"],
+                    "references": ["plugins/setec-voiceprint/references/x.md"],
+                    "compute": {"tier": "api_llm"},
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "stable_is_todo" not in kinds
+
+
+def test_stable_entry_with_placeholder_content_detected():
+    """A handoff: stable entry that left a real (non-todo) status but
+    kept TODO family/purpose/use_when placeholders also trips
+    stable_is_todo — a stable contract must never be placeholders."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": _REAL_SCRIPT,
+                    "surface": "narrative_decision_audit",
+                    "status": "heuristic",  # non-todo, but...
+                    "family": "TODO",  # ...placeholder content remains
+                    "use_when": ["TODO"],
+                    "do_not_use_when": ["TODO"],
+                    "handoff": "stable",
+                    "consumers": ["apodictic"],
+                    "references": ["plugins/setec-voiceprint/references/x.md"],
+                    "compute": {"tier": "api_llm"},
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "stable_is_todo" in kinds, (
+            f"expected stable_is_todo for placeholder content; got {kinds}"
+        )
+
+
+def test_todo_status_on_non_stable_entry_does_not_trip_check8():
+    """status: todo is still fine for a non-stable entry (handoff:
+    none/experimental). Check 8 only fires on stable entries."""
+    if yaml is None:
+        return
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {
+            "schema_version": "0.3.0",
+            "entries": [
+                {
+                    "id": "narrative_decision_audit",
+                    "script_path": _REAL_SCRIPT,
+                    "surface": "narrative_decision_audit",
+                    "status": "todo",
+                    "family": "TODO",
+                    "use_when": ["TODO"],
+                    "do_not_use_when": ["TODO"],
+                    "handoff": "none",  # not stable
+                    "consumers": [],
+                    "compute": {"tier": "api_llm"},
+                },
+            ],
+        })
+        report = ccd.check_drift(manifest)
+        kinds = {v.kind for v in report.violations}
+        assert "stable_is_todo" not in kinds
+
+
 # ---------- R1 field-bundle linting -------------------------------
 
 _REAL_SCRIPT = (

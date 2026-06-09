@@ -38,6 +38,11 @@ Exemptions:
     Hand-curated entries (status != todo) must have non-TODO content
     in their use_when / do_not_use_when blocks.
 
+    The one exception: a `handoff: stable` entry may NOT be `status:
+    todo` (Check 8). A stable surface is a pinned consumer contract;
+    a todo placeholder there is incoherent, so the todo content-check
+    exemption does not extend to stable entries.
+
 Run in CI:
 
     Add this to your CI step list. It's stdlib + PyYAML (the latter
@@ -77,7 +82,7 @@ SKIP_FILE_PATTERNS = [
 
 @dataclass
 class Violation:
-    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content"
+    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content" | "stable_is_todo"
     where: str  # path or entry id
     detail: str
 
@@ -507,6 +512,77 @@ def check_drift(
                 where=eid,
                 detail=problem,
             ))
+
+    # Check 8 (R1 build-review follow-up): a `handoff: stable` entry must
+    # NOT be `status: todo`. A stable surface is a pinned contract that
+    # `emit` advertises to consumers; an `status: todo` entry is an
+    # uncurated placeholder that `list --handoff stable` hides by default
+    # (it skips todos). The two surfaces then disagree about what is
+    # stable. A stable contract made of `family: TODO` / `use_when: [TODO]`
+    # placeholders is incoherent, so curate the entry (set a real status +
+    # fill the content) or drop it to `handoff: none` until it is ready.
+    # The placeholder-content half of the guard catches a stable entry
+    # that left a real-but-non-todo status while keeping TODO fields; the
+    # Check 4 todo_content guard already covers that for non-stable
+    # curated entries, but a stable entry should never carry placeholders
+    # regardless of its status.
+    for entry in manifest_entries:
+        if entry.get("handoff") != "stable":
+            continue
+        eid = entry.get("id") or "(no id)"
+        if entry.get("status") == "todo":
+            report.violations.append(Violation(
+                kind="stable_is_todo",
+                where=eid,
+                detail=(
+                    "handoff is 'stable' but status is 'todo'. A stable "
+                    "surface is a pinned consumer contract `emit` "
+                    "advertises, but `list --handoff stable` hides "
+                    "todos — the two disagree. Curate the entry (real "
+                    "status + non-TODO family/purpose/use_when in its "
+                    "`capabilities.d/<id>.yaml` fragment) or drop it to "
+                    "`handoff: none` until it is ready."
+                ),
+            ))
+            continue
+        # Non-todo stable entry: it must not retain placeholder content.
+        family = entry.get("family")
+        if family == "TODO" or family is None:
+            report.violations.append(Violation(
+                kind="stable_is_todo",
+                where=eid,
+                detail=(
+                    f"handoff is 'stable' but family is still TODO "
+                    f"(status {entry.get('status')!r}). A stable contract "
+                    f"must not be made of placeholders — fill the entry's "
+                    f"`capabilities.d/<id>.yaml` fragment."
+                ),
+            ))
+        purpose = entry.get("purpose") or ""
+        if "TODO" in str(purpose):
+            report.violations.append(Violation(
+                kind="stable_is_todo",
+                where=eid,
+                detail=(
+                    f"handoff is 'stable' but purpose still contains TODO "
+                    f"(status {entry.get('status')!r}). Curate the entry's "
+                    f"`capabilities.d/<id>.yaml` fragment."
+                ),
+            ))
+        for list_field in ("use_when", "do_not_use_when"):
+            value = entry.get(list_field) or []
+            if not value or any(v == "TODO" for v in value):
+                report.violations.append(Violation(
+                    kind="stable_is_todo",
+                    where=eid,
+                    detail=(
+                        f"handoff is 'stable' but {list_field!r} is empty "
+                        f"or still contains TODO (status "
+                        f"{entry.get('status')!r}). A stable contract must "
+                        f"not be made of placeholders — fill the entry's "
+                        f"`capabilities.d/<id>.yaml` fragment."
+                    ),
+                ))
 
     return report
 

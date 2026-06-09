@@ -2,18 +2,33 @@ entries:
 - id: repetition_audit
   script_path: plugins/setec-voiceprint/scripts/repetition_audit.py
   surface: smoothing_diagnosis
-  status: todo
+  status: heuristic
   handoff: stable
   consumers:
   - apodictic
   min_setec_version: "1.86.0"
   json_delivery: stdout
-  family: TODO
-  purpose: repetition_audit.py Vocabulary repetition diagnostic.
+  family: repetition
+  purpose: 'Vocabulary repetition diagnostic. Surfaces words over-represented in a
+    target against the writer''s own baseline (target/baseline frequency ratio) plus
+    within-text clustering (max occurrences in a sliding window). Supports the
+    vocabulary-restoration pass when Layer A flags lexical compression (MATTR / MTLD).
+
+    '
   use_when:
-  - TODO
+  - Layer A flagged lexical compression and you want the specific over-represented
+    words to target in a vocabulary-restoration pass
+  - You have a baseline corpus of the writer's own prior prose to compute the ratio
+    against
+  - You want to distinguish concentrated repetition (clustered) from distributed repetition
+    (the cluster_max signal)
   do_not_use_when:
-  - TODO
+  - You want a calibrated AI/human verdict — the ratio and cluster signals are heuristic
+    (plausible working thresholds awaiting calibration), diagnostic only
+  - You have no writer-specific baseline (the over-representation ratio is meaningless
+    without one)
+  - The over-representation is an intended motif or domain term (read candidates as
+    cues, not findings)
   inputs:
   - flag: target
     type: path
@@ -30,16 +45,21 @@ entries:
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - .repetition.json
+    - .repetition.md
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib only (tokenization + counting); no spaCy, no API costs
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
+  examples:
+  - description: Words over-represented vs. a personal baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/repetition_audit.py target.md --baseline-dir
+      baseline/
   references:
   - plugins/setec-voiceprint/references/signals-glossary.md
   - plugins/setec-voiceprint/references/distributional-diagnostics.md

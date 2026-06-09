@@ -2053,21 +2053,36 @@
     {
       "_seeded_at": "2026-05-28",
       "compute": {
-        "cost_note": "TODO",
-        "length_floor_words": null,
+        "cost_note": "Per-chapter cost is variance_audit's: Tier 1 is stdlib + tokenization; Tier 2/3 need spaCy + en_core_web_sm; runs all chapters, so cost scales with chapter count (a chapter audit cache supports resume on long runs).\n",
+        "length_floor_words": 200,
         "tier": "core"
       },
       "consumers": [
         "apodictic"
       ],
       "dependencies": {
-        "python": []
+        "python": [],
+        "python_optional": [
+          "spacy",
+          "sklearn",
+          "sentence_transformers",
+          "textstat",
+          "nltk",
+          "numpy"
+        ]
       },
       "do_not_use_when": [
-        "TODO"
+        "You want a single-chapter or short-passage diagnosis (use variance_audit directly)",
+        "You want an authorship verdict \u2014 the dashboard reports per-chapter band labels, not a label; aggregation uses medians, not a verdict",
+        "The chapters are ESL writing without a matched ESL baseline (inherits variance_audit's ESL polarity caveat)"
       ],
-      "examples": [],
-      "family": "TODO",
+      "examples": [
+        {
+          "cmd": "python3 plugins/setec-voiceprint/scripts/manuscript_audit.py manuscript.md --baseline-dir baseline/",
+          "description": "Manuscript-wide Layer A dashboard against a baseline"
+        }
+      ],
+      "family": "tier1-variance",
       "handoff": "stable",
       "id": "manuscript_audit",
       "inputs": [
@@ -2096,23 +2111,29 @@
       "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
-          "TODO"
+          ".manuscript_audit.json",
+          ".manuscript_audit.md"
         ],
         "schema_version": "1.0"
       },
-      "purpose": "manuscript_audit.py Cross-chapter aggregate of Layer A distributional diagnostics.",
+      "purpose": "Cross-chapter aggregate of the Layer A distributional diagnostic. Runs variance_audit's signal machinery (audit_text / classify_compression) on every chapter of a manuscript (or every file in a chapter directory) and reports a dashboard of per-signal medians, per-chapter band labels, and outlier chapters that single-chapter audits miss.\n",
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md",
         "plugins/setec-voiceprint/references/distributional-diagnostics.md"
       ],
       "registers": [
-        "TODO"
+        "literary_fiction",
+        "blog_essay",
+        "academic_philosophy",
+        "long_form_journalism"
       ],
       "script_path": "plugins/setec-voiceprint/scripts/manuscript_audit.py",
-      "status": "todo",
+      "status": "empirically_oriented",
       "surface": "smoothing_diagnosis",
       "use_when": [
-        "TODO"
+        "You want manuscript-wide distributional evidence of mode-collapse and which chapters deviate from baseline",
+        "You have a multi-chapter manuscript (or a chapter directory) and an optional baseline corpus for z-score comparison",
+        "Each chapter clears the Tier 1 length floor (\u2265 200 words); thin chapters degrade the per-chapter estimate"
       ]
     },
     {
@@ -2607,21 +2628,31 @@
     {
       "_seeded_at": "2026-05-28",
       "compute": {
-        "cost_note": "TODO",
-        "length_floor_words": null,
+        "cost_note": "stdlib + spaCy (shares voice_profile's feature extraction); no API costs. Default-private output (refuses paths outside ai-prose-baselines-private/ unless --allow-public-output).",
+        "length_floor_words": 3000,
         "tier": "core"
       },
       "consumers": [
         "apodictic"
       ],
       "dependencies": {
-        "python": []
+        "python": [],
+        "python_optional": [
+          "spacy"
+        ]
       },
       "do_not_use_when": [
-        "TODO"
+        "Single-POV work, or multi-POV work where the POVs are deliberately voice-aligned (chorus / single-narrator) \u2014 the collapse verdict will be a false positive",
+        "You want a calibrated cutoff \u2014 the collapse threshold is heuristic (calibration is roadmap); treat borderline verdicts as advisory",
+        "No POV-annotated manifest exists (the audit cannot produce a comparison set without one)"
       ],
-      "examples": [],
-      "family": "TODO",
+      "examples": [
+        {
+          "cmd": "python3 plugins/setec-voiceprint/scripts/pov_voice_profile.py --manifest baseline_manifest.jsonl --out ai-prose-baselines-private/pov_profile.md",
+          "description": "Per-POV voiceprints + collapse verdict from a POV-tagged manifest"
+        }
+      ],
+      "family": "pov-voice",
       "handoff": "stable",
       "id": "pov_voice_profile",
       "inputs": [
@@ -2645,23 +2676,26 @@
       "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
-          "TODO"
+          "pov_profile.json",
+          "pov_profile.md"
         ],
         "schema_version": "1.0"
       },
-      "purpose": "Per-POV-character voiceprints (cathedral #6 sub-item, completes upgrade #6).",
+      "purpose": "Per-POV-character voiceprints for multi-POV fiction. Disaggregates a writer's baseline by the manifest's `pov` field and reports per-POV feature centroids, a pairwise POV voice-distance matrix (Burrows Delta + cosine), POV-vs-corpus-mean distance, top distinguishing features per POV, and a voice-collapse verdict (POV pairs whose pairwise Delta falls below a heuristic threshold).\n",
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md",
         "plugins/setec-voiceprint/references/stylometry-oracle.md"
       ],
       "registers": [
-        "TODO"
+        "all_fiction"
       ],
       "script_path": "plugins/setec-voiceprint/scripts/pov_voice_profile.py",
-      "status": "todo",
+      "status": "heuristic",
       "surface": "voice_coherence",
       "use_when": [
-        "TODO"
+        "Multi-POV fiction where you suspect the POV voices have collapsed into the writer's neutral default (e.g., a Blind Swap test fails)",
+        "You have a JSONL manifest tagging documents/chapters by `pov`, with \u2265 ~3000 words per POV for stable centroids",
+        "You want to see which POV pairs are closest and which features distinguish each POV"
       ]
     },
     {
@@ -2768,8 +2802,8 @@
     {
       "_seeded_at": "2026-05-28",
       "compute": {
-        "cost_note": "TODO",
-        "length_floor_words": null,
+        "cost_note": "stdlib only (regex + counting); baseline comparison adds per-signal z-scores. No spaCy, no API costs.",
+        "length_floor_words": 2000,
         "tier": "core"
       },
       "consumers": [
@@ -2779,10 +2813,17 @@
         "python": []
       },
       "do_not_use_when": [
-        "TODO"
+        "Manuscript is below ~2000 words \u2014 the distributional signals are noisy at small sizes (the audit warns; the warning is the answer)",
+        "You want a calibrated AI/human verdict \u2014 the band calls and signals are heuristic (regularization bands against priors), diagnostic only",
+        "A first-draft fresh from the writer's hand \u2014 this audit catches regularization, so it has nothing to catch but the writer's natural rhythm"
       ],
-      "examples": [],
-      "family": "TODO",
+      "examples": [
+        {
+          "cmd": "python3 plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py target.md --baseline-dir baseline/",
+          "description": "Punctuation cadence vs. a personal baseline"
+        }
+      ],
+      "family": "punctuation",
       "handoff": "stable",
       "id": "punctuation_cadence_audit",
       "inputs": [
@@ -2811,23 +2852,27 @@
       "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
-          "TODO"
+          ".punctuation.json",
+          ".punctuation.md"
         ],
         "schema_version": "1.0"
       },
-      "purpose": "punctuation rhythm + interruption-grammar audit.",
+      "purpose": "Punctuation rhythm + interruption-grammar audit. Treats punctuation as its own diagnostic dimension: per-mark density, sentence-final distribution, interruption grammar (parentheticals / em-dashes / appositives), punctuation bigrams, and a compression-fraction band call. Punctuation regularizes before vocabulary erases, so this is among the earliest signals to fire on AI-edited or house-styled prose.\n",
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md",
         "plugins/setec-voiceprint/references/stylometry-oracle.md"
       ],
       "registers": [
-        "TODO"
+        "all_fiction",
+        "all_nonfiction"
       ],
       "script_path": "plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py",
-      "status": "todo",
+      "status": "heuristic",
       "surface": "voice_coherence",
       "use_when": [
-        "TODO"
+        "As a follow-up to Layer A when lexical compression fired and you want to name what specifically was regularized at the punctuation layer",
+        "A line edit / copyedit \"changed something\" and you want the specific cadence shifts (best with --baseline-dir for z-scores)",
+        "A quick triage on AI-revised prose \u2014 punctuation cadence shifts early"
       ]
     },
     {
@@ -2928,7 +2973,7 @@
     {
       "_seeded_at": "2026-05-28",
       "compute": {
-        "cost_note": "TODO",
+        "cost_note": "stdlib only (tokenization + counting); no spaCy, no API costs",
         "length_floor_words": null,
         "tier": "core"
       },
@@ -2939,10 +2984,17 @@
         "python": []
       },
       "do_not_use_when": [
-        "TODO"
+        "You want a calibrated AI/human verdict \u2014 the ratio and cluster signals are heuristic (plausible working thresholds awaiting calibration), diagnostic only",
+        "You have no writer-specific baseline (the over-representation ratio is meaningless without one)",
+        "The over-representation is an intended motif or domain term (read candidates as cues, not findings)"
       ],
-      "examples": [],
-      "family": "TODO",
+      "examples": [
+        {
+          "cmd": "python3 plugins/setec-voiceprint/scripts/repetition_audit.py target.md --baseline-dir baseline/",
+          "description": "Words over-represented vs. a personal baseline"
+        }
+      ],
+      "family": "repetition",
       "handoff": "stable",
       "id": "repetition_audit",
       "inputs": [
@@ -2971,23 +3023,27 @@
       "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
-          "TODO"
+          ".repetition.json",
+          ".repetition.md"
         ],
         "schema_version": "1.0"
       },
-      "purpose": "repetition_audit.py Vocabulary repetition diagnostic.",
+      "purpose": "Vocabulary repetition diagnostic. Surfaces words over-represented in a target against the writer's own baseline (target/baseline frequency ratio) plus within-text clustering (max occurrences in a sliding window). Supports the vocabulary-restoration pass when Layer A flags lexical compression (MATTR / MTLD).\n",
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md",
         "plugins/setec-voiceprint/references/distributional-diagnostics.md"
       ],
       "registers": [
-        "TODO"
+        "all_fiction",
+        "all_nonfiction"
       ],
       "script_path": "plugins/setec-voiceprint/scripts/repetition_audit.py",
-      "status": "todo",
+      "status": "heuristic",
       "surface": "smoothing_diagnosis",
       "use_when": [
-        "TODO"
+        "Layer A flagged lexical compression and you want the specific over-represented words to target in a vocabulary-restoration pass",
+        "You have a baseline corpus of the writer's own prior prose to compute the ratio against",
+        "You want to distinguish concentrated repetition (clustered) from distributed repetition (the cluster_max signal)"
       ]
     },
     {
@@ -3870,21 +3926,30 @@
     {
       "_seeded_at": "2026-05-28",
       "compute": {
-        "cost_note": "TODO",
-        "length_floor_words": null,
+        "cost_note": "stdlib + spaCy (POS / dependency families need en_core_web_sm; --no-spacy drops them); no API costs",
+        "length_floor_words": 2000,
         "tier": "core"
       },
       "consumers": [
         "apodictic"
       ],
       "dependencies": {
-        "python": []
+        "python": [],
+        "python_optional": [
+          "spacy"
+        ]
       },
       "do_not_use_when": [
-        "TODO"
+        "You want a target-vs-baseline drift score \u2014 that is voice_distance; voice_profile is descriptive, not diagnostic",
+        "You would share the output carelessly \u2014 a voice profile is voice-cloning-grade input (keep it private; the script refuses public output paths by default)"
       ],
-      "examples": [],
-      "family": "TODO",
+      "examples": [
+        {
+          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_profile.py --baseline-dir baseline/ --out ai-prose-baselines-private/profile.md",
+          "description": "Build a private voice profile from a baseline"
+        }
+      ],
+      "family": "voice-distance",
       "handoff": "stable",
       "id": "voice_profile",
       "inputs": [
@@ -3913,23 +3978,27 @@
       "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
-          "TODO"
+          ".voice_profile.json",
+          ".voice_profile.md"
         ],
         "schema_version": "1.0"
       },
-      "purpose": "voice_profile.py Produce a private, human-readable stylometric profile from a writer/register baseline corpus.",
+      "purpose": "Produce a private, human-readable stylometric profile from a writer/register baseline corpus: per-family feature inventory (function words, character n-grams, POS trigrams, dependency n-grams) with each feature's baseline mean, SD, and coefficient of variation. This is the within-author reference (the aggregation voice_distance / idiolect_detector / mimicry_cosplay_audit build on), not a diagnostic verdict.\n",
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md",
         "plugins/setec-voiceprint/references/stylometry-oracle.md"
       ],
       "registers": [
-        "TODO"
+        "all_fiction",
+        "all_nonfiction"
       ],
       "script_path": "plugins/setec-voiceprint/scripts/voice_profile.py",
-      "status": "todo",
+      "status": "empirically_oriented",
       "surface": "voice_coherence",
       "use_when": [
-        "TODO"
+        "You want a durable within-author reference to anchor downstream voice-coherence work (voice_distance, idiolect_detector, mimicry)",
+        "You have a baseline corpus of the writer's prior prose (a directory or a manifest)",
+        "You want to see which feature families are most stable (low CV) for the writer"
       ]
     },
     {

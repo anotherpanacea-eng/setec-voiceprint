@@ -2,19 +2,34 @@ entries:
 - id: pov_voice_profile
   script_path: plugins/setec-voiceprint/scripts/pov_voice_profile.py
   surface: voice_coherence
-  status: todo
+  status: heuristic
   handoff: stable
   consumers:
   - apodictic
   min_setec_version: "1.86.0"
   json_delivery: file
-  family: TODO
-  purpose: 'Per-POV-character voiceprints (cathedral #6 sub-item, completes upgrade
-    #6).'
+  family: pov-voice
+  purpose: 'Per-POV-character voiceprints for multi-POV fiction. Disaggregates a writer''s
+    baseline by the manifest''s `pov` field and reports per-POV feature centroids,
+    a pairwise POV voice-distance matrix (Burrows Delta + cosine), POV-vs-corpus-mean
+    distance, top distinguishing features per POV, and a voice-collapse verdict
+    (POV pairs whose pairwise Delta falls below a heuristic threshold).
+
+    '
   use_when:
-  - TODO
+  - Multi-POV fiction where you suspect the POV voices have collapsed into the writer's
+    neutral default (e.g., a Blind Swap test fails)
+  - You have a JSONL manifest tagging documents/chapters by `pov`, with ≥ ~3000 words
+    per POV for stable centroids
+  - You want to see which POV pairs are closest and which features distinguish each
+    POV
   do_not_use_when:
-  - TODO
+  - Single-POV work, or multi-POV work where the POVs are deliberately voice-aligned
+    (chorus / single-narrator) — the collapse verdict will be a false positive
+  - You want a calibrated cutoff — the collapse threshold is heuristic (calibration
+    is roadmap); treat borderline verdicts as advisory
+  - No POV-annotated manifest exists (the audit cannot produce a comparison set without
+    one)
   inputs:
   - flag: --manifest
     type: path
@@ -28,16 +43,24 @@ entries:
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - pov_profile.json
+    - pov_profile.md
   compute:
     tier: core
-    cost_note: TODO
-    length_floor_words: null
+    cost_note: stdlib + spaCy (shares voice_profile's feature extraction); no API
+      costs. Default-private output (refuses paths outside ai-prose-baselines-private/
+      unless --allow-public-output).
+    length_floor_words: 3000
   registers:
-  - TODO
+  - all_fiction
   dependencies:
     python: []
-  examples: []
+    python_optional:
+    - spacy
+  examples:
+  - description: Per-POV voiceprints + collapse verdict from a POV-tagged manifest
+    cmd: python3 plugins/setec-voiceprint/scripts/pov_voice_profile.py --manifest baseline_manifest.jsonl
+      --out ai-prose-baselines-private/pov_profile.md
   references:
   - plugins/setec-voiceprint/references/signals-glossary.md
   - plugins/setec-voiceprint/references/stylometry-oracle.md

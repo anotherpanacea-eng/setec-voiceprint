@@ -2,19 +2,31 @@ entries:
 - id: voice_profile
   script_path: plugins/setec-voiceprint/scripts/voice_profile.py
   surface: voice_coherence
-  status: todo
+  status: empirically_oriented
   handoff: stable
   consumers:
   - apodictic
   min_setec_version: "1.86.0"
   json_delivery: stdout
-  family: TODO
-  purpose: voice_profile.py Produce a private, human-readable stylometric profile
-    from a writer/register baseline corpus.
+  family: voice-distance
+  purpose: 'Produce a private, human-readable stylometric profile from a writer/register
+    baseline corpus: per-family feature inventory (function words, character n-grams,
+    POS trigrams, dependency n-grams) with each feature''s baseline mean, SD, and
+    coefficient of variation. This is the within-author reference (the aggregation
+    voice_distance / idiolect_detector / mimicry_cosplay_audit build on), not a diagnostic
+    verdict.
+
+    '
   use_when:
-  - TODO
+  - You want a durable within-author reference to anchor downstream voice-coherence
+    work (voice_distance, idiolect_detector, mimicry)
+  - You have a baseline corpus of the writer's prior prose (a directory or a manifest)
+  - You want to see which feature families are most stable (low CV) for the writer
   do_not_use_when:
-  - TODO
+  - You want a target-vs-baseline drift score — that is voice_distance; voice_profile
+    is descriptive, not diagnostic
+  - You would share the output carelessly — a voice profile is voice-cloning-grade
+    input (keep it private; the script refuses public output paths by default)
   inputs:
   - flag: --baseline-dir
     type: path
@@ -31,16 +43,24 @@ entries:
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - .voice_profile.json
+    - .voice_profile.md
   compute:
     tier: core
-    cost_note: TODO
-    length_floor_words: null
+    cost_note: stdlib + spaCy (POS / dependency families need en_core_web_sm; --no-spacy
+      drops them); no API costs
+    length_floor_words: 2000
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python: []
-  examples: []
+    python_optional:
+    - spacy
+  examples:
+  - description: Build a private voice profile from a baseline
+    cmd: python3 plugins/setec-voiceprint/scripts/voice_profile.py --baseline-dir baseline/
+      --out ai-prose-baselines-private/profile.md
   references:
   - plugins/setec-voiceprint/references/signals-glossary.md
   - plugins/setec-voiceprint/references/stylometry-oracle.md
