@@ -4,7 +4,10 @@
 The capabilities manifest at `plugins/setec-voiceprint/capabilities.d/`
 is the single source of truth for what every user-facing script in
 SETEC does. This linter ensures the manifest stays in sync with the
-source by checking three properties:
+source. It also gates the R5 contract fixtures (Check 9) so a surface's
+golden envelope can never silently drift from `build_output`.
+
+It checks the following properties:
 
   1. **Orphan scripts.** Every Python file under
      `plugins/setec-voiceprint/scripts/` that declares a
@@ -16,6 +19,15 @@ source by checking three properties:
 
   3. **Surface drift.** Every manifest entry's `surface` field must
      equal the `TASK_SURFACE` constant declared in the source file.
+
+  9. **Fixture drift (R5).** For every consumer surface that has a
+     committed golden envelope under
+     `plugins/setec-voiceprint/references/contract_fixtures/`, the
+     generator's regenerated envelope (post-normalization) must match the
+     golden. This catches a surface whose `build_output(...)` output
+     drifts from its pinned `schema_version: 1.0` contract before merge.
+     The check delegates to `gen_contract_fixtures.check_all()` so the
+     gate and the generator can never disagree about what a golden is.
 
 The linter is intentionally noisy: it reports every violation
 encountered before exiting with a non-zero status. Exit codes:
@@ -73,6 +85,13 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 from capabilities import entries, load_manifest  # type: ignore  # noqa: E402
 
+# R5 contract-fixture drift (Check 9). Import the generator so the gate and
+# the generator share one definition of "what a golden should be" — they can
+# never disagree. gen_contract_fixtures is stdlib-only at import (it imports
+# the heavy audit scripts lazily, inside each per-surface builder), so this
+# import is cheap and dependency-free.
+import gen_contract_fixtures  # type: ignore  # noqa: E402
+
 SKIP_FILE_PATTERNS = [
     re.compile(r"^test_"),
     re.compile(r"_test\.py$"),
@@ -82,7 +101,7 @@ SKIP_FILE_PATTERNS = [
 
 @dataclass
 class Violation:
-    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content" | "stable_is_todo"
+    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content" | "stable_is_todo" | "fixture_drift"
     where: str  # path or entry id
     detail: str
 
@@ -583,6 +602,24 @@ def check_drift(
                         f"`capabilities.d/<id>.yaml` fragment."
                     ),
                 ))
+
+    # Check 9 (R5 contract fixtures): fixture_matches_build_output. For each
+    # consumer surface that has a committed golden envelope under
+    # references/contract_fixtures/, assert the generator's regenerated
+    # envelope matches it after normalization. Delegated to the generator's
+    # own `check_all()` so the gate and the generator share one source of
+    # truth — a fixture can never pass `gen_contract_fixtures.py --check`
+    # while failing the gate or vice versa. A surface whose envelope drifts
+    # from its pinned schema_version 1.0 golden fails SETEC pre-merge.
+    for problem in gen_contract_fixtures.check_all():
+        # `problem` is already "<surface>: <detail>"; split the surface off
+        # so it lands in `where` (matching the rest of the report's shape).
+        surface, _, detail = problem.partition(": ")
+        report.violations.append(Violation(
+            kind="fixture_drift",
+            where=surface or "(contract_fixtures)",
+            detail=detail or problem,
+        ))
 
     return report
 
