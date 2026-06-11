@@ -204,6 +204,50 @@
       ]
     },
     {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; published + granules pagination plus one HTM fetch per prepared statement",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "bs4"
+        ]
+      },
+      "do_not_use_when": [
+        "the source is not the GovInfo CHRG collection"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_govinfo_chrg",
+      "inputs": {
+        "target": "GovInfo published service (collection CHRG) via the api.data.gov API"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "pull prepared written congressional testimony from GovInfo CHRG into the testimony_policy impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "testimony_policy"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the testimony_policy population baseline from public-domain CHRG prepared statements"
+      ]
+    },
+    {
       "_seeded_at": "2026-05-28",
       "compute": {
         "cost_note": "TODO",
