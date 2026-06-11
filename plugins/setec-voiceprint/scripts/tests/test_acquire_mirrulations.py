@@ -44,7 +44,7 @@ if pytest is not None and not _ok:
     pytestmark = pytest.mark.skip(reason=_reason)
 
 
-PREFIX = "EPA/EPA-HQ-OAR-2013-0602"
+PREFIX = "derived-data/EPA/EPA-HQ-OAR-2013-0602"
 
 _C1 = (
     "On behalf of the Association, we submit these comments on the proposed "
@@ -93,7 +93,7 @@ OBJECTS = {
     f"{PREFIX}/derived/comments_extracted_text/c2_extracted.txt": _C2.encode(),
     f"{PREFIX}/derived/comments_extracted_text/c3_extracted.txt": _C3.encode(),
     f"{PREFIX}/text-1/comments/c1.json": b'{"data": {"id": "c1"}}',
-    "OTHER/OTHER-DOCKET/derived/comments_extracted_text/x_extracted.txt": b"out of scope",
+    "derived-data/OTHER/OTHER-DOCKET/derived/comments_extracted_text/x_extracted.txt": b"out of scope",
 }
 
 

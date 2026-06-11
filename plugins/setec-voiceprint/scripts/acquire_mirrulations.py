@@ -20,10 +20,15 @@ summary's duplicate count understates campaign text accordingly. Regulatory
 comments are the highest AI-contamination genre post-2022, so pick pre-2020
 dockets (the temporal cut rides on docket selection + ``--era``).
 
-The exact extracted-text key path is not publicly documented; it is matched by
-a configurable ``--text-key-pattern`` under operator ``--prefix`` keys. Verify
-the pattern and hit counts with ``--dry-run`` before a bulk pull (see
-references/acquire-corpus-pattern.md).
+Bucket layout (verified 2026-06-11 against the live bucket): the top level is
+``raw-data/`` and ``derived-data/``. ``raw-data/`` holds only the binary
+attachments; the pre-extracted text lives under ``derived-data/`` at
+``derived-data/<AGENCY>/<DOCKET>/mirrulations/extracted_txt/
+comments_extracted_text/<engine>/<comment>_extracted.txt``. So ``--prefix``
+must be rooted at ``derived-data/`` -- a bare-agency or ``raw-data/`` prefix
+lists no extracted text and acquires nothing. The default
+``--text-key-pattern`` matches these keys; still verify hit counts with
+``--dry-run`` before a bulk pull (see references/acquire-corpus-pattern.md).
 
 Privacy: output goes under ``ai-prose-baselines-private/impostors/<register>/
 <persona>/`` and the privacy guard refuses paths outside any directory named
@@ -32,7 +37,7 @@ Privacy: output goes under ``ai-prose-baselines-private/impostors/<register>/
 Usage:
 
     python3 scripts/acquire_mirrulations.py \\
-        --prefix EPA/EPA-HQ-OAR-2013-0602 \\
+        --prefix derived-data/EPA/EPA-HQ-OAR-2013-0602 \\
         --persona mirrulations \\
         --impostor-for argscope_regulatory_comment \\
         --register regulatory_comment \\
@@ -331,9 +336,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--prefix", action="append", required=True, dest="prefixes",
-                   help="S3 key prefix to list, e.g. EPA/EPA-HQ-OAR-2013-0602 "
-                        "(repeatable; required). Pick substantive, pre-2020 "
-                        "dockets.")
+                   help="S3 key prefix to list, rooted at derived-data/, e.g. "
+                        "derived-data/EPA/EPA-HQ-OAR-2013-0602 (repeatable; "
+                        "required). raw-data/ holds only binaries; the "
+                        "extracted text is under derived-data/. Pick "
+                        "substantive, pre-2020 dockets.")
     p.add_argument("--bucket", default=DEFAULT_BUCKET,
                    help=f"S3 bucket (default: {DEFAULT_BUCKET}).")
     p.add_argument("--region", default=DEFAULT_REGION,
@@ -502,7 +509,8 @@ def run(args: argparse.Namespace, store: ObjectStore | None = None) -> int:
 
     if summary.acquired == 0 and not summary.skip_log:
         sys.stderr.write(
-            "No comments acquired. Verify the --prefix dockets, the "
+            "No comments acquired. Verify the --prefix is rooted at "
+            "derived-data/ (raw-data/ holds only binaries), the "
             "--text-key-pattern (with --dry-run), and S3 connectivity.\n"
         )
         return 1
