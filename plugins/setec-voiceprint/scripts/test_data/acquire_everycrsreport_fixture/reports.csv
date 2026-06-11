@@ -1,0 +1,6 @@
+number,url,sha1,latestPubDate,title,latestPDF,latestHTML
+R1,reports/R1.json,aaa1,2018-05-10,"Federal Widget Policy: Analysis and Options",R1.pdf,R1.html
+R2,reports/R2.json,aaa2,2019-03-02,"Interstate Data Flows and Regulatory Tradeoffs",R2.pdf,R2.html
+IF1,reports/IF1.json,aaa3,2020-01-15,"Widget Tariffs in Focus",IF1.pdf,IF1.html
+R3,reports/R3.json,aaa4,2017-06-01,"Legacy PDF-Only Report",R3.pdf,
+R4,reports/R4.json,aaa5,2024-05-01,"Recent Report Outside the Window",R4.pdf,R4.html

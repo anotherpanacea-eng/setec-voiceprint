@@ -160,6 +160,50 @@
       ]
     },
     {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; one CSV fetch plus one HTML fetch per admitted report",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "bs4"
+        ]
+      },
+      "do_not_use_when": [
+        "the source is not the EveryCRSReport reports.csv index"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_everycrsreport",
+      "inputs": {
+        "target": "EveryCRSReport reports.csv URL (default https://www.everycrsreport.com/reports.csv)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "pull Congressional Research Service reports from EveryCRSReport.com into the policy_brief impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "policy_brief"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_everycrsreport.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the policy_brief population baseline from public-domain CRS reports"
+      ]
+    },
+    {
       "_seeded_at": "2026-05-28",
       "compute": {
         "cost_note": "TODO",
