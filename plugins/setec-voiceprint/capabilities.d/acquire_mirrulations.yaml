@@ -1,0 +1,36 @@
+entries:
+- id: acquire_mirrulations
+  script_path: plugins/setec-voiceprint/scripts/acquire_mirrulations.py
+  surface: voice_coherence_acquisition
+  status: todo
+  handoff: none
+  consumers: []
+  family: acquisition
+  purpose: acquire substantive regulatory comments from the Mirrulations S3 mirror
+    into the regulatory_comment impostor pool (the population baseline
+    argmove_profile profiles).
+  use_when:
+  - building the regulatory_comment population baseline from pre-extracted
+    comment-attachment text in the public Mirrulations bucket
+  do_not_use_when:
+  - near-duplicate campaign text must be removed (v1 does exact-hash dedup only)
+  inputs:
+    target: the public Mirrulations AWS Open Data S3 bucket (anonymous access)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
+    - draft_manifest.jsonl (corpus_role impostor)
+  compute:
+    tier: acquisition
+    cost_note: network-bound; S3 list_objects_v2 pagination plus one get per extracted-text key
+    length_floor_words: 1000
+  registers:
+  - regulatory_comment
+  dependencies:
+    python:
+    - boto3
+  examples: []
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  _seeded_at: '2026-06-11'

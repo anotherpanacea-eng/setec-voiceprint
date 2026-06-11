@@ -373,6 +373,50 @@
       ]
     },
     {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; S3 list_objects_v2 pagination plus one get per extracted-text key",
+        "length_floor_words": 1000,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "boto3"
+        ]
+      },
+      "do_not_use_when": [
+        "near-duplicate campaign text must be removed (v1 does exact-hash dedup only)"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_mirrulations",
+      "inputs": {
+        "target": "the public Mirrulations AWS Open Data S3 bucket (anonymous access)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire substantive regulatory comments from the Mirrulations S3 mirror into the regulatory_comment impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "regulatory_comment"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_mirrulations.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the regulatory_comment population baseline from pre-extracted comment-attachment text in the public Mirrulations bucket"
+      ]
+    },
+    {
       "_seeded_at": "2026-05-28",
       "compute": {
         "cost_note": "TODO",
