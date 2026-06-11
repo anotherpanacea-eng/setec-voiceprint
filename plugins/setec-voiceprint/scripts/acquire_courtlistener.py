@@ -69,6 +69,7 @@ import json
 import os
 import re
 import sys
+import time
 import urllib.parse
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -93,6 +94,12 @@ DEFAULT_SINCE = "2000-01-01"
 DEFAULT_UNTIL = "2021-12-31"
 MAX_PAGES = 10000
 DEFAULT_AUTHOR = "Legal Filing"
+# Search pagination is brittle on a single failed page (we need that page's
+# `next` cursor to continue), so retry a failed page with linear backoff
+# before giving up. This covers transient read-timeouts and short rate-limit
+# throttles (HTTP 429). Module-level so tests can zero the sleep.
+_SEARCH_RETRIES = 4
+_RETRY_SLEEP_SECONDS = 2.0
 
 # Description substrings that mark an argument-dense filing. A few-shot
 # prior, not exhaustive — the operator spot-checks descriptions in
@@ -180,6 +187,28 @@ def _is_brief(description: str) -> bool:
 # ---- Discovery ----------------------------------------------------
 
 
+def _fetch_search_page(fetcher: ac.Fetcher, url: str):
+    """Fetch one search page, retrying a failed request with linear backoff.
+
+    Returns the OK ``FetchResult``, or ``None`` after exhausting retries (a
+    transient blip clears; a persistent 429/timeout is reported so the run
+    doesn't end on a silent one-page hiccup)."""
+    last_status = None
+    for attempt in range(_SEARCH_RETRIES):
+        result = fetcher.fetch(url)
+        if result.ok:
+            return result
+        last_status = getattr(result, "status", None)
+        if attempt < _SEARCH_RETRIES - 1:
+            time.sleep(_RETRY_SLEEP_SECONDS * (attempt + 1))
+    sys.stderr.write(
+        f"  CourtListener search page failed after {_SEARCH_RETRIES} attempts "
+        f"(last HTTP status {last_status}); stopping discovery. HTTP 429 means "
+        "rate-limited — raise --rate-limit and re-run (dedupe makes it safe).\n"
+    )
+    return None
+
+
 def _iter_search(
     query: str, fetcher: ac.Fetcher,
     since: _dt.date | None = None, until: _dt.date | None = None,
@@ -187,19 +216,15 @@ def _iter_search(
     """Yield CourtListener search results, following the `next` cursor URL.
 
     The auth token rides in the fetcher header, so `next` (a full URL with
-    the cursor) is followed as-is. Bounded by MAX_PAGES. A failed request
-    (bad token, changed endpoint) stops discovery with a warning rather than
-    silently yielding nothing.
+    the cursor) is followed as-is. Bounded by MAX_PAGES. A failed page is
+    retried with backoff (``_fetch_search_page``); only a persistent failure
+    stops discovery, so one flaky/throttled page doesn't truncate the run.
     """
     url: str | None = _search_url(query, since, until)
     pages = 0
     while url and pages < MAX_PAGES:
-        result = fetcher.fetch(url)
-        if not result.ok:
-            sys.stderr.write(
-                "  CourtListener search request failed (check the --api-key "
-                "token, the endpoint, and --query); stopping discovery.\n"
-            )
+        result = _fetch_search_page(fetcher, url)
+        if result is None:
             return
         if not result.text:
             return

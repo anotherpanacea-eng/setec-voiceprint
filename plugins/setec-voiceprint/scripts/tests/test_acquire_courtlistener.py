@@ -179,6 +179,43 @@ def test_iter_search_follows_next():
     assert ids == [1, 2]
 
 
+class _SequenceFetcher:
+    """Returns a queued FetchResult per call (to simulate transient failures)."""
+
+    def __init__(self, results):
+        self._results = list(results)
+        self.calls = 0
+
+    def fetch(self, url):
+        self.calls += 1
+        return self._results[min(self.calls - 1, len(self._results) - 1)]
+
+
+def test_iter_search_retries_transient_page_failure(monkeypatch):
+    """A failed search page is retried (not fatal): one 503 then a good page
+    still yields results."""
+    monkeypatch.setattr(cl, "_RETRY_SLEEP_SECONDS", 0)
+    url = cl._search_url("brief")
+    down = ac.FetchResult(url=url, status=503, final_url=url, text="")
+    good = ac.FetchResult(url=url, status=200, final_url=url,
+                          text=json.dumps({"results": [{"id": 7}], "next": None}))
+    f = _SequenceFetcher([down, good])
+    ids = [r["id"] for r in cl._iter_search("brief", f)]
+    assert ids == [7]
+    assert f.calls == 2  # failed once, retried, succeeded
+
+
+def test_iter_search_gives_up_after_retries(monkeypatch):
+    """A persistently failing page stops discovery after _SEARCH_RETRIES
+    attempts (no infinite loop, no crash)."""
+    monkeypatch.setattr(cl, "_RETRY_SLEEP_SECONDS", 0)
+    url = cl._search_url("brief")
+    down = ac.FetchResult(url=url, status=429, final_url=url, text="")
+    f = _SequenceFetcher([down])
+    assert list(cl._iter_search("brief", f)) == []
+    assert f.calls == cl._SEARCH_RETRIES
+
+
 # ------------------- Discovery + extraction ----------------------
 
 
