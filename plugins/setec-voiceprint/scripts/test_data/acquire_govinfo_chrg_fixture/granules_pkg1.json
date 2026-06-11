@@ -1,9 +1,7 @@
 {
-  "count": 3,
+  "count": 1,
   "nextPage": null,
   "granules": [
-    {"granuleId": "CHRG-116hhrg11111-Smith", "title": "Prepared statement of Jane Smith, Director, Office of Widgets"},
-    {"granuleId": "CHRG-116hhrg11111-Short", "title": "Prepared statement of Bob Short, Analyst"},
-    {"granuleId": "CHRG-116hhrg11111-QA", "title": "Questions and answers"}
+    {"granuleId": "CHRG-116hhrg11111", "title": "Hearing on Widget Oversight"}
   ]
 }

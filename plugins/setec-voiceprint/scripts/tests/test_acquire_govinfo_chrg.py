@@ -7,16 +7,24 @@ the module's own URL helpers, so the map can't drift from what discovery
 requests) to local fixtures under
 ``scripts/test_data/acquire_govinfo_chrg_fixture/``:
 
-  * published.json    — 2 hearing packages.
-  * granules_pkg1.json — Smith (prepared, long), Short (prepared, short),
-                         Q&A (not a statement → filtered).
-  * granules_pkg2.json — Jones (prepared, long), member statement (filtered).
+  * published.json     — 2 hearing packages.
+  * granules_pkg1.json — the single whole-hearing granule for package 1.
+  * granules_pkg2.json — the single whole-hearing granule for package 2.
+  * hearing_pkg1.htm   — a hearing transcript with two prepared statements
+                         (Jane Smith, long; Bob Short, short) plus oral
+                         testimony / Q&A that must NOT be captured.
+  * hearing_pkg2.htm   — a hearing with one prepared statement (Robert Jones)
+                         plus a member opening (no heading → not captured).
 
-Invariants: the prepared-statement granule filter (Q&A + member statements
-dropped); JSON pagination via nextPage; api_key URL threading; HTM → clean
-text; witness-name parse; the --min-words gate (Short dropped); the impostor
-manifest schema with register testimony_policy; dedupe; the privacy guard;
-argparse required flags; and a manifest-validator integration.
+CHRG packages are single whole-hearing granules, so discovery fetches the
+hearing HTM and splits it on the ``Prepared Statement of <Name>`` heading.
+
+Invariants: the date-only /published bound; JSON pagination via nextPage;
+api_key URL threading; HTM → clean text; the heading-anchored statement split
+(oral Q&A + member statements dropped); witness-name parse; the --min-words
+gate (Short dropped); the impostor manifest schema with register
+testimony_policy; dedupe; the privacy guard; argparse required flags; and a
+manifest-validator integration.
 """
 
 from __future__ import annotations
@@ -80,7 +88,7 @@ def make_args(**overrides) -> argparse.Namespace:
         since="2000-01-01",
         until="2021-12-31",
         max_items=400,
-        min_words=300,
+        min_words=150,
         output_dir=None,
         emit_manifest=None,
         out=None,
@@ -99,17 +107,16 @@ def make_args(**overrides) -> argparse.Namespace:
 def fixture_url_map() -> dict:
     """Build the URL→fixture map using the module's own URL helpers, so the
     keys are byte-identical to what discovery/extraction request."""
-    start = gi._govinfo_datetime(dt.date(2000, 1, 1))
-    end = gi._govinfo_datetime(dt.date(2021, 12, 31))
+    start = gi._govinfo_date(dt.date(2000, 1, 1))
+    end = gi._govinfo_date(dt.date(2021, 12, 31))
     return {
         gi._published_url(start, end, KEY, collection="CHRG"): "published.json",
         gi._granules_url(PKG1, KEY): "granules_pkg1.json",
         gi._granules_url(PKG2, KEY): "granules_pkg2.json",
-        # extract_one fetches the key-appended granule URL; the stored
-        # locator stays clean.
-        gi._add_query(gi._granule_content_url(PKG1, f"{PKG1}-Smith"), api_key=KEY): "granule_smith.htm",
-        gi._add_query(gi._granule_content_url(PKG1, f"{PKG1}-Short"), api_key=KEY): "granule_short.htm",
-        gi._add_query(gi._granule_content_url(PKG2, f"{PKG2}-Jones"), api_key=KEY): "granule_jones.htm",
+        # CHRG granuleId == packageId; the hearing HTM is fetched with the key
+        # appended, while the stored locator stays credential-free.
+        gi._add_query(gi._granule_content_url(PKG1, PKG1), api_key=KEY): "hearing_pkg1.htm",
+        gi._add_query(gi._granule_content_url(PKG2, PKG2), api_key=KEY): "hearing_pkg2.htm",
     }
 
 
@@ -143,26 +150,40 @@ def test_add_query_sets_and_overrides():
     assert u2.count("api_key=") == 1 and "api_key=K2" in u2
 
 
-def test_govinfo_datetime():
-    assert gi._govinfo_datetime(dt.date(2018, 1, 2)) == "2018-01-02T00:00:00Z"
+def test_govinfo_date_is_date_only():
+    # The /published path rejects the dateTime form; the bound is YYYY-MM-DD.
+    assert gi._govinfo_date(dt.date(2018, 1, 2)) == "2018-01-02"
 
 
-def test_is_prepared_statement():
-    assert gi._is_prepared_statement("Prepared statement of Jane Smith, Director")
-    assert gi._is_prepared_statement("PREPARED STATEMENT BY Robert Jones")
-    assert not gi._is_prepared_statement("Questions and answers")
-    assert not gi._is_prepared_statement(
-        "Statement of Hon. John Member, a Representative in Congress")
-    assert not gi._is_prepared_statement("")
+def test_witness_name():
+    assert gi._witness_name("Jane Smith, Director, Office of Widgets") == "Jane Smith"
+    assert gi._witness_name("Hon. Robert Jones") == "Hon. Robert Jones"
+    assert gi._witness_name("") == gi.WITNESS_FALLBACK
 
 
-def test_witness_from_title():
-    assert gi._witness_from_title(
-        "Prepared statement of Jane Smith, Director, Office of Widgets"
-    ) == "Jane Smith"
-    assert gi._witness_from_title("Prepared statement by Robert Jones") == \
-        "Robert Jones"
-    assert gi._witness_from_title("Questions and answers") == gi.WITNESS_FALLBACK
+def test_split_prepared_statements():
+    text = (
+        "STATEMENT OF JANE DOE, DIRECTOR\n"
+        "    Ms. DOE. Thank you, Mr. Chairman.\n"
+        "    [The prepared statement of Ms. Doe follows:]\n"
+        "Prepared Statement of Jane Doe, Director, Office of Examples\n"
+        "First paragraph of the written statement, which develops an argument\n"
+        "at some length about the matter before the committee.\n"
+        "    [Questions and answers follow.]\n"
+        "    The CHAIRMAN. Thank you, and now Mr. Roe.\n"
+        "Prepared Statement of John Roe, Fellow\n"
+        "The second witness's written statement body.\n"
+        "    [Whereupon the hearing was adjourned.]\n"
+    )
+    stmts = gi._split_prepared_statements(text)
+    assert [name for name, _ in stmts] == ["Jane Doe", "John Roe"]
+    doe_body = stmts[0][1]
+    assert "written statement" in doe_body
+    # Bounded at the bracket marker; oral header not captured.
+    assert "Questions and answers" not in doe_body
+    assert "STATEMENT OF JANE DOE" not in doe_body
+    # No prepared-statement headings → no statements.
+    assert gi._split_prepared_statements("Markup of H.R. 1. The CHAIRMAN. ...") == []
 
 
 def test_iter_pages_follows_nextpage():
@@ -190,43 +211,51 @@ def test_iter_pages_follows_nextpage():
 # ------------------- Discovery -----------------------------------
 
 
-def test_discover_filters_to_prepared_statements():
-    """Only prepared-statement granules are yielded; Q&A and member
-    statements are dropped. Both packages are paged."""
+def test_discover_splits_statements():
+    """Discovery fetches each hearing HTM and yields one item per prepared
+    statement; oral Q&A and member statements are not captured."""
     options = gi.parse_options(make_args())
     items = list(gi.discover_items(options, make_fetcher()))
-    titles = [it.title for it in items]
-    assert len(items) == 3  # Smith, Short, Jones
-    assert all(gi._is_prepared_statement(t) for t in titles)
-    assert not any("Questions and answers" in t for t in titles)
-    assert not any("Hon. John Member" in t for t in titles)
-    smith = [it for it in items if "Smith" in it.title][0]
+    # Smith + Short from pkg1, Jones from pkg2.
+    assert {it.author for it in items} == {"Jane Smith", "Bob Short", "Robert Jones"}
+    assert len(items) == 3
+    smith = [it for it in items if it.author == "Jane Smith"][0]
     assert smith.package_id == PKG1
     assert smith.date == dt.date(2019, 5, 10)
+    assert smith.title == "Prepared statement of Jane Smith"
+    assert "widget" in smith.body_text.lower()
     # Stored locator is credential-free.
-    assert smith.locator == gi._granule_content_url(PKG1, f"{PKG1}-Smith")
+    assert smith.locator == gi._granule_content_url(PKG1, PKG1)
     assert "api_key" not in smith.locator
+    # The member opening in pkg2 (no heading) is not captured.
+    assert not any("Member" in it.author for it in items)
 
 
-def test_extract_one_clean_body():
+def test_extract_one_returns_discovered_body():
+    """extract_one returns the body parsed during discovery (no per-item
+    fetch) and resolves the witness as author."""
     options = gi.parse_options(make_args())
     item = gi.ItemMeta(
-        locator=gi._granule_content_url(PKG1, f"{PKG1}-Smith"),
-        title="Prepared statement of Jane Smith, Director, Office of Widgets",
+        locator=gi._granule_content_url(PKG1, PKG1),
+        title="Prepared statement of Jane Smith",
         date=dt.date(2019, 5, 10),
+        author="Jane Smith",
+        body_text="Chairman, thank you for the chance to testify on widgets.",
     )
     body, title, author, date = gi.extract_one(item, options, make_fetcher())
-    assert ac.html_text_is_clean(body)
-    assert author == "Jane Smith"  # parsed from the title
-    assert "widget" in body.lower()
+    assert body == item.body_text
+    assert title == item.title
+    assert author == "Jane Smith"
+    # An empty statement is skipped.
+    assert gi.extract_one(gi.ItemMeta(locator="x"), options, make_fetcher())[0] == ""
 
 
 # ------------------- End-to-end ----------------------------------
 
 
 def test_end_to_end(tmp_path):
-    """Smith + Jones acquired; Short dropped (below floor); Q&A + member
-    statement filtered. Manifest carries register testimony_policy and the
+    """Smith + Jones acquired; Short dropped (below floor); oral Q&A + member
+    statement not captured. Manifest carries register testimony_policy and the
     parsed witness as author."""
     output_dir = tmp_path / "ai-prose-baselines-private" / "impostors" / \
         "testimony_policy" / "chrg"
@@ -332,7 +361,8 @@ def test_api_key_from_env(monkeypatch):
 
 
 def test_api_key_in_request_urls():
-    """Discovery URLs embed the api_key."""
+    """Discovery URLs embed the api_key (published, granules, and the hearing
+    HTM fetch)."""
     options = gi.parse_options(make_args(api_key="SECRET"))
     fetcher = make_fetcher({})  # empty map → all 404, but record fetched URLs
     list(gi.discover_items(options, fetcher))

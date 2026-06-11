@@ -8,26 +8,29 @@ manifest with ``corpus_role: impostor`` entries.
 
 The argument-dense material in a hearing is the prepared written witness
 statement — not the oral Q&A colloquy, members' opening statements, or
-procedural inserts. GovInfo breaks a hearing package into granules; this
-acquirer keeps the granules whose title marks a prepared statement (the
-written-statement quality gate), fetches each granule's HTML, extracts the
-body, and admits statements at or above ``--min-words`` (default 1500).
-CHRG is public domain (US-government work). The output builds the
-``testimony_policy`` population baseline that ``argmove_profile.py``
-profiles.
+procedural inserts. CHRG packages are a SINGLE whole-hearing granule (no
+per-witness granules — verified against the live API), so the prepared
+statements are split out of the hearing transcript itself: each is anchored
+on a ``Prepared Statement of <Name>`` heading (see
+``_split_prepared_statements``). Statements at or above ``--min-words``
+(default 1500) are admitted. CHRG is public domain (US-government work); the
+output builds the ``testimony_policy`` population baseline that
+``argmove_profile.py`` profiles.
 
-Source shape (best-effort; verify with --dry-run against the live API):
+Source shape (verified 2026-06-11 against the live API):
 
-  published  GET /published/{startDT}/{endDT}?collection=CHRG&...&api_key=KEY
-             -> {packages:[{packageId, dateIssued, title}], nextPage}
-  granules   GET /packages/{packageId}/granules?...&api_key=KEY
-             -> {granules:[{granuleId, title}], nextPage}
+  published  GET /published/{startDate}/{endDate}?collection=CHRG&…&api_key=KEY
+             dates are ``YYYY-MM-DD`` — the ``…T00:00:00Z`` form returns 400
+             -> {packages:[{packageId, dateIssued}], nextPage}
+  granules   GET /packages/{packageId}/granules?…&api_key=KEY
+             -> {granules:[{granuleId}], nextPage}   (one granule per CHRG pkg)
   granule    GET /packages/{packageId}/granules/{granuleId}/htm?api_key=KEY
+             -> the whole-hearing HTML, split into per-witness statements
 
 An api.data.gov key is required: --api-key, else $GOVINFO_API_KEY, else the
-rate-limited public DEMO_KEY. The exact endpoint shapes and the granule
-title format are resolved tolerantly and MUST be spot-checked with
---dry-run before a bulk pull (see references/acquire-corpus-pattern.md).
+rate-limited public DEMO_KEY. The in-document heading format is a few-shot
+prior and MUST be spot-checked with --dry-run before a bulk pull (see
+references/acquire-corpus-pattern.md).
 
 Privacy: output goes under ``ai-prose-baselines-private/impostors/
 <register>/<persona>/`` and the privacy guard refuses paths outside any
@@ -83,13 +86,19 @@ PAGE_SIZE = 100
 MAX_PAGES = 10000      # safety bound on pagination loops
 WITNESS_FALLBACK = "Congressional Witness"
 
-# Granule-title prefixes that mark a prepared written statement. Lowercased
-# prefix match; a few-shot prior, not exhaustive — the operator should
-# spot-check real titles in --dry-run.
-PREPARED_PREFIXES = (
-    "prepared statement of",
-    "prepared statement by",
-)
+# CHRG packages are single whole-hearing granules; the per-witness prepared
+# WRITTEN statements live INSIDE the hearing text, each introduced by a heading
+# line "Prepared Statement of <Name>, <title>". House and Senate hearings both
+# use this heading; the bracketed "[The prepared statement of X follows:]"
+# insertion marker varies between chambers, so the heading is the stable anchor.
+# Verified against live CHRG HTM 2026-06-11. Fragile by nature — spot-check with
+# --dry-run.
+PREPARED_HEADING_RE = re.compile(r"(?im)^[ \t]*Prepared Statement of\s+(.+?)\s*$")
+# An inserted statement block is closed by a bracketed transcript-resume marker
+# at line start; bound the body there when present.
+_RESUME_BRACKET_RE = re.compile(r"\n[ \t]*\[")
+# Safety cap so a missing boundary can't swallow the rest of the hearing.
+MAX_STATEMENT_CHARS = 120_000
 
 # Strip GPO page chrome on the granule HTML; html_to_text already drops
 # nav/header/footer/script/style globally.
@@ -100,12 +109,14 @@ DEFAULT_STRIP_SELECTORS = (
 
 @dataclass
 class ItemMeta:
-    """One discovered prepared-statement granule."""
-    locator: str          # granule HTM URL (api_key embedded)
+    """One prepared written statement parsed from a hearing transcript."""
+    locator: str          # hearing granule HTM URL (key-free; key added at fetch)
     title: str = ""
     date: _dt.date | None = None
     package_id: str = ""
     granule_id: str = ""
+    author: str = ""      # witness name parsed from the statement heading
+    body_text: str = ""   # the statement body, extracted in discovery
 
 
 @dataclass
@@ -150,9 +161,14 @@ def _add_query(url: str, **params: Any) -> str:
     return urllib.parse.urlunparse(parts._replace(query=urllib.parse.urlencode(q)))
 
 
-def _govinfo_datetime(d: _dt.date) -> str:
-    """GovInfo published-service datetime: ``YYYY-MM-DDT00:00:00Z``."""
-    return d.isoformat() + "T00:00:00Z"
+def _govinfo_date(d: _dt.date) -> str:
+    """GovInfo published-service date bound: ``YYYY-MM-DD``.
+
+    The /published path rejects the dateTime form (``…T00:00:00Z`` → HTTP 400,
+    "Use proper date format") and accepts the plain ``YYYY-MM-DD`` — verified
+    against the live API 2026-06-11.
+    """
+    return d.isoformat()
 
 
 def _published_url(
@@ -221,24 +237,37 @@ def _iter_pages(
 # ---- Granule-title helpers ----------------------------------------
 
 
-def _is_prepared_statement(title: str) -> bool:
-    """True iff the granule title marks a prepared written statement."""
-    t = (title or "").strip().lower()
-    return any(t.startswith(p) for p in PREPARED_PREFIXES)
-
-
-def _witness_from_title(title: str) -> str:
-    """Best-effort witness name from ``Prepared statement of <NAME>, <role>``.
-
-    Returns the text after ``of``/``by`` up to the first comma, or the
-    fallback when the pattern doesn't match. Author is informational, not
-    load-bearing for the population baseline.
-    """
-    m = re.match(r"\s*prepared statement (?:of|by)\s+(.+)", title or "", re.I)
-    if not m:
-        return WITNESS_FALLBACK
-    name = m.group(1).split(",")[0].strip()
+def _witness_name(heading_tail: str) -> str:
+    """Witness name from a ``Prepared Statement of <Name>, <role>`` heading —
+    the text up to the first comma. Informational, not load-bearing."""
+    name = (heading_tail or "").split(",")[0].strip()
     return name or WITNESS_FALLBACK
+
+
+def _split_prepared_statements(text: str) -> list[tuple[str, str]]:
+    """Split a whole-hearing transcript into per-witness prepared statements.
+
+    Each statement is anchored on a ``Prepared Statement of <Name>`` heading
+    line; the body runs to the next such heading, the next bracketed
+    transcript-resume marker, or a safety cap — whichever comes first.
+    Returns ``[(witness, body), …]``, possibly empty (markups and short
+    hearings carry no prepared statements). The min-words gate downstream
+    drops fragments.
+    """
+    heads = list(PREPARED_HEADING_RE.finditer(text))
+    out: list[tuple[str, str]] = []
+    for i, m in enumerate(heads):
+        witness = _witness_name(m.group(1))
+        start = m.end()
+        end = heads[i + 1].start() if i + 1 < len(heads) else len(text)
+        body = text[start:end]
+        resume = _RESUME_BRACKET_RE.search(body)
+        if resume:
+            body = body[: resume.start()]
+        body = body[:MAX_STATEMENT_CHARS].strip()
+        if body:
+            out.append((witness, body))
+    return out
 
 
 # ---- Discovery ----------------------------------------------------
@@ -247,16 +276,16 @@ def _witness_from_title(title: str) -> str:
 def discover_items(
     options: ProcessOptions, fetcher: ac.Fetcher,
 ) -> Iterable[ItemMeta]:
-    """Page published -> packages -> granules; yield prepared-statement granules.
+    """Page published -> packages -> the hearing HTM; yield one item per
+    prepared written statement parsed out of each hearing.
 
-    The date window is applied on the package ``dateIssued`` (the published
-    endpoint is already date-bounded, but re-filtering guards against an
-    endpoint that returns adjacent material). Granules whose title is not a
-    prepared statement (oral Q&A, member statements, procedural inserts) are
-    dropped here — the written-statement quality gate.
+    CHRG packages are single whole-hearing granules, so per-witness statements
+    are split out of the hearing text (``_split_prepared_statements``), not
+    discovered as per-statement granules. The date window is applied on the
+    package ``dateIssued``.
     """
-    start_dt = _govinfo_datetime(options.since) if options.since else _govinfo_datetime(_dt.date(2000, 1, 1))
-    end_dt = _govinfo_datetime(options.until) if options.until else _govinfo_datetime(_dt.date(2021, 12, 31))
+    start_dt = _govinfo_date(options.since or _dt.date(2000, 1, 1))
+    end_dt = _govinfo_date(options.until or _dt.date(2021, 12, 31))
     published = _published_url(
         start_dt, end_dt, options.api_key, collection=options.collection,
     )
@@ -269,18 +298,34 @@ def discover_items(
             continue
         if options.until and date and date > options.until:
             continue
-        granules_url = _granules_url(package_id, options.api_key)
-        for gran in _iter_pages(granules_url, fetcher, options.api_key, "granules"):
-            title = (gran.get("title") or "").strip()
-            if not _is_prepared_statement(title):
-                continue
+        # CHRG is single-granule; take the hearing granule's id.
+        granule_id = ""
+        for gran in _iter_pages(
+            _granules_url(package_id, options.api_key), fetcher,
+            options.api_key, "granules",
+        ):
             granule_id = (gran.get("granuleId") or "").strip()
-            if not granule_id:
-                continue
+            if granule_id:
+                break
+        if not granule_id:
+            continue
+        # Fetch the hearing HTM (key at the fetch boundary only) and split it.
+        locator = _granule_content_url(package_id, granule_id)
+        result = fetcher.fetch(_add_query(locator, api_key=options.api_key))
+        if not result.ok or not result.text:
+            continue
+        body_text, _title = ac.html_to_text(
+            result.text, strip_selectors=DEFAULT_STRIP_SELECTORS,
+        )
+        for witness, statement in _split_prepared_statements(body_text):
             yield ItemMeta(
-                locator=_granule_content_url(package_id, granule_id),
-                title=title, date=date,
-                package_id=package_id, granule_id=granule_id,
+                locator=locator,
+                title=f"Prepared statement of {witness}",
+                date=date,
+                package_id=package_id,
+                granule_id=granule_id,
+                author=witness,
+                body_text=statement,
             )
 
 
@@ -290,23 +335,16 @@ def discover_items(
 def extract_one(
     item: ItemMeta, options: ProcessOptions, fetcher: ac.Fetcher,
 ) -> tuple[str, str, str, _dt.date | None]:
-    """Fetch one granule's HTML and return (body_text, title, author, date).
+    """Return the statement text parsed during discovery.
 
-    Returns ``("", "", "", None)`` to signal a silent skip (a 404 / empty
-    granule is treated as a parse-error skip rather than aborting the run).
+    The body was extracted from the hearing HTM in ``discover_items`` (CHRG
+    hearings are single granules holding many statements), so there is no
+    per-item fetch here. ``("", "", "", None)`` skips an empty statement.
     """
-    if not item.locator:
+    if not item.body_text:
         return "", "", "", None
-    # Add the api_key only here, at the fetch boundary — item.locator stays
-    # credential-free so it can be stored as the entry's source_url.
-    result = fetcher.fetch(_add_query(item.locator, api_key=options.api_key))
-    if not result.ok or not result.text:
-        return "", "", "", None
-    body_text, _html_title = ac.html_to_text(
-        result.text, strip_selectors=DEFAULT_STRIP_SELECTORS,
-    )
-    author = options.author or _witness_from_title(item.title)
-    return body_text, item.title, author, item.date
+    author = options.author or item.author or WITNESS_FALLBACK
+    return item.body_text, item.title, author, item.date
 
 
 # ---- Per-statement processing -------------------------------------
@@ -613,8 +651,10 @@ def run(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
 
     if summary.acquired == 0 and not summary.skip_log:
         sys.stderr.write(
-            "No statements acquired. Verify the api key, the date window, "
-            "and (with --dry-run) the granule-title filter + HTM endpoint.\n"
+            "No statements acquired. Verify the api key and the date window, "
+            "and (with --dry-run) that the hearings in range carry "
+            "'Prepared Statement of <Name>' headings (markups and short "
+            "hearings have none).\n"
         )
         return 1
     return 0
