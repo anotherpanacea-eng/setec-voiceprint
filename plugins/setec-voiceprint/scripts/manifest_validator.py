@@ -68,7 +68,7 @@ ALLOWED_REGISTER = {
     "literary_fiction", "blog_essay", "academic_philosophy",
     "testimony_policy", "personal", "policy_advocacy",
     "literary_horror", "policy_brief", "scholarly_article",
-    "legal_brief",
+    "legal_brief", "grant_proposal", "expert_affidavit",
 }
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
