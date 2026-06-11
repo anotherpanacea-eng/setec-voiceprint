@@ -8,11 +8,13 @@ documents, so there is no PDF parsing. Briefs are the most formally
 adversarial argument genre (question presented, summary of argument,
 propositional headings, adverse-authority treatment).
 
-Source shape (best-effort; verify with --dry-run against the live API):
+Source shape (verified 2026-06-11 against the live v4 API):
 
-  search   GET {CL}/search/?type=rd&q=<query>&cursor=...   (Token header)
-           -> {results:[{id, description, dateFiled, ...}], next}
-  detail   GET {CL}/recap-documents/{id}/                  (Token header)
+  search   GET {CL}/search/?type=rd&q=<query>
+           &filed_after=&filed_before=&order_by=score desc   (Token header)
+           -> {results:[{id, short_description, snippet,
+                         entry_date_filed, ...}], next}
+  detail   GET {CL}/recap-documents/{id}/                     (Token header)
            -> {plain_text, description, ...}
   {CL} = https://www.courtlistener.com/api/rest/v4
 
@@ -21,11 +23,24 @@ query-param fallback). The token is supplied via --api-key /
 $COURTLISTENER_API_KEY and carried in the fetcher's header — never in a
 URL — so it cannot leak into a stored ``source_url``.
 
-Only granules whose ``description`` marks a brief / memorandum / amicus
-are kept (the argument-density filter; motions, notices, and orders are
-dropped). The min-words gate backstops. The brief filter and endpoint
-shapes are best-effort — spot-check with --dry-run before a bulk pull
-(see references/acquire-corpus-pattern.md).
+Text availability is the binding constraint, and two real fields gate
+discovery (the v4 search result's ``description`` is empty, and most RECAP
+entries are docket stubs — summonses, notices, objections — with no
+extracted text):
+
+  * ``snippet`` is populated only when the document body is indexed, which
+    is exactly when the detail endpoint returns a non-empty ``plain_text``.
+    So a non-empty snippet is the text-availability gate — without it we
+    would fetch a detail only to drop it for empty text.
+  * ``short_description`` carries the brief / memorandum / amicus label;
+    entries whose label is a non-brief docket action are dropped (the
+    argument-density filter). The default --query is a full-text brief
+    phrase so the search returns text-bearing briefs, not metadata hits.
+
+The date is ``entry_date_filed``; the window is also applied server-side
+via ``filed_after``/``filed_before``. The min-words gate backstops.
+Spot-check with --dry-run before a bulk pull (see
+references/acquire-corpus-pattern.md).
 
 Privacy: output goes under ``ai-prose-baselines-private/impostors/
 <register>/<persona>/`` and the privacy guard refuses paths outside any
@@ -70,7 +85,10 @@ TOOL_NAME = "acquire_courtlistener"
 SCRAPER_VERSION = "1.0"
 
 CL_BASE = "https://www.courtlistener.com/api/rest/v4"
-DEFAULT_QUERY = "brief"
+# A full-text phrase query: it forces matches in the document body (so the
+# search returns text-bearing briefs with a populated snippet) rather than
+# bare metadata hits. Operators tune --query for other brief shapes.
+DEFAULT_QUERY = '"brief in support of"'
 DEFAULT_SINCE = "2000-01-01"
 DEFAULT_UNTIL = "2021-12-31"
 MAX_PAGES = 10000
@@ -131,9 +149,22 @@ def _auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Token {token}"} if token else {}
 
 
-def _search_url(query: str) -> str:
-    """First-page RECAP-document search URL (no cursor; no token in URL)."""
-    return _add_query(f"{CL_BASE}/search/", type="rd", q=query)
+def _search_url(
+    query: str,
+    since: _dt.date | None = None,
+    until: _dt.date | None = None,
+) -> str:
+    """First-page RECAP-document search URL (no cursor; no token in URL).
+
+    ``filed_after``/``filed_before`` apply the date window server-side so
+    pagination stays inside it; ``order_by`` is left at relevance so the
+    brief query surfaces text-bearing documents first."""
+    params: dict[str, Any] = {"type": "rd", "q": query, "order_by": "score desc"}
+    if since is not None:
+        params["filed_after"] = since.isoformat()
+    if until is not None:
+        params["filed_before"] = until.isoformat()
+    return _add_query(f"{CL_BASE}/search/", **params)
 
 
 def _recap_doc_url(doc_id: str) -> str:
@@ -151,21 +182,33 @@ def _is_brief(description: str) -> bool:
 
 def _iter_search(
     query: str, fetcher: ac.Fetcher,
+    since: _dt.date | None = None, until: _dt.date | None = None,
 ) -> Iterator[dict[str, Any]]:
     """Yield CourtListener search results, following the `next` cursor URL.
 
     The auth token rides in the fetcher header, so `next` (a full URL with
-    the cursor) is followed as-is. Bounded by MAX_PAGES.
+    the cursor) is followed as-is. Bounded by MAX_PAGES. A failed request
+    (bad token, changed endpoint) stops discovery with a warning rather than
+    silently yielding nothing.
     """
-    url: str | None = _search_url(query)
+    url: str | None = _search_url(query, since, until)
     pages = 0
     while url and pages < MAX_PAGES:
         result = fetcher.fetch(url)
-        if not result.ok or not result.text:
+        if not result.ok:
+            sys.stderr.write(
+                "  CourtListener search request failed (check the --api-key "
+                "token, the endpoint, and --query); stopping discovery.\n"
+            )
+            return
+        if not result.text:
             return
         try:
             data = json.loads(result.text)
         except json.JSONDecodeError:
+            sys.stderr.write(
+                "  CourtListener search returned non-JSON; stopping discovery.\n"
+            )
             return
         results = data.get("results") or []
         for item in results:
@@ -179,22 +222,33 @@ def _iter_search(
 def discover_items(
     options: ProcessOptions, fetcher: ac.Fetcher,
 ) -> Iterable[ItemMeta]:
-    """Search RECAP documents and yield brief-type filings in the date window."""
-    for res in _iter_search(options.query, fetcher):
-        description = (res.get("description") or "").strip()
-        if not _is_brief(description):
-            continue
+    """Search RECAP documents and yield brief-type, text-bearing filings.
+
+    Two real fields gate discovery (see the module docstring): a non-empty
+    ``snippet`` means the body is indexed and the detail's ``plain_text``
+    will be present; ``short_description`` carries the brief label (the v4
+    search ``description`` is empty). The date is ``entry_date_filed``.
+    """
+    for res in _iter_search(options.query, fetcher, options.since, options.until):
+        if not (res.get("snippet") or "").strip():
+            continue  # body not indexed -> detail plain_text would be empty
+        short_desc = (res.get("short_description") or "").strip()
+        if not _is_brief(short_desc):
+            continue  # not a brief / memorandum / amicus
         doc_id = res.get("id")
         if doc_id in (None, ""):
             continue
-        date = ac.parse_iso_date(res.get("dateFiled") or res.get("date_filed"))
+        date = ac.parse_iso_date(
+            res.get("entry_date_filed")
+            or res.get("dateFiled") or res.get("date_filed")
+        )
         if options.since and date and date < options.since:
             continue
         if options.until and date and date > options.until:
             continue
         yield ItemMeta(
             locator=_recap_doc_url(str(doc_id)),
-            title=description or "untitled",
+            title=short_desc or "untitled",
             date=date,
             doc_id=str(doc_id),
         )
@@ -345,8 +399,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="CourtListener token. Defaults to "
                         "$COURTLISTENER_API_KEY.")
     p.add_argument("--query", default=DEFAULT_QUERY,
-                   help=f"RECAP search query (default: {DEFAULT_QUERY!r}). Tune "
-                        "to target the briefs you want; verify with --dry-run.")
+                   help=f"RECAP full-text search query (default: {DEFAULT_QUERY!r}). "
+                        "A phrase that appears in brief bodies works best, so the "
+                        "search returns text-bearing documents. Tune to target the "
+                        "briefs you want; verify hit counts with --dry-run.")
 
     # Persona / impostor metadata.
     p.add_argument("--persona", default="courtlistener",
@@ -528,8 +584,10 @@ def run(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
 
     if summary.acquired == 0 and not summary.skip_log:
         sys.stderr.write(
-            "No briefs acquired. Verify the CourtListener token, the --query, "
-            "and (with --dry-run) the brief-type filter.\n"
+            "No briefs acquired. Most RECAP entries have no extracted text "
+            "(no snippet) or are non-brief docket actions. Verify the token, "
+            "widen/tune --query to a phrase that appears in brief bodies, and "
+            "spot-check the snippet/short_description fields with --dry-run.\n"
         )
         return 1
     return 0

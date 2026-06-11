@@ -2,16 +2,19 @@
 """Regression tests for acquire_courtlistener.py + the Fetcher extra_headers
 shared-core addition.
 
-Mocks the CourtListener API with `acquisition_core.FixtureFetcher`. Fixtures
-under ``scripts/test_data/acquire_courtlistener_fixture/``:
+Mocks the CourtListener v4 API with `acquisition_core.FixtureFetcher`.
+Fixtures under ``scripts/test_data/acquire_courtlistener_fixture/``:
 
-  * search.json   — 4 RECAP results: two briefs, a motion (filtered out by
-    the brief-type filter), and a short reply brief.
+  * search.json   — 5 RECAP results in the real v4 shape (short_description,
+    snippet, entry_date_filed): two briefs, a motion (fails the brief-type
+    filter), a short reply brief, and a brief with an empty snippet (fails
+    the text-availability gate).
   * recap_101/102/104.json — the per-document detail responses with
     plain_text (104 is below the word floor).
 
-Invariants: the brief-type description filter; cursor pagination; the
-plain_text join; the min-words gate; the impostor schema with register
+Invariants: the snippet text-availability gate; the short_description
+brief-type filter; cursor pagination; the plain_text join; the min-words
+gate; the impostor schema with register
 legal_brief; dedupe; the privacy guard; argparse; the auth-header plumbing
 (make_requests_fetcher carries the token; the token never enters a stored
 source_url); and that the new optional Fetcher param does not disturb the
@@ -85,8 +88,10 @@ def make_args(**overrides) -> argparse.Namespace:
 
 
 def fixture_url_map() -> dict:
+    # discover_items applies the date window server-side, so the search key
+    # must carry the same filed_after/filed_before as make_args' since/until.
     return {
-        cl._search_url("brief"): "search.json",
+        cl._search_url("brief", dt.date(2000, 1, 1), dt.date(2021, 12, 31)): "search.json",
         cl._recap_doc_url("101"): "recap_101.json",
         cl._recap_doc_url("102"): "recap_102.json",
         cl._recap_doc_url("104"): "recap_104.json",
@@ -180,13 +185,23 @@ def test_iter_search_follows_next():
 def test_discover_filters_to_briefs():
     options = cl.parse_options(make_args())
     items = list(cl.discover_items(options, make_fetcher()))
-    # 101, 102, 104 are briefs; 103 (motion) is filtered.
+    # 101, 102, 104 are text-bearing briefs (snippet + brief short_description);
+    # 103 (motion) fails the brief filter; 105 (empty snippet) fails the
+    # text-availability gate.
     assert {it.doc_id for it in items} == {"101", "102", "104"}
     b1 = [it for it in items if it.doc_id == "101"][0]
-    assert b1.title == "Brief for Appellant"
-    assert b1.date == dt.date(2018, 5, 10)
+    assert b1.title == "Brief for Appellant"   # from short_description
+    assert b1.date == dt.date(2018, 5, 10)     # from entry_date_filed
     assert b1.locator == cl._recap_doc_url("101")
     assert "Token" not in b1.locator
+
+
+def test_discover_requires_indexed_text():
+    """A brief-labelled result with an empty snippet (no indexed body) is
+    dropped: fetching its detail would only yield empty plain_text."""
+    options = cl.parse_options(make_args())
+    items = list(cl.discover_items(options, make_fetcher()))
+    assert "105" not in {it.doc_id for it in items}
 
 
 def test_extract_one_plain_text():
