@@ -133,7 +133,11 @@ def discover_items(
 ) -> Iterable[ItemMeta]:
     """Read the URL list and yield one ItemMeta per in-window entry."""
     try:
-        text = Path(urls_path).expanduser().read_text(encoding="utf-8")
+        # utf-8-sig tolerates a leading BOM on lists authored by Windows
+        # editors; without it the BOM (U+FEFF) rides on the first line and a
+        # leading ``#`` comment is misparsed as a bare URL (str.strip() does
+        # not drop U+FEFF).
+        text = Path(urls_path).expanduser().read_text(encoding="utf-8-sig")
     except OSError as exc:
         sys.stderr.write(f"  cannot read urls_file {urls_path}: {exc}\n")
         return

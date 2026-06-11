@@ -207,6 +207,24 @@ def test_discover_date_window():
     assert dated == {"https://ex.test/grant1.pdf"}
 
 
+def test_discover_tolerates_utf8_bom(tmp_path):
+    """A BOM-prefixed list (Windows editors) parses the same as plain utf-8:
+    the leading ``#`` comment is skipped, not misread as a bare URL."""
+    urls = tmp_path / "urls.jsonl"
+    urls.write_text(
+        "# curated grant PDFs\n"
+        '{"url": "https://ex.test/a.pdf", "title": "A"}\n'
+        "https://ex.test/b.pdf\n",
+        encoding="utf-8-sig",  # writes a leading U+FEFF BOM
+    )
+    assert urls.read_bytes().startswith(b"\xef\xbb\xbf")  # BOM really present
+    options = pu.parse_options(make_args(urls_file=str(urls)))
+    items = list(pu.discover_items(urls, options))
+    assert {it.locator for it in items} == {
+        "https://ex.test/a.pdf", "https://ex.test/b.pdf",
+    }
+
+
 # ------------------- End-to-end (decode stand-in) ----------------
 
 
