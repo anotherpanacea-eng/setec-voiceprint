@@ -1,0 +1,11 @@
+{
+  "count": 4,
+  "next": null,
+  "previous": null,
+  "results": [
+    {"id": 101, "description": "Brief for Appellant", "dateFiled": "2018-05-10"},
+    {"id": 102, "description": "Amicus Brief of the Association in Support of Respondent", "dateFiled": "2019-03-02"},
+    {"id": 103, "description": "Motion for Extension of Time", "dateFiled": "2018-01-01"},
+    {"id": 104, "description": "Reply Brief", "dateFiled": "2017-06-01"}
+  ]
+}
