@@ -59,6 +59,7 @@ TOKEN = "TESTTOKEN"
 def make_args(**overrides) -> argparse.Namespace:
     base = dict(
         api_key=TOKEN,
+        doc_type="brief",
         query="brief",
         persona="courtlistener",
         author="",
@@ -430,6 +431,101 @@ def test_emitted_manifest_validates_with_legal_brief(tmp_path):
     ]
     assert unknown_register == [], \
         f"legal_brief should be a known register: {unknown_register}"
+
+
+# ------------------- Affidavit mode (--doc-type affidavit) -------
+
+
+_AFFIDAVIT_TEXT = (
+    "Declaration of Dr. Jane Roe. I have been retained as an expert witness in "
+    "this matter and my qualifications and curriculum vitae are attached; I hold "
+    "a Ph.D. and have twenty years of experience in the field. It is my opinion, "
+    "to a reasonable degree of scientific certainty, that the device failed "
+    "because of a design defect. The basis for my opinion is the methodology "
+    "described below: I reviewed the records, relied on the test data, and "
+    "analyzed the failure mode in detail. " * 6
+)
+_BOILERPLATE_AFFIDAVIT = (
+    "Affidavit of Service. I am over eighteen years of age and not a party to "
+    "this action. I served the summons and complaint upon the defendant by hand. "
+    "Sworn before me this day, a notary public; my commission expires next year. "
+    * 8
+)
+
+
+def test_matches_doc_terms_and_modes():
+    assert cl._matches_doc_terms("Declaration of Jane Roe", cl.AFFIDAVIT_TERMS)
+    assert cl._matches_doc_terms("Expert Report of Dr. Smith", cl.AFFIDAVIT_TERMS)
+    assert not cl._matches_doc_terms("Brief for Appellant", cl.AFFIDAVIT_TERMS)
+    assert cl._is_brief("Brief for Appellant")  # back-compat wrapper
+
+
+def test_is_substantive_affidavit():
+    assert cl._is_substantive_affidavit(_AFFIDAVIT_TEXT)
+    # form/notary affidavit lacks >=2 of qualifications/opinion/basis
+    assert not cl._is_substantive_affidavit(_BOILERPLATE_AFFIDAVIT)
+    assert not cl._is_substantive_affidavit("I declare under penalty of perjury.")
+
+
+def test_looks_like_ocr_garbage():
+    assert not cl._looks_like_ocr_garbage(_AFFIDAVIT_TEXT)
+    garbage = " ".join(["rn", "1l", "0o", "vv", "x", "q", "z"] * 40)
+    assert cl._looks_like_ocr_garbage(garbage)
+
+
+def test_doc_type_profile_defaults():
+    o = cl.parse_options(make_args(doc_type="affidavit", query=None, min_words=None,
+                                   register="expert_affidavit"))
+    assert o.doc_type == "affidavit"
+    assert o.query == cl.DOC_TYPE_PROFILES["affidavit"]["query"]
+    assert o.min_words == 1000
+    ob = cl.parse_options(make_args(query=None, min_words=None))   # brief default
+    assert ob.query == cl.DOC_TYPE_PROFILES["brief"]["query"]
+    assert ob.min_words == 3000
+
+
+def test_discover_affidavit_mode_filters():
+    options = cl.parse_options(make_args(doc_type="affidavit", query=None,
+                                         register="expert_affidavit", min_words=None))
+    surl = cl._search_url(options.query, options.since, options.until)
+    page = ac.FetchResult(url=surl, status=200, final_url=surl, text=json.dumps({
+        "results": [
+            {"id": 201, "short_description": "Declaration of Dr. Jane Roe",
+             "snippet": "...expert...", "entry_date_filed": "2019-05-01"},
+            {"id": 202, "short_description": "Brief for Appellant",
+             "snippet": "...argument...", "entry_date_filed": "2019-06-01"},
+            {"id": 203, "short_description": "Expert Report of Dr. Smith",
+             "snippet": "...opinion...", "entry_date_filed": "2018-01-01"},
+        ], "next": None}))
+    fetcher = ac.FixtureFetcher(url_map={surl: page},
+                                rate_limit_seconds=0.0, respect_robots=False)
+    ids = {it.doc_id for it in cl.discover_items(options, fetcher)}
+    assert ids == {"201", "203"}  # declaration + expert report; brief excluded
+
+
+def test_affidavit_screen_wired_into_process(tmp_path):
+    options = cl.parse_options(make_args(
+        doc_type="affidavit", register="expert_affidavit", min_words=80,
+        output_dir=str(tmp_path / "ai-prose-baselines-private")))
+    item = cl.ItemMeta(locator="https://x/recap-documents/1/",
+                       title="Declaration of Dr. Roe", doc_id="1")
+    p = cl.process_one_item(item, _AFFIDAVIT_TEXT, item.title, "Legal Filing", None,
+                            options=options, summary=ac.RunSummary())
+    assert p is not None
+    p2 = cl.process_one_item(item, _BOILERPLATE_AFFIDAVIT, item.title, "Legal Filing",
+                             None, options=options, summary=ac.RunSummary())
+    assert p2 is None   # form affidavit screened out
+
+
+def test_brief_mode_skips_affidavit_screen(tmp_path):
+    # In brief mode the affidavit screen must NOT run (boilerplate-shaped text
+    # is fine for a brief; only doc_type=affidavit applies the structural gate).
+    options = cl.parse_options(make_args(min_words=80,
+                               output_dir=str(tmp_path / "ai-prose-baselines-private")))
+    item = cl.ItemMeta(locator="https://x/recap-documents/9/", title="Brief", doc_id="9")
+    p = cl.process_one_item(item, _BOILERPLATE_AFFIDAVIT, item.title, "Legal Filing",
+                            None, options=options, summary=ac.RunSummary())
+    assert p is not None
 
 
 if __name__ == "__main__":

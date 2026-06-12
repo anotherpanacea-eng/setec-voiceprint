@@ -106,6 +106,23 @@ _RETRY_SLEEP_SECONDS = 2.0
 # --dry-run and the min-words gate backstops.
 BRIEF_TERMS = ("brief", "memorandum", "amicus")
 
+# Expert-affidavit / declaration document-type terms (the expert_affidavit
+# register). Like BRIEF_TERMS, a short_description few-shot prior; the
+# structural screen (_is_substantive_affidavit) is the real quality gate that
+# rejects form affidavits, notary boilerplate, and one-paragraph stubs.
+AFFIDAVIT_TERMS = (
+    "affidavit", "declaration", "expert report", "expert witness",
+    "expert disclosure", "verified statement",
+)
+
+# Per-doc-type defaults: the short_description filter terms, a full-text query
+# that surfaces the type (so results are text-bearing, snippet-gated), and the
+# word floor. --query / --min-words override; --register is always explicit.
+DOC_TYPE_PROFILES = {
+    "brief": {"terms": BRIEF_TERMS, "query": '"brief in support of"', "min_words": 3000},
+    "affidavit": {"terms": AFFIDAVIT_TERMS, "query": '"declaration of"', "min_words": 1000},
+}
+
 
 @dataclass
 class ItemMeta:
@@ -129,6 +146,7 @@ class ProcessOptions:
     since: _dt.date | None
     until: _dt.date | None
     query: str
+    doc_type: str
     api_token: str
     output_dir: Path
     manifest_path: Path
@@ -179,9 +197,54 @@ def _recap_doc_url(doc_id: str) -> str:
     return f"{CL_BASE}/recap-documents/{doc_id}/"
 
 
-def _is_brief(description: str) -> bool:
+def _matches_doc_terms(description: str, terms: tuple[str, ...]) -> bool:
+    """True iff the short_description contains any of the doc-type terms."""
     d = (description or "").lower()
-    return any(term in d for term in BRIEF_TERMS)
+    return any(term in d for term in terms)
+
+
+def _is_brief(description: str) -> bool:
+    """Back-compat wrapper: brief-type short_description filter."""
+    return _matches_doc_terms(description, BRIEF_TERMS)
+
+
+# Expert-affidavit structural screen. A real expert affidavit/declaration
+# carries a qualifications/background section, stated opinions, and a
+# basis/methodology; a form affidavit, notary block, or one-paragraph stub
+# does not. Heuristic (tune in --dry-run); two of the three families present
+# = substantive. Length is gated separately by --min-words.
+_QUAL_RE = re.compile(
+    r"\b(qualif|curriculum vitae|\bc\.?v\.?\b|education|experience|degrees?|"
+    r"expert in|retained|engaged to|board[- ]certified)\b", re.I)
+_OPINION_RE = re.compile(
+    r"\b(opinions?|in my (?:professional |expert )?opinion|i conclude|"
+    r"it is my opinion|reasonable degree of (?:scientific|professional|medical) "
+    r"certainty)\b", re.I)
+_BASIS_RE = re.compile(
+    r"\b(based (?:up)?on|basis for|methodolog|reviewed|relied (?:up)?on|"
+    r"in reaching|in forming|materials? (?:i )?considered)\b", re.I)
+
+
+def _is_substantive_affidavit(text: str) -> bool:
+    """True iff the text reads like a real expert affidavit/declaration:
+    >=2 of the three families (qualifications, opinion, basis)."""
+    families = sum(bool(rx.search(text)) for rx in (_QUAL_RE, _OPINION_RE, _BASIS_RE))
+    return families >= 2
+
+
+def _looks_like_ocr_garbage(text: str, *, sample: int = 4000) -> bool:
+    """Heuristic OCR-garbage detector (FLP OCRs scanned filings; quality
+    varies). Flags text with a very low alphabetic-token ratio or a high
+    fraction of 1-2 character fragments — hallmarks of OCR noise."""
+    toks = re.findall(r"\S+", text[:sample])
+    if len(toks) < 50:
+        return False  # too little to judge; --min-words handles it
+    alpha = [t for t in toks if re.search(r"[A-Za-z]", t)]
+    if not alpha:
+        return True
+    alpha_ratio = len(alpha) / len(toks)
+    short_frac = sum(1 for t in alpha if len(t) <= 2) / len(alpha)
+    return alpha_ratio < 0.55 or short_frac > 0.45
 
 
 # ---- Discovery ----------------------------------------------------
@@ -254,12 +317,13 @@ def discover_items(
     will be present; ``short_description`` carries the brief label (the v4
     search ``description`` is empty). The date is ``entry_date_filed``.
     """
+    terms = DOC_TYPE_PROFILES[options.doc_type]["terms"]
     for res in _iter_search(options.query, fetcher, options.since, options.until):
         if not (res.get("snippet") or "").strip():
             continue  # body not indexed -> detail plain_text would be empty
         short_desc = (res.get("short_description") or "").strip()
-        if not _is_brief(short_desc):
-            continue  # not a brief / memorandum / amicus
+        if not _matches_doc_terms(short_desc, terms):
+            continue  # not the target document type
         doc_id = res.get("id")
         if doc_id in (None, ""):
             continue
@@ -345,6 +409,23 @@ def process_one_item(
         )
         return None
 
+    # Affidavit-mode quality screens: reject OCR garbage and form/notary/stub
+    # affidavits that pass the type filter but aren't substantive expert work.
+    if options.doc_type == "affidavit":
+        if _looks_like_ocr_garbage(cleaned):
+            summary.skipped_parse_error += 1
+            summary.log_skip(
+                reason="ocr-garbage", url=item.locator, detail=f"words={word_count}",
+            )
+            return None
+        if not _is_substantive_affidavit(cleaned):
+            summary.skipped_filtered += 1
+            summary.log_skip(
+                reason="not-substantive-affidavit", url=item.locator,
+                detail="missing >=2 of qualifications/opinion/basis",
+            )
+            return None
+
     piece = ac.AcquiredPiece(
         title=title or "untitled",
         author=author or DEFAULT_AUTHOR,
@@ -414,8 +495,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog=TOOL_NAME,
         description=(
-            "Acquire legal briefs from CourtListener / RECAP into the impostor "
-            "pool (the legal_brief population baseline). See "
+            "Acquire legal briefs (--doc-type brief -> legal_brief) or expert "
+            "affidavits/declarations (--doc-type affidavit -> expert_affidavit) "
+            "from CourtListener / RECAP into the impostor pool. See "
             "internal/SPEC_acquire_courtlistener.md."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -423,11 +505,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--api-key", default=None,
                    help="CourtListener token. Defaults to "
                         "$COURTLISTENER_API_KEY.")
-    p.add_argument("--query", default=DEFAULT_QUERY,
-                   help=f"RECAP full-text search query (default: {DEFAULT_QUERY!r}). "
-                        "A phrase that appears in brief bodies works best, so the "
-                        "search returns text-bearing documents. Tune to target the "
-                        "briefs you want; verify hit counts with --dry-run.")
+    p.add_argument("--doc-type", choices=["brief", "affidavit"], default="brief",
+                   help="Document type to target (default: brief). 'affidavit' "
+                        "selects the declaration/affidavit short_description "
+                        "filter, an affidavit-shaped default --query, and the "
+                        "expert-affidavit structural + OCR screens.")
+    p.add_argument("--query", default=None,
+                   help="RECAP full-text search query. A phrase that appears in "
+                        "the document body works best (text-bearing, snippet-"
+                        "gated). Defaults per --doc-type "
+                        f"(brief: {DOC_TYPE_PROFILES['brief']['query']!r}, "
+                        f"affidavit: {DOC_TYPE_PROFILES['affidavit']['query']!r}). "
+                        "Verify hit counts with --dry-run.")
 
     # Persona / impostor metadata.
     p.add_argument("--persona", default="courtlistener",
@@ -439,7 +528,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help=("Persona slug(s) this impostor pool serves "
                          "(required; the schema rejects empty)."))
     p.add_argument("--register", required=True,
-                   help="Manifest register; use legal_brief.")
+                   help="Manifest register; legal_brief for --doc-type brief, "
+                        "expert_affidavit for --doc-type affidavit.")
     p.add_argument("--register-match",
                    choices=["high", "medium", "low"], default="high")
     p.add_argument("--topic-match",
@@ -465,9 +555,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help=f"Inclusive upper-bound date (default: {DEFAULT_UNTIL}).")
     p.add_argument("--max-items", type=int, default=400,
                    help="Maximum briefs to acquire (default: 400).")
-    p.add_argument("--min-words", type=int, default=3000,
-                   help="Drop filings below this cleaned word count "
-                        "(default: 3000; briefs run long).")
+    p.add_argument("--min-words", type=int, default=None,
+                   help="Drop filings below this cleaned word count. Defaults "
+                        "per --doc-type (brief: 3000; affidavit: 1000).")
 
     # Output paths.
     p.add_argument("--output-dir",
@@ -517,6 +607,13 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
 
     acquired_via = f"acquire_courtlistener_{_dt.date.today().isoformat()}"
 
+    # Resolve doc-type-dependent defaults: an unset --query / --min-words
+    # falls back to the profile for the chosen --doc-type.
+    doc_type = getattr(args, "doc_type", "brief")
+    profile = DOC_TYPE_PROFILES[doc_type]
+    query = args.query or profile["query"]
+    min_words = args.min_words if args.min_words is not None else profile["min_words"]
+
     return ProcessOptions(
         persona=args.persona,
         author=args.author,
@@ -528,12 +625,13 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
         era=args.era,
         since=ac.parse_iso_date(args.since) if args.since else None,
         until=ac.parse_iso_date(args.until) if args.until else None,
-        query=args.query,
+        query=query,
+        doc_type=doc_type,
         api_token=api_token,
         output_dir=output_dir,
         manifest_path=manifest_path,
         max_items=args.max_items,
-        min_words=args.min_words,
+        min_words=min_words,
         dry_run=args.dry_run,
         allow_non_prose=args.allow_non_prose,
         strip_rules=args.strip_rules,
