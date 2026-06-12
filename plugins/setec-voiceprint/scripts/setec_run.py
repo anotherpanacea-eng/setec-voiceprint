@@ -203,12 +203,15 @@ def _wrap_script_failure(
     """Map a nonzero-exit / unparseable script run to an R3 envelope.
 
     A SETEC consumer script signals a usage / policy refusal with a
-    nonzero exit and a stderr message; the privacy guard
-    (``pov_voice_profile`` / ``voice_profile``) exits 2 on a refused
-    output path. We classify on the script's exit code: 2 -> a
-    ``policy_refused`` contract failure (the only exit-2 path in the
-    consumer scripts is the privacy ratchet); anything else ->
-    ``internal_error``. The stderr tail becomes the human ``reason``."""
+    nonzero exit and a stderr message. Exit 2 is overloaded: the
+    voice-clone privacy guard (``pov_voice_profile`` / ``voice_profile``)
+    exits 2 on a refused output path, but Python ``argparse`` ALSO exits 2
+    on a usage error (e.g. an unrecognized flag), emitting a ``usage:``
+    line. We disambiguate so consumers can branch on ``reason_category``
+    (R3): an argparse usage error (``usage:`` in stderr) -> ``bad_input``;
+    any other exit 2 -> ``policy_refused`` (the privacy ratchet); anything
+    else -> ``internal_error``. The stderr tail becomes the human
+    ``reason``."""
     stderr_tail = (proc.stderr or "").strip()
     if not stderr_tail:
         stderr_tail = (
@@ -216,6 +219,17 @@ def _wrap_script_failure(
             f"parseable envelope on stdout"
         )
     if proc.returncode == 2:
+        # argparse usage errors (unrecognized flag, etc.) also exit 2 but
+        # emit a "usage:" line — those are bad_input, not a privacy refusal.
+        if "usage:" in stderr_tail.lower():
+            return _error(
+                surface=surface,
+                reason=(
+                    f"{surface}: invalid arguments (exit 2): {stderr_tail}"
+                ),
+                reason_category="bad_input",
+                exit_code=EXIT_CONTRACT,
+            )
         return _error(
             surface=surface,
             reason=(
@@ -386,6 +400,26 @@ def _run_file_surface(
                 reason=(
                     f"{surface}: the --json-out artifact was not a parseable "
                     f"JSON envelope ({exc})"
+                ),
+                reason_category="internal_error",
+                exit_code=EXIT_INTERNAL,
+            )
+        # The artifact must BE the promised schema_version 1.0 envelope before
+        # we re-emit it. The stdout path rejects non-envelope output via
+        # _extract_envelope; the file path must not be a weaker guarantee — a
+        # regressed surface that writes ``{}`` or some other JSON object would
+        # otherwise exit 0 and break R2's promise that ``setec run ... --json``
+        # returns a schema-versioned envelope.
+        if not isinstance(envelope, dict) or envelope.get("schema_version") != "1.0":
+            shape = (
+                f"keys {sorted(envelope)[:8]}" if isinstance(envelope, dict)
+                else type(envelope).__name__
+            )
+            return _error(
+                surface=surface,
+                reason=(
+                    f"{surface}: the --json-out artifact is not a "
+                    f"schema_version 1.0 envelope ({shape})"
                 ),
                 reason_category="internal_error",
                 exit_code=EXIT_INTERNAL,

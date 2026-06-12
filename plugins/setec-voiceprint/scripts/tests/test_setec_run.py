@@ -439,11 +439,15 @@ def test_pov_projection_cleans_up_tempdir(manifest, monkeypatch):
     import subprocess
 
     def fake_run(cmd, **kw):
-        # The injected --json-out path is the last arg.
+        # The injected --json-out path is the last arg. Write a VALID
+        # schema_version 1.0 envelope so the dispatcher's artifact check
+        # passes (the happy path this test exercises).
         out_idx = cmd.index("--json-out")
         out_path = Path(cmd[out_idx + 1])
-        out_path.write_text(json.dumps({"tool": "pov_voice_profile"}),
-                            encoding="utf-8")
+        out_path.write_text(
+            json.dumps({"schema_version": "1.0", "tool": "pov_voice_profile"}),
+            encoding="utf-8",
+        )
         return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
 
     monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
@@ -455,6 +459,55 @@ def test_pov_projection_cleans_up_tempdir(manifest, monkeypatch):
     assert env["tool"] == "pov_voice_profile"
     assert "dir" in created
     assert not Path(created["dir"]).exists(), "tempdir not cleaned up"
+
+
+def test_file_surface_non_envelope_artifact_internal_error(manifest, monkeypatch):
+    """A regressed file-delivery surface that writes a non-envelope artifact
+    (no schema_version 1.0) must NOT slip through as success — the dispatcher
+    wraps it as internal_error rather than exit 0 with a bogus payload."""
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        out_idx = cmd.index("--json-out")
+        out_path = Path(cmd[out_idx + 1])
+        # Valid JSON, but NOT a schema_version 1.0 envelope.
+        out_path.write_text(
+            json.dumps({"tool": "pov_voice_profile"}), encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "pov_voice_profile", ["--manifest", "m.jsonl"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_INTERNAL == 1
+    assert env["reason_category"] == "internal_error"
+    assert "schema_version" in env["reason"]
+
+
+def test_argparse_usage_error_wrapped_as_bad_input(manifest, monkeypatch):
+    """Exit 2 is overloaded: argparse usage errors (unrecognized flag, etc.)
+    emit a 'usage:' line and must map to bad_input, NOT the voice-clone
+    privacy refusal (policy_refused). Consumers branch on reason_category."""
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 2, stdout="",
+            stderr=(
+                "usage: voice_profile.py [-h] ...\n"
+                "voice_profile.py: error: unrecognized arguments: --bogus"
+            ),
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "voice_profile", ["--baseline-dir", "x", "--bogus"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_CONTRACT == 3
+    assert env["reason_category"] == "bad_input"
 
 
 # ---- R4: output-validity bounds gate -----------------------------------
