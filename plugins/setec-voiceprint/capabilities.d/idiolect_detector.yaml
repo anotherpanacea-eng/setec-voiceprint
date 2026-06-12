@@ -27,18 +27,23 @@ entries:
   - flag: --target-dir
     type: path
     required: false
+    group: target
   - flag: --manifest
     type: path
     required: false
+    group: target
   - flag: --reference-dir
     type: path
     required: false
+    group: reference
   - flag: --reference-manifest
     type: path
     required: false
+    group: reference
   - flag: --reference-corpus
     type: enum
     required: false
+    group: reference
     values:
     - brown
   - flag: --keyness-method

@@ -39,7 +39,7 @@ New per-entry manifest fields (additive; `seed_capabilities.py` + `check_capabil
 - `min_setec_version` (string semver) — the floor the consumer asserts against. **Retires APODICTIC's hardcoded `MIN_SETEC_VERSION` per shim (R1 acceptance criterion).**
 - `json_delivery` (`"stdout"` | `"file"`) — current truth per surface; target is uniformly `"stdout"` once §2 lands.
 - `calibration_status` — surface the existing `status` (`heuristic|literature_anchored|calibrated|…`) under the name the consumer expects.
-- `inputs[]` — `{flag, type, required, values?}` so the consumer builds the arg list without guessing.
+- `inputs[]` — `{flag, type, required, values?, group?}` so the consumer builds the arg list without guessing. Inputs sharing a `group` are mutually exclusive alternatives of which **exactly one is required** (e.g. `idiolect_detector`'s `target` and `reference` groups); a flag with no `group` is standalone, governed by its own `required`.
 
 Top-level fields the emit adds around `entries`:
 - `setec_version` — read from `.claude-plugin/plugin.json` (the SOT), not duplicated.

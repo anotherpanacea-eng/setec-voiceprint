@@ -1758,26 +1758,31 @@
       "inputs": [
         {
           "flag": "--target-dir",
+          "group": "target",
           "required": false,
           "type": "path"
         },
         {
           "flag": "--manifest",
+          "group": "target",
           "required": false,
           "type": "path"
         },
         {
           "flag": "--reference-dir",
+          "group": "reference",
           "required": false,
           "type": "path"
         },
         {
           "flag": "--reference-manifest",
+          "group": "reference",
           "required": false,
           "type": "path"
         },
         {
           "flag": "--reference-corpus",
+          "group": "reference",
           "required": false,
           "type": "enum",
           "values": [
@@ -3974,7 +3979,7 @@
           "type": "path"
         }
       ],
-      "json_delivery": "stdout",
+      "json_delivery": "file",
       "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [

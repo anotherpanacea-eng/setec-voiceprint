@@ -7,7 +7,7 @@ entries:
   consumers:
   - apodictic
   min_setec_version: "1.86.0"
-  json_delivery: stdout
+  json_delivery: file
   family: voice-distance
   purpose: 'Produce a private, human-readable stylometric profile from a writer/register
     baseline corpus: per-family feature inventory (function words, character n-grams,
