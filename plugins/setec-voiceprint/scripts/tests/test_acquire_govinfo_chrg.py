@@ -95,6 +95,7 @@ def make_args(**overrides) -> argparse.Namespace:
         rate_limit=0.0,
         user_agent=None,
         dry_run=False,
+        allow_empty=False,
         allow_public_output=True,
         allow_non_prose=False,
         strip_rules=None,
@@ -470,6 +471,22 @@ def test_emitted_manifest_validates(tmp_path):
     report = mv.validate_manifest(manifest_path)
     errors = [i for i in report["issues"] if i.get("severity") == "error"]
     assert errors == [], f"Manifest should validate without errors: {errors}"
+
+
+def test_zero_output_exit_code(tmp_path):
+    """A zero-output run that isn't a dedupe-only rerun fails (rc=1) unless
+    --allow-empty; a dedupe-only rerun exits 0."""
+    base = tmp_path / "ai-prose-baselines-private"
+    # Everything below the floor -> nothing acquired, no dupes -> failure.
+    ze = dict(output_dir=str(base / "ze"),
+              emit_manifest=str(base / "ze" / "d.jsonl"), min_words=100000)
+    assert gi.run(make_args(**ze), fetcher=make_fetcher()) == 1
+    assert gi.run(make_args(allow_empty=True, **ze), fetcher=make_fetcher()) == 0
+    # Dedupe-only rerun is a valid empty result -> 0.
+    od = dict(output_dir=str(base / "do"),
+              emit_manifest=str(base / "do" / "d.jsonl"), min_words=150)
+    assert gi.run(make_args(**od), fetcher=make_fetcher()) == 0   # first acquires
+    assert gi.run(make_args(**od), fetcher=make_fetcher()) == 0   # rerun: all dupe
 
 
 if __name__ == "__main__":
