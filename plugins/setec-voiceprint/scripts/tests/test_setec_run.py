@@ -48,8 +48,9 @@ REQUIRED_TOP_LEVEL_KEYS = frozenset({
     "claim_license_rendered", "warnings", "ai_status",
 })
 
-# The nine consumer surfaces R1 promoted (carry json_delivery), with their
-# expected script module basename and delivery mode.
+# The consumer surfaces that carry json_delivery (the nine R1 promoted for
+# apodictic + the four promoted for setec-voicewright in 1.115.0), with
+# their expected script module basename and delivery mode.
 EXPECTED_SURFACES = {
     "variance_audit": ("variance_audit.py", "stdout"),
     "voice_distance": ("voice_distance.py", "stdout"),
@@ -60,6 +61,10 @@ EXPECTED_SURFACES = {
     "repetition_audit": ("repetition_audit.py", "stdout"),
     "voice_profile": ("voice_profile.py", "file"),
     "pov_voice_profile": ("pov_voice_profile.py", "file"),
+    "voice_fingerprint": ("voice_fingerprint.py", "stdout"),
+    "mimicry_cosplay_audit": ("mimicry_cosplay_audit.py", "stdout"),
+    "binoculars_audit": ("binoculars_audit.py", "stdout"),
+    "general_imposters": ("general_imposters.py", "file"),
 }
 
 
@@ -83,7 +88,7 @@ def _dispatch_capture(surface, args, *, manifest, observed_version):
 
 # ---- surface -> script resolution (table-driven) -----------------------
 
-def test_consumer_entries_are_exactly_the_nine(manifest):
+def test_consumer_entries_are_exactly_the_thirteen(manifest):
     surfaces = setec_run.consumer_entries(manifest)
     assert set(surfaces) == set(EXPECTED_SURFACES)
 

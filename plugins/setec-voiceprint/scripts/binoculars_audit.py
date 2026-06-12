@@ -498,6 +498,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--threshold-high", type=float, default=DEFAULT_THRESHOLD_HIGH, help="Above this ratio, verdict is human_likely. See --threshold-low note on calibration.")
     parser.add_argument("--out", default=None, help="Evidence pack JSON path (default <target-parent>/<stem>.binoculars.json).")
     parser.add_argument("--out-md", default=None, help="Evidence pack markdown path (default <target-parent>/<stem>.binoculars.md).")
+    parser.add_argument("--json", action="store_true", help="Emit the schema_version 1.0 envelope as JSON on stdout (R2 consumer delivery). Default evidence-pack writes are skipped; explicit --out/--out-md are still honored.")
     parser.add_argument("--licenses", default=DEFAULT_LICENSES, help="Override the claim_license.licenses text.")
     parser.add_argument("--does-not-license", default=DEFAULT_DOES_NOT_LICENSE, help="Override the claim_license.does_not_license text.")
     parser.add_argument(
@@ -579,6 +580,21 @@ def main(argv: list[str] | None = None) -> int:
         does_not_license_text=args.does_not_license,
     )
     markdown = render_markdown(envelope)
+
+    if args.json:
+        # json_delivery: stdout — the envelope is the only stdout output, so
+        # dispatcher/consumer calls don't get side files next to the target.
+        # Explicit --out/--out-md are still honored (notices go to stderr).
+        if args.out:
+            out_json = Path(args.out)
+            out_json.write_text(json.dumps(envelope, indent=2, default=str), encoding="utf-8")
+            print(f"Wrote {out_json}", file=sys.stderr)
+        if args.out_md:
+            out_md = Path(args.out_md)
+            out_md.write_text(markdown, encoding="utf-8")
+            print(f"Wrote {out_md}", file=sys.stderr)
+        print(json.dumps(envelope, indent=2, default=str))
+        return 0
 
     out_json = Path(args.out) if args.out else target_path.with_suffix(target_path.suffix + ".binoculars.json")
     out_md = Path(args.out_md) if args.out_md else target_path.with_suffix(target_path.suffix + ".binoculars.md")

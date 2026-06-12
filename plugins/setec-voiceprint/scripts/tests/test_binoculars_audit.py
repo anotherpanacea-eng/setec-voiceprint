@@ -520,6 +520,76 @@ def test_cli_end_to_end_with_stubbed_backend(monkeypatch, tmp_path):
     assert envelope["results"]["verdict_band"] == "ai_likely"
 
 
+def test_cli_json_emits_envelope_on_stdout_and_skips_default_writes(
+    monkeypatch, tmp_path, capsys,
+):
+    """--json (R2 consumer delivery, json_delivery: stdout): the envelope is
+    the only stdout output, and the DEFAULT evidence-pack paths are not
+    written, so dispatcher calls don't leave side files next to the target."""
+    target = tmp_path / "target.txt"
+    target.write_text("the cat sat on the mat " * 50)
+
+    def stub_init(self, *, model_id, revision=None, dtype="auto"):
+        self.model_id = model_id
+        self.revision = revision
+        self._alias = model_id
+        self.deterministic = True
+        self.dtype = dtype
+        self._resolved_dtype_label = "fp32"
+
+    def stub_score_text(self, text, *, return_top_k=0):
+        if self.model_id == bin_audit.DEFAULT_SCORER:
+            return _series(2.0, 100)
+        return _series(4.0, 100)
+
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "__init__", stub_init)
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "score_text", stub_score_text)
+
+    rc = bin_audit.main([str(target), "--json"])
+    assert rc == 0
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == "1.0"
+    assert envelope["task_surface"] == "binoculars_discrimination"
+    assert envelope["results"]["perplexity_ratio"] == 0.5
+    # No default evidence-pack side files.
+    assert not (tmp_path / "target.txt.binoculars.json").exists()
+    assert not (tmp_path / "target.txt.binoculars.md").exists()
+
+
+def test_cli_json_honors_explicit_out_with_clean_stdout(
+    monkeypatch, tmp_path, capsys,
+):
+    """--json + explicit --out: the file is still written (notice on
+    stderr), and stdout stays a single parseable envelope."""
+    target = tmp_path / "target.txt"
+    target.write_text("the cat sat on the mat " * 50)
+
+    def stub_init(self, *, model_id, revision=None, dtype="auto"):
+        self.model_id = model_id
+        self.revision = revision
+        self._alias = model_id
+        self.deterministic = True
+        self.dtype = dtype
+        self._resolved_dtype_label = "fp32"
+
+    def stub_score_text(self, text, *, return_top_k=0):
+        if self.model_id == bin_audit.DEFAULT_SCORER:
+            return _series(2.0, 100)
+        return _series(4.0, 100)
+
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "__init__", stub_init)
+    monkeypatch.setattr(bin_audit.SurprisalBackend, "score_text", stub_score_text)
+
+    out_json = tmp_path / "explicit.json"
+    rc = bin_audit.main([str(target), "--json", "--out", str(out_json)])
+    assert rc == 0
+    captured = capsys.readouterr()
+    stdout_envelope = json.loads(captured.out)
+    assert out_json.exists()
+    assert json.loads(out_json.read_text()) == stdout_envelope
+    assert "Wrote" in captured.err
+
+
 # ============================================================
 # v2 cross-perplexity: helper math
 # ============================================================

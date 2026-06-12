@@ -2,30 +2,80 @@ entries:
 - id: general_imposters
   script_path: plugins/setec-voiceprint/scripts/general_imposters.py
   surface: voice_coherence
-  status: todo
-  handoff: none
-  consumers: []
-  family: TODO
-  purpose: General Imposters attribution harness.
+  status: literature_anchored
+  handoff: experimental
+  consumers:
+  - setec-voicewright
+  min_setec_version: "1.115.0"
+  json_delivery: file
+  family: general-imposters
+  purpose: 'General Imposters attribution harness (Koppel et al. 2014, Kestemont
+    et al. 2016 / R stylo::imposters()). Under bootstrap resampling with feature
+    subsampling, measures how often a target falls closer to a candidate
+    writer''s identity baseline than to N plausible-other writers in matched
+    register. Emits a win proportion (1.0 = always closer to candidate) with a
+    bootstrap CI; scores near the extremes are trustworthy, the gray zone
+    (~0.2-0.8) explicitly refuses an attribution claim. Licenses "stylometrically
+    consistent/inconsistent with", never "is by". Privacy-gated: voiceprint-shaped
+    outputs default under ai-prose-baselines-private/ and refuse public paths
+    without --allow-public-output.
+
+    '
   use_when:
-  - TODO
+  - You want calibrated consistency evidence (target vs candidate-vs-impostor
+    pool), not a raw distance — the embedding analogue is voice_fingerprint's
+    n-way mode
+  - You have a corpus manifest with the candidate's identity_baseline entries
+    plus register-matched impostor personas
+  - You can accept a refusal — the gray zone is a designed outcome, not an error
   do_not_use_when:
-  - TODO
+  - You need an authorship verdict in the legal or philosophical sense — the
+    harness measures consistency with a stylometric fingerprint only
+  - You have no register-matched impostor pool in the manifest (the MIN_IMPOSTORS
+    gate refuses)
+  - Impostor identities must stay anonymous in a public report and you cannot
+    run the anonymization path
   inputs:
-    target: TODO
+  - flag: --target
+    type: path
+    required: true
+  - flag: --manifest
+    type: path
+    required: true
+  - flag: --candidate-persona
+    type: string
+    required: true
+  - flag: --register
+    type: string
+    required: false
+  - flag: --iterations
+    type: int
+    required: false
+  - flag: --feature-fraction
+    type: float
+    required: false
+  - flag: --seed
+    type: int
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - GI markdown report (via --out)
+    - GI JSON envelope (via --json-out, private-dir-gated)
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib + scipy (CI computation); bootstrap iterations scale linearly
     length_floor_words: null
   registers:
-  - TODO
+  - all_fiction
+  - all_nonfiction
   dependencies:
     python:
     - scipy
-  examples: []
-  references: []
-  _seeded_at: '2026-05-28'
+  examples:
+  - description: GI run against a candidate persona with a manifest-backed impostor pool
+    cmd: python3 plugins/setec-voiceprint/scripts/general_imposters.py --target draft.txt
+      --manifest corpus_manifest.jsonl --candidate-persona blog --register blog_essay
+      --json-out ai-prose-baselines-private/gi_report.json
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md

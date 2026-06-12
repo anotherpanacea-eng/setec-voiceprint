@@ -98,9 +98,10 @@ _CATEGORY_DEFAULT_EXIT = {
 
 def consumer_entries(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return ``{surface_id: entry}`` for every consumer surface — i.e.
-    every entry carrying a ``json_delivery`` field. That is exactly the set
-    R1 promoted (the nine APODICTIC surfaces); a manifest entry without
-    ``json_delivery`` is not a normalized consumer surface and the
+    every entry carrying a ``json_delivery`` field. That is exactly the
+    promoted set (the nine APODICTIC surfaces from R1 + the four
+    setec-voicewright fitness surfaces from 1.115.0); a manifest entry
+    without ``json_delivery`` is not a normalized consumer surface and the
     dispatcher will not run it."""
     out: dict[str, dict[str, Any]] = {}
     for e in capabilities.entries(manifest):

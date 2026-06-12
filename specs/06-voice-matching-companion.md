@@ -26,13 +26,14 @@ closed loop get without gaming the metric?).
 A **separate companion repo** that depends on SETEC as a library — keeps the
 forensic tool's no-verdict brand and privacy ratchet uncompromised, and makes the
 matcher the first real external consumer of SETEC's normalized-entrypoint contract
-(`references/setec-normalized-entrypoint-spec.md` — defined in #139, **not yet
-merged**; see the Contract's pre-build note) + the APODICTIC handoff
-(`capabilities` v0.3 `handoff: stable`). **Prerequisite to *building*:** the repo
-must be created and added to the agent's session scope (currently restricted to
-`anotherpanacea-eng/setec-voiceprint`). This spec lives here in the interim because
-it defines SETEC's side of the contract; it moves to the companion repo once that
-exists.
+(`references/setec-normalized-entrypoint-spec.md`, landed v1.113.0–v1.114.0) +
+the APODICTIC handoff (`capabilities` v0.3 `handoff: stable`).
+**Status update (1.115.0):** the companion repo exists —
+`anotherpanacea-eng/setec-voicewright` — and built its v1a loop against the
+interim per-script contract. The consumer-side adoption plan (vendored
+projection + release-tag lock + offline drift gate + dispatcher runner) is
+**setec-voicewright `specs/06-setec-formal-dependency.md`**; this spec remains
+SETEC's side of the contract.
 
 ## Architecture (the full v1 pipeline)
 
@@ -67,18 +68,21 @@ Components (v1 sub-milestones, buildable in order):
 
 ## Contract: how it consumes SETEC
 
-- **Entry point.** *Pre-build prerequisite — not yet on `main`.* The normalized
-  `setec run <surface> --json` dispatcher and its spec
-  (`references/setec-normalized-entrypoint-spec.md`) are defined in **#139, still
-  open**; neither the dispatcher nor that reference file exists on `main` yet.
-  Until #139 lands, the companion consumes each surface's **existing per-script
-  CLI directly** — e.g. `python3 plugins/setec-voiceprint/scripts/voice_distance.py
-  … --json` — which already emits the `build_output()` envelope; the dispatcher is
-  a convenience layer over those same envelopes, not a new contract. Pin only
-  `handoff: stable` surfaces (`variance_audit`, `voice_distance`,
-  `idiolect_detector`, `aic_pattern_audit`, `restoration_packet`) + the planned
-  **voice-fingerprint embedding surface (`specs/02`)**, the matcher's lead
-  evaluator, which should ship first.
+- **Entry point.** The normalized `setec run <surface> --json` dispatcher
+  (`scripts/setec_run.py`, spec
+  `references/setec-normalized-entrypoint-spec.md`) **landed in
+  v1.113.0–v1.114.0** and is the companion's only supported entry point; the
+  per-script-CLI consumption described in earlier drafts is the deprecated
+  interim contract. The companion's surface set is the `capabilities.d/`
+  fragments listing `setec-voicewright` in `consumers:` (promoted in
+  **1.115.0**): `voice_fingerprint` (the `specs/02` surface — one surface
+  covering LUAR and the Wegmann cross-check via `--model wegmann`),
+  `voice_distance`, `idiolect_detector` (whose JSON is
+  `mimicry_cosplay_audit`'s required cross-check input),
+  `mimicry_cosplay_audit`, `general_imposters` (file-delivery,
+  privacy-gated), and `binoculars_audit`. Floors are read from the manifest
+  (`min_setec_version`), never hardcoded; goldens for all six live in
+  `references/contract_fixtures/` for the consumer to vendor.
 - **Selection signals** (the ranker reads these): LUAR + Wegmann cosine
   (`specs/02`), `voice_distance` Burrows-Delta / function-word / POS-ngram,
   `idiolect_detector` preservation survival.
@@ -128,10 +132,12 @@ from `specs/00` TODO); base-model license (prefer Apache/MIT over Llama/Gemma).
 
 ## Open questions
 
-- **Companion repo name + creation** (prerequisite to building). Add to agent scope
-  once created.
+- ~~**Companion repo name + creation** (prerequisite to building).~~ Resolved:
+  `anotherpanacea-eng/setec-voicewright` exists and shipped its v1a loop.
 - **v1a RAG-only vs. straight-to-LoRA** as the first runnable milestone (RAG-only
   exercises the loop without GPU; recommended first step despite "full pipeline" v1).
-- **Where the spec lives long-term** — moves to the companion repo on creation.
+- ~~**Where the spec lives long-term.**~~ Resolved: the consumer-side adoption
+  spec is setec-voicewright `specs/06-setec-formal-dependency.md`; this file
+  stays as SETEC's side of the contract.
 - Whether the held-out validator set should include a *fresh* GI impostor pool per
   run (independence) — ties into the fiction impostor-pool track.

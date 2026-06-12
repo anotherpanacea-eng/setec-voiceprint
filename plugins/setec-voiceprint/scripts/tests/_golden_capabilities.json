@@ -893,12 +893,86 @@
       ]
     },
     {
-      "compute": {
-        "cost_note": "One-time ~600 MB tinyllama + ~500 MB gpt2 download; CPU inference acceptable",
-        "length_floor_words": 50,
-        "tier": "surprisal"
+      "id": "binoculars_audit",
+      "script_path": "plugins/setec-voiceprint/scripts/binoculars_audit.py",
+      "surface": "binoculars_discrimination",
+      "status": "literature_anchored",
+      "handoff": "experimental",
+      "consumers": [
+        "setec-voicewright"
+      ],
+      "min_setec_version": "1.115.0",
+      "json_delivery": "stdout",
+      "family": "binoculars",
+      "purpose": "Two-model perplexity comparison (Hans et al. 2024). Scores a target against a scorer LLM + observer LLM pair; lower ratios indicate the target is more predictable under the scorer than the observer \u2014 a known signal for AI-generated text. v1 uses perplexity-ratio; v2 uses true cross-perplexity when tokenizers align.\n",
+      "use_when": [
+        "You want a discrimination-evidence signal that's close to the published 95% AUC condition",
+        "You have access to a scorer + observer pair (default tinyllama + gpt2)",
+        "Target \u2265 50 tokens"
+      ],
+      "do_not_use_when": [
+        "You need a binary verdict \u2014 ships uncalibrated by default",
+        "Target is in the scorer's or observer's training set (memorization biases the score)",
+        "You can't install the surprisal tier (transformers + torch, ~2 GB)"
+      ],
+      "inputs": [
+        {
+          "flag": "target",
+          "type": "path",
+          "required": true
+        },
+        {
+          "flag": "--scorer",
+          "type": "string",
+          "required": false
+        },
+        {
+          "flag": "--observer",
+          "type": "string",
+          "required": false
+        },
+        {
+          "flag": "--threshold-low",
+          "type": "float",
+          "required": false
+        },
+        {
+          "flag": "--threshold-high",
+          "type": "float",
+          "required": false
+        },
+        {
+          "flag": "--score-version",
+          "type": "enum",
+          "required": false,
+          "values": [
+            "auto",
+            "v1",
+            "v2"
+          ]
+        },
+        {
+          "flag": "--json",
+          "type": "bool",
+          "required": false
+        }
+      ],
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".binoculars.json",
+          ".binoculars.md"
+        ]
       },
-      "consumers": [],
+      "compute": {
+        "tier": "surprisal",
+        "cost_note": "One-time ~600 MB tinyllama + ~500 MB gpt2 download; CPU inference acceptable",
+        "length_floor_words": 50
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
       "dependencies": {
         "python": [
           "transformers",
@@ -906,49 +980,22 @@
         ],
         "python_optional": []
       },
-      "do_not_use_when": [
-        "You need a binary verdict \u2014 ships uncalibrated by default",
-        "Target is in the scorer's or observer's training set (memorization biases the score)",
-        "You can't install the surprisal tier (transformers + torch, ~2 GB)"
-      ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt",
-          "description": "Default scorer/observer pair"
+          "description": "Default scorer/observer pair (writes the evidence pack)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt"
         },
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --scorer falcon-7b --observer falcon-7b-instruct",
-          "description": "Custom scorer pair"
+          "description": "Consumer envelope on stdout (no evidence-pack side files)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --json"
+        },
+        {
+          "description": "Custom scorer pair",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --scorer falcon-7b --observer falcon-7b-instruct"
         }
       ],
-      "family": "binoculars",
-      "handoff": "experimental",
-      "id": "binoculars_audit",
-      "inputs": {
-        "target": "prose text file (UTF-8)"
-      },
-      "outputs": {
-        "artifacts": [
-          ".binoculars.json",
-          ".binoculars.md"
-        ],
-        "schema_version": "1.0"
-      },
-      "purpose": "Two-model perplexity comparison (Hans et al. 2024). Scores a target against a scorer LLM + observer LLM pair; lower ratios indicate the target is more predictable under the scorer than the observer \u2014 a known signal for AI-generated text. v1 uses perplexity-ratio; v2 uses true cross-perplexity when tokenizers align.\n",
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md"
-      ],
-      "registers": [
-        "all_fiction",
-        "all_nonfiction"
-      ],
-      "script_path": "plugins/setec-voiceprint/scripts/binoculars_audit.py",
-      "status": "literature_anchored",
-      "surface": "binoculars_discrimination",
-      "use_when": [
-        "You want a discrimination-evidence signal that's close to the published 95% AUC condition",
-        "You have access to a scorer + observer pair (default tinyllama + gpt2)",
-        "Target \u2265 50 tokens"
       ]
     },
     {
@@ -1957,44 +2004,94 @@
       ]
     },
     {
-      "_seeded_at": "2026-05-28",
-      "compute": {
-        "cost_note": "TODO",
-        "length_floor_words": null,
-        "tier": "core"
+      "id": "general_imposters",
+      "script_path": "plugins/setec-voiceprint/scripts/general_imposters.py",
+      "surface": "voice_coherence",
+      "status": "literature_anchored",
+      "handoff": "experimental",
+      "consumers": [
+        "setec-voicewright"
+      ],
+      "min_setec_version": "1.115.0",
+      "json_delivery": "file",
+      "family": "general-imposters",
+      "purpose": "General Imposters attribution harness (Koppel et al. 2014, Kestemont et al. 2016 / R stylo::imposters()). Under bootstrap resampling with feature subsampling, measures how often a target falls closer to a candidate writer's identity baseline than to N plausible-other writers in matched register. Emits a win proportion (1.0 = always closer to candidate) with a bootstrap CI; scores near the extremes are trustworthy, the gray zone (~0.2-0.8) explicitly refuses an attribution claim. Licenses \"stylometrically consistent/inconsistent with\", never \"is by\". Privacy-gated: voiceprint-shaped outputs default under ai-prose-baselines-private/ and refuse public paths without --allow-public-output.\n",
+      "use_when": [
+        "You want calibrated consistency evidence (target vs candidate-vs-impostor pool), not a raw distance \u2014 the embedding analogue is voice_fingerprint's n-way mode",
+        "You have a corpus manifest with the candidate's identity_baseline entries plus register-matched impostor personas",
+        "You can accept a refusal \u2014 the gray zone is a designed outcome, not an error"
+      ],
+      "do_not_use_when": [
+        "You need an authorship verdict in the legal or philosophical sense \u2014 the harness measures consistency with a stylometric fingerprint only",
+        "You have no register-matched impostor pool in the manifest (the MIN_IMPOSTORS gate refuses)",
+        "Impostor identities must stay anonymous in a public report and you cannot run the anonymization path"
+      ],
+      "inputs": [
+        {
+          "flag": "--target",
+          "type": "path",
+          "required": true
+        },
+        {
+          "flag": "--manifest",
+          "type": "path",
+          "required": true
+        },
+        {
+          "flag": "--candidate-persona",
+          "type": "string",
+          "required": true
+        },
+        {
+          "flag": "--register",
+          "type": "string",
+          "required": false
+        },
+        {
+          "flag": "--iterations",
+          "type": "int",
+          "required": false
+        },
+        {
+          "flag": "--feature-fraction",
+          "type": "float",
+          "required": false
+        },
+        {
+          "flag": "--seed",
+          "type": "int",
+          "required": false
+        }
+      ],
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          "GI markdown report (via --out)",
+          "GI JSON envelope (via --json-out, private-dir-gated)"
+        ]
       },
-      "consumers": [],
+      "compute": {
+        "tier": "core",
+        "cost_note": "stdlib + scipy (CI computation); bootstrap iterations scale linearly",
+        "length_floor_words": null
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
       "dependencies": {
         "python": [
           "scipy"
         ]
       },
-      "do_not_use_when": [
-        "TODO"
+      "examples": [
+        {
+          "description": "GI run against a candidate persona with a manifest-backed impostor pool",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/general_imposters.py --target draft.txt --manifest corpus_manifest.jsonl --candidate-persona blog --register blog_essay --json-out ai-prose-baselines-private/gi_report.json"
+        }
       ],
-      "examples": [],
-      "family": "TODO",
-      "handoff": "none",
-      "id": "general_imposters",
-      "inputs": {
-        "target": "TODO"
-      },
-      "outputs": {
-        "artifacts": [
-          "TODO"
-        ],
-        "schema_version": "1.0"
-      },
-      "purpose": "General Imposters attribution harness.",
-      "references": [],
-      "registers": [
-        "TODO"
-      ],
-      "script_path": "plugins/setec-voiceprint/scripts/general_imposters.py",
-      "status": "todo",
-      "surface": "voice_coherence",
-      "use_when": [
-        "TODO"
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md"
       ]
     },
     {
@@ -2037,35 +2134,32 @@
       ]
     },
     {
-      "compute": {
-        "cost_note": "scipy for G\u00b2 / PMI; no API costs",
-        "length_floor_words": 20000,
-        "tier": "core"
-      },
+      "id": "idiolect_detector",
+      "script_path": "plugins/setec-voiceprint/scripts/idiolect_detector.py",
+      "surface": "voice_coherence",
+      "status": "empirically_oriented",
+      "handoff": "stable",
       "consumers": [
-        "apodictic"
+        "apodictic",
+        "setec-voicewright"
       ],
-      "dependencies": {
-        "python": [
-          "scipy"
-        ],
-        "python_optional": [
-          "nltk"
-        ]
-      },
+      "min_setec_version": "1.86.0",
+      "json_delivery": "stdout",
+      "family": "idiolect",
+      "purpose": "Extract distinctive bigrams and trigrams from a writer's baseline corpus that are characteristic enough to flag during revision. Outputs a preservation list of phrases worth protecting across edits (Dunning's G\u00b2 for bigrams, PMI for trigrams).\n",
+      "use_when": [
+        "You're about to revise (or LLM-edit) a draft and want to know which phrasings to preserve",
+        "The writer has a baseline corpus of \u2265 50K words",
+        "You want to detect post-revision mimicry / cosplay (paired with mimicry_cosplay_audit)"
+      ],
       "do_not_use_when": [
         "The baseline is mixed-genre (idiolect signals cross-contaminate across registers)",
         "The baseline is under ~20K words (sparse n-grams produce false positives)"
       ],
-      "examples": [
-        {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/idiolect_detector.py --reference-dir baseline/",
-          "description": "Build a preservation list from a writer's baseline"
-        }
+      "required_groups": [
+        "target",
+        "reference"
       ],
-      "family": "idiolect",
-      "handoff": "stable",
-      "id": "idiolect_detector",
       "inputs": [
         {
           "flag": "--target-dir",
@@ -2118,33 +2212,37 @@
         }
       ],
       "outputs": {
+        "schema_version": "1.0",
         "artifacts": [
           ".idiolect.json",
           ".idiolect.md"
-        ],
-        "schema_version": "1.0"
+        ]
       },
-      "purpose": "Extract distinctive bigrams and trigrams from a writer's baseline corpus that are characteristic enough to flag during revision. Outputs a preservation list of phrases worth protecting across edits (Dunning's G\u00b2 for bigrams, PMI for trigrams).\n",
-      "references": [
-        "plugins/setec-voiceprint/references/signals-glossary.md"
-      ],
+      "compute": {
+        "tier": "core",
+        "cost_note": "scipy for G\u00b2 / PMI; no API costs",
+        "length_floor_words": 20000
+      },
       "registers": [
         "all_fiction",
         "all_nonfiction"
       ],
-      "script_path": "plugins/setec-voiceprint/scripts/idiolect_detector.py",
-      "status": "empirically_oriented",
-      "surface": "voice_coherence",
-      "use_when": [
-        "You're about to revise (or LLM-edit) a draft and want to know which phrasings to preserve",
-        "The writer has a baseline corpus of \u2265 50K words",
-        "You want to detect post-revision mimicry / cosplay (paired with mimicry_cosplay_audit)"
+      "dependencies": {
+        "python": [
+          "scipy"
+        ],
+        "python_optional": [
+          "nltk"
+        ]
+      },
+      "examples": [
+        {
+          "description": "Build a preservation list from a writer's baseline",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/idiolect_detector.py --reference-dir baseline/"
+        }
       ],
-      "min_setec_version": "1.86.0",
-      "json_delivery": "stdout",
-      "required_groups": [
-        "target",
-        "reference"
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md"
       ]
     },
     {
@@ -2535,42 +2633,81 @@
       ]
     },
     {
-      "_seeded_at": "2026-05-28",
-      "compute": {
-        "cost_note": "TODO",
-        "length_floor_words": null,
-        "tier": "core"
+      "id": "mimicry_cosplay_audit",
+      "script_path": "plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py",
+      "surface": "voice_coherence",
+      "status": "heuristic",
+      "handoff": "experimental",
+      "consumers": [
+        "setec-voicewright"
+      ],
+      "min_setec_version": "1.115.0",
+      "json_delivery": "stdout",
+      "family": "style-cosplay",
+      "purpose": "Detect lexical mimicry without syntactic conformity \u2014 the style-cosplay signature. Cross-checks idiolect-phrase survival (from an idiolect_detector JSON) against function-word / syntactic Delta (from a voice_distance JSON): normal authorial work shows the two negatively correlated; high survival WITH high Delta is the dissociation flag a composite score would hide. Also flags unnaturally high signature-phrase density (over-preservation). Refuses authorship verdicts: a cosplay flag is evidence the draft is not a normal authorial sample, not a call on whether it is AI, imitation, or self-conscious self-imitation.\n",
+      "use_when": [
+        "A draft scores well on per-feature voice metrics but reads as imitation \u2014 you want the lexical-vs-syntactic cross-check, not an aggregate",
+        "QC on restoration / voice-matched output (catches over-targeted revisions that hit the metric but lost the voice)",
+        "You already have idiolect_detector and voice_distance JSON outputs for the same target (the cross-check needs both to fire shape 1)"
+      ],
+      "do_not_use_when": [
+        "You need an authorship or AI-provenance verdict \u2014 the surface refuses both",
+        "You have no idiolect / voice_distance JSONs for the target \u2014 the audit degrades to density-only evidence",
+        "You want a single composite mimicry score \u2014 the dissociation pattern is the signal; averaging the axes hides it"
+      ],
+      "inputs": [
+        {
+          "flag": "--target",
+          "type": "path",
+          "required": true
+        },
+        {
+          "flag": "--idiolect-json",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--voice-distance-json",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--variance-json",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--json",
+          "type": "bool",
+          "required": false
+        }
+      ],
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          "mimicry-cosplay markdown report (via --out)"
+        ]
       },
-      "consumers": [],
+      "compute": {
+        "tier": "core",
+        "cost_note": "stdlib-only; reads pre-computed audit JSONs, no model loads",
+        "length_floor_words": null
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
       "dependencies": {
         "python": []
       },
-      "do_not_use_when": [
-        "TODO"
+      "examples": [
+        {
+          "description": "Full cross-check with both upstream audits",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py --target draft.md --idiolect-json draft.idiolect.json --voice-distance-json draft.voice_distance.json --json"
+        }
       ],
-      "examples": [],
-      "family": "TODO",
-      "handoff": "none",
-      "id": "mimicry_cosplay_audit",
-      "inputs": {
-        "target": "TODO"
-      },
-      "outputs": {
-        "artifacts": [
-          "TODO"
-        ],
-        "schema_version": "1.0"
-      },
-      "purpose": "detect lexical mimicry without syntactic conformity (paired-release schedule Release 10, Surfaces Tier 3).",
-      "references": [],
-      "registers": [
-        "TODO"
-      ],
-      "script_path": "plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py",
-      "status": "todo",
-      "surface": "voice_coherence",
-      "use_when": [
-        "TODO"
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md"
       ]
     },
     {
@@ -4053,34 +4190,29 @@
       "json_delivery": "stdout"
     },
     {
-      "compute": {
-        "cost_note": "stdlib + spaCy; no API costs",
-        "length_floor_words": 2000,
-        "tier": "core"
-      },
+      "id": "voice_distance",
+      "script_path": "plugins/setec-voiceprint/scripts/voice_distance.py",
+      "surface": "voice_coherence",
+      "status": "empirically_oriented",
+      "handoff": "stable",
       "consumers": [
-        "apodictic"
+        "apodictic",
+        "setec-voicewright"
       ],
-      "dependencies": {
-        "python": [],
-        "python_optional": [
-          "spacy"
-        ]
-      },
+      "min_setec_version": "1.86.0",
+      "json_delivery": "stdout",
+      "family": "voice-distance",
+      "purpose": "Compare a target text against a specific writer's (or register's) baseline using classic stylometric feature families \u2014 Burrows Delta on function words, per-feature cosine distance, POS-bigram comparison. Answers \"how far has this draft drifted from this writer's prior voice?\"\n",
+      "use_when": [
+        "You have a baseline of the writer's prior prose (\u2265 20K words for tight bounds)",
+        "You suspect voice drift across drafts / time / register",
+        "You want to identify which feature families drove the drift (Delta + per-family cosine)"
+      ],
       "do_not_use_when": [
         "You don't have a writer-specific baseline (use variance_audit against a register baseline instead)",
         "The baseline is mixed-state (some pre-AI, some AI-assisted) without slicing by ai_status",
         "Target is under ~2000 words (Burrows Delta is noisy below that)"
       ],
-      "examples": [
-        {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_distance.py target.md --baseline-dir baseline/",
-          "description": "Voice-drift comparison against a baseline"
-        }
-      ],
-      "family": "voice-distance",
-      "handoff": "stable",
-      "id": "voice_distance",
       "inputs": [
         {
           "flag": "target",
@@ -4109,31 +4241,37 @@
         }
       ],
       "outputs": {
+        "schema_version": "1.0",
         "artifacts": [
           ".voice_distance.json",
           ".voice_distance.md"
-        ],
-        "schema_version": "1.0"
+        ]
       },
-      "purpose": "Compare a target text against a specific writer's (or register's) baseline using classic stylometric feature families \u2014 Burrows Delta on function words, per-feature cosine distance, POS-bigram comparison. Answers \"how far has this draft drifted from this writer's prior voice?\"\n",
-      "references": [
-        "plugins/setec-voiceprint/references/signals-glossary.md",
-        "plugins/setec-voiceprint/references/stylometry-oracle.md"
-      ],
+      "compute": {
+        "tier": "core",
+        "cost_note": "stdlib + spaCy; no API costs",
+        "length_floor_words": 2000
+      },
       "registers": [
         "all_fiction",
         "all_nonfiction"
       ],
-      "script_path": "plugins/setec-voiceprint/scripts/voice_distance.py",
-      "status": "empirically_oriented",
-      "surface": "voice_coherence",
-      "use_when": [
-        "You have a baseline of the writer's prior prose (\u2265 20K words for tight bounds)",
-        "You suspect voice drift across drafts / time / register",
-        "You want to identify which feature families drove the drift (Delta + per-family cosine)"
+      "dependencies": {
+        "python": [],
+        "python_optional": [
+          "spacy"
+        ]
+      },
+      "examples": [
+        {
+          "description": "Voice-drift comparison against a baseline",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_distance.py target.md --baseline-dir baseline/"
+        }
       ],
-      "min_setec_version": "1.86.0",
-      "json_delivery": "stdout"
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md",
+        "plugins/setec-voiceprint/references/stylometry-oracle.md"
+      ]
     },
     {
       "_seeded_at": "2026-05-28",
@@ -4175,12 +4313,71 @@
       ]
     },
     {
-      "compute": {
-        "cost_note": "loads a ~0.5\u20131.4 GB style encoder; CPU-feasible, GPU optional <2 GB VRAM",
-        "length_floor_words": 500,
-        "tier": "optional"
+      "id": "voice_fingerprint",
+      "script_path": "plugins/setec-voiceprint/scripts/voice_fingerprint.py",
+      "surface": "authorship_embedding",
+      "status": "empirically_oriented",
+      "handoff": "experimental",
+      "consumers": [
+        "setec-voicewright"
+      ],
+      "min_setec_version": "1.115.0",
+      "json_delivery": "stdout",
+      "family": "style-embedding",
+      "purpose": "Same-author style-embedding surface. Embeds passages with a frozen style encoder (LUAR default; Wegmann optional via sentence-transformers) and reports the cosine-similarity DISTRIBUTION across windows \u2014 internal consistency (single), consistency with a baseline voice centroid (two-corpus), or where the target's candidate-similarity falls relative to an impostor pool (n-way, descriptive). Refuses any identity / AI verdict; ships PROVISIONAL with no threshold.\n",
+      "use_when": [
+        "You want a learned-manifold complement to the scalar voice-coherence signals (voice_distance, idiolect_detector)",
+        "You want same-author-consistency evidence that needs no per-deployment training and no threshold",
+        "You want the embedding analogue of the general-imposters framing (target vs candidate vs impostor pool)"
+      ],
+      "do_not_use_when": [
+        "You need an identity verdict (\"same person\" / \"different author\") \u2014 the surface refuses it",
+        "You need an AI-vs-human call \u2014 this surface does not discriminate provenance",
+        "Windows are short (<~100 tokens) \u2014 style embeddings are fragile on short text; read the distribution, not single windows",
+        "You want a general-imposters win/loss proportion \u2014 use general_imposters.py (this is descriptive only)"
+      ],
+      "inputs": [
+        {
+          "flag": "target",
+          "type": "path",
+          "required": true
+        },
+        {
+          "flag": "--baseline-dir",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--impostor-dir",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--model",
+          "type": "string",
+          "required": false
+        },
+        {
+          "flag": "--json",
+          "type": "bool",
+          "required": false
+        }
+      ],
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".voice_fingerprint.json"
+        ]
       },
-      "consumers": [],
+      "compute": {
+        "tier": "optional",
+        "cost_note": "loads a ~0.5\u20131.4 GB style encoder; CPU-feasible, GPU optional <2 GB VRAM",
+        "length_floor_words": 500
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
       "dependencies": {
         "python": [
           "transformers"
@@ -4189,58 +4386,23 @@
           "sentence_transformers"
         ]
       },
-      "do_not_use_when": [
-        "You need an identity verdict (\"same person\" / \"different author\") \u2014 the surface refuses it",
-        "You need an AI-vs-human call \u2014 this surface does not discriminate provenance",
-        "Windows are short (<~100 tokens) \u2014 style embeddings are fragile on short text; read the distribution, not single windows",
-        "You want a general-imposters win/loss proportion \u2014 use general_imposters.py (this is descriptive only)"
-      ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --json",
-          "description": "Single-document internal voice consistency"
+          "description": "Single-document internal voice consistency",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --json"
         },
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --baseline-dir prior_work/ --json",
-          "description": "Two-corpus same-author-consistency evidence"
+          "description": "Two-corpus same-author-consistency evidence",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --baseline-dir prior_work/ --json"
         },
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --baseline-dir candidate/ --impostor-dir impostors/ --json",
-          "description": "N-way embedding analogue (target vs candidate vs impostors)"
+          "description": "N-way embedding analogue (target vs candidate vs impostors)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --baseline-dir candidate/ --impostor-dir impostors/ --json"
         }
       ],
-      "family": "style-embedding",
-      "handoff": "experimental",
-      "id": "voice_fingerprint",
-      "inputs": {
-        "optional": [
-          "--baseline-dir for two-corpus / candidate corpus",
-          "--impostor-dir for n-way impostor pool (requires --baseline-dir)"
-        ],
-        "target": "prose text file (UTF-8)"
-      },
-      "outputs": {
-        "artifacts": [
-          ".voice_fingerprint.json"
-        ],
-        "schema_version": "1.0"
-      },
-      "purpose": "Same-author style-embedding surface. Embeds passages with a frozen style encoder (LUAR default; Wegmann optional via sentence-transformers) and reports the cosine-similarity DISTRIBUTION across windows \u2014 internal consistency (single), consistency with a baseline voice centroid (two-corpus), or where the target's candidate-similarity falls relative to an impostor pool (n-way, descriptive). Refuses any identity / AI verdict; ships PROVISIONAL with no threshold.\n",
       "references": [
         "specs/02-voice-fingerprint-embedding.md",
         "plugins/setec-voiceprint/references/signals-glossary.md"
-      ],
-      "registers": [
-        "all_fiction",
-        "all_nonfiction"
-      ],
-      "script_path": "plugins/setec-voiceprint/scripts/voice_fingerprint.py",
-      "status": "empirically_oriented",
-      "surface": "authorship_embedding",
-      "use_when": [
-        "You want a learned-manifold complement to the scalar voice-coherence signals (voice_distance, idiolect_detector)",
-        "You want same-author-consistency evidence that needs no per-deployment training and no threshold",
-        "You want the embedding analogue of the general-imposters framing (target vs candidate vs impostor pool)"
       ]
     },
     {

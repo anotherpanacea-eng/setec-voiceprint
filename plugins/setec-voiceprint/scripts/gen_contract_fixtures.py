@@ -3,10 +3,10 @@
 
 Implements R5 of ``references/setec-normalized-entrypoint-spec.md`` §6.
 
-For every ``handoff: stable|experimental`` consumer surface (the nine
-fragments in ``capabilities.d/`` that carry ``min_setec_version`` and list
-``apodictic`` as a consumer) this module produces ONE canonical
-``schema_version: 1.0`` envelope and writes it to
+For every consumer surface (a fragment in ``capabilities.d/`` that carries
+``min_setec_version`` and lists at least one consumer — the nine apodictic
+surfaces plus the four setec-voicewright fitness surfaces) this module
+produces ONE canonical ``schema_version: 1.0`` envelope and writes it to
 ``references/contract_fixtures/<surface>.json``.
 
 Faithfulness contract
@@ -608,6 +608,147 @@ def _build_narrative_decision_audit() -> dict[str, Any]:
     )
 
 
+def _build_voice_fingerprint() -> dict[str, Any]:
+    import voice_fingerprint as m  # type: ignore
+
+    # Mirrors assemble_output()'s build_output call site for single mode.
+    # The real encode path needs numpy + a downloaded style encoder, so the
+    # builder carries representative VALUES with run_single()'s REAL key
+    # shape (mode / n_windows / cosine_distribution / per_window) plus the
+    # model_id + windowing additions assemble_output() makes.
+    results = {
+        "mode": "single",
+        "n_windows": 4,
+        "cosine_distribution": {
+            "n": 6,
+            "mean": 0.84,
+            "sd": 0.05,
+            "min": 0.74,
+            "p10": 0.76,
+            "p50": 0.85,
+            "p90": 0.9,
+        },
+        "per_window": [0.84, 0.81, 0.9, 0.74, 0.88, 0.86],
+        "model_id": "rrivera1849/LUAR-MUD",
+        "windowing": {"strategy": "paragraph", "window_size": None},
+    }
+    lic = m._claim_license(model_id="rrivera1849/LUAR-MUD", mode="single")
+    return m.build_output(
+        task_surface=m.TASK_SURFACE,
+        tool=m.TOOL_NAME,
+        version=m.SCRIPT_VERSION,
+        target_path="<fixture>",
+        target_words=1800,
+        baseline=None,
+        results=results,
+        claim_license=lic,
+    )
+
+
+def _build_mimicry_cosplay_audit() -> dict[str, Any]:
+    import mimicry_cosplay_audit as m  # type: ignore
+
+    # The audit path is pure stdlib, so the golden runs the REAL
+    # audit_cosplay() over a canonical target + the upstream-JSON shapes it
+    # reads (an idiolect_detector preservation_list + a voice_distance
+    # overall block), then wraps with the script's own build_audit_payload().
+    target_text = (
+        "The harbor light went out before the harbor light came back, "
+        "as it happens, and nobody on the quay said a word about it. "
+        "As it happens, the ferryman counted his coins twice, the way "
+        "he always did, and the harbor light blinked its slow yellow "
+        "blink over the breakwater. Nobody said a word."
+    )
+    idiolect = {
+        "preservation_list": [
+            {"phrase": "as it happens"},
+            {"phrase": "the harbor light"},
+            {"phrase": "nobody said a word"},
+            {"phrase": "the long wet street"},
+        ],
+    }
+    voice_distance = {"overall": {"weighted_delta": 1.62}}
+    audit = m.audit_cosplay(
+        target_text=target_text,
+        idiolect=idiolect,
+        voice_distance=voice_distance,
+        variance=None,
+    )
+    return m.build_audit_payload(
+        audit, target_path="<fixture>", target_text=target_text,
+    )
+
+
+def _build_general_imposters() -> dict[str, Any]:
+    import general_imposters as m  # type: ignore
+
+    # GIResult -> _build_envelope() is the exact runtime assembly path
+    # (legacy to_dict() preserved under results, structured claim_license
+    # built from the legacy 3-key form). Representative non-refusal run in
+    # the trustworthy high band.
+    result = m.GIResult(
+        target_id="<fixture>",
+        candidate_persona="blog",
+        candidate_n_docs=6,
+        n_impostors=8,
+        impostor_personas=[
+            "imp_essayist_a", "imp_essayist_b", "imp_critic_a",
+            "imp_critic_b", "imp_blogger_a", "imp_blogger_b",
+            "imp_novelist_a", "imp_novelist_b",
+        ],
+        iterations=100,
+        feature_fraction=0.5,
+        top_n_features=50,
+        wins=87,
+        losses=13,
+        proportion=0.87,
+        proportion_ci_95=(0.79, 0.93),
+        refused=False,
+        refusal_reason="",
+        decision="consistent",
+    )
+    return m._build_envelope(result)
+
+
+def _build_binoculars_audit() -> dict[str, Any]:
+    import binoculars_audit as m  # type: ignore
+
+    # Mirrors audit()'s return shape (v1 perplexity-ratio path with no
+    # operator thresholds -> uncalibrated band) fed through the script's
+    # own compose_envelope(). The real path needs transformers + torch.
+    results = {
+        "scorer": {
+            "model_id": "TinyLlama/TinyLlama-1.1B-Chat-v1.0",
+            "revision": "<fixture>",
+            "identifier_block": "<fixture-identifier>",
+        },
+        "observer": {
+            "model_id": "gpt2",
+            "revision": "<fixture>",
+            "identifier_block": "<fixture-identifier>",
+        },
+        "scorer_log_perplexity_bits": 4.21,
+        "observer_log_perplexity_bits": 4.87,
+        "perplexity_ratio": 0.864476,
+        "score_version": "v1",
+        "cross_perplexity_log_nats": None,
+        "scorer_log_perplexity_nats": 2.918,
+        "tokenizers_compatible": False,
+        "thresholds": {"low": None, "high": None},
+        "verdict_band": "uncalibrated",
+        "scorer_series_length": 512,
+        "observer_series_length": 512,
+        "caveats": ["no_calibrated_thresholds_supplied"],
+    }
+    return m.compose_envelope(
+        target_path=Path("<fixture>"),
+        target_words=850,
+        results=results,
+        licenses_text=m.DEFAULT_LICENSES,
+        does_not_license_text=m.DEFAULT_DOES_NOT_LICENSE,
+    )
+
+
 #: surface id -> raw-envelope builder. The id matches the
 #: ``capabilities.d/<id>.yaml`` fragment stem and the golden filename stem.
 SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
@@ -620,6 +761,10 @@ SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "punctuation_cadence_audit": _build_punctuation_cadence_audit,
     "idiolect_detector": _build_idiolect_detector,
     "narrative_decision_audit": _build_narrative_decision_audit,
+    "voice_fingerprint": _build_voice_fingerprint,
+    "mimicry_cosplay_audit": _build_mimicry_cosplay_audit,
+    "general_imposters": _build_general_imposters,
+    "binoculars_audit": _build_binoculars_audit,
 }
 
 
