@@ -38,6 +38,8 @@ Usage::
 
 from __future__ import annotations
 
+import math
+import re
 from pathlib import Path
 from typing import Any
 
@@ -45,11 +47,174 @@ from claim_license import ClaimLicense, TASK_SURFACE_LABELS  # type: ignore
 
 SCHEMA_VERSION = "1.0"
 
+# R3 — structured error model (spec §4). One envelope shape for success
+# AND failure: a failed/blocked run emits the SAME schema_version 1.0
+# envelope with ``available: false`` plus two ADDITIVE keys, ``reason``
+# (human text) and ``reason_category`` (this enum). The keys are present
+# only on error envelopes, so the 12-key success contract (and the R5
+# goldens) are untouched; schema_version stays "1.0" (additive only).
+REASON_CATEGORIES = frozenset({
+    "version_floor",       # surface's min_setec_version > running setec_version
+    "missing_dependency",  # a required dependencies.python import is absent
+    "bad_input",           # unknown surface / malformed args / usage error
+    "text_too_short",      # input below a surface's length floor
+    "policy_refused",      # a privacy / policy guard refused the run
+    "internal_error",      # unexpected failure, incl. an out-of-bounds value
+})
+
 # Canonical task surfaces — derived from
 # claim_license.TASK_SURFACE_LABELS (the single source of truth, itself
 # assembled from drop-in fragments) so an unknown surface fails loudly and
 # a new surface is registered in exactly one place (a fragment file).
 VALID_TASK_SURFACES = frozenset(TASK_SURFACE_LABELS)
+
+
+# R4 — output-validity bounds gate (spec §5). Cheap, surface-agnostic
+# plausibility checks applied to the ``results`` payload at the
+# build_output() boundary so an out-of-bounds COMPUTED value (the
+# DirectML-surprisal class of bug: a confident, out-of-range number)
+# becomes an R3 ``internal_error`` instead of shipping in the envelope.
+#
+# What this gate covers (honestly — only UNAMBIGUOUS, surface-agnostic
+# bounds, per the spec's explicit instruction not to invent bounds):
+#   * NaN / +/-inf is invalid for EVERY numeric leaf, unconditionally (a
+#     finite-value guarantee no real metric violates). This is the real
+#     corruption mode and the check that catches a corrupt cosine too.
+#   * a value at a key whose name marks it as a RAW surprisal / perplexity
+#     / entropy must be >= 0 (no upper bound is asserted — log2|vocab| is
+#     only known when vocab size is actually present, which it is not at
+#     this boundary, so no upper bound is invented). DERIVATIONS of those
+#     quantities are excluded: a log/ratio/sum/delta/diff transform, AND a
+#     STANDARDIZED value (a z-score / standardized score) of an
+#     entropy/surprisal is signed and routinely negative, so it is left
+#     unchecked rather than false-positived.
+#   * a value at a key whose name marks it as a probability (strict names
+#     only) must be in [0, 1].
+#
+# What this gate deliberately does NOT cover:
+#   * cosine RANGE. Real cosine similarities are emitted as nested stat
+#     dicts ({mean,sd,min,max}) under a parent key, not as leaf keys, so a
+#     leaf-key substring check was theater — it essentially never fired.
+#     Float-epsilon overshoot (e.g. 1.0000000002 from np.dot/(‖a‖‖b‖)) is
+#     prevented AT THE COMPUTING SURFACE instead, by clamping each cosine
+#     helper to [-1, 1] at its source. NaN/inf on a cosine is still caught
+#     here by the unconditional finiteness check above.
+# Anything whose correct bound is not unambiguous is LEFT UNCHECKED.
+class OutputValidityError(ValueError):
+    """Raised by ``build_output`` when a computed ``results`` value violates
+    an unambiguous, surface-agnostic plausibility bound (R4). The dispatcher
+    catches this and emits an ``internal_error`` envelope rather than
+    shipping the bad number."""
+
+
+# Field-name -> bound classifier. Keys are matched case-insensitively as
+# whole snake_case tokens (so ``perplexity_ratio`` is matched on the
+# ``perplexity`` token, and the ``ratio`` transform guard then suppresses
+# the check).
+_SURPRISAL_RE = re.compile(
+    r"(?:^|_)(?:surprisal|perplexity|entropy|cross_entropy|nll)(?:$|_)"
+)
+# Probability bound is restricted to UNAMBIGUOUS names only. A bare ``prob``
+# token is intentionally NOT matched: SETEC has many ``*_log_prob*`` /
+# ``log_prob_sum`` fields (a log-probability is <= 0, never in [0, 1]), so
+# matching ``prob`` would wrongly reject them — the exact over-constraint the
+# spec warns against. We match the full word ``probability`` and the
+# statistical p-value names, and we explicitly do NOT fire when the value sits
+# on a log-/ratio-transformed probability field.
+_PROBABILITY_RE = re.compile(
+    r"(?:^|_)(?:probability|p_value|pvalue)(?:$|_)"
+)
+# Guard: a key carrying one of these tokens names a TRANSFORM/DERIVATION of a
+# base quantity (a log, ratio, sum, difference, …) whose range is NOT the
+# base's range, so we leave it unchecked rather than invent a bound. This is
+# deliberately conservative — it lists only unambiguous transform words, NOT
+# units (``bits``/``nats`` are units, not transforms: ``surprisal_bits`` is a
+# raw surprisal and stays checked).
+_TRANSFORM_RE = re.compile(
+    r"(?:^|_)(?:log|ln|logit|ratio|sum|delta|diff)(?:$|_)"
+)
+# Guard: a key carrying one of these tokens names a STANDARDIZED value — a
+# z-score / standardized score of a base quantity. Standardization subtracts a
+# mean and divides by an sd, so the result is SIGNED and routinely negative
+# even when the base is non-negative (a below-baseline entropy gives a negative
+# z). function_word_grammar_audit / stance_modality_audit emit a
+# ``baseline_comparison`` block with ``z_*_entropy`` fields exactly like this,
+# so a standardized entropy/surprisal must NOT be range-checked as a raw one.
+# This is its own guard (not folded into ``_TRANSFORM_RE``) so the
+# ``z``/``score`` tokens only suppress the SURPRISAL-class >= 0 check; the
+# unconditional NaN/inf check above still applies to every numeric leaf.
+_STANDARDIZED_RE = re.compile(
+    r"(?:^|_)(?:z|zscore|z_score|zscored|standardized|standardised|score)(?:$|_)"
+)
+
+
+def _check_numeric_bounds(key: str, value: float) -> None:
+    """Raise ``OutputValidityError`` if a numeric ``value`` at ``key``
+    violates an unambiguous bound. NaN/inf is ALWAYS invalid (every numeric
+    leaf, unconditionally — this is also what catches a corrupt cosine).
+    Named RAW surprisal-family / probability fields then get their range
+    checked. Cosine RANGE is NOT checked here (it is clamped at the
+    computing surface); derivations and standardized values are excluded
+    from the surprisal check. Unrecognized keys are left unchecked."""
+    if math.isnan(value) or math.isinf(value):
+        raise OutputValidityError(
+            f"results[...][{key!r}] = {value!r} is not finite "
+            f"(NaN/inf is never a valid computed metric)"
+        )
+    lname = key.lower()
+    # A derived/transformed metric (a log, ratio, delta, difference, sum OF a
+    # base quantity) does NOT inherit the base's range, so we leave transformed
+    # fields unchecked rather than invent a bound. This is what keeps the gate
+    # off ``actual_log_prob_sum_nats`` (a negative log probability) and similar
+    # legitimately-out-of-[0,1]/negative fields.
+    transformed = _TRANSFORM_RE.search(lname) is not None
+    # A standardized value (a z-score / standardized score) of a base quantity
+    # is signed and routinely negative even when the base is non-negative, so a
+    # z-scored entropy/surprisal must not be flagged by the >= 0 check.
+    standardized = _STANDARDIZED_RE.search(lname) is not None
+    if _SURPRISAL_RE.search(lname):
+        # >= 0 only, and only for the RAW quantity. No upper bound:
+        # log2|vocab| is unknown at this boundary, and the spec forbids
+        # inventing one. A ratio/delta/sum or a z-score of a surprisal/entropy
+        # can be negative, so the transform/standardization guards suppress
+        # the check there (e.g. baseline_comparison.z_function_bigram_entropy).
+        if not transformed and not standardized and value < 0.0:
+            raise OutputValidityError(
+                f"results[...][{key!r}] = {value!r} is a surprisal/entropy "
+                f"value below 0"
+            )
+    elif _PROBABILITY_RE.search(lname):
+        if not transformed and not (0.0 <= value <= 1.0):
+            raise OutputValidityError(
+                f"results[...][{key!r}] = {value!r} is a probability "
+                f"outside [0, 1]"
+            )
+
+
+def validate_results_bounds(results: Any, _key: str = "") -> None:
+    """Recursively walk a ``results`` payload and assert R4 bounds on every
+    numeric leaf. ``bool`` is skipped (a subclass of ``int`` but never a
+    metric). Strings/None and any non-numeric leaf are ignored. Mappings
+    recurse by key (so the field name reaches ``_check_numeric_bounds``);
+    sequences recurse carrying the parent key, so a numeric in a list still
+    reaches the bound check under its field's semantic (e.g. a NaN in a list
+    of surprisals under ``surprisal_bits`` is still rejected)."""
+    if isinstance(results, bool):
+        return
+    if isinstance(results, (int, float)):
+        _check_numeric_bounds(_key, float(results))
+        return
+    if isinstance(results, dict):
+        for k, v in results.items():
+            validate_results_bounds(v, str(k))
+        return
+    if isinstance(results, (list, tuple)):
+        for item in results:
+            # Carry the parent key so list elements inherit the field's
+            # semantic (e.g. a list under ``surprisal_bits`` is surprisals).
+            validate_results_bounds(item, _key)
+        return
+    # str / None / other: nothing to bound.
 
 
 def build_output(
@@ -67,6 +232,7 @@ def build_output(
     ai_status: str | None = None,
     target_extra: dict[str, Any] | None = None,
     extra: dict[str, Any] | None = None,
+    validate_bounds: bool = True,
 ) -> dict[str, Any]:
     """Build the canonical schema_version 1.0 envelope.
 
@@ -97,6 +263,21 @@ def build_output(
     - ``extra`` — extra top-level keys for script-specific metadata
       that doesn't belong inside ``results`` (e.g., a top-level
       ``compression`` verdict on variance_audit). Use sparingly.
+    - ``validate_bounds`` — default ``True``. Runs the R4 output-validity
+      gate over ``results`` and raises ``OutputValidityError`` on an
+      out-of-bounds computed value: NaN/inf on ANY numeric leaf, a negative
+      RAW surprisal/perplexity/entropy (derivations and z-scores excluded),
+      or a probability (strict names) outside [0, 1]. Cosine range is NOT
+      checked here — it is clamped at the computing surface. Set ``False``
+      only to bypass the gate intentionally (e.g., a script that has already
+      validated and wants to skip the re-walk); the dispatcher leaves it on.
+
+    Raises:
+
+    - ``ValueError`` for the metadata-contract violations above.
+    - ``OutputValidityError`` (a ``ValueError`` subclass) when the R4
+      gate rejects a ``results`` value (NaN/inf, negative raw
+      surprisal/entropy, or out-of-[0,1] probability).
     """
     if task_surface not in VALID_TASK_SURFACES:
         raise ValueError(
@@ -117,6 +298,15 @@ def build_output(
             f"claim_license.task_surface={claim_license.task_surface!r} "
             f"does not match envelope task_surface={task_surface!r}"
         )
+
+    # R4 output-validity gate: bound-check the computed payload before it
+    # can enter the envelope. Only run on available results (an
+    # available=False envelope legitimately carries {} or partial data),
+    # and only on the script-specific ``results`` (the metadata blocks are
+    # builder-controlled). Raises OutputValidityError on violation; the
+    # dispatcher turns that into an internal_error envelope.
+    if validate_bounds and available:
+        validate_results_bounds(results)
 
     target_block: dict[str, Any] = {
         "path": str(target_path) if target_path is not None else None,
@@ -150,6 +340,80 @@ def build_output(
                 raise ValueError(
                     f"build_output: extra key {k!r} collides with a "
                     f"required envelope key"
+                )
+            envelope[k] = v
+    return envelope
+
+
+def build_error_output(
+    *,
+    task_surface: str | None,
+    tool: str,
+    version: str,
+    reason: str,
+    reason_category: str,
+    target_path: Path | str | None = None,
+    target_words: int = 0,
+    warnings: list[str] | None = None,
+    extra: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build the R3 structured-error envelope (spec §4).
+
+    One envelope shape for success and failure: this returns the SAME
+    ``schema_version: 1.0`` envelope ``build_output`` produces, with
+    ``available: false`` and the script-specific blocks emptied
+    (``baseline: null``, ``results: {}``, ``claim_license: null``), PLUS
+    two ADDITIVE keys the consumer branches on:
+
+    - ``reason`` — human-readable explanation.
+    - ``reason_category`` — one of :data:`REASON_CATEGORIES`.
+
+    These keys are present only on error envelopes, so the 12-key success
+    contract (and the R5 goldens) is untouched and ``schema_version`` stays
+    ``"1.0"`` (additive only).
+
+    ``task_surface`` may be ``None`` (e.g. an unknown surface, where no
+    valid surface label exists yet) — unlike the success path, the error
+    builder does NOT validate it against ``VALID_TASK_SURFACES``, because a
+    ``bad_input`` failure is exactly the case where the surface is unknown.
+
+    For a ``version_floor`` failure the caller puts BOTH the requested
+    floor and the observed version into ``reason`` (and may carry the
+    machine-readable pair via ``extra``); the builder does not invent
+    defaults (the ``_install_instructions`` self-contradiction bug).
+    """
+    if reason_category not in REASON_CATEGORIES:
+        raise ValueError(
+            f"Unknown reason_category {reason_category!r}; expected one of "
+            f"{sorted(REASON_CATEGORIES)!r}"
+        )
+
+    envelope: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "task_surface": task_surface,
+        "tool": tool,
+        "version": version,
+        "available": False,
+        "target": {
+            "path": str(target_path) if target_path is not None else None,
+            "words": int(target_words),
+        },
+        "baseline": None,
+        "results": {},
+        "claim_license": None,
+        "claim_license_rendered": None,
+        "warnings": list(warnings) if warnings else [],
+        "ai_status": None,
+        # Additive R3 keys (present only on error envelopes).
+        "reason": reason,
+        "reason_category": reason_category,
+    }
+    if extra:
+        for k, v in extra.items():
+            if k in envelope:
+                raise ValueError(
+                    f"build_error_output: extra key {k!r} collides with a "
+                    f"reserved envelope key"
                 )
             envelope[k] = v
     return envelope

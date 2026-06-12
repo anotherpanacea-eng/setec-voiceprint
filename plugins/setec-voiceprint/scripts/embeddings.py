@@ -139,7 +139,9 @@ def cosine_similarity(word_a: str, word_b: str) -> Optional[float]:
     if norm_a == 0.0 or norm_b == 0.0:
         return None
     dot = float(np.dot(va, vb))
-    return dot / (norm_a * norm_b)
+    # Clamp to [-1, 1] at the source: float-epsilon can push an identical-
+    # vector dot just past 1.0 (e.g. 1.0000000002).
+    return max(-1.0, min(1.0, dot / (norm_a * norm_b)))
 
 
 def has_vector(word: str) -> bool:

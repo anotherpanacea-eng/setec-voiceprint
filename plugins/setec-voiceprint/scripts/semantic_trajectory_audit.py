@@ -231,13 +231,15 @@ def _cosine(a: Any, b: Any) -> float:
     """Plain cosine similarity over two numpy vectors. Returns 0.0
     when either vector is the zero vector (avoids division-by-zero
     blow-ups when an encoder happens to emit a degenerate
-    embedding)."""
+    embedding). Clamped to [-1, 1] at the source: float-epsilon in
+    ``np.dot/(‖a‖‖b‖)`` can otherwise emit e.g. 1.0000000002, which
+    would ship as a spurious out-of-range value downstream."""
     import numpy as np  # type: ignore
     na = float(np.linalg.norm(a))
     nb = float(np.linalg.norm(b))
     if na == 0.0 or nb == 0.0:
         return 0.0
-    return float(np.dot(a, b) / (na * nb))
+    return max(-1.0, min(1.0, float(np.dot(a, b) / (na * nb))))
 
 
 def adjacent_cosine_series(embeddings: Any) -> list[float]:

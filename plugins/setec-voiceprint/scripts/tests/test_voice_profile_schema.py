@@ -246,3 +246,92 @@ class TestStdoutPrivacyGate:
         payload = _json.loads(captured.out)
         assert payload["schema_version"] == "1.0"
         assert payload["tool"] == "voice_profile"
+
+
+def _write_baseline(tmp_path) -> Path:
+    """A minimal two-file prose baseline the real script can profile."""
+    baseline_dir = tmp_path / "baseline"
+    baseline_dir.mkdir()
+    (baseline_dir / "a.md").write_text(
+        "The committee deliberated through the afternoon. " * 20,
+        encoding="utf-8",
+    )
+    (baseline_dir / "b.md").write_text(
+        "Members reviewed the budget on Tuesday. " * 20,
+        encoding="utf-8",
+    )
+    return baseline_dir
+
+
+def _run_main(argv):
+    """Invoke vp.main() with a patched argv (the script reads sys.argv
+    directly via parser.parse_args() with no argv kwarg)."""
+    import sys as _sys
+    orig = _sys.argv
+    _sys.argv = argv
+    try:
+        return vp.main()
+    finally:
+        _sys.argv = orig
+
+
+class TestJsonOutFileDelivery:
+    """The R2/R3 dispatcher file-delivery contract (json_delivery: file).
+
+    setec_run injects a private ``--json-out`` under
+    ``ai-prose-baselines-private/``, the script writes the schema_version
+    1.0 envelope there, and the dispatcher reads it back and projects it to
+    stdout. Mirrors pov_voice_profile.py's --json-out. The same
+    default-private posture as --out / stdout applies: a public --json-out
+    path is refused without --allow-public-output, so nothing voice-cloning-
+    grade ever lands outside ai-prose-baselines-private/.
+    """
+
+    def test_json_out_to_private_path_writes_envelope(self, tmp_path, capsys):
+        baseline_dir = _write_baseline(tmp_path)
+        artifact = tmp_path / "ai-prose-baselines-private" / "profile.json"
+        rc = _run_main([
+            "voice_profile.py",
+            "--baseline-dir", str(baseline_dir),
+            "--no-spacy",
+            "--json-out", str(artifact),
+        ])
+        assert rc == 0
+        captured = capsys.readouterr()
+        # The envelope goes to the private file, never to stdout.
+        assert captured.out == ""
+        import json as _json
+        payload = _json.loads(artifact.read_text(encoding="utf-8"))
+        assert payload["schema_version"] == "1.0"
+        assert payload["tool"] == "voice_profile"
+
+    def test_json_out_to_public_path_refused(self, tmp_path, capsys):
+        baseline_dir = _write_baseline(tmp_path)
+        artifact = tmp_path / "profile.json"  # NOT under the private dir
+        rc = _run_main([
+            "voice_profile.py",
+            "--baseline-dir", str(baseline_dir),
+            "--no-spacy",
+            "--json-out", str(artifact),
+        ])
+        assert rc == 2
+        captured = capsys.readouterr()
+        assert "ai-prose-baselines-private" in captured.err
+        assert "allow-public-output" in captured.err
+        # Refusal happens BEFORE any write — nothing leaked.
+        assert not artifact.exists()
+
+    def test_json_out_public_with_allow_flag(self, tmp_path, capsys):
+        baseline_dir = _write_baseline(tmp_path)
+        artifact = tmp_path / "profile.json"
+        rc = _run_main([
+            "voice_profile.py",
+            "--baseline-dir", str(baseline_dir),
+            "--no-spacy",
+            "--json-out", str(artifact),
+            "--allow-public-output",
+        ])
+        assert rc == 0
+        import json as _json
+        payload = _json.loads(artifact.read_text(encoding="utf-8"))
+        assert payload["tool"] == "voice_profile"

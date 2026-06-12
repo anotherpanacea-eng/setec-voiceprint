@@ -670,7 +670,11 @@ def adjacent_sentence_cosine(  # noqa: PLR0913
                     denom = (np.linalg.norm(a) * np.linalg.norm(b))
                     if denom == 0:
                         continue
-                    sims.append(float(np.dot(a, b) / denom))
+                    # Clamp to [-1, 1] at the source: float-epsilon in
+                    # np.dot/denom can otherwise emit e.g. 1.0000000002.
+                    sims.append(
+                        max(-1.0, min(1.0, float(np.dot(a, b) / denom)))
+                    )
                 if not sims:
                     return None
                 ident = backend.identifier_block()
@@ -711,7 +715,11 @@ def adjacent_sentence_cosine(  # noqa: PLR0913
                 denom = (np.linalg.norm(a) * np.linalg.norm(b))
                 if denom == 0:
                     continue
-                sims.append(float(np.dot(a, b) / denom))
+                # Clamp to [-1, 1] at the source: float-epsilon in
+                # np.dot/denom can otherwise emit e.g. 1.0000000002.
+                sims.append(
+                    max(-1.0, min(1.0, float(np.dot(a, b) / denom)))
+                )
             if not sims:
                 return None
             return {
@@ -731,7 +739,8 @@ def adjacent_sentence_cosine(  # noqa: PLR0913
             sims = []
             for i in range(vec.shape[0] - 1):
                 s = float(cosine_similarity(vec[i], vec[i + 1])[0][0])
-                sims.append(s)
+                # Clamp to [-1, 1] at the source against float-epsilon.
+                sims.append(max(-1.0, min(1.0, s)))
             if not sims:
                 return None
             return {

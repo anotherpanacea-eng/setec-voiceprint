@@ -321,14 +321,16 @@ def _unit_normalize_rows(matrix: Any) -> Any:
 
 def _cosine(a: Any, b: Any) -> float:
     """Plain cosine similarity over two vectors. Returns 0.0 when
-    either is a zero vector."""
+    either is a zero vector. Clamped to [-1, 1] at the source so
+    float-epsilon in ``np.dot/(‖a‖‖b‖)`` cannot emit a value just
+    outside the range (e.g. 1.0000000002)."""
     import numpy as np  # type: ignore
 
     na = float(np.linalg.norm(a))
     nb = float(np.linalg.norm(b))
     if na == 0.0 or nb == 0.0:
         return 0.0
-    return float(np.dot(a, b) / (na * nb))
+    return max(-1.0, min(1.0, float(np.dot(a, b) / (na * nb))))
 
 
 def _pairwise_cosines(embeddings: Any) -> list[float]:

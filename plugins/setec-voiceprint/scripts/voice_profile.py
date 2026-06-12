@@ -281,6 +281,13 @@ def main() -> int:
     parser.add_argument("--json", action="store_true", help="Output JSON.")
     parser.add_argument("--out", help="Write report to file instead of stdout.")
     parser.add_argument(
+        "--json-out",
+        help="Write the JSON audit envelope to this path (default-private, "
+             "like --out but always JSON). Used by the setec_run dispatcher's "
+             "file-delivery path; the privacy guard requires a path under "
+             "ai-prose-baselines-private/ unless --allow-public-output.",
+    )
+    parser.add_argument(
         "--allow-public-output",
         action="store_true",
         help="Allow writing a voice profile outside ai-prose-baselines-private/.",
@@ -321,6 +328,33 @@ def main() -> int:
         strip_aggressive=args.strip_aggressive,
     )
     profile["task_surface"] = TASK_SURFACE
+
+    # setec_run file-delivery path (R2/R3): --json-out writes the JSON audit
+    # envelope to a private file, which the dispatcher reads back and projects
+    # to stdout (spec §3). Mirrors pov_voice_profile.py's --json-out so both
+    # voice-clone surfaces share one file-delivery contract. Default-private:
+    # the path must live under ai-prose-baselines-private/ unless
+    # --allow-public-output (same guard --out enforces below).
+    if args.json_out:
+        payload = build_audit_payload(
+            profile,
+            target_path=args.baseline_dir or args.manifest,
+        )
+        if not args.allow_public_output and not is_private_output_path(args.json_out):
+            print(
+                "Refusing to write a voice profile JSON outside "
+                "ai-prose-baselines-private/. Pass --allow-public-output to "
+                "override.",
+                file=sys.stderr,
+            )
+            return 2
+        json_out_path = Path(args.json_out)
+        json_out_path.parent.mkdir(parents=True, exist_ok=True)
+        json_out_path.write_text(
+            json.dumps(payload, indent=2, default=str), encoding="utf-8",
+        )
+        print(f"Written JSON to {args.json_out}", file=sys.stderr)
+        return 0
 
     if args.json:
         payload = build_audit_payload(
