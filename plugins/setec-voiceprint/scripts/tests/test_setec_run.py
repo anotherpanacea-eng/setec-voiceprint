@@ -217,6 +217,99 @@ def test_script_exit_2_wrapped_as_policy_refused(manifest, monkeypatch):
     assert env["reason_category"] == "policy_refused"
 
 
+def _refusal_envelope(reason_category="bad_input", *, tool="general_imposters"):
+    """A surface-emitted structured R3 refusal envelope (the shape
+    general_imposters now writes when it refuses below MIN_IMPOSTORS)."""
+    return {
+        "schema_version": "1.0",
+        "task_surface": "voice_coherence",
+        "tool": tool,
+        "version": "9.9.9",
+        "available": False,
+        "target": {"path": None, "words": 0},
+        "baseline": None,
+        "results": {},
+        "claim_license": None,
+        "claim_license_rendered": None,
+        "warnings": [],
+        "ai_status": None,
+        "reason": "Need at least 5 distinct impostor personas; got 3.",
+        "reason_category": reason_category,
+    }
+
+
+def test_stdout_surface_honors_script_emitted_refusal(manifest, monkeypatch):
+    """A stdout surface that emits its OWN available=False envelope with a
+    reason_category is honored: the dispatcher re-emits it verbatim and
+    derives the exit code from reason_category (bad_input on a known surface
+    → EXIT_CONTRACT), rather than re-emitting at rc 0 or scraping stderr."""
+    import subprocess
+
+    env_out = _refusal_envelope(tool="variance_audit")
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps(env_out), stderr="",
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_CONTRACT == 3
+    assert env["available"] is False
+    assert env["reason_category"] == "bad_input"
+    assert "impostor" in env["reason"].lower()  # script's own reason preserved
+
+
+def test_file_surface_honors_script_emitted_refusal(manifest, monkeypatch):
+    """The file-delivery analogue (general_imposters' real path): the script
+    writes an available=False refusal to the injected --json-out; the
+    dispatcher re-emits it and exits with the reason_category's code."""
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        out_idx = cmd.index("--json-out")
+        Path(cmd[out_idx + 1]).write_text(
+            json.dumps(_refusal_envelope()), encoding="utf-8",
+        )
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "general_imposters",
+        ["--target", "t.txt", "--manifest", "m.jsonl",
+         "--candidate-persona", "blog"],
+        manifest=manifest, observed_version="1.115.0",
+    )
+    assert rc == setec_run.EXIT_CONTRACT == 3
+    assert env["available"] is False
+    assert env["reason_category"] == "bad_input"
+
+
+def test_available_false_without_category_is_internal_error(manifest, monkeypatch):
+    """An available=False envelope that names no reason_category is a contract
+    bug (a surface that says 'unavailable' without saying why); it maps to
+    internal_error (exit 1), not a silent rc 0."""
+    import subprocess
+
+    bad = _refusal_envelope()
+    del bad["reason_category"]
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps(bad), stderr="",
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_INTERNAL == 1
+
+
 def test_unparseable_stdout_wrapped_as_internal_error(manifest, monkeypatch):
     import subprocess
 

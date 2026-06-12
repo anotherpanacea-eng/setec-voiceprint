@@ -171,6 +171,30 @@ def _emit(envelope: dict[str, Any]) -> None:
     print(json.dumps(envelope, indent=2, default=str))
 
 
+def _emit_surface_envelope(envelope: dict[str, Any]) -> int:
+    """Re-emit a surface-produced schema_version 1.0 envelope and return the
+    dispatcher exit code.
+
+    A success envelope (``available`` not False) re-emits and exits 0. A
+    surface that emits its OWN structured R3 refusal — ``available: false``
+    with a ``reason_category`` (e.g. general_imposters refusing when the
+    manifest has too few impostor personas) — is HONORED: the envelope is
+    re-emitted verbatim (its ``reason``/``reason_category`` are richer and
+    more accurate than the dispatcher scraping stderr in
+    ``_wrap_script_failure``) and the exit code is derived from
+    ``reason_category`` via the SAME mapping the dispatcher's synthesized
+    errors use, so a script-emitted refusal and a dispatcher-synthesized one
+    are indistinguishable to the consumer. A missing/unknown category on an
+    available=False envelope is treated as ``internal_error`` (exit 1) — a
+    surface that says "unavailable" without saying why is a contract bug.
+    Applied on BOTH delivery paths (stdout + file) so they cannot diverge."""
+    _emit(envelope)
+    if envelope.get("available") is False:
+        category = envelope.get("reason_category")
+        return _CATEGORY_DEFAULT_EXIT.get(category, EXIT_INTERNAL)
+    return EXIT_OK
+
+
 def _error(
     *,
     surface: str | None,
@@ -359,8 +383,7 @@ def _run_stdout_surface(
             reason_category="internal_error",
             exit_code=EXIT_INTERNAL,
         )
-    _emit(envelope)
-    return EXIT_OK
+    return _emit_surface_envelope(envelope)
 
 
 def _run_file_surface(
@@ -442,9 +465,10 @@ def _run_file_surface(
         # dispatcher never requests), so the projection is a faithful
         # re-emit. The rich private artifact stays inside the tempdir and
         # is destroyed on cleanup; nothing private reaches stdout beyond
-        # what the audit already licenses.
-        _emit(envelope)
-        return EXIT_OK
+        # what the audit already licenses. A script-emitted available=False
+        # refusal (e.g. general_imposters' too-few-impostors gate) is honored
+        # with its own reason_category and the mapped exit code.
+        return _emit_surface_envelope(envelope)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
