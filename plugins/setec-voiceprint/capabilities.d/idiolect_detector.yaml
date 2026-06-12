@@ -23,6 +23,9 @@ entries:
   do_not_use_when:
   - The baseline is mixed-genre (idiolect signals cross-contaminate across registers)
   - The baseline is under ~20K words (sparse n-grams produce false positives)
+  required_groups:
+  - target
+  - reference
   inputs:
   - flag: --target-dir
     type: path

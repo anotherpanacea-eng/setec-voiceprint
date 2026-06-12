@@ -694,6 +694,58 @@ def test_r1_bundle_complete_passes():
         assert "invalid_r1_bundle" not in kinds
 
 
+def _check(entry) -> set:
+    with tempfile.TemporaryDirectory() as td:
+        manifest = Path(td) / "capabilities.yaml"
+        _write_yaml(manifest, {"schema_version": "0.3.0", "entries": [entry]})
+        return {v.kind for v in ccd.check_drift(manifest).violations}
+
+
+def test_r1_bundle_required_groups_valid_passes():
+    """Grouped inputs + a matching required_groups (all members required:false)
+    do NOT trip invalid_r1_bundle — the required-one-of shape is recognized."""
+    if yaml is None:
+        return
+    entry = _entry_with_bundle(
+        inputs=[
+            {"flag": "--target-dir", "type": "path", "required": False, "group": "target"},
+            {"flag": "--manifest", "type": "path", "required": False, "group": "target"},
+            {"flag": "--reference-dir", "type": "path", "required": False, "group": "reference"},
+        ],
+        required_groups=["target", "reference"],
+    )
+    assert "invalid_r1_bundle" not in _check(entry)
+
+
+def test_r1_bundle_required_groups_unknown_group_fails():
+    """required_groups naming a group no input carries trips invalid_r1_bundle —
+    the requirement can't silently reference a phantom group."""
+    if yaml is None:
+        return
+    entry = _entry_with_bundle(
+        inputs=[
+            {"flag": "--target-dir", "type": "path", "required": False, "group": "target"},
+        ],
+        required_groups=["target", "reference"],  # no input has group 'reference'
+    )
+    assert "invalid_r1_bundle" in _check(entry)
+
+
+def test_r1_bundle_required_group_member_must_be_optional():
+    """A member of a required group marked required:true is contradictory (the
+    group, not the member, is mandatory) → invalid_r1_bundle."""
+    if yaml is None:
+        return
+    entry = _entry_with_bundle(
+        inputs=[
+            {"flag": "--target-dir", "type": "path", "required": True, "group": "target"},
+            {"flag": "--manifest", "type": "path", "required": False, "group": "target"},
+        ],
+        required_groups=["target"],
+    )
+    assert "invalid_r1_bundle" in _check(entry)
+
+
 def test_fragment_without_marker_is_bundle_exempt():
     """(d) a fragment WITHOUT min_setec_version is not required to carry the
     bundle — no invalid_r1_bundle violation even with no json_delivery /

@@ -1823,6 +1823,10 @@
         "all_fiction",
         "all_nonfiction"
       ],
+      "required_groups": [
+        "target",
+        "reference"
+      ],
       "script_path": "plugins/setec-voiceprint/scripts/idiolect_detector.py",
       "status": "empirically_oriented",
       "surface": "voice_coherence",
