@@ -362,10 +362,8 @@ def emit_piece(piece: ac.AcquiredPiece, item: ItemMeta, *,
         corpus_role=options.corpus_role, use=options.use,
         ai_status=item.extra.get("ai_status", options.ai_status),
     )
-    # compose_manifest_entry only emits `era` for impostor entries; preserve the
-    # operator's --era on identity_baseline entries too — it marks the pre/post-AI
-    # slice of the writer's own corpus, which smoothing-diagnosis relies on.
-    entry.setdefault("era", piece.era)
+    # consent_status / era / acquired_via now persist for identity entries at
+    # the source (compose_manifest_entry), no longer just impostor ones.
     ac.append_manifest_entry(options.manifest_path, entry)
     summary.acquired += 1
     sys.stderr.write(f"  acquired {text_path.name} ({piece.word_count} words)\n")

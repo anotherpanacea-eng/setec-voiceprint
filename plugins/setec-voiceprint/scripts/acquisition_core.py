@@ -752,8 +752,12 @@ def compose_manifest_entry(
 ) -> dict[str, Any]:
     """Compose one draft manifest entry from an `AcquiredPiece`.
 
-    The entry conforms to ``references/manifest-schema.md`` for
-    impostor-corpus entries:
+    The entry conforms to ``references/manifest-schema.md``. ``consent_status``,
+    ``era``, and ``acquired_via`` are emitted for every ``corpus_role`` (a
+    writer's own identity baseline carries them as much as an impostor pool
+    does); the impostor-pool match fields (``impostor_for``,
+    ``register_match``, ``topic_match``) are emitted only for
+    ``corpus_role: "impostor"``. Defaults yield an impostor entry:
       - ``corpus_role: "impostor"``
       - ``use: ["voice_impostor"]``
       - ``split: "baseline"`` (reference pool, not identity baseline)
@@ -794,15 +798,19 @@ def compose_manifest_entry(
     # don't fire for date_written: null on undated entries.
     if entry["date_written"] is None:
         del entry["date_written"]
-    # Impostor-required fields. Always emit for impostor entries; the
-    # validator errors on missing ones.
+    # Consent posture, era, and provenance apply to EVERY entry — identity
+    # baselines need them too (a writer's own corpus has a consent_status and
+    # an era just as an impostor pool does, and the validator's completeness
+    # checks expect them). Previously these were gated behind the impostor
+    # branch, so identity-baseline entries silently lost them.
+    entry["consent_status"] = piece.consent_status
+    entry["era"] = piece.era
+    entry["acquired_via"] = piece.acquired_via
+    # Impostor-pool match fields are meaningful only for impostor entries.
     if corpus_role == "impostor":
         entry["impostor_for"] = list(piece.impostor_for)
         entry["register_match"] = piece.register_match
         entry["topic_match"] = piece.topic_match
-        entry["consent_status"] = piece.consent_status
-        entry["era"] = piece.era
-        entry["acquired_via"] = piece.acquired_via
     if piece.notes:
         entry["notes"] = piece.notes
     if extra:
