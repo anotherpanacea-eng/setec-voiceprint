@@ -6,10 +6,14 @@ entries:
   handoff: none
   consumers: []
   family: acquisition
-  purpose: acquire legal briefs from CourtListener / RECAP into the legal_brief
-    impostor pool (the population baseline argmove_profile profiles).
+  purpose: acquire legal briefs (--doc-type brief -> legal_brief) or expert
+    affidavits/declarations (--doc-type affidavit -> expert_affidavit) from
+    CourtListener / RECAP into the impostor pool (the population baselines
+    argmove_profile profiles).
   use_when:
   - building the legal_brief population baseline from public-record RECAP briefs
+  - building the expert_affidavit population baseline from public-record RECAP
+    declarations (--doc-type affidavit applies the structural + OCR screens)
   do_not_use_when:
   - the source is not the CourtListener v4 API
   inputs:
@@ -21,10 +25,12 @@ entries:
     - draft_manifest.jsonl (corpus_role impostor)
   compute:
     tier: acquisition
-    cost_note: network-bound; search cursor pagination plus one detail fetch per brief
+    cost_note: network-bound; search cursor pagination plus one detail fetch per
+      document; per-doc-type word floors (brief 3000, affidavit 1000)
     length_floor_words: 3000
   registers:
   - legal_brief
+  - expert_affidavit
   dependencies:
     python: []
   examples: []
