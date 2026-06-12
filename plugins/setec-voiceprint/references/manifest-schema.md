@@ -56,7 +56,7 @@ For impostor-pool support per `internal/2026-05-08-impostor-corpus-spec.md`. Req
 | Field | Values |
 |---|---|
 | `ai_status` | `pre_ai_human`, `ai_generated`, `ai_generated_from_outline`, `ai_assisted`, `ai_edited`, `mixed`, `unknown` |
-| `register` | `literary_fiction`, `blog_essay`, `academic_philosophy`, `testimony_policy`, `personal`, `policy_advocacy`, `literary_horror`, `policy_brief` |
+| `register` | `literary_fiction`, `blog_essay`, `academic_philosophy`, `testimony_policy`, `personal`, `policy_advocacy`, `literary_horror`, `policy_brief`, `scholarly_article` |
 | `split` | `baseline`, `train`, `test`, `holdout` |
 | `privacy` | `private`, `shareable`, `public_domain` |
 | `use` | `baseline`, `validation`, `voice_validation`, `voice_profile`, `voice_impostor`, `idiolect`, `negative_baseline`, `exclude` |
