@@ -28,12 +28,13 @@ Responsibilities, IN ORDER (spec §2):
      ``missing_dependency``.
   4. Exec the resolved script.
   5. Guarantee the envelope reaches stdout:
-       * ``json_delivery: stdout`` (8 surfaces) — pass ``--json`` through,
+       * ``json_delivery: stdout`` (7 surfaces) — pass ``--json`` through,
          capture stdout, re-emit.
-       * ``json_delivery: file`` (``pov_voice_profile`` only) — inject a
-         private ``--json-out`` under ``ai-prose-baselines-private/`` in a
-         tempdir, read the artifact, project the consumer envelope to
-         stdout, clean up the tempdir (spec §3).
+       * ``json_delivery: file`` (``pov_voice_profile`` + ``voice_profile``,
+         the two voice-clone surfaces) — inject a private ``--json-out``
+         under ``ai-prose-baselines-private/`` in a tempdir, read the
+         artifact, project the consumer envelope to stdout, clean up the
+         tempdir (spec §3).
   6. On script failure (nonzero exit / unparseable output), wrap as an R3
      error envelope.
 
@@ -340,13 +341,14 @@ def _run_file_surface(
     entry: dict[str, Any],
     surface_args: list[str],
 ) -> int:
-    """Run the one ``json_delivery: file`` surface (``pov_voice_profile``):
-    inject a private ``--json-out`` under ``ai-prose-baselines-private/`` in
-    a tempdir, run the script (which writes the FULL schema_version 1.0
-    envelope to that file under its default-private policy), read the
-    artifact, and project the consumer envelope to stdout. The consumer
-    never touches ``--json-out`` (spec §3). The tempdir is always cleaned
-    up."""
+    """Run a ``json_delivery: file`` surface (``pov_voice_profile`` /
+    ``voice_profile`` — the voice-clone surfaces, which refuse JSON on
+    stdout): inject a private ``--json-out`` under
+    ``ai-prose-baselines-private/`` in a tempdir, run the script (which
+    writes the FULL schema_version 1.0 envelope to that file under its
+    default-private policy), read the artifact, and project the consumer
+    envelope to stdout. The consumer never touches ``--json-out`` (spec §3).
+    The tempdir is always cleaned up."""
     script = _script_abspath(entry)
     # The script's privacy guard requires the output path to live under a
     # directory named exactly ``ai-prose-baselines-private`` (resolved

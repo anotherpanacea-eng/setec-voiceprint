@@ -58,7 +58,7 @@ EXPECTED_SURFACES = {
     "narrative_decision_audit": ("narrative_decision_audit.py", "stdout"),
     "manuscript_audit": ("manuscript_audit.py", "stdout"),
     "repetition_audit": ("repetition_audit.py", "stdout"),
-    "voice_profile": ("voice_profile.py", "stdout"),
+    "voice_profile": ("voice_profile.py", "file"),
     "pov_voice_profile": ("pov_voice_profile.py", "file"),
 }
 
