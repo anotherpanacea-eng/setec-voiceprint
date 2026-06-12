@@ -45,6 +45,7 @@ import concreteness  # type: ignore  # noqa: E402
 import re  # noqa: E402
 
 SCRIPT_VERSION = "0.1.0"
+TASK_SURFACE = "assertoric"
 MIN_WORDS = 300  # substantiality floor (argument-bearing structure needs length)
 
 _WORD_RE = re.compile(r"[A-Za-z][A-Za-z'\-]*")
