@@ -1,0 +1,5 @@
+# Sample PDF URL list (grant proposals)
+{"url": "https://ex.test/grant1.pdf", "title": "Specific Aims and Significance", "author": "Dr. PI One", "date": "2018-05-10"}
+https://ex.test/grant2.pdf
+{"url": "https://ex.test/grant3.pdf", "title": "Short Letter of Inquiry", "date": "2017-06-01"}
+{"url": "https://ex.test/imageonly.pdf", "title": "Scanned Image PDF"}

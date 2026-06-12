@@ -1,0 +1,35 @@
+entries:
+- id: acquire_openalex_core
+  script_path: plugins/setec-voiceprint/scripts/acquire_openalex_core.py
+  surface: voice_coherence_acquisition
+  status: todo
+  handoff: none
+  consumers: []
+  family: acquisition
+  purpose: acquire academic scholarly articles via OpenAlex (discipline/OA filter)
+    + CORE (full text) into the scholarly_article impostor pool (the population
+    baseline argmove_profile profiles).
+  use_when:
+  - building the scholarly_article population baseline from open-access
+    argumentative-discipline articles
+  do_not_use_when:
+  - the discipline filter would admit STEM lab reports (tune --openalex-filter)
+  inputs:
+    target: OpenAlex works API (keyless) + CORE v3 search API (keyed)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
+    - draft_manifest.jsonl (corpus_role impostor)
+  compute:
+    tier: acquisition
+    cost_note: network-bound; OpenAlex cursor pagination plus one CORE fetch per candidate DOI
+    length_floor_words: 3000
+  registers:
+  - scholarly_article
+  dependencies:
+    python: []
+  examples: []
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  _seeded_at: '2026-06-11'

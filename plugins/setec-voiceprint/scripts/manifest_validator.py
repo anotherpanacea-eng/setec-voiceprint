@@ -67,7 +67,9 @@ ALLOWED_AI_STATUS = {
 ALLOWED_REGISTER = {
     "literary_fiction", "blog_essay", "academic_philosophy",
     "testimony_policy", "personal", "policy_advocacy",
-    "literary_horror",
+    "literary_horror", "policy_brief", "scholarly_article",
+    "legal_brief", "grant_proposal", "expert_affidavit",
+    "regulatory_comment",
 }
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}

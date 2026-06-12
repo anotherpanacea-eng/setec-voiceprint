@@ -1,0 +1,35 @@
+entries:
+- id: acquire_everycrsreport
+  script_path: plugins/setec-voiceprint/scripts/acquire_everycrsreport.py
+  surface: voice_coherence_acquisition
+  status: todo
+  handoff: none
+  consumers: []
+  family: acquisition
+  purpose: pull Congressional Research Service reports from EveryCRSReport.com
+    into the policy_brief impostor pool (the population baseline argmove_profile
+    profiles).
+  use_when:
+  - building the policy_brief population baseline from public-domain CRS reports
+  do_not_use_when:
+  - the source is not the EveryCRSReport reports.csv index
+  inputs:
+    target: EveryCRSReport reports.csv URL (default https://www.everycrsreport.com/reports.csv)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
+    - draft_manifest.jsonl (corpus_role impostor)
+  compute:
+    tier: acquisition
+    cost_note: network-bound; one CSV fetch plus one HTML fetch per admitted report
+    length_floor_words: 1500
+  registers:
+  - policy_brief
+  dependencies:
+    python:
+    - bs4
+  examples: []
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  _seeded_at: '2026-06-11'

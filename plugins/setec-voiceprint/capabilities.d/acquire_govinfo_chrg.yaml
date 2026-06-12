@@ -1,0 +1,36 @@
+entries:
+- id: acquire_govinfo_chrg
+  script_path: plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py
+  surface: voice_coherence_acquisition
+  status: todo
+  handoff: none
+  consumers: []
+  family: acquisition
+  purpose: pull prepared written congressional testimony from GovInfo CHRG into
+    the testimony_policy impostor pool (the population baseline argmove_profile
+    profiles).
+  use_when:
+  - building the testimony_policy population baseline from public-domain CHRG
+    prepared statements
+  do_not_use_when:
+  - the source is not the GovInfo CHRG collection
+  inputs:
+    target: GovInfo published service (collection CHRG) via the api.data.gov API
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/
+    - draft_manifest.jsonl (corpus_role impostor)
+  compute:
+    tier: acquisition
+    cost_note: network-bound; published + granules pagination plus one HTM fetch per prepared statement
+    length_floor_words: 1500
+  registers:
+  - testimony_policy
+  dependencies:
+    python:
+    - bs4
+  examples: []
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  _seeded_at: '2026-06-11'

@@ -121,6 +121,48 @@
       ]
     },
     {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; search cursor pagination plus one detail fetch per brief",
+        "length_floor_words": 3000,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": []
+      },
+      "do_not_use_when": [
+        "the source is not the CourtListener v4 API"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_courtlistener",
+      "inputs": {
+        "target": "CourtListener v4 REST API (Token header auth)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire legal briefs from CourtListener / RECAP into the legal_brief impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "legal_brief"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_courtlistener.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the legal_brief population baseline from public-record RECAP briefs"
+      ]
+    },
+    {
       "_seeded_at": "2026-06-02",
       "compute": {
         "cost_note": "TODO",
@@ -157,6 +199,136 @@
       "surface": "voice_coherence_acquisition",
       "use_when": [
         "TODO"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; one CSV fetch plus one HTML fetch per admitted report",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "bs4"
+        ]
+      },
+      "do_not_use_when": [
+        "the source is not the EveryCRSReport reports.csv index"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_everycrsreport",
+      "inputs": {
+        "target": "EveryCRSReport reports.csv URL (default https://www.everycrsreport.com/reports.csv)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "pull Congressional Research Service reports from EveryCRSReport.com into the policy_brief impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "policy_brief"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_everycrsreport.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the policy_brief population baseline from public-domain CRS reports"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; published + granules pagination plus one HTM fetch per prepared statement",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "bs4"
+        ]
+      },
+      "do_not_use_when": [
+        "the source is not the GovInfo CHRG collection"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_govinfo_chrg",
+      "inputs": {
+        "target": "GovInfo published service (collection CHRG) via the api.data.gov API"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "pull prepared written congressional testimony from GovInfo CHRG into the testimony_policy impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "testimony_policy"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the testimony_policy population baseline from public-domain CHRG prepared statements"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; OpenAlex cursor pagination plus one CORE fetch per candidate DOI",
+        "length_floor_words": 3000,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": []
+      },
+      "do_not_use_when": [
+        "the discipline filter would admit STEM lab reports (tune --openalex-filter)"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_openalex_core",
+      "inputs": {
+        "target": "OpenAlex works API (keyless) + CORE v3 search API (keyed)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire academic scholarly articles via OpenAlex (discipline/OA filter) + CORE (full text) into the scholarly_article impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "scholarly_article"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_openalex_core.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the scholarly_article population baseline from open-access argumentative-discipline articles"
       ]
     },
     {
@@ -198,6 +370,50 @@
       "surface": "voice_coherence_acquisition",
       "use_when": [
         "TODO"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; S3 list_objects_v2 pagination plus one get per extracted-text key",
+        "length_floor_words": 1000,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "boto3"
+        ]
+      },
+      "do_not_use_when": [
+        "near-duplicate campaign text must be removed (v1 does exact-hash dedup only)"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_mirrulations",
+      "inputs": {
+        "target": "the public Mirrulations AWS Open Data S3 bucket (anonymous access)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire substantive regulatory comments from the Mirrulations S3 mirror into the regulatory_comment impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "regulatory_comment"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_mirrulations.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the regulatory_comment population baseline from pre-extracted comment-attachment text in the public Mirrulations bucket"
       ]
     },
     {
@@ -319,6 +535,51 @@
       "surface": "voice_coherence_acquisition",
       "use_when": [
         "TODO"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; one PDF download + text-layer extraction per URL",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "pypdf"
+        ]
+      },
+      "do_not_use_when": [
+        "the URLs are Zenodo/Figshare record pages rather than direct PDF links"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_pdf_urls",
+      "inputs": {
+        "target": "a local URL-list file (JSONL objects with a url key, or bare PDF URLs)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire prose from a curated list of remote PDF URLs into the impostor pool (the grant_proposal / expert_affidavit population baselines); the generic PDF acquirer that per-source URL-list builders feed.",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "grant_proposal",
+        "expert_affidavit"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_pdf_urls.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the grant_proposal or expert_affidavit population baseline from a curated list of direct PDF URLs"
       ]
     },
     {
