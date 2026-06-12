@@ -229,6 +229,28 @@ def test_unparseable_stdout_wrapped_as_internal_error(manifest, monkeypatch):
     assert env["reason_category"] == "internal_error"
 
 
+def test_stdout_wrong_schema_version_wrapped_as_internal_error(manifest, monkeypatch):
+    """A stdout surface that regresses to a non-1.0 schema_version must NOT be
+    re-emitted as success — _extract_envelope requires schema_version == '1.0',
+    the SAME gate the file-delivery artifact path applies (_is_envelope)."""
+    import subprocess
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 0,
+            stdout=json.dumps({"schema_version": "2.0", "tool": "variance_audit"}),
+            stderr="",
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_INTERNAL == 1
+    assert env["reason_category"] == "internal_error"
+
+
 # ---- SHOULD-FIX 3: robust stdout envelope parse ------------------------
 # A surface may emit a non-JSON preamble on stdout (a model-download /
 # progress line, an NLTK [nltk_data] notice) BEFORE the envelope. The

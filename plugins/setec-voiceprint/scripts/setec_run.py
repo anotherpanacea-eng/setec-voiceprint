@@ -59,7 +59,7 @@ from pathlib import Path
 from typing import Any
 
 import capabilities  # type: ignore
-from output_schema import REASON_CATEGORIES, build_error_output  # type: ignore
+from output_schema import REASON_CATEGORIES, SCHEMA_VERSION, build_error_output  # type: ignore
 
 PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 # The repo root is the parent of plugins/ — manifest script_path values are
@@ -250,6 +250,17 @@ def _wrap_script_failure(
     )
 
 
+def _is_envelope(obj: Any) -> bool:
+    """True iff ``obj`` is the promised envelope: a dict whose
+    ``schema_version`` is exactly ``SCHEMA_VERSION`` (``"1.0"``). BOTH delivery
+    paths gate on this — stdout extraction (``_extract_envelope``) and the
+    file-artifact re-emit (``_run_file_surface``) — so neither can re-emit a
+    non-1.0 / non-envelope payload as a success, honoring R2's promise that
+    ``setec run ... --json`` returns a schema_version 1.0 envelope. A schema
+    bump is then a single-line change to ``output_schema.SCHEMA_VERSION``."""
+    return isinstance(obj, dict) and obj.get("schema_version") == SCHEMA_VERSION
+
+
 def _extract_envelope(stdout: str) -> dict[str, Any] | None:
     """Recover the schema_version 1.0 envelope from a surface's stdout.
 
@@ -265,20 +276,21 @@ def _extract_envelope(stdout: str) -> dict[str, Any] | None:
     as a single top-level JSON OBJECT, so we scan the buffer for balanced
     ``{...}`` blocks (respecting strings/escapes so braces inside JSON string
     values don't confuse the matcher) and return the LAST one that parses as a
-    dict carrying ``schema_version`` — the envelope's defining key. The last
-    such block is the most robust choice: any preamble objects a tool might
-    print precede the real envelope, which is emitted last.
+    dict whose ``schema_version`` is ``1.0`` (the envelope's defining shape).
+    The last such block is the most robust choice: any preamble objects a tool
+    might print precede the real envelope, which is emitted last.
 
     Returns the parsed envelope dict, or ``None`` if no valid envelope object
     is found (the caller then raises ``internal_error``)."""
     # Fast path: clean single-object stdout. Confirm it is the envelope shape
-    # (a dict with schema_version) so a surface that prints a bare non-envelope
-    # JSON value doesn't slip through as a "success".
+    # (a dict with schema_version == 1.0) so a surface that prints a bare
+    # non-envelope JSON value — or a wrong-version one — doesn't slip through
+    # as a "success".
     try:
         whole = json.loads(stdout)
     except json.JSONDecodeError:
         whole = None
-    if isinstance(whole, dict) and "schema_version" in whole:
+    if _is_envelope(whole):
         return whole
 
     # Robust path: scan for balanced top-level {...} blocks and keep the last
@@ -312,7 +324,7 @@ def _extract_envelope(stdout: str) -> dict[str, Any] | None:
                         obj = json.loads(block)
                     except json.JSONDecodeError:
                         obj = None
-                    if isinstance(obj, dict) and "schema_version" in obj:
+                    if _is_envelope(obj):
                         found = obj  # keep scanning; prefer the LAST match
     return found
 
@@ -405,12 +417,11 @@ def _run_file_surface(
                 exit_code=EXIT_INTERNAL,
             )
         # The artifact must BE the promised schema_version 1.0 envelope before
-        # we re-emit it. The stdout path rejects non-envelope output via
-        # _extract_envelope; the file path must not be a weaker guarantee — a
-        # regressed surface that writes ``{}`` or some other JSON object would
-        # otherwise exit 0 and break R2's promise that ``setec run ... --json``
-        # returns a schema-versioned envelope.
-        if not isinstance(envelope, dict) or envelope.get("schema_version") != "1.0":
+        # we re-emit it — the SAME gate the stdout path applies (_is_envelope).
+        # A regressed surface that writes ``{}``, a wrong-version object, or
+        # some other JSON would otherwise exit 0 and break R2's promise that
+        # ``setec run ... --json`` returns a schema_version 1.0 envelope.
+        if not _is_envelope(envelope):
             shape = (
                 f"keys {sorted(envelope)[:8]}" if isinstance(envelope, dict)
                 else type(envelope).__name__
