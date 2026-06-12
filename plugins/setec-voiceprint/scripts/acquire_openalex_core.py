@@ -71,14 +71,20 @@ DEFAULT_UNTIL = "2021-12-31"
 PAGE_SIZE = 100
 MAX_PAGES = 10000
 
-# Default OpenAlex filter: open-access research articles, not retracted, in
-# the Social Sciences domain (id 2 — covers law, political science,
-# sociology, economics; broaden via --openalex-filter for philosophy /
-# humanities fields). The date window is appended from --since/--until.
-# Brittle by nature (domain ids drift) — the operator verifies hit counts
-# in --dry-run.
+# Default OpenAlex filter: CC-licensed open-access research articles, not
+# retracted, in the Social Sciences domain (id 2 — covers law, political
+# science, sociology, economics; broaden via --openalex-filter for
+# philosophy / humanities fields). The date window is appended from
+# --since/--until. The license term is load-bearing for consent labeling:
+# bare ``is_oa:true`` also admits bronze OA (free to read, NO license) and
+# green repository copies, which must not be labeled ``cc_licensed``. Widen
+# the filter beyond CC licenses only with ``--consent-status
+# fair_use_research``. Brittle by nature (domain ids drift) — the operator
+# verifies hit counts in --dry-run.
 DEFAULT_OPENALEX_FILTER = (
-    "primary_topic.domain.id:2,is_oa:true,type:article,is_retracted:false"
+    "primary_topic.domain.id:2,is_oa:true,"
+    "best_oa_location.license:cc-by|cc-by-sa|cc-by-nc|cc-by-nc-sa,"
+    "type:article,is_retracted:false"
 )
 
 
@@ -411,8 +417,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "public_record", "cc_licensed", "fair_use_research",
                        "author_consent", "undocumented",
                    ],
-                   help="Consent / legal posture (cc_licensed for the OA "
-                        "CC-BY tier).")
+                   help="Consent / legal posture. cc_licensed matches the "
+                        "default filter's CC-license constraint; if you widen "
+                        "--openalex-filter beyond CC licenses (e.g. bare "
+                        "is_oa:true admits unlicensed bronze OA), use "
+                        "fair_use_research instead.")
     p.add_argument("--era",
                    choices=[
                        "pre_chatgpt", "pre_ai_widespread",
