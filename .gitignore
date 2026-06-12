@@ -5,6 +5,14 @@
 *_voice_profile.json
 *PRIVATE*
 *private*
+# Exception (R5 contract fixtures): the producer-owned golden envelopes under
+# references/contract_fixtures/ are normalized, sentinelized, dependency-free
+# CONTRACT fixtures — not real voice-clone artifacts. pov_voice_profile.json
+# matches the *_voice_profile.json privacy glob above, so re-include the
+# fixtures explicitly; the ratchet still covers every other path. (The
+# generator + drift gate guarantee these carry only <fixture> sentinels and
+# representative values, never a real corpus.)
+!plugins/setec-voiceprint/references/contract_fixtures/*.json
 
 # Claude Code agent harness state. The .claude/worktrees/ directory holds
 # temporary git worktrees the agent harness manages during sub-agent runs;

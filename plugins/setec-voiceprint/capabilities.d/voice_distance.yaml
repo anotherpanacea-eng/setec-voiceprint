@@ -6,6 +6,8 @@ entries:
   handoff: stable
   consumers:
   - apodictic
+  min_setec_version: "1.86.0"
+  json_delivery: stdout
   family: voice-distance
   purpose: 'Compare a target text against a specific writer''s (or register''s) baseline
     using classic stylometric feature families — Burrows Delta on function words,
@@ -25,9 +27,21 @@ entries:
     ai_status
   - Target is under ~2000 words (Burrows Delta is noisy below that)
   inputs:
-    target: prose text file (UTF-8)
-    required:
-    - --baseline-dir pointing at the writer's prior work
+  - flag: target
+    type: path
+    required: true
+  - flag: --baseline-dir
+    type: path
+    required: false
+  - flag: --manifest
+    type: path
+    required: false
+  - flag: --ai-status
+    type: string
+    required: false
+  - flag: --json
+    type: bool
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:

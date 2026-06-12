@@ -450,6 +450,125 @@ def test_cli_recommend_returns_zero():
     assert rc == 0
 
 
+# ---------- R1: emit + projected calibration_status ----------------
+
+# The nine APODICTIC subprocess-shim surfaces that carry the R1 field
+# bundle (min_setec_version / json_delivery / structured inputs[]).
+_R1_CONSUMER_SURFACES = [
+    "variance_audit", "manuscript_audit", "repetition_audit",
+    "voice_distance", "voice_profile", "pov_voice_profile",
+    "punctuation_cadence_audit", "idiolect_detector",
+    "narrative_decision_audit",
+]
+
+
+def test_setec_version_matches_plugin_json():
+    """setec_version() reads the version SOT from .claude-plugin/plugin.json
+    (resolved relative to PLUGIN_ROOT, not the CWD)."""
+    plugin_json = json.loads(
+        cap.PLUGIN_JSON_PATH.read_text(encoding="utf-8")
+    )
+    assert cap.setec_version() == plugin_json["version"]
+
+
+def test_emit_has_expected_top_level_fields():
+    """(a) `emit --json` carries top-level setec_version (== plugin.json
+    version), manifest_schema_version (== _meta schema_version), and
+    entries[]."""
+    m = _manifest()
+    env = cap.build_emit_envelope(m)
+    assert set(env.keys()) == {
+        "setec_version", "manifest_schema_version", "entries",
+    }
+    plugin_json = json.loads(
+        cap.PLUGIN_JSON_PATH.read_text(encoding="utf-8")
+    )
+    assert env["setec_version"] == plugin_json["version"]
+    assert env["manifest_schema_version"] == m["schema_version"] == "0.3.0"
+    assert isinstance(env["entries"], list)
+    assert len(env["entries"]) == len(m["entries"])
+
+
+def test_emit_projects_calibration_status_on_every_entry():
+    """Every entry in the emit envelope carries calibration_status projected
+    from its status — and the projection does not mutate the stored entry."""
+    m = _manifest()
+    env = cap.build_emit_envelope(m)
+    for e in env["entries"]:
+        assert e.get("calibration_status") == e.get("status")
+    # Projection must be non-mutating: the source manifest entries never gain
+    # a calibration_status key.
+    assert all(
+        "calibration_status" not in e for e in m["entries"]
+    ), "build_emit_envelope mutated the source manifest entries"
+
+
+def test_emit_consumer_surfaces_carry_full_r1_bundle():
+    """(b) each of the 9 consumer entries in emit output has
+    min_setec_version, json_delivery, structured inputs[] (list of dicts),
+    and the projected calibration_status."""
+    env = cap.build_emit_envelope(_manifest())
+    by_id = {e["id"]: e for e in env["entries"]}
+    for sid in _R1_CONSUMER_SURFACES:
+        e = by_id[sid]
+        assert isinstance(e.get("min_setec_version"), str), sid
+        assert e.get("json_delivery") in ("stdout", "file"), sid
+        inputs = e.get("inputs")
+        assert isinstance(inputs, list) and inputs, sid
+        assert all(isinstance(item, dict) for item in inputs), sid
+        assert all(
+            {"flag", "type", "required"} <= set(item) for item in inputs
+        ), sid
+        assert "calibration_status" in e, sid
+
+
+def test_emit_floor_and_delivery_decisions():
+    """Pin the per-surface floor and delivery decisions made in R1 Step B:
+    narrative_decision_audit floors at 1.107.0 (the rest at 1.86.0), and
+    voice_profile + pov_voice_profile are the file-delivery surfaces (both
+    privacy-gate stdout, so the R2 dispatcher must project their envelopes)."""
+    by_id = {
+        e["id"]: e for e in cap.build_emit_envelope(_manifest())["entries"]
+    }
+    assert by_id["narrative_decision_audit"]["min_setec_version"] == "1.107.0"
+    for sid in _R1_CONSUMER_SURFACES:
+        if sid != "narrative_decision_audit":
+            assert by_id[sid]["min_setec_version"] == "1.86.0", sid
+    file_surfaces = {"voice_profile", "pov_voice_profile"}
+    for sid in _R1_CONSUMER_SURFACES:
+        expected = "file" if sid in file_surfaces else "stdout"
+        assert by_id[sid]["json_delivery"] == expected, sid
+
+
+def test_show_json_projects_calibration_status():
+    """`show <id> --json` projects calibration_status the same way emit does,
+    so a consumer can read a single surface consistently."""
+    import io
+    import contextlib
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cap.main(["show", "variance_audit", "--format", "json"])
+    assert rc == 0
+    payload = json.loads(buf.getvalue())
+    assert payload["calibration_status"] == payload["status"]
+    # The R1 bundle flows through `show` (it dumps the entry).
+    assert isinstance(payload["inputs"], list)
+    assert payload["min_setec_version"] == "1.86.0"
+
+
+def test_cli_emit_returns_zero_and_valid_json():
+    import io
+    import contextlib
+
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        rc = cap.main(["emit", "--json"])
+    assert rc == 0
+    env = json.loads(buf.getvalue())
+    assert "setec_version" in env and "entries" in env
+
+
 if __name__ == "__main__":
     import traceback
     for name, fn in sorted(globals().items()):

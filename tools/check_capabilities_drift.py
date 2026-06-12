@@ -4,7 +4,10 @@
 The capabilities manifest at `plugins/setec-voiceprint/capabilities.d/`
 is the single source of truth for what every user-facing script in
 SETEC does. This linter ensures the manifest stays in sync with the
-source by checking three properties:
+source. It also gates the R5 contract fixtures (Check 9) so a surface's
+golden envelope can never silently drift from `build_output`.
+
+It checks the following properties:
 
   1. **Orphan scripts.** Every Python file under
      `plugins/setec-voiceprint/scripts/` that declares a
@@ -16,6 +19,15 @@ source by checking three properties:
 
   3. **Surface drift.** Every manifest entry's `surface` field must
      equal the `TASK_SURFACE` constant declared in the source file.
+
+  9. **Fixture drift (R5).** For every consumer surface that has a
+     committed golden envelope under
+     `plugins/setec-voiceprint/references/contract_fixtures/`, the
+     generator's regenerated envelope (post-normalization) must match the
+     golden. This catches a surface whose `build_output(...)` output
+     drifts from its pinned `schema_version: 1.0` contract before merge.
+     The check delegates to `gen_contract_fixtures.check_all()` so the
+     gate and the generator can never disagree about what a golden is.
 
 The linter is intentionally noisy: it reports every violation
 encountered before exiting with a non-zero status. Exit codes:
@@ -37,6 +49,11 @@ Exemptions:
     still requires them to exist and to point at a real script.
     Hand-curated entries (status != todo) must have non-TODO content
     in their use_when / do_not_use_when blocks.
+
+    The one exception: a `handoff: stable` entry may NOT be `status:
+    todo` (Check 8). A stable surface is a pinned consumer contract;
+    a todo placeholder there is incoherent, so the todo content-check
+    exemption does not extend to stable entries.
 
 Run in CI:
 
@@ -68,6 +85,13 @@ if str(SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_ROOT))
 from capabilities import entries, load_manifest  # type: ignore  # noqa: E402
 
+# R5 contract-fixture drift (Check 9). Import the generator so the gate and
+# the generator share one definition of "what a golden should be" — they can
+# never disagree. gen_contract_fixtures is stdlib-only at import (it imports
+# the heavy audit scripts lazily, inside each per-surface builder), so this
+# import is cheap and dependency-free.
+import gen_contract_fixtures  # type: ignore  # noqa: E402
+
 SKIP_FILE_PATTERNS = [
     re.compile(r"^test_"),
     re.compile(r"_test\.py$"),
@@ -77,12 +101,152 @@ SKIP_FILE_PATTERNS = [
 
 @dataclass
 class Violation:
-    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content"
+    kind: str  # "orphan_script" | "orphan_entry" | "surface_drift" | "todo_content" | "stable_is_todo" | "fixture_drift"
     where: str  # path or entry id
     detail: str
 
     def render(self) -> str:
         return f"  {self.kind}: {self.where}\n    {self.detail}"
+
+
+# R1 (normalized-entrypoint) field bundle. The presence of `min_setec_version`
+# is the bundle marker: a fragment carrying it is a subprocess consumer surface
+# and MUST carry the rest of the bundle in valid form. Fragments WITHOUT
+# `min_setec_version` are exempt (reference-tagged / internal entries are left
+# untouched).
+_R1_BUNDLE_MARKER = "min_setec_version"
+_VALID_JSON_DELIVERY = frozenset({"stdout", "file"})
+_VALID_INPUT_TYPES = frozenset(
+    {"path", "string", "int", "float", "enum", "bool"}
+)
+# Conservative semver: MAJOR.MINOR.PATCH with optional -prerelease/+build. Good
+# enough to catch a fat-fingered floor like "1.86" or "v1.86.0" without pulling
+# in a packaging dep.
+_SEMVER_RE = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
+
+
+def validate_r1_bundle(entry: dict) -> list[str]:
+    """Return a list of human-readable problems with `entry`'s R1 field bundle.
+
+    An entry is subject to the bundle iff it carries `min_setec_version` (the
+    marker). When present, the FULL bundle is required and validated:
+
+      * `min_setec_version` — a valid semver string.
+      * `json_delivery` — one of {stdout, file}.
+      * `inputs` — a non-empty list of mappings, each with `flag`, `type`, and
+        `required`; `type` in the legal vocabulary; `values` (a non-empty list)
+        present iff `type == "enum"`. An input may carry a `group`; an
+        entry-level `required_groups` names groups of which exactly one member
+        must be supplied, and every member of such a group must be
+        `required: false` (the group, not the member, is mandatory).
+
+    Entries WITHOUT the marker return `[]` (exempt). This is a pure validator
+    (no side effects) so both the drift linter and the seeder can reuse it."""
+    if _R1_BUNDLE_MARKER not in entry:
+        return []
+    problems: list[str] = []
+
+    floor = entry.get("min_setec_version")
+    if not isinstance(floor, str) or not _SEMVER_RE.match(floor):
+        problems.append(
+            f"min_setec_version must be a valid semver string "
+            f"(MAJOR.MINOR.PATCH); got {floor!r}"
+        )
+
+    delivery = entry.get("json_delivery")
+    if delivery not in _VALID_JSON_DELIVERY:
+        problems.append(
+            f"json_delivery must be one of {sorted(_VALID_JSON_DELIVERY)!r}; "
+            f"got {delivery!r}"
+        )
+
+    inputs = entry.get("inputs")
+    if not isinstance(inputs, list) or not inputs:
+        problems.append(
+            f"inputs must be a non-empty list of mappings; got "
+            f"{type(inputs).__name__ if inputs is not None else None!r}"
+        )
+    else:
+        for i, item in enumerate(inputs):
+            if not isinstance(item, dict):
+                problems.append(
+                    f"inputs[{i}] must be a mapping; got "
+                    f"{type(item).__name__}"
+                )
+                continue
+            for key in ("flag", "type", "required"):
+                if key not in item:
+                    problems.append(
+                        f"inputs[{i}] missing required key {key!r}"
+                    )
+            itype = item.get("type")
+            if itype is not None and itype not in _VALID_INPUT_TYPES:
+                problems.append(
+                    f"inputs[{i}].type {itype!r} not in "
+                    f"{sorted(_VALID_INPUT_TYPES)!r}"
+                )
+            has_values = "values" in item
+            if itype == "enum":
+                vals = item.get("values")
+                if not isinstance(vals, list) or not vals:
+                    problems.append(
+                        f"inputs[{i}] has type 'enum' but `values` is not a "
+                        f"non-empty list; got {vals!r}"
+                    )
+            elif has_values:
+                problems.append(
+                    f"inputs[{i}] carries `values` but type is "
+                    f"{itype!r} (values is only valid for type 'enum')"
+                )
+
+        # `group` + entry-level `required_groups`: an input may carry a
+        # `group` (a mutually-exclusive alternative set); a group named in
+        # `required_groups` requires exactly one of its members. Members of a
+        # required group are individually `required: false` (the group, not the
+        # member, is mandatory). Validating this makes the requirement
+        # machine-knowable to a consumer instead of buried in prose.
+        groups: dict[str, list[int]] = {}
+        for i, item in enumerate(inputs):
+            if not isinstance(item, dict):
+                continue
+            g = item.get("group")
+            if g is None:
+                continue
+            if not isinstance(g, str) or not g:
+                problems.append(
+                    f"inputs[{i}].group must be a non-empty string; got {g!r}"
+                )
+            else:
+                groups.setdefault(g, []).append(i)
+
+        required_groups = entry.get("required_groups")
+        if required_groups is not None:
+            if not isinstance(required_groups, list) or not all(
+                isinstance(g, str) for g in required_groups
+            ):
+                problems.append(
+                    f"required_groups must be a list of group-name strings; "
+                    f"got {required_groups!r}"
+                )
+            else:
+                for g in required_groups:
+                    members = groups.get(g)
+                    if not members:
+                        problems.append(
+                            f"required_groups names {g!r} but no input carries "
+                            f"group: {g!r}"
+                        )
+                        continue
+                    for i in members:
+                        if inputs[i].get("required") is not False:
+                            problems.append(
+                                f"inputs[{i}] is in required group {g!r} and "
+                                f"must be `required: false` (the group is "
+                                f"required, not the individual flag)"
+                            )
+    return problems
 
 
 @dataclass
@@ -400,6 +564,111 @@ def check_drift(
                     f"mixed types: {[type(c).__name__ for c in consumers]}"
                 ),
             ))
+
+    # Check 7 (R1 normalized-entrypoint): any fragment carrying the
+    # `min_setec_version` bundle marker must carry the WHOLE bundle in valid
+    # form (min_setec_version semver + json_delivery in {stdout,file} +
+    # structured inputs[]). Fragments without the marker are exempt — this
+    # leaves reference-tagged / internal entries untouched. The check triggers
+    # on bundle PRESENCE, not on handoff/consumers, so an entry can be
+    # handoff: stable without the bundle and vice versa.
+    for entry in manifest_entries:
+        eid = entry.get("id") or "(no id)"
+        for problem in validate_r1_bundle(entry):
+            report.violations.append(Violation(
+                kind="invalid_r1_bundle",
+                where=eid,
+                detail=problem,
+            ))
+
+    # Check 8 (R1 build-review follow-up): a `handoff: stable` entry must
+    # NOT be `status: todo`. A stable surface is a pinned contract that
+    # `emit` advertises to consumers; an `status: todo` entry is an
+    # uncurated placeholder that `list --handoff stable` hides by default
+    # (it skips todos). The two surfaces then disagree about what is
+    # stable. A stable contract made of `family: TODO` / `use_when: [TODO]`
+    # placeholders is incoherent, so curate the entry (set a real status +
+    # fill the content) or drop it to `handoff: none` until it is ready.
+    # The placeholder-content half of the guard catches a stable entry
+    # that left a real-but-non-todo status while keeping TODO fields; the
+    # Check 4 todo_content guard already covers that for non-stable
+    # curated entries, but a stable entry should never carry placeholders
+    # regardless of its status.
+    for entry in manifest_entries:
+        if entry.get("handoff") != "stable":
+            continue
+        eid = entry.get("id") or "(no id)"
+        if entry.get("status") == "todo":
+            report.violations.append(Violation(
+                kind="stable_is_todo",
+                where=eid,
+                detail=(
+                    "handoff is 'stable' but status is 'todo'. A stable "
+                    "surface is a pinned consumer contract `emit` "
+                    "advertises, but `list --handoff stable` hides "
+                    "todos — the two disagree. Curate the entry (real "
+                    "status + non-TODO family/purpose/use_when in its "
+                    "`capabilities.d/<id>.yaml` fragment) or drop it to "
+                    "`handoff: none` until it is ready."
+                ),
+            ))
+            continue
+        # Non-todo stable entry: it must not retain placeholder content.
+        family = entry.get("family")
+        if family == "TODO" or family is None:
+            report.violations.append(Violation(
+                kind="stable_is_todo",
+                where=eid,
+                detail=(
+                    f"handoff is 'stable' but family is still TODO "
+                    f"(status {entry.get('status')!r}). A stable contract "
+                    f"must not be made of placeholders — fill the entry's "
+                    f"`capabilities.d/<id>.yaml` fragment."
+                ),
+            ))
+        purpose = entry.get("purpose") or ""
+        if "TODO" in str(purpose):
+            report.violations.append(Violation(
+                kind="stable_is_todo",
+                where=eid,
+                detail=(
+                    f"handoff is 'stable' but purpose still contains TODO "
+                    f"(status {entry.get('status')!r}). Curate the entry's "
+                    f"`capabilities.d/<id>.yaml` fragment."
+                ),
+            ))
+        for list_field in ("use_when", "do_not_use_when"):
+            value = entry.get(list_field) or []
+            if not value or any(v == "TODO" for v in value):
+                report.violations.append(Violation(
+                    kind="stable_is_todo",
+                    where=eid,
+                    detail=(
+                        f"handoff is 'stable' but {list_field!r} is empty "
+                        f"or still contains TODO (status "
+                        f"{entry.get('status')!r}). A stable contract must "
+                        f"not be made of placeholders — fill the entry's "
+                        f"`capabilities.d/<id>.yaml` fragment."
+                    ),
+                ))
+
+    # Check 9 (R5 contract fixtures): fixture_matches_build_output. For each
+    # consumer surface that has a committed golden envelope under
+    # references/contract_fixtures/, assert the generator's regenerated
+    # envelope matches it after normalization. Delegated to the generator's
+    # own `check_all()` so the gate and the generator share one source of
+    # truth — a fixture can never pass `gen_contract_fixtures.py --check`
+    # while failing the gate or vice versa. A surface whose envelope drifts
+    # from its pinned schema_version 1.0 golden fails SETEC pre-merge.
+    for problem in gen_contract_fixtures.check_all():
+        # `problem` is already "<surface>: <detail>"; split the surface off
+        # so it lands in `where` (matching the rest of the report's shape).
+        surface, _, detail = problem.partition(": ")
+        report.violations.append(Violation(
+            kind="fixture_drift",
+            where=surface or "(contract_fixtures)",
+            detail=detail or problem,
+        ))
 
     return report
 

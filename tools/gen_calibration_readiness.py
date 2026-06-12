@@ -163,6 +163,102 @@ def _baseline_size_hint(use_when: list[str]) -> str | None:
     return best[1] if best else None
 
 
+# Corpus-bearing flags in the structured R1 `inputs[]` shape: when one of
+# these is the way a baseline/reference is supplied, the audit is corpus-gated.
+_CORPUS_FLAGS = frozenset({
+    "--baseline-dir", "--manifest", "--reference-dir",
+    "--reference-manifest", "--reference-corpus", "--target-dir",
+})
+# Flags that are delivery / output plumbing, not user-supplied inputs.
+_NON_INPUT_FLAGS = frozenset({"--json", "--json-out", "--out", "--quiet"})
+
+
+def _normalize_inputs(entry: dict[str, Any]) -> tuple[str, list[str], list[str]]:
+    """Return ``(target, required, optional)`` strings from an entry's inputs.
+
+    R1 replaced the freeform ``inputs:`` mapping (``{target, required[],
+    optional[]}``) with a structured ``inputs:`` list of ``{flag, type,
+    required}`` on the consumer surfaces. This generator predates that and
+    reads the legacy mapping shape. To keep it working against both, normalize
+    here: a mapping passes through unchanged; a structured list is projected
+    back into the ``target`` / ``required`` / ``optional`` corpus-signal strings
+    the row builder already understands.
+
+    The corpus flags are treated as a *required corpus* when the entry exposes
+    no positional path input (the corpus IS the input, e.g. idiolect_detector)
+    or when the surface is voice-coherence with a baseline/manifest flag (the
+    baseline is mandatory even though it's supplied via a one-of group, e.g.
+    voice_distance). Otherwise a corpus flag is an *optional* enrichment of a
+    standalone target run (e.g. variance_audit). This reproduces the pre-R1
+    required/optional split that drives `runs_without_corpus`."""
+    inputs = entry.get("inputs")
+    # Legacy mapping shape — pass through.
+    if isinstance(inputs, dict):
+        return (
+            inputs.get("target") or "",
+            list(inputs.get("required") or []),
+            list(inputs.get("optional") or []),
+        )
+    if not isinstance(inputs, list):
+        return ("", [], [])
+
+    surface = entry.get("surface", "")
+    flags = [
+        (i.get("flag", ""), bool(i.get("required")))
+        for i in inputs if isinstance(i, dict)
+    ]
+    positional = [f for f, _ in flags if f and not f.startswith("--")]
+    corpus_flags = [f for f, _ in flags if f in _CORPUS_FLAGS]
+    has_positional_path = bool(positional)
+
+    # Does a corpus need to be supplied to get any result?
+    corpus_required = (
+        any(req for f, req in flags if f in _CORPUS_FLAGS)
+        or (bool(corpus_flags) and not has_positional_path)
+        or (bool(corpus_flags) and surface == "voice_coherence"
+            and any(f in ("--baseline-dir", "--manifest", "--reference-dir",
+                          "--reference-manifest", "--reference-corpus")
+                    for f in corpus_flags))
+    )
+
+    target = "prose text file (UTF-8)" if has_positional_path else ""
+    required: list[str] = []
+    optional: list[str] = []
+
+    # Render corpus flags into the legacy-style strings `_friendly_input` maps.
+    has_baseline = "--baseline-dir" in corpus_flags
+    has_ref_manifest = (
+        "--reference-manifest" in corpus_flags
+        or "--reference-dir" in corpus_flags
+        or "--reference-corpus" in corpus_flags
+    )
+    if corpus_flags:
+        # An entry that takes the writer's own prose dir (--reference-dir /
+        # --target-dir) OR a reference manifest is the idiolect-style "baseline
+        # or a reference manifest" case; phrase it that way so the size hint
+        # (scraped from use_when, e.g. ≥50K words) attaches.
+        offers_own_corpus_dir = (
+            "--reference-dir" in corpus_flags or "--target-dir" in corpus_flags
+        )
+        if has_baseline and has_ref_manifest:
+            corpus_str = "--baseline-dir or --reference-manifest"
+        elif has_ref_manifest and offers_own_corpus_dir:
+            corpus_str = "--baseline-dir or --reference-manifest"
+        elif has_baseline:
+            corpus_str = "--baseline-dir pointing at the writer's prior work"
+        elif has_ref_manifest:
+            corpus_str = "--reference-manifest reference corpus"
+        else:  # only --manifest / --target-dir
+            corpus_str = "--manifest labeled corpus"
+        (required if corpus_required else optional).append(corpus_str)
+
+    # Judge-manifest is an optional pre-computed feature source (api_llm tier).
+    if any(f == "--judge-manifest" for f, _ in flags):
+        optional.append("--judge-manifest with pre-computed feature values")
+
+    return (target, required, optional)
+
+
 def derive(entry: dict[str, Any]) -> dict[str, Any]:
     """Derive the readiness row for one curated manifest entry."""
     eid = entry["id"]
@@ -174,10 +270,7 @@ def derive(entry: dict[str, Any]) -> dict[str, Any]:
     deps = entry.get("dependencies") or {}
     req_pkgs = deps.get("python") or []
     opt_pkgs = deps.get("python_optional") or []
-    inputs = entry.get("inputs") or {}
-    required = inputs.get("required") or []
-    optional = inputs.get("optional") or []
-    target = inputs.get("target") or ""
+    target, required, optional = _normalize_inputs(entry)
     use_when = entry.get("use_when") or []
 
     # Does the entry require a user-supplied corpus to produce any result?

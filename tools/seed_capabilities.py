@@ -236,6 +236,80 @@ def _external_deps(imports: set[str]) -> set[str]:
     return out
 
 
+# ---------- R1 field-bundle validation ----------------------------
+
+# R1 (normalized-entrypoint) field bundle. `min_setec_version` is the marker:
+# any entry carrying it is a subprocess consumer surface and must carry the
+# rest of the bundle in valid form. Entries WITHOUT it are exempt. Kept in sync
+# with tools/check_capabilities_drift.validate_r1_bundle (same contract; this
+# tool is self-contained by design and does not import the drift linter).
+_R1_BUNDLE_MARKER = "min_setec_version"
+_VALID_JSON_DELIVERY = frozenset({"stdout", "file"})
+_VALID_INPUT_TYPES = frozenset(
+    {"path", "string", "int", "float", "enum", "bool"}
+)
+_SEMVER_RE = re.compile(
+    r"^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$"
+)
+
+
+def validate_r1_bundle(entry: dict) -> list[str]:
+    """Return human-readable problems with `entry`'s R1 field bundle, or `[]`.
+
+    An entry is subject to the bundle iff it carries `min_setec_version`. When
+    present, the full bundle is required: `min_setec_version` a valid semver
+    string; `json_delivery` in {stdout, file}; `inputs` a non-empty list of
+    mappings each with `flag`/`type`/`required` (`type` in the legal set, and
+    `values` a non-empty list iff `type == "enum"`). Entries without the marker
+    are exempt and return `[]`."""
+    if _R1_BUNDLE_MARKER not in entry:
+        return []
+    problems: list[str] = []
+
+    floor = entry.get("min_setec_version")
+    if not isinstance(floor, str) or not _SEMVER_RE.match(floor):
+        problems.append(
+            f"min_setec_version must be a valid semver string; got {floor!r}"
+        )
+
+    delivery = entry.get("json_delivery")
+    if delivery not in _VALID_JSON_DELIVERY:
+        problems.append(
+            f"json_delivery must be one of {sorted(_VALID_JSON_DELIVERY)!r}; "
+            f"got {delivery!r}"
+        )
+
+    inputs = entry.get("inputs")
+    if not isinstance(inputs, list) or not inputs:
+        problems.append("inputs must be a non-empty list of mappings")
+    else:
+        for i, item in enumerate(inputs):
+            if not isinstance(item, dict):
+                problems.append(f"inputs[{i}] must be a mapping")
+                continue
+            for key in ("flag", "type", "required"):
+                if key not in item:
+                    problems.append(f"inputs[{i}] missing required key {key!r}")
+            itype = item.get("type")
+            if itype is not None and itype not in _VALID_INPUT_TYPES:
+                problems.append(
+                    f"inputs[{i}].type {itype!r} not in "
+                    f"{sorted(_VALID_INPUT_TYPES)!r}"
+                )
+            if itype == "enum":
+                vals = item.get("values")
+                if not isinstance(vals, list) or not vals:
+                    problems.append(
+                        f"inputs[{i}] type 'enum' requires a non-empty "
+                        f"`values` list"
+                    )
+            elif "values" in item:
+                problems.append(
+                    f"inputs[{i}] carries `values` but type is not 'enum'"
+                )
+    return problems
+
+
 # ---------- YAML rendering ----------------------------------------
 
 def _yaml_escape(value: str) -> str:
@@ -392,6 +466,33 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     yaml_text = render_yaml(seeds)
+
+    # R1 guard: refuse to write a manifest whose emitted entries carry a
+    # malformed field bundle. Today the seeder emits no `min_setec_version`
+    # (the bundle is hand-curated), so every entry is exempt and this is a
+    # no-op — but it pins the contract in the bootstrap tool too, so if the
+    # seeder is ever taught to emit the bundle, an invalid one can't ship.
+    # Parsing the rendered text (rather than the Seed dataclasses) validates
+    # exactly what gets written.
+    try:
+        import yaml  # type: ignore
+    except ImportError:
+        yaml = None
+    if yaml is not None:
+        parsed = yaml.safe_load(yaml_text) or {}
+        bundle_problems: list[str] = []
+        for entry in parsed.get("entries") or []:
+            eid = entry.get("id", "(no id)")
+            for problem in validate_r1_bundle(entry):
+                bundle_problems.append(f"  {eid}: {problem}")
+        if bundle_problems:
+            print(
+                "error: emitted manifest has invalid R1 field bundle(s):\n"
+                + "\n".join(bundle_problems),
+                file=sys.stderr,
+            )
+            return 2
+
     args.out.write_text(yaml_text, encoding="utf-8")
     print(f"Wrote {args.out} ({len(seeds)} entries).")
     return 0

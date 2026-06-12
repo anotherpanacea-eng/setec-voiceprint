@@ -13,6 +13,9 @@ Subcommands
   list      — list entries, with filters
   show ID   — print one entry in full
   recommend — given a free-text situation, return matching audits
+  emit      — print the whole manifest as the R1 query envelope
+              (top-level setec_version + manifest_schema_version +
+              entries[], each with a projected calibration_status)
 
 Filters supported by `list`:
 
@@ -68,6 +71,10 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 # <id>.yaml per capability plus _meta.yaml for top-level keys (schema_version).
 # A single-file manifest is still accepted (legacy / test fixtures).
 MANIFEST_PATH = PLUGIN_ROOT / "capabilities.d"
+# The plugin version SOT (semver). `emit` reads `setec_version` from here so
+# the R1 envelope never duplicates the version — it always reflects plugin.json
+# (resolved relative to PLUGIN_ROOT, not the CWD).
+PLUGIN_JSON_PATH = PLUGIN_ROOT / ".claude-plugin" / "plugin.json"
 
 
 def _load_yaml():
@@ -159,6 +166,28 @@ def _load_manifest_dir(path: Path, yaml: Any) -> dict[str, Any]:
 
 def entries(manifest: dict[str, Any]) -> list[dict[str, Any]]:
     return list(manifest.get("entries") or [])
+
+
+def setec_version(path: Path = PLUGIN_JSON_PATH) -> str:
+    """Read the plugin's semver from `.claude-plugin/plugin.json`.
+
+    This is the version SOT (R1 §1): the `emit` envelope's top-level
+    `setec_version` reflects plugin.json, never a duplicated literal in the
+    manifest. `path` resolves relative to PLUGIN_ROOT by default so the value
+    is independent of the caller's CWD."""
+    if not path.exists():
+        raise FileNotFoundError(
+            f"plugin manifest missing at {path}; expected "
+            f".claude-plugin/plugin.json with a `version` key"
+        )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    version = data.get("version")
+    if not isinstance(version, str) or not version:
+        raise ValueError(
+            f"{path}: `version` must be a non-empty string (the plugin "
+            f"semver SOT); got {version!r}"
+        )
+    return version
 
 
 # ---------- availability check -------------------------------------
@@ -580,6 +609,44 @@ def render_recommend(
     return "\n".join(lines)
 
 
+# ---------- emit (R1 query envelope) -------------------------------
+
+def _project_calibration_status(entry: dict[str, Any]) -> dict[str, Any]:
+    """Return a shallow copy of `entry` with `calibration_status` projected
+    from the entry's `status`.
+
+    The consumer (APODICTIC) reads the calibration posture under the name
+    `calibration_status`; SETEC stores it as `status`. R1 projects the name at
+    emit/show time rather than duplicating it into every fragment — one source
+    of truth (`status`), surfaced under the consumer's expected key. No other
+    field is mutated; the original entry is left untouched."""
+    projected = dict(entry)
+    projected["calibration_status"] = entry.get("status")
+    return projected
+
+
+def build_emit_envelope(
+    manifest: dict[str, Any],
+    *,
+    version: str | None = None,
+) -> dict[str, Any]:
+    """Build the R1 `emit` envelope: top-level `setec_version` (from
+    plugin.json, the SOT) + `manifest_schema_version` (the manifest's
+    `schema_version`, distinct from the per-surface output envelope's 1.0) +
+    `entries[]` with a projected `calibration_status` on every entry.
+
+    `version` defaults to `setec_version()` (plugin.json); callers can inject
+    one to avoid a second file read."""
+    sv = version if version is not None else setec_version()
+    return {
+        "setec_version": sv,
+        "manifest_schema_version": manifest.get("schema_version"),
+        "entries": [
+            _project_calibration_status(e) for e in entries(manifest)
+        ],
+    }
+
+
 # ---------- CLI ----------------------------------------------------
 
 def cmd_list(args) -> int:
@@ -617,12 +684,27 @@ def cmd_show(args) -> int:
     for e in entries(manifest):
         if e.get("id") == args.id:
             if args.format == "json":
-                print(json.dumps(e, indent=2, default=str))
+                # Project calibration_status here too (consistency with
+                # `emit`): the consumer reads the calibration posture under
+                # `calibration_status`; the stored field is `status`.
+                print(json.dumps(
+                    _project_calibration_status(e), indent=2, default=str,
+                ))
             else:
                 print(render_show(e))
             return 0
     print(f"error: no entry {args.id!r}", file=sys.stderr)
     return 1
+
+
+def cmd_emit(args) -> int:
+    manifest = load_manifest(args.manifest)
+    envelope = build_emit_envelope(manifest)
+    # `emit` is a machine-readable surface; JSON is the only (and default)
+    # format. Honor --format json explicitly so the flag is symmetric with
+    # the other subcommands.
+    print(json.dumps(envelope, indent=2, default=str))
+    return 0
 
 
 def cmd_recommend(args) -> int:
@@ -723,6 +805,20 @@ def main(argv: list[str] | None = None) -> int:
         default="md",
     )
     p_rec.set_defaults(func=cmd_recommend)
+
+    p_emit = sub.add_parser(
+        "emit",
+        help=(
+            "Emit the whole manifest as the R1 query envelope "
+            "(setec_version + manifest_schema_version + entries[])"
+        ),
+    )
+    p_emit.add_argument(
+        "--json", dest="format", action="store_const", const="json",
+        default="json",
+        help="Emit JSON (the only format; default).",
+    )
+    p_emit.set_defaults(func=cmd_emit)
 
     args = parser.parse_args(argv)
     return args.func(args)
