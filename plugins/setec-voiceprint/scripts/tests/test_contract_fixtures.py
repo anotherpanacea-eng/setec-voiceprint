@@ -47,6 +47,10 @@ EXPECTED_TASK_SURFACE = {
     "punctuation_cadence_audit": "voice_coherence",
     "idiolect_detector": "voice_coherence",
     "narrative_decision_audit": "narrative_decision_audit",
+    "voice_fingerprint": "authorship_embedding",
+    "mimicry_cosplay_audit": "voice_coherence",
+    "general_imposters": "voice_coherence",
+    "binoculars_audit": "binoculars_discrimination",
 }
 
 REQUIRED_TOP_LEVEL_KEYS = frozenset({

@@ -153,6 +153,25 @@ def test_filter_by_consumer_apodictic():
     )
 
 
+def test_filter_by_consumer_setec_voicewright():
+    """v1.115.0: --consumer setec-voicewright returns the voicewright
+    fitness-loop surfaces — the selection ensemble (voice_fingerprint,
+    voice_distance) + held-out validators (mimicry_cosplay_audit,
+    general_imposters, binoculars_audit) + idiolect_detector (whose JSON
+    is mimicry_cosplay_audit's required cross-check input)."""
+    m = _manifest()
+    out = cap.filter_entries(m["entries"], consumer="setec-voicewright")
+    ids = {e["id"] for e in out}
+    expected = {
+        "voice_fingerprint", "voice_distance", "idiolect_detector",
+        "mimicry_cosplay_audit", "general_imposters", "binoculars_audit",
+    }
+    assert ids == expected, (
+        f"--consumer setec-voicewright mismatch: "
+        f"missing {expected - ids}, unexpected {ids - expected}"
+    )
+
+
 def test_filter_by_consumer_unknown_returns_empty():
     """A consumer name that no entry lists returns an empty result —
     not an error. The list is documentation, not enforcement, so
@@ -452,14 +471,29 @@ def test_cli_recommend_returns_zero():
 
 # ---------- R1: emit + projected calibration_status ----------------
 
-# The nine APODICTIC subprocess-shim surfaces that carry the R1 field
-# bundle (min_setec_version / json_delivery / structured inputs[]).
+# The consumer surfaces that carry the R1 field bundle
+# (min_setec_version / json_delivery / structured inputs[]): the nine
+# APODICTIC subprocess-shim surfaces plus the four setec-voicewright
+# fitness surfaces promoted in 1.115.0.
 _R1_CONSUMER_SURFACES = [
     "variance_audit", "manuscript_audit", "repetition_audit",
     "voice_distance", "voice_profile", "pov_voice_profile",
     "punctuation_cadence_audit", "idiolect_detector",
     "narrative_decision_audit",
+    "voice_fingerprint", "mimicry_cosplay_audit",
+    "general_imposters", "binoculars_audit",
 ]
+
+# Per-surface version floors (R1 Step B for the apodictic nine;
+# 1.115.0 for the voicewright four). Everything not listed floors at
+# the 1.86.0 baseline.
+_R1_FLOOR_EXCEPTIONS = {
+    "narrative_decision_audit": "1.107.0",
+    "voice_fingerprint": "1.115.0",
+    "mimicry_cosplay_audit": "1.115.0",
+    "general_imposters": "1.115.0",
+    "binoculars_audit": "1.115.0",
+}
 
 
 def test_setec_version_matches_plugin_json():
@@ -523,18 +557,19 @@ def test_emit_consumer_surfaces_carry_full_r1_bundle():
 
 
 def test_emit_floor_and_delivery_decisions():
-    """Pin the per-surface floor and delivery decisions made in R1 Step B:
-    narrative_decision_audit floors at 1.107.0 (the rest at 1.86.0), and
-    voice_profile + pov_voice_profile are the file-delivery surfaces (both
-    privacy-gate stdout, so the R2 dispatcher must project their envelopes)."""
+    """Pin the per-surface floor and delivery decisions: the R1 Step B
+    floors (narrative_decision_audit at 1.107.0, the other apodictic
+    surfaces at 1.86.0), the voicewright four at 1.115.0, and the
+    file-delivery set — voice_profile + pov_voice_profile + general_imposters
+    (all privacy-gate non-private output, so the R2 dispatcher must inject
+    a private --json-out and project their envelopes)."""
     by_id = {
         e["id"]: e for e in cap.build_emit_envelope(_manifest())["entries"]
     }
-    assert by_id["narrative_decision_audit"]["min_setec_version"] == "1.107.0"
     for sid in _R1_CONSUMER_SURFACES:
-        if sid != "narrative_decision_audit":
-            assert by_id[sid]["min_setec_version"] == "1.86.0", sid
-    file_surfaces = {"voice_profile", "pov_voice_profile"}
+        expected_floor = _R1_FLOOR_EXCEPTIONS.get(sid, "1.86.0")
+        assert by_id[sid]["min_setec_version"] == expected_floor, sid
+    file_surfaces = {"voice_profile", "pov_voice_profile", "general_imposters"}
     for sid in _R1_CONSUMER_SURFACES:
         expected = "file" if sid in file_surfaces else "stdout"
         assert by_id[sid]["json_delivery"] == expected, sid

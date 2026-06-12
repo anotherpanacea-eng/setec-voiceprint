@@ -98,9 +98,10 @@ _CATEGORY_DEFAULT_EXIT = {
 
 def consumer_entries(manifest: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """Return ``{surface_id: entry}`` for every consumer surface — i.e.
-    every entry carrying a ``json_delivery`` field. That is exactly the set
-    R1 promoted (the nine APODICTIC surfaces); a manifest entry without
-    ``json_delivery`` is not a normalized consumer surface and the
+    every entry carrying a ``json_delivery`` field. That is exactly the
+    promoted set (the nine APODICTIC surfaces from R1 + the four
+    setec-voicewright fitness surfaces from 1.115.0); a manifest entry
+    without ``json_delivery`` is not a normalized consumer surface and the
     dispatcher will not run it."""
     out: dict[str, dict[str, Any]] = {}
     for e in capabilities.entries(manifest):
@@ -168,6 +169,50 @@ def _run_subprocess(cmd: list[str]) -> subprocess.CompletedProcess[str]:
 def _emit(envelope: dict[str, Any]) -> None:
     """Write a finished envelope to stdout (pretty + stable)."""
     print(json.dumps(envelope, indent=2, default=str))
+
+
+def _emit_surface_envelope(surface: str, envelope: dict[str, Any]) -> int:
+    """Re-emit a surface-produced schema_version 1.0 envelope and return the
+    dispatcher exit code.
+
+    A success envelope (``available`` not False) re-emits verbatim and exits
+    0. A surface that emits its OWN structured R3 refusal — ``available:
+    false`` with a RECOGNIZED ``reason_category`` (e.g. general_imposters
+    refusing when the manifest has too few impostor personas) — is HONORED:
+    the envelope is re-emitted verbatim (its ``reason``/``reason_category``
+    are richer and more accurate than the dispatcher scraping stderr in
+    ``_wrap_script_failure``) and the exit code is derived from
+    ``reason_category`` via the SAME mapping the dispatcher's synthesized
+    errors use, so a script-emitted refusal and a dispatcher-synthesized one
+    are indistinguishable to the consumer.
+
+    An ``available: false`` envelope with a MISSING or UNRECOGNIZED
+    ``reason_category`` is a contract bug — a failure a consumer cannot branch
+    on, when R3 promises every failure names a ``reason_category``. Rather
+    than pass the malformed envelope through (exit 1 but no branchable
+    category), the dispatcher SYNTHESIZES a proper ``internal_error`` envelope
+    in its place. Applied on BOTH delivery paths (stdout + file) so they
+    cannot diverge."""
+    if envelope.get("available") is False:
+        category = envelope.get("reason_category")
+        if category in _CATEGORY_DEFAULT_EXIT:
+            _emit(envelope)
+            return _CATEGORY_DEFAULT_EXIT[category]
+        # Malformed available:false (no / unrecognized reason_category):
+        # synthesize an internal_error so the consumer still gets a branchable
+        # reason_category, instead of re-emitting the unbranchable envelope.
+        return _error(
+            surface=surface,
+            reason=(
+                f"{surface}: emitted an available:false envelope with a "
+                f"missing/unrecognized reason_category ({category!r}); every "
+                f"R3 failure must name a reason_category."
+            ),
+            reason_category="internal_error",
+            exit_code=EXIT_INTERNAL,
+        )
+    _emit(envelope)
+    return EXIT_OK
 
 
 def _error(
@@ -358,8 +403,7 @@ def _run_stdout_surface(
             reason_category="internal_error",
             exit_code=EXIT_INTERNAL,
         )
-    _emit(envelope)
-    return EXIT_OK
+    return _emit_surface_envelope(surface, envelope)
 
 
 def _run_file_surface(
@@ -441,9 +485,10 @@ def _run_file_surface(
         # dispatcher never requests), so the projection is a faithful
         # re-emit. The rich private artifact stays inside the tempdir and
         # is destroyed on cleanup; nothing private reaches stdout beyond
-        # what the audit already licenses.
-        _emit(envelope)
-        return EXIT_OK
+        # what the audit already licenses. A script-emitted available=False
+        # refusal (e.g. general_imposters' too-few-impostors gate) is honored
+        # with its own reason_category and the mapped exit code.
+        return _emit_surface_envelope(surface, envelope)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 

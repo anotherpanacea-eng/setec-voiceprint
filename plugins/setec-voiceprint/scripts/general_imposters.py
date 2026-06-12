@@ -86,7 +86,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import acquisition_core as ac  # noqa: E402
-from output_schema import build_output  # noqa: E402
+from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import (  # noqa: E402
     ClaimLicense,
     from_legacy,
@@ -364,6 +364,32 @@ def _build_envelope(result) -> dict[str, Any]:
     GIResult.to_dict() return shape is preserved under
     ``envelope.results`` for any internal/legacy consumer that
     reads it back via to_dict()."""
+    # A hard refusal (fewer than MIN_IMPOSTORS distinct impostor personas,
+    # or no candidate docs) could not compute a win proportion — it is NaN.
+    # Emit a STRUCTURED R3 refusal (available=False + reason_category
+    # bad_input: the manifest/corpus does not satisfy the method's
+    # preconditions) rather than a success envelope carrying NaN. Two
+    # reasons this is the right shape, not NaN-with-available=True:
+    #   (1) build_output's R4 output-validity gate runs only on available
+    #       results and rejects NaN — a refusal that shipped available=True
+    #       tracebacked and surfaced through the setec_run dispatcher as an
+    #       internal_error (and crashed direct CLI use too);
+    #   (2) a held-out consumer scoring proportion=null would read it as the
+    #       worst possible candidate; a refusal means the validator could
+    #       not run, which must surface as blocking, not as a bad score.
+    # The gray-zone DECISION (a valid proportion in [0.20, 0.80] where the
+    # harness declines an attribution CLAIM) is NOT a refusal: it ships
+    # available=True with a real number and is unaffected here.
+    if result.refused:
+        return build_error_output(
+            task_surface=TASK_SURFACE,
+            tool=TOOL_NAME,
+            version=SCRIPT_VERSION,
+            target_path=result.target_id,
+            target_words=0,
+            reason=result.refusal_reason or "General Imposters run refused.",
+            reason_category="bad_input",
+        )
     legacy = result.to_dict()
     # Strip metadata keys that move to envelope top level.
     metadata_keys = {"task_surface", "tool", "version", "ai_status"}

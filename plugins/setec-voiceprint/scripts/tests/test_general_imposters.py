@@ -142,6 +142,53 @@ def test_refuses_when_no_candidate_docs():
     assert "candidate" in result.refusal_reason.lower()
 
 
+def test_refused_result_builds_structured_r3_envelope():
+    """A hard refusal must NOT ship a success envelope with proportion=NaN
+    (which tripped build_output's R4 bounds gate and surfaced as an
+    internal_error through the dispatcher). It emits an available=False R3
+    refusal with reason_category bad_input, empty results, and JSON that
+    carries no NaN."""
+    candidate = _candidate_docs()
+    impostors = _impostor_docs()[:3]  # below MIN_IMPOSTORS
+    result = gi.run_gi(
+        target_text=candidate[0].text, target_id="target",
+        candidate_docs=candidate, impostor_docs=impostors,
+        iterations=20, seed=42,
+    )
+    assert result.refused is True
+
+    env = gi._build_envelope(result)
+    assert env["available"] is False
+    assert env["reason_category"] == "bad_input"
+    assert env["schema_version"] == "1.0"
+    assert env["results"] == {}
+    assert "at least" in env["reason"].lower()
+    # Serializable with strict JSON (NaN would need allow_nan and would break
+    # downstream parsers); the proportion=NaN must never reach the envelope.
+    json.dumps(env, allow_nan=False)
+
+
+def test_gray_zone_decision_is_available_not_refused():
+    """The gray-zone DECISION (a valid proportion where the harness declines
+    an attribution CLAIM) is distinct from a hard refusal: it ships
+    available=True with a real numeric proportion, untouched by the refusal
+    path."""
+    candidate = _candidate_docs()
+    impostors = _impostor_docs()
+    # A target equal to a candidate doc tends to win cleanly; we only assert
+    # the *shape* contract for a non-refused run, not a particular band.
+    result = gi.run_gi(
+        target_text=candidate[0].text, target_id="target",
+        candidate_docs=candidate, impostor_docs=impostors,
+        iterations=20, seed=42,
+    )
+    assert result.refused is False
+    env = gi._build_envelope(result)
+    assert env["available"] is True
+    assert isinstance(env["results"].get("proportion"), (int, float))
+    json.dumps(env, allow_nan=False)
+
+
 # ------------------- Math invariants -----------------------------
 
 

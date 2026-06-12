@@ -101,8 +101,10 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `edit_magnitude_audit` | Heuristic (uncalibrated) | Yes | operator-calibrated model (--model PATH) (optional) | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 100 |
 | `fast_detect_curvature` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `formulaicity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
+| `general_imposters` | Literature-anchored | No | labeled corpus + valid `corpus_manifest.jsonl` (required) | req: scipy | CPU / stdlib (+ optional spaCy model) | — |
 | `intrinsic_dimension_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch, numpy, scipy | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 500 |
 | `manuscript_audit` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | stdlib; opt: spacy, sklearn, sentence_transformers, textstat, nltk, numpy | CPU / stdlib (+ optional spaCy model) | 200 |
+| `mimicry_cosplay_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `narratorial_distance_audit` | Heuristic (uncalibrated) | Yes | to override the perception/cognition verb set (optional) | req: spacy | CPU + spaCy model | 1500 |
 | `pov_voice_profile` | Heuristic (uncalibrated) | No | labeled corpus + valid `corpus_manifest.jsonl` (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 3000 |
 | `productive_roughness_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | req: spacy | CPU + spaCy model | 1000 |
@@ -111,7 +113,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `repetition_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `rewriting_invariance_audit` | Heuristic (uncalibrated) | Yes | MODEL (operator-supplied LLM model id used to rewrite) (required); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 50 |
 | `sound_texture_audit` | Heuristic (uncalibrated) | Yes | register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
-| `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional); register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
+| `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
 | `voice_profile` | Empirical (provisional) | No | register-matched personal baseline corpus (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 2000 |
 
 ### Runway & calibration tooling

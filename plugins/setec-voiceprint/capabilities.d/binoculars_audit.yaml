@@ -4,7 +4,10 @@ entries:
   surface: binoculars_discrimination
   status: literature_anchored
   handoff: experimental
-  consumers: []
+  consumers:
+  - setec-voicewright
+  min_setec_version: "1.115.0"
+  json_delivery: stdout
   family: binoculars
   purpose: 'Two-model perplexity comparison (Hans et al. 2024). Scores a target against
     a scorer LLM + observer LLM pair; lower ratios indicate the target is more predictable
@@ -23,7 +26,31 @@ entries:
     score)
   - You can't install the surprisal tier (transformers + torch, ~2 GB)
   inputs:
-    target: prose text file (UTF-8)
+  - flag: target
+    type: path
+    required: true
+  - flag: --scorer
+    type: string
+    required: false
+  - flag: --observer
+    type: string
+    required: false
+  - flag: --threshold-low
+    type: float
+    required: false
+  - flag: --threshold-high
+    type: float
+    required: false
+  - flag: --score-version
+    type: enum
+    required: false
+    values:
+    - auto
+    - v1
+    - v2
+  - flag: --json
+    type: bool
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:
@@ -42,8 +69,10 @@ entries:
     - torch
     python_optional: []
   examples:
-  - description: Default scorer/observer pair
+  - description: Default scorer/observer pair (writes the evidence pack)
     cmd: python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt
+  - description: Consumer envelope on stdout (no evidence-pack side files)
+    cmd: python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --json
   - description: Custom scorer pair
     cmd: python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --scorer
       falcon-7b --observer falcon-7b-instruct

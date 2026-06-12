@@ -4,7 +4,10 @@ entries:
   surface: authorship_embedding
   status: empirically_oriented
   handoff: experimental
-  consumers: []
+  consumers:
+  - setec-voicewright
+  min_setec_version: "1.115.0"
+  json_delivery: stdout
   family: style-embedding
   purpose: 'Same-author style-embedding surface. Embeds passages with a frozen style
     encoder (LUAR default; Wegmann optional via sentence-transformers) and reports
@@ -30,10 +33,21 @@ entries:
   - You want a general-imposters win/loss proportion — use general_imposters.py (this
     is descriptive only)
   inputs:
-    target: prose text file (UTF-8)
-    optional:
-    - --baseline-dir for two-corpus / candidate corpus
-    - --impostor-dir for n-way impostor pool (requires --baseline-dir)
+  - flag: target
+    type: path
+    required: true
+  - flag: --baseline-dir
+    type: path
+    required: false
+  - flag: --impostor-dir
+    type: path
+    required: false
+  - flag: --model
+    type: string
+    required: false
+  - flag: --json
+    type: bool
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:

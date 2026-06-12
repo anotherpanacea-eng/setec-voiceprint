@@ -6,6 +6,7 @@ entries:
   handoff: stable
   consumers:
   - apodictic
+  - setec-voicewright
   min_setec_version: "1.86.0"
   json_delivery: stdout
   family: idiolect
