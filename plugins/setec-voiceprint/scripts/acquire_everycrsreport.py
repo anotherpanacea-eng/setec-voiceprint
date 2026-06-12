@@ -493,6 +493,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--user-agent", help="Override the User-Agent header.")
     p.add_argument("--dry-run", action="store_true",
                    help="Inventory what would be acquired without writing.")
+    p.add_argument("--allow-empty", action="store_true",
+                   help="Exit 0 even when nothing is acquired. By default a "
+                        "zero-output run that isn't a dedupe-only rerun "
+                        "(nothing matched the source/filters) fails.")
     p.add_argument("--allow-public-output", action="store_true",
                    help=("Allow writing outside ai-prose-baselines-private/. "
                          "Acquired prose is corpus-baseline input; only use "
@@ -620,10 +624,15 @@ def run(args: argparse.Namespace, fetcher: ac.Fetcher | None = None) -> int:
             encoding="utf-8",
         )
 
-    if summary.acquired == 0 and not summary.skip_log:
+    if summary.acquired == 0 and not args.allow_empty and not any(
+        s.get("reason") == "duplicate-hash" for s in summary.skip_log
+    ):
+        # Zero acquired with no duplicate-hash skip seen: nothing matched the
+        # source/filters (a likely misconfiguration), not a dedupe-only rerun.
         sys.stderr.write(
-            "No reports acquired. Verify the reports.csv URL, the date "
-            "window, and (with --dry-run) the body selector.\n"
+            "No reports acquired and nothing matched the source/filters. "
+            "Verify the reports.csv URL, the date window, and (with --dry-run) "
+            "the body selector; pass --allow-empty to allow an empty run.\n"
         )
         return 1
     return 0

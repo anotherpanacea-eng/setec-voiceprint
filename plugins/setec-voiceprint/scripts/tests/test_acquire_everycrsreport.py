@@ -104,6 +104,7 @@ def make_args(**overrides) -> argparse.Namespace:
         user_agent=None,
         dry_run=False,
         allow_public_output=True,  # tests write into tmp dirs
+        allow_empty=False,
         allow_non_prose=False,
         strip_rules=None,
         strip_aggressive=False,
@@ -303,6 +304,22 @@ def test_min_words_gate_drops_everything_when_high(tmp_path):
     )
     ev.run(args, fetcher=make_fetcher())
     assert not output_dir.exists() or not list(output_dir.glob("*.txt"))
+
+
+def test_zero_output_exit_code(tmp_path):
+    """A zero-output run that isn't a dedupe-only rerun fails (rc=1) unless
+    --allow-empty; a dedupe-only rerun exits 0."""
+    base = tmp_path / "ai-prose-baselines-private"
+    # Everything below the floor → nothing acquired, no dupes → failure.
+    ze = dict(output_dir=str(base / "ze"),
+              emit_manifest=str(base / "ze" / "d.jsonl"), min_words=100000)
+    assert ev.run(make_args(**ze), fetcher=make_fetcher()) == 1
+    assert ev.run(make_args(allow_empty=True, **ze), fetcher=make_fetcher()) == 0
+    # Dedupe-only rerun is a valid empty result → 0.
+    od = dict(output_dir=str(base / "do"),
+              emit_manifest=str(base / "do" / "d.jsonl"), min_words=300)
+    assert ev.run(make_args(**od), fetcher=make_fetcher()) == 0   # first acquires
+    assert ev.run(make_args(**od), fetcher=make_fetcher()) == 0   # rerun: all dupe
 
 
 def test_in_focus_dropped_below_floor(tmp_path):
