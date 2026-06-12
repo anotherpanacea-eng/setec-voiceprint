@@ -311,10 +311,17 @@ class Fetcher:
         rate_limit_seconds: float = 2.0,
         user_agent: str = "",
         respect_robots: bool = True,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self.rate_limit_seconds = max(0.0, rate_limit_seconds)
         self.user_agent = user_agent or DEFAULT_USER_AGENT
         self.respect_robots = respect_robots
+        # Extra request headers (e.g. ``Authorization: Token …``) for
+        # APIs that require header auth. Kept on the fetcher (not in the
+        # URL) so a credential never lands in a stored source_url.
+        # Production (`RequestsFetcher`) merges these into each GET;
+        # `FixtureFetcher` ignores them (it maps by URL).
+        self.extra_headers = dict(extra_headers or {})
         self._last_fetch_per_host: dict[str, float] = {}
         self._robots_cache: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self.fetch_count = 0
@@ -448,6 +455,7 @@ def make_requests_fetcher(
     rate_limit_seconds: float = 2.0,
     timeout: float = 30.0,
     user_agent: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> Fetcher:
     """Construct a production fetcher backed by the `requests` library.
 
@@ -460,6 +468,11 @@ def make_requests_fetcher(
     advertises both on outgoing HTTP requests AND when consulting
     robots.txt — both checks must agree, so the user-agent threading
     is end-to-end.
+
+    ``extra_headers`` are merged into every GET (e.g. ``{"Authorization":
+    "Token <key>"}`` for header-auth APIs like CourtListener). Keeping the
+    credential in a header — never in the URL — means it cannot leak into a
+    stored ``source_url``.
     """
     try:
         import requests  # type: ignore
@@ -477,7 +490,7 @@ def make_requests_fetcher(
             try:
                 resp = requests.get(
                     url,
-                    headers={"User-Agent": self.user_agent},
+                    headers={"User-Agent": self.user_agent, **self.extra_headers},
                     timeout=timeout,
                     allow_redirects=True,
                 )
@@ -506,6 +519,7 @@ def make_requests_fetcher(
         rate_limit_seconds=rate_limit_seconds,
         user_agent=user_agent,
         respect_robots=True,
+        extra_headers=extra_headers,
     )
 
 
