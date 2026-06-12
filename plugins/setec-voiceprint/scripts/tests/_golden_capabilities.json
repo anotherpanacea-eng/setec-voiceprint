@@ -494,6 +494,51 @@
       ]
     },
     {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; one PDF download + text-layer extraction per URL",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "pypdf"
+        ]
+      },
+      "do_not_use_when": [
+        "the URLs are Zenodo/Figshare record pages rather than direct PDF links"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_pdf_urls",
+      "inputs": {
+        "target": "a local URL-list file (JSONL objects with a url key, or bare PDF URLs)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire prose from a curated list of remote PDF URLs into the impostor pool (the grant_proposal / expert_affidavit population baselines); the generic PDF acquirer that per-source URL-list builders feed.",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "grant_proposal",
+        "expert_affidavit"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_pdf_urls.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the grant_proposal or expert_affidavit population baseline from a curated list of direct PDF URLs"
+      ]
+    },
+    {
       "_seeded_at": "2026-05-28",
       "compute": {
         "cost_note": "TODO",
