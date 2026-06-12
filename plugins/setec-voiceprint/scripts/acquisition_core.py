@@ -311,10 +311,17 @@ class Fetcher:
         rate_limit_seconds: float = 2.0,
         user_agent: str = "",
         respect_robots: bool = True,
+        extra_headers: dict[str, str] | None = None,
     ) -> None:
         self.rate_limit_seconds = max(0.0, rate_limit_seconds)
         self.user_agent = user_agent or DEFAULT_USER_AGENT
         self.respect_robots = respect_robots
+        # Extra request headers (e.g. ``Authorization: Token …``) for
+        # APIs that require header auth. Kept on the fetcher (not in the
+        # URL) so a credential never lands in a stored source_url.
+        # Production (`RequestsFetcher`) merges these into each GET;
+        # `FixtureFetcher` ignores them (it maps by URL).
+        self.extra_headers = dict(extra_headers or {})
         self._last_fetch_per_host: dict[str, float] = {}
         self._robots_cache: dict[str, urllib.robotparser.RobotFileParser | None] = {}
         self.fetch_count = 0
@@ -334,6 +341,25 @@ class Fetcher:
         return result
 
     def _do_fetch(self, url: str) -> FetchResult:  # pragma: no cover
+        raise NotImplementedError
+
+    def fetch_bytes(self, url: str) -> bytes | None:
+        """Fetch raw bytes (for binary payloads like PDFs).
+
+        Same rate-limit + robots enforcement as ``fetch``; returns the
+        response body as bytes, or ``None`` on a robots block / network
+        error / non-2xx. Used by the PDF acquisition path
+        (``pdf_text_from_bytes``).
+        """
+        if self.respect_robots and not self._robots_allows(url):
+            return None
+        self._wait_for_rate_limit(url)
+        data = self._do_fetch_bytes(url)
+        self._record_fetch(url)
+        self.fetch_count += 1
+        return data
+
+    def _do_fetch_bytes(self, url: str) -> bytes | None:  # pragma: no cover
         raise NotImplementedError
 
     def _wait_for_rate_limit(self, url: str) -> None:
@@ -441,6 +467,20 @@ class FixtureFetcher(Fetcher):
             content_type=content_type, final_url=url,
         )
 
+    def _do_fetch_bytes(self, url: str) -> bytes | None:
+        self.fetched_urls.append(url)
+        target = self.url_map.get(url)
+        if target is None:
+            return None
+        if isinstance(target, FetchResult):
+            return target.text.encode("utf-8")
+        path = Path(target)
+        if self.fixture_dir is not None and not path.is_absolute():
+            path = self.fixture_dir / path
+        if not path.is_file():
+            return None
+        return path.read_bytes()
+
 
 def make_requests_fetcher(
     *,
@@ -448,6 +488,7 @@ def make_requests_fetcher(
     rate_limit_seconds: float = 2.0,
     timeout: float = 30.0,
     user_agent: str | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> Fetcher:
     """Construct a production fetcher backed by the `requests` library.
 
@@ -460,6 +501,11 @@ def make_requests_fetcher(
     advertises both on outgoing HTTP requests AND when consulting
     robots.txt — both checks must agree, so the user-agent threading
     is end-to-end.
+
+    ``extra_headers`` are merged into every GET (e.g. ``{"Authorization":
+    "Token <key>"}`` for header-auth APIs like CourtListener). Keeping the
+    credential in a header — never in the URL — means it cannot leak into a
+    stored ``source_url``.
     """
     try:
         import requests  # type: ignore
@@ -477,7 +523,7 @@ def make_requests_fetcher(
             try:
                 resp = requests.get(
                     url,
-                    headers={"User-Agent": self.user_agent},
+                    headers={"User-Agent": self.user_agent, **self.extra_headers},
                     timeout=timeout,
                     allow_redirects=True,
                 )
@@ -502,10 +548,26 @@ def make_requests_fetcher(
                 final_url=resp.url,
             )
 
+        def _do_fetch_bytes(self, url: str) -> bytes | None:
+            try:
+                resp = requests.get(
+                    url,
+                    headers={"User-Agent": self.user_agent, **self.extra_headers},
+                    timeout=timeout,
+                    allow_redirects=True,
+                )
+            except Exception as exc:
+                sys.stderr.write(f"  network error: {url}: {exc}\n")
+                return None
+            if not (200 <= resp.status_code < 300):
+                return None
+            return resp.content
+
     return RequestsFetcher(
         rate_limit_seconds=rate_limit_seconds,
         user_agent=user_agent,
         respect_robots=True,
+        extra_headers=extra_headers,
     )
 
 
@@ -914,3 +976,44 @@ def html_text_is_clean(text: str) -> bool:
     if re.search(r"</?[a-zA-Z][a-zA-Z0-9]*[\s/>]", text):
         return False
     return True
+
+
+# --------------- PDF extraction -----------------------------------
+
+
+def pdf_text_from_bytes(data: bytes) -> str:
+    """Extract text from PDF bytes via the existing ``pdf_extract`` text-layer
+    extractor (pypdf).
+
+    ``pdf_extract.extract_text_layer`` takes a path, so the bytes are written
+    to a temp file. Returns the extracted text, or ``""`` on empty / image-only
+    / unparseable input (the caller treats ``""`` as a skip). OCR is out of
+    scope here — image-only PDFs return ``""``; the operator runs the dedicated
+    ``pdf_extract.py`` OCR pass for those.
+
+    The PDF acquisition path (``acquire_pdf_urls.py``) calls this on bytes
+    fetched via ``Fetcher.fetch_bytes``.
+    """
+    if not data:
+        return ""
+    import os
+    import tempfile
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    try:
+        import pdf_extract  # type: ignore
+    finally:
+        sys.path.pop(0)
+    tmp_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tf:
+            tf.write(data)
+            tmp_path = tf.name
+        return pdf_extract.extract_text_layer(Path(tmp_path)) or ""
+    except Exception:
+        return ""
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass

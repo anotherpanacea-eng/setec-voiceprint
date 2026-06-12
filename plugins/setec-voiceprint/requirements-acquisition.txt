@@ -65,3 +65,10 @@ pypdf>=4.0
 # Acquisition scripts emit a clear "install OCR dependencies or pass
 # --skip-ocr" message when ocrmypdf is unavailable.
 # ocrmypdf>=15
+
+# AWS S3 client for the Mirrulations regulatory-comment acquirer
+# (`scripts/acquire_mirrulations.py`). Used for anonymous (unsigned) reads
+# of the public Mirrulations Open Data bucket; not needed by any other
+# acquisition script. The store abstraction falls back to a clear
+# "boto3 is not installed" message when absent.
+boto3>=1.28
