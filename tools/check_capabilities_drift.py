@@ -137,7 +137,10 @@ def validate_r1_bundle(entry: dict) -> list[str]:
       * `json_delivery` — one of {stdout, file}.
       * `inputs` — a non-empty list of mappings, each with `flag`, `type`, and
         `required`; `type` in the legal vocabulary; `values` (a non-empty list)
-        present iff `type == "enum"`.
+        present iff `type == "enum"`. An input may carry a `group`; an
+        entry-level `required_groups` names groups of which exactly one member
+        must be supplied, and every member of such a group must be
+        `required: false` (the group, not the member, is mandatory).
 
     Entries WITHOUT the marker return `[]` (exempt). This is a pure validator
     (no side effects) so both the drift linter and the seeder can reuse it."""
@@ -197,6 +200,52 @@ def validate_r1_bundle(entry: dict) -> list[str]:
                     f"inputs[{i}] carries `values` but type is "
                     f"{itype!r} (values is only valid for type 'enum')"
                 )
+
+        # `group` + entry-level `required_groups`: an input may carry a
+        # `group` (a mutually-exclusive alternative set); a group named in
+        # `required_groups` requires exactly one of its members. Members of a
+        # required group are individually `required: false` (the group, not the
+        # member, is mandatory). Validating this makes the requirement
+        # machine-knowable to a consumer instead of buried in prose.
+        groups: dict[str, list[int]] = {}
+        for i, item in enumerate(inputs):
+            if not isinstance(item, dict):
+                continue
+            g = item.get("group")
+            if g is None:
+                continue
+            if not isinstance(g, str) or not g:
+                problems.append(
+                    f"inputs[{i}].group must be a non-empty string; got {g!r}"
+                )
+            else:
+                groups.setdefault(g, []).append(i)
+
+        required_groups = entry.get("required_groups")
+        if required_groups is not None:
+            if not isinstance(required_groups, list) or not all(
+                isinstance(g, str) for g in required_groups
+            ):
+                problems.append(
+                    f"required_groups must be a list of group-name strings; "
+                    f"got {required_groups!r}"
+                )
+            else:
+                for g in required_groups:
+                    members = groups.get(g)
+                    if not members:
+                        problems.append(
+                            f"required_groups names {g!r} but no input carries "
+                            f"group: {g!r}"
+                        )
+                        continue
+                    for i in members:
+                        if inputs[i].get("required") is not False:
+                            problems.append(
+                                f"inputs[{i}] is in required group {g!r} and "
+                                f"must be `required: false` (the group is "
+                                f"required, not the individual flag)"
+                            )
     return problems
 
 

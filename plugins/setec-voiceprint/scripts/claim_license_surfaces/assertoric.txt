@@ -1,0 +1,1 @@
+deterministic argument-move profile (ArgScope B3/B4 + AGD; population baseline + two-corpus separation test, no verdict)

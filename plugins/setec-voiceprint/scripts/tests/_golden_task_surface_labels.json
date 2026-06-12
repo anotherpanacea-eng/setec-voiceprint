@@ -1,4 +1,5 @@
 {
+  "assertoric": "deterministic argument-move profile (ArgScope B3/B4 + AGD; population baseline + two-corpus separation test, no verdict)",
   "authorship_embedding": "style-embedding voice fingerprint (LUAR / Wegmann learned style manifold; cosine-similarity distribution, no verdict)",
   "binoculars_discrimination": "Binoculars-style perplexity-ratio discrimination",
   "calibration": "per-signal threshold calibration",

@@ -525,7 +525,8 @@ def test_emit_consumer_surfaces_carry_full_r1_bundle():
 def test_emit_floor_and_delivery_decisions():
     """Pin the per-surface floor and delivery decisions made in R1 Step B:
     narrative_decision_audit floors at 1.107.0 (the rest at 1.86.0), and
-    pov_voice_profile is the one file-delivery surface."""
+    voice_profile + pov_voice_profile are the file-delivery surfaces (both
+    privacy-gate stdout, so the R2 dispatcher must project their envelopes)."""
     by_id = {
         e["id"]: e for e in cap.build_emit_envelope(_manifest())["entries"]
     }
@@ -533,10 +534,10 @@ def test_emit_floor_and_delivery_decisions():
     for sid in _R1_CONSUMER_SURFACES:
         if sid != "narrative_decision_audit":
             assert by_id[sid]["min_setec_version"] == "1.86.0", sid
-    assert by_id["pov_voice_profile"]["json_delivery"] == "file"
+    file_surfaces = {"voice_profile", "pov_voice_profile"}
     for sid in _R1_CONSUMER_SURFACES:
-        if sid != "pov_voice_profile":
-            assert by_id[sid]["json_delivery"] == "stdout", sid
+        expected = "file" if sid in file_surfaces else "stdout"
+        assert by_id[sid]["json_delivery"] == expected, sid
 
 
 def test_show_json_projects_calibration_status():

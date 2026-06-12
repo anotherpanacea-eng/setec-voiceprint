@@ -121,6 +121,50 @@
       ]
     },
     {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; search cursor pagination plus one detail fetch per document; per-doc-type word floors (brief 3000, affidavit 1000)",
+        "length_floor_words": 3000,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": []
+      },
+      "do_not_use_when": [
+        "the source is not the CourtListener v4 API"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_courtlistener",
+      "inputs": {
+        "target": "CourtListener v4 REST API (Token header auth)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire legal briefs (--doc-type brief -> legal_brief) or expert affidavits/declarations (--doc-type affidavit -> expert_affidavit) from CourtListener / RECAP into the impostor pool (the population baselines argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "legal_brief",
+        "expert_affidavit"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_courtlistener.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the legal_brief population baseline from public-record RECAP briefs",
+        "building the expert_affidavit population baseline from public-record RECAP declarations (--doc-type affidavit applies the structural + OCR screens)"
+      ]
+    },
+    {
       "_seeded_at": "2026-06-02",
       "compute": {
         "cost_note": "TODO",
@@ -157,6 +201,94 @@
       "surface": "voice_coherence_acquisition",
       "use_when": [
         "TODO"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; one CSV fetch plus one HTML fetch per admitted report",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "bs4"
+        ]
+      },
+      "do_not_use_when": [
+        "the source is not the EveryCRSReport reports.csv index"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_everycrsreport",
+      "inputs": {
+        "target": "EveryCRSReport reports.csv URL (default https://www.everycrsreport.com/reports.csv)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "pull Congressional Research Service reports from EveryCRSReport.com into the policy_brief impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "policy_brief"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_everycrsreport.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the policy_brief population baseline from public-domain CRS reports"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; published + granules pagination plus one HTM fetch per prepared statement",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "bs4"
+        ]
+      },
+      "do_not_use_when": [
+        "the source is not the GovInfo CHRG collection"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_govinfo_chrg",
+      "inputs": {
+        "target": "GovInfo published service (collection CHRG) via the api.data.gov API"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "pull prepared written congressional testimony from GovInfo CHRG into the testimony_policy impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "testimony_policy"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_govinfo_chrg.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the testimony_policy population baseline from public-domain CHRG prepared statements"
       ]
     },
     {
@@ -237,6 +369,137 @@
       "surface": "voice_coherence_acquisition",
       "use_when": [
         "TODO"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; S3 list_objects_v2 pagination plus one get per extracted-text key",
+        "length_floor_words": 1000,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "boto3"
+        ]
+      },
+      "do_not_use_when": [
+        "near-duplicate campaign text must be removed (v1 does exact-hash dedup only)"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_mirrulations",
+      "inputs": {
+        "target": "the public Mirrulations AWS Open Data S3 bucket (anonymous access)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire substantive regulatory comments from the Mirrulations S3 mirror into the regulatory_comment impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "regulatory_comment"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_mirrulations.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the regulatory_comment population baseline from pre-extracted comment-attachment text in the public Mirrulations bucket"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; OpenAlex cursor pagination plus one CORE fetch per candidate DOI",
+        "length_floor_words": 3000,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": []
+      },
+      "do_not_use_when": [
+        "the discipline filter would admit STEM lab reports (tune --openalex-filter)"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_openalex_core",
+      "inputs": {
+        "target": "OpenAlex works API (keyless) + CORE v3 search API (keyed)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire academic scholarly articles via OpenAlex (discipline/OA filter) + CORE (full text) into the scholarly_article impostor pool (the population baseline argmove_profile profiles).",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "scholarly_article"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_openalex_core.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the scholarly_article population baseline from open-access argumentative-discipline articles"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-11",
+      "compute": {
+        "cost_note": "network-bound; one PDF download + text-layer extraction per URL",
+        "length_floor_words": 1500,
+        "tier": "acquisition"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": [
+          "pypdf"
+        ]
+      },
+      "do_not_use_when": [
+        "the URLs are Zenodo/Figshare record pages rather than direct PDF links"
+      ],
+      "examples": [],
+      "family": "acquisition",
+      "handoff": "none",
+      "id": "acquire_pdf_urls",
+      "inputs": {
+        "target": "a local URL-list file (JSONL objects with a url key, or bare PDF URLs)"
+      },
+      "outputs": {
+        "artifacts": [
+          "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+          "draft_manifest.jsonl (corpus_role impostor)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "acquire prose from a curated list of remote PDF URLs into the impostor pool (the grant_proposal / expert_affidavit population baselines); the generic PDF acquirer that per-source URL-list builders feed.",
+      "references": [
+        "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+      ],
+      "registers": [
+        "grant_proposal",
+        "expert_affidavit"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/acquire_pdf_urls.py",
+      "status": "todo",
+      "surface": "voice_coherence_acquisition",
+      "use_when": [
+        "building the grant_proposal or expert_affidavit population baseline from a curated list of direct PDF URLs"
       ]
     },
     {
@@ -462,6 +725,54 @@
         "Target prose feels \"smooth\" or \"professional\" in a way that signals over-production",
         "You want surface evidence to complement Tier 1 variance audit",
         "You're doing source triage on a manuscript and want flagged sentences for adjudication"
+      ]
+    },
+    {
+      "_seeded_at": "2026-06-12",
+      "compute": {
+        "cost_note": "CPU-bound; two reused stdlib audits (stance B4, agency B3) plus regex AGD markers per document; no model load",
+        "length_floor_words": 300,
+        "tier": "core"
+      },
+      "consumers": [],
+      "dependencies": {
+        "python": []
+      },
+      "do_not_use_when": [
+        "paragraph-role / discourse-mode labeling is needed (that is the B1/B2 LLM judge, a separate surface)",
+        "a provenance verdict about a text or person is wanted (no verdict by design)"
+      ],
+      "examples": [],
+      "family": "argument-moves",
+      "handoff": "none",
+      "id": "argmove_profile",
+      "inputs": {
+        "target": "a corpus directory of .txt/.md documents (default substantiality floor 300 words; --compare takes two directories)"
+      },
+      "outputs": {
+        "artifacts": [
+          "argmove profile JSON (per-signal mean/sd/cv/median/p10-p90 bands)",
+          "compare JSON (per-signal Cliff's delta + Cohen's d, sorted by |delta|)"
+        ],
+        "schema_version": "1.0"
+      },
+      "purpose": "aggregate the deterministic B4 stance + B3 abstraction signals plus the net-new AGD marker module (assuring/guarding/discounting) over a corpus into an argument-move population profile, and run the two-corpus separation test (Cliff's delta primary, Cohen's d secondary) \u2014 the cheap, judge-free half of ArgScope, gating any B1/B2 LLM-judge spend.",
+      "references": [],
+      "registers": [
+        "policy_brief",
+        "testimony_policy",
+        "scholarly_article",
+        "legal_brief",
+        "regulatory_comment",
+        "grant_proposal",
+        "expert_affidavit"
+      ],
+      "script_path": "plugins/setec-voiceprint/scripts/argmove_profile.py",
+      "status": "todo",
+      "surface": "assertoric",
+      "use_when": [
+        "building an argument-register population baseline (the profiles the acquisition-tier registers feed)",
+        "answering whether deterministic signals separate two corpora (e.g. human vs LLM argument) before spending on the LLM judge"
       ]
     },
     {
@@ -1758,36 +2069,41 @@
       "inputs": [
         {
           "flag": "--target-dir",
+          "type": "path",
           "required": false,
-          "type": "path"
+          "group": "target"
         },
         {
           "flag": "--manifest",
+          "type": "path",
           "required": false,
-          "type": "path"
+          "group": "target"
         },
         {
           "flag": "--reference-dir",
+          "type": "path",
           "required": false,
-          "type": "path"
+          "group": "reference"
         },
         {
           "flag": "--reference-manifest",
+          "type": "path",
           "required": false,
-          "type": "path"
+          "group": "reference"
         },
         {
           "flag": "--reference-corpus",
-          "required": false,
           "type": "enum",
+          "required": false,
+          "group": "reference",
           "values": [
             "brown"
           ]
         },
         {
           "flag": "--keyness-method",
-          "required": false,
           "type": "enum",
+          "required": false,
           "values": [
             "log_likelihood",
             "chi_square",
@@ -1797,12 +2113,10 @@
         },
         {
           "flag": "--json",
-          "required": false,
-          "type": "bool"
+          "type": "bool",
+          "required": false
         }
       ],
-      "json_delivery": "stdout",
-      "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
           ".idiolect.json",
@@ -1825,6 +2139,12 @@
         "You're about to revise (or LLM-edit) a draft and want to know which phrasings to preserve",
         "The writer has a baseline corpus of \u2265 50K words",
         "You want to detect post-revision mimicry / cosplay (paired with mimicry_cosplay_audit)"
+      ],
+      "min_setec_version": "1.86.0",
+      "json_delivery": "stdout",
+      "required_groups": [
+        "target",
+        "reference"
       ]
     },
     {
@@ -2078,8 +2398,8 @@
       ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/manuscript_audit.py manuscript.md --baseline-dir baseline/",
-          "description": "Manuscript-wide Layer A dashboard against a baseline"
+          "description": "Manuscript-wide Layer A dashboard against a baseline",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/manuscript_audit.py manuscript.md --baseline-dir baseline/"
         }
       ],
       "family": "tier1-variance",
@@ -2088,27 +2408,25 @@
       "inputs": [
         {
           "flag": "manuscript",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--chapter-dir",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--baseline-dir",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--json",
-          "required": false,
-          "type": "bool"
+          "type": "bool",
+          "required": false
         }
       ],
-      "json_delivery": "stdout",
-      "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
           ".manuscript_audit.json",
@@ -2134,7 +2452,9 @@
         "You want manuscript-wide distributional evidence of mode-collapse and which chapters deviate from baseline",
         "You have a multi-chapter manuscript (or a chapter directory) and an optional baseline corpus for z-score comparison",
         "Each chapter clears the Tier 1 length floor (\u2265 200 words); thin chapters degrade the per-chapter estimate"
-      ]
+      ],
+      "min_setec_version": "1.86.0",
+      "json_delivery": "stdout"
     },
     {
       "_seeded_at": "2026-05-28",
@@ -2292,13 +2612,13 @@
       "inputs": [
         {
           "flag": "target",
-          "required": true,
-          "type": "path"
+          "type": "path",
+          "required": true
         },
         {
           "flag": "--judge",
-          "required": false,
           "type": "enum",
+          "required": false,
           "values": [
             "manifest",
             "mock",
@@ -2309,22 +2629,20 @@
         },
         {
           "flag": "--judge-manifest",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--judge-model",
-          "required": false,
-          "type": "string"
+          "type": "string",
+          "required": false
         },
         {
           "flag": "--json",
-          "required": false,
-          "type": "bool"
+          "type": "bool",
+          "required": false
         }
       ],
-      "json_delivery": "stdout",
-      "min_setec_version": "1.107.0",
       "outputs": {
         "artifacts": [
           ".narrative.json",
@@ -2349,7 +2667,9 @@
         "Target is long-form fiction \u2265 2000 words",
         "You want evidence that survives LAMP-style stylistic rewriting",
         "You're stacking signals with Tier 1 / AIC / Binoculars"
-      ]
+      ],
+      "min_setec_version": "1.107.0",
+      "json_delivery": "stdout"
     },
     {
       "_seeded_at": "2026-06-06",
@@ -2648,8 +2968,8 @@
       ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/pov_voice_profile.py --manifest baseline_manifest.jsonl --out ai-prose-baselines-private/pov_profile.md",
-          "description": "Per-POV voiceprints + collapse verdict from a POV-tagged manifest"
+          "description": "Per-POV voiceprints + collapse verdict from a POV-tagged manifest",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/pov_voice_profile.py --manifest baseline_manifest.jsonl --out ai-prose-baselines-private/pov_profile.md"
         }
       ],
       "family": "pov-voice",
@@ -2658,22 +2978,20 @@
       "inputs": [
         {
           "flag": "--manifest",
-          "required": true,
-          "type": "path"
+          "type": "path",
+          "required": true
         },
         {
           "flag": "--out",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--json-out",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         }
       ],
-      "json_delivery": "file",
-      "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
           "pov_profile.json",
@@ -2696,7 +3014,9 @@
         "Multi-POV fiction where you suspect the POV voices have collapsed into the writer's neutral default (e.g., a Blind Swap test fails)",
         "You have a JSONL manifest tagging documents/chapters by `pov`, with \u2265 ~3000 words per POV for stable centroids",
         "You want to see which POV pairs are closest and which features distinguish each POV"
-      ]
+      ],
+      "min_setec_version": "1.86.0",
+      "json_delivery": "file"
     },
     {
       "_seeded_at": "2026-05-28",
@@ -2819,8 +3139,8 @@
       ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py target.md --baseline-dir baseline/",
-          "description": "Punctuation cadence vs. a personal baseline"
+          "description": "Punctuation cadence vs. a personal baseline",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py target.md --baseline-dir baseline/"
         }
       ],
       "family": "punctuation",
@@ -2829,27 +3149,25 @@
       "inputs": [
         {
           "flag": "input",
-          "required": true,
-          "type": "path"
+          "type": "path",
+          "required": true
         },
         {
           "flag": "--baseline-dir",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--json",
-          "required": false,
-          "type": "bool"
+          "type": "bool",
+          "required": false
         },
         {
           "flag": "--ai-status",
-          "required": false,
-          "type": "string"
+          "type": "string",
+          "required": false
         }
       ],
-      "json_delivery": "stdout",
-      "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
           ".punctuation.json",
@@ -2873,7 +3191,9 @@
         "As a follow-up to Layer A when lexical compression fired and you want to name what specifically was regularized at the punctuation layer",
         "A line edit / copyedit \"changed something\" and you want the specific cadence shifts (best with --baseline-dir for z-scores)",
         "A quick triage on AI-revised prose \u2014 punctuation cadence shifts early"
-      ]
+      ],
+      "min_setec_version": "1.86.0",
+      "json_delivery": "stdout"
     },
     {
       "compute": {
@@ -2990,8 +3310,8 @@
       ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/repetition_audit.py target.md --baseline-dir baseline/",
-          "description": "Words over-represented vs. a personal baseline"
+          "description": "Words over-represented vs. a personal baseline",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/repetition_audit.py target.md --baseline-dir baseline/"
         }
       ],
       "family": "repetition",
@@ -3000,27 +3320,25 @@
       "inputs": [
         {
           "flag": "target",
-          "required": true,
-          "type": "path"
+          "type": "path",
+          "required": true
         },
         {
           "flag": "--baseline-dir",
-          "required": true,
-          "type": "path"
+          "type": "path",
+          "required": true
         },
         {
           "flag": "--anchors",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--json",
-          "required": false,
-          "type": "bool"
+          "type": "bool",
+          "required": false
         }
       ],
-      "json_delivery": "stdout",
-      "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
           ".repetition.json",
@@ -3044,7 +3362,9 @@
         "Layer A flagged lexical compression and you want the specific over-represented words to target in a vocabulary-restoration pass",
         "You have a baseline corpus of the writer's own prior prose to compute the ratio against",
         "You want to distinguish concentrated repetition (clustered) from distributed repetition (the cluster_max signal)"
-      ]
+      ],
+      "min_setec_version": "1.86.0",
+      "json_delivery": "stdout"
     },
     {
       "compute": {
@@ -3688,22 +4008,20 @@
       "inputs": [
         {
           "flag": "input",
-          "required": true,
-          "type": "path"
+          "type": "path",
+          "required": true
         },
         {
           "flag": "--baseline-dir",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--json",
-          "required": false,
-          "type": "bool"
+          "type": "bool",
+          "required": false
         }
       ],
-      "json_delivery": "stdout",
-      "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
           ".variance.json",
@@ -3730,7 +4048,9 @@
         "First pass on any prose where you want distributional evidence of mode-collapse",
         "You have a baseline corpus (the writer's own prior work or a register match)",
         "Target is \u2265 200 words for Tier 1; \u2265 500 for Tier 2/3; \u2265 2000 for Tier 4 surprisal"
-      ]
+      ],
+      "min_setec_version": "1.86.0",
+      "json_delivery": "stdout"
     },
     {
       "compute": {
@@ -3764,32 +4084,30 @@
       "inputs": [
         {
           "flag": "target",
-          "required": true,
-          "type": "path"
+          "type": "path",
+          "required": true
         },
         {
           "flag": "--baseline-dir",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--manifest",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--ai-status",
-          "required": false,
-          "type": "string"
+          "type": "string",
+          "required": false
         },
         {
           "flag": "--json",
-          "required": false,
-          "type": "bool"
+          "type": "bool",
+          "required": false
         }
       ],
-      "json_delivery": "stdout",
-      "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
           ".voice_distance.json",
@@ -3813,7 +4131,9 @@
         "You have a baseline of the writer's prior prose (\u2265 20K words for tight bounds)",
         "You suspect voice drift across drafts / time / register",
         "You want to identify which feature families drove the drift (Delta + per-family cosine)"
-      ]
+      ],
+      "min_setec_version": "1.86.0",
+      "json_delivery": "stdout"
     },
     {
       "_seeded_at": "2026-05-28",
@@ -3945,8 +4265,8 @@
       ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_profile.py --baseline-dir baseline/ --out ai-prose-baselines-private/profile.md",
-          "description": "Build a private voice profile from a baseline"
+          "description": "Build a private voice profile from a baseline",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/voice_profile.py --baseline-dir baseline/ --out ai-prose-baselines-private/profile.md"
         }
       ],
       "family": "voice-distance",
@@ -3955,27 +4275,25 @@
       "inputs": [
         {
           "flag": "--baseline-dir",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--manifest",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         },
         {
           "flag": "--json",
-          "required": false,
-          "type": "bool"
+          "type": "bool",
+          "required": false
         },
         {
           "flag": "--out",
-          "required": false,
-          "type": "path"
+          "type": "path",
+          "required": false
         }
       ],
-      "json_delivery": "stdout",
-      "min_setec_version": "1.86.0",
       "outputs": {
         "artifacts": [
           ".voice_profile.json",
@@ -3999,7 +4317,9 @@
         "You want a durable within-author reference to anchor downstream voice-coherence work (voice_distance, idiolect_detector, mimicry)",
         "You have a baseline corpus of the writer's prior prose (a directory or a manifest)",
         "You want to see which feature families are most stable (low CV) for the writer"
-      ]
+      ],
+      "min_setec_version": "1.86.0",
+      "json_delivery": "file"
     },
     {
       "_seeded_at": "2026-05-28",

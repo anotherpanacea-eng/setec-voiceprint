@@ -1,0 +1,9 @@
+{
+  "meta": {"count": 4, "next_cursor": null},
+  "results": [
+    {"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1234/d1", "title": "On the Justification of Legal Norms", "publication_year": 2018, "publication_date": "2018-05-10", "authorships": [{"author": {"display_name": "Jane Scholar"}}]},
+    {"id": "https://openalex.org/W2", "doi": "https://doi.org/10.1234/d2", "title": "Distributive Justice and Public Policy", "publication_year": 2019, "publication_date": "2019-03-02", "authorships": [{"author": {"display_name": "Robert Theorist"}}]},
+    {"id": "https://openalex.org/W3", "doi": "https://doi.org/10.1234/d3", "title": "A Work Not Indexed in CORE", "publication_year": 2020, "publication_date": "2020-01-15", "authorships": [{"author": {"display_name": "Missing Author"}}]},
+    {"id": "https://openalex.org/W4", "doi": "https://doi.org/10.1234/d4", "title": "A Short Research Note", "publication_year": 2017, "publication_date": "2017-06-01", "authorships": [{"author": {"display_name": "Brief Author"}}]}
+  ]
+}

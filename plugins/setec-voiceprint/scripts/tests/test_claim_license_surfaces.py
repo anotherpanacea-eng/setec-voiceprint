@@ -39,7 +39,7 @@ def test_matches_golden_snapshot_byte_for_byte():
     """The assembled dict must equal the pre-refactor literal exactly."""
     golden = json.loads(_GOLDEN.read_text(encoding="utf-8"))
     assert TASK_SURFACE_LABELS == golden
-    assert len(TASK_SURFACE_LABELS) == 21
+    assert len(TASK_SURFACE_LABELS) == 22
 
 
 def test_fragments_are_exactly_the_key_set():
