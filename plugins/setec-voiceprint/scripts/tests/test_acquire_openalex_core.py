@@ -80,6 +80,7 @@ def make_args(**overrides) -> argparse.Namespace:
         user_agent=None,
         dry_run=False,
         allow_public_output=True,
+        allow_empty=False,
         allow_non_prose=False,
         strip_rules=None,
         strip_aggressive=False,
@@ -249,6 +250,20 @@ def test_min_words_gate_high_drops_all(tmp_path):
     )
     oc.run(args, fetcher=make_fetcher())
     assert not output_dir.exists() or not list(output_dir.glob("*.txt"))
+
+
+def test_zero_output_exit_code(tmp_path):
+    """A zero-output run that isn't a dedupe-only rerun fails (rc=1) unless
+    --allow-empty; a dedupe-only rerun exits 0."""
+    base = tmp_path / "ai-prose-baselines-private"
+    ze = dict(output_dir=str(base / "ze"),
+              emit_manifest=str(base / "ze" / "d.jsonl"), min_words=100000)
+    assert oc.run(make_args(**ze), fetcher=make_fetcher()) == 1
+    assert oc.run(make_args(allow_empty=True, **ze), fetcher=make_fetcher()) == 0
+    od = dict(output_dir=str(base / "do"),
+              emit_manifest=str(base / "do" / "d.jsonl"))
+    assert oc.run(make_args(**od), fetcher=make_fetcher()) == 0   # first acquires
+    assert oc.run(make_args(**od), fetcher=make_fetcher()) == 0   # rerun: any dupe
 
 
 def test_short_article_dropped(tmp_path):
