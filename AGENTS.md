@@ -105,6 +105,19 @@ compliance (tracked in #133):
 - the standalone `calibration_survey.py` CLI (the bake-off driver).
 - any other surface that loads a full corpus into one process.
 
+## Acquisition scripts (`acquire_*.py`)
+
+The impostor-corpus acquirers share `acquisition_core.py` and the
+`acquire_corpus_template.py` shape (`discover_items` + `extract_one`; the rest
+of the pipeline is shared). The full build/test guide lives in
+`references/acquire-corpus-pattern.md`. One hard-won convention:
+
+- **A zero-output run must fail.** When a run acquires nothing, exit non-zero
+  unless it's a dedupe-only rerun (a `duplicate-hash` skip was seen) or
+  `--allow-empty` was passed — a non-empty `skip_log` (everything filtered /
+  no-text / below-min-words) must not mask a misconfigured source, filter,
+  selector, or `--prefix`. (Codex review of #180.)
+
 ## Keeping docs current (the docs-freshness step)
 
 Shipping or changing a capability is not done until its paper trail moves with
