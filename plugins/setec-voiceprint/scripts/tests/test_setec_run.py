@@ -288,10 +288,12 @@ def test_file_surface_honors_script_emitted_refusal(manifest, monkeypatch):
     assert env["reason_category"] == "bad_input"
 
 
-def test_available_false_without_category_is_internal_error(manifest, monkeypatch):
+def test_available_false_without_category_synthesizes_internal_error(manifest, monkeypatch):
     """An available=False envelope that names no reason_category is a contract
-    bug (a surface that says 'unavailable' without saying why); it maps to
-    internal_error (exit 1), not a silent rc 0."""
+    bug (a surface that says 'unavailable' without saying why). The dispatcher
+    does NOT pass the malformed envelope through — it SYNTHESIZES an
+    internal_error envelope so the consumer still gets a branchable
+    reason_category (R3), and exits 1."""
     import subprocess
 
     bad = _refusal_envelope()
@@ -308,6 +310,31 @@ def test_available_false_without_category_is_internal_error(manifest, monkeypatc
         manifest=manifest, observed_version="1.112.0",
     )
     assert rc == setec_run.EXIT_INTERNAL == 1
+    assert env["available"] is False
+    # The emitted envelope is branchable (synthesized), not the malformed one.
+    assert env["reason_category"] == "internal_error"
+    assert "reason_category" in env["reason"]
+
+
+def test_available_false_unrecognized_category_synthesizes_internal_error(manifest, monkeypatch):
+    """A present-but-unrecognized reason_category is equally unbranchable, so
+    it is synthesized to internal_error rather than honored."""
+    import subprocess
+
+    bad = _refusal_envelope(reason_category="banana")
+
+    def fake_run(cmd, **kw):
+        return subprocess.CompletedProcess(
+            cmd, 0, stdout=json.dumps(bad), stderr="",
+        )
+
+    monkeypatch.setattr(setec_run, "_run_subprocess", fake_run)
+    rc, env = _dispatch_capture(
+        "variance_audit", ["x.md"],
+        manifest=manifest, observed_version="1.112.0",
+    )
+    assert rc == setec_run.EXIT_INTERNAL == 1
+    assert env["reason_category"] == "internal_error"
 
 
 def test_unparseable_stdout_wrapped_as_internal_error(manifest, monkeypatch):

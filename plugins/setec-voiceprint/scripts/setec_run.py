@@ -171,27 +171,47 @@ def _emit(envelope: dict[str, Any]) -> None:
     print(json.dumps(envelope, indent=2, default=str))
 
 
-def _emit_surface_envelope(envelope: dict[str, Any]) -> int:
+def _emit_surface_envelope(surface: str, envelope: dict[str, Any]) -> int:
     """Re-emit a surface-produced schema_version 1.0 envelope and return the
     dispatcher exit code.
 
-    A success envelope (``available`` not False) re-emits and exits 0. A
-    surface that emits its OWN structured R3 refusal — ``available: false``
-    with a ``reason_category`` (e.g. general_imposters refusing when the
-    manifest has too few impostor personas) — is HONORED: the envelope is
-    re-emitted verbatim (its ``reason``/``reason_category`` are richer and
-    more accurate than the dispatcher scraping stderr in
+    A success envelope (``available`` not False) re-emits verbatim and exits
+    0. A surface that emits its OWN structured R3 refusal — ``available:
+    false`` with a RECOGNIZED ``reason_category`` (e.g. general_imposters
+    refusing when the manifest has too few impostor personas) — is HONORED:
+    the envelope is re-emitted verbatim (its ``reason``/``reason_category``
+    are richer and more accurate than the dispatcher scraping stderr in
     ``_wrap_script_failure``) and the exit code is derived from
     ``reason_category`` via the SAME mapping the dispatcher's synthesized
     errors use, so a script-emitted refusal and a dispatcher-synthesized one
-    are indistinguishable to the consumer. A missing/unknown category on an
-    available=False envelope is treated as ``internal_error`` (exit 1) — a
-    surface that says "unavailable" without saying why is a contract bug.
-    Applied on BOTH delivery paths (stdout + file) so they cannot diverge."""
-    _emit(envelope)
+    are indistinguishable to the consumer.
+
+    An ``available: false`` envelope with a MISSING or UNRECOGNIZED
+    ``reason_category`` is a contract bug — a failure a consumer cannot branch
+    on, when R3 promises every failure names a ``reason_category``. Rather
+    than pass the malformed envelope through (exit 1 but no branchable
+    category), the dispatcher SYNTHESIZES a proper ``internal_error`` envelope
+    in its place. Applied on BOTH delivery paths (stdout + file) so they
+    cannot diverge."""
     if envelope.get("available") is False:
         category = envelope.get("reason_category")
-        return _CATEGORY_DEFAULT_EXIT.get(category, EXIT_INTERNAL)
+        if category in _CATEGORY_DEFAULT_EXIT:
+            _emit(envelope)
+            return _CATEGORY_DEFAULT_EXIT[category]
+        # Malformed available:false (no / unrecognized reason_category):
+        # synthesize an internal_error so the consumer still gets a branchable
+        # reason_category, instead of re-emitting the unbranchable envelope.
+        return _error(
+            surface=surface,
+            reason=(
+                f"{surface}: emitted an available:false envelope with a "
+                f"missing/unrecognized reason_category ({category!r}); every "
+                f"R3 failure must name a reason_category."
+            ),
+            reason_category="internal_error",
+            exit_code=EXIT_INTERNAL,
+        )
+    _emit(envelope)
     return EXIT_OK
 
 
@@ -383,7 +403,7 @@ def _run_stdout_surface(
             reason_category="internal_error",
             exit_code=EXIT_INTERNAL,
         )
-    return _emit_surface_envelope(envelope)
+    return _emit_surface_envelope(surface, envelope)
 
 
 def _run_file_surface(
@@ -468,7 +488,7 @@ def _run_file_surface(
         # what the audit already licenses. A script-emitted available=False
         # refusal (e.g. general_imposters' too-few-impostors gate) is honored
         # with its own reason_category and the mapped exit code.
-        return _emit_surface_envelope(envelope)
+        return _emit_surface_envelope(surface, envelope)
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
 
