@@ -156,6 +156,19 @@ def test_seeded_entries_use_status_todo():
             )
 
 
+def test_validate_r1_bundle_is_the_shared_single_source():
+    """The R1 field-bundle validator is deduplicated into tools/r1_bundle.py.
+    The seeder and the drift linter must import that ONE shared object, never a
+    private copy — a private copy is exactly how they drifted before (the
+    seeder's lost the group/required_groups rules). If someone re-adds a local
+    `def validate_r1_bundle`, this identity check breaks and fails the gate."""
+    import r1_bundle  # type: ignore
+    import check_capabilities_drift as ccd  # type: ignore
+
+    assert sc.validate_r1_bundle is r1_bundle.validate_r1_bundle
+    assert ccd.validate_r1_bundle is r1_bundle.validate_r1_bundle
+
+
 if __name__ == "__main__":
     import traceback
     for name, fn in sorted(globals().items()):
