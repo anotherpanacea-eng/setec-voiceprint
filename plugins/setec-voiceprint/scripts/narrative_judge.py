@@ -50,6 +50,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
+import judge_backends  # type: ignore
 from narrative_feature_schema import (  # type: ignore
     CORE_FEATURES,
     CoreFeature,
@@ -297,224 +298,19 @@ def _mock_judge(option_index: int = 0) -> JudgeBackend:
     return _run
 
 
-def _api_judge_anthropic(
-    *,
-    model: str,
-    system_preamble: str,
-    user_prompt: str,
-    temperature: float,
-    max_tokens: int,
-) -> JudgeBackend:
-    try:
-        import anthropic  # type: ignore
-    except ImportError as exc:
-        raise JudgeError(
-            "anthropic backend requires the `anthropic` SDK; "
-            "`pip install anthropic` first."
-        ) from exc
-
-    try:
-        client = anthropic.Anthropic()  # ANTHROPIC_API_KEY from env
-    except Exception as exc:  # noqa: BLE001
-        raise JudgeError(
-            f"anthropic client construction failed: {exc}"
-        ) from exc
-
-    def _run(story_text: str) -> JudgeResult:
-        try:
-            msg = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                temperature=temperature,
-                system=system_preamble,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": (
-                            f"{user_prompt}\n\n# Story text\n\n"
-                            f"{story_text}"
-                        ),
-                    },
-                ],
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise JudgeError(
-                f"anthropic provider call failed: {exc}"
-            ) from exc
-        text = "".join(
-            block.text
-            for block in msg.content
-            if getattr(block, "type", None) == "text"
-        )
-        try:
-            payload = _extract_json(text)
-        except ValueError as exc:
-            raise JudgeError(
-                f"anthropic judge returned non-JSON: {exc}"
-            ) from exc
-        return JudgeResult(
-            values=payload.get("values", {}),
-            per_feature_confidence=payload.get(
-                "per_feature_confidence", {}
-            ) or {},
-            judge_identity={
-                "kind": "anthropic",
-                "model": model,
-                "stop_reason": getattr(msg, "stop_reason", None),
-            },
-            raw_response=text,
-        )
-
-    return _run
+def _build_user_content(user_prompt: str, story_text: str) -> str:
+    return f"{user_prompt}\n\n# Story text\n\n{story_text}"
 
 
-def _api_judge_openai(
-    *,
-    model: str,
-    system_preamble: str,
-    user_prompt: str,
-    temperature: float,
-    max_tokens: int,
-) -> JudgeBackend:
-    try:
-        from openai import OpenAI  # type: ignore
-    except ImportError as exc:
-        raise JudgeError(
-            "openai backend requires the `openai` SDK; "
-            "`pip install openai` first."
-        ) from exc
-
-    try:
-        client = OpenAI()  # OPENAI_API_KEY from env
-    except Exception as exc:  # noqa: BLE001
-        raise JudgeError(
-            f"openai client construction failed: {exc}"
-        ) from exc
-
-    def _run(story_text: str) -> JudgeResult:
-        try:
-            resp = client.chat.completions.create(
-                model=model,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                response_format={"type": "json_object"},
-                messages=[
-                    {"role": "system", "content": system_preamble},
-                    {
-                        "role": "user",
-                        "content": (
-                            f"{user_prompt}\n\n# Story text\n\n"
-                            f"{story_text}"
-                        ),
-                    },
-                ],
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise JudgeError(
-                f"openai provider call failed: {exc}"
-            ) from exc
-        text = resp.choices[0].message.content or ""
-        try:
-            payload = _extract_json(text)
-        except ValueError as exc:
-            raise JudgeError(
-                f"openai judge returned non-JSON: {exc}"
-            ) from exc
-        return JudgeResult(
-            values=payload.get("values", {}),
-            per_feature_confidence=payload.get(
-                "per_feature_confidence", {}
-            ) or {},
-            judge_identity={
-                "kind": "openai",
-                "model": model,
-                "finish_reason": resp.choices[0].finish_reason,
-            },
-            raw_response=text,
-        )
-
-    return _run
-
-
-def _api_judge_gemini(
-    *,
-    model: str,
-    system_preamble: str,
-    user_prompt: str,
-    temperature: float,
-    max_tokens: int,
-) -> JudgeBackend:
-    try:
-        from google import genai  # type: ignore
-    except ImportError as exc:
-        raise JudgeError(
-            "gemini backend requires the `google-genai` SDK; "
-            "`pip install google-genai` first."
-        ) from exc
-
-    api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get(
-        "GEMINI_API_KEY"
+def _build_api_result(
+    payload: dict[str, Any], raw_text: str, identity: dict[str, Any], _judge_input: Any
+) -> JudgeResult:
+    return JudgeResult(
+        values=payload.get("values", {}),
+        per_feature_confidence=payload.get("per_feature_confidence", {}) or {},
+        judge_identity=identity,
+        raw_response=raw_text,
     )
-    if not api_key:
-        raise JudgeError(
-            "gemini backend requires GOOGLE_API_KEY or "
-            "GEMINI_API_KEY in the environment."
-        )
-    try:
-        client = genai.Client(api_key=api_key)
-    except Exception as exc:  # noqa: BLE001
-        raise JudgeError(
-            f"gemini client construction failed: {exc}"
-        ) from exc
-
-    def _run(story_text: str) -> JudgeResult:
-        try:
-            resp = client.models.generate_content(
-                model=model,
-                contents=[
-                    {
-                        "role": "user",
-                        "parts": [
-                            {
-                                "text": (
-                                    f"{system_preamble}\n\n"
-                                    f"{user_prompt}\n\n"
-                                    f"# Story text\n\n{story_text}"
-                                ),
-                            },
-                        ],
-                    },
-                ],
-                config={
-                    "temperature": temperature,
-                    "max_output_tokens": max_tokens,
-                    "response_mime_type": "application/json",
-                },
-            )
-        except Exception as exc:  # noqa: BLE001
-            raise JudgeError(
-                f"gemini provider call failed: {exc}"
-            ) from exc
-        text = resp.text or ""
-        try:
-            payload = _extract_json(text)
-        except ValueError as exc:
-            raise JudgeError(
-                f"gemini judge returned non-JSON: {exc}"
-            ) from exc
-        return JudgeResult(
-            values=payload.get("values", {}),
-            per_feature_confidence=payload.get(
-                "per_feature_confidence", {}
-            ) or {},
-            judge_identity={
-                "kind": "gemini",
-                "model": model,
-            },
-            raw_response=text,
-        )
-
-    return _run
 
 
 def _extract_json(text: str) -> dict[str, Any]:
@@ -588,11 +384,14 @@ def build_judge(
             temperature=temperature,
             max_tokens=max_tokens,
         )
-        if kind == "anthropic":
-            return _api_judge_anthropic(**common)
-        if kind == "openai":
-            return _api_judge_openai(**common)
-        return _api_judge_gemini(**common)
+        return judge_backends.make_api_judge(
+            kind,
+            **common,
+            build_user_content=_build_user_content,
+            build_result=_build_api_result,
+            judge_error=JudgeError,
+            extract_json=_extract_json,
+        )
     raise JudgeError(f"unknown judge kind: {kind!r}")
 
 
