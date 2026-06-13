@@ -42,6 +42,7 @@ Each entry block carries the signal's metadata on a single line:
 - [Bigram-KL signals (1)](#bigram-kl-signals)
 - [Repetition signals (2)](#repetition-signals)
 - [Narrative-decision signals (33)](#narrative-decision-signals)
+- [Argument-decision signals (4)](#argument-decision-signals)
 - [Totals](#totals)
 
 ---
@@ -552,6 +553,30 @@ The 30 features produce 33 signals because three categorical features ("Subplot 
 
 ---
 
+## Argument-decision signals
+
+Discourse-level argument-decision features from Kim, Chang, Pham & Iyyer 2026 ("Argument Collapse: LLMs Flatten Long-Form Public Debate", arXiv:2606.01736v3, §4.1–4.2 + Tables 26/27). The argument-domain sibling of the narrative-decision signals above: these score how an *argument* is structurally built — paragraph-role transition rates (B1) and discourse-mode mix (B2) — not how the prose phrases it. Computed via a pluggable per-paragraph LLM judge (`argument_judge`; default reads pre-computed labels from a JSON manifest) over the paragraph-role sequence.
+
+**Register-bound anchors.** The human / LLM means are public-debate-forum numbers (NYT *Room for Debate* ~352w; *Boston Review* ~1,150w); the paper's Limitations warn they may not transfer to research / legal / policy writing. The surface ships an unconditional `uncalibrated` band with a `register_match: ["op-ed"]` list — the arrows below are the paper's *directional* reference, never thresholds. Not a provenance detector and not a quality judgment (the paper measures argumentative *diversity*; no "human = better").
+
+Full surface spec at `.argscope-spec/argscope-layer-a-SPEC.md`. Schema at `scripts/argument_feature_schema.py` (importable; carries the paper's human / LLM means). Audit at `scripts/argument_decision_audit.py`. Signal keys are flat (the surface emits them as `results.contributions[].signal_key`).
+
+### B1 — Structural arc (paragraph-role transitions) (3)
+
+- `support_to_proposal_rate` · argument-decision · ↑ · **literature_anchored** · Kim et al. 2026 (H=0.123, AI=0.294; NYT *Room for Debate*) — LLM-elevated: jumps support→proposal more often
+- `support_to_support_rate` · argument-decision · ↓ · **literature_anchored** · (H=0.525, AI=0.329; reported-range midpoints) — human-elevated: humans sustain longer support chains
+- `thesis_opening_tendency` · argument-decision · ↑ · **literature_anchored** · directional only — no numeric anchor; reported as a tendency (LLMs open thesis-first more often), not scored against a mean and excluded from the aggregate
+
+### B2 — Discourse-mode mix (1)
+
+- `argumentation_share` · argument-decision · ↑ · **literature_anchored** · (H=0.715, AI=0.897) — LLM-elevated argumentation discourse-mode share
+
+### Aggregate
+
+- `argument.aggregate.literature_anchored_score` · argument-decision · ↓ · **literature_anchored** · mean over the numerically anchored signal contributions in human-z-units (1.0 = paper's human mean; 0.0 = paper's LLM mean). Lower scores are more AI-like. Ships `uncalibrated`; `thesis_opening_tendency` (directional) is not in the aggregate.
+
+---
+
 ## Totals
 
 | Family | Count |
@@ -574,18 +599,19 @@ The 30 features produce 33 signals because three categorical features ("Subplot 
 | bigram-kl | 1 |
 | repetition | 2 |
 | narrative-decision | 33 (+1 aggregate) |
-| **TOTAL** | **90** |
+| argument-decision | 4 (+1 aggregate) |
+| **TOTAL** | **95** |
 
-## Calibration-status distribution (v1.66.0 + ND v0.1.0)
+## Calibration-status distribution (v1.66.0 + ND v0.1.0 + AD v0.1.0)
 
 | Status | Count | Notes |
 |---|---|---|
 | calibrated | 0 | Per Stylometry-to-the-people policy; no corpus-derived thresholds shipped as load-bearing defaults |
-| literature_anchored | 40 | 6 prior (mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl) + 34 from the narrative-decision family (33 per-signal + aggregate), anchored to Russell et al. 2026 |
+| literature_anchored | 45 | 6 prior (mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl) + 34 from the narrative-decision family (33 per-signal + aggregate), anchored to Russell et al. 2026 + 5 from the argument-decision family (4 per-signal + aggregate), anchored to Kim et al. 2026 |
 | empirically_oriented | 8 | The six 2026-05-10 EditLens-measured variance signals + pos_bigram_entropy + Burrows Delta + per_feature_cosine |
 | heuristic | 41 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints |
 | structural_only | 1 | function_word_ratio |
-| **TOTAL** | **90** |
+| **TOTAL** | **95** |
 
 ## Related references
 
