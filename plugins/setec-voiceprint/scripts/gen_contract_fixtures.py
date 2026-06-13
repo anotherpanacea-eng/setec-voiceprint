@@ -773,6 +773,35 @@ def _build_argument_decision_audit() -> dict[str, Any]:
         {"index": i, "role": labels[i]["role"], "mode": labels[i]["mode"]}
         for i in range(len(labels))
     ]
+    # reused_signals (B3/B4 + AGD) is canonical here — fed with argmove_vector's
+    # real key shape + fixed values rather than computed, so the golden is
+    # byte-stable regardless of whether the Brysbaert concreteness data file is
+    # installed in the gen env (the one env-variant signal). Mirrors how the
+    # voice_fingerprint / binoculars builders feed representative values.
+    reused_signals = {
+        "available": True,
+        "n_words": 620,
+        "signals": {
+            "stance.hedge": 3.2, "stance.booster": 1.1, "stance.evidential": 0.8,
+            "stance.deontic_modality": 0.5, "stance.epistemic_modality": 1.0,
+            "stance.first_person_stance": 2.0, "stance.refusal": 0.0,
+            "stance.hedge_booster_ratio": 2.9, "stance.entropy_bits": 1.4,
+            "agency.nominalization_per_1k": 12.0,
+            "agency.generic_institutional_per_1k": 4.0,
+            "agency.concrete_detail_per_1k": 6.0,
+            "agency.action_verb_per_1k": 30.0,
+            "agency.agentless_passive_per_1k": 1.5,
+            "agency.light_verb_per_1k": 2.0, "agency.proper_noun_per_1k": 5.0,
+            "agency.entity_to_action_ratio": 0.4,
+            "abstraction.mean_concreteness": 2.85,
+            "agd.discounting_per_1k": 5.0, "agd.argument_marker_per_1k": 8.0,
+            "agd.reason_to_conclusion_ratio": 1.5, "agd.abusive_assuring_per_1k": 0.5,
+        },
+        "note": (
+            "B3 abstraction + B4 stance + AGD marker densities (deterministic, "
+            "heuristic — descriptive only, NO anchor; not in the aggregate)."
+        ),
+    }
     results = m.build_results_payload(
         target_words=620,
         n_paragraphs=len(paragraphs),
@@ -780,6 +809,7 @@ def _build_argument_decision_audit() -> dict[str, Any]:
         paragraph_labels=paragraph_labels,
         validation_warnings=val_warnings,
         observed=observed,
+        reused_signals=reused_signals,
         contributions=contributions,
         bundles=bundles,
         aggregate=aggregate,

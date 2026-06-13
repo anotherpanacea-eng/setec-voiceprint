@@ -147,6 +147,37 @@ def test_end_to_end_mock_envelope(tmp_path):
     assert {b["bundle"] for b in r["bundles"]} == {"B1_structural_arc", "B2_discourse_mode"}
     # mock labels all (support, argumentation) -> judge provenance is mock
     assert r["judge"]["judge_identity"]["kind"] == "mock"
+    # B3/B4 reuse present + descriptive (heuristic, not in the aggregate)
+    rs = r["reused_signals"]
+    assert rs["available"] is True
+    assert any(k.startswith("stance.") for k in rs["signals"])
+    assert any(k.startswith("agency.") for k in rs["signals"])
+    assert any(k.startswith("agd.") for k in rs["signals"])
+
+
+def test_reused_signals_degrade_gracefully(monkeypatch):
+    # A reused-audit failure (schema drift / missing optional dep) must NOT crash
+    # the surface — B3/B4 reuse is descriptive context, not load-bearing.
+    import argmove_profile
+    def boom(_text):
+        raise argmove_profile.ContractError("simulated reuse-audit schema drift")
+    monkeypatch.setattr(argmove_profile, "argmove_vector", boom)
+    out = ada.compute_reused_signals("some argumentative text here")
+    assert out["available"] is False
+    assert "ContractError" in out["reason"]
+
+
+def test_reused_signals_real_compute_shape():
+    # The real reuse path (stdlib audits) yields the stance/agency/agd vector.
+    text = (
+        "We should act now, because the evidence is clear. "
+        "Although critics disagree, the data obviously supports the plan. "
+        "Therefore the council must decide this session."
+    )
+    out = ada.compute_reused_signals(text)
+    assert out["available"] is True
+    assert "stance.hedge" in out["signals"]
+    assert "agd.discounting_per_1k" in out["signals"]
 
 
 def test_register_warning_below_floor(tmp_path):

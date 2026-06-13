@@ -21,11 +21,13 @@ its LLM mean; the aggregate is the mean contribution. The band is
 public-debate forums — directional reference, never thresholds); the consumer
 (APODICTIC) maps the target's genre to matched/adjacent/distant and downgrades.
 
-SCOPE (Inc A1): the anchorable B1/B2 judge core. B3/B4 deterministic reuse
-(abstraction/stance via `argmove_profile` / `stance_modality_audit` /
-`agency_abstraction_audit`) and the two dynamic/arc signals (disappearing-guard,
-discounting-straw-men) are a deferred follow-up — the envelope is additive
-(schema 1.0), so they slot in later without a break.
+SCOPE (Inc A1): the anchorable B1/B2 judge core (the contributions + aggregate)
+PLUS B3/B4 deterministic reuse — abstraction + stance + AGD marker densities for
+the target (via `argmove_profile.argmove_vector`), surfaced as descriptive
+`reused_signals` (`heuristic`, NO anchor, not in the aggregate; D2/D5). Only the
+two dynamic/arc signals (disappearing-guard hedging-drift; discounting-straw-men,
+which need a judge extension + an undecided B1/B4-vs-5th-bundle placement) are a
+deferred follow-up — the envelope is additive (schema 1.0), so they slot in later.
 """
 
 from __future__ import annotations
@@ -85,8 +87,9 @@ DEFAULT_DOES_NOT_LICENSE = (
     "weaker than a faithful LLM labeler — read judge.provenance. Does not run a "
     "soundness / warrant / fairness verdict (that is dialectical-clarity / "
     "banister, which this surface may PRE-FLAG but never adjudicates). B3/B4 "
-    "abstraction & stance signals and the dynamic collapse signals are a deferred "
-    "follow-up, not in this surface."
+    "abstraction & stance ship as descriptive `reused_signals` (heuristic, NO "
+    "anchor, not in the aggregate); the two dynamic collapse signals "
+    "(disappearing-guard, discounting-straw-men) remain a deferred follow-up."
 )
 
 
@@ -308,6 +311,32 @@ def register_warnings_for(n_words: int, n_paragraphs: int) -> list[str]:
 
 # ---------- envelope -------------------------------------------------
 
+def compute_reused_signals(text: str) -> dict[str, Any]:
+    """B3 (abstraction) + B4 (stance) + AGD densities for the target, reused from
+    the deterministic audits via ``argmove_profile.argmove_vector``. These are
+    DESCRIPTIVE / `heuristic` — no anchor, not in the contributions or the
+    aggregate (D2/D5); they sit beside the anchored B1/B2 structure as texture
+    context. Lazy-imported so the surface module stays cheap; degrades to
+    ``available: false`` if a reused audit's schema drifted (ContractError) or an
+    optional dep (e.g. the concreteness data file) is unavailable — a missing
+    reuse signal is descriptive context, never a hard failure of the audit."""
+    try:
+        import argmove_profile  # lazy
+        vec = dict(argmove_profile.argmove_vector(text))
+        n_words = vec.pop("_n_words", None)
+        return {
+            "available": True,
+            "n_words": n_words,
+            "signals": vec,
+            "note": (
+                "B3 abstraction + B4 stance + AGD marker densities (deterministic, "
+                "heuristic — descriptive only, NO anchor; not in the aggregate)."
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001 — reuse is descriptive; degrade, don't crash
+        return {"available": False, "reason": f"{type(exc).__name__}: {exc}"}
+
+
 def build_results_payload(
     *,
     target_words: int,
@@ -316,6 +345,7 @@ def build_results_payload(
     paragraph_labels: list[dict[str, Any]],
     validation_warnings: list[str],
     observed: dict[str, float | None],
+    reused_signals: dict[str, Any],
     contributions: list[SignalContribution],
     bundles: list[BundleAggregate],
     aggregate: dict[str, Any],
@@ -334,6 +364,7 @@ def build_results_payload(
         "paragraph_labels": paragraph_labels,
         "validation_warnings": validation_warnings,
         "observed_signals": observed,
+        "reused_signals": reused_signals,
         "contributions": [
             {
                 "signal_key": c.signal_key,
@@ -554,6 +585,7 @@ def main(argv: list[str] | None = None) -> int:
     agg = aggregate_score(contributions)
     pre_flag = compute_pre_flag(contributions)
     reg_warnings = register_warnings_for(target_words, len(paragraphs))
+    reused = compute_reused_signals(text)
 
     paragraph_labels = [
         {"index": i, "role": labels[i]["role"], "mode": labels[i]["mode"]}
@@ -566,6 +598,7 @@ def main(argv: list[str] | None = None) -> int:
         paragraph_labels=paragraph_labels,
         validation_warnings=val_warnings,
         observed=observed,
+        reused_signals=reused,
         contributions=contributions,
         bundles=bundles,
         aggregate=agg,

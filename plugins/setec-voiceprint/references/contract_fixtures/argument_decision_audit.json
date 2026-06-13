@@ -14,7 +14,7 @@
       "prompt_fingerprint_sha256": "9c3caaf4cb4c49a17434d5488104f18665b6e8f48d5eb91a6923e23bd05042b8"
     },
     "confidence_interval_95": null,
-    "does_not_license": "Does not license an AI / human authorship verdict — no signal here means \"written by AI\"; a human arguing thesis-first in an abstract register scores the same. Does not license a quality judgment: the paper measures argumentative DIVERSITY, not quality or accuracy, and does not claim human arguments are better (no \"human = better\"). The anchors are REGISTER-BOUND to public-debate forums; the paper's Limitations warn they may not transfer to research / legal / policy writing (the consumer's `distant` tier), so the band is unconditionally `uncalibrated` and a register mismatch downgrades to structural-signals-only. Lower-fidelity judge backends (mock / heuristic) are weaker than a faithful LLM labeler — read judge.provenance. Does not run a soundness / warrant / fairness verdict (that is dialectical-clarity / banister, which this surface may PRE-FLAG but never adjudicates). B3/B4 abstraction & stance signals and the dynamic collapse signals are a deferred follow-up, not in this surface.",
+    "does_not_license": "Does not license an AI / human authorship verdict — no signal here means \"written by AI\"; a human arguing thesis-first in an abstract register scores the same. Does not license a quality judgment: the paper measures argumentative DIVERSITY, not quality or accuracy, and does not claim human arguments are better (no \"human = better\"). The anchors are REGISTER-BOUND to public-debate forums; the paper's Limitations warn they may not transfer to research / legal / policy writing (the consumer's `distant` tier), so the band is unconditionally `uncalibrated` and a register mismatch downgrades to structural-signals-only. Lower-fidelity judge backends (mock / heuristic) are weaker than a faithful LLM labeler — read judge.provenance. Does not run a soundness / warrant / fairness verdict (that is dialectical-clarity / banister, which this surface may PRE-FLAG but never adjudicates). B3/B4 abstraction & stance ship as descriptive `reused_signals` (heuristic, NO anchor, not in the aggregate); the two dynamic collapse signals (disappearing-guard, discounting-straw-men) remain a deferred follow-up.",
     "fpr_target": null,
     "language_match": [],
     "length_range_words": [
@@ -30,7 +30,7 @@
     ],
     "task_surface": "argument_decision_audit"
   },
-  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** argument-decision audit (Kim et al. 2026 / ArgScope B1-B2 structural-arc + discourse-mode anchor)\n\n**Reports:** Reports how the target's argumentative STRUCTURE compares to the human / LLM group means Kim et al. 2026 (\"Argument Collapse\", arXiv:2606.01736) reported over public-debate-forum essays (NYT Room for Debate ~352w; Boston Review ~1,150w): the B1 paragraph-role transition rates (support→proposal, support→support) and the B2 argumentation discourse-mode share. Each anchored signal's contribution is 1.0 at the paper's human mean and 0.0 at its LLM mean; the aggregate is the mean per-signal contribution. Role/mode labels come from a pluggable LLM judge (read judge.provenance).\n\n**Does NOT report:** Does not license an AI / human authorship verdict — no signal here means \"written by AI\"; a human arguing thesis-first in an abstract register scores the same. Does not license a quality judgment: the paper measures argumentative DIVERSITY, not quality or accuracy, and does not claim human arguments are better (no \"human = better\"). The anchors are REGISTER-BOUND to public-debate forums; the paper's Limitations warn they may not transfer to research / legal / policy writing (the consumer's `distant` tier), so the band is unconditionally `uncalibrated` and a register mismatch downgrades to structural-signals-only. Lower-fidelity judge backends (mock / heuristic) are weaker than a faithful LLM labeler — read judge.provenance. Does not run a soundness / warrant / fairness verdict (that is dialectical-clarity / banister, which this surface may PRE-FLAG but never adjudicates). B3/B4 abstraction & stance signals and the dynamic collapse signals are a deferred follow-up, not in this surface.\n\n### Comparison context\n\n- **judge kind:** mock\n- **judge model:** (unspecified)\n- **literature anchor:** Kim, Chang, Pham & Iyyer 2026 ('Argument Collapse', arXiv:2606.01736v3) §4.1-4.2 / Tables 26-27 group means, public-debate-forum essays (NYT Room for Debate + Boston Review)\n- **prompt fingerprint sha256:** 9c3caaf4cb4c49a17434d5488104f18665b6e8f48d5eb91a6923e23bd05042b8\n- **Length range (words):** 300–8,000\n- **Register match:** `op-ed`\n\n### Caveats\n\n- Judge backend is `mock` — lower fidelity than a faithful LLM labeler. The role/mode labels (and every B1/B2 signal derived from them) are only as good as the supplied labels.\n- Verdict band is `uncalibrated` and the anchors are register-bound to public-debate forums (directional reference, not thresholds). No human / AI label is emitted.\n\n### References\n\n- Kim, Chang, Pham & Iyyer 2026, 'Argument Collapse: LLMs Flatten Long-Form Public Debate' (arXiv:2606.01736v3)",
+  "claim_license_rendered": "## What this result licenses\n\n**Task surface:** argument-decision audit (Kim et al. 2026 / ArgScope B1-B2 structural-arc + discourse-mode anchor)\n\n**Reports:** Reports how the target's argumentative STRUCTURE compares to the human / LLM group means Kim et al. 2026 (\"Argument Collapse\", arXiv:2606.01736) reported over public-debate-forum essays (NYT Room for Debate ~352w; Boston Review ~1,150w): the B1 paragraph-role transition rates (support→proposal, support→support) and the B2 argumentation discourse-mode share. Each anchored signal's contribution is 1.0 at the paper's human mean and 0.0 at its LLM mean; the aggregate is the mean per-signal contribution. Role/mode labels come from a pluggable LLM judge (read judge.provenance).\n\n**Does NOT report:** Does not license an AI / human authorship verdict — no signal here means \"written by AI\"; a human arguing thesis-first in an abstract register scores the same. Does not license a quality judgment: the paper measures argumentative DIVERSITY, not quality or accuracy, and does not claim human arguments are better (no \"human = better\"). The anchors are REGISTER-BOUND to public-debate forums; the paper's Limitations warn they may not transfer to research / legal / policy writing (the consumer's `distant` tier), so the band is unconditionally `uncalibrated` and a register mismatch downgrades to structural-signals-only. Lower-fidelity judge backends (mock / heuristic) are weaker than a faithful LLM labeler — read judge.provenance. Does not run a soundness / warrant / fairness verdict (that is dialectical-clarity / banister, which this surface may PRE-FLAG but never adjudicates). B3/B4 abstraction & stance ship as descriptive `reused_signals` (heuristic, NO anchor, not in the aggregate); the two dynamic collapse signals (disappearing-guard, discounting-straw-men) remain a deferred follow-up.\n\n### Comparison context\n\n- **judge kind:** mock\n- **judge model:** (unspecified)\n- **literature anchor:** Kim, Chang, Pham & Iyyer 2026 ('Argument Collapse', arXiv:2606.01736v3) §4.1-4.2 / Tables 26-27 group means, public-debate-forum essays (NYT Room for Debate + Boston Review)\n- **prompt fingerprint sha256:** 9c3caaf4cb4c49a17434d5488104f18665b6e8f48d5eb91a6923e23bd05042b8\n- **Length range (words):** 300–8,000\n- **Register match:** `op-ed`\n\n### Caveats\n\n- Judge backend is `mock` — lower fidelity than a faithful LLM labeler. The role/mode labels (and every B1/B2 signal derived from them) are only as good as the supplied labels.\n- Verdict band is `uncalibrated` and the anchors are register-bound to public-debate forums (directional reference, not thresholds). No human / AI label is emitted.\n\n### References\n\n- Kim, Chang, Pham & Iyyer 2026, 'Argument Collapse: LLMs Flatten Long-Form Public Debate' (arXiv:2606.01736v3)",
   "results": {
     "aggregate": {
       "n_signals_evaluated": 3,
@@ -198,6 +198,35 @@
       "dialectical_clarity_informative": false
     },
     "prompt_fingerprint_sha256": "<fixture-sha256>",
+    "reused_signals": {
+      "available": true,
+      "n_words": 620,
+      "note": "B3 abstraction + B4 stance + AGD marker densities (deterministic, heuristic — descriptive only, NO anchor; not in the aggregate).",
+      "signals": {
+        "abstraction.mean_concreteness": 2.85,
+        "agd.abusive_assuring_per_1k": 0.5,
+        "agd.argument_marker_per_1k": 8.0,
+        "agd.discounting_per_1k": 5.0,
+        "agd.reason_to_conclusion_ratio": 1.5,
+        "agency.action_verb_per_1k": 30.0,
+        "agency.agentless_passive_per_1k": 1.5,
+        "agency.concrete_detail_per_1k": 6.0,
+        "agency.entity_to_action_ratio": 0.4,
+        "agency.generic_institutional_per_1k": 4.0,
+        "agency.light_verb_per_1k": 2.0,
+        "agency.nominalization_per_1k": 12.0,
+        "agency.proper_noun_per_1k": 5.0,
+        "stance.booster": 1.1,
+        "stance.deontic_modality": 0.5,
+        "stance.entropy_bits": 1.4,
+        "stance.epistemic_modality": 1.0,
+        "stance.evidential": 0.8,
+        "stance.first_person_stance": 2.0,
+        "stance.hedge": 3.2,
+        "stance.hedge_booster_ratio": 2.9,
+        "stance.refusal": 0.0
+      }
+    },
     "run_timestamp_utc": "<fixture-timestamp>",
     "target": {
       "paragraphs": 6,
