@@ -749,6 +749,52 @@ def _build_binoculars_audit() -> dict[str, Any]:
     )
 
 
+def _build_argument_decision_audit() -> dict[str, Any]:
+    import argument_decision_audit as m  # type: ignore
+    from argument_judge import build_judge  # type: ignore
+
+    # ArgScope's surface labels a per-paragraph sequence via the judge, then
+    # computes B1/B2 signals from it. Drive the surface's OWN deterministic,
+    # dependency-free mock judge over a canonical paragraph set (no LLM/API) so
+    # the observed signals, contributions, bundles, and aggregate are the REAL
+    # ones the script emits; compose_envelope assembles the 1.0 envelope as the
+    # CLI does. The mock labels every paragraph (support, argumentation).
+    paragraphs = [f"Canonical fixture paragraph {i}." for i in range(6)]
+    judge_result = build_judge("mock")(paragraphs)
+    labels, val_warnings = m.validate_labels(
+        judge_result.values, n_paragraphs=len(paragraphs)
+    )
+    observed = m.compute_arc_signals(labels)
+    contributions = m.per_signal_contributions(observed)
+    bundles = m.per_bundle_aggregates(contributions)
+    aggregate = m.aggregate_score(contributions)
+    pre_flag = m.compute_pre_flag(contributions)
+    paragraph_labels = [
+        {"index": i, "role": labels[i]["role"], "mode": labels[i]["mode"]}
+        for i in range(len(labels))
+    ]
+    results = m.build_results_payload(
+        target_words=620,
+        n_paragraphs=len(paragraphs),
+        judge_result=judge_result.to_dict(),
+        paragraph_labels=paragraph_labels,
+        validation_warnings=val_warnings,
+        observed=observed,
+        contributions=contributions,
+        bundles=bundles,
+        aggregate=aggregate,
+        pre_flag=pre_flag,
+        register_warnings=[],
+    )
+    return m.compose_envelope(
+        target_path=Path("<fixture>"),
+        target_words=620,
+        results=results,
+        licenses_text=m.DEFAULT_LICENSES,
+        does_not_license_text=m.DEFAULT_DOES_NOT_LICENSE,
+    )
+
+
 #: surface id -> raw-envelope builder. The id matches the
 #: ``capabilities.d/<id>.yaml`` fragment stem and the golden filename stem.
 SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
@@ -765,6 +811,7 @@ SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "mimicry_cosplay_audit": _build_mimicry_cosplay_audit,
     "general_imposters": _build_general_imposters,
     "binoculars_audit": _build_binoculars_audit,
+    "argument_decision_audit": _build_argument_decision_audit,
 }
 
 

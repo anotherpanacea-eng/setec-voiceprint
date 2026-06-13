@@ -51,6 +51,7 @@ EXPECTED_TASK_SURFACE = {
     "mimicry_cosplay_audit": "voice_coherence",
     "general_imposters": "voice_coherence",
     "binoculars_audit": "binoculars_discrimination",
+    "argument_decision_audit": "argument_decision_audit",
 }
 
 REQUIRED_TOP_LEVEL_KEYS = frozenset({

@@ -50,7 +50,7 @@ def test_aggregate_matches_golden_by_id():
     m = cap.load_manifest(_CAP_DIR)
     assert m["schema_version"] == golden["schema_version"]
     assert _by_id(m) == _by_id(golden)
-    assert len(m["entries"]) == len(golden["entries"]) == 89
+    assert len(m["entries"]) == len(golden["entries"]) == 90
 
 
 def test_meta_carries_schema_version():
