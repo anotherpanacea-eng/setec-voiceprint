@@ -129,6 +129,53 @@ def test_manifest_missing_paragraphs_raises(tmp_path):
         j.build_judge("manifest", manifest_path=manifest)
 
 
+def test_manifest_bad_paths_all_raise_judge_error(tmp_path):
+    # Every manifest failure mode must surface as JudgeError (-> clean exit 2),
+    # never a raw traceback.
+    with pytest.raises(j.JudgeError):
+        j.build_judge("manifest", manifest_path=tmp_path / "nope.json")  # missing
+    bad = tmp_path / "bad.json"
+    bad.write_text("not json at all", encoding="utf-8")
+    with pytest.raises(j.JudgeError):
+        j.build_judge("manifest", manifest_path=bad)  # invalid JSON
+    arr = tmp_path / "arr.json"
+    arr.write_text("[1, 2, 3]", encoding="utf-8")
+    with pytest.raises(j.JudgeError):
+        j.build_judge("manifest", manifest_path=arr)  # array top level
+
+
+def test_manifest_non_dict_judge_identity_does_not_crash(tmp_path):
+    manifest = tmp_path / "m.json"
+    manifest.write_text(json.dumps({
+        "values": {"paragraphs": [{"index": 0, "role": "thesis", "mode": "argumentation"}]},
+        "judge_identity": "gpt-X",  # malformed (string, not dict)
+    }), encoding="utf-8")
+    res = j.build_judge("manifest", manifest_path=manifest)(["p0"])  # must not raise
+    assert res.judge_identity["model"] is None
+
+
+def test_extract_json_rejects_non_object():
+    # A bare array (a likely model output for per-paragraph labels) is a clean
+    # ValueError -> JudgeError via the API backends, not an AttributeError.
+    with pytest.raises(ValueError):
+        j._extract_json('[{"index": 0, "role": "thesis"}]')
+
+
+def test_confidences_keep_first_matches_label_policy():
+    # validate_labels keeps the FIRST entry per index; confidences must too.
+    assert j._confidences([{"index": 0, "confidence": 0.9},
+                           {"index": 0, "confidence": 0.1}], 1) == [0.9]
+
+
+def test_bool_index_and_confidence_rejected():
+    # bool is an int subclass — must not be accepted as an index or a confidence.
+    cleaned, _ = j.validate_labels(
+        {"paragraphs": [{"index": True, "role": "thesis", "mode": "argumentation"}]},
+        n_paragraphs=2)
+    assert cleaned == [{"role": None, "mode": None}, {"role": None, "mode": None}]
+    assert j._confidences([{"index": 0, "confidence": True}], 1) == [None]
+
+
 # ---- factory errors ------------------------------------------------------
 def test_factory_unknown_kind_raises():
     with pytest.raises(j.JudgeError):

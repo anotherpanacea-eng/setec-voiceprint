@@ -157,7 +157,7 @@ def validate_labels(
             warnings.append(f"paragraph entry at position {pos} is not a mapping")
             continue
         idx = entry.get("index", pos)
-        if not isinstance(idx, int) or not (0 <= idx < n_paragraphs):
+        if not _is_index(idx, n_paragraphs):
             warnings.append(
                 f"paragraph entry at position {pos} has out-of-range index "
                 f"{idx!r} (n_paragraphs={n_paragraphs})"
@@ -196,9 +196,17 @@ def validate_labels(
 JudgeBackend = Callable[[list[str]], JudgeResult]
 
 
+def _is_index(idx: Any, n: int) -> bool:
+    """True iff ``idx`` is a real paragraph index (an int, not a bool, in range).
+    ``bool`` is an ``int`` subclass, so guard it explicitly."""
+    return isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < n
+
+
 def _confidences(raw: Any, n: int) -> list[float | None]:
     """Pull optional per-paragraph confidences from a judge's paragraph list,
-    aligned to index; default all None."""
+    aligned to index; default all None. Keeps the FIRST entry per index (so a
+    confidence never attaches to a label the keep-first validate path discarded);
+    ``bool`` confidences are rejected (a bool is an int subclass)."""
     out: list[float | None] = [None] * n
     if isinstance(raw, list):
         for pos, entry in enumerate(raw):
@@ -206,18 +214,31 @@ def _confidences(raw: Any, n: int) -> list[float | None]:
                 continue
             idx = entry.get("index", pos)
             c = entry.get("confidence")
-            if isinstance(idx, int) and 0 <= idx < n and isinstance(c, (int, float)):
+            if (_is_index(idx, n) and out[idx] is None
+                    and isinstance(c, (int, float)) and not isinstance(c, bool)):
                 out[idx] = float(c)
     return out
 
 
 def _manifest_judge(manifest_path: Path) -> JudgeBackend:
-    data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    try:
+        data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise JudgeError(f"manifest {manifest_path}: cannot read ({exc})") from exc
+    except json.JSONDecodeError as exc:
+        raise JudgeError(f"manifest {manifest_path}: invalid JSON ({exc})") from exc
+    if not isinstance(data, dict):
+        raise JudgeError(
+            f"manifest {manifest_path}: top level must be a JSON object, got "
+            f"{type(data).__name__}"
+        )
     values = data.get("values")
     if not isinstance(values, dict) or "paragraphs" not in values:
         raise JudgeError(
             f"manifest {manifest_path}: missing 'values.paragraphs' list"
         )
+    ji = data.get("judge_identity")
+    ji = ji if isinstance(ji, dict) else {}
 
     def _run(paragraphs: list[str]) -> JudgeResult:
         return JudgeResult(
@@ -228,9 +249,9 @@ def _manifest_judge(manifest_path: Path) -> JudgeBackend:
             judge_identity={
                 "kind": "manifest",
                 "manifest_path": str(manifest_path),
-                "model": data.get("judge_identity", {}).get("model"),
-                "model_revision": data.get("judge_identity", {}).get("model_revision"),
-                "prompt_version": data.get("judge_identity", {}).get("prompt_version"),
+                "model": ji.get("model"),
+                "model_revision": ji.get("model_revision"),
+                "prompt_version": ji.get("prompt_version"),
             },
             raw_response=None,
         )
@@ -388,20 +409,26 @@ def _api_judge_gemini(*, model, system_preamble, user_prompt, temperature, max_t
 
 def _extract_json(text: str) -> dict[str, Any]:
     """Best-effort JSON extraction: a bare object or a fenced ```json block.
-    Raises ValueError on parse failure."""
+    Raises ValueError on parse failure OR when the top level is not a JSON
+    object (a model that returns a bare ``[...]`` array of paragraph labels is a
+    likely failure mode; that must surface as a clean JudgeError, not an
+    AttributeError, via the API backends' ``except ValueError`` handlers)."""
     stripped = text.strip()
     if stripped.startswith("```"):
         fence_close = stripped.find("```", 3)
         if fence_close != -1:
             stripped = stripped[stripped.find("\n") + 1: fence_close]
     try:
-        return json.loads(stripped)
+        obj = json.loads(stripped)
     except json.JSONDecodeError:
         start = stripped.find("{")
         end = stripped.rfind("}")
         if start == -1 or end == -1 or end <= start:
             raise ValueError(f"no JSON object found in {text[:200]!r}")
-        return json.loads(stripped[start: end + 1])
+        obj = json.loads(stripped[start: end + 1])
+    if not isinstance(obj, dict):
+        raise ValueError(f"top-level JSON is {type(obj).__name__}, not an object")
+    return obj
 
 
 # ----------------- factory ---------------------------------------

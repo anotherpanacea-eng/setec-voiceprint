@@ -749,6 +749,85 @@ def _build_binoculars_audit() -> dict[str, Any]:
     )
 
 
+def _build_argument_decision_audit() -> dict[str, Any]:
+    import argument_decision_audit as m  # type: ignore
+    from argument_judge import build_judge  # type: ignore
+
+    # ArgScope's surface labels a per-paragraph sequence via the judge, then
+    # computes B1/B2 signals from it. Drive the surface's OWN deterministic,
+    # dependency-free mock judge over a canonical paragraph set (no LLM/API) so
+    # the observed signals, contributions, bundles, and aggregate are the REAL
+    # ones the script emits; compose_envelope assembles the 1.0 envelope as the
+    # CLI does. The mock labels every paragraph (support, argumentation).
+    paragraphs = [f"Canonical fixture paragraph {i}." for i in range(6)]
+    judge_result = build_judge("mock")(paragraphs)
+    labels, val_warnings = m.validate_labels(
+        judge_result.values, n_paragraphs=len(paragraphs)
+    )
+    observed = m.compute_arc_signals(labels)
+    contributions = m.per_signal_contributions(observed)
+    bundles = m.per_bundle_aggregates(contributions)
+    aggregate = m.aggregate_score(contributions)
+    pre_flag = m.compute_pre_flag(contributions)
+    paragraph_labels = [
+        {"index": i, "role": labels[i]["role"], "mode": labels[i]["mode"]}
+        for i in range(len(labels))
+    ]
+    # reused_signals (B3/B4 + AGD) is canonical here — fed with argmove_vector's
+    # real key shape + fixed values rather than computed, so the golden is
+    # byte-stable regardless of whether the Brysbaert concreteness data file is
+    # installed in the gen env (the one env-variant signal). Mirrors how the
+    # voice_fingerprint / binoculars builders feed representative values.
+    reused_signals = {
+        "available": True,
+        "calibration_status": "heuristic",
+        "n_words": 620,
+        "signals": {
+            "stance.hedge": 3.2, "stance.booster": 1.1, "stance.evidential": 0.8,
+            "stance.deontic_modality": 0.5, "stance.epistemic_modality": 1.0,
+            "stance.first_person_stance": 2.0, "stance.refusal": 0.0,
+            "stance.hedge_booster_ratio": 2.9, "stance.entropy_bits": 1.4,
+            "agency.nominalization_per_1k": 12.0,
+            "agency.generic_institutional_per_1k": 4.0,
+            "agency.concrete_detail_per_1k": 6.0,
+            "agency.action_verb_per_1k": 30.0,
+            "agency.agentless_passive_per_1k": 1.5,
+            "agency.light_verb_per_1k": 2.0, "agency.proper_noun_per_1k": 5.0,
+            "agency.entity_to_action_ratio": 0.4,
+            "abstraction.mean_concreteness": 2.85,
+            "agd.discounting_per_1k": 5.0, "agd.argument_marker_per_1k": 8.0,
+            "agd.reason_to_conclusion_ratio": 1.5, "agd.abusive_assuring_per_1k": 0.5,
+        },
+        "note": (
+            "B3 abstraction + B4 stance + AGD marker densities (deterministic, "
+            "`heuristic` — descriptive only, NO anchor, not in the aggregate). "
+            "No numeric anchor by design (D5): marker density is a different "
+            "construct from the paper's judge-rated per-essay stance strength."
+        ),
+    }
+    results = m.build_results_payload(
+        target_words=620,
+        n_paragraphs=len(paragraphs),
+        judge_result=judge_result.to_dict(),
+        paragraph_labels=paragraph_labels,
+        validation_warnings=val_warnings,
+        observed=observed,
+        reused_signals=reused_signals,
+        contributions=contributions,
+        bundles=bundles,
+        aggregate=aggregate,
+        pre_flag=pre_flag,
+        register_warnings=[],
+    )
+    return m.compose_envelope(
+        target_path=Path("<fixture>"),
+        target_words=620,
+        results=results,
+        licenses_text=m.DEFAULT_LICENSES,
+        does_not_license_text=m.DEFAULT_DOES_NOT_LICENSE,
+    )
+
+
 #: surface id -> raw-envelope builder. The id matches the
 #: ``capabilities.d/<id>.yaml`` fragment stem and the golden filename stem.
 SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
@@ -765,6 +844,7 @@ SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "mimicry_cosplay_audit": _build_mimicry_cosplay_audit,
     "general_imposters": _build_general_imposters,
     "binoculars_audit": _build_binoculars_audit,
+    "argument_decision_audit": _build_argument_decision_audit,
 }
 
 

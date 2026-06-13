@@ -1,4 +1,5 @@
 {
+  "argument_decision_audit": "argument-decision audit (Kim et al. 2026 / ArgScope B1-B2 structural-arc + discourse-mode anchor)",
   "assertoric": "deterministic argument-move profile (ArgScope B3/B4 + AGD; population baseline + two-corpus separation test, no verdict)",
   "authorship_embedding": "style-embedding voice fingerprint (LUAR / Wegmann learned style manifold; cosine-similarity distribution, no verdict)",
   "binoculars_discrimination": "Binoculars-style perplexity-ratio discrimination",
