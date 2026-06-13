@@ -146,6 +146,61 @@ def test_gemini_provider_error_wrapped_as_judge_error():
             os.environ["GOOGLE_API_KEY"] = prior
 
 
+# ---- manifest-load + JSON-extraction hardening (StoryScope/ArgScope parity) ----
+
+def test_manifest_missing_file_wrapped_as_judge_error():
+    import narrative_judge as nj  # type: ignore
+    judge_builder = nj._manifest_judge
+    try:
+        judge_builder(Path("/nonexistent/does-not-exist.json"))
+    except nj.JudgeError as exc:
+        assert "cannot read" in str(exc)
+    else:
+        raise AssertionError("expected JudgeError for a missing manifest file")
+
+
+def test_manifest_invalid_json_wrapped_as_judge_error():
+    import tempfile  # noqa: PLC0415
+
+    import narrative_judge as nj  # type: ignore
+    with tempfile.TemporaryDirectory() as td:
+        bad = Path(td) / "bad.json"
+        bad.write_text("{not valid json", encoding="utf-8")
+        try:
+            nj._manifest_judge(bad)
+        except nj.JudgeError as exc:
+            assert "invalid JSON" in str(exc)
+        else:
+            raise AssertionError("expected JudgeError for malformed manifest JSON")
+
+
+def test_manifest_non_object_top_level_wrapped_as_judge_error():
+    import tempfile  # noqa: PLC0415
+
+    import narrative_judge as nj  # type: ignore
+    with tempfile.TemporaryDirectory() as td:
+        arr = Path(td) / "arr.json"
+        arr.write_text("[1, 2, 3]", encoding="utf-8")
+        try:
+            nj._manifest_judge(arr)
+        except nj.JudgeError as exc:
+            assert "JSON object" in str(exc)
+        else:
+            raise AssertionError("expected JudgeError for a non-object manifest")
+
+
+def test_extract_json_rejects_bare_array():
+    # A model returning a bare ``[...]`` array must raise ValueError (which the
+    # API backends repackage as JudgeError), not slip through as a non-dict.
+    import narrative_judge as nj  # type: ignore
+    try:
+        nj._extract_json('[{"a": 1}]')
+    except ValueError as exc:
+        assert "not an object" in str(exc)
+    else:
+        raise AssertionError("expected ValueError for a bare top-level array")
+
+
 if __name__ == "__main__":
     import traceback
     for name, fn in sorted(globals().items()):

@@ -380,6 +380,30 @@ def test_manifest_judge_round_trip():
         )
 
 
+def test_missing_manifest_is_bad_input_not_policy_refusal():
+    # --judge=manifest without --judge-manifest is a setup error (bad input),
+    # not a privacy-policy refusal. It must exit 2 AND emit a "usage:" line so
+    # setec_run._wrap_script_failure categorizes it as bad_input rather than
+    # the bare-exit-2 policy_refused bucket (the privacy ratchet).
+    import contextlib
+    import io
+
+    with tempfile.TemporaryDirectory() as td:
+        target = Path(td) / "story.txt"
+        target.write_text("Once upon a time.", encoding="utf-8")
+        err = io.StringIO()
+        try:
+            with contextlib.redirect_stderr(err):
+                nda.main([str(target), "--judge", "manifest"])
+        except SystemExit as exc:
+            assert exc.code == 2
+        else:
+            raise AssertionError("expected SystemExit(2) from parser.error")
+        stderr = err.getvalue().lower()
+        assert "usage:" in stderr
+        assert "judge construction failed" in stderr
+
+
 if __name__ == "__main__":
     import traceback
     for name, fn in sorted(globals().items()):
