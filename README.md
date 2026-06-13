@@ -32,6 +32,17 @@ The measurements are organized into five task surfaces, the workflows you'd actu
 
 Each measurement carries a `claim_license` block in its JSON output: what the result entitles, what comparison set produced it, what it does not entitle. The discipline lives in those blocks. Tools and scripts that mix surfaces or collapse the licensure rules are explicit anti-goals.
 
+### Decision-audit surfaces (consumer handoff)
+
+Alongside the five task surfaces, the framework ships a separate family of **decision-audit** surfaces. These don't measure surface style; they measure how a *narrative* or an *argument* is structurally built, scored against a paper's reported human/LLM group means — structural tells that survive the sentence-level rewriting that scrubs stylistic artifacts. They're built as JSON handoffs for a downstream consumer (`apodictic`) rather than as headline laptop workflows, and like the discrimination surface they ship **uncalibrated** (no default thresholds; register-bound anchors are a directional reference, never a verdict).
+
+| Decision-audit surface | What it scores | Anchored to |
+|---|---|---|
+| `narrative_decision_audit` (StoryScope) | Narrative-decision features of long-form fiction (≥ ~2000 words) | Russell et al. 2026 |
+| `argument_decision_audit` (ArgScope) | Argumentative structure of public-debate / op-ed-register essays (≥ ~300 words) | Kim et al. 2026 |
+
+Both take a pluggable per-document LLM judge (manifest / mock / API backends) and emit the same `claim_license` discipline as everything else. Neither licenses an AI-vs-human provenance verdict or a quality judgment — the papers measure narrative/argumentative *diversity*, not authorship or merit.
+
 ## What it isn't
 
 - **Not an AI detector.** SETEC does not output a single "this is AI" percentage. The framework is designed to refuse that conclusion because the underlying measurements do not entitle it (see "Why no verdict" below). Surface 5's discrimination tools come closest, and the framework still refuses to ship per-corpus thresholds as defaults.
