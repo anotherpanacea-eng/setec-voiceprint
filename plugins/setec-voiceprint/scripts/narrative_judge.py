@@ -227,7 +227,22 @@ JudgeBackend = Callable[[str], JudgeResult]
 
 
 def _manifest_judge(manifest_path: Path) -> JudgeBackend:
-    data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    # A missing or malformed manifest is bad SETUP input, not an internal
+    # fault: wrap the read/parse in JudgeError so it surfaces through the
+    # entrypoint's `except JudgeError` contract instead of escaping as a raw
+    # FileNotFoundError / JSONDecodeError traceback (parity with
+    # argument_judge._manifest_judge).
+    try:
+        data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise JudgeError(f"manifest {manifest_path}: cannot read ({exc})") from exc
+    except json.JSONDecodeError as exc:
+        raise JudgeError(f"manifest {manifest_path}: invalid JSON ({exc})") from exc
+    if not isinstance(data, dict):
+        raise JudgeError(
+            f"manifest {manifest_path}: top level must be a JSON object, got "
+            f"{type(data).__name__}"
+        )
     if "values" not in data or not isinstance(data["values"], dict):
         raise JudgeError(
             f"manifest {manifest_path}: missing 'values' object"
@@ -505,8 +520,12 @@ def _api_judge_gemini(
 def _extract_json(text: str) -> dict[str, Any]:
     """Best-effort JSON extraction.
 
-    Accepts a bare JSON object or a fenced ```json ... ``` block.
-    Raises ValueError on parse failure.
+    Accepts a bare JSON object or a fenced ```json ... ``` block. Raises
+    ValueError on parse failure OR when the top level is not a JSON object (a
+    model that returns a bare ``[...]`` array is a likely failure mode; that
+    must surface as a clean JudgeError via the API backends' ``except
+    ValueError`` handlers, not slip through as a non-dict — parity with
+    argument_judge._extract_json).
     """
     stripped = text.strip()
     if stripped.startswith("```"):
@@ -514,7 +533,7 @@ def _extract_json(text: str) -> dict[str, Any]:
         if fence_close != -1:
             stripped = stripped[stripped.find("\n") + 1: fence_close]
     try:
-        return json.loads(stripped)
+        obj = json.loads(stripped)
     except json.JSONDecodeError:
         start = stripped.find("{")
         end = stripped.rfind("}")
@@ -522,7 +541,10 @@ def _extract_json(text: str) -> dict[str, Any]:
             raise ValueError(
                 f"no JSON object found in {text[:200]!r}"
             )
-        return json.loads(stripped[start: end + 1])
+        obj = json.loads(stripped[start: end + 1])
+    if not isinstance(obj, dict):
+        raise ValueError(f"top-level JSON is {type(obj).__name__}, not an object")
+    return obj
 
 
 # ----------------- factory ---------------------------------------
