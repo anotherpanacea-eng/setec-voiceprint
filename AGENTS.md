@@ -4,6 +4,26 @@ This repo is single-author (`anotherpanacea-eng`) but multi-agent: Claude
 sessions and Codex sessions both contribute. This document records the
 workflow they should follow.
 
+## Fleet / cross-repo context
+
+This repo is one of four maintained together (all `github.com/anotherpanacea-eng`):
+`setec-voiceprint` (producer · public · Python — **this repo**), `apodictic`
+(consumer + producer · public · Python), `setec-voicewright` (consumer · private ·
+Python), `APODICTIC-Gemini` (consumer · private · TS app).
+
+**This repo's role:** PRODUCER of the SETEC normalized-entrypoint contract
+(`setec run <surface> --json`, JSON envelope). Consumed by `apodictic` and
+`setec-voicewright`, each of which pins a release tag and runs an offline drift
+gate against the vendored contract. **Changing a consumed surface ripples to
+them** — follow the surface-addition checklist (capabilities.d fragment + golden +
+the `_golden_*` count bumps) and keep `references/contract_fixtures/` in sync; the
+consumers catch drift on their next weekly pull.
+
+**Fuller cross-repo context** (full backlog, topology, deep lessons) lives in the
+maintainer's local `Cowork/repo-fleet/` hub — **not reachable from cloud
+containers** (which hold only this one git repo). If you're a cloud session and
+need cross-repo context beyond this section, flag it rather than guessing.
+
 ## The flow
 
 ```
