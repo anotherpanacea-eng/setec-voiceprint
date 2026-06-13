@@ -254,6 +254,21 @@ def test_missing_target_exits_1(tmp_path):
     assert rc == 1
 
 
+def test_missing_manifest_is_bad_input_not_policy_refusal(tmp_path, capsys):
+    # --judge=manifest without --judge-manifest is a setup error (bad input),
+    # not a privacy-policy refusal. It must exit 2 AND emit a "usage:" line so
+    # setec_run._wrap_script_failure categorizes it as bad_input rather than
+    # the bare-exit-2 policy_refused bucket.
+    target = tmp_path / "e.txt"
+    target.write_text("P0.\n\nP1.\n\nP2.", encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        ada.main([str(target), "--judge", "manifest"])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "usage:" in err.lower()
+    assert "judge construction failed" in err
+
+
 def test_manifest_judge_round_trip(tmp_path):
     text = "\n\n".join(f"P{i}." for i in range(3))
     target = tmp_path / "e.txt"

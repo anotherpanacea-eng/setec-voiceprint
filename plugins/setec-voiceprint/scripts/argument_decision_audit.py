@@ -609,8 +609,12 @@ def main(argv: list[str] | None = None) -> int:
             temperature=args.judge_temperature, max_tokens=args.judge_max_tokens,
         )
     except JudgeError as exc:
-        print(f"error: judge construction failed: {exc}", file=sys.stderr)
-        return 2
+        # Judge construction failures are bad SETUP input (missing manifest /
+        # model / API key), not a privacy-policy refusal. Route them through
+        # argparse so the emitted "usage:" line lets setec_run categorize the
+        # exit-2 as bad_input rather than the policy_refused bucket that a bare
+        # exit-2 falls into (the privacy ratchet). See setec_run._wrap_script_failure.
+        parser.error(f"judge construction failed: {exc}")
     try:
         judge_result_obj = judge(paragraphs)
     except JudgeError as exc:
