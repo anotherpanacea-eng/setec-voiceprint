@@ -257,8 +257,16 @@ def _self_check() -> None:
                         f"signal {s.key}: proportion {m} out of [0, 1]"
                     )
             gap = s.gap
-            gap_sign = "human" if gap > 0 else "ai" if gap < 0 else None
-            if gap_sign is not None and gap_sign != s.leaning:
+            if gap == 0:
+                # Equal human/AI means → no signal, and the surface's
+                # contribution would be 0/0. Reject so a degenerate anchor
+                # can't reach the (denom==0 → 0.0) path with a fabricated value.
+                raise RuntimeError(
+                    f"signal {s.key}: anchored with equal human/AI means "
+                    f"({s.human_mean}); that carries no direction"
+                )
+            gap_sign = "human" if gap > 0 else "ai"
+            if gap_sign != s.leaning:
                 raise RuntimeError(
                     f"signal {s.key}: leaning {s.leaning!r} inconsistent with "
                     f"gap sign {gap:+.3f}"

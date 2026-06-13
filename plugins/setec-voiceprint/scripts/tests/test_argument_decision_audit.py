@@ -176,8 +176,69 @@ def test_reused_signals_real_compute_shape():
     )
     out = ada.compute_reused_signals(text)
     assert out["available"] is True
+    assert out["calibration_status"] == "heuristic"
     assert "stance.hedge" in out["signals"]
     assert "agd.discounting_per_1k" in out["signals"]
+
+
+def test_fixture_reused_keys_match_argmove_vector():
+    # The fixture hand-feeds a canonical reused_signals; pin its key shape to the
+    # REAL argmove_vector output so a producer-side rename can't drift silently
+    # (the contract-blind-spot guard).
+    import json
+    from pathlib import Path
+    import argmove_profile
+    golden = json.loads((
+        Path(__file__).resolve().parents[2]
+        / "references" / "contract_fixtures" / "argument_decision_audit.json"
+    ).read_text(encoding="utf-8"))
+    fixture_keys = set(golden["results"]["reused_signals"]["signals"])
+    real = argmove_profile.argmove_vector(
+        "We should act now because the evidence is clear and obvious. "
+        "Although critics disagree, the data supports the plan. Therefore decide."
+    )
+    real_keys = {k for k in real if k != "_n_words"}
+    assert fixture_keys == real_keys, (
+        f"fixture reused_signals shape drifted from argmove_vector: "
+        f"missing {real_keys - fixture_keys}, extra {fixture_keys - real_keys}"
+    )
+
+
+def test_thesis_opening_none_when_first_paragraph_unlabeled():
+    # If para 0 is unlabeled, thesis-opening is unknown (None) — never read off a
+    # later paragraph (that would fabricate "opens thesis-first").
+    labels = [{"role": None, "mode": None},
+              {"role": "thesis", "mode": "argumentation"}]
+    obs = ada.compute_arc_signals(labels)
+    assert obs["thesis_opening_tendency"] is None
+
+
+def test_contributions_carry_calibration_status():
+    contribs = ada.per_signal_contributions({"argumentation_share": 0.8})
+    assert all(c.calibration_status == "literature_anchored" for c in contribs)
+
+
+def test_pre_flag_basis_only_names_converged_signals():
+    # support_to_proposal HUMAN-side, the other two AI-side -> informative, but
+    # the basis must NOT claim the proposal/AT3 hook (it isn't AI-leaning).
+    obs = {"support_to_proposal_rate": 0.123,   # human
+           "support_to_support_rate": 0.329,    # ai
+           "argumentation_share": 0.897}        # ai
+    pf = ada.compute_pre_flag(ada.per_signal_contributions(obs))
+    assert pf["dialectical_clarity_informative"] is True
+    assert "AT3" not in pf["basis"]
+    assert "support_to_proposal_rate" not in pf["basis"]
+    # When support_to_proposal IS ai-side, the AT3/DC hook is named.
+    obs2 = {"support_to_proposal_rate": 0.294, "support_to_support_rate": 0.329,
+            "argumentation_share": 0.715}
+    pf2 = ada.compute_pre_flag(ada.per_signal_contributions(obs2))
+    assert pf2["dialectical_clarity_informative"] is True
+    assert "AT3" in pf2["basis"]
+
+
+def test_directory_target_exits_1(tmp_path):
+    rc = ada.main([str(tmp_path), "--judge", "mock"])  # a directory, not a file
+    assert rc == 1
 
 
 def test_register_warning_below_floor(tmp_path):

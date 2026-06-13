@@ -79,17 +79,24 @@ DEFAULT_DOES_NOT_LICENSE = (
     "\"written by AI\"; a human arguing thesis-first in an abstract register "
     "scores the same. Does not license a quality judgment: the paper measures "
     "argumentative DIVERSITY, not quality or accuracy, and does not claim human "
-    "arguments are better (no \"human = better\"). The anchors are REGISTER-BOUND "
-    "to public-debate forums; the paper's Limitations warn they may not transfer "
-    "to research / legal / policy writing (the consumer's `distant` tier), so the "
-    "band is unconditionally `uncalibrated` and a register mismatch downgrades to "
-    "structural-signals-only. Lower-fidelity judge backends (mock / heuristic) are "
-    "weaker than a faithful LLM labeler — read judge.provenance. Does not run a "
-    "soundness / warrant / fairness verdict (that is dialectical-clarity / "
-    "banister, which this surface may PRE-FLAG but never adjudicates). B3/B4 "
-    "abstraction & stance ship as descriptive `reused_signals` (heuristic, NO "
-    "anchor, not in the aggregate); the two dynamic collapse signals "
-    "(disappearing-guard, discounting-straw-men) remain a deferred follow-up."
+    "arguments are better (no \"human = better\", and no \"concrete = better\"). "
+    "The anchors are REGISTER-BOUND to public-debate forums; the paper's "
+    "Limitations warn they may not transfer to research / legal / policy writing "
+    "(the consumer's `distant` tier), so the band is unconditionally "
+    "`uncalibrated` and a register mismatch downgrades to structural-signals-only. "
+    "Temporal confound: the human/LLM means are a snapshot of the models the "
+    "paper studied; the gap will shift as models change, so the anchors are a "
+    "dated reference, not a stable threshold. Judge fidelity varies by backend: "
+    "`mock` is a test stub (do not infer from it); `manifest` is only as good as "
+    "whatever produced the labels (unverifiable by this surface — read "
+    "judge.provenance.model); the API backends are a faithful per-paragraph "
+    "labeler. Does not run a soundness / warrant / fairness verdict (that is "
+    "dialectical-clarity / banister, which this surface may PRE-FLAG but never "
+    "adjudicates). B3/B4 abstraction & stance ship as descriptive `reused_signals` "
+    "(`heuristic`, NO numeric anchor BY DESIGN — marker density is a different "
+    "construct from the paper's judge-rated per-essay stance strength, D5; not in "
+    "the aggregate); the two dynamic collapse signals (disappearing-guard, "
+    "discounting-straw-men) remain a deferred follow-up."
 )
 
 
@@ -137,11 +144,12 @@ def compute_arc_signals(labels: list[dict[str, Any]]) -> dict[str, float | None]
         if labeled_modes else None
     )
 
-    thesis_open: float | None = None
-    for r in roles:
-        if r is not None:
-            thesis_open = 1.0 if r == "thesis" else 0.0
-            break
+    # Thesis-opening is a property of the FIRST paragraph specifically. If the
+    # judge failed to label paragraph 0, the answer is unknown (None), not the
+    # role of whatever later paragraph happened to be labeled first — asserting
+    # "opens thesis-first" off paragraph 1+ would be a fabricated value.
+    r0 = roles[0] if roles else None
+    thesis_open = None if r0 is None else (1.0 if r0 == "thesis" else 0.0)
 
     return {
         "support_to_proposal_rate": sp,
@@ -153,6 +161,13 @@ def compute_arc_signals(labels: list[dict[str, Any]]) -> dict[str, float | None]
 
 # ---------- contributions -------------------------------------------
 
+# Per-signal D2 status: B1/B2 are `literature_anchored` (register-bound to
+# public-debate forums) — that holds for all four derived signals, including the
+# directional thesis-opening (anchored=False marks "no numeric anchor", a
+# distinct axis from the calibration ladder).
+_DERIVED_CALIBRATION_STATUS = "literature_anchored"
+
+
 @dataclass
 class SignalContribution:
     signal_key: str
@@ -160,6 +175,7 @@ class SignalContribution:
     bundle: str
     leaning: str
     anchored: bool
+    calibration_status: str
     paper_human_mean: float | None
     paper_ai_mean: float | None
     observed_value: float | None
@@ -173,26 +189,31 @@ def per_signal_contributions(
     out: list[SignalContribution] = []
     for sig in DERIVED_SIGNALS:
         ov = observed.get(sig.key)
+        common = dict(
+            signal_key=sig.key, label=sig.label, bundle=sig.bundle,
+            leaning=sig.leaning, calibration_status=_DERIVED_CALIBRATION_STATUS,
+        )
         if not sig.anchored:
             # Directional-only (no numeric anchor): report the observed value,
             # no contribution, no human/ai placement.
             out.append(SignalContribution(
-                signal_key=sig.key, label=sig.label, bundle=sig.bundle,
-                leaning=sig.leaning, anchored=False,
+                **common, anchored=False,
                 paper_human_mean=None, paper_ai_mean=None,
                 observed_value=ov, contribution=None, direction="directional",
             ))
             continue
-        if ov is None:
+        denom = sig.human_mean - sig.ai_mean
+        if ov is None or denom == 0:
+            # No observed value, or a degenerate equal-means anchor (which
+            # _self_check already rejects, but guard the 0/0 anyway): the signal
+            # is unavailable — never a fabricated contribution.
             out.append(SignalContribution(
-                signal_key=sig.key, label=sig.label, bundle=sig.bundle,
-                leaning=sig.leaning, anchored=True,
+                **common, anchored=True,
                 paper_human_mean=sig.human_mean, paper_ai_mean=sig.ai_mean,
-                observed_value=None, contribution=None, direction="unavailable",
+                observed_value=ov, contribution=None, direction="unavailable",
             ))
             continue
-        denom = sig.human_mean - sig.ai_mean
-        contribution = 0.0 if denom == 0 else (ov - sig.ai_mean) / denom
+        contribution = (ov - sig.ai_mean) / denom
         midpoint = (sig.human_mean + sig.ai_mean) / 2
         if abs(ov - midpoint) < 1e-9:
             direction = "neutral"
@@ -201,8 +222,7 @@ def per_signal_contributions(
         else:
             direction = "ai"
         out.append(SignalContribution(
-            signal_key=sig.key, label=sig.label, bundle=sig.bundle,
-            leaning=sig.leaning, anchored=True,
+            **common, anchored=True,
             paper_human_mean=sig.human_mean, paper_ai_mean=sig.ai_mean,
             observed_value=ov, contribution=contribution, direction=direction,
         ))
@@ -266,27 +286,37 @@ def aggregate_score(contributions: list[SignalContribution]) -> dict[str, Any]:
 
 def compute_pre_flag(contributions: list[SignalContribution]) -> dict[str, Any]:
     """D4: a structured pre-flag DATA hint — a texture observation, never a
-    reasoning verdict. True when the anchored arc/mode signals converge on the
-    paper's collapse-leaning (LLM-typical) pattern (≥2 of the 3 anchored signals
-    on the AI side). The consumer OFFERS a dialectical-clarity run on this hint
-    (offer-then-attach); ArgScope itself claims no soundness/warrant verdict."""
+    reasoning verdict. ``dialectical_clarity_informative`` is True when ≥2 of the
+    three anchored arc/mode signals (support→proposal, support→support,
+    argumentation_share) actually land on the AI side of the paper's midpoint;
+    the consumer OFFERS a dialectical-clarity run on the hint (offer-then-attach).
+    The ``basis`` is built from the SIGNALS THAT ACTUALLY CONVERGED — it never
+    asserts a direction the same payload's ``contributions[]`` contradicts — and
+    the AT3 / DC-rule-2a (uncompared-recommendation) hook is named only when
+    ``support_to_proposal_rate`` is itself among the AI-leaning signals."""
     by = {c.signal_key: c for c in contributions}
     arc_keys = ("support_to_proposal_rate", "support_to_support_rate", "argumentation_share")
     ai_leaning = [k for k in arc_keys if by.get(k) and by[k].direction == "ai"]
     informative = len(ai_leaning) >= 2
     if informative:
+        parts = ", ".join(ai_leaning)
         basis = (
-            "B1 proposal-heavy arc + B2 argumentation-dominant mode mix lean "
-            "LLM-typical (" + ", ".join(ai_leaning) + " on the AI side of the "
-            "paper's midpoint). A dialectical-clarity run would check whether "
-            "the proposal-heavy arc reflects an AT3 uncompared recommendation "
-            "(DC rule 2a). This is a texture observation, not a soundness verdict."
+            f"{len(ai_leaning)} of 3 anchored arc/mode signals lean LLM-typical "
+            f"({parts} on the AI side of the paper's midpoint)."
         )
+        if "support_to_proposal_rate" in ai_leaning:
+            basis += (
+                " The AI-side support→proposal rate makes a dialectical-clarity "
+                "run informative: it would check whether the proposal-heavy arc "
+                "reflects an AT3 uncompared recommendation (DC rule 2a)."
+            )
+        basis += " This is a texture observation, not a soundness verdict."
     else:
+        present = [k for k in arc_keys if by.get(k)]
         basis = (
             "The anchored arc/mode signals do not converge on the paper's "
-            "collapse-leaning pattern (fewer than 2 of support→proposal, "
-            "support→support, argumentation_share on the AI side)."
+            "collapse-leaning pattern (fewer than 2 of "
+            + ", ".join(present) + " on the AI side)."
         )
     return {"dialectical_clarity_informative": informative, "basis": basis}
 
@@ -326,11 +356,14 @@ def compute_reused_signals(text: str) -> dict[str, Any]:
         n_words = vec.pop("_n_words", None)
         return {
             "available": True,
+            "calibration_status": "heuristic",
             "n_words": n_words,
             "signals": vec,
             "note": (
                 "B3 abstraction + B4 stance + AGD marker densities (deterministic, "
-                "heuristic — descriptive only, NO anchor; not in the aggregate)."
+                "`heuristic` — descriptive only, NO anchor, not in the aggregate). "
+                "No numeric anchor by design (D5): marker density is a different "
+                "construct from the paper's judge-rated per-essay stance strength."
             ),
         }
     except Exception as exc:  # noqa: BLE001 — reuse is descriptive; degrade, don't crash
@@ -372,6 +405,7 @@ def build_results_payload(
                 "bundle": c.bundle,
                 "leaning": c.leaning,
                 "anchored": c.anchored,
+                "calibration_status": c.calibration_status,
                 "paper_human_mean": c.paper_human_mean,
                 "paper_ai_mean": c.paper_ai_mean,
                 "observed_value": c.observed_value,
@@ -418,11 +452,16 @@ def compose_envelope(
             f"warning(s); see results.validation_warnings."
         )
     judge_kind = results["judge"]["judge_identity"].get("kind")
-    if judge_kind in ("mock", "manifest"):
+    if judge_kind == "mock":
         caveats.append(
-            f"Judge backend is `{judge_kind}` — lower fidelity than a faithful "
-            f"LLM labeler. The role/mode labels (and every B1/B2 signal derived "
-            f"from them) are only as good as the supplied labels."
+            "Judge backend is `mock` — a deterministic TEST stub, not a real "
+            "labeler. Do not infer anything about the argument from a mock run."
+        )
+    elif judge_kind == "manifest":
+        caveats.append(
+            "Judge backend is `manifest` — the role/mode labels (and every B1/B2 "
+            "signal derived from them) are only as good as whatever produced the "
+            "manifest, which this surface cannot verify. Read judge.judge_identity."
         )
     caveats.append(
         "Verdict band is `uncalibrated` and the anchors are register-bound to "
@@ -485,9 +524,11 @@ def render_markdown(envelope: dict[str, Any]) -> str:
         f"(verdict band: `{agg['verdict_band']}`)",
         f"- **Signals evaluated:** {agg['n_signals_evaluated']}/{agg['n_signals_total']}",
         "",
-        "Score is in human-z-units: 1.0 = the paper's human mean, 0.0 = its LLM "
-        "mean. Anchors are register-bound to public-debate forums (directional, "
-        "not thresholds).",
+        "Score is a linear interpolation between the paper's group means "
+        "(1.0 = human mean, 0.0 = LLM mean), UNBOUNDED — a value past either "
+        "mean extrapolates beyond [0, 1], and one extreme signal can dominate "
+        "the mean. Not a z-score (no variance normalization). Anchors are "
+        "register-bound to public-debate forums (directional, not thresholds).",
         "",
         "## Signals",
         "",
@@ -550,13 +591,13 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     target_path = Path(args.target)
-    if not target_path.exists():
+    if not target_path.is_file():
         print(f"error: target file not found at {target_path}", file=sys.stderr)
         return 1
     try:
         text = target_path.read_text(encoding="utf-8")
-    except UnicodeDecodeError as exc:
-        print(f"error: target not valid UTF-8: {exc}", file=sys.stderr)
+    except (OSError, UnicodeDecodeError) as exc:
+        print(f"error: cannot read target {target_path}: {exc}", file=sys.stderr)
         return 1
 
     paragraphs = split_paragraphs(text)
@@ -618,8 +659,12 @@ def main(argv: list[str] | None = None) -> int:
         args.out_md if args.out_md is not None
         else target_path.with_suffix(target_path.suffix + ".argument.md")
     )
-    out_json_path.write_text(json.dumps(envelope, indent=2, default=str), encoding="utf-8")
-    out_md_path.write_text(render_markdown(envelope), encoding="utf-8")
+    try:
+        out_json_path.write_text(json.dumps(envelope, indent=2, default=str), encoding="utf-8")
+        out_md_path.write_text(render_markdown(envelope), encoding="utf-8")
+    except OSError as exc:
+        print(f"error: cannot write output: {exc}", file=sys.stderr)
+        return 1
 
     if args.json:
         print(json.dumps(envelope, indent=2, default=str))

@@ -780,6 +780,7 @@ def _build_argument_decision_audit() -> dict[str, Any]:
     # voice_fingerprint / binoculars builders feed representative values.
     reused_signals = {
         "available": True,
+        "calibration_status": "heuristic",
         "n_words": 620,
         "signals": {
             "stance.hedge": 3.2, "stance.booster": 1.1, "stance.evidential": 0.8,
@@ -799,7 +800,9 @@ def _build_argument_decision_audit() -> dict[str, Any]:
         },
         "note": (
             "B3 abstraction + B4 stance + AGD marker densities (deterministic, "
-            "heuristic — descriptive only, NO anchor; not in the aggregate)."
+            "`heuristic` — descriptive only, NO anchor, not in the aggregate). "
+            "No numeric anchor by design (D5): marker density is a different "
+            "construct from the paper's judge-rated per-essay stance strength."
         ),
     }
     results = m.build_results_payload(
