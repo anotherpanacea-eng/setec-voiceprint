@@ -1,0 +1,3 @@
+### Changed
+
+**CI now runs the repo's consistency gates, not just pytest.** `tools/check_capabilities_drift.py` (manifest ↔ source + R5 contract-fixture drift), `tools/check_docs_freshness.py` (changelog coverage + readiness-matrix freshness), and `tools/gen_calibration_readiness.py --check` were enforcement-by-convention — `AGENTS.md` lists them as the pre-push checklist, but `.github/workflows/tests.yml` only ran the test suite, so a drifted manifest, a stale golden, an unlogged capability, or a stale calibration-readiness matrix could land on a green PR. They now run as a `Consistency gates` step with `if: always()` so they report independently of the test step. No code or behavior change.
