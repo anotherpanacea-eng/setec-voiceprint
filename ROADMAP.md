@@ -2,6 +2,20 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-06-13)
+
+Supplements the 2026-06-06 pass below for the **1.110 → 1.116** window. The plugin is now at **1.116.0** (the section below still says 1.109.x). Where this conflicts with the older reconciliation or the inline markers, this is authoritative.
+
+### Shipped since 2026-06-06
+
+- **The normalized-entrypoint consumer contract (R1–R5).** `capabilities.py emit --json` (the whole manifest as one machine-readable document with a top-level version floor), the `setec_run.py` dispatcher (`setec run <surface> --json` — resolves a surface, enforces its `min_setec_version` floor + Python deps, and guarantees a `schema_version: 1.0` envelope on stdout), the R3 structured error model (`available:false` + branchable `reason_category`), the R4 output-validity bounds gate at the `build_output()` boundary, and R5 golden contract fixtures (`references/contract_fixtures/` + a vendorable `fake_setec.py` + a fixture-drift gate wired into the drift linter). **Two downstream consumers now ride it:** apodictic (nine subprocess surfaces) and setec-voicewright (four more surfaces promoted to the bundle).
+- **ArgScope Increment A1 — a new surface family.** `argument_decision_audit.py` + `argument_judge.py` + `argument_feature_schema.py` score how an *argument* is built (B1 paragraph-role transition arc + B2 discourse-mode mix) against Kim et al. 2026, plus the judge-free `argmove_profile.py` separation baseline (the new `assertoric` surface). Ships unconditionally `uncalibrated`, register-bound to op-ed, apodictic-consumed. The argument-domain sibling of Surface 6.
+- **Fiction impostor-pool acquisition tooling landed.** `acquire_epub.py` (#141) and `acquire_manuscript.py` for `.docx`/`.md`/`.txt` (#142) are now **merged to `main`** with tests — this updates "What's left" item 2 below, which still describes them as pending PRs. Assembling the pool + the fiction calibration spine remain.
+- **Repo-hygiene / dedup.** Shared `judge_backends.py` (provider plumbing for both judge families), shared `tools/r1_bundle.py` field-bundle validator, and CI now runs the consistency gates (capabilities-drift / docs-freshness / calibration-readiness), not just pytest.
+- **Releases cut 1.110 → 1.116.0**, the latest being the v1.116.0 consolidated release that cuts the ArgScope A1 `min_setec_version` floor.
+
+The 2026-06-06 "What's left" list below otherwise still stands: R12 calibration (item 1), the AIC-8/9 thresholds (item 3), and the operator-blocked cascade (item 4) are unchanged.
+
 ## Status reconciliation (2026-06-06)
 
 A full pass over the 1.42 → 1.109 CHANGELOG and the shipped script catalog, reconciling this document against the code. **Where the inline status markers further down conflict with this section, this section is authoritative** — many of them predate the work below. The plugin is at **1.109.x**; the framework has shipped well past the point most of this document describes.
