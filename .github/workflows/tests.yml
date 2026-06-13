@@ -46,3 +46,15 @@ jobs:
       - name: Run test suite
         run: |
           pytest plugins/setec-voiceprint/scripts/tests -q -rs
+
+      # Consistency gates AGENTS.md treats as enforcement (manifest <-> source
+      # drift, contract-fixture drift, changelog coverage, calibration-readiness
+      # freshness). Previously only run by hand pre-push; wiring them into CI so
+      # drift can't land unblocked. `if: always()` so they report even when the
+      # test step above failed — the two signals are independent.
+      - name: Consistency gates
+        if: always()
+        run: |
+          python3 tools/check_capabilities_drift.py
+          python3 tools/check_docs_freshness.py
+          python3 tools/gen_calibration_readiness.py --check
