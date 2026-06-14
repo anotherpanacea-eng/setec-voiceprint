@@ -112,17 +112,26 @@ Worked example — `validation_harness` straddles the line:
 
 - Its *scoring* phase is compliant: progress logging plus an incremental
   scored-records cache with `--resume`.
-- Its *metrics/bootstrap* phase honors none of the three — single-threaded
-  (not recoverable), silent (not visible), and uncheckpointed (not
-  continuable). A host hang loses the entire bootstrap with nothing to
-  resume.
+- Its *metrics/bootstrap* phase is recoverable **when `--metrics-cache` is
+  passed**: a per-CI `_MetricsCheckpoint` (atomic, default flush-after-every-CI)
+  logs each completed CI and resumes from the last one, gated by a
+  records-fingerprint. The remaining gap is that it is **opt-in** — without the
+  flag the bootstrap runs un-checkpointed, so a host hang loses it; the harness
+  now emits a loud stderr warning naming the one-flag fix. (Within-CI resampling
+  is still single-pass, but each CI is minutes, so a lost CI is bounded.)
 
 **Audit backlog** — full-corpus single-process surfaces to bring into
-compliance (tracked in #133):
+compliance (tracked in #133; see that issue for the full 2026-06-14 audit):
 
-- `validation_harness` metrics/bootstrap phase — the worked example above.
-- single-process `check_corpus` / `corpus_hygiene` at corpus scale.
-- the standalone `calibration_survey.py` CLI (the bake-off driver).
+- `validation_harness` metrics/bootstrap phase — checkpoint shipped; **opt-in**,
+  now with a discoverability warning. Open question: make `--metrics-cache` (and
+  the scoring cache) default-on rather than opt-in.
+- single-process `check_corpus` / `corpus_hygiene` at corpus scale — sharded
+  parity exists via `shard_runner`, but the default path is still uncheckpointed.
+- the standalone `calibration_survey.py` CLI (the bake-off driver) — corpus
+  scoring is cached, but the survey wrapper has no per-signal checkpoint.
+- when the `train_edit_magnitude` fine-tune loop is wired (currently a stub), it
+  must ship epoch-checkpoint + `--resume` from the start (GPU, hours).
 - any other surface that loads a full corpus into one process.
 
 ## Acquisition scripts (`acquire_*.py`)
