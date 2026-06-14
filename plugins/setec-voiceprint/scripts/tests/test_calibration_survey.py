@@ -721,3 +721,32 @@ def test_survey_cache_incompatible_meta_resweeps(tmp_path):
         cs.run_survey(_stub_args(survey_cache=str(cache), fpr_target=0.02),
                       signals=sigs)
     assert calls["n"] == 1  # different fpr_target -> cache ignored -> re-swept
+
+
+def test_survey_cache_version_bump_invalidates(tmp_path, monkeypatch):
+    """Codex #213 P2: the survey cache is gated on a format/gate version, so a
+    bump (e.g. after a SurveyRow/gate change) invalidates stale rows even when
+    the corpus + sweep knobs are unchanged."""
+    cache = tmp_path / "survey.json"
+    calls = {"n": 0}
+
+    def _count(records, *, args, scoring_meta):
+        calls["n"] += 1
+        return _entry(args.signal)
+
+    sigs = ["burstiness_B"]
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           side_effect=_count):
+        cs.run_survey(_stub_args(survey_cache=str(cache)), signals=sigs)
+    assert calls["n"] == 1
+
+    calls["n"] = 0
+    monkeypatch.setattr(cs, "_SURVEY_CACHE_VERSION", "9.9")
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           side_effect=_count):
+        cs.run_survey(_stub_args(survey_cache=str(cache)), signals=sigs)
+    assert calls["n"] == 1  # version bump -> meta mismatch -> re-swept

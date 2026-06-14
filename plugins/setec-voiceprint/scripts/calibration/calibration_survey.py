@@ -1113,6 +1113,13 @@ def _survey_one_signal_pooled(signal: str) -> SurveyRow:
 # change a row) recomputes rather than silently reuse a cache from other settings.
 
 _SURVEY_CACHE_TOOL = "calibration_survey"
+# Bump whenever the persisted row format or the logic that fills it changes —
+# SurveyRow.to_dict()/from_dict(), the gate evaluation, the ranking fields, or
+# survey_one_signal's extraction. The scoring fingerprint + sweep knobs gate
+# corpus/config drift; THIS gates code drift, so a stale --survey-cache is
+# never accepted under new gate/format logic (Codex #213 P2). Also pinned to
+# SCRIPT_VERSION so a release bump invalidates conservatively.
+_SURVEY_CACHE_VERSION = "1.0"
 
 
 def _survey_cache_meta(
@@ -1123,6 +1130,8 @@ def _survey_cache_meta(
     ).hexdigest()
     return {
         "tool": _SURVEY_CACHE_TOOL,
+        "survey_cache_version": _SURVEY_CACHE_VERSION,
+        "script_version": SCRIPT_VERSION,
         "scoring_fingerprint": scoring_fp,
         "fpr_target": fpr_target,
         "tpr_floor": tpr_floor,
