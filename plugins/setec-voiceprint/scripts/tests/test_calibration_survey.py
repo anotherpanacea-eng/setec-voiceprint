@@ -658,3 +658,95 @@ if __name__ == "__main__":
         sys.stderr.write("pytest not installed; cannot run tests.\n")
         sys.exit(2)
     sys.exit(pytest.main([__file__, "-v"]))
+
+
+# ---- survey-level per-signal checkpoint (#133) ----
+
+def test_survey_cache_resume_skips_already_swept_signals(tmp_path):
+    """A re-run with the same --survey-cache reuses cached rows and does NOT
+    re-sweep (derive_threshold_from_records is not called again)."""
+    cache = tmp_path / "survey.json"
+    calls = {"n": 0}
+
+    def _count(records, *, args, scoring_meta):
+        calls["n"] += 1
+        return _entry(args.signal)
+
+    sigs = ["burstiness_B", "mattr"]
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           side_effect=_count):
+        survey1 = cs.run_survey(_stub_args(survey_cache=str(cache)), signals=sigs)
+    assert calls["n"] == 2
+    assert cache.exists()
+    payload = json.loads(cache.read_text(encoding="utf-8"))
+    assert payload["status"] == "complete"
+    assert set(payload["rows"]) == set(sigs)
+
+    # Second run, same cache + settings: both signals served from cache.
+    calls["n"] = 0
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           side_effect=_count):
+        survey2 = cs.run_survey(_stub_args(survey_cache=str(cache)), signals=sigs)
+    assert calls["n"] == 0
+    assert {r["signal"] for r in survey2["rows"]} == set(sigs)
+
+
+def test_survey_cache_incompatible_meta_resweeps(tmp_path):
+    """Changing a sweep knob (--fpr-target) invalidates the survey cache so the
+    signals are re-swept rather than served stale."""
+    cache = tmp_path / "survey.json"
+    calls = {"n": 0}
+
+    def _count(records, *, args, scoring_meta):
+        calls["n"] += 1
+        return _entry(args.signal)
+
+    sigs = ["burstiness_B"]
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           side_effect=_count):
+        cs.run_survey(_stub_args(survey_cache=str(cache), fpr_target=0.01),
+                      signals=sigs)
+    assert calls["n"] == 1
+    calls["n"] = 0
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           side_effect=_count):
+        cs.run_survey(_stub_args(survey_cache=str(cache), fpr_target=0.02),
+                      signals=sigs)
+    assert calls["n"] == 1  # different fpr_target -> cache ignored -> re-swept
+
+
+def test_survey_cache_version_bump_invalidates(tmp_path, monkeypatch):
+    """Codex #213 P2: the survey cache is gated on a format/gate version, so a
+    bump (e.g. after a SurveyRow/gate change) invalidates stale rows even when
+    the corpus + sweep knobs are unchanged."""
+    cache = tmp_path / "survey.json"
+    calls = {"n": 0}
+
+    def _count(records, *, args, scoring_meta):
+        calls["n"] += 1
+        return _entry(args.signal)
+
+    sigs = ["burstiness_B"]
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           side_effect=_count):
+        cs.run_survey(_stub_args(survey_cache=str(cache)), signals=sigs)
+    assert calls["n"] == 1
+
+    calls["n"] = 0
+    monkeypatch.setattr(cs, "_SURVEY_CACHE_VERSION", "9.9")
+    with mock.patch.object(cs.ct, "load_or_score_corpus",
+                           return_value=([], {}, False)), \
+         mock.patch.object(cs.ct, "derive_threshold_from_records",
+                           side_effect=_count):
+        cs.run_survey(_stub_args(survey_cache=str(cache)), signals=sigs)
+    assert calls["n"] == 1  # version bump -> meta mismatch -> re-swept
