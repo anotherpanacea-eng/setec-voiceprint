@@ -283,3 +283,68 @@ def test_manifest_judge_round_trip(tmp_path):
                    str(manifest), "--out", str(tmp_path / "o.json"),
                    "--out-md", str(tmp_path / "o.md")])
     assert rc == 0
+
+
+# ---- C0: register-baseline plumbing --------------------------------------
+def test_register_op_ed_attaches_means(tmp_path):
+    """--register op-ed attaches the seeded register_human_mean (= the paper
+    anchors) + per-signal literature_anchored status, records target.register,
+    and leaves the band uncalibrated (the C0 seed graduates nothing)."""
+    text = "\n\n".join(f"Paragraph number {i} makes a point." for i in range(5))
+    rc, env = _run(tmp_path, text, argv=["--register", "op-ed"])
+    assert rc == 0
+    r = env["results"]
+    reg = r["target"]["register"]
+    assert reg is not None and reg["genre"] == "op-ed" and reg["calibrated"] is False
+    by = {c["signal_key"]: c for c in r["contributions"]}
+    # anchored signals carry a register_human_mean equal to the paper mean
+    assert by["support_to_proposal_rate"]["register_human_mean"] == 0.123
+    assert by["argumentation_share"]["register_human_mean"] == 0.715
+    assert all(c["calibration_status"] == "literature_anchored" for c in r["contributions"])
+    assert all(c["register_ai_mean"] is None for c in r["contributions"])  # no calibrated arm
+    assert r["aggregate"]["verdict_band"] == "uncalibrated"
+
+
+def test_register_unknown_genre_falls_back(tmp_path):
+    """An unknown --register genre is a soft fallback: no register block, a
+    register_warnings note, and contributions keep null register means."""
+    text = "\n\n".join(f"Paragraph number {i} makes a point." for i in range(5))
+    rc, env = _run(tmp_path, text, argv=["--register", "made_up_genre"])
+    assert rc == 0
+    r = env["results"]
+    assert r["target"]["register"] is None
+    assert any("made_up_genre" in w for w in r["target"]["register_warnings"])
+    assert all(c["register_human_mean"] is None for c in r["contributions"])
+
+
+def test_baseline_dir_requires_register(tmp_path):
+    """--baseline-dir without --register is a usage error (exit 2 / bad input)."""
+    target = tmp_path / "e.txt"
+    target.write_text("\n\n".join(f"P{i} argues." for i in range(4)), encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        ada.main([str(target), "--judge", "mock", "--baseline-dir", str(tmp_path),
+                  "--out", str(tmp_path / "o.json"), "--out-md", str(tmp_path / "o.md")])
+    assert exc.value.code == 2
+
+
+def test_baseline_dir_overrides_shipped(tmp_path):
+    """--baseline-dir prefers an operator-local yaml; an empirically_oriented row
+    graduates that signal's calibration_status (the C1/C3 drop-in path)."""
+    (tmp_path / "argument_register_baselines.yaml").write_text(
+        "argument_register_baselines:\n"
+        "  op-ed:\n"
+        "    support_to_proposal_rate:\n"
+        "      human: { mean: 0.140 }\n"
+        "      status: empirically_oriented\n"
+        "      provenance: \"local test corpus · pre-2022 · hand-authored\"\n"
+        "      provisional: false\n",
+        encoding="utf-8",
+    )
+    text = "\n\n".join(f"Paragraph number {i} makes a point." for i in range(5))
+    rc, env = _run(tmp_path, text, argv=["--register", "op-ed", "--baseline-dir", str(tmp_path)])
+    assert rc == 0
+    r = env["results"]
+    assert r["target"]["register"]["source"].startswith(str(tmp_path))
+    by = {c["signal_key"]: c for c in r["contributions"]}
+    assert by["support_to_proposal_rate"]["register_human_mean"] == 0.140
+    assert by["support_to_proposal_rate"]["calibration_status"] == "empirically_oriented"

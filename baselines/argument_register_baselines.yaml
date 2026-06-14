@@ -1,0 +1,68 @@
+# argument_register_baselines.yaml — register-matched baselines for ArgScope
+# (the argument_decision_audit surface), per the calibration spec
+# (.argscope-spec/argscope-calibration-SPEC.md §2, §6 C0).
+#
+# Purpose. The audit's paper anchors (Kim et al. 2026, "Argument Collapse",
+# arXiv:2606.01736v3) are PUBLIC-DEBATE-FORUM means — register-bound, a
+# directional reference, never thresholds. This file is the escape hatch that
+# lets a genre EARN a register-matched anchor (and eventually a calibrated band
+# verdict) its own corpus supports. The surface reads a row via `--register
+# <genre>` (and `--baseline-dir` / $SETEC_BASELINES_DIR for an operator-local
+# copy); each per-signal `status` graduates that signal up SETEC's standard
+# `calibration_status` ladder.
+#
+# Status: SEED ONLY (C0). The single seeded genre is `op-ed`, whose row simply
+# re-states the paper's public-debate-forum HUMAN means at status
+# `literature_anchored` — op-ed IS the paper's own (matched) register, so this
+# is the honest tier: a measured literature anchor, not a register-matched
+# CORPUS baseline. It changes no verdict (the band stays `uncalibrated`); it
+# exists so the schema + plumbing ship before any corpus is built.
+#
+# How a genre graduates (C1-C3, corpus-gated — NOT in this seed):
+#   * `empirically_oriented` — add a `human:` block with mean+sd+band+n from a
+#     register-matched HUMAN corpus (build_register_baseline.py, C1). Licenses a
+#     typicality read; still no AI-collapse claim, band still uncalibrated.
+#   * `calibrated` — add an `ai:` block AND a genre-level `discrimination:` row
+#     (da_AUC/FPR/TPR from a labeled human-vs-AI corpus via validation_harness,
+#     C2). Only then does the band graduate to a real, earned verdict.
+# The ABSENCE of an `ai:` block / `discrimination:` row IS the "human-only /
+# no-band" state. Per-signal `status`, so a genre may carry mixed evidence.
+#
+# Honesty discipline (calibration spec §4, enforced like ThresholdSpec):
+#   * provenance is MANDATORY above `heuristic` (a row with no documented
+#     provenance cannot claim a tier above heuristic);
+#   * a human baseline must be defensibly human (prefer a pre-2022 cutoff —
+#     the paper's own temporal confound); a thin/one-sided corpus stays
+#     `provisional: true` and uncalibrated;
+#   * `calibrated` REQUIRES measured discrimination + a model+date stamp
+#     (model-bound; re-validate on model drift).
+#
+# Schema (per calibration spec §2):
+#   argument_register_baselines:
+#     <genre>:                       # normalized APODICTIC Form genre
+#       <signal_key>:                # an argument_feature_schema DERIVED_SIGNALS key
+#         human: { mean: <f>[, sd: <f>, band: [<lo>,<hi>], n: <int>] }
+#         ai:    { ... }             # present ONLY at `calibrated`
+#         status: <calibration_status>   # per-signal ladder value
+#         provenance: "<corpus_slug> · <date-range> · <human-authorship basis>"
+#         provisional: <bool>
+#     discrimination:                # genre-level, present ONLY at `calibrated`
+#       <genre>: { da_AUC: <f>, FPR_at: <f>, TPR_at: <f>, validator_run: "<slug>", model: "<llm+date>" }
+
+argument_register_baselines:
+  op-ed:
+    support_to_proposal_rate:
+      human: { mean: 0.123 }
+      status: literature_anchored
+      provenance: "Kim et al. 2026 (arXiv:2606.01736v3) §4.1-4.2 / Table 26 — NYT Room for Debate human mean (public-debate-forum essays, the matched register)"
+      provisional: false
+    support_to_support_rate:
+      human: { mean: 0.525 }
+      status: literature_anchored
+      provenance: "Kim et al. 2026 (arXiv:2606.01736v3) §4.1-4.2 / Tables 26-27 — midpoint of the reported 50.5-54.5% human range across NYT Room for Debate + Boston Review"
+      provisional: false
+    argumentation_share:
+      human: { mean: 0.715 }
+      status: literature_anchored
+      provenance: "Kim et al. 2026 (arXiv:2606.01736v3) §4.1-4.2 / Table 27 — human argumentation discourse-mode share across NYT Room for Debate + Boston Review"
+      provisional: false
