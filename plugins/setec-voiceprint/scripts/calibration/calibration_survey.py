@@ -64,7 +64,9 @@ from __future__ import annotations
 import argparse
 import atexit
 import datetime as _dt
+import hashlib
 import json
+import os
 import random
 import shutil
 import sys
@@ -584,6 +586,19 @@ class GateResults:
     interpretable_threshold: bool | None = None  # gate 4
     esl_conservative: bool | None = None       # gate 5
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "GateResults":
+        """Reconstruct from a ``to_dict()``'d row's ``gates`` block.
+        ``n_passes`` / ``all_pass`` / ``n_evaluated`` are computed
+        properties and ignored on load."""
+        return cls(
+            polarity_matches=d.get("polarity_matches"),
+            auc_ap_not_embarrassing=d.get("auc_ap_not_embarrassing"),
+            enough_negatives=d.get("enough_negatives"),
+            interpretable_threshold=d.get("interpretable_threshold"),
+            esl_conservative=d.get("esl_conservative"),
+        )
+
     @property
     def all_pass(self) -> bool:
         """All evaluable gates pass. None values count as 'unknown';
@@ -802,6 +817,29 @@ class SurveyRow:
             },
             "error": self.error,
         }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "SurveyRow":
+        """Reconstruct a row from its ``to_dict()`` form (the survey-cache
+        round-trip). ``full_entry`` is write-only / not serialized, so it
+        defaults to empty; nothing downstream of ``run_survey`` reads it."""
+        return cls(
+            signal=d["signal"],
+            direction=d["direction"],
+            heuristic_value=d.get("heuristic_value"),
+            auc=d.get("auc"),
+            direction_aware_auc=d.get("direction_aware_auc"),
+            ap=d.get("ap"),
+            direction_aware_ap=d.get("direction_aware_ap"),
+            threshold=d.get("threshold"),
+            tpr_at_threshold=d.get("tpr_at_threshold"),
+            fpr_at_threshold=d.get("fpr_at_threshold"),
+            n_pos=d.get("n_pos"),
+            n_neg=d.get("n_neg"),
+            fpr_resolution=d.get("fpr_resolution"),
+            gates=GateResults.from_dict(d.get("gates", {}) or {}),
+            error=d.get("error"),
+        )
 
 
 def _build_inner_args(
@@ -1064,6 +1102,73 @@ def _survey_one_signal_pooled(signal: str) -> SurveyRow:
     )
 
 
+# ---- survey-level per-signal checkpoint (belt/suspenders/buttons, #133) ----
+#
+# The corpus is scored once + cached (calibrate_thresholds), but the per-signal
+# threshold SWEEP (minutes/signal at MAGE scale) had no survey-level checkpoint,
+# so a mid-survey crash / host hang re-ran already-completed signals. With
+# --survey-cache, each signal's row is persisted as it finishes (the reference
+# "_save_partial after each signal" pattern) and a resume skips already-swept
+# signals. A compat meta (corpus identity fingerprint + the sweep knobs that
+# change a row) recomputes rather than silently reuse a cache from other settings.
+
+_SURVEY_CACHE_TOOL = "calibration_survey"
+
+
+def _survey_cache_meta(
+    *, scoring_meta, fpr_target, tpr_floor, aggressiveness_tolerance,
+) -> dict[str, Any]:
+    scoring_fp = hashlib.sha256(
+        json.dumps(scoring_meta or {}, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()
+    return {
+        "tool": _SURVEY_CACHE_TOOL,
+        "scoring_fingerprint": scoring_fp,
+        "fpr_target": fpr_target,
+        "tpr_floor": tpr_floor,
+        "aggressiveness_tolerance": aggressiveness_tolerance,
+    }
+
+
+def _save_survey_cache(
+    path: Path, rows_by_signal: dict[str, "SurveyRow"], *, status: str,
+    meta: dict[str, Any],
+) -> None:
+    """Atomic write (tmp + os.replace) of the per-signal survey rows."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "status": status,
+        "meta": meta,
+        "rows": {sig: row.to_dict() for sig, row in rows_by_signal.items()},
+    }
+    tmp.write_text(json.dumps(payload, indent=2, default=str), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _load_survey_cache(
+    path: Path, *, expected_meta: dict[str, Any], refresh: bool,
+) -> dict[str, "SurveyRow"]:
+    """Return ``{signal: SurveyRow}`` for already-swept signals, or ``{}`` to
+    re-sweep (no cache, unreadable, or incompatible sweep settings)."""
+    if refresh or not path.exists():
+        return {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(payload, dict) or payload.get("meta") != expected_meta:
+        return {}
+    out: dict[str, SurveyRow] = {}
+    for sig, row_d in (payload.get("rows") or {}).items():
+        if isinstance(row_d, dict):
+            try:
+                out[sig] = SurveyRow.from_dict(row_d)
+            except (KeyError, TypeError):
+                continue
+    return out
+
+
 def run_survey(
     parent_args: argparse.Namespace,
     *,
@@ -1138,16 +1243,53 @@ def run_survey(
         raise
 
     workers = max(1, int(getattr(parent_args, "aggregate_workers", 1)))
+
+    # Survey-level per-signal checkpoint (#133): load any compatible cached
+    # rows; re-sweep only the signals not already cached.
+    survey_cache_str = getattr(parent_args, "survey_cache", None)
+    survey_cache_path = (
+        Path(survey_cache_str).expanduser() if survey_cache_str else None
+    )
+    survey_meta = _survey_cache_meta(
+        scoring_meta=cached_scoring_meta,
+        fpr_target=getattr(parent_args, "fpr_target", None),
+        tpr_floor=tpr_floor,
+        aggressiveness_tolerance=aggressiveness_tolerance,
+    )
+    cached_rows: dict[str, SurveyRow] = (
+        _load_survey_cache(
+            survey_cache_path, expected_meta=survey_meta,
+            refresh=bool(getattr(parent_args, "refresh_survey_cache", False)),
+        )
+        if survey_cache_path is not None else {}
+    )
+    signals_to_run = [s for s in signals if s not in cached_rows]
+    # Reused rows first; the _rank_key sort below fixes final ordering.
+    rows: list[SurveyRow] = [cached_rows[s] for s in signals if s in cached_rows]
+    if cached_rows:
+        sys.stderr.write(
+            f"  resuming survey from {survey_cache_path}: "
+            f"{len(cached_rows)} signal(s) cached, "
+            f"{len(signals_to_run)} to sweep.\n"
+        )
+
+    def _checkpoint(signal: str, row: SurveyRow) -> None:
+        cached_rows[signal] = row
+        if survey_cache_path is not None:
+            _save_survey_cache(
+                survey_cache_path, cached_rows,
+                status="in_progress", meta=survey_meta,
+            )
+
     sys.stderr.write(
-        f"Step 2: sweeping per-signal thresholds "
+        f"Step 2: sweeping {len(signals_to_run)} per-signal threshold(s) "
         f"(cache_hit={cache_hit}, workers={workers}).\n"
     )
-    if workers <= 1 or len(signals) <= 1:
-        # Serial path — keeps the historical behavior for small
-        # signal lists and avoids ProcessPoolExecutor's spawn
-        # overhead for the trivial case.
-        rows: list[SurveyRow] = []
-        for signal in signals:
+    if not signals_to_run:
+        pass  # every signal served from the survey cache
+    elif workers <= 1 or len(signals_to_run) <= 1:
+        # Serial path — historical behavior; also the small-list / trivial case.
+        for signal in signals_to_run:
             sys.stderr.write(f"  --> {signal}\n")
             row = survey_one_signal(
                 signal, parent_args,
@@ -1157,28 +1299,22 @@ def run_survey(
                 cached_scoring_meta=cached_scoring_meta,
             )
             rows.append(row)
+            _checkpoint(signal, row)
     else:
-        # Parallel path: per-signal bootstrap is the dominant cost
-        # at MAGE/RAID scale (~30-60 min per signal × 11 signals
-        # serial = ~6 hours). Each ``survey_one_signal`` call is
-        # independent of every other — same ``cached_records``
-        # input, no cross-signal state — so a process pool gives
-        # near-linear speedup up to the per-signal CPU work.
-        #
-        # The records list is passed via ProcessPoolExecutor's
-        # initializer + module-level globals so each worker
-        # process inherits one copy at spawn rather than
-        # re-deserializing the ~100MB records list per signal
-        # call (which would dominate the parallelism benefit).
-        # See ``_pool_init`` / ``_survey_one_signal_pooled``.
+        # Parallel path: per-signal bootstrap is the dominant cost at MAGE/RAID
+        # scale (~30-60 min per signal × 11 signals serial = ~6 hours). Each
+        # ``survey_one_signal`` call is independent (same ``cached_records``
+        # input, no cross-signal state), so a process pool gives near-linear
+        # speedup. The records list passes via the pool initializer + module
+        # globals so each worker inherits one copy at spawn rather than
+        # re-deserializing the ~100MB list per call. See ``_pool_init`` /
+        # ``_survey_one_signal_pooled``. Each completed future is checkpointed.
         from concurrent.futures import ProcessPoolExecutor, as_completed
 
         sys.stderr.write(
-            f"  ({len(signals)} signals across {workers} worker "
-            f"process(es); each worker holds one copy of the "
-            f"records cache)\n"
+            f"  ({len(signals_to_run)} signals across {workers} worker "
+            f"process(es); each worker holds one copy of the records cache)\n"
         )
-        rows = [None] * len(signals)  # type: ignore[list-item]
         with ProcessPoolExecutor(
             max_workers=workers,
             initializer=_pool_init,
@@ -1187,26 +1323,27 @@ def run_survey(
                 tpr_floor, aggressiveness_tolerance,
             ),
         ) as pool:
-            future_to_idx = {
-                pool.submit(_survey_one_signal_pooled, signal): i
-                for i, signal in enumerate(signals)
+            future_to_signal = {
+                pool.submit(_survey_one_signal_pooled, signal): signal
+                for signal in signals_to_run
             }
-            for fut in as_completed(future_to_idx):
-                i = future_to_idx[fut]
+            for fut in as_completed(future_to_signal):
+                signal = future_to_signal[fut]
                 row = fut.result()
-                rows[i] = row
-                sys.stderr.write(f"  --> {signals[i]} (done)\n")
-        # rows is now populated in original-signals order;
-        # downstream sort handles re-ranking.
-        rows = [r for r in rows if r is not None]
+                rows.append(row)
+                _checkpoint(signal, row)
+                sys.stderr.write(f"  --> {signal} (done)\n")
         if len(rows) != len(signals):
             sys.stderr.write(
-                f"WARNING: pool returned {len(rows)} of "
-                f"{len(signals)} expected rows; some signal(s) "
-                f"failed silently. Falling back to serial path is "
-                f"safer for diagnostic completeness; --aggregate-"
-                f"workers 1 reproduces the historical execution.\n"
+                f"WARNING: survey assembled {len(rows)} of {len(signals)} "
+                f"expected rows; some signal(s) failed silently. "
+                f"--aggregate-workers 1 reproduces the historical serial path.\n"
             )
+
+    if survey_cache_path is not None:
+        _save_survey_cache(
+            survey_cache_path, cached_rows, status="complete", meta=survey_meta,
+        )
 
     # Rank rows: signals that pass all evaluable gates float to the
     # top, then by descending direction-aware AUC (NOT raw AUC —
@@ -1697,6 +1834,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
                        "exists. Use after a code change that should "
                        "invalidate cached records but didn't bump "
                        "SCORER_CACHE_VERSION."
+                   ))
+    p.add_argument("--survey-cache", default=None,
+                   help=(
+                       "Path to a per-signal survey checkpoint (distinct from "
+                       "--records-cache, which caches the scored corpus). Each "
+                       "signal's row is persisted as its threshold sweep "
+                       "finishes; a re-run skips already-swept signals and "
+                       "resumes, so a host hang mid-survey doesn't re-sweep "
+                       "completed signals. Compat-gated on corpus identity + "
+                       "--fpr-target / --tpr-floor / --aggressiveness-tolerance."
+                   ))
+    p.add_argument("--refresh-survey-cache", action="store_true",
+                   help=(
+                       "Discard any existing --survey-cache and re-sweep every "
+                       "signal from scratch."
                    ))
     p.add_argument("--records-cache-flush-every", type=int, default=100,
                    help=(
