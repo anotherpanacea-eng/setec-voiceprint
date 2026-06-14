@@ -130,13 +130,17 @@ compliance (tracked in #133):
 The impostor-corpus acquirers share `acquisition_core.py` and the
 `acquire_corpus_template.py` shape (`discover_items` + `extract_one`; the rest
 of the pipeline is shared). The full build/test guide lives in
-`references/acquire-corpus-pattern.md`. One hard-won convention:
+`references/acquire-corpus-pattern.md`. Two hard-won conventions:
 
 - **A zero-output run must fail.** When a run acquires nothing, exit non-zero
   unless it's a dedupe-only rerun (a `duplicate-hash` skip was seen) or
   `--allow-empty` was passed — a non-empty `skip_log` (everything filtered /
   no-text / below-min-words) must not mask a misconfigured source, filter,
   selector, or `--prefix`. (Codex review of #180.)
+- **An API key never enters a stored locator.** Keep the manifest `source_url` /
+  `ItemMeta.locator` clean — add a key only at the fetch boundary (`extract_one`),
+  or pass it via an auth header, never embed it in a URL that gets persisted.
+  (Build-review catch on the keyed acquirers — GovInfo / CORE / CourtListener / PTAB.)
 
 ## Keeping docs current (the docs-freshness step)
 
@@ -213,6 +217,13 @@ spec→review→write→review→fix structure durable on GitHub and gives
   maintainer gave standing approval for this case (2026-06-06). If only one
   agent has reviewed, or a review comment is unresolved, hold for the
   second opinion rather than self-merging.
+- **`gh` OAuth workflow-scope merge block (public repo).** A PR that touches
+  `.github/workflows/` can't be merged with the `gh` OAuth token (403 "refusing to
+  allow an OAuth App to create or update workflow"). The *git* credential keeps the
+  scope (it pushed the branch fine), so the fallback is a local
+  `git merge --no-ff origin/<branch>` into a `main` worktree →
+  `git push origin HEAD:main` (needs explicit OK for the direct-to-main push), or
+  merge via the GitHub web UI. PRs that don't touch workflows merge via `gh` fine.
 
 ### When to skip the PR
 
