@@ -2499,6 +2499,17 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
             flush_every=int(getattr(args, "metrics_cache_flush_every", 1)),
             refresh=bool(getattr(args, "refresh_metrics_cache", False)),
         )
+    elif int(getattr(args, "metric_bootstrap_resamples", 0) or 0) > 0:
+        # The metrics/bootstrap phase is recoverable (per-CI checkpoint +
+        # --resume) only when --metrics-cache is set. Without it a SIGTERM /
+        # host hang loses the whole bootstrap with nothing to resume — make
+        # that gap (and its one-flag fix) visible rather than silent (#133).
+        sys.stderr.write(
+            "WARNING: the metrics/bootstrap phase is running without "
+            "--metrics-cache; a SIGTERM or host hang loses the entire bootstrap "
+            "with nothing to resume. Pass --metrics-cache PATH for a per-CI "
+            "checkpoint + --resume on a long run.\n"
+        )
 
     slices = build_slices(
         records,
