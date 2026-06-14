@@ -203,3 +203,64 @@ def test_warn_no_quoting_overhead_for_simple_paths() -> None:
     text = out.text
     # No surrounding quotes added for shell-safe paths.
     assert f"--source-manifest {simple_path}" in text
+
+
+# ---- scored-records cache: belt/suspenders/buttons for corpus-scale runs ----
+
+def _clean_files(tmp_path: Path, n: int) -> list[Path]:
+    files = []
+    for i in range(n):
+        p = tmp_path / f"f{i}.txt"
+        p.write_text("This is clean ordinary prose with no markup. " * 50,
+                     encoding="utf-8")
+        files.append(p)
+    return files
+
+
+def test_records_cache_passthrough_matches_uncached(tmp_path: Path) -> None:
+    files = _clean_files(tmp_path, 2)
+    plain = check_corpus_paths(files)
+    cache = tmp_path / "c.json"
+    cached = check_corpus_paths(files, cache_path=cache)
+    assert cache.exists()
+    payload = json.loads(cache.read_text(encoding="utf-8"))
+    assert payload["status"] == "complete"
+    assert len(payload["records"]) == 2
+    # A cached run produces the same result as an uncached one.
+    assert plain["files"] == cached["files"]
+    assert plain["status"] == cached["status"]
+
+
+def test_records_cache_resume_reuses_scored_files(tmp_path: Path) -> None:
+    files = _clean_files(tmp_path, 3)
+    cache = tmp_path / "c.json"
+    r1 = check_corpus_paths(files, cache_path=cache, cache_flush_every=1)
+    # Delete a file; a resume with the same cache must SERVE it from cache
+    # (skip rescoring), not emit an error for the now-missing file.
+    files[1].unlink()
+    r2 = check_corpus_paths(files, cache_path=cache, cache_flush_every=1)
+    assert r2["n_files"] == 3
+    assert r2["n_error"] == 0
+    assert [f["path"] for f in r2["files"]] == [f["path"] for f in r1["files"]]
+
+
+def test_records_cache_incompatible_meta_recomputes(tmp_path: Path) -> None:
+    files = _clean_files(tmp_path, 1)
+    cache = tmp_path / "c.json"
+    check_corpus_paths(files, cache_path=cache,
+                       warn_threshold=0.05, fail_threshold=0.10)
+    files[0].unlink()
+    # Different thresholds -> compat-meta mismatch -> cache ignored, rescored;
+    # the now-missing file becomes an error record (proving no stale reuse).
+    r = check_corpus_paths(files, cache_path=cache,
+                           warn_threshold=0.20, fail_threshold=0.40)
+    assert r["n_error"] == 1
+
+
+def test_refresh_records_cache_discards_existing(tmp_path: Path) -> None:
+    files = _clean_files(tmp_path, 1)
+    cache = tmp_path / "c.json"
+    check_corpus_paths(files, cache_path=cache)
+    files[0].unlink()
+    r = check_corpus_paths(files, cache_path=cache, refresh_cache=True)
+    assert r["n_error"] == 1  # refresh discarded the cache -> rescored the missing file
