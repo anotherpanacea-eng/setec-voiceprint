@@ -74,6 +74,9 @@
         "observed_value": 0.0,
         "paper_ai_mean": 0.294,
         "paper_human_mean": 0.123,
+        "register_ai_mean": null,
+        "register_human_mean": null,
+        "register_provenance": null,
         "signal_key": "support_to_proposal_rate"
       },
       {
@@ -87,6 +90,9 @@
         "observed_value": 1.0,
         "paper_ai_mean": 0.329,
         "paper_human_mean": 0.525,
+        "register_ai_mean": null,
+        "register_human_mean": null,
+        "register_provenance": null,
         "signal_key": "support_to_support_rate"
       },
       {
@@ -100,6 +106,9 @@
         "observed_value": 0.0,
         "paper_ai_mean": null,
         "paper_human_mean": null,
+        "register_ai_mean": null,
+        "register_human_mean": null,
+        "register_provenance": null,
         "signal_key": "thesis_opening_tendency"
       },
       {
@@ -113,6 +122,9 @@
         "observed_value": 1.0,
         "paper_ai_mean": 0.897,
         "paper_human_mean": 0.715,
+        "register_ai_mean": null,
+        "register_human_mean": null,
+        "register_provenance": null,
         "signal_key": "argumentation_share"
       }
     ],
@@ -235,6 +247,7 @@
     "run_timestamp_utc": "<fixture-timestamp>",
     "target": {
       "paragraphs": 6,
+      "register": null,
       "register_match": [
         "op-ed"
       ],

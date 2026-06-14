@@ -46,6 +46,12 @@ entries:
   - flag: --judge-model
     type: string
     required: false
+  - flag: --register
+    type: string
+    required: false
+  - flag: --baseline-dir
+    type: path
+    required: false
   - flag: --json
     type: bool
     required: false

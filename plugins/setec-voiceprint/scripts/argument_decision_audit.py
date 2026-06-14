@@ -57,7 +57,7 @@ from output_schema import build_output  # type: ignore
 
 TASK_SURFACE = "argument_decision_audit"
 TOOL_NAME = "argument_decision_audit"
-SCRIPT_VERSION = "0.1.0"
+SCRIPT_VERSION = "0.2.0"  # C0: --register / --baseline-dir register-baseline plumbing
 
 MIN_ARGUMENT_WORDS = 300       # argument-bearing structure needs length
 MIN_PARAGRAPHS = 3             # transition-matrix signals need a multi-paragraph arc
@@ -181,17 +181,34 @@ class SignalContribution:
     observed_value: float | None
     contribution: float | None
     direction: str  # "human" | "ai" | "neutral" | "directional" | "unavailable"
+    # C0: register-matched means from argument_register_baselines.yaml, carried
+    # ALONGSIDE the paper anchors. None unless `--register` supplied a row for
+    # this signal; register_ai_mean is present only at `calibrated`. The row's
+    # per-signal status flows into `calibration_status` (above).
+    register_human_mean: float | None = None
+    register_ai_mean: float | None = None
+    register_provenance: str | None = None
 
 
 def per_signal_contributions(
     observed: dict[str, float | None],
+    register: "RegisterBaseline | None" = None,
 ) -> list[SignalContribution]:
     out: list[SignalContribution] = []
+    reg_signals = register.signals if register is not None else {}
     for sig in DERIVED_SIGNALS:
         ov = observed.get(sig.key)
+        rb = reg_signals.get(sig.key)
+        # A register row upgrades this signal's calibration_status off the default
+        # `literature_anchored` and carries the register-matched mean(s) beside the
+        # paper anchors (register_ai_mean present only at `calibrated`).
         common = dict(
             signal_key=sig.key, label=sig.label, bundle=sig.bundle,
-            leaning=sig.leaning, calibration_status=_DERIVED_CALIBRATION_STATUS,
+            leaning=sig.leaning,
+            calibration_status=(rb.status if rb is not None else _DERIVED_CALIBRATION_STATUS),
+            register_human_mean=(rb.human_mean if rb is not None else None),
+            register_ai_mean=(rb.ai_mean if rb is not None else None),
+            register_provenance=(rb.provenance if rb is not None else None),
         )
         if not sig.anchored:
             # Directional-only (no numeric anchor): report the observed value,
@@ -384,6 +401,7 @@ def build_results_payload(
     aggregate: dict[str, Any],
     pre_flag: dict[str, Any],
     register_warnings: list[str],
+    register: "RegisterBaseline | None" = None,
 ) -> dict[str, Any]:
     return {
         "judge": judge_result,
@@ -393,6 +411,18 @@ def build_results_payload(
             "paragraphs": n_paragraphs,
             "register_match": ["op-ed"],
             "register_warnings": register_warnings,
+            # C0: which register baseline (if any) was applied. None when no
+            # `--register` was supplied (the surface fell back to D3 paper anchors).
+            "register": (
+                None if register is None else {
+                    "genre": register.genre,
+                    "source": register.source_path,
+                    "calibrated": register.is_calibrated,
+                    "per_signal_status": {
+                        k: v.status for k, v in register.signals.items()
+                    },
+                }
+            ),
         },
         "paragraph_labels": paragraph_labels,
         "validation_warnings": validation_warnings,
@@ -408,6 +438,9 @@ def build_results_payload(
                 "calibration_status": c.calibration_status,
                 "paper_human_mean": c.paper_human_mean,
                 "paper_ai_mean": c.paper_ai_mean,
+                "register_human_mean": c.register_human_mean,
+                "register_ai_mean": c.register_ai_mean,
+                "register_provenance": c.register_provenance,
                 "observed_value": c.observed_value,
                 "contribution": c.contribution,
                 "direction": c.direction,
@@ -586,6 +619,18 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out-md", type=Path, default=None,
                         help="Markdown output path (default <target>.argument.md).")
     parser.add_argument("--json", action="store_true", help="Print the envelope to stdout.")
+    parser.add_argument(
+        "--register", default=None,
+        help="Genre key to look up in argument_register_baselines.yaml (e.g. "
+             "op-ed): attaches the register-matched mean(s) + per-signal "
+             "calibration_status alongside the paper anchors. Absent → paper "
+             "anchors only (Layer A D3).",
+    )
+    parser.add_argument(
+        "--baseline-dir", type=Path, default=None,
+        help="Directory holding an operator-local argument_register_baselines.yaml "
+             "(else $SETEC_BASELINES_DIR, else the shipped baselines/). Requires --register.",
+    )
     parser.add_argument("--licenses", default=DEFAULT_LICENSES)
     parser.add_argument("--does-not-license", default=DEFAULT_DOES_NOT_LICENSE)
     args = parser.parse_args(argv)
@@ -602,6 +647,33 @@ def main(argv: list[str] | None = None) -> int:
 
     paragraphs = split_paragraphs(text)
     target_words = count_words(text)
+
+    # C0: resolve the register baseline (if requested) BEFORE the expensive judge
+    # run, so a malformed / unknown --register fails fast.
+    register = None
+    register_warnings_extra: list[str] = []
+    if args.register or args.baseline_dir is not None:
+        if not args.register:
+            parser.error("--baseline-dir requires --register <genre>")
+        try:
+            from argument_register_baselines import (  # type: ignore
+                RegisterBaselineError,
+                load_register,
+            )
+        except ImportError as exc:
+            parser.error(f"register baseline support unavailable: {exc}")
+        try:
+            register = load_register(args.register, baseline_dir=args.baseline_dir)
+        except RegisterBaselineError as exc:
+            # A malformed / dishonest baseline is bad INPUT; route through argparse
+            # so setec_run categorizes the exit-2 as bad_input, not policy_refused.
+            parser.error(f"register baseline error: {exc}")
+        if register is None:
+            register_warnings_extra.append(
+                f"--register {args.register!r}: no row in argument_register_baselines.yaml; "
+                f"falling back to the paper's public-debate anchors (no register-matched "
+                f"baseline for this genre yet)."
+            )
 
     try:
         judge = build_judge(
@@ -625,11 +697,11 @@ def main(argv: list[str] | None = None) -> int:
         judge_result_obj.values, n_paragraphs=len(paragraphs)
     )
     observed = compute_arc_signals(labels)
-    contributions = per_signal_contributions(observed)
+    contributions = per_signal_contributions(observed, register)
     bundles = per_bundle_aggregates(contributions)
     agg = aggregate_score(contributions)
     pre_flag = compute_pre_flag(contributions)
-    reg_warnings = register_warnings_for(target_words, len(paragraphs))
+    reg_warnings = register_warnings_for(target_words, len(paragraphs)) + register_warnings_extra
     reused = compute_reused_signals(text)
 
     paragraph_labels = [
@@ -649,6 +721,7 @@ def main(argv: list[str] | None = None) -> int:
         aggregate=agg,
         pre_flag=pre_flag,
         register_warnings=reg_warnings,
+        register=register,
     )
     envelope = compose_envelope(
         target_path=target_path, target_words=target_words, results=results,
