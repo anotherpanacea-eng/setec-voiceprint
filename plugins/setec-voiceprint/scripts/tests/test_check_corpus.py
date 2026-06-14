@@ -203,3 +203,100 @@ def test_warn_no_quoting_overhead_for_simple_paths() -> None:
     text = out.text
     # No surrounding quotes added for shell-safe paths.
     assert f"--source-manifest {simple_path}" in text
+
+
+# ---- scored-records cache: belt/suspenders/buttons for corpus-scale runs ----
+
+def _clean_files(tmp_path: Path, n: int) -> list[Path]:
+    files = []
+    for i in range(n):
+        p = tmp_path / f"f{i}.txt"
+        p.write_text("This is clean ordinary prose with no markup. " * 50,
+                     encoding="utf-8")
+        files.append(p)
+    return files
+
+
+def test_records_cache_passthrough_matches_uncached(tmp_path: Path) -> None:
+    files = _clean_files(tmp_path, 2)
+    plain = check_corpus_paths(files)
+    cache = tmp_path / "c.json"
+    cached = check_corpus_paths(files, cache_path=cache)
+    assert cache.exists()
+    payload = json.loads(cache.read_text(encoding="utf-8"))
+    assert payload["status"] == "complete"
+    assert len(payload["records"]) == 2
+    # A cached run produces the same result as an uncached one.
+    assert plain["files"] == cached["files"]
+    assert plain["status"] == cached["status"]
+
+
+def test_records_cache_resume_reuses_unchanged_files(tmp_path: Path) -> None:
+    import check_corpus as cc_mod
+    from unittest import mock
+
+    files = _clean_files(tmp_path, 3)
+    cache = tmp_path / "c.json"
+    r1 = check_corpus_paths(files, cache_path=cache, cache_flush_every=1)
+    # Second run with files UNCHANGED: every file is served from the cache, so
+    # check_path is never called (proves reuse via the content-fingerprint match,
+    # not just a path match).
+    with mock.patch.object(cc_mod, "check_path", wraps=cc_mod.check_path) as spy:
+        r2 = check_corpus_paths(files, cache_path=cache, cache_flush_every=1)
+    assert spy.call_count == 0
+    assert r2["n_files"] == 3
+    assert r2["n_error"] == 0
+    assert [f["path"] for f in r2["files"]] == [f["path"] for f in r1["files"]]
+
+
+def test_records_cache_rescores_when_file_content_changes(tmp_path: Path) -> None:
+    """Codex #212 P1: a cached 'clean' record must NOT be reused after the file's
+    content changes — otherwise a hygiene gate could pass newly-contaminated input."""
+    p = tmp_path / "f.txt"
+    p.write_text(CLEAN.read_text(encoding="utf-8"), encoding="utf-8")
+    cache = tmp_path / "c.json"
+    r1 = check_corpus_paths([p], cache_path=cache)
+    assert r1["status"] == "clean"
+    # Overwrite the same path with contaminated content; the resume must re-score
+    # (content fingerprint changed), not serve the stale clean record.
+    p.write_text(CONTAMINATED.read_text(encoding="utf-8"), encoding="utf-8")
+    r2 = check_corpus_paths([p], cache_path=cache)
+    assert r2["status"] == "fail"
+
+
+def test_records_cache_incompatible_meta_recomputes(tmp_path: Path) -> None:
+    files = _clean_files(tmp_path, 1)
+    cache = tmp_path / "c.json"
+    check_corpus_paths(files, cache_path=cache,
+                       warn_threshold=0.05, fail_threshold=0.10)
+    files[0].unlink()
+    # Different thresholds -> compat-meta mismatch -> cache ignored, rescored;
+    # the now-missing file becomes an error record (proving no stale reuse).
+    r = check_corpus_paths(files, cache_path=cache,
+                           warn_threshold=0.20, fail_threshold=0.40)
+    assert r["n_error"] == 1
+
+
+def test_refresh_records_cache_discards_existing(tmp_path: Path) -> None:
+    files = _clean_files(tmp_path, 1)
+    cache = tmp_path / "c.json"
+    check_corpus_paths(files, cache_path=cache)
+    files[0].unlink()
+    r = check_corpus_paths(files, cache_path=cache, refresh_cache=True)
+    assert r["n_error"] == 1  # refresh discarded the cache -> rescored the missing file
+
+
+def test_records_cache_collect_stripped_change_invalidates(tmp_path: Path) -> None:
+    """Codex #212 P2: collect_stripped changes the per-file record payload, so a
+    cache built without it must NOT be reused for a --show-stripped run (which
+    would omit snippets), nor vice versa (which would leak snippets)."""
+    import check_corpus as cc_mod
+    from unittest import mock
+
+    cache = tmp_path / "c.json"
+    check_corpus_paths([CONTAMINATED], cache_path=cache, collect_stripped=False)
+    # A --show-stripped run must re-score (meta differs), not serve the
+    # snippet-less cached record.
+    with mock.patch.object(cc_mod, "check_path", wraps=cc_mod.check_path) as spy:
+        check_corpus_paths([CONTAMINATED], cache_path=cache, collect_stripped=True)
+    assert spy.call_count == 1

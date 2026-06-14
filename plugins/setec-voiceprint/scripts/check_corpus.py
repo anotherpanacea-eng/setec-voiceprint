@@ -12,9 +12,12 @@ that would distort POS/KL and other distributional diagnostics.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
 import shlex
 import sys
+import time
 from collections import Counter
 from pathlib import Path
 from typing import Any
@@ -459,6 +462,98 @@ def _summarize_hygiene_records(
     }
 
 
+# ---- scored-records cache (belt/suspenders/buttons for corpus-scale runs) ----
+#
+# The single-process loop becomes the wrong tool at corpus scale (see
+# warn_if_large_manifest). When --records-cache is given, the loop becomes
+# recoverable: it skips already-scored paths, flushes an atomic cache every N
+# files (status in_progress -> complete), and logs progress — so a host hang
+# resumes from the last flush instead of rescoring from file 1 (#133). The
+# cache is keyed by file path AND a per-file content fingerprint, gated by a
+# compat meta of the scoring args that change check_path's output. A cached
+# record is reused only when the file still exists and its content is
+# byte-identical to when it was scored — a path+settings match alone is NOT
+# safe for a hygiene gate, since a changed file could let a stale "clean"
+# record mask newly-contaminated input (Codex #212 P1).
+
+_RECORDS_CACHE_TOOL = "check_corpus"
+# 1.1: cache payload now carries per-file content fingerprints. Bumping the
+# version invalidates pre-fingerprint (1.0) caches, forcing a safe rescore.
+_RECORDS_CACHE_VERSION = "1.1"
+
+
+def _records_cache_meta(
+    *, strip_rules, strip_aggressive, collect_stripped, warn_threshold, fail_threshold,
+) -> dict[str, Any]:
+    return {
+        "tool": _RECORDS_CACHE_TOOL,
+        "version": _RECORDS_CACHE_VERSION,
+        "strip_rules": strip_rules,
+        "strip_aggressive": bool(strip_aggressive),
+        # collect_stripped changes the per-file record PAYLOAD (snippet fields),
+        # so a cache built without it must not be reused for a --show-stripped
+        # run, nor vice versa (which would leak snippets into a run that didn't
+        # request them). Part of the compat gate. (Codex #212 P2.)
+        "collect_stripped": bool(collect_stripped),
+        "warn_threshold": warn_threshold,
+        "fail_threshold": fail_threshold,
+    }
+
+
+def _file_content_fingerprint(path: Path) -> str | None:
+    """SHA-256 of the file's bytes, or ``None`` if it can't be read. Used to
+    refuse reuse of a cached record after the underlying file's CONTENT changed
+    (or the file vanished) — see the module note above (Codex #212 P1)."""
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
+def _save_records_cache(
+    path: Path, records: list[dict[str, Any]], fingerprints: dict[str, Any],
+    *, status: str, meta: dict[str, Any],
+) -> None:
+    """Atomic write (tmp + os.replace) so a crash mid-write can't corrupt the
+    cache the next run loads."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    payload = {
+        "status": status, "meta": meta,
+        "records": records, "fingerprints": fingerprints,
+    }
+    tmp.write_text(json.dumps(payload, default=str), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def _load_records_cache(
+    path: Path, *, expected_meta: dict[str, Any], refresh: bool,
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Return ``({path: record}, {path: content_sha256})`` for already-scored
+    files, or two empty dicts (no cache, unreadable, or incompatible meta)."""
+    if refresh or not path.exists():
+        return {}, {}
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}, {}
+    if not isinstance(payload, dict) or payload.get("meta") != expected_meta:
+        return {}, {}
+    records = {
+        rec["path"]: rec
+        for rec in payload.get("records", [])
+        if isinstance(rec, dict) and isinstance(rec.get("path"), str)
+    }
+    fps = payload.get("fingerprints")
+    if not isinstance(fps, dict):
+        fps = {}
+    return records, fps
+
+
 def check_corpus_paths(
     paths: list[str | Path],
     *,
@@ -467,9 +562,49 @@ def check_corpus_paths(
     collect_stripped: bool = False,
     warn_threshold: float = DEFAULT_WARN_THRESHOLD,
     fail_threshold: float = DEFAULT_FAIL_THRESHOLD,
+    cache_path: str | Path | None = None,
+    cache_flush_every: int = 200,
+    refresh_cache: bool = False,
 ) -> dict[str, Any]:
-    records = [
-        check_path(
+    cache_path = Path(cache_path) if cache_path is not None else None
+    meta = _records_cache_meta(
+        strip_rules=strip_rules, strip_aggressive=strip_aggressive,
+        collect_stripped=collect_stripped,
+        warn_threshold=warn_threshold, fail_threshold=fail_threshold,
+    )
+    cached_records, cached_fps = (
+        _load_records_cache(cache_path, expected_meta=meta, refresh=refresh_cache)
+        if cache_path is not None else ({}, {})
+    )
+    if cached_records:
+        sys.stderr.write(
+            f"check_corpus: found cache at {cache_path} "
+            f"({len(cached_records)} entries); reusing files whose content is "
+            f"unchanged.\n"
+        )
+
+    flush_every = max(1, int(cache_flush_every))
+    records: list[dict[str, Any]] = []
+    fingerprints: dict[str, Any] = {}
+    n_total = len(paths)
+    n_reused = 0
+    t0 = time.time()
+    since_flush = 0
+    for i, path in enumerate(paths):
+        key = str(Path(path))
+        if cache_path is not None:
+            fp = _file_content_fingerprint(Path(path))
+            # Reuse only when the file still exists AND its content fingerprint
+            # matches the cached one — never on a missing or changed file.
+            if (
+                key in cached_records and fp is not None
+                and cached_fps.get(key) == fp
+            ):
+                records.append(cached_records[key])
+                fingerprints[key] = fp
+                n_reused += 1
+                continue
+        record = check_path(
             Path(path),
             strip_rules=strip_rules,
             strip_aggressive=strip_aggressive,
@@ -477,8 +612,32 @@ def check_corpus_paths(
             warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
         )
-        for path in paths
-    ]
+        records.append(record)
+        if cache_path is not None:
+            fingerprints[key] = fp  # computed above; None if currently unreadable
+            since_flush += 1
+            if since_flush >= flush_every:
+                _save_records_cache(
+                    cache_path, records, fingerprints,
+                    status="in_progress", meta=meta,
+                )
+                since_flush = 0
+                elapsed = time.time() - t0
+                rate = (i + 1) / elapsed if elapsed > 0 else 0.0
+                sys.stderr.write(
+                    f"  scored {i + 1}/{n_total} ({rate:.1f} files/s) "
+                    f"-> cache flushed\n"
+                )
+    if cache_path is not None:
+        _save_records_cache(
+            cache_path, records, fingerprints, status="complete", meta=meta,
+        )
+        if n_reused:
+            sys.stderr.write(
+                f"check_corpus: reused {n_reused}/{n_total} unchanged files; "
+                f"re-scored {n_total - n_reused}.\n"
+            )
+
     summary = _summarize_hygiene_records(
         records,
         warn_threshold=warn_threshold,
@@ -567,6 +726,26 @@ def main() -> int:
     )
     parser.add_argument("--json", action="store_true", help="Output JSON.")
     parser.add_argument("--out", help="Write report to file instead of stdout.")
+    parser.add_argument(
+        "--records-cache",
+        help=(
+            "Path to a scored-records cache. Makes a corpus-scale run "
+            "recoverable: skips already-scored files, flushes atomically every "
+            "--records-cache-flush-every files, and resumes from the last flush "
+            "after a crash / host hang (the single-process belt/suspenders/buttons path)."
+        ),
+    )
+    parser.add_argument(
+        "--records-cache-flush-every",
+        type=int,
+        default=200,
+        help="Flush --records-cache every N files (default 200). Ignored when --records-cache is unset.",
+    )
+    parser.add_argument(
+        "--refresh-records-cache",
+        action="store_true",
+        help="Discard any existing --records-cache and rescore from scratch.",
+    )
     args = parser.parse_args()
 
     if args.warn_threshold < 0 or args.fail_threshold < 0:
@@ -591,6 +770,9 @@ def main() -> int:
             collect_stripped=args.show_stripped,
             warn_threshold=args.warn_threshold,
             fail_threshold=args.fail_threshold,
+            cache_path=args.records_cache,
+            cache_flush_every=args.records_cache_flush_every,
+            refresh_cache=args.refresh_records_cache,
         )
     except CorpusCheckError as exc:
         print(f"CorpusCheckError: {exc}", file=sys.stderr)
