@@ -293,6 +293,10 @@ git push origin v1.<MAJOR>.<MINOR>
 Tags are required for the marketplace + plugin install flow to find
 the right version.
 
+Full cross-repo release sequence (this tag → apodictic + voicewright
+re-pin → apodictic release → APODICTIC-Gemini re-pin), with exact
+commands and the known gotchas: `references/fleet-release-runbook.md`.
+
 ## When this document is wrong
 
 Update it. It's a working document, not a contract. The goal is for
