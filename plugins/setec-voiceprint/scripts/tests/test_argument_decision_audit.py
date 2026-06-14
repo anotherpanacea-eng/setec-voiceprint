@@ -142,9 +142,15 @@ def test_end_to_end_mock_envelope(tmp_path):
     assert r["target"]["paragraphs"] == 5
     assert r["aggregate"]["verdict_band"] == "uncalibrated"
     assert r["aggregate"]["thresholds"] == {"low": None, "high": None}
-    # 4 derived signals; 3 anchored + 1 directional
-    assert len(r["contributions"]) == 4
-    assert {b["bundle"] for b in r["bundles"]} == {"B1_structural_arc", "B2_discourse_mode"}
+    # 6 derived signals; 3 anchored (B1/B2) + 1 directional (thesis) + 2 B5 flags
+    assert len(r["contributions"]) == 6
+    assert {b["bundle"] for b in r["bundles"]} == {
+        "B1_structural_arc", "B2_discourse_mode", "B5_collapse_dynamics",
+    }
+    # the B5 bundle is present, unanchored -> never enters a bundle mean
+    b5 = next(b for b in r["bundles"] if b["bundle"] == "B5_collapse_dynamics")
+    assert b5["n_signals"] == 2 and b5["n_evaluated"] == 0
+    assert b5["mean_contribution"] is None
     # mock labels all (support, argumentation) -> judge provenance is mock
     assert r["judge"]["judge_identity"]["kind"] == "mock"
     # B3/B4 reuse present + descriptive (heuristic, not in the aggregate)
@@ -214,8 +220,17 @@ def test_thesis_opening_none_when_first_paragraph_unlabeled():
 
 
 def test_contributions_carry_calibration_status():
+    # B1/B2 are literature_anchored; the two B5 arc flags are heuristic.
     contribs = ada.per_signal_contributions({"argumentation_share": 0.8})
-    assert all(c.calibration_status == "literature_anchored" for c in contribs)
+    by = {c.signal_key: c for c in contribs}
+    for key in ("support_to_proposal_rate", "support_to_support_rate",
+                "thesis_opening_tendency", "argumentation_share"):
+        assert by[key].calibration_status == "literature_anchored"
+    for key in ("disappearing_guard_flag", "discounting_straw_men_flag"):
+        assert by[key].calibration_status == "heuristic"
+        assert by[key].anchored is False
+        assert by[key].contribution is None
+        assert by[key].paper_human_mean is None and by[key].paper_ai_mean is None
 
 
 def test_pre_flag_basis_only_names_converged_signals():
@@ -300,7 +315,16 @@ def test_register_op_ed_attaches_means(tmp_path):
     # anchored signals carry a register_human_mean equal to the paper mean
     assert by["support_to_proposal_rate"]["register_human_mean"] == 0.123
     assert by["argumentation_share"]["register_human_mean"] == 0.715
-    assert all(c["calibration_status"] == "literature_anchored" for c in r["contributions"])
+    # the four B1/B2 signals stay literature_anchored under the op-ed seed.
+    for key in ("support_to_proposal_rate", "support_to_support_rate",
+                "thesis_opening_tendency", "argumentation_share"):
+        assert by[key]["calibration_status"] == "literature_anchored"
+    # the B5 arc flags are pinned heuristic and carry NO register means even when
+    # a register is supplied (an unanchored arc_flag is never graduated).
+    for key in ("disappearing_guard_flag", "discounting_straw_men_flag"):
+        assert by[key]["calibration_status"] == "heuristic"
+        assert by[key]["register_human_mean"] is None
+        assert by[key]["register_provenance"] is None
     assert all(c["register_ai_mean"] is None for c in r["contributions"])  # no calibrated arm
     assert r["aggregate"]["verdict_band"] == "uncalibrated"
 
@@ -348,3 +372,171 @@ def test_baseline_dir_overrides_shipped(tmp_path):
     by = {c["signal_key"]: c for c in r["contributions"]}
     assert by["support_to_proposal_rate"]["register_human_mean"] == 0.140
     assert by["support_to_proposal_rate"]["calibration_status"] == "empirically_oriented"
+
+
+# ---- B5: collapse-dynamics derivation ------------------------------------
+def _lbl(role, mode="argumentation", guard=None, claim=None, obj=None):
+    return {"role": role, "mode": mode, "guard_strength": guard,
+            "claim_ref": claim, "objection_strength": obj}
+
+
+def test_disappearing_guard_true_on_downward_transition():
+    # same claim guarded strong early, then weak later -> True.
+    labels = [
+        _lbl("thesis", guard="strong", claim="c1"),
+        _lbl("support", guard="moderate", claim="c2"),
+        _lbl("support", guard="weak", claim="c1"),
+    ]
+    out = ada.compute_collapse_dynamics(labels, None)
+    assert out["disappearing_guard_flag"] is True
+
+
+def test_disappearing_guard_false_when_tracked_but_no_drop():
+    # claim c1 tracked across 2 paragraphs but guard does not weaken -> False.
+    labels = [
+        _lbl("thesis", guard="strong", claim="c1"),
+        _lbl("support", guard="strong", claim="c1"),
+    ]
+    out = ada.compute_collapse_dynamics(labels, None)
+    assert out["disappearing_guard_flag"] is False
+
+
+def test_disappearing_guard_none_when_no_claim_spans_two():
+    # no claim_ref appears in >=2 paragraphs with guard data -> None (not False).
+    labels = [
+        _lbl("thesis", guard="strong", claim="c1"),
+        _lbl("support", guard="weak", claim="c2"),
+    ]
+    out = ada.compute_collapse_dynamics(labels, None)
+    assert out["disappearing_guard_flag"] is None
+
+
+def test_disappearing_guard_none_when_no_guard_data():
+    labels = [_lbl("thesis", claim="c1"), _lbl("support", claim="c1")]
+    out = ada.compute_collapse_dynamics(labels, None)
+    assert out["disappearing_guard_flag"] is None
+
+
+def test_discounting_straw_men_true_weak_objection_strong_ignored():
+    labels = [
+        _lbl("thesis"),
+        _lbl("counterclaim", obj="weak"),
+        _lbl("rebuttal", obj="weak"),
+    ]
+    out = ada.compute_collapse_dynamics(labels, strongest_internal_objection_engaged=False)
+    assert out["discounting_straw_men_flag"] is True
+
+
+def test_discounting_straw_men_false_when_strongest_engaged():
+    labels = [_lbl("thesis"), _lbl("counterclaim", obj="strong")]
+    out = ada.compute_collapse_dynamics(labels, strongest_internal_objection_engaged=True)
+    assert out["discounting_straw_men_flag"] is False
+
+
+def test_discounting_straw_men_none_when_no_objection_paragraph():
+    labels = [_lbl("thesis"), _lbl("support")]
+    out = ada.compute_collapse_dynamics(labels, strongest_internal_objection_engaged=False)
+    assert out["discounting_straw_men_flag"] is None
+
+
+def test_discounting_straw_men_none_when_doc_field_unknown():
+    # a counterclaim exists but the strongest-objection judgment is null -> None,
+    # never a fabricated False.
+    labels = [_lbl("thesis"), _lbl("counterclaim", obj="weak")]
+    out = ada.compute_collapse_dynamics(labels, strongest_internal_objection_engaged=None)
+    assert out["discounting_straw_men_flag"] is None
+
+
+def test_b5_contributions_shape_anchored_false_contribution_null():
+    obs = {"disappearing_guard_flag": True, "discounting_straw_men_flag": None}
+    contribs = ada.per_signal_contributions(obs)
+    by = {c.signal_key: c for c in contribs}
+    dg = by["disappearing_guard_flag"]
+    assert dg.anchored is False and dg.contribution is None
+    assert dg.calibration_status == "heuristic" and dg.bundle == "B5_collapse_dynamics"
+    assert dg.observed_value is True and dg.direction == "directional"
+    ds = by["discounting_straw_men_flag"]
+    assert ds.observed_value is None and ds.direction == "unavailable"
+
+
+def test_b5_status_immune_to_register_graduation(tmp_path):
+    """A register row keyed to a B5 arc_flag must NOT graduate it above heuristic
+    (an unanchored arc_flag has no numeric anchor to calibrate) — the review's
+    register-graduation guard."""
+    (tmp_path / "argument_register_baselines.yaml").write_text(
+        "argument_register_baselines:\n"
+        "  op-ed:\n"
+        "    disappearing_guard_flag:\n"
+        "      human: { mean: 0.300 }\n"
+        "      status: empirically_oriented\n"
+        "      provenance: \"adversarial register row · should be ignored for B5\"\n"
+        "      provisional: false\n",
+        encoding="utf-8",
+    )
+    text = "\n\n".join(f"Paragraph number {i} makes a point." for i in range(5))
+    rc, env = _run(tmp_path, text, argv=["--register", "op-ed", "--baseline-dir", str(tmp_path)])
+    assert rc == 0
+    by = {c["signal_key"]: c for c in env["results"]["contributions"]}
+    dg = by["disappearing_guard_flag"]
+    assert dg["calibration_status"] == "heuristic"   # pinned, not graduated
+    assert dg["register_human_mean"] is None          # register mean not attached
+    assert dg["register_provenance"] is None
+
+
+def test_additive_envelope_aggregate_unchanged_by_b5():
+    """The review-binding regression guard: B5 must not perturb the aggregate
+    score, the verdict band, or the pre_flag boolean. Compute the B1/B2-only
+    contributions (no B5 keys) and the full observed (with B5 keys) and assert
+    the score/band/pre_flag are byte-identical."""
+    base_obs = {
+        "support_to_proposal_rate": 0.294,
+        "support_to_support_rate": 0.329,
+        "argumentation_share": 0.897,
+        "thesis_opening_tendency": 0.0,
+    }
+    full_obs = dict(base_obs)
+    full_obs.update({"disappearing_guard_flag": True, "discounting_straw_men_flag": True})
+
+    base_c = ada.per_signal_contributions(base_obs)
+    full_c = ada.per_signal_contributions(full_obs)
+
+    base_agg = ada.aggregate_score(base_c)
+    full_agg = ada.aggregate_score(full_c)
+    assert base_agg["score"] == full_agg["score"]
+    assert base_agg["verdict_band"] == full_agg["verdict_band"]
+    # only the total-signal COUNT grows (4 -> 6); the evaluated count is unchanged.
+    assert base_agg["n_signals_evaluated"] == full_agg["n_signals_evaluated"]
+
+    base_pf = ada.compute_pre_flag(base_c)
+    full_pf = ada.compute_pre_flag(full_c)
+    assert base_pf["dialectical_clarity_informative"] == full_pf["dialectical_clarity_informative"]
+    assert base_pf["basis"] == full_pf["basis"]
+
+
+def test_b5_excluded_from_pre_flag_arc_keys():
+    # Even with both B5 flags True (AI-leaning), the pre_flag stays driven only by
+    # the B1/B2 arc keys — B5 is never in arc_keys.
+    obs = {
+        "support_to_proposal_rate": 0.123,   # human
+        "support_to_support_rate": 0.525,    # human
+        "argumentation_share": 0.715,        # human
+        "disappearing_guard_flag": True,
+        "discounting_straw_men_flag": True,
+    }
+    pf = ada.compute_pre_flag(ada.per_signal_contributions(obs))
+    assert pf["dialectical_clarity_informative"] is False
+
+
+def test_end_to_end_doc_level_field_in_envelope(tmp_path):
+    # the doc-level collapse field lands in results.collapse_dynamics.
+    text = "\n\n".join(f"Paragraph number {i} makes a point." for i in range(5))
+    rc, env = _run(tmp_path, text)
+    assert rc == 0
+    cd = env["results"]["collapse_dynamics"]
+    assert "strongest_internal_objection_engaged" in cd
+    # mock judge emits no objection role -> doc-level field is null.
+    assert cd["strongest_internal_objection_engaged"] is None
+    # and the mock's strong->weak guard on a shared claim_ref derives True.
+    by = {c["signal_key"]: c for c in env["results"]["contributions"]}
+    assert by["disappearing_guard_flag"]["observed_value"] is True
+    assert by["discounting_straw_men_flag"]["observed_value"] is None

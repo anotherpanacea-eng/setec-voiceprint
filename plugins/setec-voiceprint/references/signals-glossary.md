@@ -42,7 +42,7 @@ Each entry block carries the signal's metadata on a single line:
 - [Bigram-KL signals (1)](#bigram-kl-signals)
 - [Repetition signals (2)](#repetition-signals)
 - [Narrative-decision signals (33)](#narrative-decision-signals)
-- [Argument-decision signals (4)](#argument-decision-signals)
+- [Argument-decision signals (6)](#argument-decision-signals)
 - [Totals](#totals)
 
 ---
@@ -571,6 +571,13 @@ Full surface spec at `.argscope-spec/argscope-layer-a-SPEC.md`. Schema at `scrip
 
 - `argumentation_share` · argument-decision · ↑ · **literature_anchored** · (H=0.715, AI=0.897) — LLM-elevated argumentation discourse-mode share
 
+### B5 — Collapse dynamics (within-document) (2)
+
+Two arc-level (cross-paragraph) collapse-dynamics signals the per-paragraph {role, mode} schema cannot express, derived from an additive judge extension (per-paragraph `guard_strength` + a stable `claim_ref`; per counterclaim/rebuttal `objection_strength`; one document-level `strongest_internal_objection_engaged`). Both are **heuristic**, directional, with **NO numeric anchor** (the paper supports them only qualitatively and there is no measured discrimination) — they are EXCLUDED from the aggregate (`contribution=null`), do not change the verdict band, and return null (never a fabricated False) when the evidence is absent. They describe TEXTURE only and do **not** adjudicate fairness or soundness (that is banister / dialectical-clarity). Provenance is conceptual (the AGD apparatus + the paper's decoy-objection finding + dialectical-clarity OB5), not a numeric anchor.
+
+- `disappearing_guard_flag` · argument-decision · ↑ · **heuristic** · directional only, no anchor — a claim guarded (hedged) early then treated as unguarded later (within-document hedging-drift); a downward guard transition for one `claim_ref` across ≥2 paragraphs. AGD "disappearing guard" + the paper's collapse framing
+- `discounting_straw_men_flag` · argument-decision · ↑ · **heuristic** · directional only, no anchor — engaging weak objections while leaving the strongest text-internal objection un-engaged (decoy-objection); fires only when a weak counterclaim/rebuttal is labeled AND `strongest_internal_objection_engaged` is False. AGD discounting + the paper's decoy-objection finding + dialectical-clarity OB5 (a True flag at most makes a dialectical-clarity run informative; never adjudicated here)
+
 ### Aggregate
 
 - `argument.aggregate.literature_anchored_score` · argument-decision · ↓ · **literature_anchored** · mean over the numerically anchored signal contributions in human-z-units (1.0 = paper's human mean; 0.0 = paper's LLM mean). Lower scores are more AI-like. Ships `uncalibrated`; `thesis_opening_tendency` (directional) is not in the aggregate.
@@ -599,8 +606,8 @@ Full surface spec at `.argscope-spec/argscope-layer-a-SPEC.md`. Schema at `scrip
 | bigram-kl | 1 |
 | repetition | 2 |
 | narrative-decision | 33 (+1 aggregate) |
-| argument-decision | 4 (+1 aggregate) |
-| **TOTAL** | **95** |
+| argument-decision | 6 (+1 aggregate) |
+| **TOTAL** | **97** |
 
 ## Calibration-status distribution (v1.66.0 + ND v0.1.0 + AD v0.1.0)
 
@@ -609,9 +616,9 @@ Full surface spec at `.argscope-spec/argscope-layer-a-SPEC.md`. Schema at `scrip
 | calibrated | 0 | Per Stylometry-to-the-people policy; no corpus-derived thresholds shipped as load-bearing defaults |
 | literature_anchored | 45 | 6 prior (mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl) + 34 from the narrative-decision family (33 per-signal + aggregate), anchored to Russell et al. 2026 + 5 from the argument-decision family (4 per-signal + aggregate), anchored to Kim et al. 2026 |
 | empirically_oriented | 8 | The six 2026-05-10 EditLens-measured variance signals + pos_bigram_entropy + Burrows Delta + per_feature_cosine |
-| heuristic | 41 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints |
+| heuristic | 43 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) |
 | structural_only | 1 | function_word_ratio |
-| **TOTAL** | **95** |
+| **TOTAL** | **97** |
 
 ## Related references
 

@@ -759,18 +759,36 @@ def _build_argument_decision_audit() -> dict[str, Any]:
     # the observed signals, contributions, bundles, and aggregate are the REAL
     # ones the script emits; compose_envelope assembles the 1.0 envelope as the
     # CLI does. The mock labels every paragraph (support, argumentation).
+    from argument_judge import validate_doc_level  # type: ignore
+
     paragraphs = [f"Canonical fixture paragraph {i}." for i in range(6)]
     judge_result = build_judge("mock")(paragraphs)
     labels, val_warnings = m.validate_labels(
         judge_result.values, n_paragraphs=len(paragraphs)
     )
+    # B5: drive the doc-level field + the collapse-dynamics derivation through the
+    # SAME mock path the CLI uses, so the golden carries the real B5 contributions
+    # (disappearing_guard_flag True via the mock's strong->weak guard on a shared
+    # claim_ref; discounting_straw_men_flag None — no objection role, doc-level
+    # field null) and the new per-paragraph guard_strength/claim_ref/objection
+    # fields. The aggregate stays byte-identical (B5 contribution=null).
+    strongest_obj_engaged, doc_warnings = validate_doc_level(judge_result.values)
+    val_warnings = val_warnings + doc_warnings
     observed = m.compute_arc_signals(labels)
+    observed.update(m.compute_collapse_dynamics(labels, strongest_obj_engaged))
     contributions = m.per_signal_contributions(observed)
     bundles = m.per_bundle_aggregates(contributions)
     aggregate = m.aggregate_score(contributions)
     pre_flag = m.compute_pre_flag(contributions)
     paragraph_labels = [
-        {"index": i, "role": labels[i]["role"], "mode": labels[i]["mode"]}
+        {
+            "index": i,
+            "role": labels[i]["role"],
+            "mode": labels[i]["mode"],
+            "guard_strength": labels[i].get("guard_strength"),
+            "claim_ref": labels[i].get("claim_ref"),
+            "objection_strength": labels[i].get("objection_strength"),
+        }
         for i in range(len(labels))
     ]
     # reused_signals (B3/B4 + AGD) is canonical here — fed with argmove_vector's
@@ -818,6 +836,7 @@ def _build_argument_decision_audit() -> dict[str, Any]:
         aggregate=aggregate,
         pre_flag=pre_flag,
         register_warnings=[],
+        strongest_internal_objection_engaged=strongest_obj_engaged,
     )
     return m.compose_envelope(
         target_path=Path("<fixture>"),
