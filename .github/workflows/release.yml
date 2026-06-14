@@ -1,0 +1,68 @@
+name: release
+
+# On a v* tag push, publish a GitHub Release for the tag so the consumer
+# weekly-sync workflows (apodictic + setec-voicewright sync-setec.yml) can
+# resolve `latest` via `gh release view`. setec-voiceprint distributes via
+# git tags; before this, tags existed but no Release object did, so the
+# consumers' `gh release view --json tagName` returned nothing and the weekly
+# auto-bump silently no-opped. This mirrors apodictic's release.yml, minus the
+# host-bundle assets (setec-voiceprint ships no per-host bundles).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      # Prefer the CHANGELOG section for this version; fall back to GitHub's
+      # auto-generated notes. TAG is routed through env (never interpolated into
+      # the shell) per the Actions injection guidance.
+      - name: Resolve release notes from CHANGELOG
+        id: notes
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          if [ -f CHANGELOG.md ]; then
+            awk -v v="$VERSION" '
+              $0 ~ ("^## \\[" v "\\]") { grab = 1; next }
+              grab && /^## \[/ { exit }
+              grab { print }
+            ' CHANGELOG.md > release-notes.md || true
+          fi
+          if [ -s release-notes.md ]; then
+            echo "have_notes=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "have_notes=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create the GitHub Release (idempotent)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          HAVE_NOTES: ${{ steps.notes.outputs.have_notes }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists; nothing to do"
+            exit 0
+          fi
+          if [ "$HAVE_NOTES" = "true" ]; then
+            gh release create "$TAG" --title "$TAG" --notes-file release-notes.md
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes
+          fi

@@ -291,7 +291,10 @@ git push origin v1.<MAJOR>.<MINOR>
 ```
 
 Tags are required for the marketplace + plugin install flow to find
-the right version.
+the right version. Pushing a `v*` tag also auto-publishes a GitHub
+**Release** for it (`.github/workflows/release.yml`) — the consumer
+weekly-sync workflows resolve `latest` via that Release object, so a tag
+without a Release means their auto-bump silently no-ops.
 
 Full cross-repo release sequence (this tag → apodictic + voicewright
 re-pin → apodictic release → APODICTIC-Gemini re-pin), with exact
