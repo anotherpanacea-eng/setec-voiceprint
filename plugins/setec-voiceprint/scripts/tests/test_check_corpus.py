@@ -231,17 +231,37 @@ def test_records_cache_passthrough_matches_uncached(tmp_path: Path) -> None:
     assert plain["status"] == cached["status"]
 
 
-def test_records_cache_resume_reuses_scored_files(tmp_path: Path) -> None:
+def test_records_cache_resume_reuses_unchanged_files(tmp_path: Path) -> None:
+    import check_corpus as cc_mod
+    from unittest import mock
+
     files = _clean_files(tmp_path, 3)
     cache = tmp_path / "c.json"
     r1 = check_corpus_paths(files, cache_path=cache, cache_flush_every=1)
-    # Delete a file; a resume with the same cache must SERVE it from cache
-    # (skip rescoring), not emit an error for the now-missing file.
-    files[1].unlink()
-    r2 = check_corpus_paths(files, cache_path=cache, cache_flush_every=1)
+    # Second run with files UNCHANGED: every file is served from the cache, so
+    # check_path is never called (proves reuse via the content-fingerprint match,
+    # not just a path match).
+    with mock.patch.object(cc_mod, "check_path", wraps=cc_mod.check_path) as spy:
+        r2 = check_corpus_paths(files, cache_path=cache, cache_flush_every=1)
+    assert spy.call_count == 0
     assert r2["n_files"] == 3
     assert r2["n_error"] == 0
     assert [f["path"] for f in r2["files"]] == [f["path"] for f in r1["files"]]
+
+
+def test_records_cache_rescores_when_file_content_changes(tmp_path: Path) -> None:
+    """Codex #212 P1: a cached 'clean' record must NOT be reused after the file's
+    content changes — otherwise a hygiene gate could pass newly-contaminated input."""
+    p = tmp_path / "f.txt"
+    p.write_text(CLEAN.read_text(encoding="utf-8"), encoding="utf-8")
+    cache = tmp_path / "c.json"
+    r1 = check_corpus_paths([p], cache_path=cache)
+    assert r1["status"] == "clean"
+    # Overwrite the same path with contaminated content; the resume must re-score
+    # (content fingerprint changed), not serve the stale clean record.
+    p.write_text(CONTAMINATED.read_text(encoding="utf-8"), encoding="utf-8")
+    r2 = check_corpus_paths([p], cache_path=cache)
+    assert r2["status"] == "fail"
 
 
 def test_records_cache_incompatible_meta_recomputes(tmp_path: Path) -> None:

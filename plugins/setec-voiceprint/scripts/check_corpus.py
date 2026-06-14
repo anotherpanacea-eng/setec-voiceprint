@@ -12,6 +12,7 @@ that would distort POS/KL and other distributional diagnostics.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shlex
@@ -468,12 +469,17 @@ def _summarize_hygiene_records(
 # recoverable: it skips already-scored paths, flushes an atomic cache every N
 # files (status in_progress -> complete), and logs progress — so a host hang
 # resumes from the last flush instead of rescoring from file 1 (#133). The
-# cache is keyed by file path and gated by a compat meta of the scoring args
-# that change check_path's output, so a cache from different settings is
-# recomputed rather than silently reused.
+# cache is keyed by file path AND a per-file content fingerprint, gated by a
+# compat meta of the scoring args that change check_path's output. A cached
+# record is reused only when the file still exists and its content is
+# byte-identical to when it was scored — a path+settings match alone is NOT
+# safe for a hygiene gate, since a changed file could let a stale "clean"
+# record mask newly-contaminated input (Codex #212 P1).
 
 _RECORDS_CACHE_TOOL = "check_corpus"
-_RECORDS_CACHE_VERSION = "1.0"
+# 1.1: cache payload now carries per-file content fingerprints. Bumping the
+# version invalidates pre-fingerprint (1.0) caches, forcing a safe rescore.
+_RECORDS_CACHE_VERSION = "1.1"
 
 
 def _records_cache_meta(
@@ -489,36 +495,58 @@ def _records_cache_meta(
     }
 
 
+def _file_content_fingerprint(path: Path) -> str | None:
+    """SHA-256 of the file's bytes, or ``None`` if it can't be read. Used to
+    refuse reuse of a cached record after the underlying file's CONTENT changed
+    (or the file vanished) — see the module note above (Codex #212 P1)."""
+    try:
+        h = hashlib.sha256()
+        with open(path, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 20), b""):
+                h.update(chunk)
+        return h.hexdigest()
+    except OSError:
+        return None
+
+
 def _save_records_cache(
-    path: Path, records: list[dict[str, Any]], *, status: str, meta: dict[str, Any],
+    path: Path, records: list[dict[str, Any]], fingerprints: dict[str, Any],
+    *, status: str, meta: dict[str, Any],
 ) -> None:
     """Atomic write (tmp + os.replace) so a crash mid-write can't corrupt the
     cache the next run loads."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    payload = {"status": status, "meta": meta, "records": records}
+    payload = {
+        "status": status, "meta": meta,
+        "records": records, "fingerprints": fingerprints,
+    }
     tmp.write_text(json.dumps(payload, default=str), encoding="utf-8")
     os.replace(tmp, path)
 
 
 def _load_records_cache(
     path: Path, *, expected_meta: dict[str, Any], refresh: bool,
-) -> dict[str, dict[str, Any]]:
-    """Return ``{path: record}`` for already-scored files, or ``{}`` to rescore
-    (no cache, unreadable, or incompatible scoring args)."""
+) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+    """Return ``({path: record}, {path: content_sha256})`` for already-scored
+    files, or two empty dicts (no cache, unreadable, or incompatible meta)."""
     if refresh or not path.exists():
-        return {}
+        return {}, {}
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
-        return {}
+        return {}, {}
     if not isinstance(payload, dict) or payload.get("meta") != expected_meta:
-        return {}
-    return {
+        return {}, {}
+    records = {
         rec["path"]: rec
         for rec in payload.get("records", [])
         if isinstance(rec, dict) and isinstance(rec.get("path"), str)
     }
+    fps = payload.get("fingerprints")
+    if not isinstance(fps, dict):
+        fps = {}
+    return records, fps
 
 
 def check_corpus_paths(
@@ -538,46 +566,71 @@ def check_corpus_paths(
         strip_rules=strip_rules, strip_aggressive=strip_aggressive,
         warn_threshold=warn_threshold, fail_threshold=fail_threshold,
     )
-    cached = (
+    cached_records, cached_fps = (
         _load_records_cache(cache_path, expected_meta=meta, refresh=refresh_cache)
-        if cache_path is not None else {}
+        if cache_path is not None else ({}, {})
     )
-    if cached:
+    if cached_records:
         sys.stderr.write(
-            f"check_corpus: resuming from {cache_path} "
-            f"({len(cached)} files already scored).\n"
+            f"check_corpus: found cache at {cache_path} "
+            f"({len(cached_records)} entries); reusing files whose content is "
+            f"unchanged.\n"
         )
 
     flush_every = max(1, int(cache_flush_every))
     records: list[dict[str, Any]] = []
+    fingerprints: dict[str, Any] = {}
     n_total = len(paths)
+    n_reused = 0
     t0 = time.time()
     since_flush = 0
     for i, path in enumerate(paths):
         key = str(Path(path))
-        if key in cached:
-            records.append(cached[key])
-            continue
-        records.append(check_path(
+        if cache_path is not None:
+            fp = _file_content_fingerprint(Path(path))
+            # Reuse only when the file still exists AND its content fingerprint
+            # matches the cached one — never on a missing or changed file.
+            if (
+                key in cached_records and fp is not None
+                and cached_fps.get(key) == fp
+            ):
+                records.append(cached_records[key])
+                fingerprints[key] = fp
+                n_reused += 1
+                continue
+        record = check_path(
             Path(path),
             strip_rules=strip_rules,
             strip_aggressive=strip_aggressive,
             collect_stripped=collect_stripped,
             warn_threshold=warn_threshold,
             fail_threshold=fail_threshold,
-        ))
-        since_flush += 1
-        if cache_path is not None and since_flush >= flush_every:
-            _save_records_cache(cache_path, records, status="in_progress", meta=meta)
-            since_flush = 0
-            elapsed = time.time() - t0
-            rate = (i + 1) / elapsed if elapsed > 0 else 0.0
-            sys.stderr.write(
-                f"  scored {i + 1}/{n_total} ({rate:.1f} files/s) "
-                f"-> cache flushed\n"
-            )
+        )
+        records.append(record)
+        if cache_path is not None:
+            fingerprints[key] = fp  # computed above; None if currently unreadable
+            since_flush += 1
+            if since_flush >= flush_every:
+                _save_records_cache(
+                    cache_path, records, fingerprints,
+                    status="in_progress", meta=meta,
+                )
+                since_flush = 0
+                elapsed = time.time() - t0
+                rate = (i + 1) / elapsed if elapsed > 0 else 0.0
+                sys.stderr.write(
+                    f"  scored {i + 1}/{n_total} ({rate:.1f} files/s) "
+                    f"-> cache flushed\n"
+                )
     if cache_path is not None:
-        _save_records_cache(cache_path, records, status="complete", meta=meta)
+        _save_records_cache(
+            cache_path, records, fingerprints, status="complete", meta=meta,
+        )
+        if n_reused:
+            sys.stderr.write(
+                f"check_corpus: reused {n_reused}/{n_total} unchanged files; "
+                f"re-scored {n_total - n_reused}.\n"
+            )
 
     summary = _summarize_hygiene_records(
         records,
