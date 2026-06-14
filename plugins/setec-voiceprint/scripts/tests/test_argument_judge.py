@@ -44,17 +44,29 @@ def test_validate_good_sequence_no_warnings():
     ]}
     cleaned, warns = j.validate_labels(vals, n_paragraphs=3)
     assert warns == []
-    assert cleaned == [
+    # the B5 arc fields default to None when the entry omits them (additive).
+    assert [{"role": c["role"], "mode": c["mode"]} for c in cleaned] == [
         {"role": "thesis", "mode": "argumentation"},
         {"role": "support", "mode": "exposition"},
         {"role": "proposal", "mode": "argumentation"},
     ]
+    assert all(
+        c["guard_strength"] is None and c["claim_ref"] is None
+        and c["objection_strength"] is None
+        for c in cleaned
+    )
+
+
+_NULL_LABEL = {
+    "role": None, "mode": None, "guard_strength": None,
+    "claim_ref": None, "objection_strength": None,
+}
 
 
 def test_validate_bad_role_and_mode_nulled_with_warnings():
     vals = {"paragraphs": [{"index": 0, "role": "BOGUS", "mode": "alsobad"}]}
     cleaned, warns = j.validate_labels(vals, n_paragraphs=1)
-    assert cleaned[0] == {"role": None, "mode": None}
+    assert cleaned[0] == _NULL_LABEL
     assert any("role 'BOGUS'" in w for w in warns)
     assert any("mode 'alsobad'" in w for w in warns)
 
@@ -62,14 +74,14 @@ def test_validate_bad_role_and_mode_nulled_with_warnings():
 def test_validate_missing_paragraphs_flagged():
     vals = {"paragraphs": [{"index": 0, "role": "thesis", "mode": "argumentation"}]}
     cleaned, warns = j.validate_labels(vals, n_paragraphs=3)
-    assert cleaned[1] == {"role": None, "mode": None}
-    assert cleaned[2] == {"role": None, "mode": None}
+    assert cleaned[1] == _NULL_LABEL
+    assert cleaned[2] == _NULL_LABEL
     assert any("missing indices" in w for w in warns)
 
 
 def test_validate_non_list_all_null():
     cleaned, warns = j.validate_labels({"paragraphs": "nope"}, n_paragraphs=2)
-    assert cleaned == [{"role": None, "mode": None}, {"role": None, "mode": None}]
+    assert cleaned == [_NULL_LABEL, _NULL_LABEL]
     assert any("missing a 'paragraphs' list" in w for w in warns)
 
 
@@ -102,6 +114,93 @@ def test_validate_extra_entries_flagged():
     ]}
     cleaned, warns = j.validate_labels(vals, n_paragraphs=1)
     assert any("extras ignored" in w for w in warns)
+
+
+# ---- B5 arc fields (guard_strength / claim_ref / objection_strength) ------
+def test_mock_judge_emits_deterministic_b5_fields():
+    seq = j.build_judge("mock")(["a", "b", "c"]).values
+    paras = seq["paragraphs"]
+    # guard drops strong (para 0) -> weak (later); a single shared claim_ref;
+    # no objection role so objection_strength + doc-level field are null.
+    assert paras[0]["guard_strength"] == "strong"
+    assert paras[1]["guard_strength"] == "weak"
+    assert all(p["claim_ref"] == "c0" for p in paras)
+    assert all(p["objection_strength"] is None for p in paras)
+    assert seq["strongest_internal_objection_engaged"] is None
+
+
+def test_validate_b5_fields_good_values():
+    vals = {"paragraphs": [
+        {"index": 0, "role": "thesis", "mode": "argumentation",
+         "guard_strength": "strong", "claim_ref": "c1"},
+        {"index": 1, "role": "counterclaim", "mode": "argumentation",
+         "guard_strength": "none", "claim_ref": "c1", "objection_strength": "weak"},
+    ]}
+    cleaned, warns = j.validate_labels(vals, n_paragraphs=2)
+    assert warns == []
+    assert cleaned[0]["guard_strength"] == "strong" and cleaned[0]["claim_ref"] == "c1"
+    assert cleaned[1]["objection_strength"] == "weak"
+
+
+def test_validate_b5_out_of_vocab_nulled_with_warning():
+    vals = {"paragraphs": [{
+        "index": 0, "role": "rebuttal", "mode": "argumentation",
+        "guard_strength": "ultra", "objection_strength": "meh", "claim_ref": "  ",
+    }]}
+    cleaned, warns = j.validate_labels(vals, n_paragraphs=1)
+    assert cleaned[0]["guard_strength"] is None
+    assert cleaned[0]["objection_strength"] is None
+    assert cleaned[0]["claim_ref"] is None  # whitespace-only is not a real id
+    assert any("guard_strength 'ultra'" in w for w in warns)
+    assert any("objection_strength 'meh'" in w for w in warns)
+    assert any("claim_ref" in w for w in warns)
+
+
+def test_validate_b5_explicit_null_is_legal():
+    vals = {"paragraphs": [{
+        "index": 0, "role": "support", "mode": "argumentation",
+        "guard_strength": None, "claim_ref": None, "objection_strength": None,
+    }]}
+    cleaned, warns = j.validate_labels(vals, n_paragraphs=1)
+    assert warns == []
+    assert cleaned[0]["guard_strength"] is None
+
+
+def test_validate_b5_missing_fields_tolerated_legacy_manifest():
+    # A pre-extension manifest entry has no B5 keys — must load with the fields
+    # defaulting to None and NO warnings (back-compat).
+    vals = {"paragraphs": [{"index": 0, "role": "thesis", "mode": "argumentation"}]}
+    cleaned, warns = j.validate_labels(vals, n_paragraphs=1)
+    assert warns == []
+    assert cleaned[0]["guard_strength"] is None
+    assert cleaned[0]["claim_ref"] is None
+    assert cleaned[0]["objection_strength"] is None
+
+
+def test_validate_doc_level_field():
+    assert j.validate_doc_level({"strongest_internal_objection_engaged": True}) == (True, [])
+    assert j.validate_doc_level({"strongest_internal_objection_engaged": False}) == (False, [])
+    assert j.validate_doc_level({"strongest_internal_objection_engaged": None}) == (None, [])
+    # missing -> None, no warning (legacy manifest)
+    assert j.validate_doc_level({}) == (None, [])
+    # non-bool (incl. int 1, since bool is an int subclass) -> None + warning
+    v, w = j.validate_doc_level({"strongest_internal_objection_engaged": 1})
+    assert v is None and any("not a boolean" in m for m in w)
+
+
+def test_to_dict_carries_doc_level_field():
+    res = j.build_judge("mock")(["a", "b"])
+    d = res.to_dict()
+    assert "strongest_internal_objection_engaged" in d["values"]
+
+
+def test_prompt_introduces_b5_fields():
+    prompt = j.render_prompt()
+    for token in ("guard_strength", "claim_ref", "objection_strength",
+                  "strongest_internal_objection_engaged"):
+        assert token in prompt
+    # the null-on-uncertainty discipline must be in the preamble or prompt.
+    assert "null" in prompt.lower()
 
 
 # ---- manifest backend ----------------------------------------------------
@@ -172,7 +271,7 @@ def test_bool_index_and_confidence_rejected():
     cleaned, _ = j.validate_labels(
         {"paragraphs": [{"index": True, "role": "thesis", "mode": "argumentation"}]},
         n_paragraphs=2)
-    assert cleaned == [{"role": None, "mode": None}, {"role": None, "mode": None}]
+    assert cleaned == [_NULL_LABEL, _NULL_LABEL]
     assert j._confidences([{"index": 0, "confidence": True}], 1) == [None]
 
 

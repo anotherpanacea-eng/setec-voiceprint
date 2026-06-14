@@ -65,7 +65,19 @@ __all__ = [
 ]
 
 Leaning = Literal["ai", "human"]
-SignalKind = Literal["transition_rate", "mode_share", "opening_tendency"]
+SignalKind = Literal[
+    "transition_rate", "mode_share", "opening_tendency", "arc_flag"
+]
+# The per-signal honesty tier. B1/B2 carry a transcribable per-essay human/LLM
+# mean from the paper, so they are `literature_anchored`. The B5 arc-collapse
+# flags have NO numeric anchor (the paper reports them only qualitatively) and no
+# measured discrimination, so they are pinned `heuristic` (directional, no anchor)
+# at the SCHEMA level — the exactly-honest tier the corpus supports, immune to a
+# register-baseline upgrade (an unanchored arc_flag can never be graduated).
+CalibrationStatus = Literal[
+    "heuristic", "literature_anchored", "empirically_oriented",
+    "calibrated", "structural_only",
+]
 
 # ---- B1: the 8-way argumentative paragraph-role taxonomy (paper §4.1) -------
 # The role each paragraph plays in the argument's construction. Cross-walked
@@ -111,6 +123,7 @@ MODE_DESCRIPTIONS: dict[str, str] = {
 BUNDLE_LABELS: dict[str, str] = {
     "B1_structural_arc": "B1 — Structural arc (paragraph-role transitions)",
     "B2_discourse_mode": "B2 — Discourse-mode mix",
+    "B5_collapse_dynamics": "B5 — Collapse dynamics (within-document)",
 }
 
 
@@ -128,6 +141,14 @@ class DerivedSignal:
     ``anchor_register`` records which corpus the means come from (the
     register-binding is the point); ``notes`` carries secondary-register figures
     and range caveats so nothing anchored is silently single-valued.
+
+    ``calibration_status`` is the per-signal honesty TIER, pinned at the schema
+    level (default ``literature_anchored`` for the anchored B1/B2 signals;
+    ``heuristic`` for the unanchored B5 arc-collapse flags). It is the FLOOR a
+    register baseline may not undercut, and — for unanchored signals — a CEILING
+    a register row may not raise: an ``arc_flag`` with no numeric anchor can never
+    be graduated above ``heuristic`` (calibrated/empirically_oriented require a
+    measured per-essay anchor the paper does not provide for these constructs).
     """
 
     key: str
@@ -140,6 +161,7 @@ class DerivedSignal:
     ai_mean: float | None
     anchor_register: str
     notes: str
+    calibration_status: CalibrationStatus = "literature_anchored"
 
     @property
     def gap(self) -> float | None:
@@ -222,6 +244,58 @@ DERIVED_SIGNALS: tuple[DerivedSignal, ...] = (
             "condition (0.897)."
         ),
     ),
+    # ---- B5: the two arc-level collapse-dynamics flags (heuristic) ----------
+    # Net-new dynamic (arc-level) signals the per-paragraph {role, mode} schema
+    # cannot express: a TRAJECTORY of a guard quantity tied to a specific claim
+    # (disappearing-guard) and a comparison between which objection the text
+    # engages and the strongest one available (discounting-straw-men). Both are
+    # `heuristic`/directional with NO numeric anchor — the paper supports them
+    # only qualitatively and there is no measured discrimination, so they carry
+    # NO per-essay human/LLM mean (anchored=False) and NEVER enter the aggregate
+    # (contribution stays null at the surface). The three converging sources in
+    # `notes` are conceptual grounding, not a numeric anchor.
+    DerivedSignal(
+        key="disappearing_guard_flag",
+        label="disappearing-guard (hedging-drift) flag",
+        bundle="B5_collapse_dynamics",
+        kind="arc_flag",
+        leaning="ai",  # AI-typical direction: an early guard quietly drops away
+        anchored=False,
+        human_mean=None,
+        ai_mean=None,
+        anchor_register="directional (AGD guard trajectory; no numeric anchor)",
+        calibration_status="heuristic",
+        notes=(
+            "A claim guarded (hedged/qualified) in an earlier paragraph and "
+            "treated as unguarded later — a within-document hedging-drift "
+            "trajectory the per-paragraph role/mode labels cannot represent. "
+            "Grounded in the AGD apparatus (Sinnott-Armstrong & Fogelin's "
+            "'disappearing guard') and the paper's argument-collapse framing; "
+            "heuristic/directional, NO numeric anchor (no per-essay rate is "
+            "reported). Does NOT adjudicate fairness or soundness."
+        ),
+    ),
+    DerivedSignal(
+        key="discounting_straw_men_flag",
+        label="discounting-straw-men (decoy-objection) flag",
+        bundle="B5_collapse_dynamics",
+        kind="arc_flag",
+        leaning="ai",  # AI-typical direction: engages a decoy, skips the strong one
+        anchored=False,
+        human_mean=None,
+        ai_mean=None,
+        anchor_register="directional (AGD discounting; no numeric anchor)",
+        calibration_status="heuristic",
+        notes=(
+            "Engaging weak objections while leaving the strongest text-internal "
+            "objection un-engaged (the paper's decoy-objection finding; "
+            "dialectical-clarity OB5). Grounded in the AGD apparatus "
+            "(discounting moves) + the paper's decoy-objection observation + "
+            "dialectical-clarity OB5; heuristic/directional, NO numeric anchor "
+            "(reported qualitatively, no per-essay rate). Does NOT adjudicate "
+            "fairness or soundness — that is banister / dialectical-clarity."
+        ),
+    ),
 )
 
 
@@ -245,9 +319,37 @@ def _self_check() -> None:
     keys = {s.key for s in DERIVED_SIGNALS}
     if len(keys) != len(DERIVED_SIGNALS):
         raise RuntimeError("DERIVED_SIGNALS contains duplicate keys")
+    _no_anchor_tiers = {"heuristic", "structural_only"}
     for s in DERIVED_SIGNALS:
         if s.bundle not in BUNDLE_LABELS:
             raise RuntimeError(f"signal {s.key}: unknown bundle {s.bundle!r}")
+        # Honesty-tier discipline, enforced at import (mirrors the anchored<->mean
+        # check). A signal carrying a numeric mean pair (anchored=True) must NOT
+        # claim a no-anchor tier (heuristic/structural_only) — it HAS an anchor.
+        # An arc_flag is an arc-level construct with no per-essay numeric anchor
+        # and no measured discrimination, so it must be directional-only
+        # (anchored=False) and pinned `heuristic` — never graduated to a tier that
+        # requires the numeric anchor the corpus does not provide. (Note: the
+        # register-bound directional signal thesis_opening_tendency is unanchored
+        # yet legitimately `literature_anchored` — the paper's register IS its
+        # anchor — so the heuristic floor is keyed to arc_flag, not to anchored.)
+        if s.anchored and s.calibration_status in _no_anchor_tiers:
+            raise RuntimeError(
+                f"signal {s.key}: anchored (carries a numeric mean) but "
+                f"calibration_status {s.calibration_status!r} is a no-anchor tier"
+            )
+        if s.kind == "arc_flag":
+            if s.anchored:
+                raise RuntimeError(
+                    f"signal {s.key}: arc_flag signals are directional-only and "
+                    f"must be anchored=False (no per-essay numeric anchor exists)"
+                )
+            if s.calibration_status != "heuristic":
+                raise RuntimeError(
+                    f"signal {s.key}: arc_flag is heuristic by construction "
+                    f"(no numeric anchor, no measured discrimination); "
+                    f"calibration_status {s.calibration_status!r} over-claims"
+                )
         if s.anchored:
             if s.human_mean is None or s.ai_mean is None:
                 raise RuntimeError(f"signal {s.key}: anchored but missing a mean")

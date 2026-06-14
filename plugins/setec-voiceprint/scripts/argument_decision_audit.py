@@ -50,6 +50,7 @@ from argument_judge import (  # type: ignore
     build_judge,
     fingerprint_prompt,
     utc_now,
+    validate_doc_level,
     validate_labels,
 )
 from claim_license import ClaimLicense  # type: ignore
@@ -95,8 +96,19 @@ DEFAULT_DOES_NOT_LICENSE = (
     "adjudicates). B3/B4 abstraction & stance ship as descriptive `reused_signals` "
     "(`heuristic`, NO numeric anchor BY DESIGN — marker density is a different "
     "construct from the paper's judge-rated per-essay stance strength, D5; not in "
-    "the aggregate); the two dynamic collapse signals (disappearing-guard, "
-    "discounting-straw-men) remain a deferred follow-up."
+    "the aggregate). The two B5 dynamic collapse signals (disappearing-guard, "
+    "discounting-straw-men) ship as `heuristic`, directional-only TEXTURE "
+    "observations of within-document hedging-drift and decoy-objection patterns "
+    "(judge-derived from per-paragraph guard_strength/claim_ref + counterclaim "
+    "objection_strength + a doc-level strongest-objection-engaged field): they "
+    "carry NO numeric anchor (the paper reports them only qualitatively) and NO "
+    "measured discrimination, are EXCLUDED from the aggregate (contribution=null) "
+    "and from the verdict band, and return null (never a fabricated False) when "
+    "the evidence is absent. They do NOT adjudicate fairness or soundness (that "
+    "is banister / dialectical-clarity) and license NO provenance or quality "
+    "verdict; a True discounting-straw-men flag at most signals that a "
+    "dialectical-clarity OB5 run would be informative — the surface never "
+    "adjudicates it."
 )
 
 
@@ -159,13 +171,96 @@ def compute_arc_signals(labels: list[dict[str, Any]]) -> dict[str, float | None]
     }
 
 
+# ---- B5: arc-level collapse-dynamics derivation --------------------
+
+# Guard levels the surface treats as "guarded" vs "unguarded" when reading a
+# disappearing-guard trajectory. A downward transition is a guarded earlier
+# paragraph (strong/moderate) followed by an unguarded later one (weak/none) for
+# the SAME claim (matched by claim_ref).
+_GUARDED = {"strong", "moderate"}
+_UNGUARDED = {"weak", "none"}
+
+
+def compute_collapse_dynamics(
+    labels: list[dict[str, Any]],
+    strongest_internal_objection_engaged: bool | None,
+) -> dict[str, bool | None]:
+    """Derive the two B5 arc-collapse flags from the per-paragraph judge labels
+    + the document-level objection field. Returns ``bool | None`` per flag and
+    NEVER fabricates a False: when the evidence is absent the flag is None
+    (insufficient evidence), distinct from a real False (evidence present, no
+    collapse).
+
+    disappearing_guard_flag — group paragraphs by ``claim_ref``; a claim guarded
+    (``strong``/``moderate``) in an EARLIER paragraph and unguarded
+    (``weak``/``none``) in a LATER paragraph (a downward guard transition across
+    >=2 paragraphs) sets True. False when >=1 claim is tracked across >=2
+    paragraphs WITH guard data but no downward transition occurs. None when no
+    claim_ref spans >=2 paragraphs carrying guard data (nothing to compare).
+
+    discounting_straw_men_flag — True when >=1 counterclaim/rebuttal paragraph is
+    labeled ``objection_strength=weak`` AND the doc-level
+    ``strongest_internal_objection_engaged`` is False (weak objections engaged,
+    the strong one ignored). False when the strongest internal objection IS
+    engaged (doc-level True). None when no counterclaim/rebuttal is labeled OR
+    the doc-level field is null (unknown — never a fabricated False)."""
+    # --- disappearing_guard ---
+    by_claim: dict[str, list[tuple[int, str]]] = {}
+    for i, l in enumerate(labels):
+        cref = l.get("claim_ref")
+        gs = l.get("guard_strength")
+        if cref is not None and gs is not None:
+            by_claim.setdefault(cref, []).append((i, gs))
+
+    trackable = [seq for seq in by_claim.values() if len(seq) >= 2]
+    if not trackable:
+        disappearing_guard: bool | None = None
+    else:
+        disappearing_guard = False
+        for seq in trackable:
+            # seq is in document order (we appended by ascending index).
+            for (i_e, g_e), (i_l, g_l) in zip(seq, seq[1:]):
+                if g_e in _GUARDED and g_l in _UNGUARDED:
+                    disappearing_guard = True
+                    break
+            if disappearing_guard:
+                break
+
+    # --- discounting_straw_men ---
+    objection_roles = {"counterclaim", "rebuttal"}
+    has_objection_para = any(
+        l.get("role") in objection_roles and l.get("objection_strength") is not None
+        for l in labels
+    )
+    weak_engaged = any(
+        l.get("role") in objection_roles and l.get("objection_strength") == "weak"
+        for l in labels
+    )
+    if not has_objection_para or strongest_internal_objection_engaged is None:
+        # No counterclaim/rebuttal labeled, or the strongest-objection judgment is
+        # unknown: insufficient evidence -> None (never a fabricated False).
+        discounting_straw_men: bool | None = None
+    elif strongest_internal_objection_engaged is False and weak_engaged:
+        discounting_straw_men = True
+    else:
+        # The strongest objection IS engaged (doc-level True), or only strong
+        # objections are engaged: not a decoy pattern.
+        discounting_straw_men = False
+
+    return {
+        "disappearing_guard_flag": disappearing_guard,
+        "discounting_straw_men_flag": discounting_straw_men,
+    }
+
+
 # ---------- contributions -------------------------------------------
 
-# Per-signal D2 status: B1/B2 are `literature_anchored` (register-bound to
-# public-debate forums) — that holds for all four derived signals, including the
-# directional thesis-opening (anchored=False marks "no numeric anchor", a
-# distinct axis from the calibration ladder).
-_DERIVED_CALIBRATION_STATUS = "literature_anchored"
+# Per-signal D2 status is carried on the schema's DerivedSignal.calibration_status
+# (B1/B2 `literature_anchored`; B5 arc_flags `heuristic`). The schema tier is the
+# FLOOR; a register baseline row may graduate an ANCHORED signal off it (the C0
+# path), but an unanchored arc_flag (B5) NEVER reads the register row's status —
+# its `heuristic` tier is pinned (no numeric anchor / no measured discrimination
+# exists to graduate it, so no op-ed/other register row can push it higher).
 
 
 @dataclass
@@ -199,24 +294,35 @@ def per_signal_contributions(
     for sig in DERIVED_SIGNALS:
         ov = observed.get(sig.key)
         rb = reg_signals.get(sig.key)
-        # A register row upgrades this signal's calibration_status off the default
-        # `literature_anchored` and carries the register-matched mean(s) beside the
-        # paper anchors (register_ai_mean present only at `calibrated`).
+        # Per-signal calibration_status resolution: start from the schema tier
+        # (the floor). A register row may graduate an ANCHORED signal off its
+        # floor (the C0 path), carrying the register-matched mean(s) beside the
+        # paper anchors. An UNANCHORED arc_flag (B5) is pinned at its schema tier
+        # (`heuristic`) and NEVER reads the register row's status — there is no
+        # numeric anchor / measured discrimination to graduate it, so a register
+        # baseline cannot push it above heuristic (honesty ladder, review-binding).
+        status = sig.calibration_status
+        if rb is not None and sig.anchored:
+            status = rb.status
         common = dict(
             signal_key=sig.key, label=sig.label, bundle=sig.bundle,
             leaning=sig.leaning,
-            calibration_status=(rb.status if rb is not None else _DERIVED_CALIBRATION_STATUS),
-            register_human_mean=(rb.human_mean if rb is not None else None),
-            register_ai_mean=(rb.ai_mean if rb is not None else None),
-            register_provenance=(rb.provenance if rb is not None else None),
+            calibration_status=status,
+            register_human_mean=(rb.human_mean if rb is not None and sig.anchored else None),
+            register_ai_mean=(rb.ai_mean if rb is not None and sig.anchored else None),
+            register_provenance=(rb.provenance if rb is not None and sig.anchored else None),
         )
         if not sig.anchored:
             # Directional-only (no numeric anchor): report the observed value,
-            # no contribution, no human/ai placement.
+            # no contribution, no human/ai placement. When the observed value is
+            # absent (e.g. a B5 arc_flag that derived to None on insufficient
+            # evidence, or thesis-opening with an unlabeled paragraph 0) the
+            # direction is `unavailable` — never a fabricated `directional`.
             out.append(SignalContribution(
                 **common, anchored=False,
                 paper_human_mean=None, paper_ai_mean=None,
-                observed_value=ov, contribution=None, direction="directional",
+                observed_value=ov, contribution=None,
+                direction=("directional" if ov is not None else "unavailable"),
             ))
             continue
         denom = sig.human_mean - sig.ai_mean
@@ -402,6 +508,7 @@ def build_results_payload(
     pre_flag: dict[str, Any],
     register_warnings: list[str],
     register: "RegisterBaseline | None" = None,
+    strongest_internal_objection_engaged: bool | None = None,
 ) -> dict[str, Any]:
     return {
         "judge": judge_result,
@@ -460,6 +567,17 @@ def build_results_payload(
             for b in bundles
         ],
         "pre_flag": pre_flag,
+        # B5 (collapse dynamics): the document-level judge field the two B5 flags
+        # derive against. The per-signal flag VALUES live in observed_signals /
+        # contributions[] like every other derived signal; this block carries the
+        # single doc-level scalar (strongest_internal_objection_engaged) that has
+        # no per-paragraph home. None = the judge could not tell (the derivation
+        # then returns None for discounting_straw_men_flag, never a fabricated
+        # False). These signals are `heuristic` directional-only TEXTURE — they do
+        # NOT enter the aggregate and do NOT adjudicate fairness/soundness.
+        "collapse_dynamics": {
+            "strongest_internal_objection_engaged": strongest_internal_objection_engaged,
+        },
         "aggregate": {
             **aggregate,
             "thresholds": {"low": None, "high": None},
@@ -696,7 +814,14 @@ def main(argv: list[str] | None = None) -> int:
     labels, val_warnings = validate_labels(
         judge_result_obj.values, n_paragraphs=len(paragraphs)
     )
+    strongest_obj_engaged, doc_warnings = validate_doc_level(judge_result_obj.values)
+    val_warnings = val_warnings + doc_warnings
     observed = compute_arc_signals(labels)
+    # B5: derive the two arc-collapse flags + merge into observed_signals so the
+    # B5 contributions (unanchored, contribution=null) pick them up. Additive —
+    # the B1/B2 observed keys are untouched.
+    collapse = compute_collapse_dynamics(labels, strongest_obj_engaged)
+    observed.update(collapse)
     contributions = per_signal_contributions(observed, register)
     bundles = per_bundle_aggregates(contributions)
     agg = aggregate_score(contributions)
@@ -705,7 +830,14 @@ def main(argv: list[str] | None = None) -> int:
     reused = compute_reused_signals(text)
 
     paragraph_labels = [
-        {"index": i, "role": labels[i]["role"], "mode": labels[i]["mode"]}
+        {
+            "index": i,
+            "role": labels[i]["role"],
+            "mode": labels[i]["mode"],
+            "guard_strength": labels[i].get("guard_strength"),
+            "claim_ref": labels[i].get("claim_ref"),
+            "objection_strength": labels[i].get("objection_strength"),
+        }
         for i in range(len(labels))
     ]
     results = build_results_payload(
@@ -722,6 +854,7 @@ def main(argv: list[str] | None = None) -> int:
         pre_flag=pre_flag,
         register_warnings=reg_warnings,
         register=register,
+        strongest_internal_objection_engaged=strongest_obj_engaged,
     )
     envelope = compose_envelope(
         target_path=target_path, target_words=target_words, results=results,
