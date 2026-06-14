@@ -284,3 +284,19 @@ def test_refresh_records_cache_discards_existing(tmp_path: Path) -> None:
     files[0].unlink()
     r = check_corpus_paths(files, cache_path=cache, refresh_cache=True)
     assert r["n_error"] == 1  # refresh discarded the cache -> rescored the missing file
+
+
+def test_records_cache_collect_stripped_change_invalidates(tmp_path: Path) -> None:
+    """Codex #212 P2: collect_stripped changes the per-file record payload, so a
+    cache built without it must NOT be reused for a --show-stripped run (which
+    would omit snippets), nor vice versa (which would leak snippets)."""
+    import check_corpus as cc_mod
+    from unittest import mock
+
+    cache = tmp_path / "c.json"
+    check_corpus_paths([CONTAMINATED], cache_path=cache, collect_stripped=False)
+    # A --show-stripped run must re-score (meta differs), not serve the
+    # snippet-less cached record.
+    with mock.patch.object(cc_mod, "check_path", wraps=cc_mod.check_path) as spy:
+        check_corpus_paths([CONTAMINATED], cache_path=cache, collect_stripped=True)
+    assert spy.call_count == 1

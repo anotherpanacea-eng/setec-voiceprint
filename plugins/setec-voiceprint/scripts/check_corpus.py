@@ -483,13 +483,18 @@ _RECORDS_CACHE_VERSION = "1.1"
 
 
 def _records_cache_meta(
-    *, strip_rules, strip_aggressive, warn_threshold, fail_threshold,
+    *, strip_rules, strip_aggressive, collect_stripped, warn_threshold, fail_threshold,
 ) -> dict[str, Any]:
     return {
         "tool": _RECORDS_CACHE_TOOL,
         "version": _RECORDS_CACHE_VERSION,
         "strip_rules": strip_rules,
         "strip_aggressive": bool(strip_aggressive),
+        # collect_stripped changes the per-file record PAYLOAD (snippet fields),
+        # so a cache built without it must not be reused for a --show-stripped
+        # run, nor vice versa (which would leak snippets into a run that didn't
+        # request them). Part of the compat gate. (Codex #212 P2.)
+        "collect_stripped": bool(collect_stripped),
         "warn_threshold": warn_threshold,
         "fail_threshold": fail_threshold,
     }
@@ -564,6 +569,7 @@ def check_corpus_paths(
     cache_path = Path(cache_path) if cache_path is not None else None
     meta = _records_cache_meta(
         strip_rules=strip_rules, strip_aggressive=strip_aggressive,
+        collect_stripped=collect_stripped,
         warn_threshold=warn_threshold, fail_threshold=fail_threshold,
     )
     cached_records, cached_fps = (
