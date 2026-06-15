@@ -77,6 +77,8 @@ class ProcessOptions:
     impostor_for: list[str]
     register_match: str
     topic_match: str
+    since: _dt.date | None
+    until: _dt.date | None
     output_dir: Path
     manifest_path: Path
     max_items: int
@@ -245,6 +247,23 @@ def discover_items(
             mtime = _dt.date.fromtimestamp(f.stat().st_mtime)
         except Exception:
             mtime = None
+        # Date-range filter (--since / --until), by file mtime. When a filter is
+        # active and a file's date can't be determined, skip it (we can't confirm
+        # it falls in range) rather than silently include it.
+        if options.since or options.until:
+            if mtime is None:
+                sys.stderr.write(f"  skip (date filter set, mtime unknown): {f.name}\n")
+                continue
+            if options.since and mtime < options.since:
+                sys.stderr.write(
+                    f"  skip (before --since {options.since.isoformat()}): "
+                    f"{f.name} [{mtime.isoformat()}]\n")
+                continue
+            if options.until and mtime > options.until:
+                sys.stderr.write(
+                    f"  skip (after --until {options.until.isoformat()}): "
+                    f"{f.name} [{mtime.isoformat()}]\n")
+                continue
         ext = f.suffix.lower()
         try:
             if ext == DOCX_EXT:
@@ -411,6 +430,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--window-words", type=int, default=2500)
     p.add_argument("--min-words", type=int, default=300)
 
+    p.add_argument("--since", metavar="YYYY-MM-DD",
+                   help="Only ingest works dated on/after this ISO date (by file mtime).")
+    p.add_argument("--until", metavar="YYYY-MM-DD",
+                   help="Only ingest works dated on/before this ISO date (by file mtime).")
     p.add_argument("--max-items", type=int, default=100000)
     p.add_argument("--output-dir")
     p.add_argument("--emit-manifest")
@@ -439,6 +462,8 @@ def parse_options(args: argparse.Namespace) -> ProcessOptions:
         consent_status=args.consent_status, era=args.era,
         impostor_for=list(args.impostor_for or []),
         register_match=args.register_match, topic_match=args.topic_match,
+        since=ac.parse_iso_date(args.since) if args.since else None,
+        until=ac.parse_iso_date(args.until) if args.until else None,
         output_dir=output_dir, manifest_path=manifest_path,
         max_items=args.max_items, dry_run=args.dry_run,
         allow_non_prose=args.allow_non_prose, strip_rules=args.strip_rules,
