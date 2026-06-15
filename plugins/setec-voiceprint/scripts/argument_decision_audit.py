@@ -24,10 +24,12 @@ public-debate forums — directional reference, never thresholds); the consumer
 SCOPE (Inc A1): the anchorable B1/B2 judge core (the contributions + aggregate)
 PLUS B3/B4 deterministic reuse — abstraction + stance + AGD marker densities for
 the target (via `argmove_profile.argmove_vector`), surfaced as descriptive
-`reused_signals` (`heuristic`, NO anchor, not in the aggregate; D2/D5). Only the
-two dynamic/arc signals (disappearing-guard hedging-drift; discounting-straw-men,
-which need a judge extension + an undecided B1/B4-vs-5th-bundle placement) are a
-deferred follow-up — the envelope is additive (schema 1.0), so they slot in later.
+`reused_signals` (`heuristic`, NO anchor, not in the aggregate; D2/D5). The two
+dynamic/arc signals (disappearing-guard hedging-drift; discounting-straw-men)
+shipped subsequently as B5 — `heuristic`, directional-only TEXTURE observations
+excluded from the aggregate (see `compute_collapse_dynamics` + the B5 derivation
+below), so they leave the score and the `uncalibrated` band unchanged. The
+envelope is additive (schema 1.0).
 """
 
 from __future__ import annotations
