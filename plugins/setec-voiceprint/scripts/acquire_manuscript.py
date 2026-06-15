@@ -522,6 +522,14 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(
             "--impostor-for is required with --corpus-role impostor "
             "(name the persona(s) this impostor pool serves)")
+    # Reject a mistyped date flag rather than silently disabling that side of the
+    # filter (parse_iso_date is lenient by design for messy per-entry data, but an
+    # operator's CLI flag is intent — a bad --since must fail loud, not widen the run).
+    for flag, raw in (("--since", args.since), ("--until", args.until)):
+        if raw and ac.parse_iso_date(raw) is None:
+            parser.error(
+                f"{flag} must be an ISO date (YYYY, YYYY-MM, or YYYY-MM-DD); "
+                f"got {raw!r}")
     return run(args)
 
 
