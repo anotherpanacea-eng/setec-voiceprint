@@ -2822,7 +2822,8 @@
         "tier": "api_llm"
       },
       "consumers": [
-        "apodictic"
+        "apodictic",
+        "setec-voicewright"
       ],
       "dependencies": {
         "python": [],
