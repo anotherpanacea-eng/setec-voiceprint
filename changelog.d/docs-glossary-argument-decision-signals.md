@@ -1,3 +1,0 @@
-### Changed
-
-**`references/signals-glossary.md` now indexes the argument-decision signals.** The `argument_decision_audit` (ArgScope) surface shipped in v1.116.0 but its signals were absent from the glossary (the narrative-decision family was already indexed). Adds an "Argument-decision signals" section — the four derived signals (`support_to_proposal_rate`, `support_to_support_rate`, `thesis_opening_tendency`, `argumentation_share`) grouped by B1 structural arc / B2 discourse mode, with the Kim et al. 2026 register-bound human/LLM anchors, the directional-only caveat for `thesis_opening_tendency`, and the aggregate — plus the TOC entry and the Totals / calibration-status-distribution tables (90 → 95 signals; literature_anchored 40 → 45). Docs only.
