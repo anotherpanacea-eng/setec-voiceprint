@@ -33,6 +33,7 @@ with a SETEC user-agent header.
 
 from __future__ import annotations
 
+import argparse
 import datetime as _dt
 import hashlib
 import json
@@ -1017,3 +1018,43 @@ def pdf_text_from_bytes(data: bytes) -> str:
                 os.unlink(tmp_path)
             except OSError:
                 pass
+
+
+# --------------- Shared CLI argument helpers ----------------------
+#
+# Only flags whose definition (name, action, default, choices, AND
+# help text) was already byte-identical across every `acquire_*.py`
+# that declares them are factored here. Adding these via a helper
+# produces argparse arguments indistinguishable from the inline
+# `p.add_argument(...)` calls they replace — same `--help` text, same
+# defaults, same parse behavior — so the CLI surface is unchanged.
+#
+# Flags that *look* shared but diverge in help text or defaults
+# across scripts (e.g. `--persona`, `--register`, `--min-words`,
+# `--max-items`, `--out`, `--dry-run`) are intentionally left inline:
+# a single canonical definition would silently rewrite their `--help`
+# output or change per-source defaults. See issue #198 item 3.
+
+
+def add_user_agent_arg(parser: argparse.ArgumentParser) -> None:
+    """Register the shared ``--user-agent`` flag.
+
+    Byte-identical across the 8 network-bound acquirers that expose it;
+    extracting it keeps the override consistent without changing the
+    flag's name, behavior, or help text.
+    """
+    parser.add_argument("--user-agent",
+                        help="Override the User-Agent header.")
+
+
+def add_allow_empty_arg(parser: argparse.ArgumentParser) -> None:
+    """Register the shared ``--allow-empty`` flag.
+
+    Byte-identical across the acquirers that expose it (the 3-line help
+    block was hand-duplicated verbatim). Same ``store_true`` action and
+    same help text as the inline definitions it replaces.
+    """
+    parser.add_argument("--allow-empty", action="store_true",
+                        help="Exit 0 even when nothing is acquired. By default a "
+                             "zero-output run that isn't a dedupe-only rerun "
+                             "(nothing matched the source/filters) fails.")
