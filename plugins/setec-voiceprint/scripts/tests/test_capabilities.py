@@ -158,13 +158,17 @@ def test_filter_by_consumer_setec_voicewright():
     fitness-loop surfaces — the selection ensemble (voice_fingerprint,
     voice_distance) + held-out validators (mimicry_cosplay_audit,
     general_imposters, binoculars_audit) + idiolect_detector (whose JSON
-    is mimicry_cosplay_audit's required cross-check input)."""
+    is mimicry_cosplay_audit's required cross-check input).
+    Plus narrative_decision_audit — added as a consumer for voicewright's
+    spec-17 M3 work-level narrative diagnostic (a read-only check over the
+    assembled draft, NOT a fitness-loop surface)."""
     m = _manifest()
     out = cap.filter_entries(m["entries"], consumer="setec-voicewright")
     ids = {e["id"] for e in out}
     expected = {
         "voice_fingerprint", "voice_distance", "idiolect_detector",
         "mimicry_cosplay_audit", "general_imposters", "binoculars_audit",
+        "narrative_decision_audit",
     }
     assert ids == expected, (
         f"--consumer setec-voicewright mismatch: "

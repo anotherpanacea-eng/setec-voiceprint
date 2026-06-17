@@ -6,6 +6,7 @@ entries:
   handoff: experimental
   consumers:
   - apodictic
+  - setec-voicewright
   min_setec_version: "1.107.0"
   json_delivery: stdout
   family: narrative-decision
