@@ -2,9 +2,23 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-06-17)
+
+Supplements the two passes below for the **1.117.0** release. The plugin is now at **1.117.0**. Where this conflicts with the earlier reconciliations or the inline markers, this is authoritative.
+
+### Shipped since 1.116.0
+
+- **ArgScope grows two increments on the `argument_decision_audit` surface — B5 (collapse dynamics) and C0 (register-baseline plumbing).** B5 adds a fifth bundle, `B5_collapse_dynamics`, carrying two arc-level signals the per-paragraph {role, mode} schema can't express: `disappearing_guard_flag` (a claim hedged early then treated as unguarded later) and `discounting_straw_men_flag` (the strongest text-internal objection left un-engaged). Both are `heuristic`, directional, with **no numeric anchor**, **excluded from the aggregate and the verdict band** (the score is numerically unchanged) — they describe texture, not fairness or soundness. C0 adds `--register` / `--baseline-dir` plumbing reading `baselines/argument_register_baselines.yaml` (seed: one genre, `op-ed`, at `literature_anchored`, so the band stays `uncalibrated` and **no verdict changes**); it ships the schema so the corpus-built `empirically_oriented` / `calibrated` rows (C1/C3) drop straight in. Both envelope changes are additive (schema 1.0).
+- **`narrative_decision_audit` (StoryScope) adds `setec-voicewright` as a consumer.** A consumer-membership change only — the surface, its judge, its schema (1.0), its claim-license, and its `min_setec_version` floor (`1.107.0`) are all unchanged. This makes setec-voicewright the second consumer of the StoryScope work-level narrative diagnostic (read-only over an assembled draft, never a selection/training target), picked up on this v1.117.0 release.
+- **LLM-judge provider plumbing deduplicated into a shared `judge_backends.py`.** `narrative_judge` and `argument_judge` each carried near-identical `_api_judge_{anthropic,openai,gemini}` adapters; the provider plumbing now lives once in `judge_backends.make_api_judge`, parameterized per family, so the two families' data contracts stay decoupled while the plumbing can't drift again (the parity gap behind #194). No behavior change. (The 2026-06-13 section below already mentions `judge_backends.py` under repo-hygiene; it actually landed in this v1.117.0 window.)
+- **Fleet release-train runbook + release/sync infra.** `references/fleet-release-runbook.md` documents the four-repo producer-before-consumer release sequence; `v*` tags now auto-publish a GitHub Release so the consumer weekly-sync workflows can resolve `latest`; `calibration_survey` and `check_corpus` gain corpus-scale resume (`--survey-cache` / `--records-cache`); `validation_harness` warns on un-checkpointed bootstrap.
+- **Released as v1.117.0** (2026-06-17), the consolidated release cutting the above.
+
+The two "What's left" lists below otherwise still stand: R12 calibration, the AIC-8/9 thresholds, the operator-blocked cascade, and the F-bis compression-polarity mirror reconciliation are unchanged.
+
 ## Status reconciliation (2026-06-13)
 
-Supplements the 2026-06-06 pass below for the **1.110 → 1.116** window. The plugin is now at **1.116.0** (the section below still says 1.109.x). Where this conflicts with the older reconciliation or the inline markers, this is authoritative.
+Supplements the 2026-06-06 pass below for the **1.110 → 1.116** window. At the time of this pass the plugin was at **1.116.0** (the 2026-06-17 section above carries it to 1.117.0; the 2026-06-06 section below still says 1.109.x). Where this conflicts with the older reconciliation or the inline markers, this is authoritative.
 
 ### Shipped since 2026-06-06
 
