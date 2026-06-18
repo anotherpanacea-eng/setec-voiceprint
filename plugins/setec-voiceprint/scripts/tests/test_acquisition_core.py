@@ -47,6 +47,44 @@ def test_disambiguated_stem_is_filesystem_safe(tmp_path):
     assert t2.stem.endswith(p2.content_hash.split(":")[-1][:8])
 
 
+def test_compose_impostor_shape_is_the_default(tmp_path):
+    # Backward-compat guard: a no-bucket call still emits corpus_role
+    # impostor plus all five impostor-only fields, unchanged.
+    p = _piece("alpha " * 200)
+    tp = tmp_path / "x.txt"
+    tp.write_text("alpha")
+    e = ac.compose_manifest_entry(
+        p, text_path=tp, manifest_relative_to=tmp_path,
+    )
+    assert e["corpus_role"] == "impostor"
+    assert e["use"] == ["voice_impostor"]
+    assert e["split"] == "baseline"
+    for fld in ("impostor_for", "register_match", "topic_match",
+                "consent_status", "era", "acquired_via"):
+        assert fld in e
+
+
+def test_compose_corpus_role_none_omits_role_and_impostor_fields(tmp_path):
+    # The test/drift bucket: corpus_role=None drops the role field AND the
+    # five impostor-only fields; use/split/ai_status come from kwargs.
+    p = _piece("beta " * 200)
+    tp = tmp_path / "y.txt"
+    tp.write_text("beta")
+    e = ac.compose_manifest_entry(
+        p, text_path=tp, manifest_relative_to=tmp_path,
+        corpus_role=None, use=["test_set"], split="test", ai_status="mixed",
+        extra={"notes": {"composite_states": ["ai_assisted"]}},
+    )
+    assert "corpus_role" not in e
+    assert e["use"] == ["test_set"]
+    assert e["split"] == "test"
+    assert e["ai_status"] == "mixed"
+    assert e["notes"] == {"composite_states": ["ai_assisted"]}
+    for fld in ("impostor_for", "register_match", "topic_match",
+                "consent_status", "era", "acquired_via"):
+        assert fld not in e
+
+
 def test_no_collision_keeps_base_stem(tmp_path):
     p = _piece("z " * 200)
     t, _ = ac.write_piece(p, output_dir=tmp_path, scraper_version="t")
