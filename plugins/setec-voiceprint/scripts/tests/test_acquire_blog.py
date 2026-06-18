@@ -446,8 +446,8 @@ def test_substack_end_to_end(tmp_path):
     assert impostor_errors == []
 
 
-def test_substack_test_bucket_end_to_end(tmp_path):
-    """--bucket test routes the same Substack acquisition into the
+def test_substack_validation_bucket_end_to_end(tmp_path):
+    """--bucket validation routes the same Substack acquisition into the
     validation-spine bucket: no corpus_role, no impostor-only fields,
     use=[validation], split=test, ai_status=mixed with composite_states.
     This is the supported replacement for the old monkey-patch one-off.
@@ -463,7 +463,7 @@ def test_substack_test_bucket_end_to_end(tmp_path):
         # No --impostor-for / --consent-status: the test bucket needs neither.
         impostor_for=None,
         consent_status=None,
-        bucket="test",
+        bucket="validation",
         ai_status="mixed",
         notes_composite="ai_assisted,ai_generated_from_outline",
         notes_description="Substack post; AI involvement varies by piece.",
@@ -1165,7 +1165,7 @@ def test_sitemap_fetched_paid_post_is_skipped(tmp_path):
 
 def test_run_rejects_missing_impostor_for_in_impostor_bucket():
     """impostor_for is required for the (default) impostor bucket. The
-    check moved from argparse-time to run() so --bucket test can omit it,
+    check moved from argparse-time to run() so --bucket validation can omit it,
     but it still fails fast — before any network budget is spent (the
     validation precedes source-type detection / fetching).
     """
@@ -1187,14 +1187,14 @@ def test_run_rejects_missing_impostor_for_in_impostor_bucket():
             pass
 
 
-def test_run_allows_missing_impostor_for_in_test_bucket():
-    """--bucket test emits no impostor fields, so --impostor-for and
+def test_run_allows_missing_impostor_for_in_validation_bucket():
+    """--bucket validation emits no impostor fields, so --impostor-for and
     --consent-status are not required (the whole point of the bucket)."""
     parser = ab.build_arg_parser()
     args = parser.parse_args([
         "https://example.com",
         "--register", "blog_essay",
-        "--bucket", "test",
+        "--bucket", "validation",
     ])
     # run() must NOT raise SystemExit on the missing-impostor-for check;
     # it gets past validation to source detection (which the empty

@@ -12,11 +12,11 @@ Corpus bucket (``--bucket``):
      [voice_impostor]``, ``split: baseline``: third-party reference prose
      for voice discrimination. Requires ``--impostor-for`` /
      ``--consent-status``.
-  ``test`` — no ``corpus_role``, ``use: [validation]``, ``split: test``:
-     validation-spine material (e.g. your own AI-involved writing),
-     excluded from the baseline and selected by the validation harness.
-     Pair with ``--ai-status mixed`` + ``--notes-composite`` for writing
-     whose AI involvement varies.
+  ``validation`` — no ``corpus_role``, ``use: [validation]``, ``split:
+     test``: validation-spine material (e.g. your own AI-involved
+     writing), excluded from the baseline and selected by the validation
+     harness. Pair with ``--ai-status mixed`` + ``--notes-composite`` for
+     writing whose AI involvement varies.
 
 The script auto-detects which extraction path to use:
 
@@ -58,10 +58,10 @@ Usage:
         --max-posts 25 \\
         --output-dir ../ai-prose-baselines-private/impostors/blog_essay/smith_jeh
 
-    # Your own AI-involved Substack → the drift/test bucket:
+    # Your own AI-involved Substack → the validation bucket:
     python3 scripts/acquire_blog.py https://anotherpanacea.substack.com \\
         --persona anotherpanacea --register blog_essay \\
-        --bucket test --ai-status mixed \\
+        --bucket validation --ai-status mixed \\
         --notes-composite ai_assisted,ai_generated_from_outline
 
 See ``internal/2026-05-08-impostor-corpus-spec.md`` for design context.
@@ -451,7 +451,7 @@ class ProcessOptions:
     content_selector: str | None
     skip_robots: bool = False
     # Corpus-bucket controls. Defaults reproduce the historical impostor
-    # shape exactly; --bucket test flips them to the drift/test bucket.
+    # shape exactly; --bucket validation flips them to the validation set.
     corpus_role: str | None = "impostor"
     use: list[str] = field(default_factory=lambda: ["voice_impostor"])
     split: str = "baseline"
@@ -1037,7 +1037,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
                          "version of the persona slug."))
     # impostor_for / consent_status are required ONLY for the (default)
     # impostor bucket; run() enforces that post-parse so they can stay
-    # optional here for --bucket test, which emits neither field. For the
+    # optional here for --bucket validation, which emits neither. For the
     # impostor bucket the validator errors on empty impostor_for, so run()
     # rejects it early — before any network budget is spent.
     p.add_argument("--impostor-for", nargs="+",
@@ -1067,16 +1067,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    default="pre_chatgpt",
                    help="Era classification of the acquired prose.")
 
-    # ---- Corpus bucket (impostor reference pool vs. drift/test set) ----
-    p.add_argument("--bucket", choices=["impostor", "test"],
+    # ---- Corpus bucket (impostor reference pool vs. validation set) ----
+    p.add_argument("--bucket", choices=["impostor", "validation"],
                    default="impostor",
                    help=("Which corpus bucket the entries land in. "
                          "'impostor' (default): corpus_role=impostor, "
                          "use=[voice_impostor], split=baseline — the "
-                         "reference pool for voice discrimination. 'test': "
-                         "no corpus_role, use=[validation], split=test — "
-                         "validation-spine material (e.g. your own "
-                         "AI-involved writing), excluded from the baseline."))
+                         "reference pool for voice discrimination. "
+                         "'validation': no corpus_role, use=[validation], "
+                         "split=test — validation-spine material (e.g. your "
+                         "own AI-involved writing), excluded from the "
+                         "baseline and selected by the validation harness."))
     p.add_argument("--ai-status",
                    choices=[
                        "pre_ai_human", "ai_generated", "ai_assisted",
@@ -1195,8 +1196,9 @@ def run(
     bucket_presets = {
         "impostor": (["voice_impostor"], "baseline", "impostor"),
         # use=validation (the ALLOWED_USE tag the validation harness
-        # selects on; test_set is not a recognized use), split=test.
-        "test": (["validation"], "test", None),
+        # selects on; test_set is not a recognized use); split=test is the
+        # canonical partition for validation entries (manifest-schema.md).
+        "validation": (["validation"], "test", None),
     }
     use_tags, split_tag, corpus_role = bucket_presets[bucket]
     ai_status = getattr(args, "ai_status", None)
