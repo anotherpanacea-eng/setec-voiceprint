@@ -448,8 +448,8 @@ def test_substack_end_to_end(tmp_path):
 
 def test_substack_test_bucket_end_to_end(tmp_path):
     """--bucket test routes the same Substack acquisition into the
-    drift/test bucket: no corpus_role, no impostor-only fields,
-    use=[test_set], split=test, ai_status=mixed with composite_states.
+    validation-spine bucket: no corpus_role, no impostor-only fields,
+    use=[validation], split=test, ai_status=mixed with composite_states.
     This is the supported replacement for the old monkey-patch one-off.
     """
     output_dir = tmp_path / "ai-prose-baselines-private" / "blog" / \
@@ -480,8 +480,10 @@ def test_substack_test_bucket_end_to_end(tmp_path):
         "topic_match", "consent_status", "era", "acquired_via",
     }
     for e in entries:
-        # Drift/test shape.
-        assert e["use"] == ["test_set"]
+        # Validation-spine shape. use MUST be the recognized 'validation'
+        # tag (ALLOWED_USE) — 'test_set' is not a real use and the
+        # validation harness selects on 'validation'.
+        assert e["use"] == ["validation"]
         assert e["split"] == "test"
         assert e["ai_status"] == "mixed"
         assert e["notes"]["composite_states"] == \
@@ -501,6 +503,11 @@ def test_substack_test_bucket_end_to_end(tmp_path):
     ]
     assert error_issues == [], \
         f"Test-bucket manifest should validate clean: {error_issues}"
+    # And no 'use'-field WARNINGS — the bug Codex caught was a warning
+    # (use: test_set ∉ ALLOWED_USE), which an error-only check missed.
+    use_issues = [i for i in report["issues"] if i.get("field") == "use"]
+    assert use_issues == [], \
+        f"Test-bucket 'use' must not warn: {use_issues}"
 
 
 def test_substack_paid_post_is_skipped(tmp_path):

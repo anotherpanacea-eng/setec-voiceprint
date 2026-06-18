@@ -12,10 +12,11 @@ Corpus bucket (``--bucket``):
      [voice_impostor]``, ``split: baseline``: third-party reference prose
      for voice discrimination. Requires ``--impostor-for`` /
      ``--consent-status``.
-  ``test`` — no ``corpus_role``, ``use: [test_set]``, ``split: test``:
-     drift/test material (e.g. your own AI-involved writing), excluded
-     from the baseline. Pair with ``--ai-status mixed`` +
-     ``--notes-composite`` for writing whose AI involvement varies.
+  ``test`` — no ``corpus_role``, ``use: [validation]``, ``split: test``:
+     validation-spine material (e.g. your own AI-involved writing),
+     excluded from the baseline and selected by the validation harness.
+     Pair with ``--ai-status mixed`` + ``--notes-composite`` for writing
+     whose AI involvement varies.
 
 The script auto-detects which extraction path to use:
 
@@ -1073,9 +1074,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
                          "'impostor' (default): corpus_role=impostor, "
                          "use=[voice_impostor], split=baseline — the "
                          "reference pool for voice discrimination. 'test': "
-                         "no corpus_role, use=[test_set], split=test — "
-                         "drift/test material (e.g. your own AI-involved "
-                         "writing), excluded from the baseline."))
+                         "no corpus_role, use=[validation], split=test — "
+                         "validation-spine material (e.g. your own "
+                         "AI-involved writing), excluded from the baseline."))
     p.add_argument("--ai-status",
                    choices=[
                        "pre_ai_human", "ai_generated", "ai_assisted",
@@ -1193,7 +1194,9 @@ def run(
     bucket = getattr(args, "bucket", "impostor")
     bucket_presets = {
         "impostor": (["voice_impostor"], "baseline", "impostor"),
-        "test": (["test_set"], "test", None),
+        # use=validation (the ALLOWED_USE tag the validation harness
+        # selects on; test_set is not a recognized use), split=test.
+        "test": (["validation"], "test", None),
     }
     use_tags, split_tag, corpus_role = bucket_presets[bucket]
     ai_status = getattr(args, "ai_status", None)
