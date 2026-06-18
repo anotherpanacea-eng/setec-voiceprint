@@ -2,10 +2,20 @@
 """acquire_blog.py — pull a single author's blog or Substack archive.
 
 Reads a single feed/archive URL and writes:
-  1. One ``.txt`` per acquired post into a private impostor pool dir.
+  1. One ``.txt`` per acquired post into a private pool dir.
   2. One ``.meta.json`` sidecar per post (URL, date, hash, scraper meta).
-  3. One draft manifest JSONL with ``corpus_role: impostor`` entries
-     ready to merge into ``corpus_manifest.jsonl`` after review.
+  3. One draft manifest JSONL ready to merge into ``corpus_manifest.jsonl``
+     after review.
+
+Corpus bucket (``--bucket``):
+  ``impostor`` (default) — ``corpus_role: impostor``, ``use:
+     [voice_impostor]``, ``split: baseline``: third-party reference prose
+     for voice discrimination. Requires ``--impostor-for`` /
+     ``--consent-status``.
+  ``test`` — no ``corpus_role``, ``use: [test_set]``, ``split: test``:
+     drift/test material (e.g. your own AI-involved writing), excluded
+     from the baseline. Pair with ``--ai-status mixed`` +
+     ``--notes-composite`` for writing whose AI involvement varies.
 
 The script auto-detects which extraction path to use:
 
@@ -46,6 +56,12 @@ Usage:
         --since 2018-01-01 --until 2022-11-01 \\
         --max-posts 25 \\
         --output-dir ../ai-prose-baselines-private/impostors/blog_essay/smith_jeh
+
+    # Your own AI-involved Substack → the drift/test bucket:
+    python3 scripts/acquire_blog.py https://anotherpanacea.substack.com \\
+        --persona anotherpanacea --register blog_essay \\
+        --bucket test --ai-status mixed \\
+        --notes-composite ai_assisted,ai_generated_from_outline
 
 See ``internal/2026-05-08-impostor-corpus-spec.md`` for design context.
 """
@@ -433,6 +449,13 @@ class ProcessOptions:
     acquired_via: str
     content_selector: str | None
     skip_robots: bool = False
+    # Corpus-bucket controls. Defaults reproduce the historical impostor
+    # shape exactly; --bucket test flips them to the drift/test bucket.
+    corpus_role: str | None = "impostor"
+    use: list[str] = field(default_factory=lambda: ["voice_impostor"])
+    split: str = "baseline"
+    ai_status: str | None = None
+    notes_obj: dict[str, Any] | None = None
 
 
 def process_one_post(
@@ -572,11 +595,20 @@ def emit_piece(
         piece, output_dir=options.output_dir,
         scraper_version=SCRAPER_VERSION,
     )
-    entry = ac.compose_manifest_entry(
-        piece,
+    compose_kwargs: dict[str, Any] = dict(
         text_path=text_path,
         manifest_relative_to=options.manifest_path.parent,
+        use=options.use,
+        split=options.split,
+        corpus_role=options.corpus_role,
     )
+    # Only override the compose defaults when set, so the impostor path
+    # stays byte-identical (ai_status -> "pre_ai_human", no extra notes).
+    if options.ai_status is not None:
+        compose_kwargs["ai_status"] = options.ai_status
+    if options.notes_obj is not None:
+        compose_kwargs["extra"] = {"notes": options.notes_obj}
+    entry = ac.compose_manifest_entry(piece, **compose_kwargs)
     ac.append_manifest_entry(options.manifest_path, entry)
     summary.acquired += 1
     sys.stderr.write(
@@ -1002,15 +1034,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--author",
                    help=("Author display name. Defaults to a humanized "
                          "version of the persona slug."))
-    # Required: every emitted entry hard-codes corpus_role: impostor,
-    # and the manifest validator errors on impostor entries with empty
-    # impostor_for. Allowing the flag to default to [] meant the script
-    # could exit 0 while writing a draft manifest that immediately
-    # failed validation. The required=True turns that into an
-    # argparse-time error users see before they spend network budget.
-    p.add_argument("--impostor-for", nargs="+", required=True,
+    # impostor_for / consent_status are required ONLY for the (default)
+    # impostor bucket; run() enforces that post-parse so they can stay
+    # optional here for --bucket test, which emits neither field. For the
+    # impostor bucket the validator errors on empty impostor_for, so run()
+    # rejects it early — before any network budget is spent.
+    p.add_argument("--impostor-for", nargs="+",
                    help=("Persona slug(s) this impostor serves "
-                         "(required; the schema rejects empty)."))
+                         "(required for --bucket impostor; the schema "
+                         "rejects empty)."))
     p.add_argument("--register", required=True,
                    help="Manifest register; e.g. blog_essay.")
     p.add_argument("--register-match",
@@ -1019,12 +1051,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--topic-match",
                    choices=["high", "medium", "low"], default="medium",
                    help="Topical-match closeness for the impostor target.")
-    p.add_argument("--consent-status", required=True,
+    p.add_argument("--consent-status",
                    choices=[
                        "public_record", "cc_licensed", "fair_use_research",
                        "author_consent", "undocumented",
                    ],
-                   help="Consent / legal posture for the impostor entry.")
+                   help=("Consent / legal posture for the impostor entry "
+                         "(required for --bucket impostor)."))
     p.add_argument("--era",
                    choices=[
                        "pre_chatgpt", "pre_ai_widespread",
@@ -1032,6 +1065,35 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    ],
                    default="pre_chatgpt",
                    help="Era classification of the acquired prose.")
+
+    # ---- Corpus bucket (impostor reference pool vs. drift/test set) ----
+    p.add_argument("--bucket", choices=["impostor", "test"],
+                   default="impostor",
+                   help=("Which corpus bucket the entries land in. "
+                         "'impostor' (default): corpus_role=impostor, "
+                         "use=[voice_impostor], split=baseline — the "
+                         "reference pool for voice discrimination. 'test': "
+                         "no corpus_role, use=[test_set], split=test — "
+                         "drift/test material (e.g. your own AI-involved "
+                         "writing), excluded from the baseline."))
+    p.add_argument("--ai-status",
+                   choices=[
+                       "pre_ai_human", "ai_generated", "ai_assisted",
+                       "ai_edited", "mixed", "unknown",
+                       "ai_generated_from_outline",
+                   ],
+                   help=("AI-authorship status of the acquired prose. "
+                         "Unset → compose's 'pre_ai_human'. Use 'mixed' for "
+                         "writing whose AI involvement varies by piece "
+                         "(requires --notes-composite)."))
+    p.add_argument("--notes-composite",
+                   help=("Comma-separated authorship states for an "
+                         "--ai-status mixed entry (e.g. "
+                         "'ai_assisted,ai_generated_from_outline'); written "
+                         "to notes.composite_states, which the schema "
+                         "requires for mixed entries."))
+    p.add_argument("--notes-description",
+                   help="Free-text note stored at notes.description.")
 
     # Date window + max.
     p.add_argument("--since", help="Inclusive lower-bound date (YYYY-MM-DD).")
@@ -1127,6 +1189,41 @@ def run(
     persona = args.persona or derive_author_slug(args.url)
     author = args.author or humanize_persona(persona)
 
+    # ---- Corpus bucket: presets + post-parse requirement checks -------
+    bucket = getattr(args, "bucket", "impostor")
+    bucket_presets = {
+        "impostor": (["voice_impostor"], "baseline", "impostor"),
+        "test": (["test_set"], "test", None),
+    }
+    use_tags, split_tag, corpus_role = bucket_presets[bucket]
+    ai_status = getattr(args, "ai_status", None)
+    if bucket == "impostor":
+        missing = [name for name, val in (
+            ("--impostor-for", args.impostor_for),
+            ("--consent-status", args.consent_status),
+        ) if not val]
+        if missing:
+            raise SystemExit(
+                f"{TOOL_NAME}: {', '.join(missing)} required for "
+                "--bucket impostor"
+            )
+    notes_composite = getattr(args, "notes_composite", None)
+    notes_description = getattr(args, "notes_description", None)
+    if ai_status == "mixed" and not notes_composite:
+        raise SystemExit(
+            f"{TOOL_NAME}: --ai-status mixed requires --notes-composite "
+            "(the schema needs notes.composite_states)"
+        )
+    notes_obj: dict[str, Any] | None = None
+    if notes_composite or notes_description:
+        notes_obj = {}
+        if notes_composite:
+            notes_obj["composite_states"] = [
+                s.strip() for s in notes_composite.split(",") if s.strip()
+            ]
+        if notes_description:
+            notes_obj["description"] = notes_description
+
     # Source-type detection.
     source_type, hints = determine_source_type(args, fetcher)
     sys.stderr.write(f"Detected source type: {source_type} (url={args.url})\n")
@@ -1177,7 +1274,7 @@ def run(
         register=args.register,
         register_match=args.register_match,
         topic_match=args.topic_match,
-        consent_status=args.consent_status,
+        consent_status=args.consent_status or "",
         era=args.era,
         since=since,
         until=until,
@@ -1191,6 +1288,11 @@ def run(
         strip_aggressive=args.strip_aggressive,
         acquired_via=acquired_via,
         content_selector=args.content_selector,
+        corpus_role=corpus_role,
+        use=list(use_tags),
+        split=split_tag,
+        ai_status=ai_status,
+        notes_obj=notes_obj,
     )
     summary = ac.RunSummary(
         draft_manifest_path=str(manifest_path) if not args.dry_run else None,

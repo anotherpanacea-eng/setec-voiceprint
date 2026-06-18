@@ -808,7 +808,7 @@ def compose_manifest_entry(
     use: list[str] | None = None,
     privacy: str = "private",
     split: str = "baseline",
-    corpus_role: str = "impostor",
+    corpus_role: str | None = "impostor",
     ai_status: str = "pre_ai_human",
     language_status: str = "native",
     extra: dict[str, Any] | None = None,
@@ -823,6 +823,12 @@ def compose_manifest_entry(
       - ``privacy: "private"``
       - all five impostor required fields present
       - ``content_hash`` populated
+
+    For a non-impostor (test/drift) bucket, pass ``corpus_role=None``
+    alongside ``use``/``split``/``ai_status`` overrides: the
+    ``corpus_role`` field is then omitted entirely and the five
+    impostor-only fields are not emitted, matching the hand-curated
+    drift entries (e.g. ``wordpress_archive_post2022_uncertain/``).
 
     ``manifest_relative_to`` is the directory the manifest will live
     in; the entry's ``path`` is computed relative to that directory
@@ -849,7 +855,6 @@ def compose_manifest_entry(
         "use": list(use),
         "split": split,
         "privacy": privacy,
-        "corpus_role": corpus_role,
         "content_hash": piece.content_hash,
         "source": piece.source_url,
     }
@@ -857,6 +862,10 @@ def compose_manifest_entry(
     # don't fire for date_written: null on undated entries.
     if entry["date_written"] is None:
         del entry["date_written"]
+    # corpus_role is optional in the schema; emit it only when set so a
+    # test/drift entry (corpus_role=None) carries no role field at all.
+    if corpus_role is not None:
+        entry["corpus_role"] = corpus_role
     # Impostor-required fields. Always emit for impostor entries; the
     # validator errors on missing ones.
     if corpus_role == "impostor":

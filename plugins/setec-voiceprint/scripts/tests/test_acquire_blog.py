@@ -126,6 +126,10 @@ def make_args(**overrides) -> argparse.Namespace:
         topic_match="medium",
         consent_status="fair_use_research",
         era="pre_chatgpt",
+        bucket="impostor",
+        ai_status=None,
+        notes_composite=None,
+        notes_description=None,
         since=None,
         until=None,
         max_posts=50,
@@ -440,6 +444,63 @@ def test_substack_end_to_end(tmp_path):
         or "impostor" in i.get("message", "").lower()
     ]
     assert impostor_errors == []
+
+
+def test_substack_test_bucket_end_to_end(tmp_path):
+    """--bucket test routes the same Substack acquisition into the
+    drift/test bucket: no corpus_role, no impostor-only fields,
+    use=[test_set], split=test, ai_status=mixed with composite_states.
+    This is the supported replacement for the old monkey-patch one-off.
+    """
+    output_dir = tmp_path / "ai-prose-baselines-private" / "blog" / \
+        "substack_archive_post_ai"
+    manifest_path = output_dir / "draft_manifest.jsonl"
+    args = make_args(
+        url=SUBSTACK_URL,
+        substack=True,
+        output_dir=str(output_dir),
+        emit_manifest=str(manifest_path),
+        # No --impostor-for / --consent-status: the test bucket needs neither.
+        impostor_for=None,
+        consent_status=None,
+        bucket="test",
+        ai_status="mixed",
+        notes_composite="ai_assisted,ai_generated_from_outline",
+        notes_description="Substack post; AI involvement varies by piece.",
+    )
+    fetcher = make_fetcher(SUBSTACK_URLS)
+
+    rc = ab.run(args, fetcher=fetcher)
+    assert rc == 0, "Test-bucket acquisition should succeed"
+
+    entries = read_manifest(manifest_path)
+    assert len(entries) == 3
+    impostor_only = {
+        "corpus_role", "impostor_for", "register_match",
+        "topic_match", "consent_status", "era", "acquired_via",
+    }
+    for e in entries:
+        # Drift/test shape.
+        assert e["use"] == ["test_set"]
+        assert e["split"] == "test"
+        assert e["ai_status"] == "mixed"
+        assert e["notes"]["composite_states"] == \
+            ["ai_assisted", "ai_generated_from_outline"]
+        # None of the impostor-only fields leak into a test entry.
+        assert impostor_only.isdisjoint(e.keys()), \
+            f"impostor-only fields leaked: {impostor_only & e.keys()}"
+        # Shared fields still present.
+        assert e["register"] == "blog_essay"
+        assert e["privacy"] == "private"
+        assert e["content_hash"].startswith("sha256:")
+
+    # ai_status=mixed entries with composite_states must validate clean.
+    report = mv.validate_manifest(manifest_path)
+    error_issues = [
+        i for i in report["issues"] if i.get("severity") == "error"
+    ]
+    assert error_issues == [], \
+        f"Test-bucket manifest should validate clean: {error_issues}"
 
 
 def test_substack_paid_post_is_skipped(tmp_path):
@@ -1092,33 +1153,48 @@ def test_sitemap_fetched_paid_post_is_skipped(tmp_path):
     ), "Paid post should not have a manifest entry"
 
 
-# --- Fix 5: --impostor-for required at argparse time ---------------
+# --- Fix 5: --impostor-for required for the impostor bucket --------
 
 
-def test_argparse_rejects_missing_impostor_for():
-    """`build_arg_parser().parse_args()` must error when --impostor-for
-    is omitted. Pre-fix, the flag defaulted to [] and the validator
-    rejected the resulting manifest at load time, after the run had
-    already spent its network budget.
+def test_run_rejects_missing_impostor_for_in_impostor_bucket():
+    """impostor_for is required for the (default) impostor bucket. The
+    check moved from argparse-time to run() so --bucket test can omit it,
+    but it still fails fast — before any network budget is spent (the
+    validation precedes source-type detection / fetching).
     """
     parser = ab.build_arg_parser()
+    args = parser.parse_args([
+        "https://example.com",
+        "--register", "blog_essay",
+        "--consent-status", "fair_use_research",
+    ])  # no --impostor-for; bucket defaults to impostor
+    fetcher = make_fetcher({})  # never reached — validation precedes network
     if pytest is not None:
         with pytest.raises(SystemExit):
-            parser.parse_args([
-                "https://example.com",
-                "--register", "blog_essay",
-                "--consent-status", "fair_use_research",
-            ])
+            ab.run(args, fetcher=fetcher)
     else:
         try:
-            parser.parse_args([
-                "https://example.com",
-                "--register", "blog_essay",
-                "--consent-status", "fair_use_research",
-            ])
-            assert False, "argparse should have rejected missing --impostor-for"
+            ab.run(args, fetcher=fetcher)
+            assert False, "run() should reject missing --impostor-for (impostor bucket)"
         except SystemExit:
             pass
+
+
+def test_run_allows_missing_impostor_for_in_test_bucket():
+    """--bucket test emits no impostor fields, so --impostor-for and
+    --consent-status are not required (the whole point of the bucket)."""
+    parser = ab.build_arg_parser()
+    args = parser.parse_args([
+        "https://example.com",
+        "--register", "blog_essay",
+        "--bucket", "test",
+    ])
+    # run() must NOT raise SystemExit on the missing-impostor-for check;
+    # it gets past validation to source detection (which the empty
+    # fixture fetcher fails cleanly, returning a nonzero — not a raise).
+    fetcher = make_fetcher({})
+    rc = ab.run(args, fetcher=fetcher)
+    assert isinstance(rc, int)
 
 
 def test_argparse_accepts_impostor_for_when_provided():
