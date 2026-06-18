@@ -1051,8 +1051,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     # Behavior.
     p.add_argument("--rate-limit", type=float, default=2.0,
                    help="Seconds between same-host requests (default: 2.0).")
-    p.add_argument("--user-agent",
-                   help="Override the User-Agent header.")
+    ac.add_user_agent_arg(p)
     p.add_argument("--dry-run", action="store_true",
                    help="Inventory what would be acquired without writing.")
     p.add_argument("--allow-public-output", action="store_true",

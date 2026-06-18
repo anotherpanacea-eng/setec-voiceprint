@@ -398,10 +398,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     # Behavior.
     p.add_argument("--dry-run", action="store_true",
                    help="Inventory what would be acquired without writing.")
-    p.add_argument("--allow-empty", action="store_true",
-                   help="Exit 0 even when nothing is acquired. By default a "
-                        "zero-output run that isn't a dedupe-only rerun "
-                        "(nothing matched the source/filters) fails.")
+    ac.add_allow_empty_arg(p)
     p.add_argument("--allow-public-output", action="store_true",
                    help=("Allow writing outside ai-prose-baselines-private/. "
                          "Acquired prose is corpus-baseline input; only use "
