@@ -72,6 +72,11 @@ def _load_reference_manifest(path: Path) -> list[tuple[str, str, Path | None]]:
         except json.JSONDecodeError as e:
             sys.stderr.write(f"  manifest line {line_no}: {e}; skipping\n")
             continue
+        if not isinstance(row, dict):
+            # #225: a valid-JSON-but-non-object row (array / number / string) has no .get —
+            # skip it rather than tracebacking.
+            sys.stderr.write(f"  manifest line {line_no}: not a JSON object; skipping\n")
+            continue
         src = str(row.get("id") or row.get("path") or row.get("text_path") or f"line{line_no}")
         if isinstance(row.get("text"), str):
             out.append((src, row["text"], None))
@@ -219,18 +224,21 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     target_path = Path(args.target)
     try:
         target_text = target_path.read_text(encoding="utf-8")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
+        # #225: invalid UTF-8 raises UnicodeDecodeError (a ValueError, not OSError) — bad input,
+        # not a crash.
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME,
                                   version=SCRIPT_VERSION, target_path=str(target_path),
                                   reason=f"cannot read --target: {e}", reason_category="bad_input")
-    # A missing/unreadable reference dir or manifest is bad INPUT, not a crash (#225 P2):
-    # _load_reference_* call read_text(), which raises OSError on a missing path.
+    # A missing/unreadable/non-UTF-8 reference dir or manifest is bad INPUT, not a crash (#225 P2):
+    # _load_reference_* call read_text(), which raises OSError on a missing path and
+    # UnicodeDecodeError on a non-UTF-8 manifest file.
     try:
         if args.reference_dir:
             loaded = _load_reference_dir(Path(args.reference_dir))
         else:
             loaded = _load_reference_manifest(Path(args.manifest))
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         which = "--reference-dir" if args.reference_dir else "--manifest"
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME,
                                   version=SCRIPT_VERSION, target_path=str(target_path),

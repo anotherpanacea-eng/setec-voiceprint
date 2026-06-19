@@ -198,3 +198,29 @@ def test_max_span_below_min_ngram_rejected(tmp_path):
     rc = oa.main(["--target", str(tgt), "--reference-dir", str(rdir),
                   "--min-ngram", "5", "--max-span", "3", "--json"])
     assert rc == 2
+
+
+# --- #225 P2 round-2: invalid UTF-8 + non-object JSONL rows -----------------
+
+def test_invalid_utf8_target_is_bad_input(tmp_path):
+    tgt = tmp_path / "bad.txt"; tgt.write_bytes(b"\xff\xfe not utf-8 \x80\x81")
+    rdir = tmp_path / "ref"; rdir.mkdir(); (rdir / "r.txt").write_text("some reference text here")
+    rc, env = _envelope(["--target", str(tgt), "--reference-dir", str(rdir), "--json"])
+    assert env["available"] is False and "bad_input" in json.dumps(env)
+
+
+def test_invalid_utf8_manifest_is_bad_input(tmp_path):
+    tgt = tmp_path / "t.txt"; tgt.write_text("alpha beta gamma delta epsilon")
+    man = tmp_path / "bad.jsonl"; man.write_bytes(b"\xff\xfe\x00 garbage bytes")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert env["available"] is False and "bad_input" in json.dumps(env)
+
+
+def test_non_object_jsonl_rows_skipped_not_traceback(tmp_path):
+    tgt = tmp_path / "t.txt"; tgt.write_text("alpha beta gamma delta epsilon zeta")
+    man = tmp_path / "m.jsonl"
+    man.write_text('[1,2,3]\n42\n"a bare string"\n'
+                   + json.dumps({"id": "a", "text": "alpha beta gamma delta epsilon zeta"}) + "\n")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert env["available"] is True                       # the non-object rows are skipped, not fatal
+    assert env["results"]["n_reference_docs"] == 1        # only the one valid object row is used
