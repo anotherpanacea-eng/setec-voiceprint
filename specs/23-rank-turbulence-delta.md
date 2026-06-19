@@ -4,7 +4,10 @@
 > rank-turbulence divergence (RTD) — that says *which words drive the difference*, the
 > attribution layer Burrows Delta's single aggregate score can't give.
 
-- **Status:** Draft
+- **Status:** Ready — adversarially reviewed 2026-06-19 (P1 fixes: **function-words-only M1 default**
+  to kill the topic confound; Z(α) normalization + reconstruction invariant pinned; **mandatory
+  self-exclusion** of the target from its own baseline; tie-rule + α-monotonicity numeric pins). M1
+  cleared to build.
 - **Tier:** near-term (stdlib, additive)
 - **GPU required:** no
 - **Upstream / prior art:**
@@ -33,19 +36,34 @@ later surface it alongside the Delta report; that wiring is out of scope here).
 
 ## Method
 
-Given a `--target` and a `--baseline-dir`/`--manifest`, build a word-frequency distribution for each,
-rank words by frequency within each system (rank 1 = most frequent; ties → shared/competition rank),
-and compute, over the union of words τ:
+**M1 is function-words-only by default** (P1 — topic confound). RTD over the *full* vocabulary is
+dominated by content words and measures **topic**, not style — a reviewer would (correctly) call it a
+topic detector. So M1 restricts both distributions to the shared **function-word set**
+(`stylometry_core.FUNCTION_WORDS`, the ~135-word list `voice_distance` / `idiolect_detector` already
+use), making it a genuine *stylometric* sibling to Burrows Delta. `--all-words` is an opt-in mode,
+explicitly labelled "topical, not stylometric," in the results `assumptions` and a warning.
 
-  D^R_α(target ‖ baseline) = Z(α) · Σ_τ | 1/[r_τ,target]^α − 1/[r_τ,baseline]^α |^{1/(α+1)}
+Given a `--target` and a `--baseline-dir`/`--manifest`, build a function-word frequency distribution
+for each, rank words by frequency within each system (rank 1 = most frequent; **competition "1224"
+ranking** for ties, ties shared), and compute over the union of (function) words τ the canonical
+rank-turbulence divergence (Dodds et al. 2020):
 
-where a word absent from one system takes a **tie-extended rank** (ranked just past that system's last
-word, ties shared) and Z(α) is the paper's normalization. The headline scalar is `rtd` (≥ 0; 0 iff the
-two rank distributions are identical). Each summand is the **per-word contribution** δ_τ; report the
-top-`--top-k` contributors in each direction — words **over-ranked in the target** vs **over-ranked in
-the baseline** — with their ranks in both systems. α is tunable (`--alpha`, default **1/3** per the
-allotaxonometry literature; α→0 emphasizes rare words, larger α emphasizes the top of the rank list).
-Pure stdlib (counting + ranking + arithmetic), deterministic.
+  D^R_α(target ‖ baseline) = Z(α) · Σ_τ | 1/[r_{τ,target}]^α − 1/[r_{τ,baseline}]^α |^{1/(α+1)}
+  with **Z(α) = ((α+1)/α) · (1/N_{1,2;α})** — the paper's prefactor `(α+1)/α` times the divisive
+  normalizer `1/N_{1,2;α}` (N is the normalization sum that makes the two single-system self-divergences
+  equal 1; pin its exact form to the paper in the build).
+
+A word absent from one system takes a **tie-extended rank** (ranked just past that system's last word,
+ties shared) — with α > 0 the term `1/r^α` is finite, so no divide-by-zero and absent words still
+contribute. The headline scalar is `rtd` (≥ 0; 0 iff the two rank distributions are identical).
+
+The **per-word contribution** reported in the output is the **bare summand**
+δ_τ = | 1/[r_{τ,target}]^α − 1/[r_{τ,baseline}]^α |^{1/(α+1)}, so the interpretability invariant is
+**Σ_τ δ_τ = rtd / Z(α)** (the contributions reconstruct the scalar; pinned in a test). Report the
+top-`--top-k` δ_τ in each direction — words **over-ranked in the target** vs **in the baseline** —
+with their ranks in both systems; **break contribution ties by word (lexicographic)** for deterministic
+output. α is tunable (`--alpha`, default **1/3** per the allotaxonometry literature; α→0 emphasizes
+rare words, larger α emphasizes the top of the rank list). Pure stdlib, deterministic.
 
 ## Contract (the testable interface)
 
@@ -53,10 +71,18 @@ Pure stdlib (counting + ranking + arithmetic), deterministic.
   already use — a target-vs-baseline stylometric axis; precedented multi-script surface, no new
   registration). No `claim_license_surfaces/` fragment needed (the surface exists).
 - **CLI:** `python3 plugins/setec-voiceprint/scripts/rank_turbulence_audit.py --target T
-  [--baseline-dir D | --manifest M] [--alpha 0.333] [--top-k 20] [--min-count 1] [--json] [--out F]`.
+  [--baseline-dir D | --manifest M] [--alpha 0.333] [--top-k 20] [--all-words] [--json] [--out F]`.
+  Default = **function-words-only**; `--all-words` opts into the full-vocab (topical) mode.
+- **Self-exclusion (mandatory, P1):** drop any baseline doc whose `Path.resolve()` equals the target's
+  (the house pattern — `voice_distance`'s drop loop, `general_imposters._exclude_target_path`), else the
+  target self-normalizes its own rank distribution and `rtd` collapses toward 0. Emit a `dropped` count
+  in `assumptions` + a stderr note; if the baseline is empty after the drop → `bad_input`.
 - **JSON envelope:** via `output_schema.build_output()` with a `ClaimLicense` block. `results`:
-  `rtd`, `alpha`, `n_vocab`, `top_target` / `top_baseline` (each a list of `{word, rank_target,
-  rank_baseline, contribution}`), `target_tokens`, `n_baseline_docs`, `assumptions`.
+  `rtd`, `alpha`, `mode` ("function_words" | "all_words"), `n_vocab`, `top_target` / `top_baseline`
+  (each a list of `{word, rank_target, rank_baseline, contribution}`), `target_tokens`,
+  `n_baseline_docs`, `assumptions` (`{mode, alpha, tie_rule: "competition", normalization, dropped_self,
+  topic_caveat}`). The unavailable/empty cases route through `build_error_output(...,
+  reason_category="bad_input")` (like `general_imposters`).
 - **Claim license — licenses:** "a rank-based divergence between the target's and the named baseline's
   word-rank distributions, with per-word contributions identifying which words drive it." **Refuses:**
   any AI/human or authorship verdict; any claim that a high RTD means 'different author' or 'AI' (it is
@@ -78,15 +104,24 @@ Pure stdlib (counting + ranking + arithmetic), deterministic.
 `plugins/setec-voiceprint/scripts/tests/test_rank_turbulence_audit.py`:
 
 - **deterministic-output**; **envelope-shape**; **claim-license-present** + **refuses-verdict** (no
-  `verdict`/`is_ai` key; `does_not_license` carries the "not authorship / not AI" caveat).
+  `verdict`/`is_ai` key; `does_not_license` carries the "not authorship / not AI / topic moves it"
+  caveat).
+- **default-is-function-words** — a run with no `--all-words` restricts to the function-word set
+  (`results.mode == "function_words"`); `--all-words` flips the mode + sets the topic-caveat warning.
+- **self-exclusion** — target placed INSIDE its own `--baseline-dir` is dropped (`assumptions.dropped_self
+  >= 1`, stderr note); `rtd` is computed against the remaining docs, not collapsed to ~0; empty-after-drop
+  → `bad_input`.
 - **graceful-degradation** — empty baseline or empty target → `available:false` `bad_input`.
-- **numeric pins:** identical target/baseline word distributions → `rtd` ≈ 0 and empty/zero
-  contributions; a target that heavily over-uses a word the baseline rarely uses → that word tops
-  `top_target` with a positive contribution; **non-negativity** (`rtd ≥ 0`); **per-word sum** equals
-  `rtd / Z(α)` (the contributions reconstruct the scalar, the interpretability invariant);
-  **α-monotonicity sanity** (changing α reorders rare-vs-common emphasis as documented).
+- **numeric pins:** identical target/baseline distributions → `rtd` ≈ 0, empty contributions;
+  **non-negativity** (`rtd ≥ 0`); **reconstruction invariant** — `sum(δ_τ) == pytest.approx(rtd / Z(α))`
+  (contributions are the bare summands); a target over-using a function word the baseline rarely uses →
+  that word tops `top_target` with positive δ.
+- **α-monotonicity (concrete)** — a fixture where a common function word A and a rare one B swap the
+  top-1 contribution between `--alpha 0.1` and `--alpha 1.0`; assert the swap (pins that α dials
+  rare-vs-common emphasis, not a vague "as documented").
 - **tie-extended rank** — a word present only in the target is assigned the tie-extended baseline rank
-  (tested), so absent words contribute without a divide-by-zero or a dropped term.
+  (tested), so absent words contribute without a divide-by-zero or a dropped term; **competition "1224"**
+  tie rule pinned.
 
 ## Calibration posture
 
@@ -97,15 +132,13 @@ later → `empirically_oriented` with a PROVENANCE entry. The default emits no d
 ## Out of scope / non-goals
 
 - **Not** a modification of `voice_distance` (additive companion; wiring RTD into the Delta report is a
-  later, separate change). No authorship/AI verdict. Not a topic-divergence claim (RTD over content
-  words moves with topic — `do_not_use_when` topic-mismatched; an optional `--function-words-only`
-  mode that restricts to a function-word list is a possible M2, not M1).
+  later, separate change). No authorship/AI verdict. The full-vocab `--all-words` mode is **topical, not
+  stylometric** by design (off by default) — it is a diagnostic, never an authorship/AI claim.
 
 ## Open questions
 
-1. **α default** — 1/3 (allotaxonometry default) vs a stylometry-tuned value; expose `--alpha`, decide
-   the default with the maintainer.
-2. **Function-words-only mode** — restrict the distribution to function words (closer to Burrows Delta,
-   topic-robust) as a flag/M2? Decide whether M1 ships full-vocab only.
-3. **Tie-handling** — competition ("1224") vs dense ("1223") ranking for frequency ties; pick the one
-   the paper uses and pin it in a test.
+1. **α default** — 1/3 (allotaxonometry default) vs a stylometry-tuned value; `--alpha` exposed, the
+   default is a maintainer call (a calibration question, not a build blocker).
+2. ~~**Function-words-only mode**~~ **Resolved: function-words is the M1 default** (topic-robust,
+   genuinely stylometric); `--all-words` is the opt-in full-vocab/topical mode.
+3. ~~**Tie-handling**~~ **Resolved: competition "1224"** ranking, ties shared; pinned in a test.
