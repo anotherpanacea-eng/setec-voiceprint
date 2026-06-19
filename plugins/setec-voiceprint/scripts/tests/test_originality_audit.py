@@ -151,3 +151,50 @@ def test_manifest_reference(tmp_path):
     tgt = tmp_path / "t.txt"; tgt.write_text(_REF[0][1])     # verbatim of doc a
     _, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
     assert env["available"] is True and env["results"]["coverage"] == pytest.approx(1.0)
+
+
+# --- #225 P2 regressions ---------------------------------------------------
+
+def test_missing_reference_dir_is_bad_input(tmp_path):
+    """A missing --reference-dir / --manifest must return a bad_input envelope, not traceback."""
+    tgt = tmp_path / "t.txt"; tgt.write_text("alpha beta gamma delta epsilon")
+    rc, env = _envelope(["--target", str(tgt),
+                         "--reference-dir", str(tmp_path / "does_not_exist"), "--json"])
+    assert env["available"] is False
+    assert "bad_input" in json.dumps(env)
+    assert rc == 3
+
+
+def test_missing_manifest_is_bad_input(tmp_path):
+    tgt = tmp_path / "t.txt"; tgt.write_text("alpha beta gamma delta epsilon")
+    rc, env = _envelope(["--target", str(tgt),
+                         "--manifest", str(tmp_path / "nope.jsonl"), "--json"])
+    assert env["available"] is False and "bad_input" in json.dumps(env)
+
+
+def test_span_cap_is_surfaced_not_hidden(tmp_path):
+    """The per-span cap must be surfaced: when hit, longest_match_tokens is a lower bound and
+    longest_match_capped is True (raising --max-span recovers the exact value)."""
+    long_ref = " ".join(f"w{i}" for i in range(40))
+    rdir = tmp_path / "ref"; rdir.mkdir(); (rdir / "r.txt").write_text(long_ref)
+    tgt = tmp_path / "t.txt"; tgt.write_text(long_ref)            # full verbatim of the reference
+    # cap below the true 40-token span -> capped True, longest == cap
+    rc, env = _envelope(["--target", str(tgt), "--reference-dir", str(rdir),
+                         "--min-ngram", "3", "--max-span", "10", "--json"])
+    r = env["results"]
+    assert r["max_span_cap"] == 10
+    assert r["longest_match_tokens"] == 10 and r["longest_match_capped"] is True
+    assert "span_cap" in r["assumptions"]
+    # raising the cap recovers the exact longest span and clears the flag
+    _, env2 = _envelope(["--target", str(tgt), "--reference-dir", str(rdir),
+                         "--min-ngram", "3", "--max-span", "256", "--json"])
+    assert env2["results"]["longest_match_tokens"] == 40
+    assert env2["results"]["longest_match_capped"] is False
+
+
+def test_max_span_below_min_ngram_rejected(tmp_path):
+    rdir, tgt = _files(tmp_path)
+    # validation exits 2 before emitting any JSON — call main() directly (not _envelope)
+    rc = oa.main(["--target", str(tgt), "--reference-dir", str(rdir),
+                  "--min-ngram", "5", "--max-span", "3", "--json"])
+    assert rc == 2

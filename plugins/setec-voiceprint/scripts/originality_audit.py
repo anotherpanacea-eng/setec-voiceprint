@@ -108,12 +108,17 @@ def _match_len(target: list[str], i: int, ref_search: str, max_len: int) -> int:
 
 
 def audit_originality(target_text: str, reference: list[tuple[str, str]], *,
-                      min_ngram: int = DEFAULT_MIN_NGRAM) -> dict[str, Any]:
+                      min_ngram: int = DEFAULT_MIN_NGRAM,
+                      max_span: int = _MAX_SPAN) -> dict[str, Any]:
     """Greedily cover the target with longest left-to-right reference matches (DJ Search).
 
     Returns the value-level results: `coverage`/`originality`, span stats, and attribution for the
     longest spans. Deterministic. Raises ValueError on an empty target or empty reference (the caller
-    maps that to a bad_input envelope — no division by zero, no silent 1.0)."""
+    maps that to a bad_input envelope — no division by zero, no silent 1.0).
+
+    `max_span` bounds each per-position match (search cost). It is SURFACED, not hidden (#225 P2):
+    when a match reaches the cap, `longest_match_tokens` is a LOWER BOUND and `longest_match_capped`
+    is True — raise --max-span for the exact value rather than silently reporting the cap."""
     target = _tokens(target_text)
     if not target:
         raise ValueError("target has no word tokens")
@@ -131,7 +136,7 @@ def audit_originality(target_text: str, reference: list[tuple[str, str]], *,
     longest_overall = 0
     i = 0
     while i < n:
-        L = _match_len(target, i, ref_search, _MAX_SPAN)
+        L = _match_len(target, i, ref_search, max_span)
         longest_overall = max(longest_overall, L)
         if L >= min_ngram:
             covered += L
@@ -165,6 +170,10 @@ def audit_originality(target_text: str, reference: list[tuple[str, str]], *,
         "coverage": round(coverage, 6),
         "originality": round(1.0 - coverage, 6),
         "longest_match_tokens": longest_overall,
+        # #225 P2: the per-span search is capped at max_span_cap; when hit, longest_match_tokens
+        # is a LOWER BOUND (the true span may be longer). Surfaced so the stat isn't silently false.
+        "max_span_cap": max_span,
+        "longest_match_capped": longest_overall >= max_span,
         "n_matched_spans": len(spans),
         "matched_token_histogram": dict(sorted(histogram.items(), key=lambda kv: int(kv[0]))),
         "attribution": attribution,
@@ -179,6 +188,10 @@ def audit_originality(target_text: str, reference: list[tuple[str, str]], *,
             "corpus_dependence": "reconstructibility is corpus- and register-dependent — a "
                                  "thin/narrow reference pool inflates apparent originality; "
                                  "ESL/dialect or genre-formula text is not adjudicated here",
+            "span_cap": f"per-span search is capped at max_span_cap={max_span} tokens; when "
+                        "longest_match_capped is true, longest_match_tokens is a LOWER BOUND "
+                        "(raise --max-span for the exact value). Coverage is unaffected (a capped "
+                        "match continues from the next position).",
         },
     }
 
@@ -210,10 +223,18 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME,
                                   version=SCRIPT_VERSION, target_path=str(target_path),
                                   reason=f"cannot read --target: {e}", reason_category="bad_input")
-    if args.reference_dir:
-        loaded = _load_reference_dir(Path(args.reference_dir))
-    else:
-        loaded = _load_reference_manifest(Path(args.manifest))
+    # A missing/unreadable reference dir or manifest is bad INPUT, not a crash (#225 P2):
+    # _load_reference_* call read_text(), which raises OSError on a missing path.
+    try:
+        if args.reference_dir:
+            loaded = _load_reference_dir(Path(args.reference_dir))
+        else:
+            loaded = _load_reference_manifest(Path(args.manifest))
+    except OSError as e:
+        which = "--reference-dir" if args.reference_dir else "--manifest"
+        return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME,
+                                  version=SCRIPT_VERSION, target_path=str(target_path),
+                                  reason=f"cannot read {which}: {e}", reason_category="bad_input")
 
     # Self-exclusion: never let the target reconstruct itself if it sits in its own reference
     # pool (mirrors general_imposters' drop-self) — otherwise coverage trivially collapses to 1.0.
@@ -222,7 +243,8 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     reference = [(src, text) for src, text, pth in loaded if pth != target_abs]
 
     try:
-        results = audit_originality(target_text, reference, min_ngram=args.min_ngram)
+        results = audit_originality(target_text, reference, min_ngram=args.min_ngram,
+                                    max_span=args.max_span)
     except ValueError as e:
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME,
                                   version=SCRIPT_VERSION, target_path=str(target_path),
@@ -255,12 +277,20 @@ def main(argv: list[str] | None = None) -> int:
     g.add_argument("--manifest", help="JSONL manifest of the reference pool (id + text|text_path).")
     ap.add_argument("--min-ngram", type=int, default=DEFAULT_MIN_NGRAM,
                     help=f"Minimum verbatim span length counted as reconstructed (default {DEFAULT_MIN_NGRAM}).")
+    ap.add_argument("--max-span", type=int, default=_MAX_SPAN,
+                    help=f"Cap on a single matched span, bounding the per-position search (default "
+                         f"{_MAX_SPAN}). Surfaced as max_span_cap + longest_match_capped; raise it for "
+                         "the exact longest_match_tokens on corpora with very long verbatim reuse.")
     ap.add_argument("--json", action="store_true", help="Emit the JSON envelope to stdout.")
     ap.add_argument("--out", help="Write the JSON envelope to this path.")
     args = ap.parse_args(argv)
 
     if args.min_ngram < 1:
         sys.stderr.write("[originality_audit] --min-ngram must be >= 1\n")
+        return 2
+    if args.max_span < args.min_ngram:
+        sys.stderr.write("[originality_audit] --max-span must be >= --min-ngram "
+                         "(a cap below the minimum span counts nothing)\n")
         return 2
 
     envelope = _run(args)
