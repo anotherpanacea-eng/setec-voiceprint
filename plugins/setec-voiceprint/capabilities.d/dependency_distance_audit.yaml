@@ -1,0 +1,54 @@
+entries:
+- id: dependency_distance_audit
+  script_path: plugins/setec-voiceprint/scripts/dependency_distance_audit.py
+  surface: voice_coherence
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: syntactic-shape
+  purpose: 'Descriptive syntactic-SHAPE profile: the DISTRIBUTION of dependency distances
+    (the linear span of each syntactic link, d = |i - head.i|) — the histogram, the
+    adjacent-link share (d=1), and the long-range tail (d>=threshold). The scalar MDD
+    (per-sentence mean/SD) already ships as variance_audit.mdd_stats and is REUSED here, not
+    re-implemented; the distribution is the additive contribution (arXiv:2211.14620). Parser-tier
+    (reuses the shared spaCy pipeline); abstains (available:false / missing_dependency) without it.
+    NOT a verdict: not authorship/AI, not a quality/readability score, and NOT length-controlled
+    (MDD covaries with sentence length; mean_sentence_length co-reported). Claim-license refuses
+    those inferences; thresholds operator-side / PROVISIONAL.
+
+    '
+  use_when:
+  - You want a descriptive syntactic-complexity profile (how long-range a writer's dependencies run)
+  - You want the dependency-distance distribution, not just the mean (which mdd_stats already gives)
+  - Target is English, >= ~150 words, and a dependency parser is installed
+  do_not_use_when:
+  - No spaCy / en_core_web_sm available (the surface abstains)
+  - You want an authorship/AI verdict or a writing-quality judgment
+  - Non-English text (MDD norms are language-specific), or a length-controlled reading
+  inputs:
+    target: prose/markdown text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: spaCy dependency parse (CPU); reuses the shared variance_audit._NLP pipeline.
+    length_floor_words: 150
+  registers:
+  - blog_essay
+  - testimony_policy
+  - technical_documentation
+  dependencies:
+    python:
+    - spacy
+    python_optional: []
+  examples:
+  - description: Dependency-distance distribution of a document
+    cmd: python3 plugins/setec-voiceprint/scripts/dependency_distance_audit.py target.md --json
+  - description: With a custom long-range threshold
+    cmd: python3 plugins/setec-voiceprint/scripts/dependency_distance_audit.py target.md
+      --long-threshold 5
+  references:
+  - plugins/setec-voiceprint/specs/24-dependency-distance.md
+  - 'The distribution of syntactic dependency distances (arXiv:2211.14620): https://arxiv.org/abs/2211.14620'
