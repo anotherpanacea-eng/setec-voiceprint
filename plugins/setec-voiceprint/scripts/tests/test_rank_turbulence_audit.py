@@ -139,3 +139,14 @@ def test_empty_baseline_bad_input(tmp_path):
     tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
     rc, env = _envelope(["--target", str(tgt), "--baseline-dir", str(empty), "--json"])
     assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
+
+
+def test_missing_baseline_is_bad_input(tmp_path):
+    """#226 P2: a missing --baseline-dir / --manifest must return bad_input, not traceback."""
+    tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
+    rc, env = _envelope(["--target", str(tgt),
+                         "--baseline-dir", str(tmp_path / "does_not_exist"), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
+    rc2, env2 = _envelope(["--target", str(tgt),
+                           "--manifest", str(tmp_path / "nope.jsonl"), "--json"])
+    assert env2["available"] is False and env2["reason_category"] == "bad_input"
