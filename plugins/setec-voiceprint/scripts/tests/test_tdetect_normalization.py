@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Tests for the T-Detect Student-t tail normalization (spec 25) in fast_detect_curvature.py.
 
-Opt-in `--tail student-t` adds the tail-aware `p_value_t` (the deliverable); the default gaussian
-output is unchanged. All torch-free (stub `score_fn`). The exact formula, the heavier-tails property,
-the default-preservation, and the p_value_t='NOT P(AI)' caveat are pinned."""
+Opt-in `--tail student-t` adds the T-Detect SCORE `curvature_t` (the deliverable — the statistic the
+paper exposes) plus a secondary, uncalibrated `p_value_t` tail aid; the default gaussian output is
+unchanged. All torch-free (stub `score_fn`). The exact formula, the heavier-tails property of the aid,
+the default-preservation, the uncalibrated-p_value_t caveat, and the t_df<=2 guards (CLI + direct
+caller) are pinned."""
 
 from __future__ import annotations
 
@@ -54,8 +56,11 @@ def test_exact_formula():
     assert t["t_df"] == 5 and t["tail"] == "student-t"
 
 
-def test_p_value_is_the_deliverable():
+def test_curvature_t_is_the_deliverable():
+    # The deliverable is the SCORE curvature_t (the statistic the paper exposes), a global rescale
+    # of the Gaussian curvature_score; p_value_t is the secondary, derived tail aid.
     t = fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=5)
+    assert t["curvature_t"] == pytest.approx(t["curvature_score"] / math.sqrt(5 / 3))
     assert t["p_value_t"] == pytest.approx(float(student_t.sf(t["curvature_t"], df=5)))
     assert 0.0 < t["p_value_t"] < 1.0
 
@@ -87,16 +92,27 @@ def test_student_t_caveat_and_no_verdict():
     t = fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=5)
     env = fd.compose_envelope(target_path=None, target_words=10, results=t)
     dnl = env["claim_license"]["does_not_license"]
-    assert "p_value_t" in dnl and "NOT a probability the text is AI" in dnl
+    # caveat leads with curvature_t as the deliverable + flags p_value_t as uncalibrated, not P(AI)
+    assert "curvature_t" in dnl and "deliverable" in dnl
+    assert "p_value_t" in dnl and "UNCALIBRATED" in dnl
+    assert "NOT a probability the text is AI" in dnl
     assert not any(k in t for k in ("verdict", "is_ai", "label", "decision"))
 
 
-# --- nu guard (via main, before backend) -----------------------------------
+# --- nu guard: CLI (before backend) AND direct caller of audit() ------------
 
 def test_t_df_guard_rejects_le_2(capsys):
     rc = fd.main(["/nonexistent/target.txt", "--tail", "student-t", "--t-df", "2"])
     assert rc == 2
     assert "must be > 2" in capsys.readouterr().err
+
+
+def test_audit_direct_caller_t_df_le_2_raises():
+    # P2 (#228): a direct caller of audit() bypasses the CLI guard — audit() must fail loud
+    # rather than divide by zero / take sqrt of a negative at nu<=2.
+    for nu in (2, 1, 0, -1):
+        with pytest.raises(ValueError, match="t_df must be > 2"):
+            fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=nu)
 
 
 def test_t_df_guard_not_triggered_in_gaussian(tmp_path):
