@@ -123,7 +123,10 @@ def build_comparison(cosine: float, features: dict[str, Any]) -> list[dict[str, 
         pair = features.get(name)
         if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
             continue
-        t, c = float(pair[0]), float(pair[1])
+        try:                                    # #231: a non-numeric pair must not traceback here
+            t, c = float(pair[0]), float(pair[1])
+        except (TypeError, ValueError):
+            continue
         sim = feature_similarity(t, c, scale)
         rows.append(
             {
@@ -181,22 +184,73 @@ def fit_residual(corpus: list[dict[str, Any]]) -> dict[str, Any] | None:
     }
 
 
+def _named_features(text: str) -> dict[str, float]:
+    """Compute the curated named features for one text via the existing audits.
+    `mean_dependency_distance` is included only when the spaCy parser tier is
+    available (mdd_stats returns None otherwise — it is then simply absent)."""
+    import variance_audit as va  # type: ignore
+    words = va.split_words(text)
+    sents = va.split_sentences(text)
+    feats: dict[str, float] = {
+        "burstiness_B": float(va.sentence_length_stats(sents)["burstiness_B"]),
+        "mattr": float(va.mattr(words)),
+        "mtld": float(va.mtld(words)),
+        "function_word_ratio": float(va.function_word_fingerprint(words)["function_word_ratio"]),
+    }
+    mdd = va.mdd_stats(text)
+    if mdd is not None:
+        feats["mean_dependency_distance"] = float(mdd["mean"])
+    return feats
+
+
 def compute_inputs(target: Path, comparison: Path) -> tuple[float, dict[str, Any]]:
-    """Real path: LUAR cosine (voice_fingerprint) + named feature values (existing
-    audits). Needs the style-embedding tier (transformers + torch), NOT available
-    in CI — the tests monkeypatch this seam. Fail-loud if the tier is absent."""
-    raise RuntimeError(
-        "cosine_explanation real-input path requires the style-embedding tier "
-        "(transformers + torch) for the LUAR cosine; install it, or pass "
-        "--inputs-json with a precomputed {cosine, features}."
-    )
+    """Real path: the LUAR document cosine (voice_fingerprint) + named feature values
+    (variance_audit), for the target vs the comparison. Raises ``RuntimeError`` when the
+    style-embedding tier (transformers + torch / numpy) is absent — surfaced upstream as
+    ``missing_dependency`` — and ``ValueError`` on unreadable input (bad_input). The LUAR
+    weights are not CI-available, so the tests exercise this via ``--inputs-json`` or by
+    monkeypatching this seam; the production path here computes for real when the tier exists."""
+    try:
+        target_text = target.read_text(encoding="utf-8")
+        comparison_text = comparison.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ValueError(f"cannot read input text: {exc}")
+
+    import voice_fingerprint as vf  # type: ignore
+    try:
+        import numpy as np  # type: ignore
+        encoder = vf._load_encoder(vf.DEFAULT_MODEL)
+        tvec = np.asarray(encoder.encode([target_text]))[0]
+        cvec = np.asarray(encoder.encode([comparison_text]))[0]
+    except (ImportError, vf.VoiceFingerprintError) as exc:
+        raise RuntimeError(
+            "cosine_explanation real-input path requires the style-embedding tier "
+            f"(transformers + torch + numpy) for the LUAR cosine: {exc}. Install it, or "
+            "pass --inputs-json with a precomputed {cosine, features}."
+        )
+    cosine = vf._cosine(tvec, cvec)
+
+    tf, cf = _named_features(target_text), _named_features(comparison_text)
+    features = {name: [tf[name], cf[name]] for name in tf if name in cf}
+    return float(cosine), features
 
 
 def load_injected(path: Path) -> tuple[float, dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or "cosine" not in data or "features" not in data:
         raise ValueError("--inputs-json must be a JSON object with 'cosine' + 'features'")
-    return float(data["cosine"]), dict(data["features"])
+    if not isinstance(data["cosine"], (int, float)) or isinstance(data["cosine"], bool):
+        raise ValueError("--inputs-json 'cosine' must be a number")
+    feats = data["features"]
+    if not isinstance(feats, dict):
+        raise ValueError("--inputs-json 'features' must be an object mapping name -> [target, comparison]")
+    # #231 P2: validate each feature value up front so a malformed injected feature is a clean
+    # bad_input error, not a downstream traceback (and not silently dropped).
+    for name, pair in feats.items():
+        if not (isinstance(pair, (list, tuple)) and len(pair) == 2
+                and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in pair)):
+            raise ValueError(f"--inputs-json feature {name!r} must be [target_number, comparison_number]")
+    return float(data["cosine"]), dict(feats)
 
 
 def build_results(
@@ -379,8 +433,11 @@ def main(argv: list[str] | None = None) -> int:
             return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
         try:
             cosine, features = compute_inputs(target_path, args.comparison)
-        except RuntimeError as exc:
+        except RuntimeError as exc:                          # absent style-embedding tier
             env = _error_envelope(str(exc), "missing_dependency", target_path)
+            return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
+        except (ValueError, OSError) as exc:                 # unreadable/invalid input, not a crash
+            env = _error_envelope(f"--comparison: {exc}", "bad_input", target_path)
             return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
         inputs_source = "computed"
         provenance = {"inputs_source": "computed",
@@ -395,15 +452,32 @@ def main(argv: list[str] | None = None) -> int:
         return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
 
     fit = None
+    fit_warning = None
     if args.fit_baseline is not None:
+        # #231 P2: a REQUESTED --fit-baseline that cannot be read/parsed is bad input (the operator
+        # asked for it), not a silent no-op; an unusable-but-parseable corpus (too few rows / no
+        # numpy) surfaces a warning rather than vanishing.
         try:
-            corpus = json.loads(args.fit_baseline.read_text(encoding="utf-8"))
-            fit = fit_residual(corpus if isinstance(corpus, list) else [])
-        except (OSError, json.JSONDecodeError):
-            fit = None
+            raw_corpus = args.fit_baseline.read_text(encoding="utf-8")
+            corpus = json.loads(raw_corpus)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            env = _error_envelope(f"--fit-baseline: cannot read/parse corpus: {exc}",
+                                  "bad_input", target_path)
+            return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
+        if not isinstance(corpus, list):
+            env = _error_envelope("--fit-baseline: corpus must be a JSON array of "
+                                  "{cosine, features} rows.", "bad_input", target_path)
+            return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
+        fit = fit_residual(corpus)
+        if fit is None:
+            fit_warning = ("--fit-baseline corpus was valid JSON but unusable for an OLS fit "
+                           "(fewer rows than named features + 2, or numpy unavailable); no "
+                           "explained/residual split was computed.")
 
     results = build_results(cosine=cosine, rows=rows, inputs_source=inputs_source,
                             fit=fit, provenance=provenance)
+    if fit_warning:
+        results["fit_baseline_warning"] = fit_warning
     envelope = compose_envelope(
         target_path=target_path, target_words=0, results=results,
         licenses_text=args.licenses, does_not_license_text=args.does_not_license,

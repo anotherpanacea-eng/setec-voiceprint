@@ -127,14 +127,68 @@ def test_injected_vs_computed_provenance(tmp_path, monkeypatch):
     assert _results(env2)["inputs_source"] == "computed"
 
 
-def test_computed_path_without_luar_is_missing_dependency(tmp_path):
-    target = tmp_path / "t.txt"; target.write_text("x", encoding="utf-8")
-    comp = tmp_path / "c.txt"; comp.write_text("y", encoding="utf-8")
+def test_computed_path_without_luar_is_missing_dependency(tmp_path, monkeypatch):
+    # #231 P1: an ABSENT style-embedding tier -> missing_dependency (deterministic: simulate the
+    # encoder raising VoiceFingerprintError, rather than depending on whether transformers is here).
+    import voice_fingerprint as vf  # type: ignore
+    def _no_tier(model, device=None):
+        raise vf.VoiceFingerprintError("transformers not installed")
+    monkeypatch.setattr(vf, "_load_encoder", _no_tier)
+    target = tmp_path / "t.txt"; target.write_text("some real argument text here", encoding="utf-8")
+    comp = tmp_path / "c.txt"; comp.write_text("a different argument text here", encoding="utf-8")
     out = tmp_path / "o.json"
     ce.main([str(target), "--comparison", str(comp), "--out", str(out)])
     env = json.loads(out.read_text(encoding="utf-8"))
     assert env["available"] is False
     assert "missing_dependency" in json.dumps(env)
+
+
+def test_computed_path_works_when_tier_present(tmp_path, monkeypatch):
+    # #231 P1: the production path must actually COMPUTE when the tier is present (it previously
+    # always raised RuntimeError). Stub only the encoder; the named features run for real.
+    import numpy as np  # type: ignore
+    import voice_fingerprint as vf  # type: ignore
+
+    class _StubEnc:
+        def encode(self, texts):
+            return np.array([[float(len(t)), float(t.count("e")), 1.0] for t in texts])
+
+    monkeypatch.setattr(vf, "_load_encoder", lambda model, device=None: _StubEnc())
+    target = tmp_path / "t.txt"
+    target.write_text("The harbor was quiet at dawn, because the tide turned; therefore boats came.",
+                      encoding="utf-8")
+    comp = tmp_path / "c.txt"
+    comp.write_text("Terse. Clipped. Punchy prose. No flourish here at all, however brief.",
+                    encoding="utf-8")
+    out = tmp_path / "o.json"
+    rc = ce.main([str(target), "--comparison", str(comp), "--out", str(out)])
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert rc == 0 and env["available"] is True
+    r = env["results"]
+    assert r["inputs_source"] == "computed"
+    assert r["named_feature_comparison"] and isinstance(r["luar_cosine"], float)
+
+
+def test_malformed_injected_feature_is_bad_input(tmp_path):
+    # #231 P2: a non-numeric injected feature value must be a clean bad_input, not a traceback.
+    rc, env = _run_injected(tmp_path, {"cosine": 0.5, "features": {"mattr": ["a", "b"]}})
+    assert env["available"] is False and "bad_input" in json.dumps(env)
+
+
+def test_fit_baseline_unreadable_is_bad_input(tmp_path):
+    # #231 P2: a REQUESTED --fit-baseline that can't be read/parsed is bad_input, not silently ignored.
+    rc, env = _run_injected(tmp_path, INPUTS_HI, "--fit-baseline", str(tmp_path / "nope.json"))
+    assert env["available"] is False and "bad_input" in json.dumps(env)
+
+
+def test_fit_baseline_insufficient_corpus_warns(tmp_path):
+    # #231 P2: a valid-but-unusable corpus (too few rows) surfaces a warning, not a silent no-op.
+    corpus = tmp_path / "corpus.json"
+    corpus.write_text(json.dumps([{"cosine": 0.5, "features": {}}]))   # 1 row, far too few
+    rc, env = _run_injected(tmp_path, INPUTS_HI, "--fit-baseline", str(corpus))
+    assert env["available"] is True
+    assert "fit_baseline" not in env["results"]                # no fit computed
+    assert "fit_baseline_warning" in env["results"]            # but NOT silent
 
 
 def test_no_inputs_is_bad_input(tmp_path):
