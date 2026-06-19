@@ -151,10 +151,12 @@ def normalize_claims(raw: Any, paragraphs: list[str]) -> list[dict[str, Any]]:
     """Validate + normalize a raw judge ``claims`` list. Drops a claim with an
     out-of-range index, an empty span, a ``claim_span`` that is NOT a verbatim
     (whitespace-normalized) substring of the paragraph it is attributed to (#229:
-    a hallucinated claim the judge did not actually quote is rejected), or
-    critical_questions that is not a dict of the three axes with valid statuses
-    (an unknown status → ``absent``, the conservative no-coverage default; never
-    a fabricated ``present``)."""
+    a hallucinated claim the judge did not actually quote is rejected), or whose
+    ``critical_questions`` is not a dict carrying a VALID status (one of
+    ``present`` / ``partial`` / ``absent``) for every axis. A malformed or missing
+    status is NOT coerced to ``absent`` — ``absent`` is a substantive coverage-gap
+    finding, so manufacturing it from unparseable output would invent a gap (#230);
+    such a claim is dropped instead. Never a fabricated ``present`` or ``absent``."""
     out: list[dict[str, Any]] = []
     if not isinstance(raw, list):
         return out
@@ -174,10 +176,15 @@ def normalize_claims(raw: Any, paragraphs: list[str]) -> list[dict[str, Any]]:
             continue   # hallucinated claim — not actually present in the cited paragraph
         if not isinstance(cqs, dict):
             continue
-        norm_cq = {
-            cq: (cqs.get(cq) if cqs.get(cq) in CQ_STATUSES else "absent")
-            for cq in CRITICAL_QUESTIONS
-        }
+        # #230: a malformed/missing CQ status must NOT be coerced to "absent" — "absent" is a
+        # SUBSTANTIVE coverage-gap finding, and manufacturing it from unparseable judge output would
+        # invent a gap the judge never reported. A claim with any CQ status not in CQ_STATUSES is
+        # untrustworthy judge output for that claim, so drop it (as with a hallucinated span) rather
+        # than fabricate coverage.
+        cq_vals = {cq: cqs.get(cq) for cq in CRITICAL_QUESTIONS}
+        if any(v not in CQ_STATUSES for v in cq_vals.values()):
+            continue
+        norm_cq = dict(cq_vals)
         out.append(
             {
                 "claim_span": span,

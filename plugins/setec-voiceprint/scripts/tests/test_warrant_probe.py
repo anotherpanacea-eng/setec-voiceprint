@@ -128,26 +128,30 @@ def test_missing_sdk_is_missing_dependency(tmp_path, monkeypatch):
     assert "missing_dependency" in json.dumps(env)
 
 
-def test_normalize_claims_coerces_unknown_status_and_drops_hallucinated():
-    paras = ["paragraph zero has a real claim stated plainly here"]
+def test_normalize_claims_drops_malformed_status_and_hallucinated():
+    paras = ["paragraph zero has a real claim and a second real claim stated plainly here"]
+    full = {"warrant": "present", "backing": "absent", "rebuttal": "absent"}
     kept = warrant_judge.normalize_claims(
         [
-            {"claim_span": "real claim", "paragraph_index": 0,
-             "critical_questions": {"warrant": "present", "backing": "BOGUS"}},
-            {"claim_span": "  ", "paragraph_index": 0,
-             "critical_questions": {"warrant": "present"}},
-            {"claim_span": "x", "paragraph_index": 9,
-             "critical_questions": {"warrant": "present"}},
+            {"claim_span": "real claim", "paragraph_index": 0,                       # #230 malformed status
+             "critical_questions": {"warrant": "present", "backing": "BOGUS", "rebuttal": "absent"}},
+            {"claim_span": "real claim", "paragraph_index": 0,                       # #230 missing rebuttal
+             "critical_questions": {"warrant": "present", "backing": "absent"}},
+            {"claim_span": "  ", "paragraph_index": 0, "critical_questions": full},  # empty span
+            {"claim_span": "x", "paragraph_index": 9, "critical_questions": full},   # out of range
             {"claim_span": "a claim the judge never quoted", "paragraph_index": 0,   # #229 hallucinated
-             "critical_questions": {"warrant": "present"}},
+             "critical_questions": full},
+            {"claim_span": "second real claim", "paragraph_index": 0,                # valid -> kept
+             "critical_questions": {"warrant": "present", "backing": "partial", "rebuttal": "absent"}},
         ],
         paras,
     )
+    # the malformed-status claims are DROPPED (not coerced to a fabricated 'absent' gap); only the
+    # all-valid claim survives.
     assert len(kept) == 1
-    cq = kept[0]["critical_questions"]
-    assert cq["warrant"] == "present"
-    assert cq["backing"] == "absent"   # unknown -> absent (conservative default)
-    assert cq["rebuttal"] == "absent"  # missing -> absent
+    assert kept[0]["claim_span"] == "second real claim"
+    assert kept[0]["critical_questions"] == {"warrant": "present", "backing": "partial",
+                                             "rebuttal": "absent"}
 
 
 def test_mock_judge_deterministic():
