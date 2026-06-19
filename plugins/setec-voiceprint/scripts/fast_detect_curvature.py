@@ -126,16 +126,16 @@ MIN_STABLE_TOKENS = 50
 DEFAULT_T_DF = 5
 # Appended to does_not_license ONLY when the student-t mode runs (so the gaussian-mode claim
 # license is byte-identical). The DELIVERABLE is the score curvature_t (the statistic the paper
-# and its reference implementation expose); p_value_t is a secondary, UNCALIBRATED tail aid.
-P_VALUE_T_CAVEAT = (
+# and its reference implementation expose); NO p-value is emitted (it would be unsupported).
+STUDENT_T_CAVEAT = (
     "Under --tail student-t the deliverable is curvature_t — the T-Detect t-standardized "
-    "curvature SCORE (the statistic the paper and reference implementation expose). It is a "
+    "curvature SCORE 𝒟ₜ (the statistic the paper and reference implementation expose). It is a "
     "global constant rescale of the Gaussian curvature_score (= curvature_score / sqrt(nu/(nu-2))), "
     "so its discrimination RANKING equals the Gaussian z; what T-Detect changes is the reference "
-    "null, not the ranking. p_value_t is the survival of curvature_t under the ASSUMED heavy-tailed "
-    "Student-t(nu) null — an UNCALIBRATED tail aid for thresholding (the nu null is a modeling "
-    "assumption, not a fitted calibration), NOT the method's output, NOT a probability the text is "
-    "AI, and NOT a shipped threshold; the operator supplies any band."
+    "scale, not the ranking. NO p-value is emitted: curvature_t is a rescaled (asymptotically "
+    "Gaussian) z-score, not a Student-t variate, so a t-survival of it would be an UNSUPPORTED "
+    "transform, not a calibrated probability. curvature_t is a value, NOT a verdict and NOT a "
+    "shipped threshold; the operator supplies any band."
 )
 
 
@@ -427,12 +427,17 @@ def audit(
     }
     # T-Detect (spec 25; arXiv:2507.23577): opt-in Student-t tail-aware normalization. The
     # DELIVERABLE is the SCORE curvature_t = d / sqrt((nu/(nu-2)) * V) = 𝒟ₜ — the t-standardized
-    # curvature statistic the paper and its reference implementation expose. It is a global
-    # constant rescale of the Gaussian curvature_score (nu fixed), so its discrimination RANKING
-    # equals the Gaussian z; T-Detect changes the reference null, not the ranking. p_value_t is a
-    # SECONDARY, UNCALIBRATED tail probability under the assumed Student-t(nu) null — an aid for
-    # thresholding, never the method's output or a calibrated probability. Added strictly inside
-    # this branch so the gaussian envelope stays byte-identical.
+    # curvature statistic the paper and its reference implementation expose. It is a global constant
+    # rescale of the Gaussian curvature_score (nu fixed), so its discrimination RANKING equals the
+    # Gaussian z; T-Detect changes the reference scale, not the ranking. We deliberately emit NO
+    # p-value: curvature_t is a rescaled (asymptotically Gaussian) z-score, NOT a t-distributed
+    # variate, so a Student-t survival of it would be an unsupported transform — not a calibrated
+    # probability. Added strictly inside the student-t branch so the gaussian envelope is unchanged.
+    if tail not in ("gaussian", "student-t"):
+        # #228 P2: a direct caller of audit() bypasses the CLI's choices=; an unknown tail must
+        # fail loud, never be silently treated as gaussian.
+        raise ValueError(
+            f"unknown tail {tail!r} (choices: gaussian, student-t)")
     if tail == "student-t" and stats["curvature_score"] is not None:
         nu = t_df
         if nu <= 2:
@@ -442,14 +447,11 @@ def audit(
                 f"t_df must be > 2 for --tail student-t (got {nu}); the Student-t variance "
                 f"scale nu/(nu-2) is undefined at nu<=2."
             )
-        from scipy.stats import t as _student_t  # scipy is a SETEC dependency
         d = stats["actual_log_prob_sum_nats"] - stats["reference_mean_sum_nats"]
         v = stats["reference_variance_sum_nats2"]
-        curvature_t = d / math.sqrt((nu / (nu - 2)) * v)
         out["tail"] = "student-t"
         out["t_df"] = nu
-        out["curvature_t"] = curvature_t          # 𝒟ₜ — the T-Detect score (the deliverable)
-        out["p_value_t"] = float(_student_t.sf(curvature_t, df=nu))  # uncalibrated tail aid only
+        out["curvature_t"] = d / math.sqrt((nu / (nu - 2)) * v)   # 𝒟ₜ — the T-Detect score
     return out
 
 
@@ -464,10 +466,10 @@ def compose_envelope(
 ) -> dict[str, Any]:
     caveats = list(results.get("caveats", []))
 
-    # T-Detect: name p_value_t in the refusal block ONLY when it is emitted (student-t mode),
+    # T-Detect: name curvature_t in the refusal block ONLY when it is emitted (student-t mode),
     # so the gaussian-mode claim license is unchanged.
-    if "p_value_t" in results:
-        does_not_license_text = f"{does_not_license_text} {P_VALUE_T_CAVEAT}"
+    if "curvature_t" in results:
+        does_not_license_text = f"{does_not_license_text} {STUDENT_T_CAVEAT}"
 
     license_block = ClaimLicense(
         task_surface=TASK_SURFACE,
@@ -607,8 +609,8 @@ def main(argv: list[str] | None = None) -> int:
         help=(
             "Normalization of the curvature. 'gaussian' (default) is the Fast-DetectGPT "
             "z-score, unchanged. 'student-t' adds the T-Detect SCORE curvature_t "
-            "(arXiv:2507.23577) — the t-standardized statistic the paper exposes — plus an "
-            "uncalibrated p_value_t tail aid; robust to adversarial/paraphrased text."
+            "(arXiv:2507.23577) — the t-standardized statistic the paper exposes; robust to "
+            "adversarial/paraphrased text. No p-value is emitted (it would be unsupported)."
         ),
     )
     parser.add_argument(

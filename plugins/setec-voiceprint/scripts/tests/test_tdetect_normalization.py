@@ -2,10 +2,10 @@
 """Tests for the T-Detect Student-t tail normalization (spec 25) in fast_detect_curvature.py.
 
 Opt-in `--tail student-t` adds the T-Detect SCORE `curvature_t` (the deliverable — the statistic the
-paper exposes) plus a secondary, uncalibrated `p_value_t` tail aid; the default gaussian output is
-unchanged. All torch-free (stub `score_fn`). The exact formula, the heavier-tails property of the aid,
-the default-preservation, the uncalibrated-p_value_t caveat, and the t_df<=2 guards (CLI + direct
-caller) are pinned."""
+paper exposes); NO p-value is emitted (a t-survival of a rescaled-Gaussian z would be an unsupported
+transform). The default gaussian output is unchanged. All torch-free (stub `score_fn`). The exact
+formula, the default-preservation, the no-p-value caveat, the unknown-tail guard, and the t_df<=2
+guards (CLI + direct caller) are pinned."""
 
 from __future__ import annotations
 
@@ -20,10 +20,8 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import fast_detect_curvature as fd  # type: ignore  # noqa: E402
-from scipy.stats import norm  # type: ignore  # noqa: E402
-from scipy.stats import t as student_t  # type: ignore  # noqa: E402
 
-_STUDENT_KEYS = ("curvature_t", "p_value_t", "tail", "t_df")
+_STUDENT_KEYS = ("curvature_t", "tail", "t_df")
 
 
 def _stub(actual_lp, n=60):
@@ -56,34 +54,26 @@ def test_exact_formula():
     assert t["t_df"] == 5 and t["tail"] == "student-t"
 
 
-def test_curvature_t_is_the_deliverable():
+def test_curvature_t_is_the_deliverable_and_no_p_value():
     # The deliverable is the SCORE curvature_t (the statistic the paper exposes), a global rescale
-    # of the Gaussian curvature_score; p_value_t is the secondary, derived tail aid.
+    # of the Gaussian curvature_score. NO p_value_t is emitted (#228 P1: an unsupported transform).
     t = fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=5)
     assert t["curvature_t"] == pytest.approx(t["curvature_score"] / math.sqrt(5 / 3))
-    assert t["p_value_t"] == pytest.approx(float(student_t.sf(t["curvature_t"], df=5)))
-    assert 0.0 < t["p_value_t"] < 1.0
+    assert "p_value_t" not in t                       # the unsupported transform is gone
 
 
-def test_heavier_tails_than_gaussian():
-    # the core robustness property: for the same statistic, the t-null p-value is LESS extreme
-    t = fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=5)
-    cs = t["curvature_score"]
-    assert cs > 0
-    assert t["p_value_t"] > float(norm.sf(cs))
-
-
-def test_monotonic_in_curvature():
+def test_curvature_t_monotonic_in_curvature_score():
     lo = fd.audit("x", score_fn=_stub(-1.8), tail="student-t", t_df=5)   # smaller curvature
     hi = fd.audit("x", score_fn=_stub(-1.2), tail="student-t", t_df=5)   # larger curvature
     assert hi["curvature_score"] > lo["curvature_score"]
-    assert hi["p_value_t"] < lo["p_value_t"]                              # higher curvature -> smaller p
+    assert hi["curvature_t"] > lo["curvature_t"]                          # monotone rescale
 
 
 def test_df_robustness_runs_3_to_7():
     for nu in (3, 4, 5, 6, 7):
         t = fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=nu)
-        assert t["t_df"] == nu and 0.0 < t["p_value_t"] < 1.0
+        assert t["t_df"] == nu and math.isfinite(t["curvature_t"])
+        assert "p_value_t" not in t
 
 
 # --- posture / claim license -----------------------------------------------
@@ -92,11 +82,11 @@ def test_student_t_caveat_and_no_verdict():
     t = fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=5)
     env = fd.compose_envelope(target_path=None, target_words=10, results=t)
     dnl = env["claim_license"]["does_not_license"]
-    # caveat leads with curvature_t as the deliverable + flags p_value_t as uncalibrated, not P(AI)
+    # caveat leads with curvature_t as the deliverable + states no p-value (unsupported transform)
     assert "curvature_t" in dnl and "deliverable" in dnl
-    assert "p_value_t" in dnl and "UNCALIBRATED" in dnl
-    assert "NOT a probability the text is AI" in dnl
-    assert not any(k in t for k in ("verdict", "is_ai", "label", "decision"))
+    assert "p-value" in dnl.lower() and "UNSUPPORTED" in dnl
+    assert "p_value_t" not in dnl                      # we never name an emitted p-value
+    assert not any(k in t for k in ("verdict", "is_ai", "label", "decision", "p_value_t"))
 
 
 # --- nu guard: CLI (before backend) AND direct caller of audit() ------------
@@ -113,6 +103,14 @@ def test_audit_direct_caller_t_df_le_2_raises():
     for nu in (2, 1, 0, -1):
         with pytest.raises(ValueError, match="t_df must be > 2"):
             fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=nu)
+
+
+def test_audit_unknown_tail_raises():
+    # P2 (#228): a direct caller passing an unknown tail must fail loud, NOT be silently treated
+    # as gaussian (the CLI restricts tail via choices=; audit() backstops programmatic callers).
+    for bad in ("foo", "gauss", "studentt", "", "Gaussian"):
+        with pytest.raises(ValueError, match="unknown tail"):
+            fd.audit("x", score_fn=_stub(-1.5), tail=bad)
 
 
 def test_t_df_guard_not_triggered_in_gaussian(tmp_path):

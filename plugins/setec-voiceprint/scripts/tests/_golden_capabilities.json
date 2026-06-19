@@ -2009,7 +2009,7 @@
           "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt --model gpt2 --seed 7 --json"
         },
         {
-          "description": "T-Detect t-standardized SCORE curvature_t (the paper's statistic; robust to adversarial/paraphrased text; spec 25, arXiv:2507.23577) + an uncalibrated p_value_t tail aid; default gaussian unchanged",
+          "description": "T-Detect t-standardized SCORE curvature_t (the paper's statistic; robust to adversarial/paraphrased text; spec 25, arXiv:2507.23577); no p-value emitted; default gaussian unchanged",
           "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt --tail student-t --t-df 5 --json"
         }
       ],
