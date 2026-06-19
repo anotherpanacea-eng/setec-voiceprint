@@ -1981,7 +1981,7 @@
         {
           "flag": "--judge",
           "type": "enum",
-          "required": false,
+          "required": true,
           "values": [
             "mock",
             "manifest",
