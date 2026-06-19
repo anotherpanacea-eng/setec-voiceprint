@@ -38,8 +38,10 @@ def _run(tmp_path, text=SAMPLE, *args):
     target = tmp_path / "arg.txt"
     target.write_text(text, encoding="utf-8")
     out = tmp_path / "arg.json"
-    rc = fallacy_scan.main([str(target), "--out", str(out),
-                            "--out-md", str(tmp_path / "arg.md"), *args])
+    argv = [str(target), "--out", str(out), "--out-md", str(tmp_path / "arg.md"), *args]
+    if "--judge" not in args:                 # --judge is now REQUIRED; tests opt into the mock stub
+        argv += ["--judge", "mock"]
+    rc = fallacy_scan.main(argv)
     env = json.loads(out.read_text(encoding="utf-8"))
     return rc, env
 
@@ -143,18 +145,33 @@ def test_missing_sdk_is_missing_dependency(tmp_path, monkeypatch):
 
 
 # ----------------- judge unit: normalize_flags ---------------------
-def test_normalize_flags_drops_invalid():
+def test_normalize_flags_drops_invalid_and_hallucinated():
+    paras = ["paragraph zero has some words", "paragraph one contains a real span inside it"]
     kept = fallacy_judge.normalize_flags(
         [
-            {"candidate_type": "NOPE", "paragraph_index": 0, "span_text": "x"},
-            {"candidate_type": "ad_hominem", "paragraph_index": 9, "span_text": "x"},
-            {"candidate_type": "ad_hominem", "paragraph_index": 0, "span_text": "  "},
-            {"candidate_type": "ad_hominem", "paragraph_index": 1, "span_text": "real span"},
+            {"candidate_type": "NOPE", "paragraph_index": 1, "span_text": "real span"},        # bad type
+            {"candidate_type": "ad_hominem", "paragraph_index": 9, "span_text": "real span"},  # out of range
+            {"candidate_type": "ad_hominem", "paragraph_index": 1, "span_text": "  "},          # empty
+            {"candidate_type": "ad_hominem", "paragraph_index": 1,
+             "span_text": "a span the judge never quoted"},                                     # #229: hallucinated
+            {"candidate_type": "ad_hominem", "paragraph_index": 1, "span_text": "real span"},   # valid (substring)
         ],
-        n_paragraphs=2,
+        paras,
     )
     assert len(kept) == 1
     assert kept[0]["candidate_type"] == "ad_hominem" and kept[0]["paragraph_index"] == 1
+    assert kept[0]["span_text"] == "real span"
+
+
+def test_normalize_flags_tolerates_requoted_whitespace():
+    # a real judge may requote with different whitespace — containment is whitespace-normalized,
+    # so a genuine (if reflowed) quote survives while a hallucination still does not.
+    paras = ["the experts\n  all agree, so there is no debate"]
+    kept = fallacy_judge.normalize_flags(
+        [{"candidate_type": "ad_populum", "paragraph_index": 0, "span_text": "the experts all agree"}],
+        paras,
+    )
+    assert len(kept) == 1
 
 
 def test_mock_judge_deterministic():
@@ -163,3 +180,13 @@ def test_mock_judge_deterministic():
     b = j(["one two three four", "five six seven eight"]).values["flags"]
     assert a == b
     assert [f["candidate_type"] for f in a] == ["appeal_to_emotion", "false_dilemma"]
+
+
+def test_judge_is_required(tmp_path):
+    # #229: no --judge default. A bare run must NOT silently fall back to the fabricating mock.
+    target = tmp_path / "arg.txt"; target.write_text(SAMPLE, encoding="utf-8")
+    try:
+        fallacy_scan.main([str(target), "--out", str(tmp_path / "o.json")])   # no --judge
+        raise AssertionError("expected SystemExit (--judge required)")
+    except SystemExit as e:
+        assert e.code == 2
