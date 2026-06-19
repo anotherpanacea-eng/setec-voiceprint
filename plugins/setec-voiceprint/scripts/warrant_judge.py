@@ -142,24 +142,36 @@ def _is_index(idx: Any, n: int) -> bool:
     return isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < n
 
 
-def normalize_claims(raw: Any, n_paragraphs: int) -> list[dict[str, Any]]:
+def _normws(s: str) -> str:
+    """Whitespace-normalized form for a tolerant verbatim-containment check."""
+    return " ".join(s.split())
+
+
+def normalize_claims(raw: Any, paragraphs: list[str]) -> list[dict[str, Any]]:
     """Validate + normalize a raw judge ``claims`` list. Drops a claim with an
-    out-of-range index, an empty span, or critical_questions that is not a dict
-    of the three axes with valid statuses (an unknown status → ``absent``, the
-    conservative no-coverage default; never a fabricated ``present``)."""
+    out-of-range index, an empty span, a ``claim_span`` that is NOT a verbatim
+    (whitespace-normalized) substring of the paragraph it is attributed to (#229:
+    a hallucinated claim the judge did not actually quote is rejected), or
+    critical_questions that is not a dict of the three axes with valid statuses
+    (an unknown status → ``absent``, the conservative no-coverage default; never
+    a fabricated ``present``)."""
     out: list[dict[str, Any]] = []
     if not isinstance(raw, list):
         return out
+    n = len(paragraphs)
+    norm_paras = [_normws(p) for p in paragraphs]
     for entry in raw:
         if not isinstance(entry, dict):
             continue
         idx = entry.get("paragraph_index")
         span = entry.get("claim_span")
         cqs = entry.get("critical_questions")
-        if not _is_index(idx, n_paragraphs):
+        if not _is_index(idx, n):
             continue
         if not isinstance(span, str) or not span.strip():
             continue
+        if _normws(span) not in norm_paras[idx]:
+            continue   # hallucinated claim — not actually present in the cited paragraph
         if not isinstance(cqs, dict):
             continue
         norm_cq = {
@@ -195,7 +207,7 @@ def _manifest_judge(manifest_path: Path) -> JudgeBackend:
 
     def _run(paragraphs: list[str]) -> JudgeResult:
         return JudgeResult(
-            values={"claims": normalize_claims(values.get("claims"), len(paragraphs))},
+            values={"claims": normalize_claims(values.get("claims"), paragraphs)},
             judge_identity={
                 "kind": "manifest", "manifest_path": str(manifest_path),
                 "model": ji.get("model"), "model_revision": ji.get("model_revision"),
@@ -231,7 +243,7 @@ def _mock_judge(
                  "critical_questions": dict(cqs)}
             )
         return JudgeResult(
-            values={"claims": normalize_claims(claims, len(paragraphs))},
+            values={"claims": normalize_claims(claims, paragraphs)},
             judge_identity={"kind": "mock", "pattern_len": len(pattern)},
         )
 
@@ -267,7 +279,7 @@ def _build_api_result(parsed: Any, raw: str, identity: dict[str, Any],
     ident.setdefault("prompt_version", PROMPT_VERSION)
     ident["prompt_fingerprint_sha256"] = fingerprint_prompt()
     return JudgeResult(
-        values={"claims": normalize_claims(parsed.get("claims"), len(paragraphs))},
+        values={"claims": normalize_claims(parsed.get("claims"), paragraphs)},
         judge_identity=ident,
         raw_response=raw,
     )

@@ -274,9 +274,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Toulmin critical-question coverage for an argument (no verdict).",
     )
     p.add_argument("target", type=Path, help="UTF-8 prose file to probe")
-    p.add_argument("--judge", default="mock",
+    p.add_argument("--judge", required=True,
                    choices=["mock", "manifest", "anthropic", "openai", "gemini"],
-                   help="judge backend (default: mock, a deterministic test stub)")
+                   help="judge backend (REQUIRED — no default). `mock` is a deterministic TEST "
+                        "stub that FABRICATES coverage; choose it only for tests/CI, never for a "
+                        "real probe. Real probes use a manifest or an API judge.")
     p.add_argument("--judge-manifest", type=Path, default=None)
     p.add_argument("--judge-model", default=None)
     p.add_argument("--judge-temperature", type=float, default=0.0)

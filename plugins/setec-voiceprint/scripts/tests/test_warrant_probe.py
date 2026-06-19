@@ -37,8 +37,10 @@ def _run(tmp_path, text=SAMPLE, *args):
     target = tmp_path / "arg.txt"
     target.write_text(text, encoding="utf-8")
     out = tmp_path / "arg.json"
-    rc = warrant_probe.main([str(target), "--out", str(out),
-                             "--out-md", str(tmp_path / "arg.md"), *args])
+    argv = [str(target), "--out", str(out), "--out-md", str(tmp_path / "arg.md"), *args]
+    if "--judge" not in args:                 # --judge is now REQUIRED; tests opt into the mock stub
+        argv += ["--judge", "mock"]
+    rc = warrant_probe.main(argv)
     env = json.loads(out.read_text(encoding="utf-8"))
     return rc, env
 
@@ -126,7 +128,8 @@ def test_missing_sdk_is_missing_dependency(tmp_path, monkeypatch):
     assert "missing_dependency" in json.dumps(env)
 
 
-def test_normalize_claims_coerces_unknown_status_to_absent():
+def test_normalize_claims_coerces_unknown_status_and_drops_hallucinated():
+    paras = ["paragraph zero has a real claim stated plainly here"]
     kept = warrant_judge.normalize_claims(
         [
             {"claim_span": "real claim", "paragraph_index": 0,
@@ -135,8 +138,10 @@ def test_normalize_claims_coerces_unknown_status_to_absent():
              "critical_questions": {"warrant": "present"}},
             {"claim_span": "x", "paragraph_index": 9,
              "critical_questions": {"warrant": "present"}},
+            {"claim_span": "a claim the judge never quoted", "paragraph_index": 0,   # #229 hallucinated
+             "critical_questions": {"warrant": "present"}},
         ],
-        n_paragraphs=1,
+        paras,
     )
     assert len(kept) == 1
     cq = kept[0]["critical_questions"]
@@ -150,3 +155,13 @@ def test_mock_judge_deterministic():
     a = j(["one two three four", "five six seven eight"]).values["claims"]
     b = j(["one two three four", "five six seven eight"]).values["claims"]
     assert a == b and len(a) == 2
+
+
+def test_judge_is_required(tmp_path):
+    # #229 (mirrored): no --judge default — a bare run must NOT fall back to the fabricating mock.
+    target = tmp_path / "arg.txt"; target.write_text(SAMPLE, encoding="utf-8")
+    try:
+        warrant_probe.main([str(target), "--out", str(tmp_path / "o.json")])   # no --judge
+        raise AssertionError("expected SystemExit (--judge required)")
+    except SystemExit as e:
+        assert e.code == 2
