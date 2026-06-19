@@ -179,6 +179,8 @@ def _load_baseline(args: argparse.Namespace, target_resolved: Path) -> tuple[str
                 row = json.loads(raw)
             except json.JSONDecodeError:
                 continue
+            if not isinstance(row, dict):
+                continue   # #226: skip a valid-JSON-but-non-object row (no .get), don't traceback
             if isinstance(row.get("text"), str):
                 texts.append(row["text"])
                 continue
@@ -197,15 +199,17 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     target_path = Path(args.target)
     try:
         target_text = target_path.read_text(encoding="utf-8")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
+        # #226: invalid UTF-8 raises UnicodeDecodeError (a ValueError, not OSError) — bad input.
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
                                   target_path=str(target_path),
                                   reason=f"cannot read --target: {e}", reason_category="bad_input")
-    # A missing/unreadable baseline dir or manifest is bad INPUT, not a crash (#226 P2):
-    # _load_baseline calls read_text(), which raises OSError on a missing path.
+    # A missing/unreadable/non-UTF-8 baseline dir or manifest is bad INPUT, not a crash (#226 P2):
+    # _load_baseline calls read_text(), which raises OSError on a missing path and UnicodeDecodeError
+    # on a non-UTF-8 manifest file.
     try:
         baseline_text, n_docs, dropped = _load_baseline(args, target_path.resolve())
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         which = "--reference-dir/--baseline-dir" if (args.reference_dir or args.baseline_dir) else "--manifest"
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
                                   target_path=str(target_path),

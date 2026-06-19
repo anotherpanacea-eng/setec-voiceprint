@@ -150,3 +150,28 @@ def test_missing_baseline_is_bad_input(tmp_path):
     rc2, env2 = _envelope(["--target", str(tgt),
                            "--manifest", str(tmp_path / "nope.jsonl"), "--json"])
     assert env2["available"] is False and env2["reason_category"] == "bad_input"
+
+
+# --- #226 P2 round-2: invalid UTF-8 + non-object JSONL rows -----------------
+
+def test_invalid_utf8_target_is_bad_input(tmp_path):
+    tgt = tmp_path / "bad.txt"; tgt.write_bytes(b"\xff\xfe not utf-8 \x80")
+    bdir = tmp_path / "b"; bdir.mkdir(); (bdir / "x.txt").write_text(_STYLE_B)
+    rc, env = _envelope(["--target", str(tgt), "--baseline-dir", str(bdir), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input"
+
+
+def test_invalid_utf8_manifest_is_bad_input(tmp_path):
+    tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
+    man = tmp_path / "bad.jsonl"; man.write_bytes(b"\xff\xfe\x00 garbage")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input"
+
+
+def test_non_object_jsonl_rows_skipped_not_traceback(tmp_path):
+    tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
+    man = tmp_path / "m.jsonl"
+    man.write_text('[1,2,3]\n42\n"bare string"\n' + json.dumps({"id": "b", "text": _STYLE_B}) + "\n")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert env["available"] is True                       # non-object rows skipped, not fatal
+    assert env["results"]["n_baseline_docs"] == 1         # only the valid object row used
