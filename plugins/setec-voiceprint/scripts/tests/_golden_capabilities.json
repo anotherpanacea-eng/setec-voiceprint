@@ -1518,6 +1518,89 @@
       ]
     },
     {
+      "id": "cosine_explanation",
+      "script_path": "plugins/setec-voiceprint/scripts/cosine_explanation.py",
+      "surface": "embedding_explanation",
+      "status": "literature_anchored",
+      "handoff": "experimental",
+      "consumers": [],
+      "family": "embedding-explanation",
+      "purpose": "Make the opaque authorship_embedding LUAR cosine (from voice_fingerprint) human-checkable by placing it side by side with SETEC's named interpretable stylometric features (burstiness, MATTR, MTLD, function-word ratio, dependency distance) and marking, per feature, whether the named lens TRACKS or DIVERGES from the embedding. An interpretation aid (Residualized Similarity arXiv:2510.05362 / Latent-Space Interpretation arXiv:2409.07072): the divergences are where the operator must inspect the neural signal on its own terms. Emits NO same-author / AI verdict (inherits authorship_embedding's refusals) and NO fabricated explained/residual number \u2014 you cannot partition a neural cosine without a fit, so a numeric split appears only under --fit-baseline (corpus-relative OLS). A diverging feature is an inspection pointer, never a suspicion score.\n",
+      "use_when": [
+        "You have a LUAR cosine you want to make inspectable in named-feature terms",
+        "You want to see where interpretable stylometry tracks vs diverges from the embedding",
+        "You want to keep the human in the loop on an otherwise opaque similarity"
+      ],
+      "do_not_use_when": [
+        "You need a same-author / different-author / AI-vs-human verdict (the surface refuses all of these \u2014 it inherits authorship_embedding's refusals and adds none)",
+        "You want a single \"how much is explained\" number without a fit (v1 emits none; a corpus-relative split needs --fit-baseline)",
+        "You would read a diverging feature as a suspicion / authenticity / AI-ness score (it is an inspection pointer, not a score)"
+      ],
+      "inputs": [
+        {
+          "flag": "target",
+          "type": "path",
+          "required": true
+        },
+        {
+          "flag": "--comparison",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--inputs-json",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--fit-baseline",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--json",
+          "type": "bool",
+          "required": false
+        }
+      ],
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".cosine_explanation.json",
+          ".cosine_explanation.md"
+        ]
+      },
+      "compute": {
+        "tier": "optional",
+        "cost_note": "the named side-by-side is CPU/stdlib; the real-input path loads the LUAR style encoder via voice_fingerprint (~0.5\u20131.4 GB), so --inputs-json (precomputed) runs with no model",
+        "length_floor_words": 0
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
+      "dependencies": {
+        "python": [],
+        "python_optional": [
+          "transformers",
+          "numpy"
+        ]
+      },
+      "examples": [
+        {
+          "description": "Explain a precomputed cosine + features (no model load)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/cosine_explanation.py target.txt --inputs-json inputs.json --json"
+        },
+        {
+          "description": "Real path (loads the LUAR encoder via voice_fingerprint)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/cosine_explanation.py target.txt --comparison other.txt"
+        }
+      ],
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md"
+      ]
+    },
+    {
       "compute": {
         "cost_note": "stdlib only; no models, CPU-trivial.",
         "length_floor_words": 500,
