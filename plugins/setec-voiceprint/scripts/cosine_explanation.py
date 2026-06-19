@@ -1,0 +1,415 @@
+#!/usr/bin/env python3
+"""cosine_explanation.py — a named side-by-side for the LUAR cosine.
+
+ArgScope-adjacent interpretability (spec ``specs/27-embedding-explanation.md``,
+M1). Makes the opaque ``voice_fingerprint`` / ``authorship_embedding`` LUAR
+cosine human-checkable by placing it side by side with SETEC's already-named
+stylometric features (burstiness, MATTR, MTLD, function-word ratio, dependency
+distance) and marking, per feature, whether the named lens **tracks** or
+**diverges** from the embedding. The divergences are where the operator must look
+at the neural signal on its own terms.
+
+POSTURE — load-bearing
+----------------------
+A side-by-side, NOT a verdict and NOT a fabricated partition. You cannot split a
+single neural cosine scalar into "explained + residual" without a fit (the
+Residualized Similarity method, arXiv:2510.05362, IS a fitted method), so v1
+emits **no** ``explained_fraction`` / ``residual_fraction`` — only the cosine,
+each feature's per-pair similarity, and ``agreement ∈ {tracks, diverges}`` (a
+defined rule, not a cosine partition). A numeric explained/residual split exists
+ONLY under ``--fit-baseline`` (OLS R² over an operator corpus, corpus-relative
+provenance). ``divergent_features`` is a qualitative inspection pointer, never a
+suspicion score; divergence does NOT measure authenticity or AI-ness. Inherits
+``authorship_embedding``'s refusals (no same-author / different-author / AI).
+
+CLI
+---
+    python3 plugins/setec-voiceprint/scripts/cosine_explanation.py TARGET \\
+        --comparison FILE [--fit-baseline CORPUS.json] [--inputs-json F] \\
+        [--json] [--out F]
+
+``--inputs-json`` supplies a precomputed ``{cosine, features:{name:[t,c]}}`` (an
+explicit injected path → ``inputs_source: "injected"``, refused as production).
+The default path computes via ``compute_inputs`` (loads LUAR — the style-embedding
+tier, NOT available in CI; the tests monkeypatch this seam).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from claim_license import ClaimLicense  # type: ignore
+from output_schema import build_error_output, build_output  # type: ignore
+
+TASK_SURFACE = "embedding_explanation"
+TOOL_NAME = "cosine_explanation"
+SCRIPT_VERSION = "0.1.0"
+METHOD_VERSION = "cosine_side_by_side_v1"
+
+# The curated, human-legible named feature set (spec open-Q3 default). Each carries
+# a PROVISIONAL reference SCALE — the |target−comparison| gap that maps to
+# feature_similarity 0.0 (identical → 1.0). Scales are rough register-general
+# defaults, NOT calibrated thresholds; they normalize the side-by-side, nothing more.
+NAMED_FEATURES: tuple[tuple[str, float], ...] = (
+    ("burstiness_B", 0.30),
+    ("mattr", 0.15),
+    ("mtld", 40.0),
+    ("function_word_ratio", 0.10),
+    ("mean_dependency_distance", 0.80),
+)
+# Neutral midpoint that splits the [0,1] range into "reads similar" vs "reads
+# different" for BOTH the feature similarity and the cosine. A side-by-side
+# reference point, explicitly NOT an authorship operating threshold.
+NEUTRAL_MIDPOINT = 0.5
+
+DEFAULT_LICENSES = (
+    "Places the authorship_embedding LUAR cosine (from voice_fingerprint) side by "
+    "side with SETEC's named interpretable stylometric features (burstiness, "
+    "MATTR, MTLD, function-word ratio, dependency distance), reporting per feature "
+    "the pair's value on each, a per-feature similarity, and whether the named "
+    "lens tracks or diverges from the embedding. An interpretation aid that makes "
+    "the opaque cosine inspectable; the embedding and feature values are sourced "
+    "from existing audits (read results.provenance)."
+)
+
+DEFAULT_DOES_NOT_LICENSE = (
+    "Does NOT license any same-author / different-author / AI-vs-human "
+    "determination — it inherits and re-states authorship_embedding's refusals and "
+    "adds none. A diverging feature does NOT measure authenticity or AI-ness and is "
+    "NOT a suspicion score; it is an inspection pointer — the named lens and the "
+    "embedding disagree there, look closer. The named feature set is a chosen lens, "
+    "not ground truth. v1 emits no explained/residual fraction: you cannot "
+    "partition a neural cosine without a fit, and any such number would be "
+    "fabricated; a corpus-relative OLS split appears only under --fit-baseline. An "
+    "inputs_source 'injected' run (precomputed --inputs-json) is NOT a production "
+    "interpretation — it carries no text and rides no privacy gate. Ships "
+    "`uncalibrated`: no threshold; the operator reads the side-by-side."
+)
+
+
+def feature_similarity(target: float, comparison: float, scale: float) -> float:
+    """1.0 when identical, falling to 0.0 as |target−comparison| reaches one
+    reference SCALE. Clamped to [0, 1]."""
+    if scale <= 0:
+        return 0.0
+    return max(0.0, 1.0 - min(1.0, abs(target - comparison) / scale))
+
+
+def _side(value: float) -> bool:
+    """Which side of the neutral midpoint a [0,1] reading falls on."""
+    return value >= NEUTRAL_MIDPOINT
+
+
+def agreement(feat_sim: float, cosine: float) -> str:
+    """`tracks` iff the feature similarity and the cosine fall on the SAME side of
+    the neutral midpoint (both read 'similar' or both read 'different'); else
+    `diverges`. A defined side-by-side rule — NOT a partition of the cosine."""
+    return "tracks" if _side(feat_sim) == _side(cosine) else "diverges"
+
+
+def build_comparison(cosine: float, features: dict[str, Any]) -> list[dict[str, Any]]:
+    """Per named feature, the side-by-side row. `features` maps name → [target,
+    comparison]. Features absent from `features` are skipped (provenance notes it)."""
+    rows: list[dict[str, Any]] = []
+    for name, scale in NAMED_FEATURES:
+        pair = features.get(name)
+        if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+            continue
+        t, c = float(pair[0]), float(pair[1])
+        sim = feature_similarity(t, c, scale)
+        rows.append(
+            {
+                "feature": name,
+                "target_value": t,
+                "comparison_value": c,
+                "feature_similarity": round(sim, 4),
+                "agreement": agreement(sim, cosine),
+            }
+        )
+    return rows
+
+
+def fit_residual(corpus: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """`--fit-baseline`: OLS of cosine on the named features over a corpus of
+    {cosine, features:{name:[t,c]}} rows → R² + residual = 1−R², CORPUS-relative
+    provenance (never a per-pair scalar). Returns None if numpy/rows insufficient."""
+    try:
+        import numpy as np  # type: ignore
+    except ImportError:
+        return None
+    xs, ys = [], []
+    for row in corpus:
+        cos = row.get("cosine")
+        feats = row.get("features", {})
+        if not isinstance(cos, (int, float)):
+            continue
+        vec = []
+        ok = True
+        for name, scale in NAMED_FEATURES:
+            pair = feats.get(name)
+            if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+                ok = False
+                break
+            vec.append(feature_similarity(float(pair[0]), float(pair[1]), scale))
+        if ok:
+            xs.append(vec)
+            ys.append(float(cos))
+    if len(ys) < len(NAMED_FEATURES) + 2:  # need more rows than features
+        return None
+    X = np.column_stack([np.ones(len(xs)), np.asarray(xs)])
+    y = np.asarray(ys)
+    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
+    pred = X @ beta
+    ss_res = float(np.sum((y - pred) ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r2 = 1.0 - ss_res / ss_tot if ss_tot > 0 else 0.0
+    return {
+        "fit_r2": round(r2, 4),
+        "fit_residual": round(1.0 - r2, 4),
+        "n_corpus_rows": len(ys),
+        "note": ("CORPUS-relative OLS of cosine on named-feature similarities; "
+                 "an explained/residual split for THIS corpus, never a per-pair "
+                 "authorship operating point."),
+    }
+
+
+def compute_inputs(target: Path, comparison: Path) -> tuple[float, dict[str, Any]]:
+    """Real path: LUAR cosine (voice_fingerprint) + named feature values (existing
+    audits). Needs the style-embedding tier (transformers + torch), NOT available
+    in CI — the tests monkeypatch this seam. Fail-loud if the tier is absent."""
+    raise RuntimeError(
+        "cosine_explanation real-input path requires the style-embedding tier "
+        "(transformers + torch) for the LUAR cosine; install it, or pass "
+        "--inputs-json with a precomputed {cosine, features}."
+    )
+
+
+def load_injected(path: Path) -> tuple[float, dict[str, Any]]:
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict) or "cosine" not in data or "features" not in data:
+        raise ValueError("--inputs-json must be a JSON object with 'cosine' + 'features'")
+    return float(data["cosine"]), dict(data["features"])
+
+
+def build_results(
+    *,
+    cosine: float,
+    rows: list[dict[str, Any]],
+    inputs_source: str,
+    fit: dict[str, Any] | None,
+    provenance: dict[str, Any],
+) -> dict[str, Any]:
+    results: dict[str, Any] = {
+        "method_version": METHOD_VERSION,
+        "luar_cosine": cosine,
+        "named_feature_comparison": rows,
+        "divergent_features": [r["feature"] for r in rows if r["agreement"] == "diverges"],
+        "n_features": len(rows),
+        "inputs_source": inputs_source,
+        "calibration_status": "uncalibrated",
+        "provenance": provenance,
+    }
+    if fit is not None:
+        results["fit_baseline"] = fit  # corpus-relative; only when --fit-baseline given
+    return results
+
+
+def compose_envelope(
+    *,
+    target_path: Path | None,
+    target_words: int,
+    results: dict[str, Any],
+    licenses_text: str,
+    does_not_license_text: str,
+) -> dict[str, Any]:
+    caveats: list[str] = []
+    if results["inputs_source"] == "injected":
+        caveats.append(
+            "inputs_source is `injected` (precomputed --inputs-json): this run "
+            "carries no text, rides no privacy gate, and is NOT a production "
+            "interpretation."
+        )
+    caveats.append(
+        "A side-by-side for human review, not a verdict. Diverging features are "
+        "inspection pointers (the named lens and the embedding disagree there), "
+        "NOT a measure of authenticity / AI-ness and NOT a score. v1 emits no "
+        "explained/residual fraction (none is definable without a fit). Ships "
+        "`uncalibrated`; inherits authorship_embedding's no-author/no-AI refusals."
+    )
+
+    license_block = ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=licenses_text,
+        does_not_license=does_not_license_text,
+        comparison_set={
+            "embedding": "LUAR cosine via voice_fingerprint (authorship_embedding)",
+            "named_features": [n for n, _ in NAMED_FEATURES],
+            "inputs_source": results["inputs_source"],
+        },
+        length_range_words=(0, 100000),
+        register_match=["register-general (the named scales are provisional)"],
+        additional_caveats=caveats,
+        references=[
+            "Zhu & Jurgens 2025, 'Residualized Similarity' (arXiv:2510.05362)",
+            "Patel, Rao, et al. 2024, 'Latent-Space Interpretation for Stylometry' "
+            "(arXiv:2409.07072)",
+        ],
+    )
+
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results=results,
+        claim_license=license_block,
+        available=True,
+        warnings=caveats,
+    )
+
+
+def render_markdown(envelope: dict[str, Any]) -> str:
+    r = envelope["results"]
+    lines = [
+        "# LUAR cosine — named side-by-side",
+        "",
+        "> **Not a verdict.** This places the embedding cosine next to named "
+        "stylometric features and marks where they agree. A diverging feature is "
+        "an inspection pointer, not a measure of authenticity or AI-ness.",
+        "",
+        f"- **LUAR cosine:** `{r['luar_cosine']}`  ·  **inputs:** "
+        f"`{r['inputs_source']}`  ·  **calibration:** `{r['calibration_status']}`",
+        "",
+        "## Side-by-side",
+        "",
+        "| feature | target | comparison | similarity | agreement |",
+        "|---|---|---|---|---|",
+    ]
+    for row in r["named_feature_comparison"]:
+        lines.append(
+            f"| `{row['feature']}` | {row['target_value']} | "
+            f"{row['comparison_value']} | {row['feature_similarity']} | "
+            f"{row['agreement']} |"
+        )
+    lines.append("")
+    div = r.get("divergent_features", [])
+    lines.append(f"**Diverging features (inspect):** {', '.join(div) if div else '(none)'}")
+    if "fit_baseline" in r:
+        fb = r["fit_baseline"]
+        lines.append("")
+        lines.append(f"**--fit-baseline (corpus-relative):** R²={fb['fit_r2']}, "
+                     f"residual={fb['fit_residual']} over {fb['n_corpus_rows']} rows.")
+    return "\n".join(lines) + "\n"
+
+
+def _emit(envelope: dict[str, Any], *, out_path: Path, md_path: Path | None,
+          to_stdout: bool) -> int:
+    try:
+        out_path.write_text(json.dumps(envelope, indent=2, default=str),
+                            encoding="utf-8")
+        if md_path is not None:
+            md_path.write_text(render_markdown(envelope), encoding="utf-8")
+    except OSError as exc:
+        print(f"error: cannot write output: {exc}", file=sys.stderr)
+        return 1
+    if to_stdout:
+        print(json.dumps(envelope, indent=2, default=str))
+    return 0
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description="Named side-by-side for the LUAR cosine (no verdict).",
+    )
+    p.add_argument("target", type=Path, help="UTF-8 prose file (the target)")
+    p.add_argument("--comparison", type=Path, default=None,
+                   help="comparison prose file (real path); not needed with --inputs-json")
+    p.add_argument("--inputs-json", type=Path, default=None,
+                   help="precomputed {cosine, features} (injected path, non-production)")
+    p.add_argument("--fit-baseline", type=Path, default=None,
+                   help="corpus JSON of {cosine, features} rows → OLS R²/residual")
+    p.add_argument("--licenses", default=DEFAULT_LICENSES)
+    p.add_argument("--does-not-license", default=DEFAULT_DOES_NOT_LICENSE)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--out", type=Path, default=None)
+    p.add_argument("--out-md", type=Path, default=None)
+    return p
+
+
+def _error_envelope(reason: str, category: str, target: Path | None) -> dict[str, Any]:
+    return build_error_output(
+        task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+        target_path=target, target_words=0, reason=reason, reason_category=category,
+    )
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_arg_parser()
+    args = parser.parse_args(argv)
+    target_path: Path = args.target
+    out_json = (args.out if args.out is not None
+                else target_path.with_suffix(target_path.suffix + ".cosine_explanation.json"))
+    out_md = (args.out_md if args.out_md is not None
+              else target_path.with_suffix(target_path.suffix + ".cosine_explanation.md"))
+
+    # Resolve inputs: injected (cached, non-production) or computed (gated, LUAR).
+    if args.inputs_json is not None:
+        try:
+            cosine, features = load_injected(args.inputs_json)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            env = _error_envelope(f"--inputs-json: {exc}", "bad_input", target_path)
+            return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
+        inputs_source = "injected"
+        provenance = {"inputs_source": "injected", "inputs_json": str(args.inputs_json)}
+    else:
+        if args.comparison is None:
+            env = _error_envelope(
+                "need --comparison (real path) or --inputs-json (precomputed).",
+                "bad_input", target_path)
+            return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
+        try:
+            cosine, features = compute_inputs(target_path, args.comparison)
+        except RuntimeError as exc:
+            env = _error_envelope(str(exc), "missing_dependency", target_path)
+            return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
+        inputs_source = "computed"
+        provenance = {"inputs_source": "computed",
+                      "embedding": "voice_fingerprint LUAR",
+                      "comparison": str(args.comparison)}
+
+    rows = build_comparison(cosine, features)
+    if not rows:
+        env = _error_envelope(
+            "no named features present in inputs — nothing to place side by side.",
+            "bad_input", target_path)
+        return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
+
+    fit = None
+    if args.fit_baseline is not None:
+        try:
+            corpus = json.loads(args.fit_baseline.read_text(encoding="utf-8"))
+            fit = fit_residual(corpus if isinstance(corpus, list) else [])
+        except (OSError, json.JSONDecodeError):
+            fit = None
+
+    results = build_results(cosine=cosine, rows=rows, inputs_source=inputs_source,
+                            fit=fit, provenance=provenance)
+    envelope = compose_envelope(
+        target_path=target_path, target_words=0, results=results,
+        licenses_text=args.licenses, does_not_license_text=args.does_not_license,
+    )
+    return _emit(envelope, out_path=out_json, md_path=out_md, to_stdout=args.json)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
