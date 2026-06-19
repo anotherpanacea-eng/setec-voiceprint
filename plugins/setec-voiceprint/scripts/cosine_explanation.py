@@ -219,9 +219,18 @@ def compute_inputs(target: Path, comparison: Path) -> tuple[float, dict[str, Any
     import voice_fingerprint as vf  # type: ignore
     try:
         import numpy as np  # type: ignore
+        from semantic_trajectory_audit import split_windows  # type: ignore
         encoder = vf._load_encoder(vf.DEFAULT_MODEL)
-        tvec = np.asarray(encoder.encode([target_text]))[0]
-        cvec = np.asarray(encoder.encode([comparison_text]))[0]
+
+        def _doc_vec(text: str) -> Any:
+            # Window + centroid exactly as voice_fingerprint does — LUAR-MUD truncates long
+            # text, so encoding a whole document under-represents it. Fall back to the whole
+            # text when it is too short to window.
+            windows = split_windows(text, "paragraph", window_size=200) or [text]
+            return vf._centroid(np.asarray(encoder.encode(windows)))
+
+        tvec = _doc_vec(target_text)
+        cvec = _doc_vec(comparison_text)
     except (ImportError, vf.VoiceFingerprintError) as exc:
         raise RuntimeError(
             "cosine_explanation real-input path requires the style-embedding tier "
