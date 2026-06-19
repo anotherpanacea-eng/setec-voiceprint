@@ -121,6 +121,17 @@ DEFAULT_SEED = 0
 # stable estimate; mirrors binoculars_audit.MIN_STABLE_TOKENS.
 MIN_STABLE_TOKENS = 50
 
+# T-Detect (spec 25; arXiv:2507.23577): Student-t tail-aware normalization, opt-in via
+# --tail student-t. nu = 5 is the paper's fixed value (robust over 3..7).
+DEFAULT_T_DF = 5
+# Appended to does_not_license ONLY when the student-t mode emits p_value_t (so the
+# gaussian-mode claim license is byte-identical).
+P_VALUE_T_CAVEAT = (
+    "Under --tail student-t, p_value_t is the survival under a heavy-tailed Student-t(nu) "
+    "null (T-Detect) — a tail-aware significance, NOT a probability the text is AI and not a "
+    "threshold; the operator supplies any band."
+)
+
 
 DEFAULT_LICENSES = (
     "Reports the Fast-DetectGPT conditional-probability curvature of the "
@@ -352,6 +363,8 @@ def audit(
     n_samples: int = DEFAULT_N_SAMPLES,
     seed: int = DEFAULT_SEED,
     score_fn: Callable[..., list[tuple[float, Sequence[float]]]] | None = None,
+    tail: str = "gaussian",
+    t_df: int = DEFAULT_T_DF,
 ) -> dict[str, Any]:
     """Run the curvature audit. Returns the ``results`` dict wrapped into
     the ``build_output()`` envelope.
@@ -392,7 +405,7 @@ def audit(
         model.identifier_block() if model is not None else None
     )
 
-    return {
+    out: dict[str, Any] = {
         "model_id": model_id,
         "identifier_block": identifier_block,
         "curvature_score": stats["curvature_score"],
@@ -406,6 +419,23 @@ def audit(
         "reference_variance_sum_nats2": stats["reference_variance_sum_nats2"],
         "caveats": caveats,
     }
+    # T-Detect (spec 25; arXiv:2507.23577): opt-in Student-t tail-aware normalization. The
+    # DELIVERABLE is p_value_t — the survival under a heavy-tailed Student-t(nu) null, which is
+    # less extreme than the Gaussian for the same deviation (fewer false positives on adversarial,
+    # leptokurtic text). curvature_t = curvature_score / sqrt(nu/(nu-2)) is a CONSTANT rescale
+    # (nu fixed) -> zero added discrimination on its own; it is reported only as p_value_t's
+    # by-product. Added strictly inside this branch so the gaussian envelope stays byte-identical.
+    if tail == "student-t" and stats["curvature_score"] is not None:
+        from scipy.stats import t as _student_t  # scipy is a SETEC dependency
+        nu = t_df
+        d = stats["actual_log_prob_sum_nats"] - stats["reference_mean_sum_nats"]
+        v = stats["reference_variance_sum_nats2"]
+        curvature_t = d / math.sqrt((nu / (nu - 2)) * v)
+        out["tail"] = "student-t"
+        out["t_df"] = nu
+        out["curvature_t"] = curvature_t
+        out["p_value_t"] = float(_student_t.sf(curvature_t, df=nu))
+    return out
 
 
 def compose_envelope(
@@ -418,6 +448,11 @@ def compose_envelope(
     does_not_license_text: str = DEFAULT_DOES_NOT_LICENSE,
 ) -> dict[str, Any]:
     caveats = list(results.get("caveats", []))
+
+    # T-Detect: name p_value_t in the refusal block ONLY when it is emitted (student-t mode),
+    # so the gaussian-mode claim license is unchanged.
+    if "p_value_t" in results:
+        does_not_license_text = f"{does_not_license_text} {P_VALUE_T_CAVEAT}"
 
     license_block = ClaimLicense(
         task_surface=TASK_SURFACE,
@@ -553,6 +588,21 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--tail", choices=("gaussian", "student-t"), default="gaussian",
+        help=(
+            "Normalization of the curvature. 'gaussian' (default) is the Fast-DetectGPT "
+            "z-score, unchanged. 'student-t' adds the T-Detect tail-aware p_value_t "
+            "(arXiv:2507.23577), robust to adversarial/paraphrased text."
+        ),
+    )
+    parser.add_argument(
+        "--t-df", type=int, default=DEFAULT_T_DF,
+        help=(
+            "Student-t degrees of freedom for --tail student-t (default "
+            f"{DEFAULT_T_DF}; must be > 2)."
+        ),
+    )
+    parser.add_argument(
         "--per-position", action="store_true",
         help="Include the per-position curvature series in the output.",
     )
@@ -577,6 +627,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--licenses", default=DEFAULT_LICENSES)
     parser.add_argument("--does-not-license", default=DEFAULT_DOES_NOT_LICENSE)
     args = parser.parse_args(argv)
+
+    if args.tail == "student-t" and args.t_df <= 2:
+        print("error: --t-df must be > 2 (the Student-t variance nu/(nu-2) is "
+              "undefined at 2 and negative below).", file=sys.stderr)
+        return 2
 
     target_path = Path(args.target)
     if not target_path.exists():
@@ -630,6 +685,8 @@ def main(argv: list[str] | None = None) -> int:
             model=model,
             n_samples=args.n_samples,
             seed=args.seed,
+            tail=args.tail,
+            t_df=args.t_df,
         )
     except SurprisalBackendError as exc:
         print(f"error: scoring failed ({args.model}): {exc}", file=sys.stderr)

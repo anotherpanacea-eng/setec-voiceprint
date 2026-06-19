@@ -51,5 +51,9 @@ entries:
   - description: Custom model + reproducible seed
     cmd: python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt
       --model gpt2 --seed 7 --json
+  - description: T-Detect tail-aware p-value (robust to adversarial/paraphrased text; spec 25,
+      arXiv:2507.23577) — adds p_value_t under a Student-t(nu) null; default gaussian unchanged
+    cmd: python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt
+      --tail student-t --t-df 5 --json
   references:
   - plugins/setec-voiceprint/references/signals-glossary.md
