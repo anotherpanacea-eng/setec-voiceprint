@@ -1,5 +1,6 @@
 {
   "argument_decision_audit": "argument-decision audit (Kim et al. 2026 / ArgScope B1-B2 structural-arc + discourse-mode anchor)",
+  "argument_pattern_scan": "argument-pattern scan (ArgScope): candidate rhetorical-move flags (Logic 13-type taxonomy) + warrant-coverage flags for human review \u2014 descriptive span pointers, no soundness/quality/\"bad argument\" verdict",
   "assertoric": "deterministic argument-move profile (ArgScope B3/B4 + AGD; population baseline + two-corpus separation test, no verdict)",
   "authorship_embedding": "style-embedding voice fingerprint (LUAR / Wegmann learned style manifold; cosine-similarity distribution, no verdict)",
   "binoculars_discrimination": "Binoculars-style perplexity-ratio discrimination",
