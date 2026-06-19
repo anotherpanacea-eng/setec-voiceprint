@@ -39,7 +39,9 @@ jobs:
           # importorskip guard), so it must be present for collection.
           # click: spaCy's `download` CLI imports it directly, and recent
           # typer no longer pulls it in transitively.
-          pip install pypdf pytest click
+          # pytest-xdist: parallel test execution (`-n auto`, set in pytest.ini)
+          # — the suite is ~4,300 tests and serial it runs ~7 min.
+          pip install pypdf pytest pytest-xdist click
           # spaCy Tier-2/Tier-3 model (not on PyPI).
           python -m spacy download en_core_web_sm
 

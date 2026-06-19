@@ -577,23 +577,23 @@ def test_setup_launchd_cli_rejects_bad_time_window(
 
 def test_setup_launchd_cli_rejects_relative_base_dir(
     tmp_path: Path, capsys: pytest.CaptureFixture,
+    monkeypatch: pytest.MonkeyPatch,
 ):
     """A relative --base-dir would silently exec against the
     launchd-agent's working directory (typically $HOME, but
     fragile). We reject it via the validator."""
     # First, change cwd so the relative path doesn't accidentally
-    # resolve to something valid.
-    monkeypatch_cwd = tmp_path / "elsewhere"
-    monkeypatch_cwd.mkdir()
-    os.chdir(monkeypatch_cwd)
-    try:
-        rc = sl.main([
-            "--run-id", "test",
-            "--base-dir", "relative/path",  # relative
-            "--time-window", "23:00-06:00",
-        ])
-    finally:
-        os.chdir(tmp_path)
+    # resolve to something valid. Use monkeypatch.chdir so the cwd is
+    # restored to the *real* prior directory at teardown — a raw os.chdir
+    # leaks a deleted-tmp cwd into the (shared) xdist worker process.
+    elsewhere_dir = tmp_path / "elsewhere"
+    elsewhere_dir.mkdir()
+    monkeypatch.chdir(elsewhere_dir)
+    rc = sl.main([
+        "--run-id", "test",
+        "--base-dir", "relative/path",  # relative
+        "--time-window", "23:00-06:00",
+    ])
     # Note: argparse passes the string through; Path(...).expanduser()
     # in main() does NOT make it absolute. The validator catches it.
     assert rc == 2

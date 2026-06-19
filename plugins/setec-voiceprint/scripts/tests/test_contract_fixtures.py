@@ -17,6 +17,7 @@ Pins (spec §6):
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -157,32 +158,34 @@ def test_fake_setec_unknown_surface_exits_2():
 # ---- (d) drift check fails on mutation ---------------------------------
 
 def test_drift_check_fails_when_golden_mutated(tmp_path, monkeypatch):
-    """Temp-corrupt one golden and assert both the generator and the
-    capabilities drift checker flag it; the original is restored."""
-    target = FIXTURES_DIR / "variance_audit.json"
-    original = target.read_text(encoding="utf-8")
-    mutated = json.loads(original)
+    """Corrupt one golden and assert both the generator and the capabilities
+    drift checker flag it. Operates on a temp *copy* of the fixtures dir
+    (monkeypatched into gen) so it never mutates the committed tree — required
+    to be safe under ``pytest -n auto``, where other workers read that tree."""
+    tmp_fixtures = tmp_path / "contract_fixtures"
+    shutil.copytree(gen.FIXTURES_DIR, tmp_fixtures)
+    # Both sides resolve goldens via gen.FIXTURES_DIR (the drift checker's
+    # Check 9 delegates to gen.check_all()), so this one patch redirects both.
+    monkeypatch.setattr(gen, "FIXTURES_DIR", tmp_fixtures)
+
+    target = tmp_fixtures / "variance_audit.json"
+    mutated = json.loads(target.read_text(encoding="utf-8"))
     mutated["results"]["compression"]["band"] = "MUTATED-FOR-TEST"
-    try:
-        target.write_text(
-            json.dumps(mutated, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        # Generator side.
-        problems = gen.check_all()
-        assert any(p.startswith("variance_audit:") for p in problems), problems
+    target.write_text(
+        json.dumps(mutated, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
-        # Drift-checker side (Check 9 / fixture_drift).
-        import check_capabilities_drift as ccd  # type: ignore
-        report = ccd.check_drift()
-        assert not report.passed
-        kinds = {(v.kind, v.where) for v in report.violations}
-        assert ("fixture_drift", "variance_audit") in kinds, kinds
-    finally:
-        target.write_text(original, encoding="utf-8")
+    # Generator side.
+    problems = gen.check_all()
+    assert any(p.startswith("variance_audit:") for p in problems), problems
 
-    # Sanity: restored tree is clean again.
-    assert not gen.check_all()
+    # Drift-checker side (Check 9 / fixture_drift) — delegates to gen.check_all().
+    import check_capabilities_drift as ccd  # type: ignore
+    report = ccd.check_drift()
+    assert not report.passed
+    kinds = {(v.kind, v.where) for v in report.violations}
+    assert ("fixture_drift", "variance_audit") in kinds, kinds
 
 
 def test_clean_tree_passes_drift_checker():
