@@ -342,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         text = target_path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:        # invalid UTF-8 is bad input, not a crash
         env = _error_envelope(f"cannot read target: {exc}", "bad_input", target_path)
         return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
 

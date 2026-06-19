@@ -190,3 +190,12 @@ def test_judge_is_required(tmp_path):
         raise AssertionError("expected SystemExit (--judge required)")
     except SystemExit as e:
         assert e.code == 2
+
+
+def test_invalid_utf8_target_is_bad_input(tmp_path):
+    # self-audit (the #225/#226 lesson): invalid UTF-8 must be bad_input, not a traceback.
+    target = tmp_path / "bad.txt"; target.write_bytes(b"\xff\xfe not utf-8 \x80\x81")
+    out = tmp_path / "o.json"
+    rc = fallacy_scan.main([str(target), "--judge", "mock", "--out", str(out)])
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert env["available"] is False and "bad_input" in json.dumps(env)
