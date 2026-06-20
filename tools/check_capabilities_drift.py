@@ -92,6 +92,7 @@ from r1_bundle import validate_r1_bundle  # type: ignore  # noqa: E402
 # the heavy audit scripts lazily, inside each per-surface builder), so this
 # import is cheap and dependency-free.
 import gen_contract_fixtures  # type: ignore  # noqa: E402
+from _console import enable_utf8_stdio  # noqa: E402
 
 SKIP_FILE_PATTERNS = [
     re.compile(r"^test_"),
@@ -537,6 +538,7 @@ def check_drift(
 # ---------- CLI ----------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     parser = argparse.ArgumentParser(
         description=(
             "Lint the SETEC capabilities manifest for drift vs. "
