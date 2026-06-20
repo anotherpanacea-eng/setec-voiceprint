@@ -1,0 +1,43 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "TODO",
+    "length_floor_words": null,
+    "tier": "acquisition"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "bs4",
+      "dateutil",
+      "requests"
+    ]
+  },
+  "do_not_use_when": [
+    "TODO"
+  ],
+  "examples": [],
+  "family": "TODO",
+  "handoff": "none",
+  "id": "acquisition_core",
+  "inputs": {
+    "target": "TODO"
+  },
+  "outputs": {
+    "artifacts": [
+      "TODO"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "shared helpers for impostor-corpus acquisition.",
+  "references": [],
+  "registers": [
+    "TODO"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/acquisition_core.py",
+  "status": "todo",
+  "surface": "voice_coherence_acquisition",
+  "use_when": [
+    "TODO"
+  ]
+}

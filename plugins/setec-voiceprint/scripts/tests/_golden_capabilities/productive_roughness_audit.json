@@ -1,0 +1,60 @@
+{
+  "_seeded_at": "2026-06-06",
+  "compute": {
+    "cost_note": "spaCy en_core_web_sm dependency parse; CPU, no GPU/LLM.",
+    "length_floor_words": 1000,
+    "tier": "spacy"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "spacy"
+    ]
+  },
+  "do_not_use_when": [
+    "You have no writer-specific baseline (the audit refuses to run on a single document)",
+    "You want an absolute \"too smooth / too rough\" verdict or a quality score (this surface refuses it)",
+    "You want a voice-identity, authorship, or AI-provenance call"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/productive_roughness_audit.py draft.md --baseline-dir baseline/",
+      "description": "Baseline-relative roughness deviation to stdout"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/productive_roughness_audit.py draft.md --baseline-dir baseline/ --json",
+      "description": "JSON envelope"
+    }
+  ],
+  "family": "voice-coherence",
+  "handoff": "experimental",
+  "id": "productive_roughness_audit",
+  "inputs": {
+    "required": [
+      "writer-specific baseline directory (--baseline-dir)"
+    ],
+    "target": "draft prose/markdown text file (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Strictly baseline-relative productive-roughness deviation profile \u2014 fragment rate, sentence-initial coordinating-conjunction rate, contraction rate, adjacent-word-repetition rate, interjection/aside rate, very-short- sentence rate. Reports each as the draft's deviation (draft, baseline mean \u00b1 sd, z) from the WRITER'S OWN baseline, never an absolute roughness or quality judgment.\n",
+  "references": [
+    "plugins/setec-voiceprint/specs/10-productive-roughness-audit.md"
+  ],
+  "registers": [
+    "all_fiction",
+    "blog_essay"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/productive_roughness_audit.py",
+  "status": "heuristic",
+  "surface": "productive_roughness",
+  "use_when": [
+    "You want to see how a draft's sentence-internal roughness deviates from a writer's own stable pattern",
+    "You have a writer-specific baseline corpus (their prior work) to compare against",
+    "You suspect AI editing has sanded off (or amplified) a writer's productive roughness"
+  ]
+}

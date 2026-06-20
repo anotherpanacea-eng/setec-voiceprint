@@ -218,19 +218,27 @@ private-repo exemption; if voicewright ever 403s, use the same local-merge
 fallback.) See `AGENTS.md` §"Merge mechanics" and hub `PATTERNS.md` §4 for the
 verbose mechanics.
 
-### 2. Golden re-splice on stacked / colliding releases
+### 2. Capability/surface goldens are drop-in — no re-splice
 
-This applies only to **surface-addition** PRs (not docs PRs), but belongs in
-the release driver's toolkit because stacked releases can collide on the golden.
-When two surface PRs touch `_golden_capabilities.json` and stack, do a
-**surgical splice** rather than regenerating the whole golden against a stale
-tree: parse the committed golden, swap in only the new entry, and dump with
-`json.dump(..., indent=2, sort_keys=False, ensure_ascii=True)` to match the
-committed formatting (a full regen reorders unrelated entries and produces a
-noisy, conflict-prone diff). For stacked PRs, **retarget the child PR onto
-`main` before deleting the base branch**, or GitHub will close the child when
-the base is deleted. Hub `PATTERNS.md` §2/§4 has the full surface-addition
-checklist.
+The capability + surface-label goldens are now **drop-in**, so parallel
+surface-addition PRs **no longer collide** here (this retired the old
+surgical-splice dance):
+
+- **Capabilities golden** is one frozen `<id>.json` per entry under
+  `scripts/tests/_golden_capabilities/` (+ `_meta.json`), mirroring
+  `capabilities.d/`. A new capability adds its own `capabilities.d/<id>.yaml`
+  **and** `_golden_capabilities/<id>.json` — both new files, no shared edit. The
+  test count is derived from the fragments, so there is **no `==N` literal to
+  bump**. To re-bless a fragment after an intentional change, regenerate just
+  that one file (the snippet is in `test_capabilities_dropin.py`).
+- **Surface-label golden** has no aggregate snapshot at all: the per-surface
+  `claim_license_surfaces/<surface>.txt` fragment is the canonical artifact and
+  `test_round_trip_is_lossless` pins its bytes; a new surface adds one `.txt`,
+  nothing else.
+
+So stacked/parallel surface releases just add their own fragment files. (Retarget
+a stacked child PR onto `main` before deleting its base, as always.) Hub
+`PATTERNS.md` §2/§4 has the full surface-addition checklist.
 
 ### 3. Manual bump vs the weekly bot
 

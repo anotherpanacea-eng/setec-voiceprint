@@ -1,0 +1,39 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "TODO",
+    "length_floor_words": null,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": []
+  },
+  "do_not_use_when": [
+    "TODO"
+  ],
+  "examples": [],
+  "family": "TODO",
+  "handoff": "none",
+  "id": "chapter_distinctiveness_audit",
+  "inputs": {
+    "target": "TODO"
+  },
+  "outputs": {
+    "artifacts": [
+      "TODO"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "chapter_distinctiveness_audit.py Chapter-aware vocabulary repetition diagnostic.",
+  "references": [],
+  "registers": [
+    "TODO"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/chapter_distinctiveness_audit.py",
+  "status": "todo",
+  "surface": "smoothing_diagnosis",
+  "use_when": [
+    "TODO"
+  ]
+}

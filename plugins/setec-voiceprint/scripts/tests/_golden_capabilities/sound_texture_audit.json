@@ -1,0 +1,59 @@
+{
+  "compute": {
+    "cost_note": "stdlib only; no models, CPU-trivial.",
+    "length_floor_words": 300,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "do_not_use_when": [
+    "You want an AI-provenance call (this is explicitly NOT an AI signal)",
+    "You want a writing-quality judgment or a voice/authorship inference",
+    "You need a true phonetic transcription (this is an orthographic proxy, not phonemes)",
+    "Target is under 300 words (the length floor)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/sound_texture_audit.py target.md",
+      "description": "Sound-texture profile to stdout"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/sound_texture_audit.py target.md --baseline-dir baselines/personal/",
+      "description": "Deviation vs the writer's own baseline"
+    }
+  ],
+  "family": "voice-coherence",
+  "handoff": "experimental",
+  "id": "sound_texture_audit",
+  "inputs": {
+    "optional": [
+      "--baseline-dir to report metrics as deviation from the writer's own baseline"
+    ],
+    "target": "prose/markdown text file (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Descriptive sound-texture profile of prose \u2014 alliteration / assonance / consonance adjacency density and a consonant-class (plosive / fricative / sibilant / nasal / liquid / glide) profile \u2014 via an orthographic-onset proxy. The sonic layer the shipped suite (sentence-length variance only) is blind to. NOT a phonetic transcription, NOT an AI detector, NOT a quality judgment: measurements only (no band/verdict); the claim-license refuses AI-provenance / voice-identity / quality inference. Optional baseline-dir reports each metric as a deviation from the writer's own baseline.\n",
+  "references": [
+    "plugins/setec-voiceprint/specs/17-sound-texture-audit.md"
+  ],
+  "registers": [
+    "literary_fiction",
+    "blog_essay"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/sound_texture_audit.py",
+  "status": "heuristic",
+  "surface": "sound_texture",
+  "use_when": [
+    "You want a sonic-texture profile (alliteration / assonance / consonance / consonant-class) of a passage",
+    "You're developmentally editing literary prose where sound is part of voice",
+    "Target is >= 300 words"
+  ]
+}

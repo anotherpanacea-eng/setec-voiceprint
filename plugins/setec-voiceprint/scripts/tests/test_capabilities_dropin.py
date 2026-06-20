@@ -35,7 +35,19 @@ pytest.importorskip("yaml")
 
 import capabilities as cap  # type: ignore  # noqa: E402
 
-_GOLDEN = Path(__file__).resolve().parent / "_golden_capabilities.json"
+# The golden is itself drop-in: one frozen `<id>.json` per entry under
+# `_golden_capabilities/` (+ `_meta.json` for top-level keys), mirroring the
+# `capabilities.d/` source. A new capability adds its OWN golden fragment — no
+# shared file, no `==N` count literal — so parallel capability PRs never collide
+# here (the last monolithic collision point the #170 drop-in refactor left).
+# To (re)bless a fragment after an intentional change:
+#   import json, capabilities as cap
+#   from pathlib import Path
+#   m = cap.load_manifest(Path("plugins/setec-voiceprint/capabilities.d"))
+#   e = {x["id"]: x for x in m["entries"]}["<id>"]
+#   Path("plugins/setec-voiceprint/scripts/tests/_golden_capabilities/<id>.json")\
+#       .write_text(json.dumps(e, indent=2) + "\n")
+_GOLDEN_DIR = Path(__file__).resolve().parent / "_golden_capabilities"
 _CAP_DIR = SCRIPTS_ROOT.parent / "capabilities.d"
 
 
@@ -43,14 +55,27 @@ def _by_id(manifest):
     return {e["id"]: e for e in manifest["entries"]}
 
 
+def _load_golden_by_id():
+    return {
+        p.stem: json.loads(p.read_text(encoding="utf-8"))
+        for p in _GOLDEN_DIR.glob("*.json")
+        if p.name != "_meta.json"
+    }
+
+
+def _golden_meta():
+    return json.loads((_GOLDEN_DIR / "_meta.json").read_text(encoding="utf-8"))
+
+
 def test_aggregate_matches_golden_by_id():
-    """Every entry survives the split byte-for-byte (compared by id, so the
-    alphabetical re-order doesn't hide a lost or mutated entry)."""
-    golden = json.loads(_GOLDEN.read_text(encoding="utf-8"))
+    """Every entry matches its frozen golden fragment by id (so a lost, added, or
+    mutated entry is caught), and the count is derived from the fragments — no
+    `==N` literal to bump or collide on."""
+    golden = _load_golden_by_id()
     m = cap.load_manifest(_CAP_DIR)
-    assert m["schema_version"] == golden["schema_version"]
-    assert _by_id(m) == _by_id(golden)
-    assert len(m["entries"]) == len(golden["entries"]) == 97
+    assert m["schema_version"] == _golden_meta()["schema_version"]
+    assert _by_id(m) == golden
+    assert len(m["entries"]) == len(golden)
 
 
 def test_meta_carries_schema_version():

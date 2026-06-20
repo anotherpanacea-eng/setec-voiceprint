@@ -1,0 +1,56 @@
+{
+  "compute": {
+    "cost_note": "stdlib only; no models, CPU-trivial.",
+    "length_floor_words": 300,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "do_not_use_when": [
+    "You want an AI-provenance call (this is explicitly NOT an AI signal)",
+    "You want a writing-quality judgment or a voice/authorship inference",
+    "Target is under 300 words (the length floor)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/formulaicity_audit.py target.md",
+      "description": "Formulaicity profile to stdout"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/formulaicity_audit.py target.md --phrases-file my.txt",
+      "description": "With a custom phrase list"
+    }
+  ],
+  "family": "non-voice-structure",
+  "handoff": "none",
+  "id": "formulaicity_audit",
+  "inputs": {
+    "target": "prose/markdown text file (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Descriptive phraseological-texture profile \u2014 density of common generic/stock phrases (clich\u00e9s, filler transitions, hedge boilerplate, corporate idiom) from a small, user-extensible built-in list. NOT an AI detector and NOT a quality judgment: measurements only (no band/verdict), and the claim-license refuses AI-provenance / voice / quality inference.\n",
+  "references": [
+    "plugins/setec-voiceprint/specs/09-formulaicity-audit.md"
+  ],
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "technical_documentation"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/formulaicity_audit.py",
+  "status": "heuristic",
+  "surface": "formulaicity",
+  "use_when": [
+    "You want a texture profile of how stock/generic a document's phrasing is",
+    "You're comparing formulaicity across documents or registers",
+    "Target is >= 300 words"
+  ]
+}

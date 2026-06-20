@@ -1,0 +1,53 @@
+{
+  "compute": {
+    "cost_note": "GPU fine-tune for calibration (RoBERTa-large ~355M); CPU inference with a calibrated model.",
+    "length_floor_words": 100,
+    "tier": "surprisal"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "transformers",
+      "torch"
+    ],
+    "python_optional": []
+  },
+  "do_not_use_when": [
+    "You want an absolute \"% AI-edited\" number (this surface refuses it by design)",
+    "You have no same-corpus calibration (uncalibrated runs emit a score with no band)",
+    "You need cross-corpus comparability or per-sentence localization"
+  ],
+  "examples": [],
+  "family": "discrimination",
+  "handoff": "experimental",
+  "id": "edit_magnitude_audit",
+  "inputs": {
+    "optional": [
+      "operator-calibrated model (--model PATH)"
+    ],
+    "target": "prose/markdown text file (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Clean-room EditLens-style document-level edit-magnitude estimate \u2014 a RoBERTa-family regressor trained with MSE against a BERTScore-style similarity proxy between pre/post-edit pairs, framed as a SAME-CORPUS calibrated estimate with explicit OOD caveats, never an absolute \"% AI\". Uncalibrated by default (score only, no band); a calibrated model is operator-supplied via --model and applies only to the corpus it was calibrated on. The claim-license refuses an absolute %-AI / dosage claim, cross-corpus generalization, and per-sentence localization, and states the OOD-collapse caveat (degree estimation works in-distribution, collapses toward binary out-of-distribution).\n",
+  "references": [
+    "plugins/setec-voiceprint/specs/13-editlens-edit-magnitude.md"
+  ],
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "literary_fiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/edit_magnitude_audit.py",
+  "status": "heuristic",
+  "surface": "edit_magnitude",
+  "use_when": [
+    "You have an operator-calibrated model for a SPECIFIC corpus and want a same-corpus edit-magnitude estimate",
+    "You're assembling a multi-signal evidence pack and want a document-level magnitude reading",
+    "You accept the in-distribution-only caveat"
+  ]
+}

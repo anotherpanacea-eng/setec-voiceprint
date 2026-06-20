@@ -1,0 +1,76 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "stdlib only (tokenization + counting); no spaCy, no API costs",
+    "length_floor_words": null,
+    "tier": "core"
+  },
+  "consumers": [
+    "apodictic"
+  ],
+  "dependencies": {
+    "python": []
+  },
+  "do_not_use_when": [
+    "You want a calibrated AI/human verdict \u2014 the ratio and cluster signals are heuristic (plausible working thresholds awaiting calibration), diagnostic only",
+    "You have no writer-specific baseline (the over-representation ratio is meaningless without one)",
+    "The over-representation is an intended motif or domain term (read candidates as cues, not findings)"
+  ],
+  "examples": [
+    {
+      "description": "Words over-represented vs. a personal baseline",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/repetition_audit.py target.md --baseline-dir baseline/"
+    }
+  ],
+  "family": "repetition",
+  "handoff": "stable",
+  "id": "repetition_audit",
+  "inputs": [
+    {
+      "flag": "target",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--baseline-dir",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--anchors",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "artifacts": [
+      ".repetition.json",
+      ".repetition.md"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Vocabulary repetition diagnostic. Surfaces words over-represented in a target against the writer's own baseline (target/baseline frequency ratio) plus within-text clustering (max occurrences in a sliding window). Supports the vocabulary-restoration pass when Layer A flags lexical compression (MATTR / MTLD).\n",
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "plugins/setec-voiceprint/references/distributional-diagnostics.md"
+  ],
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/repetition_audit.py",
+  "status": "heuristic",
+  "surface": "smoothing_diagnosis",
+  "use_when": [
+    "Layer A flagged lexical compression and you want the specific over-represented words to target in a vocabulary-restoration pass",
+    "You have a baseline corpus of the writer's own prior prose to compute the ratio against",
+    "You want to distinguish concentrated repetition (clustered) from distributed repetition (the cluster_max signal)"
+  ],
+  "min_setec_version": "1.86.0",
+  "json_delivery": "stdout"
+}

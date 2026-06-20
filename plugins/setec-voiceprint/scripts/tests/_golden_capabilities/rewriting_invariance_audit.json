@@ -1,0 +1,63 @@
+{
+  "_seeded_at": "2026-06-06",
+  "compute": {
+    "cost_note": "N billed LLM rewrite calls per audit (one per trial); cost scales with --n and target length. Operator supplies the LLM SDK + key.\n",
+    "length_floor_words": 50,
+    "tier": "api_llm"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [],
+    "python_optional": [],
+    "sdks_optional": [
+      "anthropic"
+    ]
+  },
+  "do_not_use_when": [
+    "You want an AI/human verdict (this surface is uncalibrated and ships no threshold)",
+    "You cannot pin a single judge model + prompt (the distance is meaningless without them)",
+    "You can't absorb per-call LLM cost (each trial is a billed rewrite; cost scales with --n)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py target.txt --judge claude-sonnet-4-6",
+      "description": "Rewriting-invariance audit (markdown report)"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py target.txt --judge claude-sonnet-4-6 --n 5 --json",
+      "description": "JSON envelope, 5 trials"
+    }
+  ],
+  "family": "discrimination",
+  "handoff": "experimental",
+  "id": "rewriting_invariance_audit",
+  "inputs": {
+    "required": [
+      "--judge MODEL (operator-supplied LLM model id used to rewrite)"
+    ],
+    "target": "prose text file (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Raidar-style rewriting-invariance discrimination evidence: prompt an LLM to \"rewrite to improve clarity,\" then measure how much it changed the text (edit-distance / token-overlap) averaged over N trials. Low change \u21d2 more AI-like, high \u21d2 more human-like. A paraphrase-robust axis orthogonal to perplexity. Uncalibrated: emits the distance + provenance only (no band, no verdict); strongly dependent on the judge model + exact prompt (both pinned in provenance). Clean-room implementation of the published idea (Mao et al., ICLR 2024) \u2014 no Raidar repo code/data vendored.\n",
+  "references": [
+    "specs/15-raidar-rewriting-invariance.md"
+  ],
+  "registers": [
+    "blog_essay",
+    "long_form_fiction",
+    "testimony_policy"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/rewriting_invariance_audit.py",
+  "status": "heuristic",
+  "surface": "rewriting_invariance",
+  "use_when": [
+    "You want a discrimination signal that survives paraphrase attacks on perplexity detectors",
+    "You have an operator-supplied LLM (API key or local instruct model) to do the rewriting",
+    "You're stacking signals and want an axis orthogonal to surprisal / Binoculars"
+  ]
+}

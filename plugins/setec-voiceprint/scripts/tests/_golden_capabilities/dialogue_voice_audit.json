@@ -1,0 +1,60 @@
+{
+  "_seeded_at": "2026-06-06",
+  "compute": {
+    "cost_note": "CPU + en_core_web_sm; regex extraction, light per-turn tagging.",
+    "length_floor_words": 2000,
+    "tier": "spacy"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "spacy"
+    ]
+  },
+  "do_not_use_when": [
+    "You want an author-identity, AI-provenance, or writing-quality verdict (the audit refuses all three)",
+    "The manuscript has little tagged dialogue (attribution is tag-heuristic, not coreference)",
+    "Target is under 2000 words (the length floor)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/dialogue_voice_audit.py manuscript.md",
+      "description": "Dialogue-voice profile to stdout"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/dialogue_voice_audit.py manuscript.md --baseline-dir chapters/ --json",
+      "description": "JSON envelope with a baseline of other chapters"
+    }
+  ],
+  "family": "voice-coherence",
+  "handoff": "experimental",
+  "id": "dialogue_voice_audit",
+  "inputs": {
+    "optional": [
+      "--baseline-dir DIR (other chapters / a character's prior dialogue)"
+    ],
+    "target": "prose/markdown manuscript with quoted dialogue (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Per-character dialogue-voice profiling + cross-character divergence (Round 2 of pov_voice_profile, which profiles narration). Extracts quoted spans and tag-attributes them to speakers (\"said X\" / \"X asked\"); unattributed dialogue is bucketed separately and never force-attributed. Per character: contraction rate, mean turn length + variance, dialogue-tag verb diversity, vocative rate, interruption / trailing-punctuation rate, top function words + discourse markers. Reports a descriptive cross-character divergence matrix + a list of the lowest-divergence pairs \u2014 NOT a verdict. Refuses author-identity, AI-provenance, and quality inference.\n",
+  "references": [
+    "specs/11-dialogue-voice-audit.md"
+  ],
+  "registers": [
+    "literary_fiction",
+    "genre_fiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/dialogue_voice_audit.py",
+  "status": "heuristic",
+  "surface": "voice_coherence",
+  "use_when": [
+    "Checking whether a multi-character draft keeps its characters voice-distinct in dialogue",
+    "Character-voice collapse is suspected (it surfaces in dialogue before narration)",
+    "You want a per-character spoken-register profile to pair with pov_voice_profile's narration layer"
+  ]
+}

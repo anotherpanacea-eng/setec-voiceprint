@@ -1,0 +1,63 @@
+{
+  "compute": {
+    "cost_note": "stdlib + Tier 1-3 variance signals; CPU only, no model loads, no API costs",
+    "length_floor_words": null,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "spacy",
+      "sklearn"
+    ]
+  },
+  "do_not_use_when": [
+    "You want a single robustness or accuracy number \u2014 this surface refuses any aggregate score",
+    "You want a provenance verdict for a document \u2014 it is not a detector",
+    "You have not brought fixture pairs yet (real PAN data arrives via a PAN-account-gated, local-only fetcher)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/calibration/pan_replay.py --fixtures fixtures/ --json",
+      "description": "Replay all classes present in a fixture dir"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/calibration/pan_replay.py --fixtures fixtures/ --classes unicode,short",
+      "description": "Restrict to the unicode and short classes"
+    }
+  ],
+  "family": "pan-obfuscation-replay",
+  "handoff": "internal",
+  "id": "pan_replay",
+  "inputs": {
+    "optional": [
+      "--classes to restrict obfuscation classes",
+      "--signals to restrict reported signals"
+    ],
+    "target": "fixture directory containing a pairs.jsonl manifest of (clean, obfuscated) text pairs"
+  },
+  "outputs": {
+    "artifacts": [
+      ".pan_replay.json",
+      ".pan_replay.md"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Replay SETEC's existing signals over PAN@CLEF obfuscation fixtures (unicode / paraphrase / lang_switch / short) and emit a per-(signal \u00d7 obfuscation-class) robustness card: relative change plus a stable / degraded / collapsed tag per cell. Reuses the validation harness's audit_text + classify_compression scoring and adversarial_robustness_card's output shape. Not a detector; emits no aggregate robustness or accuracy score.\n",
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md"
+  ],
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/calibration/pan_replay.py",
+  "status": "empirically_oriented",
+  "surface": "validation",
+  "use_when": [
+    "You have (clean, obfuscated) PAN fixture pairs and want to know which signals survive which obfuscation class",
+    "You're prioritizing which SETEC signals need hardening against tokenizer / paraphrase / code-switch / short-text attacks",
+    "You want an honesty-claim artifact (\"signal S degrades by \u0394 under class C\") rather than a robustness leaderboard"
+  ]
+}
