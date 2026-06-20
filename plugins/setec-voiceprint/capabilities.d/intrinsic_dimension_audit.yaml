@@ -12,7 +12,10 @@ entries:
     al. 2023). Human prose tends to a higher intrinsic dimension than AI prose. Emits
     the scalar PHD plus sample size and the embedding-model id; uncalibrated (no band,
     no verdict) and the claim-license refuses an AI/human verdict absent operator-supplied
-    thresholds.
+    thresholds. On short text (n_points < 200, short_text_mode="auto") it routes to
+    the Short-PHD bootstrap-aggregation path (arXiv:2504.02873): the PHD is the median
+    over seeded sub-cloud fits with an explicit stability spread (fit.phd_stability),
+    an honest interval instead of one fragile point — long-text output is unchanged.
 
     '
   use_when:
@@ -46,5 +49,6 @@ entries:
     - scipy
     python_optional: []
   examples: []
-  references: []
+  references:
+  - plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md
   _seeded_at: '2026-06-06'
