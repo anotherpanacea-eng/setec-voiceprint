@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -115,18 +116,31 @@ def agreement(feat_sim: float, cosine: float) -> str:
     return "tracks" if _side(feat_sim) == _side(cosine) else "diverges"
 
 
+def _finite_pair(pair: Any) -> tuple[float, float] | None:
+    """A feature pair coerced to two FINITE floats, or None when `pair` is not a 2-element
+    sequence, an element is non-numeric, or an element is NaN/inf. Centralizes the #231 guard so
+    every consumer (side-by-side rows AND the fit baseline) skips a malformed pair instead of
+    tracebacking at `float(...)` or poisoning a fit with a non-finite value."""
+    if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+        return None
+    try:
+        t, c = float(pair[0]), float(pair[1])
+    except (TypeError, ValueError):
+        return None
+    if not (math.isfinite(t) and math.isfinite(c)):
+        return None
+    return t, c
+
+
 def build_comparison(cosine: float, features: dict[str, Any]) -> list[dict[str, Any]]:
     """Per named feature, the side-by-side row. `features` maps name → [target,
     comparison]. Features absent from `features` are skipped (provenance notes it)."""
     rows: list[dict[str, Any]] = []
     for name, scale in NAMED_FEATURES:
-        pair = features.get(name)
-        if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+        tc = _finite_pair(features.get(name))   # #231: a malformed pair must not traceback here
+        if tc is None:
             continue
-        try:                                    # #231: a non-numeric pair must not traceback here
-            t, c = float(pair[0]), float(pair[1])
-        except (TypeError, ValueError):
-            continue
+        t, c = tc
         sim = feature_similarity(t, c, scale)
         rows.append(
             {
@@ -162,11 +176,13 @@ def fit_residual(corpus: list[dict[str, Any]]) -> dict[str, Any] | None:
         vec = []
         ok = True
         for name, scale in NAMED_FEATURES:
-            pair = feats.get(name)
-            if not (isinstance(pair, (list, tuple)) and len(pair) == 2):
+            # #231: a dict row with a non-numeric/non-finite pair (e.g. ["bad", 0.2]) must skip the
+            # row, not raise ValueError at float(...). _finite_pair returns None on any malformed pair.
+            tc = _finite_pair(feats.get(name))
+            if tc is None:
                 ok = False
                 break
-            vec.append(feature_similarity(float(pair[0]), float(pair[1]), scale))
+            vec.append(feature_similarity(tc[0], tc[1], scale))
         if ok:
             xs.append(vec)
             ys.append(float(cos))

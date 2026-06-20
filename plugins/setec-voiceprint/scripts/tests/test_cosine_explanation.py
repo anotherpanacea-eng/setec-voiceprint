@@ -205,6 +205,32 @@ def test_fit_baseline_malformed_rows_skipped_not_traceback(tmp_path):
     assert "fit_baseline_warning" in env["results"]        # surfaced, not silent
 
 
+def test_fit_baseline_dict_row_nonnumeric_pair_skipped_not_traceback(tmp_path):
+    # Codex #231 re-review: a dict row with numeric cosine but a non-numeric (["bad", 0.2]) or
+    # non-finite ([NaN, 0.2]) feature pair must SKIP that row at float(pair[0]) — not raise
+    # ValueError. Mixed with enough valid rows, the fit still runs and counts ONLY the valid rows.
+    pytest.importorskip("numpy")
+
+    def full(c, b1):
+        return {"cosine": c, "features": {
+            "burstiness_B": [0.40, b1], "mattr": [0.7, 0.7], "mtld": [90, 90],
+            "function_word_ratio": [0.45, 0.45], "mean_dependency_distance": [2.0, 2.0]}}
+
+    bad_pair = {"cosine": 0.5, "features": {
+        "burstiness_B": ["bad", 0.2], "mattr": [0.7, 0.7], "mtld": [90, 90],
+        "function_word_ratio": [0.45, 0.45], "mean_dependency_distance": [2.0, 2.0]}}
+    nan_pair = {"cosine": 0.5, "features": {
+        "burstiness_B": [float("nan"), 0.2], "mattr": [0.7, 0.7], "mtld": [90, 90],
+        "function_word_ratio": [0.45, 0.45], "mean_dependency_distance": [2.0, 2.0]}}
+    corpus = [full(0.9 - (i % 4) * 0.1, 0.40 + (i % 4) * 0.05) for i in range(10)] + [bad_pair, nan_pair]
+    cpath = tmp_path / "corpus.json"
+    cpath.write_text(json.dumps(corpus), encoding="utf-8")
+    rc, env = _run_injected(tmp_path, INPUTS_HI, "--fit-baseline", str(cpath))
+    assert env["available"] is True                        # no traceback
+    fb = _results(env).get("fit_baseline")
+    assert fb is not None and fb["n_corpus_rows"] == 10     # the 2 malformed rows skipped, not fatal
+
+
 def test_no_inputs_is_bad_input(tmp_path):
     target = tmp_path / "t.txt"; target.write_text("x", encoding="utf-8")
     out = tmp_path / "o.json"
