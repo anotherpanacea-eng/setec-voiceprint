@@ -1,0 +1,66 @@
+{
+  "id": "homogeneity_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/homogeneity_audit.py",
+  "surface": "set_level_diversity",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "set-level-diversity",
+  "purpose": "Pool-level set homogeneity (\"AI hivemind\"): scores a POOL of N responses to one prompt, not one document. Reports the distribution of pairwise cosine similarities across the pool (the 7-key mean/sd/min/p10/p50/p90/n block) plus an effective number of modes (participation ratio over the Gram eigenvalues), with `mean_pairwise_cosine` as the headline, oriented gt = MORE homogeneous. An optional single-doc hivemind-proximity mode (--target + an operator-supplied --centroid / --centroid-dir) reports the cosine of one target to that centroid. M1 lens = local-stylometric (stdlib function-word + char-3/4/5-gram vectors over a pool-fixed shared vocabulary; model-free, spaCy-free). Clean-room of the average-pairwise-cosine + mode-collapse metric from Artificial Hivemind (arXiv:2510.22954). NOT an AI/human determination: measurements only, NO absolute band (like originality_audit), no verdict; the claim-license refuses any provenance call and refuses transferring the paper's ~0.8 semantic-lens line to this lens.\n",
+  "use_when": [
+    "You have a POOL of responses to ONE prompt and want its internal clustering (how tightly the set collapses toward a shared style)",
+    "You want a between-text spread measurement no per-document surface can give (the signal lives between the texts, not inside any one)",
+    "The pool has at least min_set (default 10) texts of >= ~15 words each"
+  ],
+  "do_not_use_when": [
+    "You want an AI/human call (high homogeneity is NOT 'AI'; this is not a provenance signal)",
+    "The pool answers MIXED prompts, or a single tight topical prompt forces homogeneity (the number is confounded by prompt-tightness / shared genre / single source)",
+    "You have fewer than the set floor, or you want the paper's semantic-lens number (M1 is a different, stylometric lens \u2014 not paper-comparable; the luar / semantic lenses are a gated M2 seam)"
+  ],
+  "inputs": {
+    "pool": "a --manifest (JSONL; id + text|text_path) OR a --dir of texts (.txt/.md, recursive)",
+    "proximity": "--target TEXT plus an operator-supplied --centroid FILE or --centroid-dir DIR"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "M1 stdlib local-stylometric lens; no models, no API, deterministic. effective_modes requires numpy (transitive dep) for the Gram eigenvalues; the pairwise-cosine distribution and the headline mean ship stdlib-only and effective_modes degrades to null (with a warning) if numpy is absent. The luar / text-embedding-3-small semantic lenses are a POC-gated M2 seam (the embedding / remote tier), not in this build.",
+    "length_floor_words": 15,
+    "min_set": 10
+  },
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "technical_documentation"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "numpy"
+    ]
+  },
+  "examples": [
+    {
+      "description": "Pool homogeneity over a manifest of prompt-matched responses",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/homogeneity_audit.py --manifest pool.jsonl --json"
+    },
+    {
+      "description": "Pool homogeneity over a directory of pooled texts",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/homogeneity_audit.py --dir corpora/pool --json"
+    },
+    {
+      "description": "Single-doc hivemind-proximity to an operator-supplied centroid",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/homogeneity_audit.py --target draft.md --centroid-dir corpora/ai_pool --json"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/specs/30-homogeneity-audit.md",
+    "Artificial Hivemind \u2014 Jiang, Choi, Sap et al., NeurIPS 2025 D&B (arXiv:2510.22954): https://arxiv.org/abs/2510.22954",
+    "QUDsim \u2014 discourse-structure reuse across LLM text (arXiv:2504.09373): https://arxiv.org/abs/2504.09373"
+  ]
+}

@@ -41,7 +41,7 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 **New axes (capabilities SETEC structurally lacks):**
 
 - **Model-family attribution** ("which LLM wrote this?") — NEW axis; spec 28 written + adversarially reviewed. Advisory ranked family posterior with abstention, never a verdict; M1 stdlib (named-feature per-family centroids). arXiv:2309.13322 / 2504.11369 / 2410.16107.
-- **Hivemind / cross-document homogenization** — `homogeneity_audit` (pool pairwise-cosine + effective modes) plus single-doc hivemind-proximity; M1 stdlib metric, M2 LUAR semantic lens POC-gated. Spec drafted this cycle. arXiv:2510.22954 / 2504.09373 (QUDsim).
+- **Hivemind / cross-document homogenization** — `homogeneity_audit` (pool pairwise-cosine + effective modes) plus single-doc hivemind-proximity; **M1 stdlib local-stylometric metric SHIPPED (spec 30, no band, no verdict, status: heuristic)**, M2 LUAR / text-embedding-3-small semantic lens POC-gated (deferred). arXiv:2510.22954 / 2504.09373 (QUDsim).
 
 **Shortlist tail (A1–A6):**
 
