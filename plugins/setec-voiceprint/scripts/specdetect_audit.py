@@ -305,6 +305,14 @@ def spectral_descriptors(
     ``MIN_SERIES_FOR_SPECTRUM`` still reports descriptors but flags
     ``series_too_short_for_stable_spectrum``.
     """
+    # A non-finite cutoff makes the `f < low_freq_cutoff` band split meaningless (NaN -> no bin counts;
+    # inf -> all bins count -> low_freq_frac always 1.0): a misleading spectral band. Reject it (Codex
+    # P2). The cutoff is a normalized frequency in (0, 0.5] cycles/token (0.5 = Nyquist).
+    if not (isinstance(low_freq_cutoff, (int, float)) and math.isfinite(low_freq_cutoff)
+            and 0.0 < float(low_freq_cutoff) <= 0.5):
+        raise ValueError(
+            f"low_freq_cutoff must be a finite frequency in (0, 0.5] cycles/token, "
+            f"got {low_freq_cutoff!r}")
     caveats: list[str] = []
     raw = [float(x) for x in logprob_series]
     n_in = len(raw)
@@ -326,6 +334,15 @@ def spectral_descriptors(
         "degenerate": True,
         "caveats": caveats,
     }
+
+    # A non-finite value (NaN/inf) anywhere in the series corrupts the mean, the DFT magnitudes, and
+    # every descriptor — and NaN sails past the constant/zero-energy degeneracy guards below (every
+    # NaN comparison is False), so the result would be NaN JSON + a misleading band. Treat a
+    # non-finite series as degenerate with an explicit caveat, never a spurious number (Codex P2).
+    if not all(math.isfinite(x) for x in raw):
+        caveats.append("non_finite_series")
+        caveats.append("degenerate")
+        return none_result
 
     # Too short for ANY meaningful spectrum (need at least a couple of bins).
     if n < 4:
@@ -898,6 +915,9 @@ def main(argv: list[str] | None = None) -> int:
     except SurprisalBackendError as exc:
         print(f"error: scoring failed ({args.model}): {exc}", file=sys.stderr)
         return 3
+    except ValueError as exc:   # invalid --low-freq-cutoff (non-finite / out of (0, 0.5]) -> bad input
+        print(f"error: invalid input: {exc}", file=sys.stderr)
+        return 2
 
     envelope = compose_envelope(
         target_path=target_path,

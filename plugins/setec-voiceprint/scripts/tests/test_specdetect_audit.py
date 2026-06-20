@@ -98,6 +98,33 @@ def test_sine_peaks_at_known_bin_and_is_peaky():
     assert desc["dominant_period_tokens"] == pytest.approx(32.0, rel=1e-6)
 
 
+def test_non_finite_series_is_degenerate_never_nan():
+    # Codex #244: a NaN/inf anywhere in the series must NOT produce NaN descriptors / a misleading
+    # band — NaN sails past the constant/zero-energy guards (NaN comparisons are all False). It is
+    # reported as a degenerate spectrum with an explicit caveat instead.
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        series = _sine_logprobs(n=256, freq_bin=8)
+        series[100] = bad
+        desc = sd.spectral_descriptors(series, use_numpy=False)
+        assert desc["degenerate"] is True
+        assert "non_finite_series" in desc["caveats"]
+        for k in ("spectral_centroid", "low_freq_energy_frac", "spectral_flatness",
+                  "peak_frequency_bin", "dominant_period_tokens"):
+            assert desc[k] is None      # None, never NaN
+        # the provisional band stays the safe degenerate band, not a misleading one
+        band = sd._provisional_band(desc)
+        assert band["band"] == "indeterminate" and "degenerate_spectrum" in band["flags"]
+
+
+def test_non_finite_or_out_of_range_cutoff_rejected():
+    # Codex #244: a non-finite or out-of-range low_freq_cutoff makes the band split meaningless;
+    # reject it (-> CLI bad_input) rather than emit a misleading band.
+    good = _sine_logprobs(n=64, freq_bin=4)
+    for bad_cutoff in (float("nan"), float("inf"), 0.0, -0.1, 0.9):
+        with pytest.raises(ValueError, match="low_freq_cutoff"):
+            sd.spectral_descriptors(good, low_freq_cutoff=bad_cutoff, use_numpy=False)
+
+
 def test_white_noise_is_flat_no_dominant_peak():
     desc = sd.spectral_descriptors(_white_logprobs(n=256), use_numpy=False)
     assert desc["degenerate"] is False
