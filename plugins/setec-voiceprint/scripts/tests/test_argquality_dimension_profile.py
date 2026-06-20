@@ -333,6 +333,33 @@ def test_stale_manifest_fingerprint_caught_by_drift_gate(tmp_path):
     assert _results(env)["judge"]["judge_identity"]["prompt_fingerprint_sha256"] == stale
 
 
+def test_manifest_without_fingerprint_is_not_rebound(tmp_path):
+    # Codex #243 (follow-up): a manifest that declares NO prompt fingerprint must NOT be rebound to the
+    # current code's fingerprint — the output reports None (honest "no provenance"), and any
+    # --expect-fingerprint can't be confirmed, so the gate abstains.
+    current = argquality_judge.fingerprint_prompt()
+    manifest = tmp_path / "bands.json"
+    manifest.write_text(json.dumps({
+        "values": {"dimensions": {
+            "logic": {"band": "lower", "evidence_spans": [], "basis": "m"},
+            "rhetoric": {"band": "higher", "evidence_spans": [], "basis": "m"},
+            "dialectic": {"band": None, "evidence_spans": [], "basis": "m"},
+        }},
+        "judge_identity": {"model": "precomputed-x"},   # NO prompt_fingerprint_sha256
+    }), encoding="utf-8")
+    margs = ["--judge", "manifest", "--judge-manifest", str(manifest)]
+
+    # No --expect-fingerprint: succeeds, but the output must NOT claim current_fp (no false rebind).
+    rc, env = _run(tmp_path, SAMPLE, *margs)
+    assert env["available"] is True, env
+    assert _results(env)["prompt_fingerprint_sha256"] is None
+    assert _results(env)["prompt_fingerprint_sha256"] != current
+
+    # With --expect-fingerprint set, a fingerprint-less manifest can't be confirmed -> abstain.
+    rc, env = _run(tmp_path, SAMPLE, "--expect-fingerprint", current, *margs)
+    assert env["available"] is False and "drift" in json.dumps(env).lower()
+
+
 def test_missing_sdk_is_missing_dependency(tmp_path, monkeypatch):
     def _raise(*a, **k):
         raise aqp.JudgeError(

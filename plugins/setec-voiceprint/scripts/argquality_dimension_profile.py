@@ -425,9 +425,11 @@ def main(argv: list[str] | None = None) -> int:
         n_paragraphs=len(paragraphs),
         n_words=n_words,
         reg_warnings=register_warnings(text, n_words),
-        # Report the fingerprint that PRODUCED the bands (the manifest's own, for a manifest judge),
-        # not blindly current_fp, so the output's provenance matches the drift gate (Codex P1).
-        prompt_fp=judge_result.judge_identity.get("prompt_fingerprint_sha256") or current_fp,
+        # Report the EFFECTIVE fingerprint that produced the bands (== the drift-gate value): the
+        # manifest's own for a manifest judge — None when the manifest declared none — and current_fp
+        # for API/mock. The previous `... or current_fp` REBOUND a fingerprint-less manifest to the
+        # current code's fingerprint, falsely claiming provenance it doesn't have (Codex P1).
+        prompt_fp=effective_fp,
     )
     envelope = compose_envelope(
         target_path=target_path, target_words=n_words, results=results,
