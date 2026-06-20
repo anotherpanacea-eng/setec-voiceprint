@@ -141,6 +141,11 @@ class VerifierResult:
     rationale: str
     judge_identity: dict[str, Any]
     raw_response: str | None = None
+    # The prompt fingerprint UNDER WHICH this band was produced. A live backend stamps the current
+    # code's fingerprint; an IMPORTED manifest carries the fingerprint recorded in the manifest (or
+    # None) — never the current code's, which would falsely claim the imported judgment was made under
+    # this prompt (Codex P1, mirroring the argquality fingerprint discipline).
+    prompt_fingerprint: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -294,6 +299,7 @@ def validate_result(
         rationale=result.rationale,
         judge_identity=dict(result.judge_identity),
         raw_response=result.raw_response,
+        prompt_fingerprint=result.prompt_fingerprint,   # carry the produced-under fingerprint through
     )
     return cleaned, warnings
 
@@ -407,24 +413,45 @@ def _manifest_backend(manifest_path: Path) -> VerifierBackend:
         raise VerifierError(
             f"manifest {manifest_path}: missing required 'band' key"
         )
+    # Validate feature_judgements UP FRONT (Codex P2): a malformed value would otherwise escape as an
+    # AttributeError/ValueError traceback later (compose/to_dict call `.get` on each value, and the
+    # old `dict(...)` raised on a non-mapping). Map bad input to the refusal contract instead.
+    fj_raw = data.get("feature_judgements", {})
+    if fj_raw is None:
+        fj_raw = {}
+    if not isinstance(fj_raw, dict):
+        raise VerifierError(
+            f"manifest {manifest_path}: 'feature_judgements' must be a JSON object, got "
+            f"{type(fj_raw).__name__}"
+        )
+    for _k, _v in fj_raw.items():
+        if not isinstance(_v, dict):
+            raise VerifierError(
+                f"manifest {manifest_path}: feature_judgement {_k!r} must be a JSON object, got "
+                f"{type(_v).__name__}"
+            )
+    # Preserve the fingerprint the manifest was PRODUCED under (top-level, else judge_identity), or
+    # None — never the current code's fingerprint (Codex P1: an imported band is not transferable to
+    # this prompt; rebinding it would falsely certify it under this code's prompt).
+    identity_block = data.get("judge_identity") or {}
+    manifest_fp = data.get("prompt_fingerprint_sha256")
+    if manifest_fp is None:
+        manifest_fp = identity_block.get("prompt_fingerprint_sha256")
 
     def _run(_query: str, _reference: str) -> VerifierResult:
         return VerifierResult(
             band=data.get("band"),
-            feature_judgements=dict(data.get("feature_judgements", {}) or {}),
+            feature_judgements=dict(fj_raw),
             rationale=str(data.get("rationale", "")),
             judge_identity={
                 "kind": "manifest",
                 "manifest_path": str(manifest_path),
-                "model": (data.get("judge_identity") or {}).get("model"),
-                "model_revision": (data.get("judge_identity") or {}).get(
-                    "model_revision"
-                ),
-                "prompt_version": (data.get("judge_identity") or {}).get(
-                    "prompt_version"
-                ),
+                "model": identity_block.get("model"),
+                "model_revision": identity_block.get("model_revision"),
+                "prompt_version": identity_block.get("prompt_version"),
             },
             raw_response=None,
+            prompt_fingerprint=manifest_fp,
         )
 
     return _run
@@ -473,6 +500,7 @@ def _mock_backend(mock_band: str = CENTER_BAND) -> VerifierBackend:
             ),
             judge_identity={"kind": "mock", "mock_band": mock_band},
             raw_response=None,
+            prompt_fingerprint=fingerprint_prompt(),   # a live this-code run
         )
 
     return _run
@@ -505,6 +533,7 @@ def _build_api_result(
         rationale=str(payload.get("rationale", "")),
         judge_identity=identity,
         raw_response=raw_text,
+        prompt_fingerprint=fingerprint_prompt(),   # produced under this code's prompt
     )
 
 
@@ -646,7 +675,10 @@ def compose_envelope(
         "rationale": result.rationale,
         "calibration_status": "uncalibrated",
         "judge_identity": dict(result.judge_identity),
-        "prompt_fingerprint_sha256": fingerprint_prompt(),
+        # The fingerprint the band was PRODUCED under — current code for a live run, the manifest's
+        # own recorded fingerprint (or null) for an imported result; never blindly the current code's
+        # (Codex P1).
+        "prompt_fingerprint_sha256": result.prompt_fingerprint,
         "reference": {
             "path": str(reference_path) if reference_path is not None else None,
         },

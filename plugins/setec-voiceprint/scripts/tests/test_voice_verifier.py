@@ -285,6 +285,41 @@ def test_manifest_judge_reads_precomputed_result(tmp_path):
     assert res.judge_identity["model"] == "some-local-weights"
 
 
+def test_manifest_fingerprint_is_preserved_not_rebound(tmp_path, capsys):
+    # Codex #247 P1: an imported manifest's band is NOT transferable to this code's prompt — the
+    # envelope must carry the manifest's OWN recorded fingerprint (or null), never the current code's.
+    q = tmp_path / "q.txt"; q.write_text("query habits here today.", encoding="utf-8")
+    r = tmp_path / "r.txt"; r.write_text("reference habits here today.", encoding="utf-8")
+    base = {"band": "leans_consistent",
+            "feature_judgements": _full_features("leans_consistent"),
+            "rationale": "x", "judge_identity": {"model": "local"}}
+    # (a) no fingerprint in the manifest -> null, and crucially NOT the current code's fingerprint
+    m = tmp_path / "nofp.json"; m.write_text(json.dumps(base), encoding="utf-8")
+    assert vv.main(["--query", str(q), "--reference", str(r), "--judge", "manifest",
+                    "--manifest", str(m), "--json"]) == 0
+    env = json.loads(capsys.readouterr().out)
+    assert env["results"]["prompt_fingerprint_sha256"] is None
+    assert env["results"]["prompt_fingerprint_sha256"] != vv.fingerprint_prompt()
+    # (b) a manifest carrying its own fingerprint -> preserved verbatim
+    m2 = tmp_path / "fp.json"
+    m2.write_text(json.dumps(dict(base, prompt_fingerprint_sha256="deadbeef")), encoding="utf-8")
+    assert vv.main(["--query", str(q), "--reference", str(r), "--judge", "manifest",
+                    "--manifest", str(m2), "--json"]) == 0
+    env2 = json.loads(capsys.readouterr().out)
+    assert env2["results"]["prompt_fingerprint_sha256"] == "deadbeef"
+
+
+def test_manifest_malformed_feature_judgements_raises_verifier_error(tmp_path):
+    # Codex #247 P2: a non-object feature_judgements (or a non-object value) is bad SETUP input,
+    # mapped to VerifierError (-> available:false), never an AttributeError traceback.
+    for bad in (["not", "a", "dict"], {"lexis": "should be an object"}):
+        m = tmp_path / "bad.json"
+        m.write_text(json.dumps({"band": "leans_consistent", "feature_judgements": bad}),
+                     encoding="utf-8")
+        with pytest.raises(vv.VerifierError):
+            vv.build_verifier("manifest", manifest_path=m)
+
+
 def test_manifest_missing_file_raises_verifier_error(tmp_path):
     with pytest.raises(vv.VerifierError):
         vv.build_verifier("manifest", manifest_path=tmp_path / "nope.json")
