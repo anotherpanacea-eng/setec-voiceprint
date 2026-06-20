@@ -96,6 +96,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `binoculars_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `narrative_decision_audit` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 2000 |
 | `argument_decision_audit` | Literature-anchored | Yes | register-matched personal baseline corpus (optional); pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 300 |
+| `corpus_novelty_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 24 |
 | `cosine_explanation` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: transformers, numpy | CPU (+ optional power-ups) | 0 |
 | `crosslingual_voice_distance` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required); language code shared by target and corpus (provenance) (required) | stdlib | CPU / stdlib (+ optional spaCy model) | 500 |
 | `dependency_distance_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: spacy | CPU / stdlib (+ optional spaCy model) | 150 |
@@ -118,6 +119,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `reference_ecology_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `repetition_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `rewriting_invariance_audit` | Heuristic (uncalibrated) | Yes | MODEL (operator-supplied LLM model id used to rewrite) (required); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 50 |
+| `skeleton_overlap_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 24 |
 | `sound_texture_audit` | Heuristic (uncalibrated) | Yes | register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
 | `voice_profile` | Empirical (provisional) | No | register-matched personal baseline corpus (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 2000 |
