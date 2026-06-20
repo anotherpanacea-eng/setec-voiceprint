@@ -31,6 +31,7 @@ import importlib
 import json
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -489,6 +490,41 @@ def test_crosslingual_encoder_block_beside_delta(tmp_path: Path, stub_cvd_encode
     assert block["available"] is True
     for key in ("mean", "sd", "min", "p10", "p50", "p90"):
         assert key in block["cosine_distribution"]
+
+
+def test_muar_real_load_fails_loud_no_public_checkpoint(monkeypatch: pytest.MonkeyPatch):
+    # Codex #241 P1: rrivera1849/mUAR has no public checkpoint, so the REAL load path must fail loud
+    # with actionable guidance instead of a transformers 404. The alias stays registered (spec-only)
+    # and is listed in _UNRELEASED_MODEL_IDS; the guard sits AFTER the transformers gate.
+    assert vf.MODEL_ALIASES["muar"] in vf._UNRELEASED_MODEL_IDS
+    monkeypatch.setitem(sys.modules, "transformers", types.ModuleType("transformers"))
+    with pytest.raises(vf.VoiceFingerprintError) as exc:
+        vf._load_encoder("muar")              # real loader; transformers gate passes -> guard fires
+    msg = str(exc.value).lower()
+    assert "no public checkpoint" in msg and "spec-only" in msg
+
+
+def test_encoder_block_appears_in_markdown_report():
+    # Codex #241 P2: the opt-in learned-encoder block must render in the NON-JSON markdown report too,
+    # not only the JSON envelope (else `--encoder muar` without `--json` silently drops it).
+    payload = {
+        "target": {"path": "t.txt", "words": 100},
+        "available": True,
+        "claim_license_rendered": "PARSER-FREE LICENSE",
+        "results": {
+            "lang": "en", "char_ngram_n": 4, "top_k": 10, "delta": 1.0,
+            "cosine_distance": 0.2, "per_baseline_file": [], "top_contributing_ngrams": [],
+            "encoder_block": {
+                "encoder_id": "rrivera1849/mUAR", "available": True,
+                "cosine_distribution": {"mean": 0.5}, "n_windows": 3, "n_baseline_windows": 4,
+                "claim_license_caveat": "ENCODER-CAVEAT-MUAR-SENTINEL",
+            },
+        },
+    }
+    md = cvd.render_report(payload)
+    assert "Learned-encoder block" in md
+    assert "rrivera1849/mUAR" in md
+    assert "ENCODER-CAVEAT-MUAR-SENTINEL" in md      # the per-encoder caveat is not dropped
 
 
 def test_crosslingual_encoder_block_keeps_cross_language_refusal(

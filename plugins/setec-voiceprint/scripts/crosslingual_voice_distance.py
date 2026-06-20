@@ -264,9 +264,24 @@ def render_report(payload: dict[str, Any]) -> str:
         f"- **Cosine distance:** {r['cosine_distance']}",
         f"- **Baseline cohesion (per-file cosine):** {r['per_baseline_file']}",
         f"- **Top contributing n-grams:** {r['top_contributing_ngrams']}",
-        "",
-        payload["claim_license_rendered"] or "",
     ]
+    # The opt-in learned-encoder block must appear in the MARKDOWN report too, not only the JSON
+    # envelope — otherwise `--encoder muar` without `--json` silently drops it (Codex P2).
+    eb = r.get("encoder_block")
+    if eb:
+        lines += ["", f"## Learned-encoder block — `{eb.get('encoder_id')}` (opt-in `--encoder`)", ""]
+        if eb.get("available"):
+            lines += [
+                f"- **Cosine distribution (target vs baseline centroid):** "
+                f"{eb.get('cosine_distribution')}",
+                f"- **Windows:** {eb.get('n_windows')} target / "
+                f"{eb.get('n_baseline_windows')} baseline",
+            ]
+        else:
+            lines.append(f"_Encoder block unavailable — {eb.get('note', 'no cosine produced')}._")
+        if eb.get("claim_license_caveat"):
+            lines += ["", eb["claim_license_caveat"]]
+    lines += ["", payload["claim_license_rendered"] or ""]
     return "\n".join(lines) + "\n"
 
 

@@ -104,7 +104,9 @@ SCRIPT_VERSION = "1.0"
 #     loads through the LUAR transformers/AutoModel path.
 #   * muar — Multilingual Universal Authorship Representation, the
 #     learned language-aware complement to crosslingual_voice_distance's
-#     parser-free profile (arXiv:2509.16531).
+#     parser-free profile (arXiv:2509.16531). NO public checkpoint exists
+#     yet (the alias is registered but SPEC-ONLY; the loader refuses it with
+#     guidance until weights ship — see _UNRELEASED_MODEL_IDS).
 # Both ship PROVISIONAL — an encoder swap does NOT promote calibration
 # status and does NOT change the default; DEFAULT_MODEL stays "luar".
 # Their real weight load is the M2 model seam (skipif-gated, never CI);
@@ -117,6 +119,13 @@ MODEL_ALIASES: dict[str, str] = {
     "muar": "rrivera1849/mUAR",
 }
 DEFAULT_MODEL = "luar"
+
+# mUAR's intended publisher id is registered as an alias, but NO public checkpoint exists yet —
+# verified against the publisher inventory (https://huggingface.co/rrivera1849/models lists only
+# LUAR-CRUD / LUAR-MUD / LUSR / ..., no mUAR). The alias is SPEC-ONLY: the loader refuses to attempt
+# loading these ids and fails loud with guidance instead of letting transformers 404 (Codex P1).
+# Drop an id from this set when its weights are actually published.
+_UNRELEASED_MODEL_IDS: frozenset[str] = frozenset({"rrivera1849/mUAR"})
 
 # Install hint surfaced when transformers is absent. Mirrors the
 # dependency_check-style guidance (NOT a traceback) so an operator
@@ -481,6 +490,18 @@ def _load_encoder(model: str, device: str | None = None) -> StyleEncoder:
         import transformers  # type: ignore  # noqa: F401
     except ImportError as exc:
         raise VoiceFingerprintError(_TRANSFORMERS_INSTALL_HINT) from exc
+
+    # Spec-only encoder guard (AFTER the transformers gate, so a missing-transformers run still gets
+    # the shared install hint): refuse a registered-but-unreleased id with an actionable message
+    # rather than a transformers 404 on the real load path (Codex P1, mUAR).
+    if resolved in _UNRELEASED_MODEL_IDS:
+        raise VoiceFingerprintError(
+            f"--model {model}: {resolved} has no public checkpoint — it is not in the publisher's "
+            f"model inventory (https://huggingface.co/rrivera1849/models). mUAR (Multilingual "
+            f"Universal Authorship Representation, arXiv:2509.16531) is registered but SPEC-ONLY "
+            f"until weights ship. Pass an explicit mUAR-family checkpoint via --model <hf-id-or-path>, "
+            f"or use --model luar (the calibrated default)."
+        )
 
     if is_wegmann:
         try:
