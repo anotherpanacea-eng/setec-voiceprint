@@ -53,7 +53,8 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 - **Neurobiber 96-feature family** — fast Biber features as a new `voice_profile` family (dual-use with model attribution). arXiv:2502.18590.
 - **GECScore** — black-box grammar-error-count signal; **gated behind `fairness_dialect_guardrails`** (inverts on ESL/dialect prose). arXiv:2405.04286.
 - **FWAN** — function-word adjacency networks; **deferred, overlaps `function_word_grammar_audit`**. arXiv:1406.4469.
-- **Glimpse / Gram2Vec / LambdaG** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2406.12131 / 2403.08462.
+- **Gram2Vec interpretable vectorizer** — `style_vectorizer` on `voice_coherence`. **M1 BUILT** (spec 30; stdlib named-feature vector reusing `stylometry_core.extract_features(include_spacy=False)` — function words / char n-grams / punctuation / paragraph-dialogue / pronoun-modal-negation). Glass-box: every dimension is a human-named feature; emits **no aggregate scalar at all**, so there is structurally nothing to threshold or rank on (the strongest no-verdict guarantee). Single mode = full inventory (all 135 function words, no cap); `--baseline-dir` adds a per-dimension reference distribution + a PROVISIONAL band (mean ± k·sd), held-out disjoint. M2 (follow-up) adds the two spaCy-gated families (`pos_trigrams` / `dependency_ngrams`) behind `--with-spacy` — named dimensions only, no verdict. arXiv:2406.12131.
+- **Glimpse / LambdaG** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2403.08462.
 
 **Eval-discipline / anti-Goodhart hardening (protocol upgrades, not surfaces):**
 

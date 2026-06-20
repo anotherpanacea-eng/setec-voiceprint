@@ -1,0 +1,59 @@
+entries:
+- id: style_vectorizer
+  script_path: plugins/setec-voiceprint/scripts/style_vectorizer.py
+  surface: voice_coherence
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: stylometric-vector
+  purpose: 'Interpretable (glass-box) document vectorizer (gram2vec; arXiv:2406.12131):
+    every dimension is a HUMAN-NAMED stylometric feature — function words, character
+    n-grams, punctuation, paragraph/dialogue shape, pronoun/modal/negation rates —
+    emitted as a named-feature coordinate (vector + vector_flat) in a deterministic
+    family-then-name order, so a human can read the difference dimension by dimension.
+    A VECTORIZER, not a classifier: there is NO aggregate scalar at all (no overall
+    distance, no score), so there is structurally nothing to threshold or rank on. The
+    feature math is REUSED verbatim from stylometry_core.extract_features
+    (include_spacy=False), not re-implemented. With an optional --baseline-dir / --manifest
+    it adds a per-dimension reference distribution (mean/sd/n) and a PROVISIONAL descriptive
+    band (mean ± k·sd) — illustrative, not a verdict; held-out disjoint (warns if the target
+    is a baseline member). NOT a verdict: not authorship/AI, not same-author, not a
+    writing-quality score, and not endorsed as a classifier/selection/training target.
+    Claim-license refuses those readings; thresholds operator-side / PROVISIONAL.
+
+    '
+  use_when:
+  - You want each named stylometric feature's value, by name, as a readable coordinate
+  - You want a transparent companion to voice_profile / voice_distance with no opaque embedding
+  - You want a per-dimension position against a held-out writer/register baseline (provisional band)
+  do_not_use_when:
+  - You want an authorship/AI verdict, a same-author claim, or a writing-quality judgment
+  - You want a single aggregate distance/score (use voice_distance — this surface emits none)
+  - Non-English text (the function-word list and char-n-gram axes are English-tuned)
+  inputs:
+    target: prose/markdown text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib only (M1); reuses stylometry_core feature builders with include_spacy=False.
+    length_floor_words: 500
+  registers:
+  - blog_essay
+  - testimony_policy
+  - technical_documentation
+  dependencies:
+    python: []
+    python_optional:
+    - spacy
+  examples:
+  - description: Named-feature vector of a document (single mode, full inventory)
+    cmd: python3 plugins/setec-voiceprint/scripts/style_vectorizer.py target.md --json
+  - description: Per-dimension position against a held-out baseline (provisional band)
+    cmd: python3 plugins/setec-voiceprint/scripts/style_vectorizer.py target.md
+      --baseline-dir corpus/ --json
+  references:
+  - specs/30-gram2vec.md
+  - 'gram2vec: An Interpretable Document Vectorizer (arXiv:2406.12131): https://arxiv.org/abs/2406.12131'

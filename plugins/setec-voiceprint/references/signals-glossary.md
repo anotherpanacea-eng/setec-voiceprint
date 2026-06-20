@@ -135,6 +135,12 @@ Per-sentence mean dependency distance via spaCy parse; then SD across sentences.
 
 The *distribution* of dependency distances `d = |i − head.i|` (histogram + adjacent-link share `d=1` + long-range tail `d ≥ 7`); the scalar MDD mean/SD is reused from `mdd_stats` (above). Descriptive, no verdict. Range `[0, 1]` (shares). Length floor 150 tokens. Parser-tier (spaCy `en_core_web_sm`; abstains without it). NOT length-controlled — `mean_sentence_length` co-reported. Spec 24 (arXiv:2211.14620).
 
+### Named-feature style vector (gram2vec)
+
+`style_vectorizer:vector_flat` (+ optional `baseline_reference.per_dimension[].z` / `.band`) · stylometric-vector · — · **heuristic**
+
+The interpretable (glass-box) document vector: every dimension a human-named stylometric feature (function words, char n-grams 3/4/5, punctuation, paragraph/dialogue, pronoun/modal/negation), reused verbatim from `stylometry_core.extract_features(include_spacy=False)`. **No aggregate scalar** — there is nothing to threshold or rank on (the strongest no-verdict guarantee). Single mode emits the FULL family inventory (all 135 function words, no cap); `--baseline-dir` adds a per-dimension reference distribution + a PROVISIONAL band (mean ± k·sd), held-out disjoint. `z` is signed (`null` when `sd==0`); frequencies/rates `≥ 0`. Length floor 500 words. Stdlib (M1); spaCy POS/dependency families are M2. Spec 30 (arXiv:2406.12131).
+
 ---
 
 ## Tier 3: Trajectory signals
