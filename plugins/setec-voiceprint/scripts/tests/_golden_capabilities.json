@@ -2013,6 +2013,102 @@
       ]
     },
     {
+      "id": "fallacy_scan",
+      "script_path": "plugins/setec-voiceprint/scripts/fallacy_scan.py",
+      "surface": "argument_pattern_scan",
+      "status": "literature_anchored",
+      "handoff": "experimental",
+      "consumers": [],
+      "family": "argument-pattern",
+      "purpose": "Flag CANDIDATE rhetorical moves in an argument-shaped nonfiction passage against the Logic 13-type fallacy taxonomy (Jin et al. 2022, arXiv:2202.13758): per flag, a candidate_type + a verbatim span pointer + a Flee-the-Flaw implicit-logic reconstruction (arXiv:2406.12402) explaining why the judge flagged it. Descriptive priors for a human reviewer \u2014 NOT a verdict. Emits no soundness / quality / \"bad argument\" label, score, or aggregate; a flagged move may be legitimate in context. The argument-pattern sibling of argument_decision_audit (structural arc); this flags MOVES, not structure.\n",
+      "use_when": [
+        "You want candidate fallacy-pattern flags with span pointers to triage for human review",
+        "Target is an argument-shaped nonfiction passage (op-ed / policy / testimony)",
+        "You want a Flee-the-Flaw reconstruction of each flagged move's implicit logic"
+      ],
+      "do_not_use_when": [
+        "You need a soundness / quality / \"bad argument\" / \"fallacious\" verdict (the surface refuses ALL of these \u2014 it flags CANDIDATE moves for a human, never rules; a flagged move is frequently legitimate in context)",
+        "You want an automated fallacy COUNT as a quality metric (candidate_pattern_tally is a rollup of flags raised for review, never a count of confirmed fallacies)",
+        "You don't have an LLM judge or a pre-computed label manifest"
+      ],
+      "inputs": [
+        {
+          "flag": "target",
+          "type": "path",
+          "required": true
+        },
+        {
+          "flag": "--judge",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "mock",
+            "manifest",
+            "anthropic",
+            "openai",
+            "gemini"
+          ]
+        },
+        {
+          "flag": "--judge-manifest",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--judge-model",
+          "type": "string",
+          "required": false
+        },
+        {
+          "flag": "--expect-fingerprint",
+          "type": "string",
+          "required": false
+        },
+        {
+          "flag": "--json",
+          "type": "bool",
+          "required": false
+        }
+      ],
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".fallacy_scan.json",
+          ".fallacy_scan.md"
+        ]
+      },
+      "compute": {
+        "tier": "api_llm",
+        "cost_note": "$0.01\u20130.10 per doc via Anthropic / OpenAI / Gemini (one labeling call); free with --judge manifest or --judge mock (a deterministic test stub)",
+        "length_floor_words": 120
+      },
+      "registers": [
+        "op-ed"
+      ],
+      "dependencies": {
+        "python": [],
+        "python_optional": [],
+        "sdks_optional": [
+          "anthropic",
+          "openai",
+          "google-genai"
+        ]
+      },
+      "examples": [
+        {
+          "description": "Candidate-flag scan with a pre-computed judge manifest",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/fallacy_scan.py essay.txt --judge manifest --judge-manifest flags.json"
+        },
+        {
+          "description": "Direct API spot-check",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/fallacy_scan.py essay.txt --judge anthropic --judge-model claude-sonnet-4-6"
+        }
+      ],
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md"
+      ]
+    },
+    {
       "id": "fast_detect_curvature",
       "script_path": "plugins/setec-voiceprint/scripts/fast_detect_curvature.py",
       "surface": "discrimination_curvature",

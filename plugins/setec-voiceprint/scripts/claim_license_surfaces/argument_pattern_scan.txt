@@ -1,0 +1,1 @@
+argument-pattern scan (ArgScope): candidate rhetorical-move flags (Logic 13-type taxonomy) + warrant-coverage flags for human review — descriptive span pointers, no soundness/quality/"bad argument" verdict
