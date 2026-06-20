@@ -223,25 +223,37 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                                   version=SCRIPT_VERSION, target_path=str(corpus_ref),
                                   reason=f"cannot read {which}: {e}", reason_category="bad_input")
 
-    n_docs = len(loaded)
-    if n_docs < args.min_docs:
+    n_raw = len(loaded)
+    # Apply --min-docs AFTER filtering to USABLE documents (those with word tokens). An empty-token
+    # file contributes no distribution point (audit_corpus_novelty skips it), so counting it toward
+    # the floor would let "1 real doc + 2 empty files" clear --min-docs and emit a one-point
+    # "distribution" with originality 1.0 (Codex P2). Report raw vs usable vs dropped separately.
+    usable = [(s, t, p) for (s, t, p) in loaded if _tokens(t)]
+    n_usable = len(usable)
+    n_dropped_empty = n_raw - n_usable
+    if n_usable < args.min_docs:
         return build_error_output(
             task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
             target_path=str(corpus_ref),
-            reason=(f"corpus has {n_docs} document(s); the novelty distribution needs at least "
-                    f"--min-docs ({args.min_docs}) — a distribution over 1-2 docs is meaningless"),
+            reason=(f"corpus has {n_usable} usable document(s) with word tokens "
+                    f"({n_dropped_empty} empty dropped from {n_raw} loaded); the novelty "
+                    f"distribution needs at least --min-docs ({args.min_docs}) — a distribution "
+                    "over 1-2 docs is meaningless"),
             reason_category="bad_input")
 
     try:
-        results = audit_corpus_novelty(loaded, min_ngram=args.min_ngram, max_span=args.max_span,
+        results = audit_corpus_novelty(usable, min_ngram=args.min_ngram, max_span=args.max_span,
                                        mutual_share=args.mutual_share)
     except ValueError as e:
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME,
                                   version=SCRIPT_VERSION, target_path=str(corpus_ref),
                                   reason=str(e), reason_category="bad_input")
 
-    total_words = sum(len(_tokens(t)) for _, t, _ in loaded)
+    total_words = sum(len(_tokens(t)) for _, t, _ in usable)
     warnings: list[str] = []
+    if n_dropped_empty:
+        warnings.append(f"dropped {n_dropped_empty} empty/whitespace document(s) with no word tokens "
+                        f"(of {n_raw} loaded) before the distribution")
     dropped = results["assumptions"]["dropped_self"]
     if dropped:
         warnings.append(f"dropped {dropped} self-path duplicate(s) across leave-one-out iterations "
@@ -251,7 +263,8 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     return build_output(
         task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
         target_path=str(corpus_ref), target_words=total_words,
-        baseline={"corpus": corpus_ref, "n_docs": n_docs},
+        baseline={"corpus": corpus_ref, "n_docs": n_usable, "n_docs_loaded": n_raw,
+                  "n_docs_dropped_empty": n_dropped_empty},
         results=results, claim_license=from_legacy(_claim_license(), task_surface=TASK_SURFACE),
         warnings=warnings,
     )

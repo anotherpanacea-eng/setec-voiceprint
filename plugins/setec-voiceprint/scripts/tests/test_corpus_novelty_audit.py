@@ -133,6 +133,27 @@ def test_all_empty_texts_bad_input(tmp_path):
     assert env["available"] is False and env["reason_category"] == "bad_input"
 
 
+def test_empty_files_do_not_pad_the_min_docs_floor(tmp_path):
+    # Codex P2: 1 real doc + 2 empty files must NOT clear --min-docs (default 3). The floor is on
+    # USABLE documents (those with word tokens), so this is bad_input — not a 1-point "distribution".
+    d = _corpus(tmp_path, [("real", _DOC), ("e1", "   "), ("e2", " !! ")])
+    rc, env = _envelope(["--corpus-dir", str(d), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
+    assert "usable" in env["reason"]
+
+
+def test_usable_floor_passes_and_reports_dropped_empties(tmp_path):
+    # 3 real docs + 1 empty: clears the usable floor, distribution is over the 3, and the dropped
+    # empty is reported (raw vs usable vs dropped surfaced, not silently absorbed).
+    d = _corpus(tmp_path, [("a", _DOC), ("b", _DOC), ("c", _DISJOINT), ("e", "   ")])
+    rc, env = _envelope(["--corpus-dir", str(d), "--json"])
+    assert env["available"] is True and rc == 0
+    assert env["results"]["n_documents"] == 3
+    assert env["baseline"]["n_docs_loaded"] == 4
+    assert env["baseline"]["n_docs_dropped_empty"] == 1
+    assert any("empty" in w for w in (env.get("warnings") or []))
+
+
 def test_missing_corpus_dir_bad_input(tmp_path):
     rc, env = _envelope(["--corpus-dir", str(tmp_path / "nope"), "--json"])
     assert env["available"] is False and "bad_input" in json.dumps(env)

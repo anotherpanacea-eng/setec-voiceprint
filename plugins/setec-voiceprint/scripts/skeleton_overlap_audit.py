@@ -177,25 +177,41 @@ def audit_skeleton_overlap(
     *,
     top_k: int = DEFAULT_TOP_K,
     report_threshold: float = DEFAULT_REPORT_THRESHOLD,
+    min_docs: int | None = None,
 ) -> dict[str, Any]:
     """Cross-document skeleton-overlap matrix + descriptive summaries over a loaded corpus.
 
     `loaded` is the §S2 loader's 3-tuples. Self-pairs are excluded from the off-diagonal (a doc never
     overlaps itself). Deterministic, stdlib. Raises ValueError if no document yields any discourse
-    unit (caller -> bad_input)."""
+    unit, or (when `min_docs` is given) if fewer than `min_docs` documents do (caller -> bad_input).
+
+    A document whose text yields NO discourse units (empty skeleton) is DROPPED before the matrix and
+    the floor (Codex P2): left in, it sits as a zero skeleton and emits artificial 0.0 overlaps and
+    apparent diversity, and "1 real doc + empty files" would clear `min_docs`. The count of dropped
+    documents is returned as `n_dropped_empty_skeleton`."""
     per_document: list[dict[str, Any]] = []
     sym_lists: list[list[str]] = []
     ids: list[str] = []
+    n_dropped_empty_skeleton = 0
     for src, text, _abs in loaded:
         sk = skeleton_for(text)
+        if sk["n_units"] == 0:
+            n_dropped_empty_skeleton += 1
+            continue
         per_document.append({"id": src, "skeleton": sk["skeleton"], "n_units": sk["n_units"]})
         sym_lists.append(sk["symbols"])
         ids.append(src)
 
-    if not any(sym_lists):
+    if not sym_lists:
         raise ValueError("no document in the corpus segments into discourse units")
+    if min_docs is not None and len(sym_lists) < min_docs:
+        raise ValueError(
+            f"corpus has {len(sym_lists)} document(s) with discourse units "
+            f"({n_dropped_empty_skeleton} empty-skeleton dropped from {len(loaded)} loaded); the "
+            f"skeleton-overlap matrix needs at least --min-docs ({min_docs}) — a pairwise matrix "
+            "over 1-2 docs is meaningless")
 
-    n = len(loaded)
+    n = len(sym_lists)   # the USABLE count (empty skeletons already dropped), not len(loaded)
     pair_overlaps: list[float] = []
     pairs: list[dict[str, Any]] = []
     edges: list[tuple[int, int]] = []
@@ -221,6 +237,7 @@ def audit_skeleton_overlap(
 
     return {
         "n_documents": n,
+        "n_dropped_empty_skeleton": n_dropped_empty_skeleton,
         "skeleton_overlap": {
             "mean_pairwise": mean_p,
             "median_pairwise": median_p,
@@ -304,29 +321,28 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                                   version=SCRIPT_VERSION, target_path=str(corpus_ref),
                                   reason=f"cannot read {which}: {e}", reason_category="bad_input")
 
-    n_docs = len(loaded)
-    if n_docs < args.min_docs:
-        return build_error_output(
-            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
-            target_path=str(corpus_ref),
-            reason=(f"corpus has {n_docs} document(s); the skeleton-overlap matrix needs at least "
-                    f"--min-docs ({args.min_docs}) — a pairwise matrix over 1-2 docs is meaningless"),
-            reason_category="bad_input")
-
+    # --min-docs is enforced INSIDE the audit, on the USABLE set (after empty-skeleton documents are
+    # dropped) — a raw len(loaded) gate would let empty files pad the floor and the matrix (Codex P2).
     try:
         results = audit_skeleton_overlap(loaded, top_k=args.top_k,
-                                         report_threshold=args.report_threshold)
+                                         report_threshold=args.report_threshold,
+                                         min_docs=args.min_docs)
     except ValueError as e:
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME,
                                   version=SCRIPT_VERSION, target_path=str(corpus_ref),
                                   reason=str(e), reason_category="bad_input")
 
+    n_dropped = results.get("n_dropped_empty_skeleton", 0)
+    warnings = ([f"dropped {n_dropped} document(s) with no discourse units (empty skeleton, of "
+                 f"{len(loaded)} loaded) before the overlap matrix"] if n_dropped else None)
     total_words = sum(len(t.split()) for _, t, _ in loaded)
     return build_output(
         task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
         target_path=str(corpus_ref), target_words=total_words,
-        baseline={"corpus": corpus_ref, "n_docs": n_docs},
+        baseline={"corpus": corpus_ref, "n_docs": results["n_documents"],
+                  "n_docs_loaded": len(loaded), "n_docs_dropped_empty_skeleton": n_dropped},
         results=results, claim_license=from_legacy(_claim_license(), task_surface=TASK_SURFACE),
+        warnings=warnings,
     )
 
 

@@ -130,6 +130,28 @@ def test_set_floor_abstention(tmp_path):
     assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
 
 
+def test_empty_skeletons_do_not_pad_the_min_docs_floor(tmp_path):
+    # Codex P2: 1 real (templated) doc + 2 whitespace files (empty skeletons) must NOT clear
+    # --min-docs (default 3). The floor is on documents WITH discourse units, so this is bad_input —
+    # not a matrix padded with artificial 0.0 overlaps against zero skeletons.
+    d = _corpus(tmp_path, [("real", _TPL_A), ("e1", "   "), ("e2", "\n\n")])
+    rc, env = _envelope(["--corpus-dir", str(d), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
+    assert "discourse units" in env["reason"]
+
+
+def test_empty_skeletons_dropped_from_matrix_and_reported(tmp_path):
+    # 3 real docs + 1 whitespace file: clears the usable floor, the matrix is over the 3 real docs
+    # (no artificial 0.0 overlaps against a zero skeleton), and the dropped empty is reported.
+    d = _corpus(tmp_path, [("a", _TPL_A), ("b", _TPL_B), ("c", _FLAT), ("e", "   ")])
+    rc, env = _envelope(["--corpus-dir", str(d), "--json"])
+    assert env["available"] is True and rc == 0
+    assert env["results"]["n_documents"] == 3
+    assert env["results"]["n_dropped_empty_skeleton"] == 1
+    assert env["baseline"]["n_docs_loaded"] == 4
+    assert any("empty skeleton" in w for w in (env.get("warnings") or []))
+
+
 def test_empty_corpus_bad_input(tmp_path):
     d = tmp_path / "empty"
     d.mkdir()
