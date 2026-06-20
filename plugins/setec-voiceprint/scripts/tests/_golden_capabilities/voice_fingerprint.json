@@ -10,7 +10,7 @@
   "min_setec_version": "1.115.0",
   "json_delivery": "stdout",
   "family": "style-embedding",
-  "purpose": "Same-author style-embedding surface. Embeds passages with a frozen style encoder (LUAR default; Wegmann optional via sentence-transformers) and reports the cosine-similarity DISTRIBUTION across windows \u2014 internal consistency (single), consistency with a baseline voice centroid (two-corpus), or where the target's candidate-similarity falls relative to an impostor pool (n-way, descriptive). Refuses any identity / AI verdict; ships PROVISIONAL with no threshold.\n",
+  "purpose": "Same-author style-embedding surface. Embeds passages with a frozen style encoder (LUAR default; Wegmann, StyleDistance, and mUAR selectable via --model) and reports the cosine-similarity DISTRIBUTION across windows \u2014 internal consistency (single), consistency with a baseline voice centroid (two-corpus), or where the target's candidate-similarity falls relative to an impostor pool (n-way, descriptive). StyleDistance (arXiv:2410.12757) is a more content-independent manifold than LUAR; mUAR (arXiv:2509.16531) is a multilingual authorship encoder. Cross-encoder cosines are NOT comparable. The default stays LUAR (no silent flip). Refuses any identity / AI verdict; ships PROVISIONAL with no threshold, per encoder.\n",
   "use_when": [
     "You want a learned-manifold complement to the scalar voice-coherence signals (voice_distance, idiolect_detector)",
     "You want same-author-consistency evidence that needs no per-deployment training and no threshold",
@@ -57,7 +57,7 @@
   },
   "compute": {
     "tier": "optional",
-    "cost_note": "loads a ~0.5\u20131.4 GB style encoder; CPU-feasible, GPU optional <2 GB VRAM",
+    "cost_note": "loads a ~0.5\u20131.4 GB style encoder (LUAR / Wegmann / StyleDistance / mUAR); CPU-feasible, GPU optional <2 GB VRAM",
     "length_floor_words": 500
   },
   "registers": [
@@ -84,10 +84,15 @@
     {
       "description": "N-way embedding analogue (target vs candidate vs impostors)",
       "cmd": "python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --baseline-dir candidate/ --impostor-dir impostors/ --json"
+    },
+    {
+      "description": "StyleDistance encoder (more content-independent than LUAR)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/voice_fingerprint.py draft.txt --model styledistance --json"
     }
   ],
   "references": [
     "specs/02-voice-fingerprint-embedding.md",
+    "specs/28-styledistance-encoder-upgrade.md",
     "plugins/setec-voiceprint/references/signals-glossary.md"
   ]
 }

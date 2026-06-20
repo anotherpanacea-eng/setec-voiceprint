@@ -32,6 +32,11 @@ entries:
     required:
     - --baseline-dir register-matched same-language baseline corpus
     - --lang language code shared by target and corpus (provenance)
+    optional:
+    - --encoder muar opt-in (default OFF); adds a learned mUAR cosine block BESIDE
+      the parser-free distance (does NOT replace delta, does NOT relax the --lang
+      cross-language refusal). Lazily imports transformers + voice_fingerprint only
+      on this flag.
     target: prose/markdown text file (UTF-8)
   outputs:
     schema_version: '1.0'
@@ -39,11 +44,14 @@ entries:
     - stdout markdown report (default), --json envelope, or --out PATH
   compute:
     tier: core
-    cost_note: stdlib only; no models, CPU-trivial.
+    cost_note: 'stdlib only by default; no models, CPU-trivial. --encoder muar raises
+      this to the optional/model tier (loads the mUAR style encoder via transformers,
+      imported lazily and only on that flag).'
     length_floor_words: 500
   dependencies:
     python: []
-    python_optional: []
+    python_optional:
+    - transformers
   examples:
   - description: Spanish voice distance vs a same-language baseline
     cmd: python3 plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py target.txt
@@ -53,3 +61,4 @@ entries:
       --baseline-dir baselines/es/ --lang es --char-ngram 4 --json
   references:
   - plugins/setec-voiceprint/specs/19-crosslingual-voice-distance.md
+  - specs/28-styledistance-encoder-upgrade.md
