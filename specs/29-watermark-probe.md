@@ -432,17 +432,22 @@ keys · `import`ing the script pulls no model dependency (stdlib).
    **whitespace-fallback under-detection** note. No `verdict` / `is_ai` key anywhere in the envelope.
 10. **Both goldens + count bumps (surface-addition discipline):** a new `capabilities.d/
     watermark_probe.yaml` fragment (`surface: watermark_probe`; `status: literature_anchored`;
-    `compute.tier: core`; `dependencies.python: []`; `use_when` = "you hold the green-list
-    key/params for a scheme you suspect"; `do_not_use_when` = "you have no key / want an AI verdict /
-    want to read a negative as human / the text may be paraphrase-scrubbed / the scheme is
-    semantic/SynthID-class") is added **and** mirrored into `scripts/tests/_golden_capabilities.json`
-    (insert the entry; `json.dumps` **no** `sort_keys`); a new `claim_license_surfaces/
-    watermark_probe.txt` fragment is added; **and** `scripts/tests/_golden_task_surface_labels.json`
-    gains a `watermark_probe` label carrying the absence-≠-human caveat — *"KGW green-list watermark
-    probe (Kirchenbauer et al. 2301.10226): z-test for a KNOWN, operator-keyed token-level scheme.
-    A positive is watermark-consistent with that scheme, never 'AI'; absence is NOT evidence of human
-    authorship (blind to other & semantic & scrubbed watermarks)."* The relevant golden-count
-    assertions (`==N`) are bumped. (Per the fleet golden-bump lesson: parallel new-surface PRs
+    `compute.tier: core`; `dependencies.python: []`; `use_when` = "you generated the tokens with
+    THIS module's green-list partition (partition_prf `voiceprint-greenlist-v1/sha256-seed+pyrandom-shuffle`)
+    under a known key/gamma/hash_scheme/vocab"; `do_not_use_when` = "the tokens were produced by the
+    official KGW reference processor (simple_1 / selfhash / minhash) or any vendor generator — the
+    custom PRF/RNG false-negates / you have no key / want an AI verdict / want to read a negative as
+    human / the text may be paraphrase-scrubbed / the scheme is semantic/SynthID-class") is added
+    **and** mirrored into `scripts/tests/_golden_capabilities.json` (insert the entry; `json.dumps`
+    **no** `sort_keys`); a new `claim_license_surfaces/watermark_probe.txt` fragment is added;
+    **and** `scripts/tests/_golden_task_surface_labels.json` gains a `watermark_probe` label that
+    scopes to the exact partition and carries the absence-≠-human caveat — *"Green-list watermark
+    probe (KGW construction, Kirchenbauer et al. 2301.10226): z-test for tokens generated under THIS
+    module's Voiceprint green-list partition (voiceprint-greenlist-v1/sha256-seed+pyrandom-shuffle),
+    NOT the official KGW reference processor (simple_1 / selfhash / minhash) or any vendor scheme —
+    those use a different PRF/RNG and false-negate here. A positive is watermark-consistent with that
+    partition, never 'AI'; absence is NOT evidence of human authorship (blind to other & semantic &
+    scrubbed watermarks)."* The relevant golden-count assertions (`==N`) are bumped. (Per the fleet golden-bump lesson: parallel new-surface PRs
     collide here; this is the full-suite golden test, not the drift/docs gate.)
 11. **M2 sweep is additive + caveated (gated, stubbed — no model, no GPU):** with a **stub
     catalog** of several scheme params and the whitespace fallback, the sweep emits one independent

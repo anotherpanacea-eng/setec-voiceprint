@@ -25,5 +25,5 @@
   "validation": "validation / labeled-corpus harness",
   "voice_coherence": "voice-coherence comparison",
   "voice_coherence_acquisition": "voice-coherence corpus acquisition",
-  "watermark_probe": "KGW green-list watermark probe (Kirchenbauer et al. 2301.10226): z-test for a KNOWN, operator-keyed token-level scheme. A positive is watermark-consistent with that scheme, never 'AI'; absence is NOT evidence of human authorship (blind to other & semantic & scrubbed watermarks)."
+  "watermark_probe": "Green-list watermark probe (KGW construction, Kirchenbauer et al. 2301.10226): z-test for tokens generated under THIS module's Voiceprint green-list partition (voiceprint-greenlist-v1/sha256-seed+pyrandom-shuffle), NOT the official KGW reference processor (simple_1 / selfhash / minhash) or any vendor scheme \u2014 those use a different PRF/RNG and false-negate here. A positive is watermark-consistent with that partition, never 'AI'; absence is NOT evidence of human authorship (blind to other & semantic & scrubbed watermarks)."
 }
