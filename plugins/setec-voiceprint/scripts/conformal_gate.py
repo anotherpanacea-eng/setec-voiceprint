@@ -186,7 +186,24 @@ def threshold_at_fpr_bound(
         return sum(1 for c in cal_nc if c >= t)
     if _flagged_at(threshold) > max_flagged:
         higher = sorted({c for c in cal_nc if c > threshold})
-        threshold = next((h for h in higher if _flagged_at(h) <= max_flagged), math.inf)
+        threshold = next((h for h in higher if _flagged_at(h) <= max_flagged), None)
+    if threshold is None:
+        # No FINITE threshold keeps the empirical FPR <= q without flagging the whole reference set:
+        # the calibration is degenerate (e.g. every score tied), so the only way to honor the bound is
+        # to flag nothing — a vacuous gate. Abstain with a reason rather than emit a non-JSON `inf`
+        # threshold (Codex P1). Supply calibration with variation to get a usable bound.
+        return {
+            "available": False,
+            "reason": (
+                "degenerate calibration: too many tied scores to place a finite threshold that bounds "
+                "the reference FPR <= fpr_bound without flagging the whole reference set. Supply "
+                "calibration scores with variation."
+            ),
+            "mode": "fpr_bound",
+            "fpr_bound": fpr_bound,
+            "direction": direction,
+            "n_calibration": n,
+        }
     n_flagged = _flagged_at(threshold)
     empirical_fpr = n_flagged / n
     return {

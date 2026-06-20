@@ -10,6 +10,7 @@ default one-class/two-class behavior is preserved when --fpr-bound is omitted.
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -42,18 +43,24 @@ def test_empirical_fpr_within_bound():
 
 
 def test_ties_do_not_violate_fpr_bound():
-    # Codex #242: with the `>= threshold` rule, calibration scores TIED at the threshold are all
-    # flagged. An all-tied tail (ten identical scores, q=0.1) used to flag the whole block -> empirical
-    # reference FPR 1.0 while claiming <= q. The tie-safe threshold must keep the empirical FPR <= q.
+    # Codex #242: with the `>= threshold` rule, ties at the threshold are all flagged, so an all-tied
+    # tail used to flag the whole block (empirical FPR 1.0). When NO finite threshold can bound the FPR
+    # <= q without flagging everything (whole tail tied / over-tied at this q), the gate must ABSTAIN
+    # (available=False, with a reason) — NEVER emit a non-JSON `inf` threshold (Codex #242 follow-up).
     for direction in cg.FPR_BOUND_DIRECTIONS:
         r = cg.threshold_at_fpr_bound([0.0] * 10, fpr_bound=0.1, direction=direction)
-        assert r["available"] is True
-        assert r["empirical_reference_fpr_at_threshold"] <= 0.1 + 1e-12, r
-        assert r["empirical_reference_fpr_at_threshold"] == 0.0   # all-tied -> flag none (conservative)
-    # a partial tie at the boundary is pushed above the tied block, never over the bound
-    cal = [1.0] * 5 + [9.0] * 5   # q=0.1 would want to flag 1, but the top is a 5-way tie
+        assert r["available"] is False
+        assert "threshold" not in r                       # no inf (or any) threshold emitted
+        assert "degenerate" in r["reason"] and "tied" in r["reason"]
+    # an over-tied boundary at a strict q also abstains (can't flag 1 of a 5-way tie)
+    cal = [1.0] * 5 + [9.0] * 5
     r = cg.threshold_at_fpr_bound(cal, fpr_bound=0.1, direction="higher_is_nonconforming")
-    assert r["empirical_reference_fpr_at_threshold"] <= 0.1 + 1e-12, r
+    assert r["available"] is False
+    # but a looser q that can include the whole tied block finds a FINITE threshold within bound
+    r2 = cg.threshold_at_fpr_bound(cal, fpr_bound=0.5, direction="higher_is_nonconforming")
+    assert r2["available"] is True
+    assert math.isfinite(r2["threshold"])
+    assert r2["empirical_reference_fpr_at_threshold"] <= 0.5 + 1e-12, r2
 
 
 def test_threshold_monotonic_in_bound():
