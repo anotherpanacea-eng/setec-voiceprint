@@ -97,11 +97,35 @@ SCRIPT_VERSION = "1.0"
 # Wegmann is the secondary content-controlled cross-check, opt-in via
 # sentence-transformers; its weight-card license tag is confirmed
 # permissive before shipping (spec §License decision).
+#
+# StyleDistance and mUAR are added behind the SAME seam (spec 28, M1):
+#   * styledistance — synthetic near-paraphrase contrastive training
+#     for a MORE content-independent manifold than LUAR (arXiv:2410.12757);
+#     loads through the LUAR transformers/AutoModel path.
+#   * muar — Multilingual Universal Authorship Representation, the
+#     learned language-aware complement to crosslingual_voice_distance's
+#     parser-free profile (arXiv:2509.16531). NO public checkpoint exists
+#     yet (the alias is registered but SPEC-ONLY; the loader refuses it with
+#     guidance until weights ship — see _UNRELEASED_MODEL_IDS).
+# Both ship PROVISIONAL — an encoder swap does NOT promote calibration
+# status and does NOT change the default; DEFAULT_MODEL stays "luar".
+# Their real weight load is the M2 model seam (skipif-gated, never CI);
+# under the unit suite the loader is monkeypatched to a stub, so the
+# new encoder classes are present in code but never executed here.
 MODEL_ALIASES: dict[str, str] = {
     "luar": "rrivera1849/LUAR-MUD",
     "wegmann": "AnnaWegmann/Style-Embedding",
+    "styledistance": "StyleDistance/styledistance",
+    "muar": "rrivera1849/mUAR",
 }
 DEFAULT_MODEL = "luar"
+
+# mUAR's intended publisher id is registered as an alias, but NO public checkpoint exists yet —
+# verified against the publisher inventory (https://huggingface.co/rrivera1849/models lists only
+# LUAR-CRUD / LUAR-MUD / LUSR / ..., no mUAR). The alias is SPEC-ONLY: the loader refuses to attempt
+# loading these ids and fails loud with guidance instead of letting transformers 404 (Codex P1).
+# Drop an id from this set when its weights are actually published.
+_UNRELEASED_MODEL_IDS: frozenset[str] = frozenset({"rrivera1849/mUAR"})
 
 # Install hint surfaced when transformers is absent. Mirrors the
 # dependency_check-style guidance (NOT a traceback) so an operator
@@ -260,6 +284,177 @@ class _WegmannEncoder:
         return np.asarray(vecs, dtype="float32")
 
 
+class _StyleDistanceEncoder:
+    """Real-path StyleDistance encoder. Constructed lazily by
+    ``_load_encoder``. NEVER executed in this task's tests (the spec-02
+    ``_LUAREncoder`` discipline — the suite monkeypatches
+    ``_load_encoder`` to a stub). The maintainer does the GPU/CPU smoke
+    separately (M2, see spec 28 and the module docstring).
+
+    StyleDistance (arXiv:2410.12757) is trained on synthetic
+    near-paraphrases that vary STYLE while holding CONTENT fixed, so its
+    manifold is MORE content-independent than LUAR's — a cleaner answer
+    to the topic-leakage caveat this surface already prints. It is NOT
+    topic-proof: content-independence is a training property, not a
+    guarantee (the caveat is reworded, never retired).
+
+    Integration details (StyleDistance model card):
+      * Loaded via ``transformers`` with ``AutoModel`` (same path as
+        ``_LUAREncoder``; ``trust_remote_code`` honored per the card).
+      * Mean-pool over token embeddings (mask-weighted) when the model
+        returns ``last_hidden_state``; use a ``pooler_output`` /
+        sentence embedding if the card exposes one.
+      * Rows are L2-normalized before return so downstream cosine is a
+        plain dot product.
+    """
+
+    def __init__(self, model_id: str, device: str | None = None) -> None:
+        self.model_id = model_id
+        self._device = device
+        self._tokenizer: Any = None
+        self._model: Any = None
+        self._torch: Any = None
+
+    def _load(self) -> None:
+        if self._model is not None:
+            return
+        import torch  # type: ignore
+        from transformers import AutoModel, AutoTokenizer  # type: ignore
+
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.model_id, trust_remote_code=True,
+        )
+        self._model = AutoModel.from_pretrained(
+            self.model_id, trust_remote_code=True,
+        )
+        # Inference mode (no dropout). Called via getattr to keep the
+        # frozen-encoder intent explicit; mirrors _LUAREncoder.
+        getattr(self._model, "eval")()
+        if self._device:
+            self._model.to(self._device)
+        self._torch = torch
+
+    def encode(self, texts: list[str]) -> Any:
+        import numpy as np  # type: ignore
+
+        if not texts:
+            return np.empty((0, 0), dtype="float32")
+        self._load()
+        torch = self._torch
+        enc = self._tokenizer(
+            texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+        )
+        if self._device:
+            enc = {k: v.to(self._device) for k, v in enc.items()}
+        with torch.no_grad():
+            out = self._model(**enc)
+        # Prefer a pooled/sentence embedding if exposed; else mask-weighted
+        # mean-pool of the token states (the content-vs-style choice is the
+        # model card's — both yield (N, dim)).
+        pooled = getattr(out, "pooler_output", None)
+        if pooled is not None:
+            emb = pooled
+        else:
+            hidden = getattr(out, "last_hidden_state", out)
+            if isinstance(hidden, (tuple, list)):
+                hidden = hidden[0]
+            mask = enc["attention_mask"].unsqueeze(-1).type_as(hidden)
+            summed = (hidden * mask).sum(dim=1)
+            counts = mask.sum(dim=1).clamp(min=1.0)
+            emb = summed / counts
+        vecs = emb.detach().cpu().numpy().astype("float32")
+        return _unit_normalize_rows(vecs)
+
+
+class _MUAREncoder:
+    """Real-path mUAR (Multilingual Universal Authorship
+    Representation) encoder. Constructed lazily by ``_load_encoder``.
+    NEVER executed in this task's tests (the spec-02 ``_LUAREncoder``
+    discipline). The maintainer does the GPU/CPU smoke separately (M2).
+
+    mUAR (arXiv:2509.16531) is a MULTILINGUAL authorship-representation
+    encoder — the learned, language-AWARE complement to
+    ``crosslingual_voice_distance``'s parser-free profile. It is the
+    encoder BOTH ``voice_fingerprint --model muar`` AND the
+    ``crosslingual_voice_distance --encoder muar`` opt-in mode resolve
+    to, so there is ONE mUAR load path, not two.
+
+    POSTURE: multilingual representation is a CAPABILITY, not a LICENSE.
+    The cross-language refusal is a claim-license commitment, not an
+    encoder limitation; mUAR being multilingual does NOT by itself
+    license cross-language comparison (see the per-encoder caveat and
+    spec 28 Non-goals). It is wrapped FROZEN; no per-deployment training.
+
+    Integration details (mUAR is a UAR-family episode model, like LUAR):
+      * Loaded via ``transformers`` ``AutoModel`` with
+        ``trust_remote_code`` (UAR ships custom modeling code).
+      * Embeds each passage as its own single-document author (episode
+        axis) and returns the author embedding (N, dim) directly.
+      * Rows are L2-normalized before return.
+    """
+
+    def __init__(self, model_id: str, device: str | None = None) -> None:
+        self.model_id = model_id
+        self._device = device
+        self._tokenizer: Any = None
+        self._model: Any = None
+        self._torch: Any = None
+
+    def _load(self) -> None:
+        if self._model is not None:
+            return
+        import torch  # type: ignore
+        from transformers import AutoModel, AutoTokenizer  # type: ignore
+
+        self._tokenizer = AutoTokenizer.from_pretrained(
+            self.model_id, trust_remote_code=True,
+        )
+        self._model = AutoModel.from_pretrained(
+            self.model_id, trust_remote_code=True,
+        )
+        getattr(self._model, "eval")()
+        if self._device:
+            self._model.to(self._device)
+        self._torch = torch
+
+    def encode(self, texts: list[str]) -> Any:
+        import numpy as np  # type: ignore
+
+        if not texts:
+            return np.empty((0, 0), dtype="float32")
+        self._load()
+        torch = self._torch
+        enc = self._tokenizer(
+            texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+        )
+        # UAR-family episode model: forward expects
+        # (n_authors, docs_per_author, seq_len). Embed each passage as
+        # its own author with a single document -> (N, 1, seq_len).
+        input_ids = enc["input_ids"].unsqueeze(1)
+        attention_mask = enc["attention_mask"].unsqueeze(1)
+        if self._device:
+            input_ids = input_ids.to(self._device)
+            attention_mask = attention_mask.to(self._device)
+        with torch.no_grad():
+            out = self._model(input_ids=input_ids, attention_mask=attention_mask)
+        if isinstance(out, (tuple, list)):
+            emb = out[0]
+        else:
+            emb = getattr(out, "last_hidden_state", out)
+        if hasattr(emb, "dim") and emb.dim() == 3:
+            # Fallback only: unexpected token-level (B, seq, dim) output
+            # -> mean-pool. The UAR path returns (N, dim) and skips this.
+            emb = emb.mean(dim=1)
+        vecs = emb.detach().cpu().numpy().astype("float32")
+        return _unit_normalize_rows(vecs)
+
+
 def _load_encoder(model: str, device: str | None = None) -> StyleEncoder:
     """Return a frozen style encoder for ``model``.
 
@@ -279,13 +474,34 @@ def _load_encoder(model: str, device: str | None = None) -> StyleEncoder:
     is_wegmann = (
         model == "wegmann" or resolved == MODEL_ALIASES["wegmann"]
     )
+    is_styledistance = (
+        model == "styledistance"
+        or resolved == MODEL_ALIASES["styledistance"]
+    )
+    is_muar = (
+        model == "muar" or resolved == MODEL_ALIASES["muar"]
+    )
     # Gate on transformers presence up front so the error is clean and
-    # actionable regardless of which encoder was requested. (LUAR uses
-    # transformers directly; sentence-transformers depends on it too.)
+    # actionable regardless of which encoder was requested. (LUAR /
+    # StyleDistance / mUAR use transformers directly; sentence-
+    # transformers depends on it too.) The new encoders reuse THIS gate
+    # and THIS error text — no new dependency-gate code path.
     try:
         import transformers  # type: ignore  # noqa: F401
     except ImportError as exc:
         raise VoiceFingerprintError(_TRANSFORMERS_INSTALL_HINT) from exc
+
+    # Spec-only encoder guard (AFTER the transformers gate, so a missing-transformers run still gets
+    # the shared install hint): refuse a registered-but-unreleased id with an actionable message
+    # rather than a transformers 404 on the real load path (Codex P1, mUAR).
+    if resolved in _UNRELEASED_MODEL_IDS:
+        raise VoiceFingerprintError(
+            f"--model {model}: {resolved} has no public checkpoint — it is not in the publisher's "
+            f"model inventory (https://huggingface.co/rrivera1849/models). mUAR (Multilingual "
+            f"Universal Authorship Representation, arXiv:2509.16531) is registered but SPEC-ONLY "
+            f"until weights ship. Pass an explicit mUAR-family checkpoint via --model <hf-id-or-path>, "
+            f"or use --model luar (the calibrated default)."
+        )
 
     if is_wegmann:
         try:
@@ -300,6 +516,16 @@ def _load_encoder(model: str, device: str | None = None) -> StyleEncoder:
                 "Or use the default LUAR encoder (--model luar)."
             ) from exc
         return _WegmannEncoder(resolved, device=device)
+    # StyleDistance and mUAR load through the SAME transformers /
+    # AutoModel path as LUAR — the alias picks the encoder class; the
+    # dispatch, dependency gate, and error text are reused. (StyleDistance
+    # would reuse the _WegmannEncoder branch above instead if its weight
+    # card ships as a sentence-transformers model — a one-line decision
+    # gated on the card, see spec 28 Open Questions.)
+    if is_styledistance:
+        return _StyleDistanceEncoder(resolved, device=device)
+    if is_muar:
+        return _MUAREncoder(resolved, device=device)
     return _LUAREncoder(resolved, device=device)
 
 
@@ -570,13 +796,101 @@ def run_n_way(
 # --------------- Claim license -----------------------------------
 
 
+# Short-text fragility and cross-model incomparability apply to EVERY
+# encoder, so they are appended after the per-encoder content-control
+# caveat. The cross-model caveat enumerates ALL FOUR encoders (spec 28
+# [P1] folded: it must not stay "LUAR and Wegmann" once styledistance /
+# muar are selectable).
+_SHORT_TEXT_CAVEAT = (
+    "Short-text fragility: style embeddings are unstable on "
+    "short windows. Treat per-window cosines from <~100-token "
+    "windows as noisy; prefer the distribution over any single "
+    "window's value."
+)
+_CROSS_MODEL_CAVEAT = (
+    "Cross-model incomparability: cosines from LUAR, Wegmann, "
+    "StyleDistance and mUAR (or any two models) are NOT directly "
+    "comparable. Compare like model to like model. The recorded "
+    "`model_id` is the provenance that makes a later cross-encoder "
+    "comparison flag itself rather than silently mix manifolds."
+)
+
+# Per-encoder content-control caveat. The refactor (spec 28 [P1]) turns
+# the formerly-STATIC additional_caveats block into a model_id-keyed
+# branch — WITHOUT touching licenses / does_not_license / the refusal
+# strings (those stay byte-for-byte; a test asserts it across encoders).
+# The topic-leakage / content-control caveat is REWORDED per encoder,
+# NEVER retired ("content-independent" is a training claim, not a
+# topic-proof guarantee).
+_LUAR_CONTENT_CAVEAT = (
+    "Content control: LUAR (`rrivera1849/LUAR-MUD`) is trained "
+    "on Reddit / social-media authorship data, so its style "
+    "manifold carries REGISTER SKEW — cosines between two "
+    "registers (e.g., literary fiction vs. an email) may read "
+    "as 'divergent' on topic/register grounds rather than "
+    "authorship. The Wegmann (`AnnaWegmann/Style-Embedding`) "
+    "cross-check is more content-controlled but, per its own "
+    "STEL analysis, captures mostly punctuation / casing / "
+    "contraction style — a narrower notion of voice."
+)
+_WEGMANN_CONTENT_CAVEAT = (
+    "Content control: Wegmann (`AnnaWegmann/Style-Embedding`) is "
+    "more content-controlled than LUAR but, per its own STEL "
+    "analysis, captures mostly punctuation / casing / contraction "
+    "style — a NARROWER notion of voice. A high cosine reflects "
+    "agreement on that narrow style axis, not authorship; treat "
+    "register / topic as a live confound."
+)
+_STYLEDISTANCE_CONTENT_CAVEAT = (
+    "Content control: StyleDistance (`StyleDistance/styledistance`, "
+    "arXiv:2410.12757) is trained on synthetic near-paraphrases that "
+    "vary STYLE while holding CONTENT fixed, so its manifold is MORE "
+    "content-controlled than LUAR's. This is a TRAINING property, NOT "
+    "a topic-proof guarantee: it is trained to SUPPRESS content, not "
+    "freed of it — a topic / register change can still read as voice "
+    "distance, so the register-skew confound is reduced, not retired."
+)
+_MUAR_CONTENT_CAVEAT = (
+    "Content control: mUAR (`rrivera1849/mUAR`, arXiv:2509.16531) is a "
+    "MULTILINGUAL authorship-representation manifold. Its cosines are "
+    "WITHIN-ENCODER (model-bound) and carry register / topic leakage "
+    "like any learned manifold. Multilingual representation is a "
+    "CAPABILITY, not a LICENSE: it does NOT by itself license "
+    "cross-language comparison — that refusal is a claim-license "
+    "commitment, separate, calibrated and explicitly-flagged, never the "
+    "silent default of an encoder swap."
+)
+
+
+def _content_control_caveat(model_id: str) -> str:
+    """Pick the per-encoder content-control caveat by resolved
+    ``model_id`` (or its alias). Falls back to the LUAR caveat for any
+    unrecognized id so an explicit full-HF-id invocation still prints a
+    content-control warning rather than none."""
+    if model_id in ("styledistance", MODEL_ALIASES["styledistance"]):
+        return _STYLEDISTANCE_CONTENT_CAVEAT
+    if model_id in ("muar", MODEL_ALIASES["muar"]):
+        return _MUAR_CONTENT_CAVEAT
+    if model_id in ("wegmann", MODEL_ALIASES["wegmann"]):
+        return _WEGMANN_CONTENT_CAVEAT
+    return _LUAR_CONTENT_CAVEAT
+
+
 def _claim_license(*, model_id: str, mode: str) -> ClaimLicense:
     """Structured ClaimLicense for the style-embedding surface.
 
     LICENSES the cosine-distance reading under model M's learned style
-    manifold; REFUSES "same person", "different author", and
-    "AI/human". States the content-control caveat (LUAR register skew;
-    Wegmann punctuation/casing emphasis) and short-text fragility.
+    manifold; REFUSES "same person", "different author", and the
+    "AI-generated or human-written" call. States the content-control
+    caveat (per-encoder: LUAR register skew / Wegmann punctuation-casing
+    / StyleDistance synthetic-paraphrase / mUAR multilingual) and
+    short-text fragility.
+
+    The ``additional_caveats`` block is the ONLY per-encoder-conditional
+    part (spec 28 [P1] refactor). ``licenses`` and ``does_not_license``
+    — including the refusal strings "SAME PERSON" / "DIFFERENT AUTHOR" /
+    "AI-generated or human-written" — are IDENTICAL across every encoder
+    (a test asserts byte-equality), so no encoder "earns" a verdict.
     """
     return ClaimLicense(
         task_surface=TASK_SURFACE,
@@ -613,31 +927,27 @@ def _claim_license(*, model_id: str, mode: str) -> ClaimLicense:
             ),
         },
         additional_caveats=[
-            "Content control: LUAR (`rrivera1849/LUAR-MUD`) is trained "
-            "on Reddit / social-media authorship data, so its style "
-            "manifold carries REGISTER SKEW — cosines between two "
-            "registers (e.g., literary fiction vs. an email) may read "
-            "as 'divergent' on topic/register grounds rather than "
-            "authorship. The Wegmann (`AnnaWegmann/Style-Embedding`) "
-            "cross-check is more content-controlled but, per its own "
-            "STEL analysis, captures mostly punctuation / casing / "
-            "contraction style — a narrower notion of voice.",
-            "Short-text fragility: style embeddings are unstable on "
-            "short windows. Treat per-window cosines from <~100-token "
-            "windows as noisy; prefer the distribution over any single "
-            "window's value.",
-            "Cross-model incomparability: cosines from LUAR and Wegmann "
-            "(or any two models) are NOT directly comparable. Compare "
-            "like model to like model.",
+            # Per-encoder content-control caveat (spec 28 [P1] refactor):
+            # the formerly-static "LUAR + Wegmann" string is now branched
+            # on model_id. Short-text + cross-model caveats apply to all.
+            _content_control_caveat(model_id),
+            _SHORT_TEXT_CAVEAT,
+            _CROSS_MODEL_CAVEAT,
         ],
         references=[
             "specs/02-voice-fingerprint-embedding.md",
+            "specs/28-styledistance-encoder-upgrade.md",
             "LUAR — Rivera-Soto et al., EMNLP 2021 "
             "(https://aclanthology.org/2021.emnlp-main.70/); weights "
             "rrivera1849/LUAR-MUD (Apache-2.0).",
             "Wegmann et al. 2022, 'Same Author or Just Same Topic?' "
             "(https://aclanthology.org/2022.repl4nlp-1.26/); weights "
             "AnnaWegmann/Style-Embedding.",
+            "StyleDistance — content-independent style embeddings via "
+            "synthetic near-paraphrase contrastive training "
+            "(arXiv:2410.12757); weights StyleDistance/styledistance.",
+            "mUAR — Multilingual Universal Authorship Representation "
+            "(arXiv:2509.16531); weights rrivera1849/mUAR.",
         ],
     )
 
@@ -780,9 +1090,12 @@ def _build_argparser() -> argparse.ArgumentParser:
         default=DEFAULT_MODEL,
         help=(
             "style encoder: alias `luar` (default; "
-            "rrivera1849/LUAR-MUD, Apache-2.0) or `wegmann` "
+            "rrivera1849/LUAR-MUD, Apache-2.0), `wegmann` "
             "(AnnaWegmann/Style-Embedding, via sentence-transformers), "
-            "or a full HuggingFace id. Default: %(default)s."
+            "`styledistance` (more content-independent, arXiv:2410.12757), "
+            "`muar` (multilingual, arXiv:2509.16531), or a full "
+            "HuggingFace id. Cross-encoder cosines are NOT comparable. "
+            "Default: %(default)s."
         ),
     )
     p.add_argument(
