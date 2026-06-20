@@ -133,6 +133,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `dependency_check` | Heuristic (uncalibrated) | Yes | nothing (introspects your local environment) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | — |
 | `conformal_gate` | Heuristic (uncalibrated) | No | nonconformity scores for the reference class (JSON list or newline-delimited) (required); the target nonconformity score (required); nonconformity scores for a positive class (two-class mode) (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `pan_replay` | Empirical (provisional) | No | a `corpus_manifest.jsonl` to validate (required); to restrict obfuscation classes (optional); to restrict reported signals (optional) | stdlib; opt: spacy, sklearn | CPU / stdlib (+ optional spaCy model) | — |
+| `paraphrase_ladder` | Empirical (provisional) | No | a `corpus_manifest.jsonl` to validate (required); to restrict reported signals (optional); IN.txt --passes N to regenerate a stdlib-proxy ladder fixture (optional) | stdlib; opt: spacy, sklearn | CPU / stdlib (+ optional spaCy model) | — |
 | `triage_agreement` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 
 **Readiness legend.**

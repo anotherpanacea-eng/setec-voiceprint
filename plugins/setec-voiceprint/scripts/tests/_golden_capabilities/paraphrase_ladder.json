@@ -1,0 +1,66 @@
+{
+  "compute": {
+    "cost_note": "stdlib + Tier 1-3 variance signals; CPU only, no model loads, no API costs (the DIPPER paraphraser is the gated M2 seam)",
+    "length_floor_words": null,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "spacy",
+      "sklearn"
+    ]
+  },
+  "do_not_use_when": [
+    "You want a single robustness or accuracy number \u2014 this surface refuses any aggregate score",
+    "You want a provenance verdict for a document \u2014 it is not a detector",
+    "You want proof a signal is paraphrase-robust \u2014 a flat proxy curve is never that (a stronger paraphraser approaches the 0.5-AUROC overlap floor)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py --fixtures fixtures/ --json",
+      "description": "Score a ladder fixture directory"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py --build-proxy draft.txt --passes 3 --out ladder.jsonl",
+      "description": "Regenerate a 3-pass stdlib-proxy ladder from one input"
+    }
+  ],
+  "family": "paraphrase-stress",
+  "handoff": "internal",
+  "id": "paraphrase_ladder",
+  "inputs": {
+    "optional": [
+      "--signals to restrict reported signals",
+      "--build-proxy IN.txt --passes N to regenerate a stdlib-proxy ladder fixture"
+    ],
+    "target": "fixture directory containing a ladder.jsonl manifest of {id, paraphraser, rungs} ladders (rung 0 is the clean base)"
+  },
+  "outputs": {
+    "artifacts": [
+      ".paraphrase_ladder.json",
+      ".paraphrase_ladder.md"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Walk a recursive-paraphrase ladder (a text paraphrased again and again) and emit a per-(signal \u00d7 rung) decay curve for SETEC's existing signals: the per-rung relative change plus a per-cell stability label. Reuses the validation harness's audit_text + classify_compression scoring and adversarial_robustness_card's per-cell shape (the card's aggregate dict is never embedded). The M1 paraphraser is a deterministic stdlib proxy (proxy_stdlib); a realistic DIPPER ladder is the gated M2 seam. Not a detector; emits no aggregate robustness or accuracy score, and its ClaimLicense refuses any \"robust to paraphrase\" claim by quoting Sadasivan's separability ceiling (arXiv:2303.11156).\n",
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "https://arxiv.org/abs/2405.07940",
+    "https://arxiv.org/abs/2303.13408",
+    "https://arxiv.org/abs/2303.11156"
+  ],
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/calibration/paraphrase_ladder.py",
+  "status": "empirically_oriented",
+  "surface": "validation",
+  "use_when": [
+    "You have a graded ladder of paraphrase passes (an editor''s successive passes, a humanizer tool''s output, or the bundled stdlib proxy) and want the per-signal decay curve across rungs",
+    "You're prioritizing which SETEC signals erode fastest under recursive paraphrase",
+    "You want an honesty-claim artifact (\"signal S shows relative change \u0394 at rung i\") framed against the human/AI separability ceiling, not a robustness leaderboard"
+  ]
+}
