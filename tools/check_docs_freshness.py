@@ -51,6 +51,7 @@ _SCRIPTS_ROOT = REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
 if str(_SCRIPTS_ROOT) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_ROOT))
 from capabilities import load_manifest  # type: ignore  # noqa: E402
+from _console import enable_utf8_stdio  # noqa: E402
 
 
 def changelog_coverage(manifest_path: Path, changelog_path: Path) -> list[str]:
@@ -133,6 +134,7 @@ def run(manifest_path: Path = DEFAULT_MANIFEST) -> dict[str, Any]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     ap.add_argument("--json", action="store_true")

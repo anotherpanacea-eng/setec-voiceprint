@@ -46,6 +46,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from r1_bundle import validate_r1_bundle
+from _console import enable_utf8_stdio  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_ROOT = REPO_ROOT / "plugins" / "setec-voiceprint" / "scripts"
@@ -353,6 +354,7 @@ def render_yaml(seeds: list[Seed]) -> str:
 # ---------- main ----------------------------------------------------
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     parser = argparse.ArgumentParser(
         description="Bootstrap plugins/setec-voiceprint/capabilities.yaml from TASK_SURFACE-bearing scripts.",
     )

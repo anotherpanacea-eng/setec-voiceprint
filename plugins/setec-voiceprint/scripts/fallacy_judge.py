@@ -189,16 +189,26 @@ def _is_index(idx: Any, n: int) -> bool:
     return isinstance(idx, int) and not isinstance(idx, bool) and 0 <= idx < n
 
 
-def normalize_flags(raw: Any, n_paragraphs: int) -> list[dict[str, Any]]:
+def _normws(s: str) -> str:
+    """Whitespace-normalized form for a tolerant verbatim-containment check."""
+    return " ".join(s.split())
+
+
+def normalize_flags(raw: Any, paragraphs: list[str]) -> list[dict[str, Any]]:
     """Validate + normalize a raw judge ``flags`` list into the result schema.
 
     Drops any flag whose ``candidate_type`` is not a known Logic type, whose
-    ``paragraph_index`` is out of range, or whose ``span_text`` is empty — a
-    judge cannot smuggle a free-text verdict through. Keeps document order;
-    ``reconstruction`` defaults to "" when absent."""
+    ``paragraph_index`` is out of range, whose ``span_text`` is empty, or whose
+    ``span_text`` is NOT a verbatim substring of the paragraph it is attributed
+    to (#229: a hallucinated span the judge did not actually quote is rejected —
+    containment is checked whitespace-normalized to tolerate minor requoting, so
+    only spans genuinely absent from the cited paragraph are dropped). Keeps
+    document order; ``reconstruction`` defaults to "" when absent."""
     out: list[dict[str, Any]] = []
     if not isinstance(raw, list):
         return out
+    n = len(paragraphs)
+    norm_paras = [_normws(p) for p in paragraphs]
     for entry in raw:
         if not isinstance(entry, dict):
             continue
@@ -207,10 +217,12 @@ def normalize_flags(raw: Any, n_paragraphs: int) -> list[dict[str, Any]]:
         span = entry.get("span_text")
         if ctype not in FALLACY_TYPES:
             continue
-        if not _is_index(idx, n_paragraphs):
+        if not _is_index(idx, n):
             continue
         if not isinstance(span, str) or not span.strip():
             continue
+        if _normws(span) not in norm_paras[idx]:
+            continue   # hallucinated span — not actually present in the cited paragraph
         recon = entry.get("reconstruction")
         out.append(
             {
@@ -245,7 +257,7 @@ def _manifest_judge(manifest_path: Path) -> JudgeBackend:
 
     def _run(paragraphs: list[str]) -> JudgeResult:
         return JudgeResult(
-            values={"flags": normalize_flags(values.get("flags"), len(paragraphs))},
+            values={"flags": normalize_flags(values.get("flags"), paragraphs)},
             judge_identity={
                 "kind": "manifest",
                 "manifest_path": str(manifest_path),
@@ -287,7 +299,7 @@ def _mock_judge(flag_types: tuple[str, ...] = ("appeal_to_emotion", "false_dilem
                 }
             )
         return JudgeResult(
-            values={"flags": normalize_flags(flags, len(paragraphs))},
+            values={"flags": normalize_flags(flags, paragraphs)},
             judge_identity={"kind": "mock", "flag_types": list(flag_types)},
         )
 
@@ -325,7 +337,7 @@ def _build_api_result(parsed: Any, raw: str, identity: dict[str, Any],
     ident.setdefault("prompt_version", PROMPT_VERSION)
     ident["prompt_fingerprint_sha256"] = fingerprint_prompt()
     return JudgeResult(
-        values={"flags": normalize_flags(parsed.get("flags"), len(paragraphs))},
+        values={"flags": normalize_flags(parsed.get("flags"), paragraphs)},
         judge_identity=ident,
         raw_response=raw,
     )

@@ -1629,6 +1629,65 @@
       ]
     },
     {
+      "id": "dependency_distance_audit",
+      "script_path": "plugins/setec-voiceprint/scripts/dependency_distance_audit.py",
+      "surface": "voice_coherence",
+      "status": "heuristic",
+      "handoff": "none",
+      "consumers": [],
+      "family": "syntactic-shape",
+      "purpose": "Descriptive syntactic-SHAPE profile: the DISTRIBUTION of dependency distances (the linear span of each syntactic link, d = |i - head.i|) \u2014 the histogram, the adjacent-link share (d=1), and the long-range tail (d>=threshold). The scalar MDD (per-sentence mean/SD) already ships as variance_audit.mdd_stats and is REUSED here, not re-implemented; the distribution is the additive contribution (arXiv:2211.14620). Parser-tier (reuses the shared spaCy pipeline); abstains (available:false / missing_dependency) without it. NOT a verdict: not authorship/AI, not a quality/readability score, and NOT length-controlled (MDD covaries with sentence length; mean_sentence_length co-reported). Claim-license refuses those inferences; thresholds operator-side / PROVISIONAL.\n",
+      "use_when": [
+        "You want a descriptive syntactic-complexity profile (how long-range a writer's dependencies run)",
+        "You want the dependency-distance distribution, not just the mean (which mdd_stats already gives)",
+        "Target is English, >= ~150 words, and a dependency parser is installed"
+      ],
+      "do_not_use_when": [
+        "No spaCy / en_core_web_sm available (the surface abstains)",
+        "You want an authorship/AI verdict or a writing-quality judgment",
+        "Non-English text (MDD norms are language-specific), or a length-controlled reading"
+      ],
+      "inputs": {
+        "target": "prose/markdown text file (UTF-8)"
+      },
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          "stdout JSON envelope (default), --json, or --out PATH"
+        ]
+      },
+      "compute": {
+        "tier": "core",
+        "cost_note": "spaCy dependency parse (CPU); reuses the shared variance_audit._NLP pipeline.",
+        "length_floor_words": 150
+      },
+      "registers": [
+        "blog_essay",
+        "testimony_policy",
+        "technical_documentation"
+      ],
+      "dependencies": {
+        "python": [
+          "spacy"
+        ],
+        "python_optional": []
+      },
+      "examples": [
+        {
+          "description": "Dependency-distance distribution of a document",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/dependency_distance_audit.py target.md --json"
+        },
+        {
+          "description": "With a custom long-range threshold",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/dependency_distance_audit.py target.md --long-threshold 5"
+        }
+      ],
+      "references": [
+        "plugins/setec-voiceprint/specs/24-dependency-distance.md",
+        "The distribution of syntactic dependency distances (arXiv:2211.14620): https://arxiv.org/abs/2211.14620"
+      ]
+    },
+    {
       "_seeded_at": "2026-06-06",
       "compute": {
         "cost_note": "CPU + en_core_web_sm; regex extraction, light per-turn tagging.",
@@ -1981,7 +2040,7 @@
         {
           "flag": "--judge",
           "type": "enum",
-          "required": false,
+          "required": true,
           "values": [
             "mock",
             "manifest",
@@ -2050,12 +2109,44 @@
       ]
     },
     {
-      "compute": {
-        "cost_note": "one small causal LM, ~0.6\u20132 GB weights; CPU works, GPU faster",
-        "length_floor_words": 50,
-        "tier": "surprisal"
-      },
+      "id": "fast_detect_curvature",
+      "script_path": "plugins/setec-voiceprint/scripts/fast_detect_curvature.py",
+      "surface": "discrimination_curvature",
+      "status": "literature_anchored",
+      "handoff": "experimental",
       "consumers": [],
+      "family": "fast-detectgpt",
+      "purpose": "Fast-DetectGPT conditional-probability curvature (Bao et al. 2024). Scores a target under a single causal LM and reports a curvature z-score: the standardized gap between the text's conditional log-probability and the distribution of conditional log-probs for alternative tokens sampled from the model's own per-position conditional distributions. Higher curvature means the text sits nearer a local maximum of the model's probability surface \u2014 a zero-shot signal for machine generation. Orthogonal to Binoculars' cross-perplexity ratio and DivEye's surprisal moments.\n",
+      "use_when": [
+        "You want a discrimination-evidence signal distinct from Binoculars (single model, curvature not ratio)",
+        "You're stacking orthogonal Surface-5 signals (Binoculars + curvature + DivEye)",
+        "Target \u2265 50 words and roughly in-distribution for the scoring model"
+      ],
+      "do_not_use_when": [
+        "You need a binary verdict \u2014 ships uncalibrated by default, no threshold",
+        "Target is out-of-distribution for the model, or may be in its training set (memorization biases the score)",
+        "The text has been paraphrased / surface-rewritten (curvature is paraphrase-sensitive)",
+        "You can't install the surprisal tier (transformers + torch)"
+      ],
+      "inputs": {
+        "target": "prose text file (UTF-8)"
+      },
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".fast_detect_curvature.json",
+          ".fast_detect_curvature.md"
+        ]
+      },
+      "compute": {
+        "tier": "surprisal",
+        "cost_note": "one small causal LM, ~0.6\u20132 GB weights; CPU works, GPU faster",
+        "length_floor_words": 50
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
       "dependencies": {
         "python": [
           "transformers",
@@ -2063,50 +2154,22 @@
         ],
         "python_optional": []
       },
-      "do_not_use_when": [
-        "You need a binary verdict \u2014 ships uncalibrated by default, no threshold",
-        "Target is out-of-distribution for the model, or may be in its training set (memorization biases the score)",
-        "The text has been paraphrased / surface-rewritten (curvature is paraphrase-sensitive)",
-        "You can't install the surprisal tier (transformers + torch)"
-      ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt",
-          "description": "Default scoring model"
+          "description": "Default scoring model",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt"
         },
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt --model gpt2 --seed 7 --json",
-          "description": "Custom model + reproducible seed"
+          "description": "Custom model + reproducible seed",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt --model gpt2 --seed 7 --json"
+        },
+        {
+          "description": "T-Detect t-standardized SCORE curvature_t (the paper's statistic; robust to adversarial/paraphrased text; spec 25, arXiv:2507.23577); no p-value emitted; default gaussian unchanged",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt --tail student-t --t-df 5 --json"
         }
       ],
-      "family": "fast-detectgpt",
-      "handoff": "experimental",
-      "id": "fast_detect_curvature",
-      "inputs": {
-        "target": "prose text file (UTF-8)"
-      },
-      "outputs": {
-        "artifacts": [
-          ".fast_detect_curvature.json",
-          ".fast_detect_curvature.md"
-        ],
-        "schema_version": "1.0"
-      },
-      "purpose": "Fast-DetectGPT conditional-probability curvature (Bao et al. 2024). Scores a target under a single causal LM and reports a curvature z-score: the standardized gap between the text's conditional log-probability and the distribution of conditional log-probs for alternative tokens sampled from the model's own per-position conditional distributions. Higher curvature means the text sits nearer a local maximum of the model's probability surface \u2014 a zero-shot signal for machine generation. Orthogonal to Binoculars' cross-perplexity ratio and DivEye's surprisal moments.\n",
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md"
-      ],
-      "registers": [
-        "all_fiction",
-        "all_nonfiction"
-      ],
-      "script_path": "plugins/setec-voiceprint/scripts/fast_detect_curvature.py",
-      "status": "literature_anchored",
-      "surface": "discrimination_curvature",
-      "use_when": [
-        "You want a discrimination-evidence signal distinct from Binoculars (single model, curvature not ratio)",
-        "You're stacking orthogonal Surface-5 signals (Binoculars + curvature + DivEye)",
-        "Target \u2265 50 words and roughly in-distribution for the scoring model"
       ]
     },
     {
@@ -3059,6 +3122,64 @@
       ]
     },
     {
+      "id": "originality_audit",
+      "script_path": "plugins/setec-voiceprint/scripts/originality_audit.py",
+      "surface": "set_level_diversity",
+      "status": "heuristic",
+      "handoff": "none",
+      "consumers": [],
+      "family": "set-level-diversity",
+      "purpose": "DJ-Search reconstructibility of a target against a reference pool (the operator's impostor pool by default) \u2014 the fraction of the target covered by long verbatim token spans (>= min_ngram, default 8) that appear anywhere in the reference corpus. Reports `coverage` (= reconstructibility) and `originality = 1 - coverage`, oriented gt = LESS reconstructible from that pool. A new set-level axis (target-vs-pool, not doc-vs-baseline). NOT an AI/human or plagiarism determination: clean-room DJ Search (Creativity Index, arXiv:2410.04265); measurements only, no band/verdict; the claim-license refuses provenance / plagiarism / quality inference.\n",
+      "use_when": [
+        "You want to know how much of a target is reconstructible (recombined) from a reference pool you already hold (e.g. the impostor pool)",
+        "You're comparing reconstructibility across documents against a fixed pool",
+        "Target is >= ~24 words (>= min_ngram x 3)"
+      ],
+      "do_not_use_when": [
+        "You want an AI-provenance call (low originality is NOT 'AI'; this is not an AI signal)",
+        "You want a plagiarism / derivative-work / copyright determination (it is a measurement)",
+        "The reference pool is thin / register-mismatched (it inflates apparent originality)"
+      ],
+      "inputs": {
+        "target": "prose/markdown text file (UTF-8)",
+        "reference": "a --reference-dir of texts OR a --manifest (JSONL; id + text|text_path)"
+      },
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          "stdout JSON envelope (default), --json, or --out PATH"
+        ]
+      },
+      "compute": {
+        "tier": "core",
+        "cost_note": "stdlib only; no models. Deterministic; substring index over the reference pool.",
+        "length_floor_words": 24
+      },
+      "registers": [
+        "blog_essay",
+        "testimony_policy",
+        "technical_documentation"
+      ],
+      "dependencies": {
+        "python": [],
+        "python_optional": []
+      },
+      "examples": [
+        {
+          "description": "Originality vs the impostor pool (a manifest)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/originality_audit.py --target target.md --manifest corpus_manifest.jsonl --json"
+        },
+        {
+          "description": "Originality vs a directory of reference texts",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/originality_audit.py --target target.md --reference-dir corpora/impostors --min-ngram 8"
+        }
+      ],
+      "references": [
+        "plugins/setec-voiceprint/specs/22-set-level-diversity.md",
+        "DJ Search / Creativity Index \u2014 AI as Humanity's Salieri (arXiv:2410.04265): https://arxiv.org/abs/2410.04265"
+      ]
+    },
+    {
       "compute": {
         "cost_note": "stdlib + Tier 1-3 variance signals; CPU only, no model loads, no API costs",
         "length_floor_words": null,
@@ -3533,6 +3654,65 @@
       ],
       "min_setec_version": "1.86.0",
       "json_delivery": "stdout"
+    },
+    {
+      "id": "rank_turbulence_audit",
+      "script_path": "plugins/setec-voiceprint/scripts/rank_turbulence_audit.py",
+      "surface": "voice_coherence",
+      "status": "heuristic",
+      "handoff": "none",
+      "consumers": [],
+      "family": "voice-divergence",
+      "purpose": "Interpretable per-word stylometric divergence between a target and a baseline corpus \u2014 rank-turbulence divergence (RTD, in [0,1]) over the function-word distribution by default. Where voice_distance reports one aggregate Burrows Delta, RTD's per-word contributions say WHICH words drive the difference (top contributors over-ranked in the target vs the baseline). Additive companion to voice_distance (does NOT modify it). Clean-room RTD (Dodds et al. 2020; stylometric-Delta adaptation arXiv:2604.19499); stdlib, deterministic. NOT a verdict: a high RTD is not \"different author\" or \"AI\"; topic/genre/length shift it (especially in --all-words mode). Claim-license refuses any authorship/AI inference; thresholds operator-side / PROVISIONAL.\n",
+      "use_when": [
+        "You want an interpretable, per-word complement to a voice_distance Burrows Delta run",
+        "You want to see which (function) words drive a target's divergence from a baseline",
+        "Target and baseline are >= ~200 words and register-matched"
+      ],
+      "do_not_use_when": [
+        "You want an authorship or AI-provenance verdict (this is a divergence measurement)",
+        "Target and baseline are topic-mismatched (the divergence becomes topical, not stylistic; --all-words mode is explicitly topical)",
+        "Either text is under ~200 words (unstable rank distribution)"
+      ],
+      "inputs": {
+        "target": "prose/markdown text file (UTF-8)",
+        "baseline": "a --baseline-dir of texts OR a --manifest (JSONL; id + text|text_path)"
+      },
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          "stdout JSON envelope (default), --json, or --out PATH"
+        ]
+      },
+      "compute": {
+        "tier": "core",
+        "cost_note": "stdlib only; no models. Deterministic; counting + ranking + arithmetic.",
+        "length_floor_words": 200
+      },
+      "registers": [
+        "blog_essay",
+        "testimony_policy",
+        "technical_documentation"
+      ],
+      "dependencies": {
+        "python": [],
+        "python_optional": []
+      },
+      "examples": [
+        {
+          "description": "Per-word RTD vs a baseline corpus (function words, the default)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/rank_turbulence_audit.py --target target.md --baseline-dir corpora/baseline --json"
+        },
+        {
+          "description": "Full-vocabulary (TOPICAL) mode with a custom alpha",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/rank_turbulence_audit.py --target target.md --manifest corpus_manifest.jsonl --all-words --alpha 0.2"
+        }
+      ],
+      "references": [
+        "plugins/setec-voiceprint/specs/23-rank-turbulence-delta.md",
+        "Rank-Turbulence Delta \u2014 Interpretable Stylometric Delta (arXiv:2604.19499): https://arxiv.org/abs/2604.19499",
+        "Allotaxonometry and rank-turbulence divergence \u2014 Dodds et al. 2020 (arXiv:2002.09770): https://arxiv.org/abs/2002.09770"
+      ]
     },
     {
       "compute": {

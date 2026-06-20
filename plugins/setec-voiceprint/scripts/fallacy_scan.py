@@ -287,9 +287,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         description="Flag candidate rhetorical moves in an argument (no verdict).",
     )
     p.add_argument("target", type=Path, help="UTF-8 prose file to scan")
-    p.add_argument("--judge", default="mock",
+    p.add_argument("--judge", required=True,
                    choices=["mock", "manifest", "anthropic", "openai", "gemini"],
-                   help="judge backend (default: mock, a deterministic test stub)")
+                   help="judge backend (REQUIRED — no default). `mock` is a deterministic TEST "
+                        "stub that FABRICATES findings; choose it only for tests/CI, never for a "
+                        "real scan. Real scans use a manifest or an API judge.")
     p.add_argument("--judge-manifest", type=Path, default=None,
                    help="path to a precomputed judge manifest (--judge manifest)")
     p.add_argument("--judge-model", default=None,
@@ -340,7 +342,7 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         text = target_path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeDecodeError) as exc:        # invalid UTF-8 is bad input, not a crash
         env = _error_envelope(f"cannot read target: {exc}", "bad_input", target_path)
         return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
 

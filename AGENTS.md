@@ -19,6 +19,14 @@ them** — follow the surface-addition checklist (capabilities.d fragment + gold
 the `_golden_*` count bumps) and keep `references/contract_fixtures/` in sync; the
 consumers catch drift on their next weekly pull.
 
+**Shared workflow:** spec → review → build → review → merge. **Both reviews (spec
+and build) are subagent passes — iterate until everything is fixed.** Then the fork:
+**a docs-only change lands as a direct merge commit; anything more goes up as a PR
+for Codex 5.5 review** (don't merge out from under it) — iterate with Codex until
+clean + green, then merge. Merge commits, never squash; version + changelog are cut
+at release (a PR ships a `changelog.d/` fragment), tagged from `main`. (Full detail
+in §The flow below.)
+
 **Fuller cross-repo context** (full backlog, topology, deep lessons) lives in the
 maintainer's local `Cowork/repo-fleet/` hub — **not reachable from cloud
 containers** (which hold only this one git repo). If you're a cloud session and
