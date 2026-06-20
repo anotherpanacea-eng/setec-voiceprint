@@ -111,6 +111,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `pov_voice_profile` | Heuristic (uncalibrated) | No | labeled corpus + valid `corpus_manifest.jsonl` (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 3000 |
 | `productive_roughness_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | req: spacy | CPU + spaCy model | 1000 |
 | `punctuation_cadence_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | stdlib | CPU / stdlib (+ optional spaCy model) | 2000 |
+| `rank_turbulence_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 200 |
 | `reference_ecology_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `repetition_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `rewriting_invariance_audit` | Heuristic (uncalibrated) | Yes | MODEL (operator-supplied LLM model id used to rewrite) (required); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 50 |
