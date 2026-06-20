@@ -1,0 +1,57 @@
+{
+  "id": "corpus_novelty_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/corpus_novelty_audit.py",
+  "surface": "set_level_diversity",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "set-level-diversity",
+  "purpose": "The set-wide DJ-Search novelty *distribution* (spec 28, M1a). Where `originality_audit` scores ONE target against a pool, this scores a *corpus* against itself: for each document it runs DJ-Search reconstructibility against the rest of the corpus (leave-one-out), then reports the DISTRIBUTION of per-document originality ({min/p25/median/p75/max/mean/sd} + decile histogram) plus a per-document table and an ordered-pair mutual-reconstructibility census. Wraps the shipped `audit_originality` (clean-room DJ Search, arXiv:2410.04265); it does NOT re-implement the matcher. NO single \"corpus originality score\" headline (a lone scalar is a verdict in disguise \u2014 the distribution + table is the descriptive object). NOT an AI/human or plagiarism determination: low novelty = more reconstructible FROM THIS corpus, NOT 'AI' (a tight prompt, a shared genre, a single source, or a house style all lower it legitimately); measurements only, no band/verdict; the claim-license refuses provenance / plagiarism / selection.\n",
+  "use_when": [
+    "You want to read how mutually reconstructible a CORPUS of documents is (the novelty distribution across the set), not just one target vs a pool",
+    "You're looking for a homogenized, mutually-reconstructible set vs a spread-out one",
+    "The corpus has >= --min-docs (default 3) documents, each >= ~24 words (>= min_ngram x 3)"
+  ],
+  "do_not_use_when": [
+    "You want an AI-provenance call (low novelty is NOT 'AI'; this is not an AI signal)",
+    "You want a plagiarism / derivative-work / copyright determination (it is a measurement)",
+    "The corpus is < --min-docs, a deliberately templated genre, or a single-source pool (overlap is expected and not diagnostic; reconstructibility is corpus- and register-dependent)"
+  ],
+  "inputs": {
+    "corpus": "a --corpus-dir of texts OR a --manifest (JSONL; id + text|text_path)"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "stdlib only; no models. Deterministic; reuses the originality_audit substring index leave-one-out across the corpus.",
+    "length_floor_words": 24
+  },
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "technical_documentation"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Novelty distribution across a corpus directory",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/corpus_novelty_audit.py --corpus-dir corpora/essays --min-ngram 8 --json"
+    },
+    {
+      "description": "Novelty distribution from a manifest",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/corpus_novelty_audit.py --manifest corpus_manifest.jsonl --json"
+    }
+  ],
+  "references": [
+    "specs/28-cross-doc-originality.md",
+    "DJ Search / Creativity Index \u2014 AI as Humanity's Salieri (arXiv:2410.04265): https://arxiv.org/abs/2410.04265"
+  ]
+}
