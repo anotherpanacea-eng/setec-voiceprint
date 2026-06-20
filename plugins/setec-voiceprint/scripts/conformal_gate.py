@@ -174,9 +174,20 @@ def threshold_at_fpr_bound(
     rank = math.ceil((n + 1) * (1.0 - fpr_bound))
     rank = max(1, min(n, rank))
     threshold = cal_nc[rank - 1]
-    # Empirical reference-class false-positive rate AT this threshold:
-    # the fraction of calibration scores judged nonconforming (>= t).
-    n_flagged = sum(1 for c in cal_nc if c >= threshold)
+    # TIE-SAFETY (Codex P1): the flag rule is `score >= threshold`, so ANY calibration scores TIED at
+    # the threshold are all flagged. When the tail is tied (e.g. ten identical scores, q=0.1) the
+    # order-statistic threshold flags the whole block -> empirical reference FPR 1.0, violating the
+    # claimed <= q. Raise the threshold to the smallest calibration value whose at-or-above count
+    # keeps the empirical FPR <= q; if no finite value qualifies (the whole tail is tied), flag NOTHING
+    # (threshold = +inf, FPR 0). Raising the threshold only ever flags FEWER, so the conformal guarantee
+    # for new points is preserved (more conservative), and the reported empirical FPR is honest.
+    max_flagged = math.floor(fpr_bound * n + 1e-9)   # FPR <= q  =>  flagged <= floor(q*n)
+    def _flagged_at(t: float) -> int:
+        return sum(1 for c in cal_nc if c >= t)
+    if _flagged_at(threshold) > max_flagged:
+        higher = sorted({c for c in cal_nc if c > threshold})
+        threshold = next((h for h in higher if _flagged_at(h) <= max_flagged), math.inf)
+    n_flagged = _flagged_at(threshold)
     empirical_fpr = n_flagged / n
     return {
         "available": True,

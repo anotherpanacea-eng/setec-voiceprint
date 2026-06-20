@@ -41,6 +41,21 @@ def test_empirical_fpr_within_bound():
         assert r["empirical_reference_fpr_at_threshold"] <= q + 1e-12
 
 
+def test_ties_do_not_violate_fpr_bound():
+    # Codex #242: with the `>= threshold` rule, calibration scores TIED at the threshold are all
+    # flagged. An all-tied tail (ten identical scores, q=0.1) used to flag the whole block -> empirical
+    # reference FPR 1.0 while claiming <= q. The tie-safe threshold must keep the empirical FPR <= q.
+    for direction in cg.FPR_BOUND_DIRECTIONS:
+        r = cg.threshold_at_fpr_bound([0.0] * 10, fpr_bound=0.1, direction=direction)
+        assert r["available"] is True
+        assert r["empirical_reference_fpr_at_threshold"] <= 0.1 + 1e-12, r
+        assert r["empirical_reference_fpr_at_threshold"] == 0.0   # all-tied -> flag none (conservative)
+    # a partial tie at the boundary is pushed above the tied block, never over the bound
+    cal = [1.0] * 5 + [9.0] * 5   # q=0.1 would want to flag 1, but the top is a 5-way tie
+    r = cg.threshold_at_fpr_bound(cal, fpr_bound=0.1, direction="higher_is_nonconforming")
+    assert r["empirical_reference_fpr_at_threshold"] <= 0.1 + 1e-12, r
+
+
 def test_threshold_monotonic_in_bound():
     """A larger fpr_bound never raises the threshold (so never lowers TPR)."""
     thresholds = [
