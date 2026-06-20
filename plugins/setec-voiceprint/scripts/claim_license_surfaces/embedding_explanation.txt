@@ -1,0 +1,1 @@
+embedding explanation: a named side-by-side of the authorship_embedding LUAR cosine vs interpretable stylometric features (tracks/diverges) — an interpretation aid for human review, no same-author / AI-vs-human verdict and no fabricated explained/residual number

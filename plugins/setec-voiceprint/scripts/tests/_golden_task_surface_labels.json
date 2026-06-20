@@ -9,6 +9,7 @@
   "discrimination_curvature": "Fast-DetectGPT conditional-curvature discrimination (Bao et al. 2024)",
   "document_layout": "document structure / layout profile (non-voice)",
   "edit_magnitude": "edit-magnitude estimate relative to the corpus the model was calibrated on (uncalibrated by default; NOT an absolute % AI)",
+  "embedding_explanation": "embedding explanation: a named side-by-side of the authorship_embedding LUAR cosine vs interpretable stylometric features (tracks/diverges) \u2014 an interpretation aid for human review, no same-author / AI-vs-human verdict and no fabricated explained/residual number",
   "external_mirror_discrimination": "external-mirror discrimination",
   "formulaicity": "formulaicity / phraseological-texture profile (non-voice)",
   "intrinsic_dimension": "intrinsic (PHD) dimension of the text's contextual-embedding cloud under a named model (discrimination evidence, uncalibrated, non-verdict)",
