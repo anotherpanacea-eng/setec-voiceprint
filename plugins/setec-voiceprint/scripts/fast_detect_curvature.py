@@ -121,6 +121,23 @@ DEFAULT_SEED = 0
 # stable estimate; mirrors binoculars_audit.MIN_STABLE_TOKENS.
 MIN_STABLE_TOKENS = 50
 
+# T-Detect (spec 25; arXiv:2507.23577): Student-t tail-aware normalization, opt-in via
+# --tail student-t. nu = 5 is the paper's fixed value (robust over 3..7).
+DEFAULT_T_DF = 5
+# Appended to does_not_license ONLY when the student-t mode runs (so the gaussian-mode claim
+# license is byte-identical). The DELIVERABLE is the score curvature_t (the statistic the paper
+# and its reference implementation expose); NO p-value is emitted (it would be unsupported).
+STUDENT_T_CAVEAT = (
+    "Under --tail student-t the deliverable is curvature_t — the T-Detect t-standardized "
+    "curvature SCORE 𝒟ₜ (the statistic the paper and reference implementation expose). It is a "
+    "global constant rescale of the Gaussian curvature_score (= curvature_score / sqrt(nu/(nu-2))), "
+    "so its discrimination RANKING equals the Gaussian z; what T-Detect changes is the reference "
+    "scale, not the ranking. NO p-value is emitted: curvature_t is a rescaled (asymptotically "
+    "Gaussian) z-score, not a Student-t variate, so a t-survival of it would be an UNSUPPORTED "
+    "transform, not a calibrated probability. curvature_t is a value, NOT a verdict and NOT a "
+    "shipped threshold; the operator supplies any band."
+)
+
 
 DEFAULT_LICENSES = (
     "Reports the Fast-DetectGPT conditional-probability curvature of the "
@@ -352,6 +369,8 @@ def audit(
     n_samples: int = DEFAULT_N_SAMPLES,
     seed: int = DEFAULT_SEED,
     score_fn: Callable[..., list[tuple[float, Sequence[float]]]] | None = None,
+    tail: str = "gaussian",
+    t_df: int = DEFAULT_T_DF,
 ) -> dict[str, Any]:
     """Run the curvature audit. Returns the ``results`` dict wrapped into
     the ``build_output()`` envelope.
@@ -392,7 +411,7 @@ def audit(
         model.identifier_block() if model is not None else None
     )
 
-    return {
+    out: dict[str, Any] = {
         "model_id": model_id,
         "identifier_block": identifier_block,
         "curvature_score": stats["curvature_score"],
@@ -406,6 +425,34 @@ def audit(
         "reference_variance_sum_nats2": stats["reference_variance_sum_nats2"],
         "caveats": caveats,
     }
+    # T-Detect (spec 25; arXiv:2507.23577): opt-in Student-t tail-aware normalization. The
+    # DELIVERABLE is the SCORE curvature_t = d / sqrt((nu/(nu-2)) * V) = 𝒟ₜ — the t-standardized
+    # curvature statistic the paper and its reference implementation expose. It is a global constant
+    # rescale of the Gaussian curvature_score (nu fixed), so its discrimination RANKING equals the
+    # Gaussian z; T-Detect changes the reference scale, not the ranking. We deliberately emit NO
+    # p-value: curvature_t is a rescaled (asymptotically Gaussian) z-score, NOT a t-distributed
+    # variate, so a Student-t survival of it would be an unsupported transform — not a calibrated
+    # probability. Added strictly inside the student-t branch so the gaussian envelope is unchanged.
+    if tail not in ("gaussian", "student-t"):
+        # #228 P2: a direct caller of audit() bypasses the CLI's choices=; an unknown tail must
+        # fail loud, never be silently treated as gaussian.
+        raise ValueError(
+            f"unknown tail {tail!r} (choices: gaussian, student-t)")
+    if tail == "student-t" and stats["curvature_score"] is not None:
+        nu = t_df
+        if nu <= 2:
+            # Direct-caller guard: nu/(nu-2) is undefined (nu==2) or negative (nu<2). The CLI
+            # validates this earlier and exits 2; this protects programmatic callers of audit().
+            raise ValueError(
+                f"t_df must be > 2 for --tail student-t (got {nu}); the Student-t variance "
+                f"scale nu/(nu-2) is undefined at nu<=2."
+            )
+        d = stats["actual_log_prob_sum_nats"] - stats["reference_mean_sum_nats"]
+        v = stats["reference_variance_sum_nats2"]
+        out["tail"] = "student-t"
+        out["t_df"] = nu
+        out["curvature_t"] = d / math.sqrt((nu / (nu - 2)) * v)   # 𝒟ₜ — the T-Detect score
+    return out
 
 
 def compose_envelope(
@@ -418,6 +465,11 @@ def compose_envelope(
     does_not_license_text: str = DEFAULT_DOES_NOT_LICENSE,
 ) -> dict[str, Any]:
     caveats = list(results.get("caveats", []))
+
+    # T-Detect: name curvature_t in the refusal block ONLY when it is emitted (student-t mode),
+    # so the gaussian-mode claim license is unchanged.
+    if "curvature_t" in results:
+        does_not_license_text = f"{does_not_license_text} {STUDENT_T_CAVEAT}"
 
     license_block = ClaimLicense(
         task_surface=TASK_SURFACE,
@@ -553,6 +605,22 @@ def main(argv: list[str] | None = None) -> int:
         ),
     )
     parser.add_argument(
+        "--tail", choices=("gaussian", "student-t"), default="gaussian",
+        help=(
+            "Normalization of the curvature. 'gaussian' (default) is the Fast-DetectGPT "
+            "z-score, unchanged. 'student-t' adds the T-Detect SCORE curvature_t "
+            "(arXiv:2507.23577) — the t-standardized statistic the paper exposes; robust to "
+            "adversarial/paraphrased text. No p-value is emitted (it would be unsupported)."
+        ),
+    )
+    parser.add_argument(
+        "--t-df", type=int, default=DEFAULT_T_DF,
+        help=(
+            "Student-t degrees of freedom for --tail student-t (default "
+            f"{DEFAULT_T_DF}; must be > 2)."
+        ),
+    )
+    parser.add_argument(
         "--per-position", action="store_true",
         help="Include the per-position curvature series in the output.",
     )
@@ -577,6 +645,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--licenses", default=DEFAULT_LICENSES)
     parser.add_argument("--does-not-license", default=DEFAULT_DOES_NOT_LICENSE)
     args = parser.parse_args(argv)
+
+    if args.tail == "student-t" and args.t_df <= 2:
+        print("error: --t-df must be > 2 (the Student-t variance nu/(nu-2) is "
+              "undefined at 2 and negative below).", file=sys.stderr)
+        return 2
 
     target_path = Path(args.target)
     if not target_path.exists():
@@ -630,6 +703,8 @@ def main(argv: list[str] | None = None) -> int:
             model=model,
             n_samples=args.n_samples,
             seed=args.seed,
+            tail=args.tail,
+            t_df=args.t_df,
         )
     except SurprisalBackendError as exc:
         print(f"error: scoring failed ({args.model}): {exc}", file=sys.stderr)

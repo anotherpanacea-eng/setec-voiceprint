@@ -18,6 +18,7 @@
   "productive_roughness": "productive-roughness deviation vs the writer's own baseline (descriptive, strictly baseline-relative, non-verdict)",
   "reference_ecology": "reference-ecology profile (non-voice; topic-bound)",
   "rewriting_invariance": "rewriting-invariance distance under a named judge model + prompt (discrimination evidence, uncalibrated, non-verdict)",
+  "set_level_diversity": "set-level diversity & originality (reconstructibility vs a reference pool; within-set homogeneity)",
   "smoothing_diagnosis": "AI-prose smoothing diagnosis",
   "sound_texture": "sound-texture profile (alliteration / assonance / consonance adjacency density + consonant-class profile) via an orthographic-onset proxy (descriptive, non-verdict)",
   "validation": "validation / labeled-corpus harness",
