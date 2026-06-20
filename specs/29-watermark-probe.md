@@ -104,10 +104,12 @@ not an inference from style, but the recovery of an injected signal.
 That makes it valuable **and** dangerous in exactly opposite ways, and this spec is honest about
 both:
 
-- **Positive direction (the value):** if the operator holds the green-list key/hash parameters
-  for a scheme they suspect (their own pipeline, a vendor's documented watermark), the z-test is
-  a fast, model-free, *high-confidence-when-it-fires* confirmation that the text was produced by
-  **that** scheme. That is a cleaner signal than any stylometric one — it is the recovery of a
+- **Positive direction (the value):** if the operator generated the tokens with **this module's
+  green-list partition** (`partition_prf`) under a known key/gamma/hash_scheme/vocab, the z-test is
+  a fast, model-free, *high-confidence-when-it-fires* confirmation that the text carries **that**
+  partition. (It is **not** a way to recognize a vendor's or the official processor's watermark
+  from outside — those use a different PRF/RNG and would false-negate here; see the partition-scope
+  boundary above.) That is a cleaner signal than any stylometric one — it is the recovery of a
   planted bit pattern, not a judgement about prose.
 - **Negative direction (the trap, and the load-bearing caveat):** a low z, or no available key,
   means **nothing** about human authorship. The text could be (a) human, (b) machine without a
@@ -120,7 +122,8 @@ This spec adds a model-free **M1** that computes the green-list z-statistic over
 operator-supplied scheme parameters, reports it as a descriptive value with a **reliability band**
 (`detection-power` framing, not a pass/fail), and refuses — in the claim license, structurally — any
 AI/human verdict and any absence-is-human reading. **M2** is a thin, gated *convenience*: a
-multi-key/multi-`γ`/`δ` sweep for an operator who wants to try several documented schemes at once.
+multi-key/multi-`γ`/`δ` sweep for an operator who wants to try several of their own
+partition parameter sets at once.
 M2 buys no new power; it only batches M1 — and it is gated precisely so the headline capability
 (the z-test) stays fully CI-testable stdlib.
 
@@ -297,8 +300,9 @@ Kirchenbauer et al. 2301.10226:
 
 - **Why gated at all, given M1 is stdlib.** The z-test itself is stdlib and fully CI-tested in M1 —
   M2 buys **no new statistical power**. M2 is a *convenience batcher*: run M1 across a small
-  operator-supplied **catalog of candidate schemes** (several `(key, gamma, hash_scheme, vocab)`
-  triples — e.g. a vendor's documented presets) and a couple of `prefix-h` window sizes, then
+  operator-supplied **catalog of candidate parameter sets** (several `(key, gamma, hash_scheme,
+  vocab)` triples the operator generated under **this partition**) and a couple of `prefix-h`
+  window sizes, then
   report a per-scheme card table so the operator can ask "do *any* of the schemes I hold keys for
   fire?" The gate is **not** a model gate (there is no model); it is a **scope/seam gate**: the
   catalog format, the optional operator-supplied real BPE tokenizer adapter, and any future
