@@ -5084,6 +5084,67 @@
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md"
       ]
+    },
+    {
+      "id": "watermark_probe",
+      "script_path": "plugins/setec-voiceprint/scripts/watermark_probe.py",
+      "surface": "watermark_probe",
+      "status": "literature_anchored",
+      "handoff": "experimental",
+      "consumers": [],
+      "family": "watermark",
+      "purpose": "Green-list z-test (the KGW *construction* of Kirchenbauer et al. 2024, arXiv:2301.10226) \u2014 the first watermarking axis in SETEC. Scores a target against THIS module's Voiceprint-defined green-list partition (partition_prf `voiceprint-greenlist-v1/sha256-seed+pyrandom-shuffle`: a SHA-256(key, context) seed feeding a deterministic shuffle), NOT the official KGW reference processor's seeding schemes (simple_1 / selfhash / minhash) or its RNG device. Given a target + the OPERATOR-SUPPLIED parameters (key, gamma, hash_scheme, vocab), computes the green-list z-statistic + p-value (repeated n-grams scored once) and reports them as one per-signal card with a PROVISIONAL detection-power band. Model-free: a hash-seeded vocabulary partition + a green-token count + a one-proportion z-score. A positive is watermark-consistent with THIS partition, never \"AI\"; a low/zero z (or no key) is `unknown`, never \"human\" \u2014 absence is NOT evidence of human authorship. Keyed, parameterized, never sniffed; no is_watermarked / is_ai / is_human / verdict field.\n",
+      "use_when": [
+        "You generated the tokens with THIS module''s green-list partition (partition_prf `voiceprint-greenlist-v1/sha256-seed+pyrandom-shuffle`) under a known key / gamma / hash_scheme / vocab and want positive, model-free evidence the stream carries it",
+        "You want that evidence for ONE named partition to sit beside the stylometric signals in an evidence pack",
+        "You can supply a token-id stream + vocab matching THIS partition''s tokenizer/vocab"
+      ],
+      "do_not_use_when": [
+        "The tokens were produced by the OFFICIAL KGW reference processor (simple_1 / selfhash / minhash) or any vendor / third-party watermark generator \u2014 this custom SHA/Python partition is not byte-compatible with their PRF/RNG and will systematically FALSE-NEGATIVE; you need a generator fingerprint matching partition_prf first",
+        "You have no key \u2014 the probe is keyed and cannot guess the scheme (scanning for unknown watermarks is the watermark-stealing attack, out of scope)",
+        "You want an AI / human / is_watermarked verdict \u2014 the surface ships no threshold and no verdict field, and the claim license forbids thresholding z / p_value / band into one",
+        "You would read a negative as human \u2014 absence is NOT evidence of human authorship (blind to other schemes, semantic / SynthID-class watermarks, and scrubbed watermarks)",
+        "The text may be paraphrase-scrubbed (detection power decays under heavy rewrite)",
+        "The scheme is semantic / SynthID / Gumbel-class (a different family with a different detector \u2014 v1 is token-level KGW green-list only)"
+      ],
+      "inputs": {
+        "target": "prose text file (UTF-8)",
+        "key": "the green-list hash seed (operator-supplied; never echoed)",
+        "vocab": "{token: id} JSON map or an int vocab size",
+        "tokens": "optional operator token-id stream (the real detection path)"
+      },
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".watermark_probe.json"
+        ]
+      },
+      "compute": {
+        "tier": "core",
+        "cost_note": "stdlib counting + arithmetic; no model, no GPU, no network",
+        "length_floor_words": null
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
+      "dependencies": {
+        "python": [],
+        "python_optional": []
+      },
+      "examples": [
+        {
+          "description": "Real path \u2014 operator token-id stream + vocab matching the watermarking tokenizer",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/watermark_probe.py --target target.txt --key KEY --vocab vocab.json --tokens tokens.json --json"
+        },
+        {
+          "description": "Labelled whitespace fallback (toy/demo/CI only \u2014 under-detects real BPE watermarks)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/watermark_probe.py --target target.txt --key KEY --vocab vocab.json --tokenizer fallback:whitespace --json"
+        }
+      ],
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md"
+      ]
     }
   ],
   "schema_version": "0.3.0"

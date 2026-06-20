@@ -46,7 +46,7 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 
 - **SpecDetect + Lastde/Lastde++** — spectral / time-series read of the surprisal vector, orthogonal to `surprisal_audit`; stdlib over existing logits. arXiv:2508.11343 / 2410.06072.
 - **StyleDistance / Multilingual-UAR** — stronger style encoder than Wegmann/LUAR for `voice_fingerprint`; drop-in, GPU. arXiv:2410.12757 / 2509.16531.
-- **Watermark probe** — KGW green-list z-test, "was this watermarked?"; SETEC has no watermark surface. **Absence ≠ human.** arXiv:2301.10226 / 2306.04634.
+- **Watermark probe** — KGW green-list z-test, "was this watermarked?"; the first watermarking axis in SETEC. **M1 BUILT** (`watermark_probe`, spec 29; model-free stdlib z-test + p-value + transform-safe `neg_log10_p`, two-tier PROVISIONAL band `under_powered`/`watermark_consistent`, no verdict field, keyed/never-sniffed). A positive is watermark-consistent with the named scheme, never "AI"; **absence ≠ human** (blind to other & semantic & scrubbed watermarks). M2 (gated multi-key sweep convenience) is optional polish. arXiv:2301.10226 / 2306.04634 / 2411.13425.
 - **GAQCorpus argument-quality** — theory-based per-dimension (logic/rhetoric/dialectic) band vector complementing `argument_decision_audit`. arXiv:2006.00843.
 - **LLM-as-verifier authorship** — one advisory authorship signal, not a verdict (offline InstructAV / CAVE variants). arXiv:2403.08213 / 2407.12882 / 2406.16672.
 - **RAID + DIPPER robustness fixtures/harness** — expand the adversarial fixture taxonomy + a recursive-paraphrase stress harness. arXiv:2405.07940 / 2303.13408.
