@@ -25,7 +25,7 @@ Each entry block carries the signal's metadata on a single line:
 ## Contents
 
 - [Tier 1: Variance signals (9)](#tier-1-variance-signals)
-- [Tier 2: Syntactic signals (3)](#tier-2-syntactic-signals)
+- [Tier 2: Syntactic signals (4)](#tier-2-syntactic-signals)
 - [Tier 3: Trajectory signals (4)](#tier-3-trajectory-signals)
 - [Tier 4: Surprisal signals (3)](#tier-4-surprisal-signals)
 - [AIC-7: Discourse Leak / Assistant-Register Intrusion (4)](#aic-7-discourse-leak)
@@ -128,6 +128,12 @@ Shannon entropy over POS-bigram (e.g., DET-NOUN, ADJ-NOUN) frequency distributio
 `tier2.mdd.sd` · tier2-syntax · ↓ · **empirically_oriented** · editlens_v1_findings_2026-05-10 (da_AUC 0.585)
 
 Per-sentence mean dependency distance via spaCy parse; then SD across sentences. Range `[0, ∞)` tokens. Length floor 200 tokens. Minimum 2 sentences.
+
+### Dependency-distance distribution (adjacent / long-range share)
+
+`dependency_distance_audit:adjacent_share` / `:long_range_share` · syntactic-shape · — · **heuristic**
+
+The *distribution* of dependency distances `d = |i − head.i|` (histogram + adjacent-link share `d=1` + long-range tail `d ≥ 7`); the scalar MDD mean/SD is reused from `mdd_stats` (above). Descriptive, no verdict. Range `[0, 1]` (shares). Length floor 150 tokens. Parser-tier (spaCy `en_core_web_sm`; abstains without it). NOT length-controlled — `mean_sentence_length` co-reported. Spec 24 (arXiv:2211.14620).
 
 ---
 
