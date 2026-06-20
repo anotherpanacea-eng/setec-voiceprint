@@ -24,5 +24,6 @@
   "sound_texture": "sound-texture profile (alliteration / assonance / consonance adjacency density + consonant-class profile) via an orthographic-onset proxy (descriptive, non-verdict)",
   "validation": "validation / labeled-corpus harness",
   "voice_coherence": "voice-coherence comparison",
-  "voice_coherence_acquisition": "voice-coherence corpus acquisition"
+  "voice_coherence_acquisition": "voice-coherence corpus acquisition",
+  "watermark_probe": "KGW green-list watermark probe (Kirchenbauer et al. 2301.10226): z-test for a KNOWN, operator-keyed token-level scheme. A positive is watermark-consistent with that scheme, never 'AI'; absence is NOT evidence of human authorship (blind to other & semantic & scrubbed watermarks)."
 }

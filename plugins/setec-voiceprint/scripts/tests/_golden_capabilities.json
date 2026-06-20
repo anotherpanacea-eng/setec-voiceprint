@@ -5084,6 +5084,66 @@
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md"
       ]
+    },
+    {
+      "id": "watermark_probe",
+      "script_path": "plugins/setec-voiceprint/scripts/watermark_probe.py",
+      "surface": "watermark_probe",
+      "status": "literature_anchored",
+      "handoff": "experimental",
+      "consumers": [],
+      "family": "watermark",
+      "purpose": "KGW green-list z-test (Kirchenbauer et al. 2024, arXiv:2301.10226) \u2014 the first watermarking axis in SETEC. Given a target and the OPERATOR-SUPPLIED scheme parameters (key, gamma, hash_scheme, vocab), computes the green-list z-statistic + p-value and reports them as one per-signal card with a PROVISIONAL detection-power band. Model-free: the detector is a hash-seeded vocabulary partition + a green-token count + a one-proportion z-score. A positive is watermark-consistent with the NAMED scheme, never \"AI\"; a low/zero z (or no key) is `unknown`, never \"human\" \u2014 absence is NOT evidence of human authorship. Keyed, parameterized, never sniffed; no is_watermarked / is_ai / is_human / verdict field.\n",
+      "use_when": [
+        "You hold the green-list key/params for a token-level KGW scheme you suspect (your own pipeline, a vendor's documented watermark)",
+        "You want positive, model-free evidence for ONE named scheme to sit beside the stylometric signals in an evidence pack",
+        "You can supply a token-id stream + vocab matching the watermarking tokenizer"
+      ],
+      "do_not_use_when": [
+        "You have no key \u2014 the probe is keyed and cannot guess the scheme (scanning for unknown watermarks is the watermark-stealing attack, out of scope)",
+        "You want an AI / human / is_watermarked verdict \u2014 the surface ships no threshold and no verdict field, and the claim license forbids thresholding z / p_value / band into one",
+        "You would read a negative as human \u2014 absence is NOT evidence of human authorship (blind to other schemes, semantic / SynthID-class watermarks, and scrubbed watermarks)",
+        "The text may be paraphrase-scrubbed (detection power decays under heavy rewrite)",
+        "The scheme is semantic / SynthID / Gumbel-class (a different family with a different detector \u2014 v1 is token-level KGW green-list only)"
+      ],
+      "inputs": {
+        "target": "prose text file (UTF-8)",
+        "key": "the green-list hash seed (operator-supplied; never echoed)",
+        "vocab": "{token: id} JSON map or an int vocab size",
+        "tokens": "optional operator token-id stream (the real detection path)"
+      },
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".watermark_probe.json"
+        ]
+      },
+      "compute": {
+        "tier": "core",
+        "cost_note": "stdlib counting + arithmetic; no model, no GPU, no network",
+        "length_floor_words": null
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
+      "dependencies": {
+        "python": [],
+        "python_optional": []
+      },
+      "examples": [
+        {
+          "description": "Real path \u2014 operator token-id stream + vocab matching the watermarking tokenizer",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/watermark_probe.py --target target.txt --key KEY --vocab vocab.json --tokens tokens.json --json"
+        },
+        {
+          "description": "Labelled whitespace fallback (toy/demo/CI only \u2014 under-detects real BPE watermarks)",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/watermark_probe.py --target target.txt --key KEY --vocab vocab.json --tokenizer fallback:whitespace --json"
+        }
+      ],
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md"
+      ]
     }
   ],
   "schema_version": "0.3.0"

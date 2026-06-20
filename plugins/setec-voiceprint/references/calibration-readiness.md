@@ -122,6 +122,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
 | `voice_profile` | Empirical (provisional) | No | register-matched personal baseline corpus (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 2000 |
 | `warrant_probe` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 120 |
+| `watermark_probe` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 
 ### Runway & calibration tooling
 

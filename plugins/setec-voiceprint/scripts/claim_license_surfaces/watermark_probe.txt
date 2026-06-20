@@ -1,0 +1,1 @@
+KGW green-list watermark probe (Kirchenbauer et al. 2301.10226): z-test for a KNOWN, operator-keyed token-level scheme. A positive is watermark-consistent with that scheme, never 'AI'; absence is NOT evidence of human authorship (blind to other & semantic & scrubbed watermarks).
