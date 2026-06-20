@@ -293,13 +293,27 @@ def audit_pool(pool: list[tuple[str, str]], *, min_set: int = DEFAULT_MIN_SET) -
 
 def audit_proximity(target_text: str, centroid_texts: list[tuple[str, str]],
                     *, centroid_source: str) -> dict[str, Any]:
-    """Single-doc hivemind-proximity results. Raises ValueError (→ bad_input) on an empty target /
-    empty centroid pool. Vocabulary is the union over target + centroid texts (same lens)."""
-    if _word_count(target_text) == 0:
+    """Single-doc hivemind-proximity results. Raises ValueError (→ bad_input) on an empty/too-short
+    target or a centroid with no text clearing the stylometric stability floor. Vocabulary is the
+    union over target + centroid texts (same lens)."""
+    target_words = _word_count(target_text)
+    if target_words == 0:
         raise ValueError("--target has no word tokens")
-    centroid = [t for _, t in centroid_texts if _word_count(t) > 0]
+    # Apply the SAME stylometric stability floor pool mode enforces (Codex P2): below
+    # LENGTH_FLOOR_WORDS a text has too few function-word / char-n-gram observations for a stable
+    # vector, so a one-word target or one-word centroid would otherwise emit an uncaveated, basically
+    # meaningless cosine under the same lens. Refuse the target; drop sub-floor centroid members.
+    if target_words < LENGTH_FLOOR_WORDS:
+        raise ValueError(
+            f"--target has {target_words} word(s) (< the {LENGTH_FLOOR_WORDS}-word stylometric "
+            "stability floor); a proximity cosine is not shipped on too short a target")
+    n_centroid_in = len(centroid_texts)
+    centroid = [t for _, t in centroid_texts if _word_count(t) >= LENGTH_FLOOR_WORDS]
     if not centroid:
-        raise ValueError("centroid has no usable texts")
+        raise ValueError(
+            f"centroid has no text with >= {LENGTH_FLOOR_WORDS} words (the stylometric stability "
+            "floor); supply longer centroid material")
+    n_dropped_short = n_centroid_in - len(centroid)
     vocab = build_vocabulary([target_text] + centroid)
     if not vocab["coords"]:
         raise ValueError("no stylometric features (no word tokens / n-grams)")
@@ -312,7 +326,9 @@ def audit_proximity(target_text: str, centroid_texts: list[tuple[str, str]],
     return {
         "lens": "local-stylometric",
         "hivemind_proximity": round(proximity, 6),
-        "centroid_provenance": {"n_texts": len(centroid), "source": centroid_source},
+        "centroid_provenance": {"n_texts": len(centroid), "source": centroid_source,
+                                "n_dropped_short": n_dropped_short,
+                                "length_floor_words": LENGTH_FLOOR_WORDS},
         "assumptions": _assumptions(mode="proximity"),
     }
 
@@ -423,12 +439,16 @@ def _run_proximity(args: argparse.Namespace) -> dict[str, Any]:
             task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
             target_path=args.target, reason=str(e), reason_category="bad_input")
 
+    nd = results["centroid_provenance"].get("n_dropped_short", 0)
+    warnings = ([f"dropped {nd} centroid text(s) below the {LENGTH_FLOOR_WORDS}-word stylometric "
+                 "stability floor before averaging"] if nd else None)
     return build_output(
         task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
         target_path=args.target, target_words=_word_count(target_text),
         baseline={"centroid": csource,
                   "n_texts": results["centroid_provenance"]["n_texts"]},
         results=results, claim_license=from_legacy(_claim_license(), task_surface=TASK_SURFACE),
+        warnings=warnings,
     )
 
 

@@ -124,6 +124,32 @@ def test_proximity_monotone_self_is_one():
     assert self_prox["hivemind_proximity"] >= other_prox["hivemind_proximity"]
 
 
+def test_proximity_refuses_short_target_below_stability_floor():
+    # Codex P2: proximity must enforce the SAME LENGTH_FLOOR_WORDS as pool mode. A sub-floor target
+    # would otherwise emit an uncaveated, meaningless cosine under the same lens.
+    with pytest.raises(ValueError, match="stability floor"):
+        ha.audit_proximity("hello there", [("c", _DIVERSE[0])], centroid_source="c")
+
+
+def test_proximity_refuses_centroid_all_below_floor():
+    with pytest.raises(ValueError, match="stability floor"):
+        ha.audit_proximity(_DIVERSE[0], [("c", "a tiny stub")], centroid_source="c")
+
+
+def test_proximity_drops_short_centroid_members_and_warns(tmp_path):
+    # A long target + a centroid dir with one usable + one stub: the stub is dropped below the floor,
+    # the measurement proceeds on the usable centroid, and the drop is surfaced (count + warning).
+    target = tmp_path / "t.txt"; target.write_text(_DIVERSE[0], encoding="utf-8")
+    cdir = tmp_path / "cen"; cdir.mkdir()
+    (cdir / "good.txt").write_text(_DIVERSE[5], encoding="utf-8")
+    (cdir / "stub.txt").write_text("tiny stub", encoding="utf-8")
+    rc, env = _envelope(["--target", str(target), "--centroid-dir", str(cdir), "--json"])
+    assert env["available"] is True and rc == 0
+    cp = env["results"]["centroid_provenance"]
+    assert cp["n_texts"] == 1 and cp["n_dropped_short"] == 1
+    assert any("stability floor" in w for w in (env.get("warnings") or []))
+
+
 def test_effective_modes_none_without_numpy(monkeypatch):
     # Guarded numpy import: when numpy is unavailable, effective_modes degrades to None (the
     # distribution still ships) — never crashes.
