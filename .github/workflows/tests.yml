@@ -39,13 +39,17 @@ jobs:
           # importorskip guard), so it must be present for collection.
           # click: spaCy's `download` CLI imports it directly, and recent
           # typer no longer pulls it in transitively.
-          pip install pypdf pytest click
+          # pytest-xdist: parallel test execution (`-n auto`, set in pytest.ini)
+          # — the suite is ~4,300 tests and serial it runs ~7 min.
+          pip install pypdf pytest pytest-xdist click
           # spaCy Tier-2/Tier-3 model (not on PyPI).
           python -m spacy download en_core_web_sm
 
       - name: Run test suite
         run: |
-          pytest plugins/setec-voiceprint/scripts/tests -q -rs
+          # -n auto: parallel via pytest-xdist (installed above). Explicit here so
+          # CI parallelism doesn't depend on the conftest auto-default. ~7min -> ~2min.
+          pytest plugins/setec-voiceprint/scripts/tests -n auto -q -rs
 
       # Consistency gates AGENTS.md treats as enforcement (manifest <-> source
       # drift, contract-fixture drift, changelog coverage, calibration-readiness

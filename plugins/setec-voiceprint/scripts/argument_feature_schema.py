@@ -4,9 +4,11 @@ plus the anchored derived signals.
 
 Source of truth: Kim, Chang, Pham & Iyyer 2026, "Argument Collapse: LLMs
 Flatten Long-Form Public Debate" (arXiv:2606.01736v3), §4.1–4.2 + Tables 26/27.
-ArgScope Layer A is the argument-domain sibling of StoryScope's
-narrative-decision audit: it scores *how an argument is built* (structural arc,
-discourse-mode mix), not how its sentences are phrased.
+The B5 discounting-straw-men (decoy-objection) arc-flag additionally draws on the
+"Flee the Flaw" fallacy-evasion lineage (arXiv:2406.12402) for the discounting /
+decoy-objection move it names. ArgScope Layer A is the argument-domain sibling of
+StoryScope's narrative-decision audit: it scores *how an argument is built*
+(structural arc, discourse-mode mix), not how its sentences are phrased.
 
 Unlike StoryScope's whole-document feature judgments, ArgScope's two net-new
 bundles are computed from a PER-PARAGRAPH label sequence:

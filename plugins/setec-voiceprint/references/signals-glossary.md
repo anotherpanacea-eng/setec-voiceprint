@@ -25,7 +25,7 @@ Each entry block carries the signal's metadata on a single line:
 ## Contents
 
 - [Tier 1: Variance signals (9)](#tier-1-variance-signals)
-- [Tier 2: Syntactic signals (3)](#tier-2-syntactic-signals)
+- [Tier 2: Syntactic signals (4)](#tier-2-syntactic-signals)
 - [Tier 3: Trajectory signals (4)](#tier-3-trajectory-signals)
 - [Tier 4: Surprisal signals (3)](#tier-4-surprisal-signals)
 - [AIC-7: Discourse Leak / Assistant-Register Intrusion (4)](#aic-7-discourse-leak)
@@ -128,6 +128,12 @@ Shannon entropy over POS-bigram (e.g., DET-NOUN, ADJ-NOUN) frequency distributio
 `tier2.mdd.sd` · tier2-syntax · ↓ · **empirically_oriented** · editlens_v1_findings_2026-05-10 (da_AUC 0.585)
 
 Per-sentence mean dependency distance via spaCy parse; then SD across sentences. Range `[0, ∞)` tokens. Length floor 200 tokens. Minimum 2 sentences.
+
+### Dependency-distance distribution (adjacent / long-range share)
+
+`dependency_distance_audit:adjacent_share` / `:long_range_share` · syntactic-shape · — · **heuristic**
+
+The *distribution* of dependency distances `d = |i − head.i|` (histogram + adjacent-link share `d=1` + long-range tail `d ≥ 7`); the scalar MDD mean/SD is reused from `mdd_stats` (above). Descriptive, no verdict. Range `[0, 1]` (shares). Length floor 150 tokens. Parser-tier (spaCy `en_core_web_sm`; abstains without it). NOT length-controlled — `mean_sentence_length` co-reported. Spec 24 (arXiv:2211.14620).
 
 ---
 
@@ -573,10 +579,10 @@ Full surface spec at `.argscope-spec/argscope-layer-a-SPEC.md`. Schema at `scrip
 
 ### B5 — Collapse dynamics (within-document) (2)
 
-Two arc-level (cross-paragraph) collapse-dynamics signals the per-paragraph {role, mode} schema cannot express, derived from an additive judge extension (per-paragraph `guard_strength` + a stable `claim_ref`; per counterclaim/rebuttal `objection_strength`; one document-level `strongest_internal_objection_engaged`). Both are **heuristic**, directional, with **NO numeric anchor** (the paper supports them only qualitatively and there is no measured discrimination) — they are EXCLUDED from the aggregate (`contribution=null`), do not change the verdict band, and return null (never a fabricated False) when the evidence is absent. They describe TEXTURE only and do **not** adjudicate fairness or soundness (that is banister / dialectical-clarity). Provenance is conceptual (the AGD apparatus + the paper's decoy-objection finding + dialectical-clarity OB5), not a numeric anchor.
+Two arc-level (cross-paragraph) collapse-dynamics signals the per-paragraph {role, mode} schema cannot express, derived from an additive judge extension (per-paragraph `guard_strength` + a stable `claim_ref`; per counterclaim/rebuttal `objection_strength`; one document-level `strongest_internal_objection_engaged`). Both are **heuristic**, directional, with **NO numeric anchor** (the paper supports them only qualitatively and there is no measured discrimination) — they are EXCLUDED from the aggregate (`contribution=null`), do not change the verdict band, and return null (never a fabricated False) when the evidence is absent. They describe TEXTURE only and do **not** adjudicate fairness or soundness (that is banister / dialectical-clarity). Provenance is conceptual (the AGD apparatus + the paper's decoy-objection finding [arXiv:2606.01736] + the "Flee the Flaw" fallacy-evasion lineage [arXiv:2406.12402] for discounting-straw-men + dialectical-clarity OB5), not a numeric anchor.
 
 - `disappearing_guard_flag` · argument-decision · ↑ · **heuristic** · directional only, no anchor — a claim guarded (hedged) early then treated as unguarded later (within-document hedging-drift); a downward guard transition for one `claim_ref` across ≥2 paragraphs. AGD "disappearing guard" + the paper's collapse framing
-- `discounting_straw_men_flag` · argument-decision · ↑ · **heuristic** · directional only, no anchor — engaging weak objections while leaving the strongest text-internal objection un-engaged (decoy-objection); fires only when a weak counterclaim/rebuttal is labeled AND `strongest_internal_objection_engaged` is False. AGD discounting + the paper's decoy-objection finding + dialectical-clarity OB5 (a True flag at most makes a dialectical-clarity run informative; never adjudicated here)
+- `discounting_straw_men_flag` · argument-decision · ↑ · **heuristic** · directional only, no anchor — engaging weak objections while leaving the strongest text-internal objection un-engaged (decoy-objection); fires only when a weak counterclaim/rebuttal is labeled AND `strongest_internal_objection_engaged` is False. AGD discounting + the paper's decoy-objection finding (arXiv:2606.01736) + the "Flee the Flaw" fallacy-evasion lineage (arXiv:2406.12402) + dialectical-clarity OB5 (a True flag at most makes a dialectical-clarity run informative; never adjudicated here)
 
 ### Aggregate
 

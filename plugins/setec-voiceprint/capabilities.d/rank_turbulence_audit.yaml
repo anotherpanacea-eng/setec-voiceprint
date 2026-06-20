@@ -1,0 +1,57 @@
+entries:
+- id: rank_turbulence_audit
+  script_path: plugins/setec-voiceprint/scripts/rank_turbulence_audit.py
+  surface: voice_coherence
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: voice-divergence
+  purpose: 'Interpretable per-word stylometric divergence between a target and a baseline
+    corpus — rank-turbulence divergence (RTD, in [0,1]) over the function-word distribution
+    by default. Where voice_distance reports one aggregate Burrows Delta, RTD''s per-word
+    contributions say WHICH words drive the difference (top contributors over-ranked in the
+    target vs the baseline). Additive companion to voice_distance (does NOT modify it).
+    Clean-room RTD (Dodds et al. 2020; stylometric-Delta adaptation arXiv:2604.19499);
+    stdlib, deterministic. NOT a verdict: a high RTD is not "different author" or "AI";
+    topic/genre/length shift it (especially in --all-words mode). Claim-license refuses any
+    authorship/AI inference; thresholds operator-side / PROVISIONAL.
+
+    '
+  use_when:
+  - You want an interpretable, per-word complement to a voice_distance Burrows Delta run
+  - You want to see which (function) words drive a target's divergence from a baseline
+  - Target and baseline are >= ~200 words and register-matched
+  do_not_use_when:
+  - You want an authorship or AI-provenance verdict (this is a divergence measurement)
+  - Target and baseline are topic-mismatched (the divergence becomes topical, not stylistic;
+    --all-words mode is explicitly topical)
+  - Either text is under ~200 words (unstable rank distribution)
+  inputs:
+    target: prose/markdown text file (UTF-8)
+    baseline: a --baseline-dir of texts OR a --manifest (JSONL; id + text|text_path)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib only; no models. Deterministic; counting + ranking + arithmetic.
+    length_floor_words: 200
+  registers:
+  - blog_essay
+  - testimony_policy
+  - technical_documentation
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Per-word RTD vs a baseline corpus (function words, the default)
+    cmd: python3 plugins/setec-voiceprint/scripts/rank_turbulence_audit.py --target target.md
+      --baseline-dir corpora/baseline --json
+  - description: Full-vocabulary (TOPICAL) mode with a custom alpha
+    cmd: python3 plugins/setec-voiceprint/scripts/rank_turbulence_audit.py --target target.md
+      --manifest corpus_manifest.jsonl --all-words --alpha 0.2
+  references:
+  - plugins/setec-voiceprint/specs/23-rank-turbulence-delta.md
+  - 'Rank-Turbulence Delta — Interpretable Stylometric Delta (arXiv:2604.19499): https://arxiv.org/abs/2604.19499'
+  - 'Allotaxonometry and rank-turbulence divergence — Dodds et al. 2020 (arXiv:2002.09770): https://arxiv.org/abs/2002.09770'
