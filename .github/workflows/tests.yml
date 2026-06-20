@@ -47,7 +47,9 @@ jobs:
 
       - name: Run test suite
         run: |
-          pytest plugins/setec-voiceprint/scripts/tests -q -rs
+          # -n auto: parallel via pytest-xdist (installed above). Explicit here so
+          # CI parallelism doesn't depend on the conftest auto-default. ~7min -> ~2min.
+          pytest plugins/setec-voiceprint/scripts/tests -n auto -q -rs
 
       # Consistency gates AGENTS.md treats as enforcement (manifest <-> source
       # drift, contract-fixture drift, changelog coverage, calibration-readiness
