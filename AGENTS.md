@@ -60,6 +60,51 @@ Most cycles are:
 5. **Fix.** The writing agent applies the fixes, runs tests, commits.
 6. **Merge.** Via PR + merge commit. See below.
 
+## Build pre-flight — root out the P1/P2 modes before review
+
+A retrospective over 350 review findings (68 P1 / 115 P2) found the same handful of
+mistakes recurring. Codex review is token-gated (≈one round per 5-hour window), so the
+goal is **first-pass-clean**: run this before you call a build done, and re-run it on
+every fix — *a fix is a build*.
+
+**Root cause (~40% of P1s):** the spec/build *asserts* something about existing source —
+an API, a field, a `file:line`, an env-var, a compute tier, a sibling spec, an invariant —
+that it never opened the file to verify. Pattern-matching a plausible API from memory is
+the single biggest defect source.
+
+1. **API-anchor drift (dominant).** For every symbol / field / `file:line` / env-var /
+   compute-tier / CLI-flag / sibling-spec / precedent you cite: **grep or open it. If grep
+   finds nothing, it does not exist — do not assert it.** Verify the real signature *and*
+   the real return shape (including caps like `.most_common(20)`). Don't describe a
+   precedent file you haven't opened this session.
+2. **Posture leak.** No bare thresholdable scalar in `results`; a `band` must name the
+   **measured property** (`smoothed`/`typical`/`indeterminate`), never the **inference
+   target** (`machine_like_spectrum`); fail-direction **closed**. Run the no-verdict
+   recursive walk — no `is_ai`/`is_human`/`verdict`/`label`/selection key, and nothing one
+   hand-edit from a back door.
+3. **M1/M2 overclaim.** "stdlib / model-free" must be import-clean and CI-runnable —
+   including `build_output`'s `task_surface` being in `VALID_TASK_SURFACES` (else M1 raises
+   and literally doesn't build). spaCy POS/dependency is model-gated; numpy is an allowed
+   transitive CI dep. If the core needs a model, it's M2.
+4. **Stale registration / golden.** Drop-in only (post-#170): a per-id
+   `_golden_capabilities/<id>.json` fragment, **NO `==N` count literal anywhere**, the YAML
+   fragment carries `entries:` + `script_path:` (open a real sibling, e.g.
+   `dependency_distance_audit.yaml`), `git add` the fragment, the dropin/drift/docs-freshness
+   gates pass. There is no `_golden_task_surface_labels` (retired).
+5. **Untestable / false-invariant AC.** Every acceptance must run against REAL behavior. No
+   "byte-identical" without a frozen-fixture test; no "copied from line X" without opening
+   line X. An AC the real API can't satisfy is NEEDS-REWORK, not a test to write.
+6. **Math / data-structure.** Bounds hold on saturated / tie / empty input; immutable
+   frozensets aren't "added to" from a caller (the module itself must change); once-consumed
+   generators are materialized.
+7. **Process.** Honor the spec's PR-split (don't bundle N sub-PRs in one commit — it defeats
+   the per-PR Codex gate); complete the paper trail (signals-glossary / changelog / ROADMAP)
+   even where CI doesn't gate it — Codex reads it.
+
+**Fix loop:** after folding a Codex finding, confirm it fully resolves the finding, self-review
+the fix against modes 1–7 (a fix that adds a field can introduce a mode-1/2/4 defect), re-run
+the suite, *then* push. Round 2 should be empty because you caught the regression, not Codex.
+
 ## Where work comes from: roadmap, briefs, and Issues
 
 Every change implements from a **written contract**, never from an
