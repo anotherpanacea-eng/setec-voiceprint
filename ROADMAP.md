@@ -55,13 +55,13 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 - **FWAN** — function-word adjacency networks; **deferred, overlaps `function_word_grammar_audit`**. arXiv:1406.4469.
 - **Glimpse / Gram2Vec / LambdaG** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2406.12131 / 2403.08462.
 
-**Eval-discipline / anti-Goodhart hardening (protocol upgrades, not surfaces):**
+**Eval-discipline / anti-Goodhart hardening (protocol upgrades, not surfaces) — _M1 in-progress (spec 28, branch `feat/eval-discipline-bundle`)_:**
 
-- **Topic-leakage controls** — topic-controlled splits so style signal isn't topic leakage. arXiv:2104.08530 / 2407.19164.
-- **Multiscale conformal FPR bound** — explicit FPR upper-bound mode for `conformal_gate`. arXiv:2505.05084.
-- **Local-Bayesian likelihood calibration** — fixes biased token-likelihood aggregation in `surprisal_audit`. arXiv:2605.06294.
-- **Short-PHD** — stabilizes intrinsic-dimension reads on short texts. arXiv:2504.02873.
-- **"Don't over-claim separability" guardrail doc** — the theoretical reliability bound; belongs in the posture docs. arXiv:2303.11156.
+- **Topic-leakage controls** — topic-controlled splits so style signal isn't topic leakage. arXiv:2104.08530 / 2407.19164. _M1 done: `topic` manifest field + `topic_disjoint_split` + `topic_leakage_diagnostic` + `--topic-split` in `validation_harness`._
+- **Multiscale conformal FPR bound** — explicit FPR upper-bound mode for `conformal_gate`. arXiv:2505.05084. _M1 done: `threshold_at_fpr_bound` + `--fpr-bound` (single-scale ceiling; multiscale/Mondrian is the named follow-on)._
+- **Local-Bayesian likelihood / Simpson calibration** — detect-and-refuse when a pooled AUC ranking inverts within strata. arXiv:2605.06294. _M1 done: `simpson_inversion_check` + `--simpson-check FIELD` in `validation_harness` (consumes per-stratum scores; emits its own refusal — **not** a `surprisal_audit` change)._
+- **Short-PHD** — stabilizes intrinsic-dimension reads on short texts. arXiv:2504.02873. _M1 done: `estimate_phd_short` + `audit(short_text_mode="auto")` in `intrinsic_dimension_audit` (default-preserving on long text)._
+- **"Don't over-claim separability" guardrail doc** — the theoretical reliability bound; belongs in the posture docs. arXiv:2303.11156. _M1 done: `references/POSTURE_no_overclaim_separability.md` + the structural absence test._
 
 ## Status reconciliation (2026-06-13)
 

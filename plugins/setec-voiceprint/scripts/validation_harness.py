@@ -263,6 +263,15 @@ def score_smoothing_entry(
         "transform": entry.get("transform"),
         "language_status": entry.get("language_status", "unknown"),
         "persona": entry.get("persona", "unknown"),
+        # Eval-discipline (spec 28): operator-declared topic / content-bucket
+        # group key. Carried through onto the scored record so the topic-
+        # leakage split + the Simpson check can read it; without this
+        # passthrough `group_records(records, "topic")` would see None on
+        # every record and bucket everything as "unknown", silently
+        # defeating the topic-disjoint split. DISTINCT from `topic_match`
+        # (impostor closeness), which is surfaced separately below.
+        "topic": entry.get("topic"),
+        "topic_match": entry.get("topic_match"),
         "declared_word_count": entry.get("word_count"),
         "label": label_for_status(entry.get("ai_status"), positive_statuses, negative_statuses),
         "score": None,
@@ -1203,6 +1212,400 @@ def build_slices(
     return slices
 
 
+# ---------- Eval-discipline: topic-leakage splits (spec 28) ----------
+#
+# Roots: Topic Confusion Task (arXiv:2104.08530) and Addressing Topic
+# Leakage / HITS (arXiv:2407.19164). A reported AUC can be measuring
+# *topic* separability (the AI and human sets talk about different
+# things) and calling it *style*. A topic-disjoint train/test partition
+# decomposes the pooled number; a large pooled-vs-split AUC gap is the
+# topic-leakage signature. Topic is operator-declared (the manifest
+# `topic` field), parsed never inferred — with no topic labels the split
+# is reported unavailable + caveated, never silently a random split.
+
+
+def distinct_topics(records: Sequence[dict[str, Any]]) -> list[str]:
+    """Sorted distinct operator-declared topic values across records.
+
+    A record with no `topic` contributes the bucket ``"unknown"``,
+    matching ``group_records``. Used to decide whether a topic-disjoint
+    split is even possible (it needs >= 2 distinct topics)."""
+    return sorted({str(r.get("topic") or "unknown") for r in records})
+
+
+def _class_balance(records: Sequence[dict[str, Any]]) -> dict[str, int]:
+    """{n, n_positive, n_negative, n_scorable} over a record group, where
+    'scorable' means usable_for_metrics with a finite score."""
+    usable = scored_records(records)
+    return {
+        "n": len(records),
+        "n_scorable": len(usable),
+        "n_positive": sum(1 for r in usable if r.get("label") == 1),
+        "n_negative": sum(1 for r in usable if r.get("label") == 0),
+    }
+
+
+def topic_disjoint_split(
+    records: Sequence[dict[str, Any]],
+    *,
+    seed: int | None,
+) -> dict[str, Any]:
+    """Deterministically partition records into train/test so that **no
+    `topic` value appears on both sides** (the HITS group-disjoint
+    protocol, arXiv:2407.19164).
+
+    The topics are sorted (so the partition is reproducible) and shuffled
+    by a seeded RNG, then assigned alternately to test/train. The split is
+    over *topic buckets*, not records, so a topic is wholly on one side.
+    Reports the per-side topic lists and class balance.
+
+    Returns ``available=False`` + a caveat when fewer than two distinct
+    topics exist — you cannot build a topic-disjoint split from one
+    topic. This is a partition utility: it emits **no AUC and no
+    verdict**, only the disjoint assignment (the diagnostic below reads
+    it)."""
+    topics = distinct_topics(records)
+    if len(topics) < 2:
+        return {
+            "available": False,
+            "reason": (
+                "topic-disjoint split needs at least two distinct `topic` "
+                "values; found "
+                + (f"only {topics[0]!r}" if topics else "none")
+                + ". Supply an operator-declared `topic` on the manifest "
+                "entries (parsed, never inferred) to decompose topic "
+                "leakage. SETEC does not infer topic by clustering prose."
+            ),
+            "n_distinct_topics": len(topics),
+            "topics": topics,
+        }
+    rng = random.Random(seed)
+    shuffled = list(topics)
+    rng.shuffle(shuffled)
+    # Alternate buckets to test/train so both sides get topics even when
+    # the topic count is small; the larger remainder goes to train.
+    test_topics = set(shuffled[0::2])
+    train_topics = set(shuffled[1::2])
+    test_records = [r for r in records if str(r.get("topic") or "unknown") in test_topics]
+    train_records = [r for r in records if str(r.get("topic") or "unknown") in train_topics]
+    return {
+        "available": True,
+        "seed": seed,
+        "n_distinct_topics": len(topics),
+        "test_topics": sorted(test_topics),
+        "train_topics": sorted(train_topics),
+        "topics_disjoint": test_topics.isdisjoint(train_topics),
+        "test_balance": _class_balance(test_records),
+        "train_balance": _class_balance(train_records),
+        "_test_records": test_records,
+        "_train_records": train_records,
+    }
+
+
+def _pooled_auc(records: Sequence[dict[str, Any]]) -> float | None:
+    """Stdlib pooled ROC AUC over the usable scored records. Uses the
+    harness's pure-Python ``fallback_roc_auc`` so the diagnostic is
+    deterministic and model-free regardless of sklearn availability."""
+    usable = scored_records(records)
+    labels = [int(r["label"]) for r in usable]
+    scores = [float(r["score"]) for r in usable]
+    return fallback_roc_auc(labels, scores)
+
+
+def _within_topic_macro_auc(records: Sequence[dict[str, Any]]) -> float | None:
+    """Macro-average of per-topic ROC AUC: rank scores **within each
+    topic** (so a topic with both classes contributes its own AUC) and
+    average over the topics that are powered (>= 1 of each class). This is
+    the topic-CONTROLLED measurement — it holds topic fixed, so it
+    isolates style separability from topic separability (the HITS
+    insight, arXiv:2407.19164). A score that is purely topic-determined
+    (constant within each topic) yields per-topic AUC ~0.5 here, even
+    though the pooled cross-topic AUC is high — that gap is the leakage.
+
+    Returns ``None`` when no single topic has both classes among its
+    scorable records."""
+    per_topic_aucs: list[float] = []
+    for _topic, group in group_records(records, "topic").items():
+        auc = _pooled_auc(group)
+        if auc is not None:
+            per_topic_aucs.append(auc)
+    if not per_topic_aucs:
+        return None
+    return sum(per_topic_aucs) / len(per_topic_aucs)
+
+
+def _topic_split_auc(split: dict[str, Any]) -> float | None:
+    """AUC under the topic-disjoint split, measured **within** the test-
+    side topics (macro-averaged per-topic AUC). Holding topic fixed
+    strips the cross-topic separation, so an AUC here far below the
+    pooled AUC says the pooled separability was bought from topic, not
+    style — the Topic-Confusion-Task signature. No threshold is fit on
+    train; this is a pure within-topic ranking decomposition."""
+    return _within_topic_macro_auc(split.get("_test_records") or [])
+
+
+def topic_class_balance(records: Sequence[dict[str, Any]]) -> dict[str, Any]:
+    """Per-topic class balance so a reviewer can see whether `topic` and
+    `ai_status` are correlated in the corpus at all — the precondition
+    for topic leakage. No correlation => no leakage to find."""
+    out: dict[str, Any] = {}
+    for topic, group in group_records(records, "topic").items():
+        out[topic] = _class_balance(group)
+    return out
+
+
+def topic_leakage_diagnostic(
+    records: Sequence[dict[str, Any]],
+    *,
+    seed: int | None,
+    resamples: int,
+    confidence_level: float = 0.95,
+) -> dict[str, Any]:
+    """Measure topic leakage: pooled ROC AUC vs. the topic-disjoint-split
+    ROC AUC, and the **gap** between them with a bootstrap CI.
+
+    A large positive gap (pooled >> split) is the Topic-Confusion-Task /
+    HITS signature: the pooled number was buying separability from topic,
+    not style. On a corpus where topic is independent of label the gap is
+    ~0.
+
+    This is a DESCRIPTIVE decomposition. It emits **no verdict string**,
+    **no corrected aggregate** — only the two AUCs, the gap, a CI, the
+    per-topic class balance, and a caveat naming the confound. The
+    operator reads the decomposition; SETEC does not collapse it into one
+    trust-me number (that would re-create the over-trust this diagnostic
+    fights)."""
+    split = topic_disjoint_split(records, seed=seed)
+    pooled_auc = _pooled_auc(records)
+    diagnostic: dict[str, Any] = {
+        "available": False,
+        "pooled_roc_auc": pooled_auc,
+        "split_roc_auc": None,
+        "auc_gap": None,
+        "auc_gap_ci": {"available": False, "reason": "split unavailable"},
+        "topic_class_balance": topic_class_balance(records),
+        "split": {k: v for k, v in split.items() if not k.startswith("_")},
+        "caveat": (
+            "Topic leakage decomposition: a positive `auc_gap` "
+            "(pooled minus topic-disjoint-split AUC) means the pooled AUC "
+            "may reflect TOPIC separability, not style (Topic Confusion "
+            "Task, arXiv:2104.08530; HITS, arXiv:2407.19164). This is a "
+            "descriptive gap, NOT a verdict: SETEC reports pooled and "
+            "split side by side and emits no corrected aggregate. Topic is "
+            "operator-declared, never inferred."
+        ),
+    }
+    if not split.get("available"):
+        diagnostic["reason"] = split.get("reason")
+        return diagnostic
+
+    split_auc = _topic_split_auc(split)
+    diagnostic["split_roc_auc"] = split_auc
+    if pooled_auc is not None and split_auc is not None:
+        diagnostic["available"] = True
+        diagnostic["auc_gap"] = pooled_auc - split_auc
+        # Bootstrap the gap: resample pooled and (held-out) test rows
+        # independently and recompute the gap, giving a percentile CI on
+        # the topic-leakage magnitude. Deterministic given the seed.
+        diagnostic["auc_gap_ci"] = _topic_gap_bootstrap_ci(
+            records,
+            split.get("_test_records") or [],
+            n_resamples=resamples,
+            confidence_level=confidence_level,
+            seed=seed,
+        )
+    else:
+        diagnostic["reason"] = (
+            "pooled or topic-disjoint-split AUC is not computable (a side "
+            "lacks both classes among scorable records)"
+        )
+    return diagnostic
+
+
+def _topic_gap_bootstrap_ci(
+    pooled_records: Sequence[dict[str, Any]],
+    test_records: Sequence[dict[str, Any]],
+    *,
+    n_resamples: int,
+    confidence_level: float,
+    seed: int | None,
+) -> dict[str, Any]:
+    """Percentile bootstrap CI on the (pooled_auc - split_auc) gap, where
+    pooled_auc is the cross-record ranking AUC and split_auc is the
+    within-test-topic macro AUC (the same definitions the point estimate
+    uses, so the CI brackets the reported gap).
+
+    Resamples that leave the pooled side single-class — or every test
+    topic single-class — are skipped (AUC undefined). Mirrors
+    ``paired_bootstrap_ci``'s discipline."""
+    if n_resamples <= 0:
+        return {"available": False, "reason": "gap bootstrap disabled", "n_resamples": 0}
+    pooled_pairs = [
+        (int(r["label"]), float(r["score"])) for r in scored_records(pooled_records)
+    ]
+    # Group the test side by topic, as (label, score) pairs, for the
+    # within-topic macro-AUC resample.
+    test_by_topic: dict[str, list[tuple[int, float]]] = defaultdict(list)
+    for r in scored_records(test_records):
+        test_by_topic[str(r.get("topic") or "unknown")].append(
+            (int(r["label"]), float(r["score"]))
+        )
+    if not pooled_pairs or not test_by_topic:
+        return {"available": False, "reason": "no scorable records on a side", "n_resamples": n_resamples}
+    rng = random.Random(seed)
+    gaps: list[float] = []
+    for _ in range(n_resamples):
+        p_sample = [pooled_pairs[rng.randrange(len(pooled_pairs))] for _ in pooled_pairs]
+        p_auc = fallback_roc_auc([y for y, _ in p_sample], [s for _, s in p_sample])
+        if p_auc is None:
+            continue
+        topic_aucs: list[float] = []
+        for pairs in test_by_topic.values():
+            if not pairs:
+                continue
+            sample = [pairs[rng.randrange(len(pairs))] for _ in pairs]
+            t_auc = fallback_roc_auc([y for y, _ in sample], [s for _, s in sample])
+            if t_auc is not None:
+                topic_aucs.append(t_auc)
+        if not topic_aucs:
+            continue
+        split_auc = sum(topic_aucs) / len(topic_aucs)
+        gaps.append(p_auc - split_auc)
+    if not gaps:
+        return {"available": False, "reason": "no resample had both classes on both sides", "n_resamples": n_resamples}
+    alpha = 1 - confidence_level
+    return {
+        "available": True,
+        "ci_low": _quantile(gaps, alpha / 2),
+        "ci_high": _quantile(gaps, 1 - alpha / 2),
+        "confidence_level": confidence_level,
+        "method": "paired_percentile_bootstrap",
+        "n_resamples": n_resamples,
+        "n_valid_resamples": len(gaps),
+    }
+
+
+# ---------- Eval-discipline: Simpson inversion check (spec 28) ----------
+#
+# Root: Log-Likelihood & Simpson's Paradox (arXiv:2605.06294). A pooled
+# AUC ranking that separates the classes can INVERT within strata. The
+# diagnostic DETECTS the sign-flip and REFUSES to license the pooled
+# number as the headline; it does NOT re-weight or emit a "corrected"
+# number (that would be the operator's modeling choice). Detect-and-
+# refuse, the ESL `refuse_aggregate_fpr` shape.
+
+# A stratum needs at least this many scorable records of EACH class
+# before its AUC is treated as powered enough to vote in the sign-flip
+# tally. A thin stratum's AUC is too noisy to refute the pooled ranking.
+MIN_SIMPSON_STRATUM_CLASS_N = 3
+
+SIMPSON_STRATA_FIELDS = ("register", "topic", "length_bucket")
+
+
+def simpson_inversion_check(
+    records: Sequence[dict[str, Any]],
+    *,
+    strata_field: str,
+    seed: int | None,
+    resamples: int,
+    confidence_level: float = 0.95,
+) -> dict[str, Any]:
+    """Detect a Simpson sign-flip between the pooled ROC AUC and the
+    within-stratum AUCs over ``strata_field`` (register / topic /
+    length_bucket).
+
+    The pooled ranking 'direction' is whether pooled AUC > 0.5. A flip is
+    detected when the pooled direction disagrees with the MAJORITY of
+    powered strata (e.g. pooled AUC > 0.5 while most powered strata have
+    AUC < 0.5). On a detected flip the diagnostic sets
+    ``pooled_ranking_refused: True`` with a refusal message — exactly the
+    ESL ``refuse_aggregate_fpr`` shape — and emits **no corrected
+    aggregate**."""
+    pooled_auc = _pooled_auc(records)
+    out: dict[str, Any] = {
+        "strata_field": strata_field,
+        "pooled_roc_auc": pooled_auc,
+        "per_stratum": {},
+        "n_powered_strata": 0,
+        "n_agree_with_pooled": 0,
+        "n_disagree_with_pooled": 0,
+        "pooled_ranking_refused": False,
+    }
+    if strata_field not in SIMPSON_STRATA_FIELDS:
+        out["reason"] = (
+            f"unsupported strata field {strata_field!r}; supported: "
+            + ", ".join(SIMPSON_STRATA_FIELDS)
+        )
+        return out
+    if pooled_auc is None:
+        out["reason"] = "pooled AUC is not computable (a class is absent among scorable records)"
+        return out
+
+    pooled_above = pooled_auc > 0.5
+    agree = 0
+    disagree = 0
+    powered = 0
+    for stratum, group in group_records(records, strata_field).items():
+        balance = _class_balance(group)
+        stratum_auc = _pooled_auc(group)
+        is_powered = (
+            stratum_auc is not None
+            and balance["n_positive"] >= MIN_SIMPSON_STRATUM_CLASS_N
+            and balance["n_negative"] >= MIN_SIMPSON_STRATUM_CLASS_N
+        )
+        block: dict[str, Any] = {
+            "roc_auc": stratum_auc,
+            "n_positive": balance["n_positive"],
+            "n_negative": balance["n_negative"],
+            "powered": is_powered,
+        }
+        if is_powered:
+            usable = scored_records(group)
+            block["roc_auc_ci"] = paired_bootstrap_ci(
+                [int(r["label"]) for r in usable],
+                [float(r["score"]) for r in usable],
+                fallback_roc_auc,
+                n_resamples=resamples,
+                confidence_level=confidence_level,
+                seed=derive_seed(seed, "simpson", strata_field, stratum),
+            )
+            powered += 1
+            # A stratum AUC of exactly 0.5 is non-informative — it neither
+            # agrees nor disagrees with the pooled direction.
+            if stratum_auc > 0.5 and pooled_above:
+                agree += 1
+            elif stratum_auc < 0.5 and not pooled_above:
+                agree += 1
+            elif stratum_auc != 0.5:
+                disagree += 1
+        out["per_stratum"][stratum] = block
+
+    out["n_powered_strata"] = powered
+    out["n_agree_with_pooled"] = agree
+    out["n_disagree_with_pooled"] = disagree
+    # Refuse the pooled headline when a strict majority of powered strata
+    # contradict the pooled ranking direction (the Simpson sign-flip).
+    if powered > 0 and disagree > agree:
+        out["pooled_ranking_refused"] = True
+        out["message"] = (
+            f"pooled AUC ({pooled_auc:.3f}) contradicts the within-stratum "
+            f"ranking on `{strata_field}` ({disagree} of {powered} powered "
+            f"strata flip the direction); the pooled number is a Simpson "
+            f"artifact (arXiv:2605.06294) and is NOT licensed as the "
+            f"headline — read the per-stratum AUCs. No corrected aggregate "
+            f"is emitted (detect-and-refuse, the operator owns any "
+            f"re-stratification)."
+        )
+    else:
+        out["message"] = (
+            f"no Simpson inversion detected on `{strata_field}`: the pooled "
+            f"ranking direction agrees with the within-stratum majority "
+            f"({agree} agree, {disagree} disagree, of {powered} powered "
+            f"strata). The pooled AUC is not refused on this stratifier."
+        )
+    return out
+
+
 # ---------- ESL / L2 fairness slice (spec 05) ----------
 
 
@@ -1835,6 +2238,61 @@ def render_report(result: dict[str, Any]) -> str:
             lines.append(f"- **Refuses:** {lang_license['refuses']}")
         if lang_license.get("licenses") or lang_license.get("refuses"):
             lines.append("")
+
+    topic_leakage = result.get("topic_leakage")
+    if topic_leakage is not None:
+        lines.append("## Topic-Leakage Diagnostic")
+        lines.append("")
+        lines.append(f"_{topic_leakage.get('caveat', '')}_")
+        lines.append("")
+        if topic_leakage.get("available"):
+            lines.append(f"- **Pooled ROC AUC:** {_fmt(topic_leakage.get('pooled_roc_auc'))}")
+            lines.append(
+                f"- **Topic-disjoint-split ROC AUC:** "
+                f"{_fmt(topic_leakage.get('split_roc_auc'))}"
+            )
+            gap_ci = topic_leakage.get("auc_gap_ci") or {}
+            if gap_ci.get("available"):
+                lines.append(
+                    f"- **AUC gap (pooled − split):** "
+                    f"{_fmt(topic_leakage.get('auc_gap'))} "
+                    f"[{_fmt(gap_ci.get('ci_low'))}, {_fmt(gap_ci.get('ci_high'))}]"
+                )
+            else:
+                lines.append(
+                    f"- **AUC gap (pooled − split):** "
+                    f"{_fmt(topic_leakage.get('auc_gap'))}"
+                )
+            split = topic_leakage.get("split") or {}
+            lines.append(
+                f"- **Train topics:** {', '.join(split.get('train_topics') or []) or '--'}"
+            )
+            lines.append(
+                f"- **Test topics:** {', '.join(split.get('test_topics') or []) or '--'}"
+            )
+        else:
+            lines.append(
+                f"- Diagnostic unavailable: {topic_leakage.get('reason', 'unavailable')}"
+            )
+        lines.append("")
+
+    simpson = result.get("simpson_inversion")
+    if simpson is not None:
+        lines.append("## Simpson Inversion Check")
+        lines.append("")
+        lines.append(f"- **Stratifier:** `{simpson.get('strata_field')}`")
+        lines.append(f"- **Pooled ROC AUC:** {_fmt(simpson.get('pooled_roc_auc'))}")
+        lines.append(
+            f"- **Powered strata:** {simpson.get('n_powered_strata', 0)} "
+            f"({simpson.get('n_agree_with_pooled', 0)} agree, "
+            f"{simpson.get('n_disagree_with_pooled', 0)} disagree with the "
+            f"pooled direction)"
+        )
+        if simpson.get("pooled_ranking_refused"):
+            lines.append(f"- **Pooled ranking REFUSED:** {simpson.get('message')}")
+        else:
+            lines.append(f"- {simpson.get('message')}")
+        lines.append("")
 
     lines.append("## Records")
     lines.append("")
@@ -2671,6 +3129,40 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
                 "not licensed (see claim_license.language_status_slice)."
             )
 
+    # Eval-discipline (spec 28): topic-leakage diagnostic + Simpson check.
+    # Both default-preserving — computed only when the flag is supplied; the
+    # result keys are absent otherwise so the report/JSON is byte-for-byte
+    # unchanged. When topic labels are present but --topic-split is off, the
+    # harness surfaces ONE warning (mirroring the ESL native-only annotation
+    # pattern): name the hazard, do not silently change any number.
+    topic_leakage: dict[str, Any] | None = None
+    simpson_check: dict[str, Any] | None = None
+    topic_labels_present = any(r.get("topic") not in (None, "", "unknown") for r in records)
+    if getattr(args, "topic_split", False):
+        topic_leakage = topic_leakage_diagnostic(
+            records,
+            seed=args.seed,
+            resamples=args.metric_bootstrap_resamples,
+            confidence_level=args.confidence_level,
+        )
+    elif topic_labels_present:
+        warnings.append(
+            "topic labels are present on this manifest; the pooled AUC may "
+            "reflect topic leakage (the AI and human sets may differ by "
+            "topic, not style). Pass --topic-split to decompose it (Topic "
+            "Confusion Task, arXiv:2104.08530; HITS, arXiv:2407.19164)."
+        )
+    if getattr(args, "simpson_check", None):
+        simpson_check = simpson_inversion_check(
+            records,
+            strata_field=args.simpson_check,
+            seed=args.seed,
+            resamples=args.metric_bootstrap_resamples,
+            confidence_level=args.confidence_level,
+        )
+        if simpson_check.get("pooled_ranking_refused"):
+            warnings.append(simpson_check.get("message", ""))
+
     result: dict[str, Any] = {
         "task_surface": TASK_SURFACE,
         "evaluated_surface": args.surface,
@@ -2703,6 +3195,12 @@ def run_harness(args: argparse.Namespace) -> dict[str, Any]:
         "language_pooling": language_pooling,
         "language_status_slices": language_status_slices,
     }
+    # Eval-discipline keys are added ONLY when their flag was supplied, so an
+    # un-invoked run carries neither key (byte-for-byte unchanged report/JSON).
+    if topic_leakage is not None:
+        result["topic_leakage"] = topic_leakage
+    if simpson_check is not None:
+        result["simpson_inversion"] = simpson_check
     result["claim_license"] = claim_license_block(result)
     return result
 
@@ -2845,6 +3343,35 @@ def main(argv: Sequence[str] | None = None) -> int:
             "the 'don't pool' guard: the harness REFUSES to emit a single "
             "aggregate FPR (it would hide the non-native false-positive "
             "failure mode) and reports an explicit refusal instead."
+        ),
+    )
+    # Eval-discipline (spec 28). Both default-preserving: without the flag
+    # the report is byte-for-byte unchanged.
+    parser.add_argument(
+        "--topic-split",
+        action="store_true",
+        help=(
+            "Add the topic-leakage diagnostic: decompose the pooled ROC AUC "
+            "against a topic-disjoint train/test split (HITS protocol) and "
+            "report the AUC gap with a CI. Needs operator-declared `topic` "
+            "labels on the manifest (parsed, never inferred); with fewer than "
+            "two distinct topics the diagnostic reports unavailable + a "
+            "caveat. Default off: without this flag the report is unchanged, "
+            "but if topic labels are present the harness adds one warning "
+            "pointing here."
+        ),
+    )
+    parser.add_argument(
+        "--simpson-check",
+        choices=list(SIMPSON_STRATA_FIELDS),
+        default=None,
+        help=(
+            "Add the Simpson inversion check over the chosen stratifier "
+            "(register / topic / length_bucket): detect when the pooled ROC "
+            "AUC ranking direction contradicts the within-stratum majority "
+            "and REFUSE the pooled number as the headline (detect-and-refuse; "
+            "no corrected aggregate is emitted). Default off; the report is "
+            "unchanged when absent."
         ),
     )
     parser.add_argument("--json", action="store_true", help="Emit JSON instead of markdown.")

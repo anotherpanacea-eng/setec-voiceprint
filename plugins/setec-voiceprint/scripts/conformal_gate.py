@@ -114,6 +114,116 @@ def conformal_p(calibration: list[float], score: float, *,
     return (1 + ge) / (n + 1)
 
 
+# Directions that admit a clean one-tailed FPR ceiling. `two_sided` has no
+# single tail, so an order-statistic FPR bound is ill-defined there — the
+# FPR-bound mode rejects it (review finding P3: direction semantics).
+FPR_BOUND_DIRECTIONS = ("higher_is_nonconforming", "lower_is_nonconforming")
+
+
+def threshold_at_fpr_bound(
+    calibration: list[float],
+    *,
+    fpr_bound: float,
+    direction: str,
+) -> dict[str, Any]:
+    """Conformal threshold whose reference-class false-positive rate is
+    provably <= ``fpr_bound`` (= ``q``) under the same finite-sample,
+    distribution-free framing as ``conformal_p`` (Multiscaled Conformal
+    Prediction, arXiv:2505.05084; v1 ships the single-scale ceiling).
+
+    Concretely: a target is flagged 'out-of-reference' when its
+    nonconformity score is >= ``t``. The fraction of calibration
+    (reference) scores at or above ``t`` is the empirical reference-class
+    false-positive rate. We pick ``t`` as the conformal quantile of the
+    calibration nonconformity scores at level ``q`` with the standard +1
+    finite-sample correction, so the guaranteed reference-class FPR is
+    <= ``q``.
+
+    Pinned to the two ONE-TAILED directions; ``two_sided`` has no single
+    tail and is rejected. Pure stdlib; no model. Returns a dict; an empty
+    calibration set yields ``available=False``."""
+    if direction not in FPR_BOUND_DIRECTIONS:
+        return {
+            "available": False,
+            "reason": (
+                f"--fpr-bound requires a one-tailed direction "
+                f"({' or '.join(FPR_BOUND_DIRECTIONS)}); got {direction!r}. "
+                "A two-sided nonconformity has no single tail, so an "
+                "order-statistic FPR ceiling is ill-defined."
+            ),
+            "mode": "fpr_bound",
+            "fpr_bound": fpr_bound,
+            "direction": direction,
+        }
+    n = len(calibration)
+    if n == 0:
+        return {
+            "available": False,
+            "reason": "empty calibration set; cannot bound the reference FPR.",
+            "mode": "fpr_bound",
+            "fpr_bound": fpr_bound,
+            "direction": direction,
+        }
+    median = statistics.median(calibration)
+    cal_nc = sorted(_nonconformity(calibration, direction, median))
+    # Conformal quantile at level q with the finite-sample +1 correction.
+    # We want the smallest threshold t such that #{cal_nc >= t} / n <= q.
+    # The (ceil((n+1)*(1-q)))-th order statistic (1-indexed) gives a
+    # distribution-free guarantee that at most q of the reference mass is
+    # flagged. Clamp the rank into [1, n].
+    rank = math.ceil((n + 1) * (1.0 - fpr_bound))
+    rank = max(1, min(n, rank))
+    threshold = cal_nc[rank - 1]
+    # Empirical reference-class false-positive rate AT this threshold:
+    # the fraction of calibration scores judged nonconforming (>= t).
+    n_flagged = sum(1 for c in cal_nc if c >= threshold)
+    empirical_fpr = n_flagged / n
+    return {
+        "available": True,
+        "mode": "fpr_bound",
+        "fpr_bound": fpr_bound,
+        "direction": direction,
+        "threshold": threshold,
+        "n_calibration": n,
+        "order_statistic_rank": rank,
+        "empirical_reference_fpr_at_threshold": empirical_fpr,
+        "threshold_rule": (
+            "a target nonconformity score >= `threshold` is flagged "
+            "out-of-reference; the reference-class false-positive rate is "
+            "bounded by `fpr_bound` under exchangeability. This is a "
+            "reference-class FPR ceiling, NOT P(AI) and NOT a guarantee on "
+            "the positive (AI) class."
+        ),
+    }
+
+
+def gate_fpr_bound(
+    calibration: list[float],
+    score: float | None,
+    *,
+    fpr_bound: float,
+    direction: str,
+    reference_label: str,
+) -> dict[str, Any]:
+    """FPR-bound result. ``score`` is optional: with no target the mode
+    returns just the bounded threshold; with a target it also reports
+    whether the target is inside/outside the bounded reference set."""
+    result = threshold_at_fpr_bound(
+        calibration, fpr_bound=fpr_bound, direction=direction,
+    )
+    if not result.get("available"):
+        return result
+    result["target_score"] = score
+    if score is not None:
+        median = statistics.median(calibration)
+        score_nc = _nonconformity([score], direction, median)[0]
+        # Flagged out-of-reference when its nonconformity is >= threshold.
+        out_of_reference = score_nc >= result["threshold"]
+        result["in_reference_set"] = not out_of_reference
+        result["prediction_set"] = [] if out_of_reference else [reference_label]
+    return result
+
+
 def gate_one_class(calibration: list[float], score: float, *, alpha: float,
                    direction: str, reference_label: str) -> dict[str, Any]:
     p = conformal_p(calibration, score, direction=direction)
@@ -160,14 +270,19 @@ def _claim_license() -> ClaimLicense:
             "a split-conformal p-value and prediction set for a target "
             "nonconformity score against operator-supplied calibration scores, "
             "with a distribution-free finite-sample coverage guarantee at the "
-            "chosen alpha."
+            "chosen alpha. In --fpr-bound mode, a conformal threshold whose "
+            "reference-class false-positive rate is bounded by `q` under "
+            "exchangeability (the operator applies the threshold)."
         ),
         does_not_license=(
             "an AI/human verdict. Validity is inherited from the operator's "
             "calibration set and nonconformity score; an empty or full prediction "
             "set is a licensed abstention, not a failure; the guarantee is marginal "
             "and assumes exchangeability of calibration and target — the p-value is "
-            "NOT P(AI)."
+            "NOT P(AI). The --fpr-bound threshold is a reference-class "
+            "false-positive ceiling, NOT P(AI), NOT a guarantee on the positive "
+            "(AI) class, and NOT a bound that survives a non-representative "
+            "calibration set; it tightens the decision, not the evidence."
         ),
         comparison_set={"mode": "split_conformal"},
         additional_caveats=[
@@ -180,6 +295,9 @@ def _claim_license() -> ClaimLicense:
         ],
         references=[
             "plugins/setec-voiceprint/specs/20-conformal-abstention-gate.md",
+            "plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md",
+            "Multiscaled Conformal Prediction (arXiv:2505.05084) — the "
+            "FPR-upper-bound operating mode; v1 ships the single-scale ceiling.",
         ],
     )
 
@@ -216,6 +334,33 @@ def render_report(payload: dict[str, Any]) -> str:
         return "\n".join(lines) + "\n"
 
     r = payload["results"]
+    if r.get("mode") == "fpr_bound":
+        lines += [
+            f"**Mode:** `fpr_bound`  |  **fpr_bound (q):** {r['fpr_bound']}  "
+            f"|  **direction:** `{r['direction']}`",
+            "",
+            "## Conformal FPR-bound threshold",
+            "",
+            f"- **Threshold:** {r['threshold']}",
+            f"- **Empirical reference-class FPR at threshold:** "
+            f"{r['empirical_reference_fpr_at_threshold']}",
+            f"- **Calibration n:** {r['n_calibration']} "
+            f"(order-statistic rank {r['order_statistic_rank']})",
+        ]
+        if r.get("target_score") is not None:
+            lines.append(
+                f"- **Target score {r['target_score']}:** in reference set: "
+                f"{r.get('in_reference_set')} "
+                f"(prediction set {r.get('prediction_set')})"
+            )
+        lines.append(
+            "- _The threshold bounds the reference-class false-positive rate "
+            "by q under exchangeability. It is NOT P(AI) and NOT a guarantee "
+            "on the positive (AI) class — the operator applies it._"
+        )
+        lines += ["", payload["claim_license_rendered"] or ""]
+        return "\n".join(lines) + "\n"
+
     lines += [
         f"**Mode:** `{r['mode']}`  |  **alpha:** {r['alpha']} "
         f"(coverage {r['coverage']})  |  **direction:** `{r['direction']}`",
@@ -243,13 +388,27 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--calibration", required=True,
                    help="Required: nonconformity scores for the reference class "
                         "(JSON list or newline-delimited floats).")
-    p.add_argument("--score", required=True, type=float,
-                   help="Required: the target nonconformity score.")
+    # --score is conditionally required: required for the one-class/two-class
+    # gate, OPTIONAL when --fpr-bound is supplied (that mode can return just a
+    # threshold without a target). Enforced in main() so the default path
+    # keeps --score mandatory (review finding P3: CLI contract).
+    p.add_argument("--score", required=False, type=float, default=None,
+                   help="The target nonconformity score. Required for the "
+                        "one-class/two-class gate; optional with --fpr-bound "
+                        "(which can emit a threshold without a target).")
     p.add_argument("--calibration-positive",
                    help="Optional: nonconformity scores for a positive class "
                         "(enables two-class prediction-set mode).")
     p.add_argument("--alpha", type=float, default=0.1,
                    help="Miscoverage level (default: 0.1 => coverage 0.9).")
+    p.add_argument("--fpr-bound", type=float, default=None,
+                   help="Reference-class false-positive ceiling q in (0, 1). "
+                        "When supplied, emit the conformal threshold whose "
+                        "reference-class FPR is bounded by q under "
+                        "exchangeability (Multiscaled Conformal Prediction, "
+                        "arXiv:2505.05084) instead of the alpha-coverage gate. "
+                        "One-tailed directions only; --score becomes optional. "
+                        "NOT P(AI), NOT a guarantee on the AI class.")
     p.add_argument("--direction", choices=DIRECTIONS,
                    default="higher_is_nonconforming",
                    help="Nonconformity direction (default: higher_is_nonconforming).")
@@ -275,7 +434,30 @@ def main(argv: list[str] | None = None) -> int:
             f"got {args.alpha}\n"
         )
         return 2
-    if not math.isfinite(args.score):
+    fpr_bound_mode = args.fpr_bound is not None
+    if fpr_bound_mode:
+        if not (math.isfinite(args.fpr_bound) and 0.0 < args.fpr_bound < 1.0):
+            sys.stderr.write(
+                f"--fpr-bound must be a finite value in the open interval "
+                f"(0, 1); got {args.fpr_bound}\n"
+            )
+            return 2
+        if args.direction not in FPR_BOUND_DIRECTIONS:
+            sys.stderr.write(
+                f"--fpr-bound requires a one-tailed --direction "
+                f"({' or '.join(FPR_BOUND_DIRECTIONS)}); got "
+                f"{args.direction!r}. A two-sided nonconformity has no single "
+                f"tail for an FPR ceiling.\n"
+            )
+            return 2
+    # --score is required for the default gate, optional under --fpr-bound.
+    if args.score is None and not fpr_bound_mode:
+        sys.stderr.write(
+            "--score is required for the one-class/two-class gate "
+            "(it becomes optional only with --fpr-bound)\n"
+        )
+        return 2
+    if args.score is not None and not math.isfinite(args.score):
         sys.stderr.write(f"--score must be a finite number; got {args.score}\n")
         return 2
 
@@ -293,6 +475,17 @@ def main(argv: list[str] | None = None) -> int:
         payload = build_payload(
             {}, target_path=cal_path, available=False,
             warnings=["Calibration file is empty; cannot compute a conformal gate."],
+        )
+    elif fpr_bound_mode:
+        results = gate_fpr_bound(
+            calibration, args.score, fpr_bound=args.fpr_bound,
+            direction=args.direction, reference_label=args.reference_label)
+        payload = build_payload(
+            results, target_path=cal_path, available=bool(results.get("available")),
+            warnings=(
+                None if results.get("available")
+                else [results.get("reason", "FPR-bound mode unavailable")]
+            ),
         )
     elif args.calibration_positive:
         pos_path = Path(args.calibration_positive).expanduser()
