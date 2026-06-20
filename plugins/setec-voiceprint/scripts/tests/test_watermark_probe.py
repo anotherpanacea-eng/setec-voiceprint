@@ -676,3 +676,25 @@ def test_partition_prf_scope_stamped_and_disclaimed():
     assert "partition" in r.render().lower()
     dnl = wp.DEFAULT_DOES_NOT_LICENSE
     assert "simple_1" in dnl and "FALSE-NEGATIVE" in dnl
+
+
+def test_comparison_set_carries_partition_prf():
+    # Codex P2: the machine-readable comparison_set must carry partition_prf so cards
+    # from incompatible partition implementations are not treated as comparable.
+    r = wp.probe(_independent_tokens(120), key=_KEY, vocab_size=_VOCAB_SIZE, gamma=_GAMMA)
+    lic = wp.build_claim_license(r)
+    assert lic.comparison_set["partition_prf"] == wp.PARTITION_PRF
+
+
+def test_vocab_bool_rejected_as_size(tmp_path):
+    # Codex P2: bool is an int subclass — a JSON `true` vocab must NOT be sized as 1.
+    for val in ("true", "false"):
+        p = tmp_path / f"{val}.json"
+        p.write_text(val, encoding="utf-8")
+        with pytest.raises(wp.WatermarkProbeError):
+            wp._resolve_vocab(str(p))
+    # a real scalar size still works (file or bare int)
+    p = tmp_path / "size.json"
+    p.write_text("128", encoding="utf-8")
+    assert wp._resolve_vocab(str(p)) == (None, 128)
+    assert wp._resolve_vocab("256") == (None, 256)

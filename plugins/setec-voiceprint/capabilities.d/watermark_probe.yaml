@@ -6,24 +6,33 @@ entries:
   handoff: experimental
   consumers: []
   family: watermark
-  purpose: 'KGW green-list z-test (Kirchenbauer et al. 2024, arXiv:2301.10226) — the
-    first watermarking axis in SETEC. Given a target and the OPERATOR-SUPPLIED scheme
-    parameters (key, gamma, hash_scheme, vocab), computes the green-list z-statistic
-    + p-value and reports them as one per-signal card with a PROVISIONAL detection-power
-    band. Model-free: the detector is a hash-seeded vocabulary partition + a green-token
-    count + a one-proportion z-score. A positive is watermark-consistent with the
-    NAMED scheme, never "AI"; a low/zero z (or no key) is `unknown`, never "human" —
-    absence is NOT evidence of human authorship. Keyed, parameterized, never sniffed;
-    no is_watermarked / is_ai / is_human / verdict field.
+  purpose: 'Green-list z-test (the KGW *construction* of Kirchenbauer et al. 2024,
+    arXiv:2301.10226) — the first watermarking axis in SETEC. Scores a target against
+    THIS module''s Voiceprint-defined green-list partition (partition_prf
+    `voiceprint-greenlist-v1/sha256-seed+pyrandom-shuffle`: a SHA-256(key, context) seed
+    feeding a deterministic shuffle), NOT the official KGW reference processor''s seeding
+    schemes (simple_1 / selfhash / minhash) or its RNG device. Given a target + the
+    OPERATOR-SUPPLIED parameters (key, gamma, hash_scheme, vocab), computes the green-list
+    z-statistic + p-value (repeated n-grams scored once) and reports them as one per-signal
+    card with a PROVISIONAL detection-power band. Model-free: a hash-seeded vocabulary
+    partition + a green-token count + a one-proportion z-score. A positive is
+    watermark-consistent with THIS partition, never "AI"; a low/zero z (or no key) is
+    `unknown`, never "human" — absence is NOT evidence of human authorship. Keyed,
+    parameterized, never sniffed; no is_watermarked / is_ai / is_human / verdict field.
 
     '
   use_when:
-  - You hold the green-list key/params for a token-level KGW scheme you suspect (your
-    own pipeline, a vendor's documented watermark)
-  - You want positive, model-free evidence for ONE named scheme to sit beside the stylometric
-    signals in an evidence pack
-  - You can supply a token-id stream + vocab matching the watermarking tokenizer
+  - You generated the tokens with THIS module''s green-list partition (partition_prf
+    `voiceprint-greenlist-v1/sha256-seed+pyrandom-shuffle`) under a known key / gamma /
+    hash_scheme / vocab and want positive, model-free evidence the stream carries it
+  - You want that evidence for ONE named partition to sit beside the stylometric signals
+    in an evidence pack
+  - You can supply a token-id stream + vocab matching THIS partition''s tokenizer/vocab
   do_not_use_when:
+  - The tokens were produced by the OFFICIAL KGW reference processor (simple_1 / selfhash
+    / minhash) or any vendor / third-party watermark generator — this custom SHA/Python
+    partition is not byte-compatible with their PRF/RNG and will systematically
+    FALSE-NEGATIVE; you need a generator fingerprint matching partition_prf first
   - You have no key — the probe is keyed and cannot guess the scheme (scanning for unknown
     watermarks is the watermark-stealing attack, out of scope)
   - You want an AI / human / is_watermarked verdict — the surface ships no threshold and

@@ -633,6 +633,9 @@ def build_claim_license(
             "key_id": result.key_id,
             "gamma": result.gamma,
             "hash_scheme": result.hash_scheme,
+            # partition_prf (Codex P2): the machine-readable boundary must match the
+            # prose — cards from a different green-list partition are NOT comparable.
+            "partition_prf": result.assumptions.get("partition_prf", PARTITION_PRF),
             "vocab_size": result.assumptions.get("vocab_size"),
             "tokenization": result.assumptions.get("tokenization"),
             "score_version": SCORE_VERSION,
@@ -892,6 +895,13 @@ def _resolve_vocab(vocab_arg: str) -> tuple[dict[str, int] | None, int]:
     except (TypeError, ValueError):
         pass
     loaded = _load_json(vocab_arg)
+    if isinstance(loaded, bool):
+        # Codex P2: bool is an int subclass — a JSON `true`/`false` must NOT be
+        # accepted as a scalar vocab size (it would slip through as size 1/0).
+        raise WatermarkProbeError(
+            "--vocab must be an int vocab size or a {token: id} map, not a JSON "
+            f"boolean ({loaded!r})"
+        )
     if isinstance(loaded, int):
         return None, loaded
     if isinstance(loaded, dict):
