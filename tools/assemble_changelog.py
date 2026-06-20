@@ -37,6 +37,8 @@ import re
 import sys
 from pathlib import Path
 
+from _console import enable_utf8_stdio
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
 FRAGMENT_DIR = REPO_ROOT / "changelog.d"
@@ -141,6 +143,7 @@ def insert_section(changelog_text: str, section: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    enable_utf8_stdio()
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--version", help="release version X.Y.Z (required unless --stdout-only)")
     ap.add_argument("--date", default=None, help="release date YYYY-MM-DD (default: today)")
