@@ -1,0 +1,1 @@
+Spectral (DFT) / time-series diversity-entropy reads of the per-token surprisal vector (SpecDetect / Lastde); zero-shot discrimination evidence, uncalibrated, non-verdict
