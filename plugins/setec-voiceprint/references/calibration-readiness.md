@@ -120,6 +120,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `sound_texture_audit` | Heuristic (uncalibrated) | Yes | register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
 | `voice_profile` | Empirical (provisional) | No | register-matched personal baseline corpus (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 2000 |
+| `warrant_probe` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 120 |
 
 ### Runway & calibration tooling
 

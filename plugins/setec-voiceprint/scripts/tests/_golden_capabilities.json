@@ -4905,6 +4905,102 @@
       "use_when": [
         "TODO"
       ]
+    },
+    {
+      "id": "warrant_probe",
+      "script_path": "plugins/setec-voiceprint/scripts/warrant_probe.py",
+      "surface": "argument_pattern_scan",
+      "status": "literature_anchored",
+      "handoff": "experimental",
+      "consumers": [],
+      "family": "argument-pattern",
+      "purpose": "Report Toulmin critical-question COVERAGE for an argument-shaped nonfiction passage: for each major claim a pluggable LLM judge identifies, whether the warrant (inferential link), the backing for that warrant, and a rebuttal (counterargument / exception) are present, partial, or absent (Favero et al. 2024, \"Critical Questions of Thought\", arXiv:2412.15177). Descriptive coverage for a human reviewer \u2014 what questions the text answers vs leaves open. The warrant sibling of fallacy_scan under the same argument_pattern_scan surface; emits no soundness / quality / \"unsound\" label, score, or aggregate. An absent warrant/backing/rebuttal is a coverage GAP to examine, not a flaw.\n",
+      "use_when": [
+        "You want per-claim warrant / backing / rebuttal coverage to triage for human review",
+        "Target is an argument-shaped nonfiction passage (op-ed / policy / testimony)",
+        "You want to see which Toulmin critical questions the text leaves open"
+      ],
+      "do_not_use_when": [
+        "You need a soundness / quality / \"weak argument\" / \"unsound\" verdict (the surface refuses ALL of these \u2014 coverage is descriptive; an absent warrant is a gap to examine, not a flaw, since many strong arguments leave a warrant implicit)",
+        "You want a coverage SCORE as a quality metric (coverage_summary is a descriptive per-question count, never a score)",
+        "You don't have an LLM judge or a pre-computed label manifest"
+      ],
+      "inputs": [
+        {
+          "flag": "target",
+          "type": "path",
+          "required": true
+        },
+        {
+          "flag": "--judge",
+          "type": "enum",
+          "required": true,
+          "values": [
+            "mock",
+            "manifest",
+            "anthropic",
+            "openai",
+            "gemini"
+          ]
+        },
+        {
+          "flag": "--judge-manifest",
+          "type": "path",
+          "required": false
+        },
+        {
+          "flag": "--judge-model",
+          "type": "string",
+          "required": false
+        },
+        {
+          "flag": "--expect-fingerprint",
+          "type": "string",
+          "required": false
+        },
+        {
+          "flag": "--json",
+          "type": "bool",
+          "required": false
+        }
+      ],
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".warrant_probe.json",
+          ".warrant_probe.md"
+        ]
+      },
+      "compute": {
+        "tier": "api_llm",
+        "cost_note": "$0.01\u20130.10 per doc via Anthropic / OpenAI / Gemini (one labeling call); free with --judge manifest or --judge mock (a deterministic test stub)",
+        "length_floor_words": 120
+      },
+      "registers": [
+        "op-ed"
+      ],
+      "dependencies": {
+        "python": [],
+        "python_optional": [],
+        "sdks_optional": [
+          "anthropic",
+          "openai",
+          "google-genai"
+        ]
+      },
+      "examples": [
+        {
+          "description": "Warrant-coverage probe with a pre-computed judge manifest",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/warrant_probe.py essay.txt --judge manifest --judge-manifest claims.json"
+        },
+        {
+          "description": "Direct API spot-check",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/warrant_probe.py essay.txt --judge anthropic --judge-model claude-sonnet-4-6"
+        }
+      ],
+      "references": [
+        "plugins/setec-voiceprint/references/signals-glossary.md"
+      ]
     }
   ],
   "schema_version": "0.3.0"
