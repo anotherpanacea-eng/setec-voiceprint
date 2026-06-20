@@ -150,9 +150,14 @@ def fit_residual(corpus: list[dict[str, Any]]) -> dict[str, Any] | None:
         return None
     xs, ys = [], []
     for row in corpus:
+        # A valid-JSON-but-non-object row (a bare number/string/list) has no .get — skip it
+        # rather than traceback (the #225/#226 non-object-row lesson). bool is not a cosine.
+        if not isinstance(row, dict):
+            continue
         cos = row.get("cosine")
         feats = row.get("features", {})
-        if not isinstance(cos, (int, float)):
+        if not isinstance(cos, (int, float)) or isinstance(cos, bool) \
+                or not isinstance(feats, dict):
             continue
         vec = []
         ok = True

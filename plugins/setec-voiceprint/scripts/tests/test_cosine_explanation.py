@@ -191,6 +191,20 @@ def test_fit_baseline_insufficient_corpus_warns(tmp_path):
     assert "fit_baseline_warning" in env["results"]            # but NOT silent
 
 
+def test_fit_baseline_malformed_rows_skipped_not_traceback(tmp_path):
+    # Codex #231 P2: rows that are valid JSON but NOT objects (a bare number/string/list/
+    # bool) — or whose `features` isn't a dict — must be SKIPPED, not `.get`'d into an
+    # AttributeError. A corpus of only such junk is unusable -> warns, never tracebacks.
+    junk = [42, "x", [1, 2], True, {"cosine": "nope", "features": {}},
+            {"cosine": 0.5, "features": [1, 2]}]   # non-dict features
+    corpus = tmp_path / "corpus.json"
+    corpus.write_text(json.dumps(junk), encoding="utf-8")
+    rc, env = _run_injected(tmp_path, INPUTS_HI, "--fit-baseline", str(corpus))
+    assert env["available"] is True                        # ran cleanly, no traceback
+    assert "fit_baseline" not in env["results"]            # nothing usable
+    assert "fit_baseline_warning" in env["results"]        # surfaced, not silent
+
+
 def test_no_inputs_is_bad_input(tmp_path):
     target = tmp_path / "t.txt"; target.write_text("x", encoding="utf-8")
     out = tmp_path / "o.json"
