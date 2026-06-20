@@ -16,6 +16,53 @@ Supplements the two passes below for the **1.117.0** release. The plugin is now 
 
 The two "What's left" lists below otherwise still stand: R12 calibration, the AIC-8/9 thresholds, the operator-blocked cascade, and the F-bis compression-polarity mirror reconciliation are unchanged.
 
+## Status reconciliation (2026-06-19)
+
+Supplements the 2026-06-17 pass above for the **post-1.117.0** window — a large arXiv-capability-review build batch plus a refreshed planned/horizon list. The shortlist provenance is `setec-scratch/arxiv-capability-review/` (every arXiv id below verified real against the arXiv API). Where this conflicts with older sections, this is authoritative. **No-verdict posture is unchanged:** every detector-flavored item below emits descriptive per-signal values/bands, never a label.
+
+### Shipped since 1.117.0
+
+These all merged to `main` this cycle (version + changelog cut at the next release per the repo's release-not-PR convention):
+
+- **T-Detect Student-t tail normalization** — `--tail student-t` / `curvature_t` on `discrimination_curvature` (PR #228, spec 25; arXiv:2507.23577). Heavy-tail-aware curvature normalization, stdlib over the existing logits.
+- **Rank-Turbulence Delta** — `rank_turbulence_audit` on the `voice_coherence` surface (PR #226, spec 23 M1; arXiv:2604.19499). Token-decomposed, interpretable per-word divergence.
+- **Dependency-distance distribution** — `dependency_distance_audit` on `voice_coherence` (PR #227, spec 24; arXiv:2211.14620). Interpretable syntactic-shape geometry over the existing parse.
+- **Originality / DJ-Search** — `originality_audit` on `set_level_diversity` (PR #225, spec 22 M1; arXiv:2410.04265). Reconstructibility/novelty vs the impostor reference pool, stdlib.
+- **Embedding-explanation** — `cosine_explanation` on the `embedding_explanation` surface (**PR #231 — OPEN, awaiting Codex re-review of a P2 fix; not yet merged**; arXiv:2510.05362 / 2409.07072). Named side-by-side for the LUAR cosine; the opaque embedding distance becomes human-checkable.
+- **ArgScope fallacy scan** — `fallacy_scan` on `argument_pattern_scan` (PR #229, spec 26 M1; arXiv:2202.13758 / 2406.12402). Candidate rhetorical-move flags as a descriptive tally.
+- **ArgScope warrant probe** — `warrant_probe` on `argument_pattern_scan` (PR #230, spec 26 M2; arXiv:2412.15177). Toulmin critical-question coverage.
+- **ArgScope B5 collapse-dynamics** — disappearing-guard + discounting-straw-men flags on `argument_decision_audit` (PR #217 / #215, spec 21; arXiv:2606.01736 / 2406.12402). Heuristic, directional, excluded from the aggregate and verdict band (already noted in the 2026-06-17 pass; the discounting-straw-men flag is cited to arXiv:2406.12402).
+
+### Planned / horizon (spec'd or shortlisted, not built)
+
+From the arXiv capability review. Detector-flavored items stay descriptive/advisory — values and bands, never a verdict.
+
+**New axes (capabilities SETEC structurally lacks):**
+
+- **Model-family attribution** ("which LLM wrote this?") — NEW axis; spec 28 written + adversarially reviewed. Advisory ranked family posterior with abstention, never a verdict; M1 stdlib (named-feature per-family centroids). arXiv:2309.13322 / 2504.11369 / 2410.16107.
+- **Hivemind / cross-document homogenization** — `homogeneity_audit` (pool pairwise-cosine + effective modes) plus single-doc hivemind-proximity; M1 stdlib metric, M2 LUAR semantic lens POC-gated. Spec drafted this cycle. arXiv:2510.22954 / 2504.09373 (QUDsim).
+
+**Shortlist tail (A1–A6):**
+
+- **SpecDetect + Lastde/Lastde++** — spectral / time-series read of the surprisal vector, orthogonal to `surprisal_audit`; stdlib over existing logits. arXiv:2508.11343 / 2410.06072.
+- **StyleDistance / Multilingual-UAR** — stronger style encoder than Wegmann/LUAR for `voice_fingerprint`; drop-in, GPU. arXiv:2410.12757 / 2509.16531.
+- **Watermark probe** — KGW green-list z-test, "was this watermarked?"; SETEC has no watermark surface. **Absence ≠ human.** arXiv:2301.10226 / 2306.04634.
+- **GAQCorpus argument-quality** — theory-based per-dimension (logic/rhetoric/dialectic) band vector complementing `argument_decision_audit`. arXiv:2006.00843.
+- **LLM-as-verifier authorship** — one advisory authorship signal, not a verdict (offline InstructAV / CAVE variants). arXiv:2403.08213 / 2407.12882 / 2406.16672.
+- **RAID + DIPPER robustness fixtures/harness** — expand the adversarial fixture taxonomy + a recursive-paraphrase stress harness. arXiv:2405.07940 / 2303.13408.
+- **Neurobiber 96-feature family** — fast Biber features as a new `voice_profile` family (dual-use with model attribution). arXiv:2502.18590.
+- **GECScore** — black-box grammar-error-count signal; **gated behind `fairness_dialect_guardrails`** (inverts on ESL/dialect prose). arXiv:2405.04286.
+- **FWAN** — function-word adjacency networks; **deferred, overlaps `function_word_grammar_audit`**. arXiv:1406.4469.
+- **Glimpse / Gram2Vec / LambdaG** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2406.12131 / 2403.08462.
+
+**Eval-discipline / anti-Goodhart hardening (protocol upgrades, not surfaces):**
+
+- **Topic-leakage controls** — topic-controlled splits so style signal isn't topic leakage. arXiv:2104.08530 / 2407.19164.
+- **Multiscale conformal FPR bound** — explicit FPR upper-bound mode for `conformal_gate`. arXiv:2505.05084.
+- **Local-Bayesian likelihood calibration** — fixes biased token-likelihood aggregation in `surprisal_audit`. arXiv:2605.06294.
+- **Short-PHD** — stabilizes intrinsic-dimension reads on short texts. arXiv:2504.02873.
+- **"Don't over-claim separability" guardrail doc** — the theoretical reliability bound; belongs in the posture docs. arXiv:2303.11156.
+
 ## Status reconciliation (2026-06-13)
 
 Supplements the 2026-06-06 pass below for the **1.110 → 1.116** window. At the time of this pass the plugin was at **1.116.0** (the 2026-06-17 section above carries it to 1.117.0; the 2026-06-06 section below still says 1.109.x). Where this conflicts with the older reconciliation or the inline markers, this is authoritative.
