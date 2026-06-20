@@ -2013,12 +2013,44 @@
       ]
     },
     {
-      "compute": {
-        "cost_note": "one small causal LM, ~0.6\u20132 GB weights; CPU works, GPU faster",
-        "length_floor_words": 50,
-        "tier": "surprisal"
-      },
+      "id": "fast_detect_curvature",
+      "script_path": "plugins/setec-voiceprint/scripts/fast_detect_curvature.py",
+      "surface": "discrimination_curvature",
+      "status": "literature_anchored",
+      "handoff": "experimental",
       "consumers": [],
+      "family": "fast-detectgpt",
+      "purpose": "Fast-DetectGPT conditional-probability curvature (Bao et al. 2024). Scores a target under a single causal LM and reports a curvature z-score: the standardized gap between the text's conditional log-probability and the distribution of conditional log-probs for alternative tokens sampled from the model's own per-position conditional distributions. Higher curvature means the text sits nearer a local maximum of the model's probability surface \u2014 a zero-shot signal for machine generation. Orthogonal to Binoculars' cross-perplexity ratio and DivEye's surprisal moments.\n",
+      "use_when": [
+        "You want a discrimination-evidence signal distinct from Binoculars (single model, curvature not ratio)",
+        "You're stacking orthogonal Surface-5 signals (Binoculars + curvature + DivEye)",
+        "Target \u2265 50 words and roughly in-distribution for the scoring model"
+      ],
+      "do_not_use_when": [
+        "You need a binary verdict \u2014 ships uncalibrated by default, no threshold",
+        "Target is out-of-distribution for the model, or may be in its training set (memorization biases the score)",
+        "The text has been paraphrased / surface-rewritten (curvature is paraphrase-sensitive)",
+        "You can't install the surprisal tier (transformers + torch)"
+      ],
+      "inputs": {
+        "target": "prose text file (UTF-8)"
+      },
+      "outputs": {
+        "schema_version": "1.0",
+        "artifacts": [
+          ".fast_detect_curvature.json",
+          ".fast_detect_curvature.md"
+        ]
+      },
+      "compute": {
+        "tier": "surprisal",
+        "cost_note": "one small causal LM, ~0.6\u20132 GB weights; CPU works, GPU faster",
+        "length_floor_words": 50
+      },
+      "registers": [
+        "all_fiction",
+        "all_nonfiction"
+      ],
       "dependencies": {
         "python": [
           "transformers",
@@ -2026,50 +2058,22 @@
         ],
         "python_optional": []
       },
-      "do_not_use_when": [
-        "You need a binary verdict \u2014 ships uncalibrated by default, no threshold",
-        "Target is out-of-distribution for the model, or may be in its training set (memorization biases the score)",
-        "The text has been paraphrased / surface-rewritten (curvature is paraphrase-sensitive)",
-        "You can't install the surprisal tier (transformers + torch)"
-      ],
       "examples": [
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt",
-          "description": "Default scoring model"
+          "description": "Default scoring model",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt"
         },
         {
-          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt --model gpt2 --seed 7 --json",
-          "description": "Custom model + reproducible seed"
+          "description": "Custom model + reproducible seed",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt --model gpt2 --seed 7 --json"
+        },
+        {
+          "description": "T-Detect t-standardized SCORE curvature_t (the paper's statistic; robust to adversarial/paraphrased text; spec 25, arXiv:2507.23577); no p-value emitted; default gaussian unchanged",
+          "cmd": "python3 plugins/setec-voiceprint/scripts/fast_detect_curvature.py target.txt --tail student-t --t-df 5 --json"
         }
       ],
-      "family": "fast-detectgpt",
-      "handoff": "experimental",
-      "id": "fast_detect_curvature",
-      "inputs": {
-        "target": "prose text file (UTF-8)"
-      },
-      "outputs": {
-        "artifacts": [
-          ".fast_detect_curvature.json",
-          ".fast_detect_curvature.md"
-        ],
-        "schema_version": "1.0"
-      },
-      "purpose": "Fast-DetectGPT conditional-probability curvature (Bao et al. 2024). Scores a target under a single causal LM and reports a curvature z-score: the standardized gap between the text's conditional log-probability and the distribution of conditional log-probs for alternative tokens sampled from the model's own per-position conditional distributions. Higher curvature means the text sits nearer a local maximum of the model's probability surface \u2014 a zero-shot signal for machine generation. Orthogonal to Binoculars' cross-perplexity ratio and DivEye's surprisal moments.\n",
       "references": [
         "plugins/setec-voiceprint/references/signals-glossary.md"
-      ],
-      "registers": [
-        "all_fiction",
-        "all_nonfiction"
-      ],
-      "script_path": "plugins/setec-voiceprint/scripts/fast_detect_curvature.py",
-      "status": "literature_anchored",
-      "surface": "discrimination_curvature",
-      "use_when": [
-        "You want a discrimination-evidence signal distinct from Binoculars (single model, curvature not ratio)",
-        "You're stacking orthogonal Surface-5 signals (Binoculars + curvature + DivEye)",
-        "Target \u2265 50 words and roughly in-distribution for the scoring model"
       ]
     },
     {
