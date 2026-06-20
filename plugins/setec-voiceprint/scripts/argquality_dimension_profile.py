@@ -338,6 +338,24 @@ def _error_envelope(reason: str, category: str, target: Path | None,
     )
 
 
+def _effective_judge_fingerprint(args: argparse.Namespace, current_fp: str) -> str | None:
+    """The prompt fingerprint that PRODUCED the bands. For an API/mock judge that is the current
+    code's prompt (``current_fp``); for a ``manifest`` judge it is the fingerprint the manifest was
+    generated under (read from its ``judge_identity``), so the drift gate checks the bands' real
+    provenance instead of comparing current-vs-current and waving a stale manifest through (Codex P1).
+    Returns None when a manifest declares no fingerprint or can't be read — the gate then can't confirm
+    the binding (treated as drift); a truly unreadable manifest is surfaced by build_judge."""
+    if args.judge == "manifest" and args.judge_manifest is not None:
+        try:
+            data = json.loads(Path(args.judge_manifest).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        ji = data.get("judge_identity") if isinstance(data, dict) else None
+        fp = (ji or {}).get("prompt_fingerprint_sha256") if isinstance(ji, dict) else None
+        return fp if isinstance(fp, str) and fp else None
+    return current_fp
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
@@ -353,11 +371,15 @@ def main(argv: list[str] | None = None) -> int:
               else target_path.with_suffix(
                   target_path.suffix + ".argquality_dimension_profile.md"))
 
-    if args.expect_fingerprint and args.expect_fingerprint != current_fp:
+    # Check the operator's expected fingerprint against the prompt that actually PRODUCED the bands —
+    # the manifest's own fingerprint for a manifest judge, current_fp for an API/mock judge — so a
+    # stale manifest can't pass a current-vs-current comparison (Codex P1).
+    effective_fp = _effective_judge_fingerprint(args, current_fp)
+    if args.expect_fingerprint and args.expect_fingerprint != effective_fp:
         env = _error_envelope(
             f"judge prompt fingerprint drift: expected {args.expect_fingerprint}, "
-            f"current {current_fp}. Any operator band bound to the old fingerprint "
-            f"is invalid for this prompt; re-calibrate.",
+            f"judge {effective_fp}. Any operator band bound to the old fingerprint "
+            f"is invalid; re-calibrate (or regenerate a stale manifest).",
             "bad_input", target_path,
         )
         return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
@@ -403,7 +425,9 @@ def main(argv: list[str] | None = None) -> int:
         n_paragraphs=len(paragraphs),
         n_words=n_words,
         reg_warnings=register_warnings(text, n_words),
-        prompt_fp=current_fp,
+        # Report the fingerprint that PRODUCED the bands (the manifest's own, for a manifest judge),
+        # not blindly current_fp, so the output's provenance matches the drift gate (Codex P1).
+        prompt_fp=judge_result.judge_identity.get("prompt_fingerprint_sha256") or current_fp,
     )
     envelope = compose_envelope(
         target_path=target_path, target_words=n_words, results=results,

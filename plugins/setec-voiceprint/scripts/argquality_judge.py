@@ -313,6 +313,10 @@ def _manifest_judge(manifest_path: Path) -> JudgeBackend:
                 "model": ji.get("model"),
                 "model_revision": ji.get("model_revision"),
                 "prompt_version": ji.get("prompt_version"),
+                # Propagate the manifest's OWN prompt fingerprint, never discard it: the bands were
+                # produced under THAT prompt, so the drift gate must see it (else a stale manifest
+                # passes a current-vs-current check). None when the manifest declared none (Codex P1).
+                "prompt_fingerprint_sha256": ji.get("prompt_fingerprint_sha256"),
             },
             raw_response=None,
         )

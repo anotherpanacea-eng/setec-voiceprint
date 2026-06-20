@@ -304,6 +304,35 @@ def test_fingerprint_drift_abstains(tmp_path):
     assert "drift" in json.dumps(env).lower()
 
 
+def test_stale_manifest_fingerprint_caught_by_drift_gate(tmp_path):
+    # Codex #243: a manifest's bands were produced under ITS prompt, so the drift gate must check the
+    # MANIFEST's stored fingerprint, not the current code's. Otherwise a stale manifest passes a
+    # current-vs-current comparison and the output mislabels its provenance as the current fingerprint.
+    current = argquality_judge.fingerprint_prompt()
+    stale = "stale" + "0" * 59
+    assert stale != current
+    manifest = tmp_path / "bands.json"
+    manifest.write_text(json.dumps({
+        "values": {"dimensions": {
+            "logic": {"band": "lower", "evidence_spans": [], "basis": "m"},
+            "rhetoric": {"band": "higher", "evidence_spans": [], "basis": "m"},
+            "dialectic": {"band": None, "evidence_spans": [], "basis": "m"},
+        }},
+        "judge_identity": {"model": "precomputed-x", "prompt_fingerprint_sha256": stale},
+    }), encoding="utf-8")
+    margs = ["--judge", "manifest", "--judge-manifest", str(manifest)]
+
+    # Expecting the CURRENT code fp must ABSTAIN — the stale manifest was NOT produced under it.
+    rc, env = _run(tmp_path, SAMPLE, "--expect-fingerprint", current, *margs)
+    assert env["available"] is False and "drift" in json.dumps(env).lower()
+
+    # Expecting the manifest's OWN fingerprint passes, and the output reports THAT fingerprint.
+    rc, env = _run(tmp_path, SAMPLE, "--expect-fingerprint", stale, *margs)
+    assert env["available"] is True, env
+    assert _results(env)["prompt_fingerprint_sha256"] == stale
+    assert _results(env)["judge"]["judge_identity"]["prompt_fingerprint_sha256"] == stale
+
+
 def test_missing_sdk_is_missing_dependency(tmp_path, monkeypatch):
     def _raise(*a, **k):
         raise aqp.JudgeError(
