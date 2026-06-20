@@ -1,0 +1,65 @@
+entries:
+- id: specdetect_audit
+  script_path: plugins/setec-voiceprint/scripts/specdetect_audit.py
+  surface: discrimination_spectral
+  status: literature_anchored
+  handoff: experimental
+  consumers: []
+  family: specdetect
+  purpose: 'SpecDetect spectral descriptors of the per-token surprisal vector (Yang
+    et al. 2025, arXiv:2508.11343). Takes the log-probability sequence a single causal
+    LM already produces and reads its DFT magnitude spectrum: spectral centroid, low-frequency
+    energy fraction, spectral flatness, peak frequency bin, and dominant period in
+    tokens — a measurement of the sequential/spectral structure of the predictability
+    signal that the DivEye point moments (mean/SD/lag-k ACF) don''t capture. Orthogonal
+    to Binoculars'' cross-perplexity ratio, Fast-DetectGPT curvature, and the DivEye
+    moments by construction (the magnitude spectrum is the whole second-order structure;
+    a single lag-k ACF is one projection of it). Lastde / Lastde++ diversity-entropy
+    (Xu et al. 2024, arXiv:2410.06072) ships as a library function but is NOT emitted
+    by this surface at M1 — it is gated on an in-tree orthogonality check (M2). M1
+    is SpecDetect-only, stdlib, model-free over an injected sequence.
+
+    '
+  use_when:
+  - You want a sequential/spectral read of the surprisal vector distinct from the DivEye
+    point moments (a whole magnitude spectrum, not one lag-k autocorrelation)
+  - You're stacking orthogonal Surface-5 signals (Binoculars + curvature + DivEye +
+    spectral)
+  - Target is long enough for a stable spectrum (≥ 50 words / 30 scored tokens)
+  do_not_use_when:
+  - You need a binary verdict — ships uncalibrated by default, no threshold; bands
+    are PROVISIONAL and name a spectrum property, not an AI/human class
+  - The prose is formulaic, translated, or ESL — these produce regular spectra too
+    (a concentrated spectrum is not an AI finding; a flat one is not a human finding)
+  - You need to compare across runs with different models/checkpoints/dtypes (the spectrum
+    is tokenizer- and model-bound)
+  - You can't install the surprisal tier (transformers + torch) for a real scored run
+  inputs:
+    target: prose text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .specdetect_audit.json
+    - .specdetect_audit.md
+  compute:
+    tier: surprisal
+    cost_note: reuses the surprisal series score_text already returns (no extra forward
+      pass); the spectral core is stdlib arithmetic
+    length_floor_words: 50
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python:
+    - transformers
+    - torch
+    python_optional:
+    - numpy
+  examples:
+  - description: Default scoring model
+    cmd: python3 plugins/setec-voiceprint/scripts/specdetect_audit.py target.txt
+  - description: Custom model + low-frequency cutoff, JSON envelope
+    cmd: python3 plugins/setec-voiceprint/scripts/specdetect_audit.py target.txt --model
+      gpt2 --low-freq-cutoff 0.1 --json
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md
