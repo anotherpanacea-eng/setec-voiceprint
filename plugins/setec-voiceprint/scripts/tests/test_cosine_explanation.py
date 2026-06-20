@@ -231,6 +231,37 @@ def test_fit_baseline_dict_row_nonnumeric_pair_skipped_not_traceback(tmp_path):
     assert fb is not None and fb["n_corpus_rows"] == 10     # the 2 malformed rows skipped, not fatal
 
 
+@pytest.mark.parametrize("bad_cos", [float("nan"), float("inf"), float("-inf")])
+def test_injected_nonfinite_cosine_is_bad_input(tmp_path, bad_cos):
+    # Codex #231: a NaN/Infinity cosine (a valid Python JSON float) must be a clean bad_input, never
+    # passed through to nonstandard JSON output.
+    bad = dict(INPUTS_HI)
+    bad["cosine"] = bad_cos
+    rc, env = _run_injected(tmp_path, bad)
+    assert env["available"] is False and "bad_input" in json.dumps(env)
+
+
+def test_fit_baseline_nonfinite_cosine_rows_skipped(tmp_path):
+    # Codex #231: baseline rows whose cosine is NaN/inf must be skipped, not enter the OLS (which
+    # would drive R²/residual to NaN). Mixed with valid rows, the fit runs over the valid ones only.
+    pytest.importorskip("numpy")
+    import math as _m
+
+    def full(c, b1):
+        return {"cosine": c, "features": {
+            "burstiness_B": [0.40, b1], "mattr": [0.7, 0.7], "mtld": [90, 90],
+            "function_word_ratio": [0.45, 0.45], "mean_dependency_distance": [2.0, 2.0]}}
+
+    rows = [full(0.9 - (i % 4) * 0.1, 0.40 + (i % 4) * 0.05) for i in range(10)]
+    rows += [full(float("nan"), 0.5), full(float("inf"), 0.5)]
+    cpath = tmp_path / "corpus.json"
+    cpath.write_text(json.dumps(rows), encoding="utf-8")
+    rc, env = _run_injected(tmp_path, INPUTS_HI, "--fit-baseline", str(cpath))
+    fb = _results(env).get("fit_baseline")
+    assert fb is not None and fb["n_corpus_rows"] == 10            # 2 non-finite-cosine rows skipped
+    assert _m.isfinite(fb["fit_r2"]) and _m.isfinite(fb["fit_residual"])
+
+
 def test_no_inputs_is_bad_input(tmp_path):
     target = tmp_path / "t.txt"; target.write_text("x", encoding="utf-8")
     out = tmp_path / "o.json"

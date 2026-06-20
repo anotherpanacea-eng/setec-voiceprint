@@ -170,8 +170,10 @@ def fit_residual(corpus: list[dict[str, Any]]) -> dict[str, Any] | None:
             continue
         cos = row.get("cosine")
         feats = row.get("features", {})
+        # #231: a non-finite cosine (NaN/Infinity is a valid JSON float in Python) must skip the row,
+        # not enter the OLS where it poisons the whole fit (R²/residual -> NaN).
         if not isinstance(cos, (int, float)) or isinstance(cos, bool) \
-                or not isinstance(feats, dict):
+                or not math.isfinite(cos) or not isinstance(feats, dict):
             continue
         vec = []
         ok = True
@@ -259,6 +261,9 @@ def compute_inputs(target: Path, comparison: Path) -> tuple[float, dict[str, Any
             "pass --inputs-json with a precomputed {cosine, features}."
         )
     cosine = vf._cosine(tvec, cvec)
+    if not math.isfinite(cosine):                            # #231: never emit a NaN/inf cosine
+        raise ValueError("computed LUAR cosine is not finite (degenerate embedding — e.g. an "
+                         "empty/whitespace input); provide real texts.")
 
     tf, cf = _named_features(target_text), _named_features(comparison_text)
     features = {name: [tf[name], cf[name]] for name in tf if name in cf}
@@ -269,17 +274,22 @@ def load_injected(path: Path) -> tuple[float, dict[str, Any]]:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or "cosine" not in data or "features" not in data:
         raise ValueError("--inputs-json must be a JSON object with 'cosine' + 'features'")
-    if not isinstance(data["cosine"], (int, float)) or isinstance(data["cosine"], bool):
-        raise ValueError("--inputs-json 'cosine' must be a number")
+    # #231: cosine must be a FINITE number — NaN/Infinity is a valid JSON float in Python but would
+    # serialize as nonstandard JSON and read as a misleading similarity. Reject it up front.
+    if not isinstance(data["cosine"], (int, float)) or isinstance(data["cosine"], bool) \
+            or not math.isfinite(data["cosine"]):
+        raise ValueError("--inputs-json 'cosine' must be a finite number")
     feats = data["features"]
     if not isinstance(feats, dict):
         raise ValueError("--inputs-json 'features' must be an object mapping name -> [target, comparison]")
     # #231 P2: validate each feature value up front so a malformed injected feature is a clean
-    # bad_input error, not a downstream traceback (and not silently dropped).
+    # bad_input error, not a downstream traceback (and not silently dropped). Each element must be a
+    # FINITE number (a NaN/inf pair would otherwise be silently dropped by build_comparison).
     for name, pair in feats.items():
         if not (isinstance(pair, (list, tuple)) and len(pair) == 2
-                and all(isinstance(x, (int, float)) and not isinstance(x, bool) for x in pair)):
-            raise ValueError(f"--inputs-json feature {name!r} must be [target_number, comparison_number]")
+                and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                        and math.isfinite(x) for x in pair)):
+            raise ValueError(f"--inputs-json feature {name!r} must be [finite target, finite comparison]")
     return float(data["cosine"]), dict(feats)
 
 
