@@ -106,6 +106,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `fast_detect_curvature` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `formulaicity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `general_imposters` | Literature-anchored | No | labeled corpus + valid `corpus_manifest.jsonl` (required) | req: scipy | CPU / stdlib (+ optional spaCy model) | — |
+| `homogeneity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: numpy | CPU / stdlib (+ optional spaCy model) | 15 |
 | `intrinsic_dimension_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch, numpy, scipy | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 500 |
 | `manuscript_audit` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | stdlib; opt: spacy, sklearn, sentence_transformers, textstat, nltk, numpy | CPU / stdlib (+ optional spaCy model) | 200 |
 | `mimicry_cosplay_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
