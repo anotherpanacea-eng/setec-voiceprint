@@ -349,8 +349,15 @@ def _encoder_cosine_block(
     # here (not at module top) keeps the default crosslingual path stdlib.
     import voice_fingerprint as vf  # type: ignore
 
-    encoder = vf._load_encoder(encoder_alias, device=device)
     encoder_id = vf.MODEL_ALIASES.get(encoder_alias, encoder_alias)
+    try:
+        encoder = vf._load_encoder(encoder_alias, device=device)
+    except vf.VoiceFingerprintError as exc:
+        # The OPT-IN encoder couldn't load — a missing style-embedding tier, or a SPEC-ONLY/unreleased
+        # encoder such as `muar` (no public checkpoint). Surface the block as unavailable with the
+        # reason; the parser-free distance above is unaffected. Do NOT let it traceback the whole run
+        # (Codex P1: `--encoder muar` raised an uncaught VoiceFingerprintError here).
+        return {"encoder_id": encoder_id, "available": False, "note": str(exc)}
 
     # Window both corpora with voice_fingerprint's SHARED windowing, then
     # reuse its two-corpus computation (target windows vs. baseline

@@ -527,6 +527,18 @@ def test_encoder_block_appears_in_markdown_report():
     assert "ENCODER-CAVEAT-MUAR-SENTINEL" in md      # the per-encoder caveat is not dropped
 
 
+def test_crosslingual_encoder_block_unavailable_on_spec_only_muar(monkeypatch: pytest.MonkeyPatch):
+    # Codex #241 (follow-up): --encoder muar uses the REAL _load_encoder, whose spec-only guard raises
+    # VoiceFingerprintError. _encoder_cosine_block must catch it and return an UNAVAILABLE block (with
+    # the reason) so the parser-free distance survives — never a traceback out of the crosslingual run.
+    monkeypatch.setitem(sys.modules, "transformers", types.ModuleType("transformers"))
+    text = "\n\n".join(_multi_para_text(n_paras=6) for _ in range(2))
+    block = cvd._encoder_cosine_block(text, [text, text, text], encoder_alias="muar")
+    assert block["available"] is False
+    assert block["encoder_id"] == vf.MODEL_ALIASES["muar"]
+    assert "no public checkpoint" in block["note"] or "spec-only" in block["note"].lower()
+
+
 def test_crosslingual_encoder_block_keeps_cross_language_refusal(
     tmp_path: Path, stub_cvd_encoder,
 ):
