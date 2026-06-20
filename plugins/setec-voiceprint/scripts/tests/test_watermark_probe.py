@@ -610,3 +610,69 @@ def test_cli_bad_input_emits_error_envelope(capsys, tmp_path):
     env = json.loads(capsys.readouterr().out)
     assert env["available"] is False
     assert env["reason_category"] == "bad_input"
+
+
+# ============================================================
+# Codex re-review regressions (spec 29 / PR #238)
+# ============================================================
+
+
+def test_repeated_ngrams_scored_once_not_inflated():
+    # Codex P1: a repeated (context, current_token) event reuses the SAME green list,
+    # so it is scored ONCE, not as N independent Bernoulli trials. A single token
+    # repeated 201x is ONE unique transition: effective T == 1 (not 200), and the
+    # bogus inflated z the per-position count produced is gone.
+    stats = wp.green_z_test([7] * 201, key=_KEY, gamma=_GAMMA,
+                            vocab_size=_VOCAB_SIZE, hash_scheme="left-hash")
+    assert stats["n_positions"] == 200          # raw positions with a context
+    assert stats["n_scored_tokens"] == 1        # one unique (context, token) event
+    assert abs(stats["z"]) < 4.0                # not the T=200 inflation (~14)
+    # two alternating transitions → exactly two unique events
+    stats2 = wp.green_z_test([3, 5] * 100, key=_KEY, gamma=_GAMMA,
+                             vocab_size=_VOCAB_SIZE, hash_scheme="left-hash")
+    assert stats2["n_scored_tokens"] == 2 and stats2["n_positions"] == 199
+    # the probe surfaces the dedup in assumptions
+    r = wp.probe([3, 5] * 100, key=_KEY, vocab_size=_VOCAB_SIZE, gamma=_GAMMA)
+    assert r.assumptions["n_positions"] == 199
+    assert r.assumptions["n_repeated_ngrams_excluded"] == 199 - 2
+
+
+def test_token_ids_validated_before_scoring():
+    # Codex P2: non-int / bool / out-of-range token ids are bad_input, not a z.
+    for bad in ([-1, 999, True, 3], [0, 1, 2, 4], [0, 1, True, 2], [0, 1.5, 2]):
+        with pytest.raises(wp.WatermarkProbeError):
+            wp.validate_params(key=_KEY, gamma=_GAMMA, vocab_size=4,
+                               hash_scheme="left-hash", token_ids=bad)
+    # probe rejects them BEFORE computing any statistic
+    with pytest.raises(wp.WatermarkProbeError):
+        wp.probe([-1, 999, True, 3], key=_KEY, vocab_size=4, gamma=_GAMMA)
+    # a clean in-range stream validates
+    wp.validate_params(key=_KEY, gamma=_GAMMA, vocab_size=4,
+                       hash_scheme="left-hash", token_ids=[0, 1, 2, 3])
+
+
+def test_vocab_map_id_domain_validated(tmp_path):
+    # Codex P2: a sparse/duplicated id map must be rejected, not silently sized by len.
+    sparse = tmp_path / "sparse.json"
+    sparse.write_text(json.dumps({"a": 100, "b": 200}), encoding="utf-8")
+    with pytest.raises(wp.WatermarkProbeError):
+        wp._resolve_vocab(str(sparse))
+    dup = tmp_path / "dup.json"
+    dup.write_text(json.dumps({"a": 0, "b": 0, "c": 1}), encoding="utf-8")
+    with pytest.raises(wp.WatermarkProbeError):
+        wp._resolve_vocab(str(dup))
+    # a dense [0, V) map is accepted and sized by its domain
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps({"a": 0, "b": 1, "c": 2}), encoding="utf-8")
+    vmap, size = wp._resolve_vocab(str(good))
+    assert size == 3 and vmap == {"a": 0, "b": 1, "c": 2}
+
+
+def test_partition_prf_scope_stamped_and_disclaimed():
+    # Codex P1: the result stamps the Voiceprint partition PRF (NOT the official KGW
+    # processor), and the claim license disclaims official-KGW / third-party interop.
+    r = wp.probe(_independent_tokens(120), key=_KEY, vocab_size=_VOCAB_SIZE, gamma=_GAMMA)
+    assert r.assumptions["partition_prf"] == wp.PARTITION_PRF
+    assert "partition" in r.render().lower()
+    dnl = wp.DEFAULT_DOES_NOT_LICENSE
+    assert "simple_1" in dnl and "FALSE-NEGATIVE" in dnl
