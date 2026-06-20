@@ -1,0 +1,78 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "stdlib + spaCy (POS / dependency families need en_core_web_sm; --no-spacy drops them); no API costs",
+    "length_floor_words": 2000,
+    "tier": "core"
+  },
+  "consumers": [
+    "apodictic"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "spacy"
+    ]
+  },
+  "do_not_use_when": [
+    "You want a target-vs-baseline drift score \u2014 that is voice_distance; voice_profile is descriptive, not diagnostic",
+    "You would share the output carelessly \u2014 a voice profile is voice-cloning-grade input (keep it private; the script refuses public output paths by default)"
+  ],
+  "examples": [
+    {
+      "description": "Build a private voice profile from a baseline",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/voice_profile.py --baseline-dir baseline/ --out ai-prose-baselines-private/profile.md"
+    }
+  ],
+  "family": "voice-distance",
+  "handoff": "stable",
+  "id": "voice_profile",
+  "inputs": [
+    {
+      "flag": "--baseline-dir",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--manifest",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    },
+    {
+      "flag": "--out",
+      "type": "path",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "artifacts": [
+      ".voice_profile.json",
+      ".voice_profile.md"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Produce a private, human-readable stylometric profile from a writer/register baseline corpus: per-family feature inventory (function words, character n-grams, POS trigrams, dependency n-grams) with each feature's baseline mean, SD, and coefficient of variation. This is the within-author reference (the aggregation voice_distance / idiolect_detector / mimicry_cosplay_audit build on), not a diagnostic verdict.\n",
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "plugins/setec-voiceprint/references/stylometry-oracle.md"
+  ],
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/voice_profile.py",
+  "status": "empirically_oriented",
+  "surface": "voice_coherence",
+  "use_when": [
+    "You want a durable within-author reference to anchor downstream voice-coherence work (voice_distance, idiolect_detector, mimicry)",
+    "You have a baseline corpus of the writer's prior prose (a directory or a manifest)",
+    "You want to see which feature families are most stable (low CV) for the writer"
+  ],
+  "min_setec_version": "1.86.0",
+  "json_delivery": "file"
+}

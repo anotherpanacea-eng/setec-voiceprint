@@ -1,0 +1,42 @@
+{
+  "_seeded_at": "2026-06-11",
+  "compute": {
+    "cost_note": "network-bound; OpenAlex cursor pagination plus one CORE fetch per candidate DOI",
+    "length_floor_words": 3000,
+    "tier": "acquisition"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": []
+  },
+  "do_not_use_when": [
+    "the discipline filter would admit STEM lab reports (tune --openalex-filter)"
+  ],
+  "examples": [],
+  "family": "acquisition",
+  "handoff": "none",
+  "id": "acquire_openalex_core",
+  "inputs": {
+    "target": "OpenAlex works API (keyless) + CORE v3 search API (keyed)"
+  },
+  "outputs": {
+    "artifacts": [
+      "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+      "draft_manifest.jsonl (corpus_role impostor)"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "acquire academic scholarly articles via OpenAlex (discipline/OA filter) + CORE (full text) into the scholarly_article impostor pool (the population baseline argmove_profile profiles).",
+  "references": [
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+  ],
+  "registers": [
+    "scholarly_article"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/acquire_openalex_core.py",
+  "status": "todo",
+  "surface": "voice_coherence_acquisition",
+  "use_when": [
+    "building the scholarly_article population baseline from open-access argumentative-discipline articles"
+  ]
+}

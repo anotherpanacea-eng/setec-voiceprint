@@ -1,0 +1,41 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "TODO",
+    "length_floor_words": null,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "xgboost"
+    ]
+  },
+  "do_not_use_when": [
+    "TODO"
+  ],
+  "examples": [],
+  "family": "TODO",
+  "handoff": "none",
+  "id": "train_xgboost",
+  "inputs": {
+    "target": "TODO"
+  },
+  "outputs": {
+    "artifacts": [
+      "TODO"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Stage C1 (binary) + C2 (multiclass).",
+  "references": [],
+  "registers": [
+    "TODO"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/replication/train_xgboost.py",
+  "status": "todo",
+  "surface": "calibration",
+  "use_when": [
+    "TODO"
+  ]
+}

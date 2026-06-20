@@ -1,0 +1,41 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "TODO",
+    "length_floor_words": null,
+    "tier": "acquisition"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "bs4"
+    ]
+  },
+  "do_not_use_when": [
+    "TODO"
+  ],
+  "examples": [],
+  "family": "TODO",
+  "handoff": "none",
+  "id": "acquire_magazine",
+  "inputs": {
+    "target": "TODO"
+  },
+  "outputs": {
+    "artifacts": [
+      "TODO"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "pull literary-horror short fiction from online magazines.",
+  "references": [],
+  "registers": [
+    "TODO"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/acquire_magazine.py",
+  "status": "todo",
+  "surface": "voice_coherence_acquisition",
+  "use_when": [
+    "TODO"
+  ]
+}

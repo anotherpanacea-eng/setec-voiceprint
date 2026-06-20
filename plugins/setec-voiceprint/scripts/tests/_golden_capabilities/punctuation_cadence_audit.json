@@ -1,0 +1,76 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "stdlib only (regex + counting); baseline comparison adds per-signal z-scores. No spaCy, no API costs.",
+    "length_floor_words": 2000,
+    "tier": "core"
+  },
+  "consumers": [
+    "apodictic"
+  ],
+  "dependencies": {
+    "python": []
+  },
+  "do_not_use_when": [
+    "Manuscript is below ~2000 words \u2014 the distributional signals are noisy at small sizes (the audit warns; the warning is the answer)",
+    "You want a calibrated AI/human verdict \u2014 the band calls and signals are heuristic (regularization bands against priors), diagnostic only",
+    "A first-draft fresh from the writer's hand \u2014 this audit catches regularization, so it has nothing to catch but the writer's natural rhythm"
+  ],
+  "examples": [
+    {
+      "description": "Punctuation cadence vs. a personal baseline",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py target.md --baseline-dir baseline/"
+    }
+  ],
+  "family": "punctuation",
+  "handoff": "stable",
+  "id": "punctuation_cadence_audit",
+  "inputs": [
+    {
+      "flag": "input",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--baseline-dir",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    },
+    {
+      "flag": "--ai-status",
+      "type": "string",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "artifacts": [
+      ".punctuation.json",
+      ".punctuation.md"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Punctuation rhythm + interruption-grammar audit. Treats punctuation as its own diagnostic dimension: per-mark density, sentence-final distribution, interruption grammar (parentheticals / em-dashes / appositives), punctuation bigrams, and a compression-fraction band call. Punctuation regularizes before vocabulary erases, so this is among the earliest signals to fire on AI-edited or house-styled prose.\n",
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "plugins/setec-voiceprint/references/stylometry-oracle.md"
+  ],
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/punctuation_cadence_audit.py",
+  "status": "heuristic",
+  "surface": "voice_coherence",
+  "use_when": [
+    "As a follow-up to Layer A when lexical compression fired and you want to name what specifically was regularized at the punctuation layer",
+    "A line edit / copyedit \"changed something\" and you want the specific cadence shifts (best with --baseline-dir for z-scores)",
+    "A quick triage on AI-revised prose \u2014 punctuation cadence shifts early"
+  ],
+  "min_setec_version": "1.86.0",
+  "json_delivery": "stdout"
+}

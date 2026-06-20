@@ -1,0 +1,41 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "TODO",
+    "length_floor_words": null,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "nltk"
+    ]
+  },
+  "do_not_use_when": [
+    "TODO"
+  ],
+  "examples": [],
+  "family": "TODO",
+  "handoff": "none",
+  "id": "prestige_metaphor",
+  "inputs": {
+    "target": "TODO"
+  },
+  "outputs": {
+    "artifacts": [
+      "TODO"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "AIC-8 prestige-metaphor detector.",
+  "references": [],
+  "registers": [
+    "TODO"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/prestige_metaphor.py",
+  "status": "todo",
+  "surface": "smoothing_diagnosis",
+  "use_when": [
+    "TODO"
+  ]
+}

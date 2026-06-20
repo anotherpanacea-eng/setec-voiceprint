@@ -1,0 +1,56 @@
+{
+  "compute": {
+    "cost_note": "stdlib only; no models, CPU-trivial.",
+    "length_floor_words": 300,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "do_not_use_when": [
+    "You want any voice, authorship, or AI-provenance inference (this surface refuses it)",
+    "You want a writing-quality judgment",
+    "Target is under 300 words (the length floor)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/document_layout_audit.py target.md",
+      "description": "Layout profile to stdout"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/document_layout_audit.py target.md --json",
+      "description": "JSON envelope"
+    }
+  ],
+  "family": "non-voice-structure",
+  "handoff": "none",
+  "id": "document_layout_audit",
+  "inputs": {
+    "target": "prose/markdown text file (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Descriptive structural/formatting profile of a document \u2014 heading cadence, section-length variance, list/blockquote/code/link/table usage. A publishing-format fingerprint, not stylometry: emits measurements only (no band, no verdict) and refuses voice/authorship/AI inference.\n",
+  "references": [
+    "plugins/setec-voiceprint/specs/07-document-layout-audit.md"
+  ],
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "technical_documentation"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/document_layout_audit.py",
+  "status": "heuristic",
+  "surface": "document_layout",
+  "use_when": [
+    "You want a structural profile of how a blog / Substack / policy / memo document is laid out",
+    "You're comparing formatting conventions across documents or media",
+    "Target is >= 300 words"
+  ]
+}

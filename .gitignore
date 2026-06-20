@@ -13,6 +13,12 @@
 # generator + drift gate guarantee these carry only <fixture> sentinels and
 # representative values, never a real corpus.)
 !plugins/setec-voiceprint/references/contract_fixtures/*.json
+# Same exception for the per-id capability goldens (one frozen <id>.json per
+# capability, drop-in): a capability id like `pov_voice_profile` matches the
+# *_voice_profile.json privacy glob above and would silently drop its golden
+# fragment (it did — that broke the dropin test in CI). Re-include the whole
+# golden dir; these are frozen manifest snapshots, never a real corpus.
+!plugins/setec-voiceprint/scripts/tests/_golden_capabilities/*.json
 
 # Claude Code agent harness state. The .claude/worktrees/ directory holds
 # temporary git worktrees the agent harness manages during sub-agent runs;

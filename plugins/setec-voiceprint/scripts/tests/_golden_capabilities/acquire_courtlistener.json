@@ -1,0 +1,44 @@
+{
+  "_seeded_at": "2026-06-11",
+  "compute": {
+    "cost_note": "network-bound; search cursor pagination plus one detail fetch per document; per-doc-type word floors (brief 3000, affidavit 1000)",
+    "length_floor_words": 3000,
+    "tier": "acquisition"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": []
+  },
+  "do_not_use_when": [
+    "the source is not the CourtListener v4 API"
+  ],
+  "examples": [],
+  "family": "acquisition",
+  "handoff": "none",
+  "id": "acquire_courtlistener",
+  "inputs": {
+    "target": "CourtListener v4 REST API (Token header auth)"
+  },
+  "outputs": {
+    "artifacts": [
+      "impostor .txt + .meta.json under ai-prose-baselines-private/impostors/<register>/<persona>/",
+      "draft_manifest.jsonl (corpus_role impostor)"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "acquire legal briefs (--doc-type brief -> legal_brief) or expert affidavits/declarations (--doc-type affidavit -> expert_affidavit) from CourtListener / RECAP into the impostor pool (the population baselines argmove_profile profiles).",
+  "references": [
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+  ],
+  "registers": [
+    "legal_brief",
+    "expert_affidavit"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/acquire_courtlistener.py",
+  "status": "todo",
+  "surface": "voice_coherence_acquisition",
+  "use_when": [
+    "building the legal_brief population baseline from public-record RECAP briefs",
+    "building the expert_affidavit population baseline from public-record RECAP declarations (--doc-type affidavit applies the structural + OCR screens)"
+  ]
+}

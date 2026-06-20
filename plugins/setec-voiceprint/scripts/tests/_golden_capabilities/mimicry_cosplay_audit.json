@@ -1,0 +1,78 @@
+{
+  "id": "mimicry_cosplay_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py",
+  "surface": "voice_coherence",
+  "status": "heuristic",
+  "handoff": "experimental",
+  "consumers": [
+    "setec-voicewright"
+  ],
+  "min_setec_version": "1.115.0",
+  "json_delivery": "stdout",
+  "family": "style-cosplay",
+  "purpose": "Detect lexical mimicry without syntactic conformity \u2014 the style-cosplay signature. Cross-checks idiolect-phrase survival (from an idiolect_detector JSON) against function-word / syntactic Delta (from a voice_distance JSON): normal authorial work shows the two negatively correlated; high survival WITH high Delta is the dissociation flag a composite score would hide. Also flags unnaturally high signature-phrase density (over-preservation). Refuses authorship verdicts: a cosplay flag is evidence the draft is not a normal authorial sample, not a call on whether it is AI, imitation, or self-conscious self-imitation.\n",
+  "use_when": [
+    "A draft scores well on per-feature voice metrics but reads as imitation \u2014 you want the lexical-vs-syntactic cross-check, not an aggregate",
+    "QC on restoration / voice-matched output (catches over-targeted revisions that hit the metric but lost the voice)",
+    "You already have idiolect_detector and voice_distance JSON outputs for the same target (the cross-check needs both to fire shape 1)"
+  ],
+  "do_not_use_when": [
+    "You need an authorship or AI-provenance verdict \u2014 the surface refuses both",
+    "You have no idiolect / voice_distance JSONs for the target \u2014 the audit degrades to density-only evidence",
+    "You want a single composite mimicry score \u2014 the dissociation pattern is the signal; averaging the axes hides it"
+  ],
+  "inputs": [
+    {
+      "flag": "--target",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--idiolect-json",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--voice-distance-json",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--variance-json",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "mimicry-cosplay markdown report (via --out)"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "stdlib-only; reads pre-computed audit JSONs, no model loads",
+    "length_floor_words": null
+  },
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "dependencies": {
+    "python": []
+  },
+  "examples": [
+    {
+      "description": "Full cross-check with both upstream audits",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/mimicry_cosplay_audit.py --target draft.md --idiolect-json draft.idiolect.json --voice-distance-json draft.voice_distance.json --json"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md"
+  ]
+}

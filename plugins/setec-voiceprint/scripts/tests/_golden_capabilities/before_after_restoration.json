@@ -1,0 +1,39 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "TODO",
+    "length_floor_words": null,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": []
+  },
+  "do_not_use_when": [
+    "TODO"
+  ],
+  "examples": [],
+  "family": "TODO",
+  "handoff": "none",
+  "id": "before_after_restoration",
+  "inputs": {
+    "target": "TODO"
+  },
+  "outputs": {
+    "artifacts": [
+      "TODO"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Cathedral upgrade #7 v2.",
+  "references": [],
+  "registers": [
+    "TODO"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/before_after_restoration.py",
+  "status": "todo",
+  "surface": "craft_restoration",
+  "use_when": [
+    "TODO"
+  ]
+}

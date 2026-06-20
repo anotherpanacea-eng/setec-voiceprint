@@ -1,0 +1,106 @@
+{
+  "id": "binoculars_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/binoculars_audit.py",
+  "surface": "binoculars_discrimination",
+  "status": "literature_anchored",
+  "handoff": "experimental",
+  "consumers": [
+    "setec-voicewright"
+  ],
+  "min_setec_version": "1.115.0",
+  "json_delivery": "stdout",
+  "family": "binoculars",
+  "purpose": "Two-model perplexity comparison (Hans et al. 2024). Scores a target against a scorer LLM + observer LLM pair; lower ratios indicate the target is more predictable under the scorer than the observer \u2014 a known signal for AI-generated text. v1 uses perplexity-ratio; v2 uses true cross-perplexity when tokenizers align.\n",
+  "use_when": [
+    "You want a discrimination-evidence signal that's close to the published 95% AUC condition",
+    "You have access to a scorer + observer pair (default tinyllama + gpt2)",
+    "Target \u2265 50 tokens"
+  ],
+  "do_not_use_when": [
+    "You need a binary verdict \u2014 ships uncalibrated by default",
+    "Target is in the scorer's or observer's training set (memorization biases the score)",
+    "You can't install the surprisal tier (transformers + torch, ~2 GB)"
+  ],
+  "inputs": [
+    {
+      "flag": "target",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--scorer",
+      "type": "string",
+      "required": false
+    },
+    {
+      "flag": "--observer",
+      "type": "string",
+      "required": false
+    },
+    {
+      "flag": "--threshold-low",
+      "type": "float",
+      "required": false
+    },
+    {
+      "flag": "--threshold-high",
+      "type": "float",
+      "required": false
+    },
+    {
+      "flag": "--score-version",
+      "type": "enum",
+      "required": false,
+      "values": [
+        "auto",
+        "v1",
+        "v2"
+      ]
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      ".binoculars.json",
+      ".binoculars.md"
+    ]
+  },
+  "compute": {
+    "tier": "surprisal",
+    "cost_note": "One-time ~600 MB tinyllama + ~500 MB gpt2 download; CPU inference acceptable",
+    "length_floor_words": 50
+  },
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "dependencies": {
+    "python": [
+      "transformers",
+      "torch"
+    ],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Default scorer/observer pair (writes the evidence pack)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt"
+    },
+    {
+      "description": "Consumer envelope on stdout (no evidence-pack side files)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --json"
+    },
+    {
+      "description": "Custom scorer pair",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/binoculars_audit.py target.txt --scorer falcon-7b --observer falcon-7b-instruct"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md"
+  ]
+}

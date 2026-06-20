@@ -1,0 +1,112 @@
+{
+  "id": "idiolect_detector",
+  "script_path": "plugins/setec-voiceprint/scripts/idiolect_detector.py",
+  "surface": "voice_coherence",
+  "status": "empirically_oriented",
+  "handoff": "stable",
+  "consumers": [
+    "apodictic",
+    "setec-voicewright"
+  ],
+  "min_setec_version": "1.86.0",
+  "json_delivery": "stdout",
+  "family": "idiolect",
+  "purpose": "Extract distinctive bigrams and trigrams from a writer's baseline corpus that are characteristic enough to flag during revision. Outputs a preservation list of phrases worth protecting across edits (Dunning's G\u00b2 for bigrams, PMI for trigrams).\n",
+  "use_when": [
+    "You're about to revise (or LLM-edit) a draft and want to know which phrasings to preserve",
+    "The writer has a baseline corpus of \u2265 50K words",
+    "You want to detect post-revision mimicry / cosplay (paired with mimicry_cosplay_audit)"
+  ],
+  "do_not_use_when": [
+    "The baseline is mixed-genre (idiolect signals cross-contaminate across registers)",
+    "The baseline is under ~20K words (sparse n-grams produce false positives)"
+  ],
+  "required_groups": [
+    "target",
+    "reference"
+  ],
+  "inputs": [
+    {
+      "flag": "--target-dir",
+      "type": "path",
+      "required": false,
+      "group": "target"
+    },
+    {
+      "flag": "--manifest",
+      "type": "path",
+      "required": false,
+      "group": "target"
+    },
+    {
+      "flag": "--reference-dir",
+      "type": "path",
+      "required": false,
+      "group": "reference"
+    },
+    {
+      "flag": "--reference-manifest",
+      "type": "path",
+      "required": false,
+      "group": "reference"
+    },
+    {
+      "flag": "--reference-corpus",
+      "type": "enum",
+      "required": false,
+      "group": "reference",
+      "values": [
+        "brown"
+      ]
+    },
+    {
+      "flag": "--keyness-method",
+      "type": "enum",
+      "required": false,
+      "values": [
+        "log_likelihood",
+        "chi_square",
+        "pmi",
+        "fisher_exact"
+      ]
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      ".idiolect.json",
+      ".idiolect.md"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "scipy for G\u00b2 / PMI; no API costs",
+    "length_floor_words": 20000
+  },
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "dependencies": {
+    "python": [
+      "scipy"
+    ],
+    "python_optional": [
+      "nltk"
+    ]
+  },
+  "examples": [
+    {
+      "description": "Build a preservation list from a writer's baseline",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/idiolect_detector.py --reference-dir baseline/"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md"
+  ]
+}

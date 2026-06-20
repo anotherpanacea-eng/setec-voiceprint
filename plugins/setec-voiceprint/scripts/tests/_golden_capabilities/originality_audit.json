@@ -1,0 +1,58 @@
+{
+  "id": "originality_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/originality_audit.py",
+  "surface": "set_level_diversity",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "set-level-diversity",
+  "purpose": "DJ-Search reconstructibility of a target against a reference pool (the operator's impostor pool by default) \u2014 the fraction of the target covered by long verbatim token spans (>= min_ngram, default 8) that appear anywhere in the reference corpus. Reports `coverage` (= reconstructibility) and `originality = 1 - coverage`, oriented gt = LESS reconstructible from that pool. A new set-level axis (target-vs-pool, not doc-vs-baseline). NOT an AI/human or plagiarism determination: clean-room DJ Search (Creativity Index, arXiv:2410.04265); measurements only, no band/verdict; the claim-license refuses provenance / plagiarism / quality inference.\n",
+  "use_when": [
+    "You want to know how much of a target is reconstructible (recombined) from a reference pool you already hold (e.g. the impostor pool)",
+    "You're comparing reconstructibility across documents against a fixed pool",
+    "Target is >= ~24 words (>= min_ngram x 3)"
+  ],
+  "do_not_use_when": [
+    "You want an AI-provenance call (low originality is NOT 'AI'; this is not an AI signal)",
+    "You want a plagiarism / derivative-work / copyright determination (it is a measurement)",
+    "The reference pool is thin / register-mismatched (it inflates apparent originality)"
+  ],
+  "inputs": {
+    "target": "prose/markdown text file (UTF-8)",
+    "reference": "a --reference-dir of texts OR a --manifest (JSONL; id + text|text_path)"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "stdlib only; no models. Deterministic; substring index over the reference pool.",
+    "length_floor_words": 24
+  },
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "technical_documentation"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Originality vs the impostor pool (a manifest)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/originality_audit.py --target target.md --manifest corpus_manifest.jsonl --json"
+    },
+    {
+      "description": "Originality vs a directory of reference texts",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/originality_audit.py --target target.md --reference-dir corpora/impostors --min-ngram 8"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/specs/22-set-level-diversity.md",
+    "DJ Search / Creativity Index \u2014 AI as Humanity's Salieri (arXiv:2410.04265): https://arxiv.org/abs/2410.04265"
+  ]
+}

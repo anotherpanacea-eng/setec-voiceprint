@@ -1,0 +1,50 @@
+{
+  "compute": {
+    "cost_note": "stdlib only; bootstrap is seeded + deterministic.",
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "do_not_use_when": [
+    "You want a ground-truth verdict (kappa measures agreement, not correctness)",
+    "You want to generalize beyond this (possibly non-representative) item set",
+    "You have fewer than 10 items (kappa is meaningless at very small N)"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/triage_agreement.py labels.jsonl",
+      "description": "Agreement statistics to stdout"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/triage_agreement.py labels.csv --format csv --bootstrap 5000",
+      "description": "CSV input with a larger bootstrap"
+    }
+  ],
+  "family": "validation",
+  "handoff": "experimental",
+  "id": "triage_agreement",
+  "inputs": {
+    "target": "JSONL (default) or CSV of per-item framework + human triage labels"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Measures the agreement between the framework's surfaced candidates and an operator's triage judgments on a labeled item set: confusion matrix, percent agreement, Cohen's kappa, the prevalence-and-bias-adjusted kappa (PABAK), and a seeded bootstrap CI on kappa. Closes the loop the framework keeps open on principle (\"source triage is judgment work\"). Measures CONCORDANCE, not correctness \u2014 it never decides who is right.\n",
+  "references": [
+    "plugins/setec-voiceprint/specs/18-triage-agreement.md"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/triage_agreement.py",
+  "status": "heuristic",
+  "surface": "validation",
+  "use_when": [
+    "You have paired (framework, human) triage decisions and want the agreement as a number",
+    "You want to know whether the framework's candidate-surfacing matches expert reads on a register",
+    "You have at least 10 triaged items"
+  ]
+}

@@ -1,0 +1,86 @@
+{
+  "_seeded_at": "2026-05-28",
+  "compute": {
+    "cost_note": "Per-chapter cost is variance_audit's: Tier 1 is stdlib + tokenization; Tier 2/3 need spaCy + en_core_web_sm; runs all chapters, so cost scales with chapter count (a chapter audit cache supports resume on long runs).\n",
+    "length_floor_words": 200,
+    "tier": "core"
+  },
+  "consumers": [
+    "apodictic"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "spacy",
+      "sklearn",
+      "sentence_transformers",
+      "textstat",
+      "nltk",
+      "numpy"
+    ]
+  },
+  "do_not_use_when": [
+    "You want a single-chapter or short-passage diagnosis (use variance_audit directly)",
+    "You want an authorship verdict \u2014 the dashboard reports per-chapter band labels, not a label; aggregation uses medians, not a verdict",
+    "The chapters are ESL writing without a matched ESL baseline (inherits variance_audit's ESL polarity caveat)"
+  ],
+  "examples": [
+    {
+      "description": "Manuscript-wide Layer A dashboard against a baseline",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/manuscript_audit.py manuscript.md --baseline-dir baseline/"
+    }
+  ],
+  "family": "tier1-variance",
+  "handoff": "stable",
+  "id": "manuscript_audit",
+  "inputs": [
+    {
+      "flag": "manuscript",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--chapter-dir",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--baseline-dir",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "artifacts": [
+      ".manuscript_audit.json",
+      ".manuscript_audit.md"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Cross-chapter aggregate of the Layer A distributional diagnostic. Runs variance_audit's signal machinery (audit_text / classify_compression) on every chapter of a manuscript (or every file in a chapter directory) and reports a dashboard of per-signal medians, per-chapter band labels, and outlier chapters that single-chapter audits miss.\n",
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "plugins/setec-voiceprint/references/distributional-diagnostics.md"
+  ],
+  "registers": [
+    "literary_fiction",
+    "blog_essay",
+    "academic_philosophy",
+    "long_form_journalism"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/manuscript_audit.py",
+  "status": "empirically_oriented",
+  "surface": "smoothing_diagnosis",
+  "use_when": [
+    "You want manuscript-wide distributional evidence of mode-collapse and which chapters deviate from baseline",
+    "You have a multi-chapter manuscript (or a chapter directory) and an optional baseline corpus for z-score comparison",
+    "Each chapter clears the Tier 1 length floor (\u2265 200 words); thin chapters degrade the per-chapter estimate"
+  ],
+  "min_setec_version": "1.86.0",
+  "json_delivery": "stdout"
+}

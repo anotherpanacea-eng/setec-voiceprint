@@ -20,7 +20,6 @@ These tests pin three guarantees:
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 
@@ -31,15 +30,14 @@ if str(ROOT) not in sys.path:
 import claim_license  # type: ignore  # noqa: E402
 from claim_license import TASK_SURFACE_LABELS  # type: ignore  # noqa: E402
 
-_GOLDEN = Path(__file__).resolve().parent / "_golden_task_surface_labels.json"
 _FRAG_DIR = ROOT / "claim_license_surfaces"
 
-
-def test_matches_golden_snapshot_byte_for_byte():
-    """The assembled dict must equal the pre-refactor literal exactly."""
-    golden = json.loads(_GOLDEN.read_text(encoding="utf-8"))
-    assert TASK_SURFACE_LABELS == golden
-    assert len(TASK_SURFACE_LABELS) == 27
+# NOTE: there is no aggregate `_golden_task_surface_labels.json` snapshot. The
+# per-surface `claim_license_surfaces/<surface>.txt` fragment IS the canonical
+# per-surface artifact, and `test_round_trip_is_lossless` already pins each
+# fragment's bytes to its label byte-for-byte — so the aggregate golden (and its
+# `==N` count literal) was a redundant collision point, dropped so a new surface
+# registers with one fragment file and no shared-file edit or count bump.
 
 
 def test_fragments_are_exactly_the_key_set():

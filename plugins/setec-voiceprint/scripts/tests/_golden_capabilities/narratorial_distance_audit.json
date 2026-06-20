@@ -1,0 +1,48 @@
+{
+  "_seeded_at": "2026-06-06",
+  "compute": {
+    "cost_note": "spaCy en_core_web_sm POS/dep + lemma; CPU, no API costs.",
+    "length_floor_words": 1500,
+    "tier": "spacy"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": [
+      "spacy"
+    ]
+  },
+  "do_not_use_when": [
+    "You want any authorship, AI-provenance, or writing-quality inference (this surface refuses it)",
+    "You want a literary-quality judgment (close and distant narration are both valid choices)",
+    "Target is under 1500 words (the length floor)"
+  ],
+  "examples": [],
+  "family": "voice-coherence",
+  "handoff": "experimental",
+  "id": "narratorial_distance_audit",
+  "inputs": {
+    "optional": [
+      "--verb-lexicon to override the perception/cognition verb set"
+    ],
+    "target": "prose/markdown text file (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Descriptive narratorial-distance / free-indirect-discourse (FID) profile for developmental editing of literary fiction: per-window pronoun anchoring, perception/cognition-verb density, deictic anchoring (proximal vs. distal), evaluative-adjective density, a heuristic FID score, an overall close/distant distribution, and a distance trajectory across document position. Adjacent to pov_voice_profile but NOT a voice-identity, authorship, AI, or quality instrument \u2014 measurements only (no band, no verdict); FID detection is heuristic, not a parse of literary intent.\n",
+  "references": [],
+  "registers": [
+    "all_fiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/narratorial_distance_audit.py",
+  "status": "heuristic",
+  "surface": "narratorial_distance",
+  "use_when": [
+    "You want to see where narration sits close to vs. distant from a character's consciousness, and how that moves across the text",
+    "You're developmentally editing literary fiction and want an FID / narratorial-distance trajectory",
+    "Target is long-form fiction >= 1500 words"
+  ]
+}

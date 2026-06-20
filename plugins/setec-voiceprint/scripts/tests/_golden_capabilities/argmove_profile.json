@@ -1,0 +1,48 @@
+{
+  "_seeded_at": "2026-06-12",
+  "compute": {
+    "cost_note": "CPU-bound; two reused stdlib audits (stance B4, agency B3) plus regex AGD markers per document; no model load",
+    "length_floor_words": 300,
+    "tier": "core"
+  },
+  "consumers": [],
+  "dependencies": {
+    "python": []
+  },
+  "do_not_use_when": [
+    "paragraph-role / discourse-mode labeling is needed (that is the B1/B2 LLM judge, a separate surface)",
+    "a provenance verdict about a text or person is wanted (no verdict by design)"
+  ],
+  "examples": [],
+  "family": "argument-moves",
+  "handoff": "none",
+  "id": "argmove_profile",
+  "inputs": {
+    "target": "a corpus directory of .txt/.md documents (default substantiality floor 300 words; --compare takes two directories)"
+  },
+  "outputs": {
+    "artifacts": [
+      "argmove profile JSON (per-signal mean/sd/cv/median/p10-p90 bands)",
+      "compare JSON (per-signal Cliff's delta + Cohen's d, sorted by |delta|)"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "aggregate the deterministic B4 stance + B3 abstraction signals plus the net-new AGD marker module (assuring/guarding/discounting) over a corpus into an argument-move population profile, and run the two-corpus separation test (Cliff's delta primary, Cohen's d secondary) \u2014 the cheap, judge-free half of ArgScope, gating any B1/B2 LLM-judge spend.",
+  "references": [],
+  "registers": [
+    "policy_brief",
+    "testimony_policy",
+    "scholarly_article",
+    "legal_brief",
+    "regulatory_comment",
+    "grant_proposal",
+    "expert_affidavit"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/argmove_profile.py",
+  "status": "todo",
+  "surface": "assertoric",
+  "use_when": [
+    "building an argument-register population baseline (the profiles the acquisition-tier registers feed)",
+    "answering whether deterministic signals separate two corpora (e.g. human vs LLM argument) before spending on the LLM judge"
+  ]
+}

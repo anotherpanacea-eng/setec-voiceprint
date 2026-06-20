@@ -1,0 +1,65 @@
+{
+  "compute": {
+    "cost_note": "regex + optional spaCy; no API costs",
+    "length_floor_words": 400,
+    "tier": "core"
+  },
+  "consumers": [
+    "apodictic"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "spacy"
+    ]
+  },
+  "do_not_use_when": [
+    "You need a binary AI verdict \u2014 the audit reports density, the writer adjudicates per instance",
+    "Target is a technical / legal register where parallel-stack patterns are expected",
+    "Length floor 400 tokens"
+  ],
+  "examples": [
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/aic_pattern_audit.py target.md",
+      "description": "Count all named patterns"
+    },
+    {
+      "cmd": "python3 plugins/setec-voiceprint/scripts/aic_pattern_audit.py target.md --baseline-dir baseline/ --pattern correctio",
+      "description": "Single pattern with baseline comparison"
+    }
+  ],
+  "family": "aic-7-discourse-leak",
+  "handoff": "stable",
+  "id": "aic_pattern_audit",
+  "inputs": {
+    "optional": [
+      "--baseline-dir for relative density comparison"
+    ],
+    "target": "prose text file (UTF-8)"
+  },
+  "outputs": {
+    "artifacts": [
+      ".aic.json",
+      ".aic.md"
+    ],
+    "schema_version": "1.0"
+  },
+  "purpose": "Layer B / Layer C named-pattern density audit. Counts the rhetorical patterns AI prose over-produces (correctio, pseudo-aphorism, manifesto cadence, triplet, professional- parallel stack, false balance, hedge-and-affirm, recommendation template, authority laundering) at per-thousand-word density, optionally vs. a baseline corpus.\n",
+  "references": [
+    "plugins/setec-voiceprint/references/aic-flags.md",
+    "plugins/setec-voiceprint/references/source-triage.md"
+  ],
+  "registers": [
+    "blog_essay",
+    "long_form_journalism",
+    "literary_fiction"
+  ],
+  "script_path": "plugins/setec-voiceprint/scripts/aic_pattern_audit.py",
+  "status": "heuristic",
+  "surface": "craft_restoration",
+  "use_when": [
+    "Target prose feels \"smooth\" or \"professional\" in a way that signals over-production",
+    "You want surface evidence to complement Tier 1 variance audit",
+    "You're doing source triage on a manuscript and want flagged sentences for adjudication"
+  ]
+}
