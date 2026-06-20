@@ -12,7 +12,10 @@ Codex window.
 SCOPE (honest): it catches **absent** references, NOT *exists-but-mischaracterized* semantic
 claims (e.g. "narrative.py is voicewright's own seam" — narrative.py exists, so this won't
 flag it; that stays a human/panel check). It catches the dominant "doesn't-exist" subclass,
-conservatively, so the gate's false-positive rate is ~0.
+conservatively, so the gate's false-positive rate is ~0. Two known limits: a spec's own
+*illustrative* anchors (a format example like ``path.py:123``, or a file named only to
+explain scope) will flag — run it on real specs and fence format-examples; and paths are
+POSIX (a backslash ``a\b.py`` is not extracted).
 
 Reference types and confidence:
 
@@ -81,14 +84,12 @@ class RepoIndex:
     rel_paths: set[str] = field(default_factory=set)
     basenames: dict[str, list[str]] = field(default_factory=dict)
     tokens: set[str] = field(default_factory=set)
+    flags: set[str] = field(default_factory=set)
     spec_numbers: set[int] = field(default_factory=set)
     _blob: str = ""
 
     def has_token(self, name: str) -> bool:
         return name in self.tokens
-
-    def has_literal(self, literal: str) -> bool:
-        return literal in self._blob
 
 
 def build_repo_index(repo: Path) -> RepoIndex:
@@ -117,6 +118,7 @@ def build_repo_index(repo: Path) -> RepoIndex:
             if m:
                 idx.spec_numbers.add(int(m.group(1)))
     idx._blob = "\n".join(blob_parts)
+    idx.flags = set(re.findall(r"--[a-z][a-z0-9-]+", idx._blob))
     return idx
 
 
@@ -185,7 +187,9 @@ def _resolve_path(rel: str, idx: RepoIndex) -> str | None:
         return rel
     base = rel.rsplit("/", 1)[-1]
     hits = idx.basenames.get(base, [])
-    return hits[0] if len(hits) == 1 else None
+    # >=1 hit = present. An AMBIGUOUS basename (multiple matches, e.g. __init__.py)
+    # is present-but-ambiguous, never "absent" — gating it would be a false positive.
+    return hits[0] if hits else None
 
 
 def verify(ref: Reference, idx: RepoIndex) -> None:
@@ -214,7 +218,9 @@ def verify(ref: Reference, idx: RepoIndex) -> None:
         if ref.status == "absent":
             ref.suggestion = f"no specs/{ref.line}-*.md (have {sorted(idx.spec_numbers)[-6:]})"
     elif ref.kind == "env_var":
-        ref.status = "found" if idx.has_literal(ref.ref) else "absent"
+        # Exact token, NOT substring: an invented SETEC_FOO must not resolve just
+        # because a real SETEC_FOO_BAR exists in source (env-var is a gating type).
+        ref.status = "found" if idx.has_token(ref.ref) else "absent"
         if ref.status == "absent":
             ref.suggestion = _suggest(ref.ref, [t for t in idx.tokens if t.isupper() and "_" in t])
     elif ref.kind in ("dotted_symbol", "symbol"):
@@ -223,10 +229,11 @@ def verify(ref: Reference, idx: RepoIndex) -> None:
         if ref.status == "absent":
             ref.suggestion = _suggest(name, idx.tokens)
     elif ref.kind == "cli_flag":
-        ref.status = "found" if idx.has_literal(ref.ref) else "absent"
+        # Whole-flag match (the prebuilt flag set), not substring: --ref must not
+        # resolve inside --reference-filter.
+        ref.status = "found" if ref.ref in idx.flags else "absent"
         if ref.status == "absent":
-            flags = set(re.findall(r"--[a-z][a-z0-9-]+", idx._blob))
-            ref.suggestion = _suggest(ref.ref, flags)
+            ref.suggestion = _suggest(ref.ref, idx.flags)
     else:
         ref.status = "skipped"
 
