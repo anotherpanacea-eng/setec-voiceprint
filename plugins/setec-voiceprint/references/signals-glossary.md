@@ -590,6 +590,20 @@ Two arc-level (cross-paragraph) collapse-dynamics signals the per-paragraph {rol
 
 ---
 
+## Argument-quality dimensions
+
+Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 2020 ("Rhetoric, Logic, and Dialectic: Advancing Theory-based Argument Quality Assessment in Natural Language Processing", arXiv:2006.00843) — the GAQCorpus / Wachsmuth taxonomy. The argument-QUALITY-DIMENSION sibling of the argument-decision signals (structural arc) and the argument-pattern flags (fallacy / warrant moves): these place where the GAQCorpus rating distribution would put an argument on each of three top-tier dimensions — *not* how it is structurally built, and *not* which specific moves it makes. Surface at `scripts/argquality_dimension_profile.py`; judge at `scripts/argquality_judge.py`; spec `specs/30-gaqcorpus-argquality.md`.
+
+**Not signals, not a score — a PROFILE.** Unlike the argument-decision aggregate, there is **no numeric `score` and no aggregate of any kind** here. The surface emits, per dimension, a coarse descriptive `band` (`lower` / `mid` / `higher` / `null`) + paragraph-anchored `evidence_spans` + a `basis` rationale, framed against the `distribution_reference` (a string descriptor of the GAQCorpus terciles). The three dimensions are placed INDEPENDENTLY and never summed (no `overall`, no roll-up). A `band` is a *distributional placement*, not a grade; a `lower` band is frequently appropriate in context; `null` is a first-class "judge declined", never coerced to `lower`. Ships **`uncalibrated`** unconditionally (the GAQCorpus distribution is register-bound — research / legal / policy targets are `distant`). No band is an AI-vs-human tell; the surface refuses provenance and quality. Bands come from a pluggable per-document LLM judge (`argquality_judge`; `mock` is a CI stub, infer nothing from it).
+
+### The three top-tier dimensions (3)
+
+- `dimensions.logic.band` · argument-quality · — · **uncalibrated** · cogency — local relevance, local sufficiency, acceptability of premises (does each step follow and rest on acceptable grounds). Distributional placement against GAQCorpus, not a grade.
+- `dimensions.rhetoric.band` · argument-quality · — · **uncalibrated** · effectiveness — arrangement, appropriateness, clarity, credibility, emotional appeal (is the case made effectively for its audience). Distributional placement against GAQCorpus, not a grade.
+- `dimensions.dialectic.band` · argument-quality · — · **uncalibrated** · reasonableness — global relevance, global sufficiency, global acceptability, engaging the opposing case (does the whole argument hold up as a reasonable contribution to the debate). The GLOBAL complement to `warrant_probe`'s per-claim rebuttal probe. Distributional placement against GAQCorpus, not a grade.
+
+---
+
 ## Totals
 
 | Family | Count |

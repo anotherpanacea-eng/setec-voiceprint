@@ -1,0 +1,88 @@
+entries:
+- id: argquality_dimension_profile
+  script_path: plugins/setec-voiceprint/scripts/argquality_dimension_profile.py
+  surface: argquality_dimension_profile
+  status: literature_anchored
+  handoff: experimental
+  consumers: []
+  family: argument-quality
+  purpose: 'Place a per-dimension COARSE descriptive band (lower / mid / higher /
+    null) over the three top-tier Wachsmuth / GAQCorpus argument-quality theory dimensions
+    — logic (cogency), rhetoric (effectiveness), dialectic (reasonableness) — against
+    the GAQCorpus rating distribution (Lauscher, Ng, Napoles & Tetreault 2020, arXiv:2006.00843),
+    with paragraph-anchored verbatim span pointers and a per-dimension rationale.
+    A theory-structured PROFILE the human reads — NOT a verdict. Emits NO aggregate
+    "argument quality" score, no overall band, no good/bad/strong/weak label, no cross-dimension
+    roll-up, and no numeric leaf under the dimensions block; a band is a distributional
+    placement, not a grade, and a `lower` band is frequently appropriate in context.
+    The argument-QUALITY-DIMENSION sibling of argument_decision_audit (structural arc)
+    and argument_pattern_scan (fallacy / warrant moves); this reads the theory-of-quality
+    dimensions neither touches.
+
+    '
+  use_when:
+  - You want a theory-structured (rhetoric / logic / dialectic) profile of an argument
+    with span pointers to triage for human review
+  - Target is an argument-shaped nonfiction passage (op-ed / policy / testimony)
+  - You want the GLOBAL dialectical read (does the whole argument engage the opposing
+    case) as the complement to argument_pattern_scan's per-claim warrant probe
+  do_not_use_when:
+  - You need an aggregate "argument quality" score, an overall-quality band, or a good
+    / bad / strong / weak / high-quality / low-quality label (the surface refuses ALL
+    of these — three independent descriptive bands, never summed, never a verdict)
+  - You want to read a `lower` band as "low quality" or a band as an AI-vs-human tell
+    (a `lower` band is frequently appropriate in context; no band licenses provenance)
+  - You don't have an LLM judge or a pre-computed label manifest
+  inputs:
+  - flag: target
+    type: path
+    required: true
+  - flag: --judge
+    type: enum
+    required: true
+    values:
+    - mock
+    - manifest
+    - anthropic
+    - openai
+    - gemini
+  - flag: --judge-manifest
+    type: path
+    required: false
+  - flag: --judge-model
+    type: string
+    required: false
+  - flag: --expect-fingerprint
+    type: string
+    required: false
+  - flag: --json
+    type: bool
+    required: false
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - .argquality_dimension_profile.json
+    - .argquality_dimension_profile.md
+  compute:
+    tier: api_llm
+    cost_note: $0.01–0.10 per doc via Anthropic / OpenAI / Gemini (one labeling call);
+      free with --judge manifest or --judge mock (a deterministic test stub)
+    length_floor_words: 120
+  registers:
+  - op-ed
+  dependencies:
+    python: []
+    python_optional: []
+    sdks_optional:
+    - anthropic
+    - openai
+    - google-genai
+  examples:
+  - description: Dimension profile with a pre-computed judge manifest
+    cmd: python3 plugins/setec-voiceprint/scripts/argquality_dimension_profile.py essay.txt
+      --judge manifest --judge-manifest bands.json
+  - description: Direct API spot-check
+    cmd: python3 plugins/setec-voiceprint/scripts/argquality_dimension_profile.py essay.txt
+      --judge anthropic --judge-model claude-sonnet-4-6
+  references:
+  - plugins/setec-voiceprint/references/signals-glossary.md

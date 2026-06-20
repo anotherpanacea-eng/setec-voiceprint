@@ -1,0 +1,1 @@
+argument-quality dimension profile (GAQCorpus / Wachsmuth rhetoric-logic-dialectic): a per-dimension descriptive band (lower/mid/higher/null) + paragraph-anchored span pointers for human review — NO aggregate quality score, no overall band, no good/bad-argument verdict
