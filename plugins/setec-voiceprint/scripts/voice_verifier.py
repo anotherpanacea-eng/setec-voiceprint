@@ -430,10 +430,28 @@ def _manifest_backend(manifest_path: Path) -> VerifierBackend:
                 f"manifest {manifest_path}: feature_judgement {_k!r} must be a JSON object, got "
                 f"{type(_v).__name__}"
             )
+        # `spans` must be a list (validate_result iterates it). A non-list (e.g. `1`) raised
+        # `TypeError: 'int' object is not iterable` deep in validate_result, escaping the exit-2
+        # refusal path (Codex P2); non-dict ENTRIES are still defensively dropped-with-warning there.
+        _spans = _v.get("spans")
+        if _spans is not None and not isinstance(_spans, list):
+            raise VerifierError(
+                f"manifest {manifest_path}: feature_judgement {_k!r} 'spans' must be a JSON list, "
+                f"got {type(_spans).__name__}"
+            )
     # Preserve the fingerprint the manifest was PRODUCED under (top-level, else judge_identity), or
     # None — never the current code's fingerprint (Codex P1: an imported band is not transferable to
-    # this prompt; rebinding it would falsely certify it under this code's prompt).
-    identity_block = data.get("judge_identity") or {}
+    # this prompt; rebinding it would falsely certify it under this code's prompt). judge_identity must
+    # be an object: a truthy non-dict (e.g. `["bad"]`) slipped past `or {}` and raised AttributeError
+    # on `.get` during backend construction, escaping the exit-2 refusal path (Codex P2).
+    identity_block = data.get("judge_identity")
+    if identity_block is None:
+        identity_block = {}
+    elif not isinstance(identity_block, dict):
+        raise VerifierError(
+            f"manifest {manifest_path}: 'judge_identity' must be a JSON object, got "
+            f"{type(identity_block).__name__}"
+        )
     manifest_fp = data.get("prompt_fingerprint_sha256")
     if manifest_fp is None:
         manifest_fp = identity_block.get("prompt_fingerprint_sha256")

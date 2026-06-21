@@ -320,6 +320,28 @@ def test_manifest_malformed_feature_judgements_raises_verifier_error(tmp_path):
             vv.build_verifier("manifest", manifest_path=m)
 
 
+def test_manifest_malformed_input_paths_exit_2_not_traceback(tmp_path):
+    # Codex #247 P2 follow-up: two more malformed shapes that previously escaped as tracebacks AFTER
+    # successful backend construction must follow the documented exit-2 refusal path through main():
+    #  (a) judge_identity as a truthy non-object (a list slipped past `or {}` -> AttributeError);
+    #  (b) a feature's `spans` as a non-list (`for span in 1` -> TypeError).
+    q = tmp_path / "q.txt"; q.write_text("query habits here today now words.", encoding="utf-8")
+    r = tmp_path / "r.txt"; r.write_text("ref habits here today now words.", encoding="utf-8")
+    feats_bad_spans = {f: {"band": "leans_consistent", "note": "", "spans": 1}
+                       for f in vv.RATIONALE_FEATURES}
+    bad_payloads = [
+        {"band": "leans_consistent", "feature_judgements": _full_features(), "judge_identity": ["x"]},
+        {"band": "leans_consistent", "feature_judgements": feats_bad_spans},
+    ]
+    for i, payload in enumerate(bad_payloads):
+        m = tmp_path / ("bad%d.json" % i)
+        m.write_text(json.dumps(payload), encoding="utf-8")
+        with pytest.raises(SystemExit) as exc:
+            vv.main(["--query", str(q), "--reference", str(r), "--judge", "manifest",
+                     "--manifest", str(m), "--json"])
+        assert exc.value.code == 2
+
+
 def test_manifest_missing_file_raises_verifier_error(tmp_path):
     with pytest.raises(vv.VerifierError):
         vv.build_verifier("manifest", manifest_path=tmp_path / "nope.json")
