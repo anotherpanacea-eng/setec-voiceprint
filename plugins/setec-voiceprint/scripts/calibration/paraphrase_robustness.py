@@ -374,6 +374,19 @@ def run_report(
     from rung 0. NO aggregate scalar is computed."""
     warns: list[str] = list(warnings) if warnings else []
 
+    # Rung-count guard at the orchestration boundary: refuse rungs < 1 up
+    # front instead of clamping with max(1, ...). A clamp silently fabricated
+    # a phantom rung 1 the caller never requested (and mislabeled the result
+    # as n_rungs:1); on the injected-scorer path it also forced a lookup for a
+    # rung-1 list the validator was told not to require, raising an IndexError
+    # deep in scoring. There is no meaningful attack curve with zero rungs.
+    rungs = int(rungs)
+    if rungs < 1:
+        raise ValueError(
+            f"n_rungs must be >= 1 (got {rungs}); the attack curve needs at "
+            f"least one paraphrase rung. Rung 0 is the unattacked baseline."
+        )
+
     # Silent-inversion guard at the orchestration boundary: refuse to score
     # any detector whose machine-vs-human sign is not pinned. _orient() raises
     # per-detector too (total coverage), but failing up front names ALL
@@ -396,7 +409,7 @@ def run_report(
         rung0_auc[det] = c["auc"]
 
     per_rung: list[dict[str, Any]] = []
-    for rung in range(1, max(1, int(rungs)) + 1):
+    for rung in range(1, rungs + 1):
         attacked: list[str] = []
         for txt in machine_texts:
             para = paraphraser.paraphrase(txt, rung=rung)
@@ -433,7 +446,7 @@ def run_report(
         "paraphraser_label": paraphraser.label,
         "n_machine_windows": len(machine_texts),
         "n_human_windows": len(human_texts),
-        "n_rungs": max(1, int(rungs)),
+        "n_rungs": rungs,
         "detectors": list(detectors),
         "rung_0": rung0_auc,
         "per_rung": per_rung,
@@ -559,6 +572,19 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
     # with a clear message instead of an IndexError deep in scoring. Each
     # detector needs one machine list AND one human list per rung 0..n_rungs
     # (i.e. n_rungs + 1 lists on each side).
+    #
+    # Reject n_rungs < 1 here too (run_report enforces it again): otherwise
+    # n_rungs:0 satisfied the per-side count check (expected_lists == 1) but
+    # the rung-1 attack loop then looked up a 2nd injected list and raised an
+    # IndexError — the exact failure this guard promises to prevent. n_rungs:0
+    # is an unsatisfiable input class (the validator wanted 1 list/side, the
+    # runtime needed 2), so refuse it outright instead of clamping a phantom
+    # rung into existence.
+    if n_rungs < 1:
+        raise ValueError(
+            f"n_rungs must be >= 1 (got {n_rungs}); the attack curve needs at "
+            f"least one paraphrase rung. Rung 0 is the unattacked baseline."
+        )
     expected_lists = n_rungs + 1
     for det in detectors:
         if det not in scores:

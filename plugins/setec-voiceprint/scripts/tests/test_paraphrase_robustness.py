@@ -303,3 +303,94 @@ def _injected_payload_two_rungs() -> dict:
             },
         },
     }
+
+
+# --------------------------- rung-count guard --------------------------- #
+
+
+def test_injected_n_rungs_zero_refuses_cleanly_not_indexerror():
+    """n_rungs:0 must be refused with a clear ValueError, NOT an uncaught
+    IndexError deep in scoring.
+
+    Before the fix: n_rungs:0 satisfied the per-side count check
+    (expected_lists == 1), but the rung-1 attack loop (the max(1, rungs)
+    clamp) then looked up a 2nd injected list and _InjectedScorer.score did
+    ``det[which][1]`` on a length-1 list, raising
+    ``IndexError: list index out of range`` — the exact failure the shape
+    validator promised to prevent. There is no valid n_rungs:0 payload: the
+    validator demanded 1 list/side while the clamped runtime demanded 2.
+    """
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": 0,
+        "machine_texts": ["m a", "m b"],
+        "human_texts": ["h a", "h b"],
+        "scores": {
+            # Exactly one list per side — the count the validator demands for
+            # n_rungs:0 (expected_lists == 1). This is the pre-fix repro that
+            # slipped the guard and then crashed with IndexError on rung 1.
+            "yules_k": {"machine": [[1.0, 2.0]], "human": [[0.0, 0.0]]},
+        },
+    }
+    with pytest.raises(ValueError, match=r"n_rungs must be >= 1"):
+        pr.run_from_injected_scores(payload)
+
+
+def test_run_report_rungs_zero_no_phantom_rung():
+    """run_report(rungs=0) with a REAL scorer must refuse, not silently run a
+    phantom 'rung 1' and mislabel the result as n_rungs:1.
+
+    Before the fix the loop ``range(1, max(1, int(rungs)) + 1)`` and the
+    ``"n_rungs": max(1, int(rungs))`` label both clamped 0 up to 1, fabricating
+    an unrequested rung and an inverted label. Now zero rungs is rejected at
+    the orchestration boundary (covers the M2/real-scorer path, not just the
+    injected entry point).
+    """
+    with pytest.raises(ValueError, match=r"n_rungs must be >= 1"):
+        pr.run_report(
+            paraphraser=_RecordingParaphraser(),
+            scorer=_ConstantScorer(),
+            detectors=["yules_k"],
+            machine_texts=["m one", "m two"],
+            human_texts=["h a", "h b", "h c"],
+            rungs=0,
+        )
+
+
+def test_negative_n_rungs_refused_with_clear_message():
+    """Negative n_rungs was already rejected (expected_lists clamped to 0), but
+    now it fails up front with the same clear rung-count message rather than a
+    downstream shape error — single, well-named refusal for the whole class."""
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": -1,
+        "machine_texts": ["m a", "m b"],
+        "human_texts": ["h a", "h b"],
+        "scores": {"yules_k": {"machine": [], "human": []}},
+    }
+    with pytest.raises(ValueError, match=r"n_rungs must be >= 1"):
+        pr.run_from_injected_scores(payload)
+
+
+def test_n_rungs_one_still_runs_and_labels_correctly():
+    """Guardrail: the smallest valid input (n_rungs:1) must still run end to
+    end and report n_rungs:1 (no off-by-one from dropping the clamp)."""
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": 1,
+        "machine_texts": ["m one window", "m two window"],
+        "human_texts": ["h a", "h b", "h c"],
+        "scores": {
+            "yules_k": {
+                "machine": [[1.0, 2.0], [1.5, 2.5]],
+                "human": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            },
+        },
+    }
+    results = pr.run_from_injected_scores(payload)
+    assert results["n_rungs"] == 1
+    assert len(results["per_rung"]) == 1
+    assert results["per_rung"][0]["rung"] == 1
