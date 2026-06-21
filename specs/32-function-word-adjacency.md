@@ -143,9 +143,10 @@ Three reasons, in order of weight:
    is a *new capability on the same `voice_coherence` surface* that **reuses**
    `variance_audit.mdd_stats` for the shared scalar and adds only the
    genuinely-new distribution/shape. FWAN mirrors that discipline: **reuse the
-   grammar audit's run-segmentation logic** (the shared `_tokens_lower` +
-   `len(run) >= 2` rule it is built on) for the token stream, and add only the
-   graph descriptors. Same precedent, same reuse rule.
+   grammar audit's run-segmentation logic** (the shared
+   `function_word_grammar_audit.function_word_runs` primitive — `_tokens_lower` +
+   sentence-boundary split + the `len(run) >= 2` rule) for the token stream, and
+   add only the graph descriptors. Same precedent, same reuse rule.
 3. **No double-counting of edge weights.** FWAN's adjacency matrix is the *same*
    bigram table the grammar audit counts. To avoid two sources of truth, FWAN
    builds the matrix from the same content-word-delimited runs and, in a test,
@@ -280,13 +281,16 @@ and importable in the env — confirmed `numpy 2.4.4`). networkx is **not** in a
 and break the "M1 = stdlib" contract, so all graph descriptors are computed
 directly on a numpy adjacency matrix:
 
-- **Token stream / runs:** reuse `function_word_grammar_audit`'s
-  content-word-delimited run logic (its `_tokens_lower` + the `len(run) >= 2`
-  rule at lines 153-163) over the same token set filtered to `FUNCTION_WORDS`.
-  Content words break runs (so cross-sentence spurious adjacencies are not
-  invented); runs of length < 2 contribute zero edges. This is the exact
-  segmentation the grammar audit uses, which keeps the edge-total tie (§2c.3,
-  §13 P1) exact.
+- **Token stream / runs:** reuse the shared
+  `function_word_grammar_audit.function_word_runs` primitive (its `_tokens_lower`
+  + the `len(run) >= 2` rule) over the token set filtered to `FUNCTION_WORDS`.
+  Content words break runs AND the text is split on sentence / paragraph
+  boundaries (`.`/`!`/`?` / blank line) first, so cross-sentence spurious
+  adjacencies are not invented — the tokenizer discards the terminal period, so
+  without the sentence split `... waited for. The ...` would fabricate a false
+  `for`→`the` edge (Codex P1). Runs of length < 2 contribute zero edges. Both
+  audits consume the SAME `function_word_runs` (single source of truth), which
+  keeps the edge-total tie (§2c.3, §13 P1) exact.
 - **Adjacency matrix:** a `numpy` `(n_active, n_active)` integer weight matrix
   indexed by the sorted active-node list. Pure numpy.
 - **Centrality:** in/out-degree from row/column sums (numpy); **PageRank** via
@@ -525,6 +529,17 @@ directionality and per-node-entropy summaries; those are folded too.
   and `== sum` of the FULL recomputed bigram Counter over those runs. AC-6 now
   pins both on a >20-distinct-bigram text so a mis-anchor to the truncated field
   would fail. Runs of length < 2 contribute zero edges — the identical rule.
+- **[Round-8 P1 follow-up] cross-sentence false edges + the tie made structural.**
+  The original segmentation broke runs only on content words; the tokenizer discards
+  punctuation, so `... waited for. The ...` fabricated a false `for`→`the` edge across
+  the sentence boundary. The run primitive now splits on sentence / paragraph
+  boundaries FIRST, and it was MOVED into `function_word_grammar_audit` as the single
+  `function_word_runs` function that BOTH audits import — so the grammar audit's own
+  cross-sentence false edges are removed in the same fix and the edge-total tie is now
+  structural (one function object), not two parallel implementations that could drift.
+  AC-6 is re-anchored a second time: it cross-checks `total_transitions` against the
+  GRAMMAR AUDIT's segmentation (`ga.function_word_runs`) and asserts
+  `fwan.function_word_runs is ga.function_word_runs`.
 - **[P2] band.score removed.** The bare, formula-less `[0,1]`
   "structure-concentration scalar" was the single most thresholdable artifact and
   a one-edit trust back door. It is deleted. The band is carried by `label` +

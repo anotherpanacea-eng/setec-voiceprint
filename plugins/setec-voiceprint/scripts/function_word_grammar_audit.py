@@ -107,6 +107,39 @@ def _tokens_lower(text: str) -> list[str]:
     return [w.lower() for w in _WORD_RE.findall(text)]
 
 
+# Sentence / paragraph boundaries that BREAK a function-word run. `_tokens_lower` discards
+# punctuation, so without splitting on these a terminal `.`/`!`/`?` (or a blank-line paragraph
+# break) would let the last function word of one sentence sit adjacent to the first of the next
+# (a false `for. The` cross-sentence edge). This is DISTINCT from `_SENTENCE_TERMINATORS` /
+# `_sentences()` (the prose-sentence splitter used for the pronoun-transition feature, which
+# requires an uppercase/quote start) — run-breaking must fire on every terminator regardless of
+# what follows (e.g. `waited for. the door`).
+_SENT_SPLIT_RE = re.compile(r"[.!?]+|\n{2,}")
+
+
+def function_word_runs(text: str) -> list[list[str]]:
+    """The content-word-delimited runs of `FUNCTION_WORDS` members, len >= 2.
+
+    The SINGLE SOURCE OF TRUTH for run segmentation, shared by this audit and
+    `function_word_adjacency_audit` (FWAN) so their edge totals tie exactly. The text is
+    split into SENTENCES first (`_SENT_SPLIT_RE`) so a run never crosses a sentence/paragraph
+    boundary; within each sentence a maximal run of `FUNCTION_WORDS` members is broken by a
+    content word, and runs of length < 2 (which carry no adjacency) are dropped."""
+    runs: list[list[str]] = []
+    for sentence in _SENT_SPLIT_RE.split(text or ""):
+        cur: list[str] = []
+        for tok in _tokens_lower(sentence):
+            if tok in FUNCTION_WORDS:
+                cur.append(tok)
+            else:
+                if len(cur) >= 2:
+                    runs.append(cur)
+                cur = []
+        if len(cur) >= 2:
+            runs.append(cur)
+    return runs
+
+
 def _entropy(counts: dict[str, int]) -> float:
     total = sum(counts.values())
     if total == 0:
@@ -148,23 +181,15 @@ def audit_function_word_grammar(text: str) -> dict[str, Any]:
             "reason": "empty text",
         }
 
-    # Function-word n-grams (over FUNCTION_WORDS only; non-function
-    # tokens act as boundary breaks for the n-gram extraction).
-    function_word_runs: list[list[str]] = []
-    cur_run: list[str] = []
-    for tok in n_words:
-        if tok in FUNCTION_WORDS:
-            cur_run.append(tok)
-        else:
-            if len(cur_run) >= 2:
-                function_word_runs.append(cur_run)
-            cur_run = []
-    if len(cur_run) >= 2:
-        function_word_runs.append(cur_run)
+    # Function-word n-grams (over FUNCTION_WORDS only; non-function tokens act as boundary
+    # breaks). Uses the shared sentence-bounded `function_word_runs` primitive so the run
+    # segmentation is the single source of truth for both this audit and FWAN — their edge
+    # totals tie exactly and a run never crosses a sentence boundary (no false `for. The`).
+    fw_runs = function_word_runs(text)
 
     bigram_counts: Counter[tuple[str, str]] = Counter()
     trigram_counts: Counter[tuple[str, str, str]] = Counter()
-    for run in function_word_runs:
+    for run in fw_runs:
         for i in range(len(run) - 1):
             bigram_counts[(run[i], run[i + 1])] += 1
         for i in range(len(run) - 2):

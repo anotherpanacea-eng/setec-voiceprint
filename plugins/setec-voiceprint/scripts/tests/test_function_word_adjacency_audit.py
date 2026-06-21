@@ -133,20 +133,30 @@ def test_claim_license_refuses_verdict(tmp_path):
 
 # --- AC-6 edge-total tie to the RUN SEGMENTATION (review P1) -----------------
 
-def test_edge_total_ties_to_run_segmentation_not_truncated_field():
-    runs = fwan.function_word_runs(_LONG_RUNS)
-    # (a) tie to the run-segmentation primitive directly.
-    seg_total = sum(len(run) - 1 for run in runs if len(run) >= 2)
+def test_edge_total_ties_to_grammar_audit_run_segmentation_not_truncated_field():
+    # The tie is to the GRAMMAR AUDIT's run segmentation, not FWAN's own recomputation
+    # (the prior version tied FWAN to itself, which couldn't catch a divergence).
+    # (0) structural single-source-of-truth: both audits share ONE run primitive, so the
+    #     segmentation cannot drift between them.
+    assert fwan.function_word_runs is ga.function_word_runs
+    runs = ga.function_word_runs(_LONG_RUNS)
     r = fwan.audit_function_word_adjacency(_LONG_RUNS)
-    assert r["graph"]["total_transitions"] == seg_total
-    # (b) tie to the FULL recomputed bigram Counter over those runs.
+    # (a) FWAN's edge total == the grammar audit's full bigram total over the SAME runs.
+    ga_full_total = sum(len(run) - 1 for run in runs)
+    assert r["graph"]["total_transitions"] == ga_full_total
+    # (b) and == the full recomputed directed-transition Counter over those runs.
     full = fwan._bigram_counts(runs)
     assert r["graph"]["total_transitions"] == sum(full.values())
-    # (c) prove the truncated public field would DIVERGE (so the tie is not
-    #     trivially anchored to a toy <=20-bigram text).
-    assert len(full) > 20, "fixture must have >20 distinct bigrams for P1 to bite"
+    # (c) the grammar audit's TRUNCATED public view diverges (so the tie is the
+    #     un-truncated total, not trivially anchored to a toy <=20-bigram text).
+    assert len(full) > 20, "fixture must have >20 distinct bigrams for the tie to bite"
     pub = ga.audit_function_word_grammar(_LONG_RUNS)["function_bigrams"]  # top-20 view
     assert sum(pub.values()) < r["graph"]["total_transitions"]
+    # (d) the shared segmentation excludes cross-sentence runs in the GRAMMAR AUDIT too
+    #     (not just FWAN): no fabricated `for`->`the` edge across a sentence boundary.
+    ga_runs = ga.function_word_runs("She waited for. The case sat on the shelf.")
+    assert not any(run[i] == "for" and run[i + 1] == "the"
+                   for run in ga_runs for i in range(len(run) - 1))
 
 
 def test_runs_use_len_ge_2_rule():

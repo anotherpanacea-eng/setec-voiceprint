@@ -39,7 +39,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -53,9 +52,11 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
-# Reuse the grammar audit's run-segmentation primitive + tokenizer so FWAN
-# reads the IDENTICAL transitions (single source of truth, spec 32 §2c.3).
-from function_word_grammar_audit import _tokens_lower  # noqa: E402
+# Reuse the grammar audit's run-segmentation primitive + tokenizer so FWAN reads the
+# IDENTICAL transitions (single source of truth, spec 32 §2c.3): `function_word_runs` is
+# the ONE sentence-bounded segmentation both this audit and the grammar audit consume, so
+# the edge-total tie is exact — not two parallel implementations that can drift.
+from function_word_grammar_audit import _tokens_lower, function_word_runs  # noqa: E402
 from stylometry_core import FUNCTION_WORDS  # noqa: E402
 
 TASK_SURFACE = "voice_coherence"
@@ -90,36 +91,6 @@ _THRESH_LOW_GLOBAL_ENTROPY_BITS = 4.0
 _THRESH_HIGH_PAGERANK_GINI = 0.65
 _THRESH_LOW_PER_NODE_ENTROPY_BITS = 1.5
 _THRESH_LOW_DENSITY = 0.10
-
-# Sentence / paragraph boundaries that BREAK an adjacency run. `_tokens_lower` discards punctuation,
-# so without splitting on these a terminal `.`/`!`/`?` (or a blank-line paragraph break) would let the
-# last function word of one sentence sit adjacent to the first of the next (a false `for. The` edge).
-_SENT_SPLIT_RE = re.compile(r"[.!?]+|\n{2,}")
-
-
-def function_word_runs(text: str) -> list[list[str]]:
-    """The content-word-delimited runs of `FUNCTION_WORDS` members, len >= 2.
-
-    Same `_tokens_lower` tokenizer + `len(cur_run) >= 2` rule as
-    `function_word_grammar_audit`, but the text is split into SENTENCES first so a run
-    never crosses a sentence/paragraph boundary. `_tokens_lower` discards punctuation,
-    so without this split the terminal period in `... waited for. The door ...` was
-    dropped and `for`→`the` became a false cross-sentence adjacency edge (Codex P1). A
-    maximal run is broken by a content word OR a boundary; runs of length < 2 carry no
-    adjacency and are dropped (the edge-total tie recomputes from these runs)."""
-    runs: list[list[str]] = []
-    for sentence in _SENT_SPLIT_RE.split(text or ""):
-        cur: list[str] = []
-        for tok in _tokens_lower(sentence):
-            if tok in FUNCTION_WORDS:
-                cur.append(tok)
-            else:
-                if len(cur) >= 2:
-                    runs.append(cur)
-                cur = []
-        if len(cur) >= 2:
-            runs.append(cur)
-    return runs
 
 
 def _bigram_counts(runs: list[list[str]]) -> Counter:
@@ -428,9 +399,9 @@ def audit_function_word_adjacency(text: str, *, top_k: int = DEFAULT_TOP_K,
             "node_set": "the 135 canonical FUNCTION_WORDS (variance_audit.py); content "
                         "words break runs; runs of len<2 carry no edge",
             "edge_total_tie": "total_transitions == the run-segmentation bigram total "
-                              "(same _tokens_lower + len(run)>=2 rule as "
-                              "function_word_grammar_audit); NOT the truncated "
-                              "function_bigrams top-20 view",
+                              "(the SHARED function_word_grammar_audit.function_word_runs "
+                              "primitive — one sentence-bounded segmentation, not a parallel "
+                              "copy); NOT the truncated function_bigrams top-20 view",
             "pagerank": "power-iteration on the row-normalized transition matrix, damping "
                         f"{pagerank_damping}, dangling nodes uniform; stdlib+numpy (no networkx)",
             "directed_path3": "count of length-3 directed WALKS (revisits allowed), not "
