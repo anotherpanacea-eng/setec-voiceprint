@@ -305,3 +305,30 @@ def test_model_dedup_lens_fails_loud_missing_dependency(tmp_path):
     assert env["available"] is False
     assert env["reason_category"] == "missing_dependency"
     assert "silently falling back" in env["reason"].lower()
+
+
+# --- AC-16: no silent fallback even when a noveltybench_deduper module IS importable ---------------
+
+def test_model_dedup_lens_fails_loud_on_import_success(tmp_path, monkeypatch):
+    """Planted-false-invariant guard: a module named `noveltybench_deduper` being importable must NOT
+    let --lens model-dedup fall through to the LEXICAL lens. M1 wires no real deduper, so the seam fails
+    loud on the import-SUCCESS branch too. Inject a stub module onto sys.modules and assert the model
+    lens still returns available:false (not a lexical-lens partition mislabeled `model-dedup`)."""
+    import types
+
+    stub = types.ModuleType("noveltybench_deduper")
+    monkeypatch.setitem(sys.modules, "noveltybench_deduper", stub)
+
+    # Unit: the seam helper returns a non-empty error block even though the import now succeeds.
+    err = dd._model_lens_unavailable()
+    assert err, "import-SUCCESS branch must fail loud (non-empty error), never return {} and fall through"
+    assert err["reason_category"] == "missing_dependency"
+    assert "silently falling back" in err["reason"].lower()
+
+    # End-to-end: --lens model-dedup yields available:false with NO lexical-lens results leaking through.
+    rc, env = _envelope(["--manifest", str(_manifest(tmp_path, _DIVERSE)),
+                         "--lens", "model-dedup", "--json"])
+    assert env["available"] is False
+    assert env["reason_category"] == "missing_dependency"
+    # The mislabel-as-lexical bug would surface here: a lexical partition leaking under model-dedup.
+    assert env.get("results") is None or "lens" not in (env.get("results") or {})

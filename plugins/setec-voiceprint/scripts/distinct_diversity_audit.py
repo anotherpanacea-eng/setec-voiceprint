@@ -356,12 +356,25 @@ def _claim_license() -> dict[str, str]:
 # ---- M2 seam (lazy-import + fail-loud; NOT in this build) --------------------
 
 def _model_lens_unavailable() -> dict[str, Any]:
-    """M2 --lens model-dedup: lazy-import the model deduper client INSIDE this branch; absent -> fail
-    loud missing_dependency. NEVER silently falls back to the lexical lens (a silent fallback would
-    change the meaning of the partition — paraphrase-equivalence vs near-verbatim)."""
-    try:  # pragma: no cover - exercised only when a client is actually installed
+    """M2 --lens model-dedup: this M1 build wires NO real deduper, so the model lens ALWAYS fails loud
+    here — whether or not a module named ``noveltybench_deduper`` happens to be importable. It NEVER
+    silently falls back to the lexical lens (a silent fallback would change the meaning of the partition
+    — paraphrase-equivalence vs near-verbatim).
+
+    Always returns a non-empty error block in this build (so the ``if err:`` guard in ``_run`` always
+    fires for ``model-dedup``). Both branches use ``reason_category: missing_dependency`` — the missing
+    thing is a *wired* learned/embedding deduper, absent in M1 either way — and differ only in the
+    operator-facing reason:
+
+      * ImportError: no ``noveltybench_deduper`` client is installed at all.
+      * import SUCCESS: a module by that name IS importable, but M1 has NOT wired a real learned/
+        embedding deduper to it. Returning ``{}`` (falsy) here would skip the guard and fall through to
+        the LEXICAL lens, mislabeling lexical numbers as ``model-dedup`` — exactly the planted
+        false-invariant a future M2 build (or a stub / name collision) would trip. We fail loud instead;
+        the import-SUCCESS path becomes a real wiring point only when M2 actually lands.
+    """
+    try:
         import noveltybench_deduper  # type: ignore  # noqa: F401
-        return {}  # a future build wires the real learned/embedding deduper here
     except ImportError:
         return {
             "reason": ("--lens model-dedup requires a model/embedding deduper client "
@@ -370,6 +383,16 @@ def _model_lens_unavailable() -> dict[str, Any]:
                        "different, near-verbatim question). Use --lens lexical-near-dup (default)."),
             "reason_category": "missing_dependency",
         }
+    # A noveltybench_deduper module is importable, but M1 has wired no real deduper to it. Fail loud
+    # rather than fall through to the lexical lens — see the docstring (the planted false-invariant).
+    return {
+        "reason": ("--lens model-dedup is a POC-gated M2 seam not wired in this build: a "
+                   "noveltybench_deduper module is importable, but no learned/embedding deduper has "
+                   "been connected to it, so the model lens fails loud rather than silently falling "
+                   "back to the stdlib lexical lens (which answers a different, near-verbatim "
+                   "question). Use --lens lexical-near-dup (default)."),
+        "reason_category": "missing_dependency",
+    }
 
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
