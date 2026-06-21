@@ -194,7 +194,14 @@ def vectorize(
         # baseline corpus, or the band would be a self-comparison.
         warnings.extend(_held_out_warnings(target_path, baseline_features))
         # Shared axis list fixed by the baseline (DEFAULT_LIMITS caps apply here on purpose).
-        selected = sc.select_feature_names(baseline_features)
+        # select_feature_names returns each non-fixed family's names in most_common(limit)
+        # (count-DESCENDING) order; the cap still picks WHICH top-N names, but we re-sort each
+        # family's list by NAME so the emitted axis order matches single mode and the documented
+        # family-then-name ordering. Sorting changes only the display/emit order, not membership.
+        selected = {
+            family: sorted(names)
+            for family, names in sc.select_feature_names(baseline_features).items()
+        }
         warnings.extend(
             sc.comparison_warnings(target_summary, baseline_entries, baseline_features)
         )

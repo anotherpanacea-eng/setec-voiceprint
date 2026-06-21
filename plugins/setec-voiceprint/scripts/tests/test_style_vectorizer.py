@@ -189,6 +189,29 @@ def test_single_mode_omits_baseline_reference(tmp_path):
     assert "baseline_reference" not in env["results"]
 
 
+# --- AC 2 (baseline mode): the documented family-then-name SORTED ordering ---
+# select_feature_names hands back non-fixed families in most_common (count-descending)
+# order; this asserts the surface re-sorts each axis list by name so vector_flat is dim-sorted
+# and the emitted ordering literals are TRUE. Would fail if the count-descending order leaked.
+def test_baseline_mode_ordering_sorted(tmp_path):
+    t = _write_target(tmp_path)
+    d = _write_baseline(tmp_path)
+    _, env = _envelope([str(t), "--baseline-dir", str(d), "--json"])
+    r = env["results"]
+    assert r["mode"] == "baseline_relative"
+    # vector_flat is dim-sorted (AC 2), even though the cap is count-driven.
+    dims = [row["dim"] for row in r["vector_flat"]]
+    assert dims == sorted(dims)
+    # baseline_reference rows cover the same dim set (ordering there is |z|-desc by design).
+    assert {row["dim"] for row in r["baseline_reference"]["per_dimension"]} == set(dims)
+    # every family's names list is name-sorted, including the capped non-fixed families
+    # (function_words / char_ngrams_*) that come from most_common.
+    for fam, blk in r["feature_space"]["families"].items():
+        assert blk["names"] == sorted(blk["names"]), f"{fam} names not name-sorted"
+    # a non-fixed, capped family is actually present (so the assertion above isn't vacuous).
+    assert "function_words" in r["feature_space"]["families"]
+
+
 # --- AC 7: no-verdict recursive walk ----------------------------------------
 
 _VERDICT_KEYS = {
