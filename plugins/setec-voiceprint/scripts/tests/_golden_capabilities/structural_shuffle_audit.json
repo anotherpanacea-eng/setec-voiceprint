@@ -1,0 +1,65 @@
+{
+  "id": "structural_shuffle_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/structural_shuffle_audit.py",
+  "surface": "discrimination_structural_shuffle",
+  "status": "heuristic",
+  "handoff": "experimental",
+  "consumers": [],
+  "family": "shuffle-perplexity",
+  "purpose": "Perplexity shift under sentence/word shuffling (Luminol-AIDetect, arXiv:2604.25860 [UNVERIFIED 2026 preprint]). Scores a target and two shuffled variants (sentence-permuted, word-permuted) under a single causal LM and reports 5 features describing the perplexity jump (ppl_sum, ppl_diff, ppl_ratio, ppl_log_ratio, ppl_pct_change). A larger jump means the text's predictability depends MORE on the ordering of its parts \u2014 a candidate heuristic signal for human authorship. A structural, order-dependence axis orthogonal in mechanism to Binoculars' cross-perplexity ratio, Fast-DetectGPT's curvature, and DivEye's surprisal moments (those score the natural ordering; this scores permuted variants). Heuristic: the preprint is UNVERIFIED and lit-fiction calibration is empirical, not assumed \u2014 no FPR/AUC number is asserted as fact.\n",
+  "use_when": [
+    "You want a discrimination-evidence signal on a different surface than the natural-ordering probability family (Binoculars / curvature / surprisal moments)",
+    "You're hedging against synonym/paraphrase humanizers (word-level substitution does not change order-dependence structure \u2014 robustness is an open empirical claim, not assumed)",
+    "Target is English prose \u2265 50 words"
+  ],
+  "do_not_use_when": [
+    "You need a binary AI/human verdict \u2014 ships uncalibrated, heuristic, no threshold",
+    "The author is ESL / non-native English \u2014 non-idiomatic, less order-dependent prose can show a small perplexity delta and FALSELY resemble the AI profile (the GECScore failure mode)",
+    "The register is literary fiction and you expect the paper's news-domain FPR \u2014 lit-fiction (high human burstiness, long deliberate sentences) calibration is an EMPIRICAL question; the 0.001 FPR claim is UNVERIFIED and not carried as fact",
+    "The text may be in the model's training set (memorization biases the perplexities)",
+    "You can't install the surprisal tier (transformers + torch)"
+  ],
+  "inputs": {
+    "target": "prose text file (UTF-8)"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      ".structural_shuffle.json",
+      ".structural_shuffle.md"
+    ]
+  },
+  "compute": {
+    "tier": "surprisal",
+    "cost_note": "GPT-Neo-2.7B (M2 scorer), ~5.4 GB bf16; 3 forward passes per window (original + sentence-shuffled + word-shuffled); CPU-first verify on ROCm before GPU. M1 is model-free (injected perplexities) and CPU-only.",
+    "length_floor_words": 50
+  },
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "dependencies": {
+    "python": [
+      "transformers",
+      "torch",
+      "spacy"
+    ],
+    "python_optional": [
+      "en_core_web_sm"
+    ]
+  },
+  "examples": [
+    {
+      "description": "Score with the M2 scorer (gpt_neo_2_7b added behind the CPU-first gate)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/structural_shuffle_audit.py target.txt --scorer gpt_neo_2_7b --json"
+    },
+    {
+      "description": "On-rig fallback scorer + reproducible seed",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/structural_shuffle_audit.py target.txt --scorer gpt2_medium --seed 7 --json"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "specs/32-structural-shuffle-perplexity.md"
+  ]
+}
