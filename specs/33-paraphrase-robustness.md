@@ -158,6 +158,13 @@ provenance from `SMOOTHED_DIRECTION` and the binoculars band) and orients each d
 scores so the WMW-U AUC is the discriminative separation. `test_sign_direction_pinned` asserts
 the map and the orientation so a future edit that flips a sign fails loudly.
 
+The guard is **total**, not limited to the eight names above. `_orient` (and every scoring path
+through it — `oriented_auc` / `tpr_at_fpr_budgets`) **raises** on any detector with no registered
+direction; `run_report` also refuses up front, naming all unregistered detectors. A new detector
+(e.g. the optional `lrr` rank-space column in §6) therefore cannot be scored un-oriented before
+its machine-vs-human sign is pinned — the M2 detector seam can never report a silently inverted
+AUC. `test_unregistered_detector_fails_loud` pins the raise.
+
 ### 3.3 Injectable `Paraphraser` Protocol (REVIEW-3 folded)
 
 ```python

@@ -192,6 +192,53 @@ def test_sign_direction_pinned():
     assert pr._orient("yules_k", [1.0, 2.0]) == [1.0, 2.0]
 
 
+def test_unregistered_detector_fails_loud():
+    # The silent-inversion guard must be TOTAL, not limited to the 8 pinned
+    # names. The spec lists `lrr` as an optional M2 detector column (§6,
+    # 'machine lower'); it is deliberately NOT in DETECTOR_DIRECTION yet. An
+    # operator scoring it (or any future detector) before pinning its sign
+    # must hit a loud failure, never a silently un-oriented (inverted) AUC.
+    assert "lrr" not in pr.DETECTOR_DIRECTION
+
+    # _orient itself raises (the lowest-level chokepoint).
+    with pytest.raises(ValueError, match="silent-inversion guard"):
+        pr._orient("lrr", [0.1, 0.2])
+
+    # ...so every scoring path that routes through it raises too.
+    with pytest.raises(ValueError, match="silent-inversion guard"):
+        pr.oriented_auc("lrr", [0.1, 0.2, 0.3], [0.8, 0.9, 1.0])
+    with pytest.raises(ValueError, match="silent-inversion guard"):
+        pr.tpr_at_fpr_budgets("lrr", [0.1, 0.2], [0.8, 0.9])
+
+    # The orchestration boundary names ALL unregistered detectors up front.
+    with pytest.raises(ValueError, match="no registered sign"):
+        pr.run_report(
+            paraphraser=_RecordingParaphraser(),
+            scorer=_ConstantScorer(),
+            detectors=["lrr"],
+            machine_texts=["m one", "m two"],
+            human_texts=["h a", "h b", "h c"],
+            rungs=1,
+        )
+
+    # And the injected-scores entry point inherits the guard.
+    bad_payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["lrr"],
+        "n_rungs": 1,
+        "machine_texts": ["m one"],
+        "human_texts": ["h a", "h b"],
+        "scores": {
+            "lrr": {
+                "machine": [[0.1], [0.2]],
+                "human": [[0.8, 0.9], [0.7, 0.6]],
+            }
+        },
+    }
+    with pytest.raises(ValueError, match="no registered sign"):
+        pr.run_from_injected_scores(bad_payload)
+
+
 def test_corruption_guard_skips_short_paraphrase():
     class _Collapser:
         label = "collapser"

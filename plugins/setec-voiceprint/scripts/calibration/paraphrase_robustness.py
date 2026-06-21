@@ -242,9 +242,24 @@ class StdlibProxyParaphraser:
 
 def _orient(detector: str, scores: list[float]) -> list[float]:
     """Negate scores for a 'lower-is-machine' detector so the WMW-U AUC is
-    the discriminative ``P(machine > human)`` separation. Unknown detectors
-    are left as-is (caller is responsible for registering a direction)."""
-    if DETECTOR_DIRECTION.get(detector) == "lower":
+    the discriminative ``P(machine > human)`` separation.
+
+    A detector with NO registered direction FAILS LOUD — it is never scored
+    un-oriented. Silent sign-inversion is the detection family's shared
+    failure mode (the whole reason this module pins ``DETECTOR_DIRECTION``);
+    defaulting an unregistered detector to the 'higher' branch would report a
+    fully inverted AUC with no warning. The spec lists ``lrr`` as an optional
+    M2 detector column (§6, 'machine lower'), so an M2 operator injecting it
+    (or any future detector) before pinning its sign must hit this guard, not
+    a flipped reading."""
+    direction = DETECTOR_DIRECTION.get(detector)
+    if direction is None:
+        raise ValueError(
+            f"detector {detector!r} has no DETECTOR_DIRECTION entry; register "
+            f"its machine-vs-human sign before scoring (silent-inversion "
+            f"guard). Known detectors: {sorted(DETECTOR_DIRECTION)}"
+        )
+    if direction == "lower":
         return [-s for s in scores]
     return list(scores)
 
@@ -358,6 +373,18 @@ def run_report(
     the cell carries ``auc`` / ``tpr_at_fpr05`` / ``tpr_at_fpr10`` and the Δ
     from rung 0. NO aggregate scalar is computed."""
     warns: list[str] = list(warnings) if warnings else []
+
+    # Silent-inversion guard at the orchestration boundary: refuse to score
+    # any detector whose machine-vs-human sign is not pinned. _orient() raises
+    # per-detector too (total coverage), but failing up front names ALL
+    # unregistered detectors at once with a clear message before any scoring.
+    unknown = [d for d in detectors if d not in DETECTOR_DIRECTION]
+    if unknown:
+        raise ValueError(
+            f"no registered sign for detector(s) {unknown}; add to "
+            f"DETECTOR_DIRECTION before scoring (silent-inversion guard). "
+            f"Known detectors: {sorted(DETECTOR_DIRECTION)}"
+        )
 
     # Rung 0: baseline (unattacked).
     rung0_scores = _score_rung(scorer, detectors, machine_texts, human_texts)
