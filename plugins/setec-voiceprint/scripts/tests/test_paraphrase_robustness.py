@@ -394,3 +394,121 @@ def test_n_rungs_one_still_runs_and_labels_correctly():
     assert results["n_rungs"] == 1
     assert len(results["per_rung"]) == 1
     assert results["per_rung"][0]["rung"] == 1
+
+
+# ------------------ score-count vs corpus-size guard ------------------ #
+
+
+def test_injected_score_count_must_match_machine_corpus_size():
+    """The Codex round-10 P1 repro: a payload may declare a large machine
+    corpus but ship a single score per machine rung. Before the fix the rung
+    LIST count check passed (n_rungs + 1 lists) and the report copied
+    ``n_machine_windows = len(machine_texts)`` straight from the corpus — so it
+    advertised n_machine_windows:100 while AUC/TPR were computed from ONE
+    observation. The reported window count and the windows the metrics consumed
+    must never diverge: refuse on a count/corpus-size mismatch.
+    """
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": 1,
+        # 100 declared machine windows...
+        "machine_texts": [f"m window {i}" for i in range(100)],
+        "human_texts": ["h a", "h b", "h c"],
+        "scores": {
+            "yules_k": {
+                # ...but one machine score per rung. Correct LIST count
+                # (n_rungs + 1 == 2), wrong INNER length (1, not 100).
+                "machine": [[1.0], [1.5]],
+                "human": [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]],
+            },
+        },
+    }
+    with pytest.raises(ValueError, match=r"one per machine corpus window"):
+        pr.run_from_injected_scores(payload)
+
+
+def test_injected_score_count_must_match_human_corpus_size():
+    """Sibling of the machine-side guard: a human rung list shorter than
+    len(human_texts) must also be refused (n_human_windows would over-report).
+    """
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": 1,
+        "machine_texts": ["m one", "m two"],
+        "human_texts": ["h a", "h b", "h c", "h d"],
+        "scores": {
+            "yules_k": {
+                "machine": [[1.0, 2.0], [1.5, 2.5]],
+                # 4 declared human windows, 1 score per rung.
+                "human": [[0.0], [0.0]],
+            },
+        },
+    }
+    with pytest.raises(ValueError, match=r"one per human corpus window"):
+        pr.run_from_injected_scores(payload)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_injected_non_finite_score_refused(bad):
+    """Non-finite score entries (NaN / +Inf / -Inf) must be refused before the
+    AUC/TPR math silently propagates them into the ranking."""
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": 1,
+        "machine_texts": ["m one", "m two"],
+        "human_texts": ["h a", "h b"],
+        "scores": {
+            "yules_k": {
+                "machine": [[1.0, bad], [1.5, 2.5]],
+                "human": [[0.0, 0.0], [0.0, 0.0]],
+            },
+        },
+    }
+    with pytest.raises(ValueError, match=r"must be finite"):
+        pr.run_from_injected_scores(payload)
+
+
+@pytest.mark.parametrize("bad", ["1.0", None, True])
+def test_injected_non_numeric_score_refused(bad):
+    """Non-numeric entries — including a stray bool, which is an int subclass
+    and would otherwise masquerade as 1.0/0.0 — must be refused as scores."""
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": 1,
+        "machine_texts": ["m one", "m two"],
+        "human_texts": ["h a", "h b"],
+        "scores": {
+            "yules_k": {
+                "machine": [[1.0, bad], [1.5, 2.5]],
+                "human": [[0.0, 0.0], [0.0, 0.0]],
+            },
+        },
+    }
+    with pytest.raises(ValueError, match=r"must be a finite number"):
+        pr.run_from_injected_scores(payload)
+
+
+def test_injected_matching_score_counts_run_and_report_true_window_counts():
+    """Guardrail: a payload whose inner score lists match the corpus sizes
+    runs end to end and reports n_machine_windows / n_human_windows equal to
+    the number of scores the metrics actually consumed."""
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": 1,
+        "machine_texts": ["m one", "m two", "m three"],
+        "human_texts": ["h a", "h b"],
+        "scores": {
+            "yules_k": {
+                "machine": [[1.0, 2.0, 3.0], [1.5, 2.5, 3.5]],
+                "human": [[0.0, 0.0], [0.0, 0.0]],
+            },
+        },
+    }
+    results = pr.run_from_injected_scores(payload)
+    assert results["n_machine_windows"] == 3
+    assert results["n_human_windows"] == 2

@@ -69,6 +69,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
@@ -571,7 +572,10 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
     # Validate the injected shape up front so a malformed table fails loudly
     # with a clear message instead of an IndexError deep in scoring. Each
     # detector needs one machine list AND one human list per rung 0..n_rungs
-    # (i.e. n_rungs + 1 lists on each side).
+    # (i.e. n_rungs + 1 lists on each side), and every one of those inner
+    # lists must carry exactly one score per corpus window (len(machine_texts)
+    # on the machine side, len(human_texts) on the human side) with every
+    # entry a finite number.
     #
     # Reject n_rungs < 1 here too (run_report enforces it again): otherwise
     # n_rungs:0 satisfied the per-side count check (expected_lists == 1) but
@@ -586,6 +590,14 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
             f"least one paraphrase rung. Rung 0 is the unattacked baseline."
         )
     expected_lists = n_rungs + 1
+    # Bind each inner score list to its corpus size. The report copies
+    # ``n_machine_windows = len(machine_texts)`` straight from the corpus, so a
+    # payload that declares 100 machine windows but ships one score per rung
+    # would advertise n_machine_windows:100 while the AUC/TPR were computed from
+    # a single observation. Pin len(inner) to the corpus length per side, and
+    # reject non-numeric / non-finite entries, so the reported window count and
+    # the windows the metrics actually consumed can never diverge.
+    expected_len = {"machine": len(machine_texts), "human": len(human_texts)}
     for det in detectors:
         if det not in scores:
             raise ValueError(f"injected scores missing detector {det!r}")
@@ -597,6 +609,28 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
                     f"{expected_lists} lists (one per rung 0..{n_rungs}); "
                     f"got {len(side_lists) if isinstance(side_lists, list) else type(side_lists).__name__}"
                 )
+            want = expected_len[side]
+            for rung, rung_scores in enumerate(side_lists):
+                if not isinstance(rung_scores, list) or len(rung_scores) != want:
+                    raise ValueError(
+                        f"injected scores[{det!r}][{side!r}][rung {rung}] must "
+                        f"hold {want} scores (one per {side} corpus window); got "
+                        f"{len(rung_scores) if isinstance(rung_scores, list) else type(rung_scores).__name__}"
+                    )
+                for pos, value in enumerate(rung_scores):
+                    # bool is an int subclass; treat True/False as non-numeric so
+                    # a stray flag can't masquerade as a 1.0/0.0 score.
+                    if isinstance(value, bool) or not isinstance(value, (int, float)):
+                        raise ValueError(
+                            f"injected scores[{det!r}][{side!r}][rung {rung}]"
+                            f"[{pos}] must be a finite number; got "
+                            f"{value!r} ({type(value).__name__})"
+                        )
+                    if not math.isfinite(value):
+                        raise ValueError(
+                            f"injected scores[{det!r}][{side!r}][rung {rung}]"
+                            f"[{pos}] must be finite; got {value!r}"
+                        )
 
     scorer = _InjectedScorer(scores)
     paraphraser = StdlibProxyParaphraser()
