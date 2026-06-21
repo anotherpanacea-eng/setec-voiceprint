@@ -654,4 +654,5 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 - `references/calibration-findings-2026-05-10.md` — the EditLens v1 empirical anchor for six variance signals.
 - `scripts/calibration/PROVENANCE.md` — Stylometry-to-the-people policy statement.
 - `internal/SPEC_calibration_status_retier.md` — the v1.66.0 retier spec this glossary reflects.
+- `specs/32-model-family-attribution.md` — the `model_family_attribution` surface: a raw, abstention-gated per-family similarity *ranking* over the standardized `variance_audit` named features (burstiness_B / MATTR / MTLD / function-word ratio / mdd). It adds no new per-text *signal* to this inventory — it re-aggregates existing ones into a family-relative, no-verdict advisory ranking — so the totals above are unchanged.
 - External primer (in development; Glass-Box Stylometry Sequence) — long-form pedagogy.
