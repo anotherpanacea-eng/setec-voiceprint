@@ -45,7 +45,7 @@ _LOG2E = 1.0 / math.log(2.0)
 def _single_window_fn(_text: str):
     log_probs_nats = [
         [-0.1, -2.0, -3.0, -4.0],  # pos 0: actual token 1 -> rank 1
-        [-3.0, -2.0, -0.5, -4.0],  # pos 1: actual token 2 -> rank 0 (inf case)
+        [-3.0, -2.0, -0.5, -4.0],  # pos 1: actual token 2 -> rank 0 (num-only)
         [-0.5, -1.0, -2.0, -0.5],  # pos 2: tie at top, actual token 3 -> rank 1
     ]
     token_ids = [0, 1, 2, 3]

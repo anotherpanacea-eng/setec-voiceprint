@@ -288,7 +288,7 @@ def audit_rank_space(
         ) from exc
 
     agg = aggregate_rank_signals(
-        series["log_rank_series"], series["lrr_series"], surprisal_bits
+        series["log_rank_series"], series["surprisal_nats_series"], surprisal_bits
     )
 
     band = _band(
@@ -313,16 +313,16 @@ def audit_rank_space(
         "log_rank_mean": agg["log_rank_mean"],
         "log_rank_sd": agg["log_rank_sd"],
         "log_rank_acf1": agg["log_rank_acf1"],
-        "lrr_excluded_positions": agg["lrr_excluded_positions"],
+        "log_rank_zero_positions": agg["log_rank_zero_positions"],
         "n_positions": agg["n_positions"],
         "scorer_backend": backend_block,
         "band": band,
         "assumptions": {
             "method": (
-                "DetectLLM LRR = mean(surprisal_nats / log(rank + 1)) over the "
-                "sequence, with per-token log-rank from an argsort of the "
-                "scorer's per-position vocab log-prob distribution "
-                "(arXiv:2306.05540)"
+                "DetectLLM LRR = sum(surprisal_nats) / sum(log(rank + 1)) over "
+                "the sequence (a ratio of sequence sums, NOT a mean of per-token "
+                "ratios), with per-token log-rank from an argsort of the scorer's "
+                "per-position vocab log-prob distribution (arXiv:2306.05540)"
             ),
             "sign_direction": (
                 "rank 0 = most-probable token (descending sort); log_rank(0) = "
@@ -330,12 +330,14 @@ def audit_rank_space(
                 "family's shared silent failure mode — the descending sort and "
                 "the rank-0 -> 0 convention are pinned in test_rank_space_signals"
             ),
-            "rank0_inf_convention": (
-                "lrr_t = surprisal_nats / log(rank + 1) is undefined at rank 0 "
-                "(log(1) = 0); those positions are emitted as inf in the series "
-                "and EXCLUDED from the lrr mean (count in "
-                "lrr_excluded_positions). The aggregate scalars are always "
-                "finite — no inf reaches the envelope"
+            "rank0_convention": (
+                "LRR is a ratio of sequence sums: a rank-0 (most-probable) token "
+                "contributes its surprisal to the numerator and 0 (= log(1)) to "
+                "the denominator — it is NOT dropped. lrr is None only when the "
+                "whole-sequence denominator sum(log(rank + 1)) is 0 (every scored "
+                "token is rank 0), a refusal not a fabricated value. "
+                "log_rank_zero_positions records the rank-0 count. The aggregate "
+                "scalars are always finite-or-None — no inf reaches the envelope"
             ),
             "esl_non_native_caveat": (
                 "log-rank is HIGHER (token less predictable) for lexically "
@@ -439,10 +441,12 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "weaker-than-human generator inverts the polarity (generator-"
             "strength inversion). Direction stability across registers is the "
             "M2 empirical question, unverified at M1.",
-            "rank-0 (most-probable token) positions give an undefined LRR "
-            "(division by log(1) = 0); they are excluded from the LRR mean "
-            "(lrr_excluded_positions records the count). No inf reaches the "
-            "envelope.",
+            "LRR = sum(surprisal_nats) / sum(log(rank + 1)) is a ratio of "
+            "sequence sums; a rank-0 (most-probable) token feeds the numerator "
+            "but adds 0 to the denominator (it is NOT dropped). LRR is undefined "
+            "(None) only when every scored token is rank 0, i.e. the sequence "
+            "denominator is 0 (log_rank_zero_positions records the count). No inf "
+            "reaches the envelope.",
             "The arXiv:2306.05540 AUC lifts (+1.75 / +3.9) are WritingPrompts-"
             "specific and a LEAD, not a target; no paper number is asserted as "
             "fact here.",
@@ -502,7 +506,8 @@ def render_markdown(envelope: dict[str, Any]) -> str:
         f"- **Scorer:** `{backend.get('model_id')}` "
         f"(dtype: {backend.get('dtype')}, {backend.get('source')})",
         f"- **Positions scored:** {results.get('n_positions')} "
-        f"(rank-0 excluded from LRR: {results.get('lrr_excluded_positions')})",
+        f"(rank-0 positions, in LRR numerator only: "
+        f"{results.get('log_rank_zero_positions')})",
         "",
         "## Result",
         "",

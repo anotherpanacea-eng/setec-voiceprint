@@ -31,20 +31,31 @@ downstream signal; this module sorts descending explicitly (pure-Python
 here is the shared failure mode of the whole surprisal/rank family, so it is
 pinned in a test rather than left to prose.
 
-THE rank-0 → inf CONVENTION (pinned, stable across runs)
-========================================================
-``log_rank_t = log(rank_t + 1)`` — the DetectLLM add-1 convention (per
-2306.05540), so the most-probable token (rank 0) gives ``log(1) = 0.0``, a
-*finite* value (good for the log-rank series). But ``lrr_t = surprisal_nats_t /
-log_rank_t`` then divides by 0 at rank 0, which is mathematically undefined. The
-fixed convention: **``lrr_t`` is emitted as ``math.inf`` at rank-0 positions, and
-those positions are EXCLUDED from the ``lrr`` mean** (``aggregate_rank_signals``
-filters non-finite ``lrr_series`` entries before reducing). The count excluded is
-returned as ``lrr_excluded_positions`` so a caller never silently averages over a
-different denominator than it thinks. A raw ``inf`` must never reach the output
-envelope's ``results`` (the R4 finiteness gate rejects it), so the *aggregate*
-scalars are always finite; the per-token ``lrr_series`` (which may carry ``inf``)
-is a helper return value, not an envelope field.
+LRR IS A RATIO OF SEQUENCE AGGREGATES, NOT A MEAN OF PER-TOKEN RATIOS
+=====================================================================
+DetectLLM (2306.05540) defines LRR as the ratio of two sequence sums::
+
+    LRR = -sum_t log p(x_t) / sum_t log r(x_t)
+        =  sum_t surprisal_nats_t / sum_t log(rank_t + 1)
+
+i.e. the (negated) summed log-likelihood over the summed log-rank — equivalently
+the ratio of the two per-token MEANS, since the position count cancels. This is
+NOT the mean of the per-token ratios ``surprisal_nats_t / log_rank_t``; those two
+operations are not equal in general (a mean of ratios is not the ratio of means).
+
+``log_rank_t = log(rank_t + 1)`` is the DetectLLM add-1 convention, so the
+most-probable token (rank 0) gives ``log(1) = 0.0``. A rank-0 token therefore
+contributes its surprisal to the NUMERATOR but ``0`` to the DENOMINATOR — it is
+NOT dropped from the statistic. (Dropping it, or averaging per-token ratios where
+a rank-0 position is undefined and excluded, is the bug this module had: it
+silently re-weighted the numerator and removed top-ranked tokens entirely.)
+
+The only degenerate case is when the **denominator** — ``sum_t log(rank_t + 1)``
+over the whole sequence — is ``0`` (every scored token is rank 0). Then the ratio
+is undefined and ``aggregate_rank_signals`` returns ``lrr = None`` (a refusal, not
+a fabricated value). ``log_rank_zero_positions`` reports the count of rank-0
+positions for transparency. The ``lrr`` scalar is always finite-or-``None`` (the
+R4 finiteness gate rejects ``inf`` / ``NaN``).
 
 This module imports NOTHING from torch / transformers / numpy / scipy, and
 nothing from the fitness / calibration / binoculars / validation / loop surfaces.
@@ -149,17 +160,21 @@ def rank_series_from_distributions(
     - ``token_ids``: full tokenized sequence, length ``N``.
     - ``surprisal_bits``: per-token surprisal series in bits, length ``N - 1``.
 
-    Returns a dict with two equal-length (``N - 1``) series::
+    Returns a dict with two equal-length (``N - 1``) series — the two SUMMABLE
+    components of the DetectLLM LRR ratio (numerator and denominator terms)::
 
         {
-          "log_rank_series": [log(rank_t + 1), ...],   # finite; rank 0 -> 0.0
-          "lrr_series":      [surprisal_nats_t / log_rank_t, ...],  # inf at rank 0
+          "log_rank_series":      [log(rank_t + 1), ...],   # finite; rank 0 -> 0.0
+          "surprisal_nats_series": [-log p(x_t), ...],       # finite; >= 0
         }
 
-    Sort direction is DESCENDING (rank 0 = highest log-prob). ``lrr_series[t]``
-    is ``math.inf`` exactly when ``rank_t == 0`` (``log(1) == 0`` in the
-    denominator); ``aggregate_rank_signals`` excludes those positions from the
-    ``lrr`` mean. See the module docstring for the full convention.
+    LRR is ``sum(surprisal_nats_series) / sum(log_rank_series)`` (a ratio of
+    sequence sums, computed in ``aggregate_rank_signals``) — NOT a mean of the
+    per-token ratios, and NO position is dropped from the numerator. A rank-0
+    token contributes its surprisal to the numerator and ``0`` to the denominator.
+    See the module docstring for the convention.
+
+    Sort direction is DESCENDING (rank 0 = highest log-prob).
 
     Raises ``ValueError`` if the input lengths are inconsistent (a tokenization
     or wiring bug the caller must see, not paper over).
@@ -178,29 +193,27 @@ def rank_series_from_distributions(
         )
 
     log_rank_series: list[float] = []
-    lrr_series: list[float] = []
+    surprisal_nats_series: list[float] = []
     for t in range(n_positions):
         actual_token = token_ids[t + 1]
         rank_t = _rank_of_token(log_probs_nats[t], actual_token)
         log_rank_t = math.log(rank_t + 1)  # add-1 convention; rank 0 -> 0.0
         log_rank_series.append(log_rank_t)
-        surprisal_nats_t = surprisal_bits[t] / _LOG2E
-        if log_rank_t == 0.0:
-            # rank 0 (most-probable token): surprisal_nats / log(1) is
-            # undefined. Emit inf per the pinned convention; the aggregate
-            # excludes it from the LRR mean. A surprisal of exactly 0 at a
-            # rank-0 position (0/0) is also emitted as inf for a stable,
-            # documented sentinel rather than a NaN that the R4 gate rejects.
-            lrr_series.append(math.inf)
-        else:
-            lrr_series.append(surprisal_nats_t / log_rank_t)
+        # Per-token surprisal in nats = -log p(actual). A rank-0 token keeps its
+        # surprisal here (it feeds the LRR numerator); only the denominator gets
+        # its 0 from log(rank + 1). The LRR ratio is formed over the SUMS in
+        # aggregate_rank_signals — no per-token ratio, no dropped token.
+        surprisal_nats_series.append(surprisal_bits[t] / _LOG2E)
 
-    return {"log_rank_series": log_rank_series, "lrr_series": lrr_series}
+    return {
+        "log_rank_series": log_rank_series,
+        "surprisal_nats_series": surprisal_nats_series,
+    }
 
 
 def aggregate_rank_signals(
     log_rank_series: list[float],
-    lrr_series: list[float],
+    surprisal_nats_series: list[float],
     surprisal_bits: list[float],
 ) -> dict[str, float | int | None]:
     """Aggregate the per-token rank series into scalar detection signals.
@@ -212,29 +225,42 @@ def aggregate_rank_signals(
           "log_rank_mean":          mean of log_rank_series,
           "log_rank_sd":            population SD (None if < 2 positions),
           "log_rank_acf1":          lag-1 ACF (None if < 3 positions / constant),
-          "lrr":                    mean of the FINITE lrr_series entries
-                                    (the DetectLLM LRR statistic),
-          "lrr_excluded_positions": count of non-finite (rank-0) lrr positions
-                                    excluded from the lrr mean,
+          "lrr":                    sum(surprisal_nats_series) /
+                                    sum(log_rank_series) — the DetectLLM LRR
+                                    statistic (ratio of sequence sums),
+          "log_rank_zero_positions": count of rank-0 (log_rank == 0) positions —
+                                    they feed the LRR numerator but add 0 to its
+                                    denominator (transparency only),
           "n_positions":            len(log_rank_series),
         }
 
-    The ``lrr`` mean is taken over FINITE ``lrr_series`` entries only: rank-0
-    positions contribute ``inf`` (see the module docstring) and are excluded.
-    When every position is rank 0 (a degenerate all-most-probable sequence) the
-    finite set is empty and ``lrr`` is ``None`` — a refusal, not a fabricated 0.
+    The ``lrr`` statistic is the RATIO OF SEQUENCE SUMS — total surprisal (nats)
+    over total log-rank — exactly as DetectLLM (2306.05540) defines it::
+
+        LRR = sum_t surprisal_nats_t / sum_t log(rank_t + 1)
+
+    This is NOT the mean of the per-token ratios, and NO position is dropped from
+    the numerator: a rank-0 (most-probable) token contributes its surprisal to
+    the numerator and ``0`` to the denominator. ``lrr`` is ``None`` ONLY when the
+    DENOMINATOR — ``sum_t log(rank_t + 1)`` over the whole sequence — is ``0``
+    (every scored token is rank 0): the ratio is then undefined, so the surface
+    refuses rather than fabricating a value.
     ``surprisal_bits`` is accepted for signature parity with the upstream tuple
     (and so a future moment can be added) but is not currently reduced here.
     """
     n_positions = len(log_rank_series)
-    finite_lrr = [x for x in lrr_series if math.isfinite(x)]
-    excluded = len(lrr_series) - len(finite_lrr)
+    log_rank_sum = sum(log_rank_series)
+    surprisal_nats_sum = sum(surprisal_nats_series)
+    log_rank_zero_positions = sum(1 for x in log_rank_series if x == 0.0)
+    # LRR = total surprisal / total log-rank. None only when the SEQUENCE
+    # denominator is zero (every token rank 0) — never a per-token guard.
+    lrr = surprisal_nats_sum / log_rank_sum if log_rank_sum != 0.0 else None
     return {
         "log_rank_mean": _mean(log_rank_series) if log_rank_series else None,
         "log_rank_sd": _pstdev(log_rank_series),
         "log_rank_acf1": _acf_lag1(log_rank_series),
-        "lrr": _mean(finite_lrr) if finite_lrr else None,
-        "lrr_excluded_positions": excluded,
+        "lrr": lrr,
+        "log_rank_zero_positions": log_rank_zero_positions,
         "n_positions": n_positions,
     }
 
