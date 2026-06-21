@@ -561,6 +561,42 @@ def test_capability_entry_present_and_golden():
     assert entries["pan_replay"]["surface"] == "validation"
 
 
+def test_use_when_has_no_doubled_apostrophe():
+    """Regression (preflight #240): the use_when / do_not_use_when scalars must
+    parse to single apostrophes, not the literal doubled `''`.
+
+    In PLAIN (unquoted) YAML a `''` is NOT un-escaped — only single-quoted
+    scalars collapse `''` -> `'`. use_when[0] was authored unquoted with
+    `editor''s` / `tool''s`, so the loader returned doubled apostrophes that
+    leaked verbatim into capabilities.py's rendered "## Use when" listing. The
+    golden masked it (it was generated FROM the buggy loader), so this asserts a
+    PROPERTY of the parsed text rather than re-comparing to the golden.
+
+    FAILS against origin/feat/raid-dipper-robustness pre-fix; passes after the
+    YAML scalar is single-quoted (so `''` -> `'`) and the golden re-blessed.
+    """
+    pytest.importorskip("yaml") if pytest is not None else __import__("yaml")
+    from capabilities import load_manifest  # type: ignore
+
+    entries = {e["id"]: e for e in load_manifest().get("entries", [])}
+    entry = entries["paraphrase_ladder"]
+
+    # Guard the WHOLE prose surface, not just the named line: every operator-
+    # facing free-text field must be free of the doubled-apostrophe artifact.
+    for field in ("purpose", "use_when", "do_not_use_when"):
+        value = entry[field]
+        items = value if isinstance(value, list) else [value]
+        for i, text in enumerate(items):
+            assert "''" not in text, (
+                f"{field}[{i}] carries a literal doubled apostrophe "
+                f"(plain-scalar YAML does not un-escape ''): {text!r}"
+            )
+
+    # Positive check: the intended possessives render correctly.
+    assert "editor's successive passes" in entry["use_when"][0]
+    assert "humanizer tool's output" in entry["use_when"][0]
+
+
 def test_no_new_surface_label_row():
     """paraphrase_ladder is on the EXISTING validation surface — it adds NO
     claim_license_surfaces fragment (the bijection test would break)."""

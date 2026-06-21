@@ -18,9 +18,9 @@ entries:
 
     '
   use_when:
-  - You have a graded ladder of paraphrase passes (an editor''s successive passes,
+  - 'You have a graded ladder of paraphrase passes (an editor''s successive passes,
     a humanizer tool''s output, or the bundled stdlib proxy) and want the per-signal
-    decay curve across rungs
+    decay curve across rungs'
   - You're prioritizing which SETEC signals erode fastest under recursive paraphrase
   - You want an honesty-claim artifact ("signal S shows relative change Δ at rung i")
     framed against the human/AI separability ceiling, not a robustness leaderboard

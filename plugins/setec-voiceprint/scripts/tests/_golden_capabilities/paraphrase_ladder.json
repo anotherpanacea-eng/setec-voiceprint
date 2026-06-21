@@ -59,7 +59,7 @@
   "status": "empirically_oriented",
   "surface": "validation",
   "use_when": [
-    "You have a graded ladder of paraphrase passes (an editor''s successive passes, a humanizer tool''s output, or the bundled stdlib proxy) and want the per-signal decay curve across rungs",
+    "You have a graded ladder of paraphrase passes (an editor's successive passes, a humanizer tool's output, or the bundled stdlib proxy) and want the per-signal decay curve across rungs",
     "You're prioritizing which SETEC signals erode fastest under recursive paraphrase",
     "You want an honesty-claim artifact (\"signal S shows relative change \u0394 at rung i\") framed against the human/AI separability ceiling, not a robustness leaderboard"
   ]
