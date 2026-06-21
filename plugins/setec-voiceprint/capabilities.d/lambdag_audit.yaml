@@ -1,0 +1,63 @@
+entries:
+- id: lambdag_audit
+  script_path: plugins/setec-voiceprint/scripts/lambdag_audit.py
+  surface: voice_coherence
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: authorship-verification
+  purpose: 'Grammar likelihood-ratio AV signal (LambdaG, arXiv:2403.08462): build a count-based
+    n-gram language model over POS-tag sequences and score a query document''s grammar
+    log-likelihood under a REFERENCE-AUTHOR POS-LM versus a BACKGROUND POS-LM. Reports a signed
+    log-LR (lambda_g, length-normalized lambda_g_per_token = logL_ref - logL_bg) plus a per-sentence
+    and per-n-gram decomposition. The likelihood-ratio sibling of voice_distance''s Burrows Delta (same
+    voice_coherence surface, same no-verdict posture). M1 is stdlib: the n-gram LM is pure
+    collections/math; the spaCy POS parse (shared variance_audit._NLP) is the only model-gated step, so
+    without it the surface ABSTAINS (available:false / missing_dependency). NO VERDICT: the headline is a
+    continuous signed real with both ratio halves exposed; the only categorical is a 3-level PROVISIONAL
+    leaning band (background_leaning / indeterminate / author_leaning); no is_ai / same_author / verdict
+    key, and the surface NEVER ranks authors (verification, one reference author — not attribution).
+    Anti-Goodhart: reference/background drawn from one manifest must be held-out DISJOINT by id
+    (self-scoring refused). The claim license refuses the same-author AND the AI/human inferences;
+    thresholds operator-side / PROVISIONAL.
+
+    '
+  use_when:
+  - You want a generative grammar likelihood-ratio of a query against a reference-author corpus vs a background (the LR companion to voice_distance's Burrows Delta)
+  - You have a reference-author corpus AND a held-out-disjoint background corpus, both English, with a parser installed
+  - You want an interpretable, white-box, stdlib signal with a per-n-gram explanation, not a neural AV score
+  do_not_use_when:
+  - No spaCy / en_core_web_sm available (the surface abstains)
+  - You want a same-author/different-author verdict or an AI/human provenance call (the surface refuses both)
+  - The reference and background overlap, are thin, or are register-mismatched (the LR is corpus-relative and inflates or flips), or the text is non-English
+  inputs:
+    query: prose/markdown text file (UTF-8)
+    reference: reference-author corpus (--reference-dir or --manifest + a persona/split/register filter)
+    background: background corpus (--background-dir or --manifest + a persona/split/register filter)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib n-gram LM over POS sequences; POS tags come from the shared spaCy parse (CPU).
+      No model trained or downloaded.
+    length_floor_words: 150
+  registers:
+  - blog_essay
+  - testimony_policy
+  - technical_documentation
+  dependencies:
+    python:
+    - spacy
+    python_optional: []
+  examples:
+  - description: Grammar log-LR of a query against a reference-author dir vs a background dir
+    cmd: python3 plugins/setec-voiceprint/scripts/lambdag_audit.py query.md --reference-dir
+      ref/ --background-dir bg/ --json
+  - description: Reference and background drawn from one manifest by persona (held-out disjoint by id)
+    cmd: python3 plugins/setec-voiceprint/scripts/lambdag_audit.py query.md --manifest
+      corpus.jsonl --reference-persona me --background-persona pool
+  references:
+  - plugins/setec-voiceprint/specs/31-lambdag.md
+  - 'Grammar as a Behavioral Biometric: Using Cognitively Motivated Grammar Models for Authorship Verification (LambdaG, arXiv:2403.08462): https://arxiv.org/abs/2403.08462'

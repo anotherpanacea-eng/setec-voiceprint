@@ -31,7 +31,7 @@ Each entry block carries the signal's metadata on a single line:
 - [AIC-7: Discourse Leak / Assistant-Register Intrusion (4)](#aic-7-discourse-leak)
 - [AIC-8: Aesthetic Authority Laundering (2)](#aic-8-aesthetic-authority-laundering)
 - [AIC-9: Closure Inflation (1)](#aic-9-closure-inflation)
-- [Voice-distance signals (2)](#voice-distance-signals)
+- [Voice-distance signals (3)](#voice-distance-signals)
 - [Voice-drift signals (2)](#voice-drift-signals)
 - [POV-voice signals (2)](#pov-voice-signals)
 - [Mimicry / cosplay signals (2)](#mimicry-cosplay-signals)
@@ -266,6 +266,12 @@ Euclidean / Mahalanobis-style norm of per-function-word z-scores against baselin
 `voice_distance:cosines.function_words` (and other feature families) · voice-distance · ↑ · **empirically_oriented** · voice_profile_aggregation_v1
 
 `1 − cosine_similarity(draft, baseline)` per feature-family vector. Range `[0, 1]`. Complement to Burrows Delta; cosine catches relative-shape changes, Delta catches magnitude changes.
+
+### Grammar likelihood-ratio (LambdaG)
+
+`lambdag_audit:lambda_g` / `:lambda_g_per_token` · authorship-verification · ↔ · **heuristic**
+
+Log-likelihood-ratio of a query's POS-sequence grammar under a count-based n-gram LM trained on a **reference-author** corpus vs one trained on a **background** corpus: `lambda_g = logL_ref − logL_bg` (nats; `lambda_g_per_token` length-normalized). `> 0` = grammar more probable under the reference author. The LR sibling of Burrows Delta (same `voice_coherence` surface). Signed real ∈ ℝ; PROVISIONAL 3-level *leaning* band, **no same/different-author verdict**. Corpus-relative (a thin/mismatched background inflates or flips the sign). Reference/background must be **held-out disjoint** (anti-Goodhart). Parser-tier (spaCy `en_core_web_sm`; abstains without it). Length floor 150 words. Spec 31 (arXiv:2403.08462).
 
 ---
 
@@ -616,6 +622,7 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | aic-8-laundering | 2 |
 | aic-9-closure-inflation | 1 |
 | voice-distance | 2 |
+| authorship-verification | 2 |
 | voice-drift | 2 |
 | pov-voice | 2 |
 | mimicry | 2 |
@@ -627,7 +634,7 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | repetition | 2 |
 | narrative-decision | 33 (+1 aggregate) |
 | argument-decision | 6 (+1 aggregate) |
-| **TOTAL** | **97** |
+| **TOTAL** | **99** |
 
 ## Calibration-status distribution (v1.66.0 + ND v0.1.0 + AD v0.1.0)
 
@@ -636,9 +643,9 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | calibrated | 0 | Per Stylometry-to-the-people policy; no corpus-derived thresholds shipped as load-bearing defaults |
 | literature_anchored | 45 | 6 prior (mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl) + 34 from the narrative-decision family (33 per-signal + aggregate), anchored to Russell et al. 2026 + 5 from the argument-decision family (4 per-signal + aggregate), anchored to Kim et al. 2026 |
 | empirically_oriented | 8 | The six 2026-05-10 EditLens-measured variance signals + pos_bigram_entropy + Burrows Delta + per_feature_cosine |
-| heuristic | 43 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) |
+| heuristic | 45 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) + the 2 lambdag_audit grammar-LR signals (lambda_g, lambda_g_per_token) |
 | structural_only | 1 | function_word_ratio |
-| **TOTAL** | **97** |
+| **TOTAL** | **99** |
 
 ## Related references
 
