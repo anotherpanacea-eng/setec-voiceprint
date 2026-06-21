@@ -31,6 +31,7 @@ Upstream / prior art (advisory; M1 is deliberately weaker than any of them):
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import statistics
 import sys
@@ -400,6 +401,18 @@ def _claim_license() -> ClaimLicense:
     )
 
 
+# ---- self-exclusion content key ---------------------------------------------
+
+def _content_key(text: str) -> str:
+    """Stable content fingerprint for self-exclusion. Whitespace-normalized exact text (leading/trailing
+    stripped, internal runs collapsed to single spaces) then SHA-256 hashed. Normalization (not a raw
+    byte compare) so a file copy of the target — which `read_text` may give a trailing newline or CRLF
+    that inline `text` lacks — still matches the same target; it is deliberately conservative (only
+    collapses whitespace) so genuinely distinct family docs are never coincidentally excluded."""
+    normalized = " ".join(text.split())
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 # ---- reference loading -------------------------------------------------------
 
 def _load_family_dir(root: Path) -> dict[str, list[tuple[str, Path]]]:
@@ -428,8 +441,9 @@ def _load_family_dir(root: Path) -> dict[str, list[tuple[str, Path]]]:
 def _load_family_manifest(path: Path) -> dict[str, list[tuple[str, Path | None]]]:
     """Group a JSONL manifest `{family, text|text_path}` into {family: [(text, resolved_path|None)]}.
 
-    Inline `text` carries a None path (no self-exclusion possible); `text_path`/`path` is resolved
-    relative to the manifest's directory. Robust loading: a blank line is skipped; a malformed-JSON row
+    Inline `text` carries a None path (path-based self-exclusion cannot apply, but the caller still
+    excludes it by CONTENT — see `_content_key` / the self-exclusion loop in `_run`); `text_path`/`path`
+    is resolved relative to the manifest's directory. Robust loading: a blank line is skipped; a malformed-JSON row
     or a valid-JSON-but-non-object row raises ValueError (mapped to bad_input — a structurally broken
     manifest is bad input, not a partial run); a referenced file that is missing/non-UTF-8 raises
     FileNotFoundError/UnicodeDecodeError (bad_input). A row missing `family` raises ValueError."""
@@ -496,19 +510,31 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
             reason=f"{which} produced no reference families/documents", reason_category="bad_input",
         )
 
-    # Self-exclusion (general_imposters pattern): drop any reference doc whose resolved path is the
-    # target file, so the target never gets to match against itself. Inline-text docs (path None) pass
-    # through (they cannot be the target file).
+    # Self-exclusion (general_imposters pattern): the target must never match against itself. This holds
+    # for BOTH manifest input forms:
+    #   - a reference doc whose resolved PATH is the target file (a file copy / the target listed in its
+    #     own family), and
+    #   - a reference doc whose CONTENT is the target (a `text_path` to a different file holding an exact
+    #     copy, OR — the case the path-only check missed — an inline `text` row, which carries path=None
+    #     and would otherwise ALWAYS be retained; repeating the exact target inline N times under one
+    #     family yields a zero-distance centroid and could flip attribution_available=True, defeating the
+    #     self-exclusion guarantee, #255 P1).
+    # Content match uses a whitespace-normalized SHA-256 of the target, so a path drop and a content drop
+    # of the same doc are not double-counted (path is checked first).
     try:
         target_abs = target_path.resolve()
     except OSError:
         target_abs = None
+    target_key = _content_key(target_text)
     n_dropped_self = 0
     families_kept: dict[str, list[tuple[str, Path | None]]] = {}
     for family, docs in loaded.items():
         kept: list[tuple[str, Path | None]] = []
         for text, pth in docs:
             if target_abs is not None and pth is not None and pth == target_abs:
+                n_dropped_self += 1
+                continue
+            if _content_key(text) == target_key:
                 n_dropped_self += 1
                 continue
             kept.append((text, pth))
@@ -579,8 +605,9 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
     if n_dropped_self:
         warnings.append(
-            f"dropped {n_dropped_self} reference doc(s) whose path matches --target (self-exclusion); "
-            "the target does not match against itself"
+            f"dropped {n_dropped_self} reference doc(s) matching --target by path or exact "
+            "(whitespace-normalized) content (self-exclusion); the target does not match against itself, "
+            "including inline-text copies"
         )
     if n_dropped_short:
         warnings.append(

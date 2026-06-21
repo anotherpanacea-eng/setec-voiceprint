@@ -466,6 +466,69 @@ def test_self_exclusion_drops_target_from_its_family(tmp_path):
     assert "self-exclusion" in warns
 
 
+def test_self_exclusion_drops_inline_text_copies_of_target(tmp_path):
+    """Self-exclusion must hold for the INLINE-`text` manifest form too, not only path-based refs (#255 P1).
+
+    The smallest input that breaks the path-only check: a manifest that repeats the EXACT target text
+    inline 5x under one family (clearing the 5-doc floor) plus a second family. Every inline row carries
+    path=None, so the old path-only self-exclusion retained all five — yielding a zero-distance centroid
+    that could flip attribution_available=True off a self-copy. With content-based self-exclusion all five
+    inline copies are dropped, the family collapses, and attribution is NOT available off the self-copy.
+
+    Against the PRE-FIX code this FAILS: the inline copies are retained, `familyA` survives with a
+    zero-distance centroid, `attribution_available` is True, and the self-exclusion warning never fires.
+    """
+    target_text = "the cat sat on the mat and ran fast and far " * 12
+    other_text = "consequently the apparatus necessitates reconsideration throughout the process " * 12
+    tgt = tmp_path / "t.txt"
+    tgt.write_text(target_text)
+    man = tmp_path / "m.jsonl"
+    lines = []
+    # five inline EXACT copies of the target under one family (each path=None)
+    for _ in range(5):
+        lines.append(json.dumps({"family": "familyA", "text": target_text}))
+    # a distinct second family so n_families >= 2 absent self-exclusion
+    for _ in range(5):
+        lines.append(json.dumps({"family": "familyB", "text": other_text}))
+    man.write_text("\n".join(lines) + "\n")
+
+    rc, env = _envelope(["--target", str(tgt), "--reference-manifest", str(man)])
+    assert env["available"] is True  # the run completes; it abstains, it does not error
+    warns = " ".join(env.get("warnings") or [])
+    assert "self-exclusion" in warns, "inline-text copies of the target must be self-excluded by content"
+    r = env["results"]
+    # the zero-distance self-copy must NOT manufacture an attribution
+    assert r["attribution_available"] is False, (
+        "repeating the exact target inline must NOT yield attribution_available=True off a "
+        "zero-distance self-copy"
+    )
+    # familyA collapsed entirely once its 5 inline self-copies were dropped -> < 2 families remain
+    assert r["n_families"] < 2
+
+
+def test_self_exclusion_drops_content_copy_at_other_path(tmp_path):
+    """Path-based self-exclusion must also catch an exact CONTENT copy living at a DIFFERENT path (a
+    `text_path` row whose file holds a byte-for-byte copy of the target). The path check alone misses it
+    because the resolved path differs; the content key catches it. Mirrors the inline case for the
+    `text_path` input form so BOTH manifest forms are covered."""
+    target_text = "the cat sat on the mat and ran fast and far " * 12
+    other_text = "consequently the apparatus necessitates reconsideration throughout the process " * 12
+    tgt = tmp_path / "t.txt"
+    tgt.write_text(target_text)
+    # a separate file holding an exact copy of the target, referenced via text_path
+    copy = tmp_path / "copy.txt"
+    copy.write_text(target_text)
+    man = tmp_path / "m.jsonl"
+    lines = [json.dumps({"family": "familyA", "text_path": "copy.txt"}) for _ in range(5)]
+    lines += [json.dumps({"family": "familyB", "text": other_text}) for _ in range(5)]
+    man.write_text("\n".join(lines) + "\n")
+    rc, env = _envelope(["--target", str(tgt), "--reference-manifest", str(man)])
+    assert env["available"] is True
+    warns = " ".join(env.get("warnings") or [])
+    assert "self-exclusion" in warns
+    assert env["results"]["attribution_available"] is False
+
+
 # --- envelope shape -----------------------------------------------------------
 
 def test_envelope_surface_registered_and_shape(tmp_path):
