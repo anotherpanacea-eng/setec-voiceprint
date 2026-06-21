@@ -377,3 +377,25 @@ def test_missing_file_bad_input(tmp_path):
     assert env["available"] is False
     assert env["reason_category"] == "bad_input"
     assert rc == 3
+
+
+def test_empty_baseline_dir_refuses(tmp_path):
+    # Codex #250: an empty baseline is not a reference distribution — refuse with bad_input rather
+    # than emit an available:true, zero-dimensional "comparison".
+    t = _write_target(tmp_path)
+    empty = tmp_path / "empty_baseline"
+    empty.mkdir()
+    rc, env = _envelope([str(t), "--baseline-dir", str(empty), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
+    assert "empty baseline" in env["reason"]
+
+
+def test_filtered_manifest_to_zero_refuses(tmp_path):
+    # a manifest whose entries are all filtered out (use != baseline) yields zero baseline docs.
+    t = _write_target(tmp_path)
+    man = tmp_path / "m.jsonl"
+    man.write_text(json.dumps({"id": "v1", "text": "some held-out validation text",
+                               "use": "validation"}) + "\n", encoding="utf-8")
+    rc, env = _envelope([str(t), "--manifest", str(man), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
+    assert "empty baseline" in env["reason"]

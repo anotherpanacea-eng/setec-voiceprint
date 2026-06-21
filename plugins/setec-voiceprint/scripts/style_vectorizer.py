@@ -189,7 +189,18 @@ def vectorize(
     if baseline_dir or manifest:
         mode = "baseline_relative"
         baseline_entries = sc.load_entries(baseline_dir=baseline_dir, manifest=manifest)
+        # An empty baseline is NOT a reference distribution: it would emit available:true with
+        # n_baseline_files=0 / total_dimensions=0, indistinguishable from a real comparison except by
+        # inspecting internals (Codex P1). Refuse so _run emits the bad-input envelope instead.
+        if not baseline_entries:
+            raise ValueError(
+                "empty baseline: --baseline-dir / --manifest yielded no documents; a reference "
+                "distribution needs at least one baseline document.")
         baseline_features = sc.extract_entry_features(baseline_entries, include_spacy=False)
+        if not baseline_features:
+            raise ValueError(
+                "empty baseline: no baseline document yielded usable style features (all entries "
+                "were filtered out); cannot form a reference distribution.")
         # Held-out disjoint guard (anti-Goodhart): the target must not be a member of the
         # baseline corpus, or the band would be a self-comparison.
         warnings.extend(_held_out_warnings(target_path, baseline_features))
