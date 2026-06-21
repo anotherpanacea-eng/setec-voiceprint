@@ -111,16 +111,23 @@ def test_identical_lms_give_zero():
 
 
 def test_ref_and_bg_share_one_vocab_for_unbiased_ratio():
-    """Codex P1: ref and bg must use ONE add-k support — a tag observed in only one corpus would
-    otherwise give the two models different smoothing denominators and bias the likelihood ratio."""
+    """Codex P1: ref and bg must use ONE add-k support so the smoothing denominators match and the
+    likelihood ratio is unbiased. The support is now the fixed closed UPOS set + EOS, so all-UPOS
+    corpora share it BY CONSTRUCTION; share_vocab additionally unions any non-standard observed tag."""
+    # all-UPOS corpora: identical support already (the fixed closed inventory), no bias possible
     ref = lg.build_lm([["NOUN", "VERB", "NOUN"]], n=2, k=0.5)
     bg = lg.build_lm([["NOUN", "ADJ", "VERB"], ["DET", "NOUN", "ADP"]], n=2, k=0.5)
-    assert ref.vocab != bg.vocab and ref.vocab_size != bg.vocab_size   # different observed tags
-    lg.share_vocab(ref, bg)
     assert ref.vocab == bg.vocab and ref.vocab_size == bg.vocab_size
-    # score_query enforces it even when the caller builds the LMs separately and forgets to share
-    ref2 = lg.build_lm([["NOUN", "VERB", "NOUN"]], n=2, k=0.5)
-    bg2 = lg.build_lm([["NOUN", "ADJ", "VERB"], ["DET", "NOUN", "ADP"]], n=2, k=0.5)
+    assert ref.vocab == set(lg.UPOS_TAGS) | {lg.EOS}
+    # a NON-standard observed tag in only one corpus → differs before share, share_vocab unions it
+    ref_x = lg.build_lm([["NOUN", "WEIRD", "VERB"]], n=2, k=0.5)
+    bg_x = lg.build_lm([["NOUN", "VERB"]], n=2, k=0.5)
+    assert "WEIRD" in ref_x.vocab and "WEIRD" not in bg_x.vocab and ref_x.vocab_size != bg_x.vocab_size
+    lg.share_vocab(ref_x, bg_x)
+    assert ref_x.vocab == bg_x.vocab and ref_x.vocab_size == bg_x.vocab_size
+    # score_query enforces the shared support even if the caller builds the LMs and forgets to share
+    ref2 = lg.build_lm([["NOUN", "WEIRD", "VERB"]], n=2, k=0.5)
+    bg2 = lg.build_lm([["NOUN", "VERB"]], n=2, k=0.5)
     assert ref2.vocab_size != bg2.vocab_size
     lg.score_query([["NOUN", "VERB", "NOUN"]], ref2, bg2, top_k=5)
     assert ref2.vocab_size == bg2.vocab_size
@@ -532,3 +539,19 @@ def test_end_to_end_passes_bounds_gate(tmp_path):
                         "--background-dir", str(bg_dir), "--json"])
     assert env["available"] is True
     validate_results_bounds(env["results"])  # belt-and-suspenders, must not raise
+
+
+def test_conditional_distribution_normalizes_over_closed_upos_support():
+    """Codex round-9 P1: the add-k support is the CLOSED UPOS inventory + EOS, NOT just the
+    observed tags. Each P(tag | context) must sum to exactly 1 over the full support —
+    including for a valid UPOS tag (ADJ) seen in neither corpus. Pre-fix, vocab_size counted
+    only observed tags while log_prob gave any tag add-k mass, so the conditional summed > 1."""
+    lm = lg.GrammarLM(n=2, k=0.5)
+    lm.add_sentences([["NOUN", "VERB"], ["VERB", "NOUN"]])  # ADJ never observed
+    support = set(lg.UPOS_TAGS) | {lg.EOS}
+    # a valid UPOS tag absent from training is still in the support (this was the bug)
+    assert "ADJ" in lm.vocab
+    assert lm.vocab_size == len(support)
+    for ctx in [("NOUN",), ("VERB",), ("<s>",), ("ZZZ",)]:  # seen, seen, BOS-context, unseen
+        total = sum(math.exp(lm.log_prob(ctx, t)) for t in support)
+        assert abs(total - 1.0) < 1e-9, (ctx, total)

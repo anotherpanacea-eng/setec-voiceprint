@@ -75,6 +75,17 @@ LENGTH_FLOOR_WORDS = 150
 BOS = "<s>"
 EOS = "</s>"
 
+# The closed Universal POS inventory (17 tags, universaldependencies.org/u/pos). A POS stream
+# draws from this fixed set, so the smoothing support is UPOS_TAGS ∪ {EOS} (∪ any non-standard
+# observed tag) — NOT just the tags seen in training. Add-k assigns mass to ANY queryable tag, so
+# the denominator V must count every tag the model could be asked about; otherwise a valid UPOS tag
+# absent from both corpora gets add-k mass that no V-term covers and the conditional sums above 1
+# (Codex P1). With the full support, every P(tag | context) distribution sums to exactly 1.
+UPOS_TAGS = frozenset({
+    "ADJ", "ADP", "ADV", "AUX", "CCONJ", "DET", "INTJ", "NOUN", "NUM",
+    "PART", "PRON", "PROPN", "PUNCT", "SCONJ", "SYM", "VERB", "X",
+})
+
 # PROVISIONAL leaning-band thresholds on lambda_g_per_token (nats/n-gram). These
 # are placeholder operator-side values; real thresholds await the FPR-targeted
 # same-vs-different-author calibration study (spec 32 § Calibration posture).
@@ -95,10 +106,11 @@ CALIBRATION_ANCHOR = "reference-author + background pair required"
 class GrammarLM:
     """A count-based, add-k (Lidstone) smoothed n-gram language model over POS-tag
     sequences. Model-free: a `Counter` over `(context, tag)` plus context totals.
-    Deterministic and order-stable. The vocabulary is the closed set of tags
-    actually seen across the training streams plus the `</s>` terminal, so the
-    add-k denominator is well-defined and every query n-gram — including one whose
-    tag was never seen — gets a finite (never zero) probability."""
+    Deterministic and order-stable. The vocabulary is the CLOSED UPOS inventory plus
+    the `</s>` terminal (and any non-standard observed tag), NOT merely the tags seen
+    in training — so the add-k denominator covers every queryable tag and each
+    conditional distribution sums to exactly 1, including for a valid UPOS tag that
+    appears in the query but in neither training corpus (Codex P1)."""
 
     def __init__(self, n: int, k: float):
         if n < 2 or n > 4:
@@ -109,7 +121,10 @@ class GrammarLM:
         self.k = k
         self.context_tag_counts: dict[tuple[str, ...], Counter[str]] = {}
         self.context_totals: Counter[tuple[str, ...]] = Counter()
-        self.vocab: set[str] = set()
+        # Seed the support with the FULL closed UPOS inventory + EOS so the add-k denominator
+        # covers every queryable tag (a valid UPOS tag unseen in training is still in the
+        # support); add_sentences only ever ADDS non-standard observed tags on top.
+        self.vocab: set[str] = set(UPOS_TAGS) | {EOS}
         self.n_sentences = 0
         self.n_pos_tokens = 0
 
@@ -132,16 +147,16 @@ class GrammarLM:
                 tag = padded[i]
                 self.context_tag_counts.setdefault(context, Counter())[tag] += 1
                 self.context_totals[context] += 1
-        # EOS is a predictable terminal in every sentence, so it is in the support.
-        if self.n_sentences:
-            self.vocab.add(EOS)
+        # `self.vocab` is pre-seeded with UPOS_TAGS ∪ {EOS} in __init__; `update(tags)`
+        # above only adds any non-standard observed tag, so the support already covers
+        # EOS and every UPOS tag whether or not it was seen.
 
     @property
     def vocab_size(self) -> int:
-        # Add-k spreads k mass over the full support of predictable symbols (the
-        # real UPOS tags seen + the EOS terminal). At least 1 so a degenerate
-        # empty model still yields a finite (uniform) probability rather than a
-        # divide-by-zero.
+        # Add-k spreads k mass over the FULL support of predictable symbols — the closed
+        # UPOS inventory + the EOS terminal (+ any non-standard observed tag) — so the
+        # denominator covers every queryable tag and the conditional sums to 1. At least 1
+        # so a degenerate empty model still yields a finite (uniform) probability.
         return max(len(self.vocab), 1)
 
     def log_prob(self, context: tuple[str, ...], tag: str) -> float:
