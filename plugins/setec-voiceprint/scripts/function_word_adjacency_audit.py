@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -90,27 +91,34 @@ _THRESH_HIGH_PAGERANK_GINI = 0.65
 _THRESH_LOW_PER_NODE_ENTROPY_BITS = 1.5
 _THRESH_LOW_DENSITY = 0.10
 
+# Sentence / paragraph boundaries that BREAK an adjacency run. `_tokens_lower` discards punctuation,
+# so without splitting on these a terminal `.`/`!`/`?` (or a blank-line paragraph break) would let the
+# last function word of one sentence sit adjacent to the first of the next (a false `for. The` edge).
+_SENT_SPLIT_RE = re.compile(r"[.!?]+|\n{2,}")
+
 
 def function_word_runs(text: str) -> list[list[str]]:
     """The content-word-delimited runs of `FUNCTION_WORDS` members, len >= 2.
 
-    Identical segmentation to `function_word_grammar_audit` (its `_tokens_lower`
-    tokenizer + the `len(cur_run) >= 2` rule, lines 153-163): a maximal run of
-    consecutive function-word tokens, broken by any non-function token. Runs of
-    length < 2 carry no adjacency and are dropped — the same rule that keeps the
-    edge-total tie exact (spec 32 §13 P1)."""
-    toks = _tokens_lower(text)
+    Same `_tokens_lower` tokenizer + `len(cur_run) >= 2` rule as
+    `function_word_grammar_audit`, but the text is split into SENTENCES first so a run
+    never crosses a sentence/paragraph boundary. `_tokens_lower` discards punctuation,
+    so without this split the terminal period in `... waited for. The door ...` was
+    dropped and `for`→`the` became a false cross-sentence adjacency edge (Codex P1). A
+    maximal run is broken by a content word OR a boundary; runs of length < 2 carry no
+    adjacency and are dropped (the edge-total tie recomputes from these runs)."""
     runs: list[list[str]] = []
-    cur: list[str] = []
-    for tok in toks:
-        if tok in FUNCTION_WORDS:
-            cur.append(tok)
-        else:
-            if len(cur) >= 2:
-                runs.append(cur)
-            cur = []
-    if len(cur) >= 2:
-        runs.append(cur)
+    for sentence in _SENT_SPLIT_RE.split(text or ""):
+        cur: list[str] = []
+        for tok in _tokens_lower(sentence):
+            if tok in FUNCTION_WORDS:
+                cur.append(tok)
+            else:
+                if len(cur) >= 2:
+                    runs.append(cur)
+                cur = []
+        if len(cur) >= 2:
+            runs.append(cur)
     return runs
 
 

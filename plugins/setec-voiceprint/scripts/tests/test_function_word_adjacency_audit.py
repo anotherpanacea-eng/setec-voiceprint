@@ -158,6 +158,20 @@ def test_runs_use_len_ge_2_rule():
     ]
 
 
+def test_runs_do_not_cross_sentence_boundaries():
+    # Codex P1: the tokenizer discards punctuation, so a sentence boundary must still BREAK a run —
+    # else `... waited for. The ...` fabricates a false `for`->`the` cross-sentence adjacency edge.
+    runs = fwan.function_word_runs("She waited for. The case sat on the shelf.")
+
+    def adjacent(a, b):
+        return any(r[i] == a and r[i + 1] == b for r in runs for i in range(len(r) - 1))
+
+    assert not adjacent("for", "the")   # the cross-sentence edge is gone
+    assert adjacent("on", "the")        # the within-sentence edge is intact
+    # a blank-line paragraph break also breaks a run
+    assert fwan.function_word_runs("of the\n\nthe of") == [["of", "the"], ["the", "of"]]
+
+
 # --- AC-7 graph-descriptor pins ---------------------------------------------
 
 def test_pagerank_sums_to_one():
