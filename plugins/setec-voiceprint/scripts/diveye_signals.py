@@ -50,6 +50,14 @@ gate, mirroring ``surprisal_audit.py``'s ``results.summary`` nesting. The whole
 returned vector passes ``validate_results_bounds`` for any finite input,
 including negative skew / kurtosis / ACF (pinned by
 ``test_aggregate_output_passes_output_schema_bounds``).
+
+NON-FINITE DEGRADATION (R4) — for a *non*-finite input (inf / NaN) every signal
+degrades gracefully rather than crashing: the moment helpers propagate the value
+as a float that ``validate_results_bounds`` rejects cleanly as "not finite", and
+``surprisal_histogram_entropy`` returns ``None`` (it cannot bin a non-finite
+value — see its guard). So ``aggregate_diveye_signals`` never raises a raw
+``ValueError``; the dispatcher reaches its clean ``internal_error`` path. Pinned
+by ``test_aggregate_nonfinite_input_does_not_raise``.
 """
 
 from __future__ import annotations
@@ -108,14 +116,30 @@ def surprisal_histogram_entropy(
 
     Returns ``None`` for:
       * a series shorter than 2 values, or
-      * a constant series (zero range -> degenerate single-bin histogram).
+      * a constant series (zero range -> degenerate single-bin histogram), or
+      * a series containing any non-finite value (inf / NaN).
 
     Convention: empty bins contribute 0 to the sum (``0 * log2(0) == 0``).
     Entropy is always ``>= 0`` (so the ``surprisal_entropy`` key is range-safe
     under ``output_schema``'s ``>= 0`` surprisal/entropy check).
+
+    NON-FINITE GUARD (R4 graceful degradation) — an ``inf`` in the series makes
+    ``width = hi - lo == inf``, so ``(x - lo) / width == inf / inf == NaN`` and
+    ``int(NaN)`` would raise an opaque ``ValueError`` *before* ``build_output``'s
+    bounds gate can run. The rest of the DivEye vector (mean / var / skew / ACF)
+    propagates a non-finite input as a *float* that ``validate_results_bounds``
+    rejects cleanly as "not finite", routing the dispatcher onto its
+    ``internal_error`` envelope; this function degrades the same way by returning
+    ``None`` here instead of crashing. (Real-backend ``inf`` is low-probability —
+    fp32 ``log_softmax`` keeps ``p > 0`` for a sampled token — so this is a
+    robustness/contract guard, not a live path on normal corpora.)
     """
     n = len(surprisal)
     if n < 2 or n_bins < 1:
+        return None
+    if any(not math.isfinite(x) for x in surprisal):
+        # Non-finite input (inf / NaN): degrade gracefully rather than letting
+        # int((x - lo) / width * n_bins) raise on the inf/inf == NaN trap.
         return None
     lo = min(surprisal)
     hi = max(surprisal)

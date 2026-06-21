@@ -117,6 +117,21 @@ def test_surprisal_entropy_nonnegative():
         assert e is None or e >= 0.0
 
 
+def test_surprisal_entropy_nonfinite_returns_none():
+    """The inf/inf == NaN -> int(NaN) ValueError trap: a non-finite value in
+    the series must degrade to None, NOT raise. ``inf`` makes ``width == inf``
+    (so the ``width <= 0`` guard does not catch it) and ``(x-lo)/width == NaN``,
+    which ``int(...)`` would refuse. Mirrors the function's other graceful
+    degenerate-input paths (too-short / constant -> None)."""
+    # The rank-0 / p=0 -> inf trap the surprisal family is hardened against.
+    assert dv.surprisal_histogram_entropy([1.0, 2.0, float("inf"), 3.0]) is None
+    assert dv.surprisal_histogram_entropy([1.0, float("nan"), 3.0]) is None
+    # -inf too (defensive: a saturated/clamped log-prob could go either way).
+    assert dv.surprisal_histogram_entropy([1.0, float("-inf"), 3.0]) is None
+    # A finite series still computes (the guard does not over-trigger).
+    assert dv.surprisal_histogram_entropy([1.0, 5.0, 9.0], n_bins=4) is not None
+
+
 # --------------- aggregate: shape + reuse invariants --------------
 
 
@@ -159,6 +174,54 @@ def test_aggregate_acf_threshold_and_short_series():
     assert out2["accel_mean"] == 0.0
     assert out2["surprisal_entropy"] is None
     assert out2["surprisal_var"] == 0.0
+
+
+# --------------- R4 non-finite graceful degradation ---------------
+
+
+@pytest.mark.parametrize(
+    "series",
+    [
+        [1.0, 2.0, float("inf"), 3.0],     # rank-0 / p=0 -> inf trap
+        [1.0, float("nan"), 3.0],          # NaN trap
+        [float("-inf"), 1.0, 2.0, 3.0],    # -inf (defensive)
+    ],
+)
+def test_aggregate_nonfinite_input_does_not_raise(series):
+    """Contract (R4): a non-finite surprisal value must NOT crash the
+    aggregator with a raw ``ValueError`` from the histogram-entropy int(NaN)
+    trap. Every signal degrades gracefully — the moment helpers propagate the
+    non-finite value as a *float* (which the R4 bounds gate then rejects as
+    'not finite'), and ``surprisal_entropy`` returns ``None``. The dispatcher
+    therefore reaches its clean ``OutputValidityError`` / ``internal_error``
+    path instead of an uncaught exception."""
+    from output_schema import validate_results_bounds, OutputValidityError
+
+    # 1. The aggregator itself must not raise.
+    out = dv.aggregate_diveye_signals(series, min_acf_length=2)
+
+    # 2. The entropy member degraded to None (could not bin a non-finite value).
+    assert out["surprisal_entropy"] is None
+
+    # 3. At least one moment member carries the non-finite float forward, and
+    #    the R4 bounds gate rejects it CLEANLY (OutputValidityError, the path
+    #    the dispatcher turns into an internal_error envelope) — NOT a ValueError.
+    with pytest.raises(OutputValidityError):
+        validate_results_bounds({"diveye_features": out})
+
+
+def test_aggregate_nonfinite_propagates_as_float_not_crash():
+    """Pin the *mechanism*: the non-finite value survives as a float in a
+    moment member (so the bounds gate can see it), rather than being swallowed
+    or raising mid-aggregation."""
+    import math as _math
+
+    out = dv.aggregate_diveye_signals([1.0, 2.0, float("inf"), 3.0])
+    # surprisal_mean is mean of a series containing inf -> inf (a float).
+    assert out["surprisal_mean"] is not None
+    assert not _math.isfinite(out["surprisal_mean"])
+    # entropy is the one member that returns None rather than a non-finite float.
+    assert out["surprisal_entropy"] is None
 
 
 # --------------- SIGN / direction pin -----------------------------
