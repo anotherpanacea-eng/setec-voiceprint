@@ -24,8 +24,16 @@ tuple of ``SurprisalBackend.score_text_with_distributions``. M1 tests inject a
 deterministic stub (no model, no torch). When no ``distributions_fn`` is given,
 the CLI lazily constructs a ``SurprisalBackend`` and uses its
 ``score_text_with_distributions`` (the M2 path; loads a model only then). The
-backend / torch import is lazy (inside ``main`` / the seam), so
-``import rank_space_audit`` and the unit tests stay model-free.
+**model is constructed lazily** (only inside ``main`` / the M2 seam) — no GPU
+work and no weight load happens at import. Note, however, that ``import
+rank_space_audit`` is NOT torch-free: the module-top ``from stylometry_core
+import word_tokens`` (used for the word count in ``main``) pulls
+``stylometry_core`` and, transitively, the Tier-4 surprisal stack and torch into
+``sys.modules`` — the same import footprint as the ``tocsin_audit`` sibling. The
+genuinely stdlib-clean, torch-free helper is ``rank_space_signals`` (guarded by
+``test_import_is_stdlib``); the unit tests run the rank math over INJECTED stub
+distributions, so no model is loaded or run in M1 even though torch is
+importable.
 
 Paper: Su, Zhuo, Wang, Nakov, "DetectLLM: Leveraging Log Rank Information for
 Zero-Shot Detection of Machine-Generated Text" (arXiv:2306.05540, MBZUAI 2023).
@@ -34,17 +42,21 @@ an empirical reproduction (M2) before reliance; they are NOT asserted here. The
 signal DIRECTION across registers is the empirical question — this surface only
 reports the values and a provisional band.
 
-POSTURE (no verdict)
-====================
+POSTURE (no verdict, NO shipped band)
+=====================================
 Descriptive only: VALUES (``log_rank_mean`` / ``log_rank_sd`` / ``log_rank_acf1``
-/ ``lrr``) + a PROVISIONAL band over the LRR value's OWN axis
-(``indeterminate`` / ``low_lrr`` / ``high_lrr``) carrying
-``calibration_status: heuristic`` + ``calibration_anchor: user-baseline-required``,
-and a claim-license that refuses any AI/human or thresholded verdict. There is NO
-``is_ai`` / ``is_human`` / ``label`` / ``verdict`` / ``decision`` key. The band
-names the MEASURED property (rank-space surprisal), never the inference target
-(authorship). The known ESL / non-native false-positive failure mode is surfaced
-in the claim-license and the assumptions block.
+/ ``lrr``) and NOTHING else — **no verdict band ships** (spec §3.5 / §9: "ships no
+verdict band", "no threshold is shipped without calibration"). The surface emits
+the raw scalars with ``band: "uncalibrated"`` and ``thresholds: None`` — the
+fast_detect_curvature model — rather than a default categorical leaf from
+invented numeric cutoffs. An operator may supply ``--threshold-low`` /
+``--threshold-high`` explicitly (the binoculars_audit model); only then does a
+band appear, carrying ``calibration_status: heuristic``,
+``calibration_anchor: user-baseline-required``, and the
+``thresholds_operator_supplied_not_framework_calibrated`` caveat. There is NO
+``is_ai`` / ``is_human`` / ``label`` / ``verdict`` / ``decision`` key, and no
+framework-shipped numeric cutoff. The known ESL / non-native false-positive
+failure mode is surfaced in the claim-license and the assumptions block.
 
 CLI:
 
@@ -85,19 +97,30 @@ SCRIPT_VERSION = "1.0"
 # tocsin_audit / fast_detect_curvature (the discrimination-family siblings).
 LENGTH_FLOOR_WORDS = 50
 
-# PROVISIONAL band thresholds on the LRR VALUE's own axis. Fixture-derived
-# first-reading numbers, NOT a calibrated operating point: calibration_status is
-# "heuristic", calibration_anchor "user-baseline-required". Disjoint from any
-# held-out validation corpus (anti-Goodhart): promotion past "heuristic" goes
-# only through scripts/calibration/ against a labeled corpus, never by tuning
-# here. The DIRECTION (which side is "more LLM-like") is itself the empirical
-# question (M2) and is NOT asserted — the band names the value's own axis.
-PROVISIONAL_BAND_THRESHOLDS: dict[str, dict[str, float]] = {
-    "lrr": {
-        "high_above": 1.20,
-        "low_below": 0.60,
-    },
-}
+# Soft length CEILING (words). The rank series requires a single scoring window;
+# a target above the scorer's context window (~1024 tokens / ~750 words for gpt2)
+# is chunked by the backend, which breaks the single-sequence alignment and is
+# REFUSED with reason_category text_too_long (see audit_rank_space). This
+# conservative word-based pre-check WARNS the operator before the model runs so
+# the ceiling is not a surprise. It is intentionally below ~750 (words tokenize
+# to more than one token each) and is advisory: the load-bearing guarantee is the
+# exact token-window refusal in audit_rank_space, not this heuristic.
+LENGTH_CEILING_WARN_WORDS = 700
+
+# LRR band thresholds DEFAULT TO None — NO framework-calibrated operating point
+# ships (spec §3.5 / §9: "ships no verdict band", "no threshold is shipped
+# without calibration"). Hard-coding numeric defaults here would emit a default
+# categorical band leaf from uncalibrated cutoffs — exactly the
+# thresholded-decision-by-default the adversarial posture forbids, and the same
+# rule binoculars_audit cites for shipping DEFAULT_THRESHOLD_LOW/HIGH = None.
+# An operator who has calibrated their own LRR operating point against a labeled
+# corpus disjoint from any development corpus may supply --threshold-low /
+# --threshold-high explicitly; only then does a band appear, carrying the
+# 'thresholds_operator_supplied_not_framework_calibrated' caveat. The DIRECTION
+# (which side is "more LLM-like") is itself the empirical question (M2) and is
+# NOT asserted; promotion past 'heuristic' goes only through scripts/calibration/.
+DEFAULT_THRESHOLD_LOW: float | None = None
+DEFAULT_THRESHOLD_HIGH: float | None = None
 
 
 class RankSpaceInputError(ValueError):
@@ -105,24 +128,68 @@ class RankSpaceInputError(ValueError):
     a structured ``build_error_output`` envelope, never a traceback."""
 
 
-def _provisional_band(lrr: float | None, *, n_positions: int) -> dict[str, Any]:
-    """Descriptive band over the LRR VALUE's own axis. NEVER over authorship.
-    ``band ∈ {indeterminate, low_lrr, high_lrr}`` is the only categorical leaf.
-    Ships ``heuristic`` + ``user-baseline-required`` so it is never read as a
-    calibrated decision boundary.
+class RankSpaceTextTooLongError(RankSpaceInputError):
+    """Raised when the target exceeds the scorer's context window so the backend
+    chunks it (multi-window), breaking the single-sequence length contract the
+    rank series requires (``len(token_ids) == len(log_probs) + 1``). The CLI maps
+    this to ``reason_category="text_too_long"`` with an actionable message that
+    names the real cause (the scorer context window), NOT a generic ``bad_input``
+    that blames the scorer."""
 
-    Fails toward NO reading (``indeterminate``) when ``lrr`` is ``None`` (every
-    position was rank 0 — a degenerate all-most-probable sequence) rather than
-    inventing a direction on a non-event."""
-    th = PROVISIONAL_BAND_THRESHOLDS["lrr"]
-    band = "indeterminate"
+
+def _band(
+    lrr: float | None,
+    *,
+    n_positions: int,
+    threshold_low: float | None = None,
+    threshold_high: float | None = None,
+) -> dict[str, Any]:
+    """Descriptive band over the LRR VALUE's own axis. NEVER over authorship.
+
+    Ships NO framework-calibrated cutoff: with both thresholds ``None`` (the
+    default — no operator override) the band is ``"uncalibrated"`` and the
+    surface reports only the raw scalars (the fast_detect_curvature model). This
+    honours spec §3.5 ("ships no verdict band") / §9 ("no threshold is shipped
+    without calibration"): a default categorical leaf from invented cutoffs is
+    exactly the thresholded-decision-by-default the posture forbids.
+
+    Only when an operator supplies BOTH ``--threshold-low`` and
+    ``--threshold-high`` (their own calibrated operating point) does a band
+    appear (``low_lrr`` / ``indeterminate`` / ``high_lrr``), carrying
+    ``calibration_status: heuristic``, ``calibration_anchor:
+    user-baseline-required``, and the
+    ``thresholds_operator_supplied_not_framework_calibrated`` caveat (the
+    binoculars_audit model). The band names the MEASURED property (LRR
+    magnitude), never the inference target (authorship); the "more LLM-like"
+    DIRECTION stays the unasserted M2 empirical question."""
+    operator_supplied = threshold_low is not None and threshold_high is not None
     flags: list[str] = []
+    if not operator_supplied:
+        if lrr is None:
+            flags.append("lrr_undefined_all_rank0")
+        return {
+            "band": "uncalibrated",
+            "flags": flags,
+            "calibration_status": "uncalibrated",
+            "calibration_anchor": "user-baseline-required",
+            "thresholds": None,
+            "orientation": (
+                "no verdict band ships: the surface reports the raw rank-space "
+                "scalars only. No framework-calibrated LRR cutoff exists (spec "
+                "§3.5 / §9); supply --threshold-low and --threshold-high to get "
+                "a band over your OWN calibrated operating point. The 'more "
+                "LLM-like' DIRECTION is the unasserted M2 empirical question "
+                "(arXiv:2306.05540)."
+            ),
+        }
+    band = "indeterminate"
     if lrr is None:
+        band = "indeterminate"
         flags.append("lrr_undefined_all_rank0")
-    elif lrr > th["high_above"]:
+    elif lrr > threshold_high:
         band = "high_lrr"
         flags.append("lrr_high")
-    elif lrr < th["low_below"]:
+    elif lrr < threshold_low:
         band = "low_lrr"
         flags.append("lrr_low")
     return {
@@ -130,12 +197,14 @@ def _provisional_band(lrr: float | None, *, n_positions: int) -> dict[str, Any]:
         "flags": flags,
         "calibration_status": "heuristic",
         "calibration_anchor": "user-baseline-required",
-        "thresholds_used": {"lrr": dict(PROVISIONAL_BAND_THRESHOLDS["lrr"])},
+        "thresholds": {"lrr": {"low_below": threshold_low, "high_above": threshold_high}},
+        "caveats": ["thresholds_operator_supplied_not_framework_calibrated"],
         "orientation": (
             "band names the MEASURED rank-space property (LRR magnitude), NOT "
-            "the inference target (authorship). The 'more LLM-like' DIRECTION "
-            "is the empirical question (arXiv:2306.05540, M2) and is NOT "
-            "asserted by this band."
+            "the inference target (authorship), and uses the OPERATOR-supplied "
+            "thresholds (not a framework-calibrated operating point). The 'more "
+            "LLM-like' DIRECTION is the empirical question (arXiv:2306.05540, "
+            "M2) and is NOT asserted by this band."
         ),
     }
 
@@ -148,6 +217,8 @@ def audit_rank_space(
     backend: object | None = None,
     model_id: str | None = None,
     scorer_dtype: str | None = None,
+    threshold_low: float | None = None,
+    threshold_high: float | None = None,
 ) -> dict[str, Any]:
     """Compute the rank-space (LRR) audit on ``text``. Returns the ``results``
     dict for ``build_output``.
@@ -183,6 +254,30 @@ def audit_rank_space(
             "continuation under the scoring model)"
         )
 
+    # Multi-window (chunked) detection. When the target exceeds the scorer's
+    # context window, SurprisalBackend.score_text_with_distributions slices it
+    # into chunks and EACH chunk forfeits its first prediction, so the flattened
+    # log_probs_nats has length N - num_chunks while token_ids keeps length N
+    # (i.e. len(token_ids) > len(log_probs_nats) + 1 for num_chunks >= 2).
+    # rank_series_from_distributions does a positional lookup token_ids[t + 1]
+    # over the FULL contiguous sequence, which would read the WRONG next token
+    # after the first chunk boundary (silent rank corruption — the family's
+    # shared failure mode). We catch the surplus here and refuse with a SPECIFIC,
+    # actionable reason that names the real cause (the scorer context window),
+    # rather than letting the generic length guard emit a scorer-blaming "rank
+    # computation failed" string. A single-window target satisfies
+    # len(token_ids) == len(log_probs_nats) + 1 and flows through normally.
+    if len(token_ids) > len(log_probs_nats) + 1:
+        n_chunks = len(token_ids) - len(log_probs_nats)
+        raise RankSpaceTextTooLongError(
+            "target exceeds the scorer context window: the scorer chunked it "
+            f"into {n_chunks} windows (token_ids length {len(token_ids)} vs "
+            f"{len(log_probs_nats)} scored positions), which breaks the "
+            "single-sequence rank alignment. Truncate the target to the "
+            "scorer's context window (~1024 tokens / ~750 words for gpt2) or "
+            "use a longer-context scorer."
+        )
+
     try:
         series = rank_series_from_distributions(
             log_probs_nats, token_ids, surprisal_bits
@@ -196,7 +291,12 @@ def audit_rank_space(
         series["log_rank_series"], series["lrr_series"], surprisal_bits
     )
 
-    band = _provisional_band(agg["lrr"], n_positions=agg["n_positions"])
+    band = _band(
+        agg["lrr"],
+        n_positions=agg["n_positions"],
+        threshold_low=threshold_low,
+        threshold_high=threshold_high,
+    )
 
     backend_block = {
         "kind": "causal_lm_logprob_distributions",
@@ -258,6 +358,16 @@ def audit_rank_space(
                 "empirical reproduction on SETEC corpora, NOT a target or a "
                 "shipped claim"
             ),
+            "length_ceiling": (
+                "the rank series requires a SINGLE scoring window: a target "
+                "above the scorer's context window (~1024 tokens / ~750 words "
+                "for gpt2) is chunked by the backend, each chunk forfeits its "
+                "first prediction, and the single-sequence alignment breaks. "
+                "Such a target is REFUSED with a 'text_too_long' message naming "
+                "the scorer window (not silently mis-ranked, not the generic "
+                "scorer-blaming 'rank computation failed' string); truncate it "
+                "or use a longer-context scorer"
+            ),
         },
     }
 
@@ -273,14 +383,18 @@ DEFAULT_LICENSES = (
     "ACF), derived from the model's per-position vocab log-prob distributions "
     "(the same forward pass Binoculars v2 uses — no second pass). These are "
     "discrimination EVIDENCE on the rank axis of the surprisal family, reported "
-    "as values plus a DESCRIPTIVE band over the LRR value's own axis. It is a "
-    "measurement, not a verdict."
+    "as the raw values only. It is a measurement, not a verdict."
 )
 
 DEFAULT_DOES_NOT_LICENSE = (
     "any AI/human authorship verdict, label, or thresholded decision. The "
-    "surface ships uncalibrated: the band is PROVISIONAL (calibration_status "
-    "heuristic, calibration_anchor user-baseline-required) and names the "
+    "surface ships uncalibrated and NO verdict band: by default band is "
+    "'uncalibrated' with thresholds None — no framework-calibrated LRR operating "
+    "point exists, and none is invented (spec §3.5 / §9). A band appears only if "
+    "the operator supplies their OWN --threshold-low / --threshold-high, and it "
+    "then carries calibration_status heuristic, calibration_anchor "
+    "user-baseline-required, and the "
+    "thresholds_operator_supplied_not_framework_calibrated caveat — it names the "
     "MEASURED property (rank-space surprisal), never the inference target "
     "(authorship). There is no is_ai / is_human / classification / prediction / "
     "verdict key. ESL / NON-NATIVE FAILURE MODE: log-rank is higher for "
@@ -291,10 +405,10 @@ DEFAULT_DOES_NOT_LICENSE = (
     "weaker-than-human generator can invert the polarity, so the direction is "
     "not portable across scorers/registers without an empirical check. The "
     "paper's +1.75 / +3.9 AUC lifts are WritingPrompts-specific (Table 3) and "
-    "are NOT asserted here. Promotion of the band past heuristic goes only "
-    "through scripts/calibration/ against a labeled corpus, never by tuning on "
-    "a held-out set; LRR is a comparison-baseline, never a held-out audit / "
-    "fitness / selection signal."
+    "are NOT asserted here. Promotion of an LRR operating point to a "
+    "framework-calibrated default goes only through scripts/calibration/ against "
+    "a labeled corpus, never by tuning on a held-out set; LRR is a "
+    "comparison-baseline, never a held-out audit / fitness / selection signal."
 )
 
 
@@ -310,8 +424,14 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "scorer_dtype": backend.get("dtype"),
         },
         additional_caveats=[
-            "Uncalibrated — provisional band, no verdict, no shipped operating "
-            "point (calibration_status heuristic).",
+            "Uncalibrated — NO verdict band ships by default (band 'uncalibrated', "
+            "thresholds None); no framework-calibrated operating point exists and "
+            "none is invented. A band appears only with operator-supplied "
+            "--threshold-low / --threshold-high.",
+            "Length ceiling: a target above the scorer context window (~1024 "
+            "tokens / ~750 words for gpt2) is chunked by the backend and REFUSED "
+            "with a 'text_too_long' message naming the scorer window, not "
+            "silently mis-ranked. Truncate or use a longer-context scorer.",
             "ESL / non-native: log-rank is higher for unconventional-but-valid "
             "word choices, so non-native human prose looks more 'surprising' in "
             "rank-space; the signal is NOT ESL-invariant and ships no threshold.",
@@ -327,14 +447,15 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "specific and a LEAD, not a target; no paper number is asserted as "
             "fact here.",
             "LRR is a comparison-baseline / heuristic, never a held-out audit, "
-            "fitness, or selection signal (anti-Goodhart). Promotion past "
-            "heuristic goes only through scripts/calibration/.",
+            "fitness, or selection signal (anti-Goodhart). Promotion to a "
+            "framework-calibrated operating point goes only through "
+            "scripts/calibration/.",
         ],
         references=[
             "Su, Zhuo, Wang, Nakov 2023, 'DetectLLM: Leveraging Log Rank "
             "Information for Zero-Shot Detection of Machine-Generated Text' "
             "(arXiv:2306.05540)",
-            "plugins/setec-voiceprint/specs/32-rank-space-detectllm.md",
+            "specs/32-rank-space-detectllm.md",
         ],
     )
 
@@ -389,16 +510,18 @@ def render_markdown(envelope: dict[str, Any]) -> str:
         f"**log_rank_mean:** {_fmt(results.get('log_rank_mean'))}  "
         f"**log_rank_sd:** {_fmt(results.get('log_rank_sd'))}  "
         f"**log_rank_acf1:** {_fmt(results.get('log_rank_acf1'))}",
-        f"**Band (DESCRIPTIVE, over the value's own axis):** "
-        f"`{band.get('band')}` "
+        f"**Band:** `{band.get('band')}` "
         f"(calibration_status: `{band.get('calibration_status')}`, "
         f"anchor: `{band.get('calibration_anchor')}`)",
         "",
-        "_The band names the MEASURED rank-space property, NOT 'is AI'. The "
-        "'more LLM-like' direction is the empirical question (arXiv:2306.05540) "
-        "and is not asserted. Uncalibrated: no verdict, no shipped threshold. "
-        "ESL / non-native prose looks more 'surprising' in rank-space — not an "
-        "AI/human verdict on such text._",
+        "_No verdict band ships: by default the band is `uncalibrated` and the "
+        "surface reports the raw scalars only — there is no framework-calibrated "
+        "LRR threshold, and none is invented. A band appears only over "
+        "operator-supplied --threshold-low / --threshold-high, and even then "
+        "names the MEASURED rank-space property, NOT 'is AI'. The 'more LLM-like' "
+        "direction is the unasserted empirical question (arXiv:2306.05540). ESL / "
+        "non-native prose looks more 'surprising' in rank-space — not an AI/human "
+        "verdict on such text._",
         "",
         "## Claim license",
         "",
@@ -432,6 +555,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--surprisal-dtype", default=None,
         choices=["auto", "fp32", "fp16", "bf16"],
         help="dtype for the scoring model (default: backend 'auto').",
+    )
+    p.add_argument(
+        "--threshold-low", type=float, default=DEFAULT_THRESHOLD_LOW,
+        help=(
+            "Below this LRR value the band is low_lrr. No framework-calibrated "
+            "default; without BOTH this and --threshold-high the band is "
+            "'uncalibrated' and no band is emitted. Operator-supplied thresholds "
+            "carry the thresholds_operator_supplied_not_framework_calibrated "
+            "caveat — they are NOT an AI/human verdict."
+        ),
+    )
+    p.add_argument(
+        "--threshold-high", type=float, default=DEFAULT_THRESHOLD_HIGH,
+        help="Above this LRR value the band is high_lrr. See --threshold-low on calibration.",
     )
     p.add_argument(
         "--json", action="store_true",
@@ -489,6 +626,14 @@ def main(argv: list[str] | None = None) -> int:
             "floor; the rank-space estimate is unstable on short text — "
             "reported but not over-claimed"
         )
+    if word_count > LENGTH_CEILING_WARN_WORDS:
+        warnings.append(
+            f"target is {word_count} words, near or above the scorer's "
+            "context-window ceiling (~1024 tokens / ~750 words for gpt2); a "
+            "target that exceeds the window is chunked by the backend and "
+            "REFUSED with reason_category text_too_long (the rank series needs a "
+            "single scoring window). Truncate it or use a longer-context scorer."
+        )
 
     # Lazy model construction: torch / transformers are imported ONLY here (the
     # M2 path), so import rank_space_audit and the unit tests stay model-free.
@@ -516,8 +661,26 @@ def main(argv: list[str] | None = None) -> int:
     try:
         backend = SurprisalBackend(model_id=model_id, dtype=dtype)
         results = audit_rank_space(
-            target_text, backend=backend, model_id=model_id, scorer_dtype=dtype
+            target_text, backend=backend, model_id=model_id, scorer_dtype=dtype,
+            threshold_low=args.threshold_low, threshold_high=args.threshold_high,
         )
+    except RankSpaceTextTooLongError as exc:
+        # Caught explicitly (before RankSpaceInputError, its base class) so the
+        # message NAMES the real cause — the scorer context window — instead of
+        # the scorer-blaming "rank computation failed on the scorer output"
+        # string the generic length guard would emit. reason_category stays
+        # bad_input (the shared output_schema.REASON_CATEGORIES enum has no
+        # text_too_long member; adding one is a cross-consumer schema change out
+        # of scope here), but the actionable message is the fix: it tells the
+        # operator to truncate or use a longer-context scorer, with the explicit
+        # text_too_long marker carried in the message + warnings.
+        envelope = build_error_output(
+            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+            target_path=str(target_path), target_words=word_count,
+            reason=f"text_too_long: {exc}", reason_category="bad_input",
+        )
+        _emit(envelope, args, as_markdown=False)
+        return 3
     except RankSpaceInputError as exc:
         envelope = build_error_output(
             task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,

@@ -14,6 +14,7 @@
   ],
   "do_not_use_when": [
     "You need an AI/human verdict (this surface ships uncalibrated and refuses one)",
+    "The target exceeds the scorer's context window (~1024 tokens / ~750 words for gpt2). The rank series needs a single scoring window; a longer target is chunked by the backend and REFUSED with a text_too_long message. Truncate it or use a longer-context scorer (this caps the all_fiction/all_nonfiction registers to single-window spans)",
     "The target is non-native / ESL or highly unconventional (log-rank is higher for valid-but-unexpected word choices; the signal is NOT ESL-invariant)",
     "The scorer is weaker than the text's generator (single-model rank signals are proxy-scorer dependent; the polarity can invert)",
     "You can't install the surprisal tier (transformers + torch)"
@@ -54,7 +55,7 @@
     }
   ],
   "references": [
-    "plugins/setec-voiceprint/specs/32-rank-space-detectllm.md",
+    "specs/32-rank-space-detectllm.md",
     "DetectLLM: Leveraging Log Rank Information for Zero-Shot Detection of Machine-Generated Text \u2014 Su, Zhuo, Wang, Nakov 2023 (arXiv:2306.05540): https://arxiv.org/abs/2306.05540"
   ]
 }
