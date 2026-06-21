@@ -230,6 +230,8 @@ Sample SD of the per-token surprisal series. Bits. Length floor 300. The most se
 
 `ACF(1) = Cov(X_t, X_{t+1}) / Var(X)` over the surprisal series. Range `[-1, 1]`. Length floor 500 tokens (≥ 30-token series). AI prose tends positive → predictability streaks.
 
+> **DivEye diversity signals (spec 32, M1 — not yet a surface).** `scripts/diveye_signals.py` adds the four DivEye temporal / distribution-shape signals beyond the three above — the delta (1st-order difference) series, the acceleration (2nd-order difference) series, the Shannon entropy of the surprisal histogram, and the lag-1 ACF of the acceleration series — and `aggregate_diveye_signals` assembling the full nine-signal DivEye vector (reusing the F1–F4/F9 surprisal moments). It is a stdlib math helper over an injected surprisal series (`TASK_SURFACE = None`, no `--tier4` surface), not a registered detection surface; the discrimination surface + classifier are the experiment-gated M2 seam. arXiv:2509.18880 (PROVISIONAL on this checkout — see `specs/32-diveye-surprisal-diversity.md`).
+
 ---
 
 ## AIC-7: Discourse Leak
