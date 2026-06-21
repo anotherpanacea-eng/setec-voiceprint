@@ -22,12 +22,12 @@ entries:
 
     '
   use_when:
-  - You generated the tokens with THIS module''s green-list partition (partition_prf
+  - 'You generated the tokens with THIS module''s green-list partition (partition_prf
     `voiceprint-greenlist-v1/sha256-seed+pyrandom-shuffle`) under a known key / gamma /
-    hash_scheme / vocab and want positive, model-free evidence the stream carries it
+    hash_scheme / vocab and want positive, model-free evidence the stream carries it'
   - You want that evidence for ONE named partition to sit beside the stylometric signals
     in an evidence pack
-  - You can supply a token-id stream + vocab matching THIS partition''s tokenizer/vocab
+  - 'You can supply a token-id stream + vocab matching THIS partition''s tokenizer/vocab'
   do_not_use_when:
   - The tokens were produced by the OFFICIAL KGW reference processor (simple_1 / selfhash
     / minhash) or any vendor / third-party watermark generator — this custom SHA/Python
