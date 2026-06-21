@@ -298,7 +298,13 @@ def audit_function_word_adjacency(text: str, *, top_k: int = DEFAULT_TOP_K,
     n_recip_edges = int(recip_mask.sum())          # counts each direction
     reciprocity = round(n_recip_edges / n_off_edges, 6) if n_off_edges > 0 else 0.0
 
-    # Weight asymmetry over reciprocated UNORDERED pairs (i<j).
+    # Weight asymmetry over reciprocated UNORDERED pairs (i<j). This is a
+    # RECIPROCATED-only directionality measure: a purely one-directional edge has
+    # no reverse weight to compare against and is NOT counted (it would read as
+    # asymmetry 1.0, but the pair is not reciprocated). To keep the directionality
+    # story complete, the share of off-diagonal edges that are one-directional is
+    # co-reported as `one_directional_edge_share` so the field name cannot be read
+    # as a global asymmetry on its own (spec 32 §13 P4).
     asyms: list[float] = []
     iu, ju = np.triu_indices(n, k=1)
     for i, j in zip(iu.tolist(), ju.tolist()):
@@ -307,7 +313,13 @@ def audit_function_word_adjacency(text: str, *, top_k: int = DEFAULT_TOP_K,
         s = wij + wji
         if s > 0 and wij > 0 and wji > 0:
             asyms.append(abs(wij - wji) / s)
-    weight_asymmetry_mean = round(float(np.mean(asyms)), 6) if asyms else 0.0
+    reciprocated_weight_asymmetry_mean = (
+        round(float(np.mean(asyms)), 6) if asyms else 0.0)
+    # Off-diagonal edges with no reverse edge (the maximally asymmetric structure
+    # that the reciprocated-only mean cannot see): one_directional / n_off_edges.
+    n_one_directional_edges = int(((off > 0) & ~(off.T > 0)).sum())
+    one_directional_edge_share = (
+        round(n_one_directional_edges / n_off_edges, 6) if n_off_edges > 0 else 0.0)
 
     # --- centrality ---
     out_degree = matrix.sum(axis=1)                # weighted out-degree
@@ -317,13 +329,40 @@ def audit_function_word_adjacency(text: str, *, top_k: int = DEFAULT_TOP_K,
     pagerank_top1_share = round(float(pagerank.max()), 6) if n > 0 else 0.0
 
     # --- transition entropy ---
-    per_node_bits = np.array([_entropy_bits(matrix[i]) for i in range(n)], dtype=float)
+    # Per-node outgoing-transition entropy is only defined where a successor
+    # distribution EXISTS — i.e. over SOURCE nodes (out_degree > 0). SINK nodes
+    # (out_degree == 0: function words that only ever appear as a transition
+    # TARGET) have an all-zero outgoing row; `_entropy_bits` returns 0.0 for them,
+    # which would (a) always win `argmin` and surface a sink as the "most
+    # predictable successor distribution" (it has NO successor distribution), and
+    # (b) dilute `per_node_mean_bits` downward, biasing the low_per_node_entropy
+    # band signal. So the summaries are computed over source nodes ONLY; the sink
+    # count is reported separately (spec 32 §13 P4).
+    source_idx = [i for i in range(n) if out_degree[i] > 0]
+    n_sink_nodes = n - len(source_idx)
+    per_node_bits = np.array(
+        [_entropy_bits(matrix[i]) for i in source_idx], dtype=float)
     # Global transition entropy over the FULL transition distribution (not top-20).
     global_bits = _entropy_bits(matrix.reshape(-1))
-    per_node_mean = round(float(per_node_bits.mean()), 6) if n > 0 else 0.0
-    per_node_sd = round(float(per_node_bits.std()), 6) if n > 0 else 0.0
-    min_i = int(per_node_bits.argmin()) if n > 0 else 0
-    max_i = int(per_node_bits.argmax()) if n > 0 else 0
+    if per_node_bits.size > 0:
+        per_node_mean = round(float(per_node_bits.mean()) + 0.0, 6)  # +0.0: kill -0.0
+        per_node_sd = round(float(per_node_bits.std()), 6)
+        min_local = int(per_node_bits.argmin())
+        max_local = int(per_node_bits.argmax())
+        min_i = source_idx[min_local]
+        max_i = source_idx[max_local]
+        min_bits = round(float(per_node_bits[min_local]) + 0.0, 6)  # +0.0: kill -0.0
+        max_bits = round(float(per_node_bits[max_local]) + 0.0, 6)
+        min_entropy_node = [nodes[min_i], min_bits]
+        max_entropy_node = [nodes[max_i], max_bits]
+    else:
+        # Defensive: every active node is a sink. Cannot happen while
+        # total_transitions > 0 (every transition has a source), but keep the
+        # leaves finite and the descriptor honest rather than picking a sink.
+        per_node_mean = 0.0
+        per_node_sd = 0.0
+        min_entropy_node = None
+        max_entropy_node = None
 
     # --- motifs ---
     # 2-cycles: unordered reciprocated off-diagonal pairs.
@@ -346,7 +385,8 @@ def audit_function_word_adjacency(text: str, *, top_k: int = DEFAULT_TOP_K,
             "total_transitions": total_transitions,
             "density": density,
             "reciprocity": reciprocity,
-            "weight_asymmetry_mean": weight_asymmetry_mean,
+            "reciprocated_weight_asymmetry_mean": reciprocated_weight_asymmetry_mean,
+            "one_directional_edge_share": one_directional_edge_share,
         },
         "centrality": {
             "top_by_pagerank": _top_k(nodes, pagerank, k),
@@ -357,11 +397,15 @@ def audit_function_word_adjacency(text: str, *, top_k: int = DEFAULT_TOP_K,
             "pagerank_damping": round(float(pagerank_damping), 6),
         },
         "transition_entropy": {
-            "global_bits": round(global_bits, 6),
+            "global_bits": round(global_bits + 0.0, 6),  # +0.0: normalize -0.0
             "per_node_mean_bits": per_node_mean,
             "per_node_sd_bits": per_node_sd,
-            "min_entropy_node": [nodes[min_i], round(float(per_node_bits[min_i]), 6)],
-            "max_entropy_node": [nodes[max_i], round(float(per_node_bits[max_i]), 6)],
+            "n_source_nodes": len(source_idx),
+            "n_sink_nodes": n_sink_nodes,
+            # Over SOURCE nodes only (out-degree > 0); sinks have no successor
+            # distribution and are excluded. None iff every node is a sink.
+            "min_entropy_node": min_entropy_node,
+            "max_entropy_node": max_entropy_node,
         },
         "motifs": {
             "two_cycles": two_cycles,

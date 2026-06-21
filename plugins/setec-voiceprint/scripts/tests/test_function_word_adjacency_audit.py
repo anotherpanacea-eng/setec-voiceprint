@@ -300,3 +300,86 @@ def test_gini_empty_and_singleton():
     assert fwan._gini(np.zeros(0)) == 0.0
     assert fwan._gini(np.array([0.0])) == 0.0
     assert fwan._gini(np.array([5.0])) == 0.0
+
+
+# --- review P4: sink nodes excluded from the per-node entropy summaries ------
+
+def test_sink_node_not_picked_as_min_entropy_node():
+    # 'of the of to all cat' repeated: each run is ['of','the','of','to','all']
+    # (broken by the content word 'cat'). The edges are of->the, the->of, of->to,
+    # to->all, so `all` appears ONLY as a transition TARGET -> it is a pure SINK
+    # (out-degree 0). A sink has an all-zero outgoing row and `_entropy_bits`
+    # returns 0.0 for it, so under the old code it always won `argmin` and
+    # surfaced as `min_entropy_node` -> ["all", -0.0], a leaf with no successor
+    # distribution AND a negative zero. The source node `of` has two successors
+    # ({the, to}) so it carries genuine entropy and the sink-dilution is visible.
+    text = "of the of to all cat " * 8
+    r = fwan.audit_function_word_adjacency(text)
+    te = r["transition_entropy"]
+    # `all` is a genuine sink here (defends the fixture).
+    assert te["n_sink_nodes"] == 1
+    assert te["n_source_nodes"] == 3
+    # The sink is NOT the "most predictable successor distribution".
+    assert te["min_entropy_node"][0] != "all"
+    assert te["max_entropy_node"][0] != "all"
+    # No negative zero anywhere in the entropy block.
+    assert repr(te["min_entropy_node"][1]) != "-0.0"
+    assert repr(te["per_node_mean_bits"]) != "-0.0"
+    # per_node_mean_bits is the mean over SOURCE nodes only: it must equal the
+    # mean of the two real source-node entropies, NOT be diluted by the sink's 0.
+    import numpy as np
+    runs = fwan.function_word_runs(text)
+    counts = fwan._bigram_counts(runs)
+    nodes = sorted({w for pair in counts for w in pair})
+    idx = {w: i for i, w in enumerate(nodes)}
+    M = np.zeros((len(nodes), len(nodes)))
+    for (a, b), c in counts.items():
+        M[idx[a], idx[b]] = c
+    out_deg = M.sum(axis=1)
+    src_bits = [fwan._entropy_bits(M[i]) for i in range(len(nodes)) if out_deg[i] > 0]
+    assert te["per_node_mean_bits"] == round(float(np.mean(src_bits)), 6)
+    # And the diluted-with-sink mean (the buggy value) is strictly lower, proving
+    # the exclusion changed the number.
+    all_bits = [fwan._entropy_bits(M[i]) for i in range(len(nodes))]
+    assert round(float(np.mean(all_bits)), 6) < te["per_node_mean_bits"]
+
+
+def test_no_negative_zero_in_entropy_block_on_saturated_input():
+    # A 2-node saturated graph ('of the' repeated) has zero-entropy source rows;
+    # the rounded values must be +0.0, never -0.0, in the public envelope.
+    r = fwan.audit_function_word_adjacency("of the " * 3)
+    te = r["transition_entropy"]
+    for leaf in (te["global_bits"], te["per_node_mean_bits"],
+                 te["min_entropy_node"][1], te["max_entropy_node"][1]):
+        assert repr(leaf) != "-0.0", leaf
+
+
+# --- review P4: directionality story is complete on a one-directional graph --
+
+def test_one_directional_graph_reports_asymmetry_story():
+    # 'of the to in' repeated: every edge (of->the, the->to, to->in, in->of) is
+    # purely one-directional -> the MAXIMALLY asymmetric structure. The
+    # reciprocated-only mean cannot see it (it is 0.0 because there are no
+    # reciprocated pairs), so `one_directional_edge_share` carries the real story.
+    r = fwan.audit_function_word_adjacency("of the to in " * 60)
+    g = r["graph"]
+    assert g["reciprocity"] == 0.0
+    assert g["reciprocated_weight_asymmetry_mean"] == 0.0  # no reciprocated pairs
+    assert g["one_directional_edge_share"] == 1.0          # ALL edges one-way
+    # The field is renamed so a maintainer cannot read it as a global asymmetry:
+    # the old ambiguous name is gone from the envelope.
+    assert "weight_asymmetry_mean" not in g
+    assert "reciprocated_weight_asymmetry_mean" in g
+
+
+def test_reciprocated_and_one_directional_shares_are_complementary():
+    # A graph with BOTH reciprocated and one-directional edges: the reciprocated
+    # mean is defined, and the one-directional share is strictly between 0 and 1.
+    # 'of the of the' gives of<->the reciprocated; '... to in' tails add one-way.
+    r = fwan.audit_function_word_adjacency(
+        ("of the of the of the to in by from with " * 30))
+    g = r["graph"]
+    assert 0.0 <= g["one_directional_edge_share"] <= 1.0
+    assert g["reciprocated_weight_asymmetry_mean"] >= 0.0
+    # reciprocity + one_directional_edge_share account for every off-diagonal edge.
+    assert round(g["reciprocity"] + g["one_directional_edge_share"], 6) == 1.0

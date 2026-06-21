@@ -113,9 +113,13 @@ graph descriptors integrate over):
   of its *outgoing* transition distribution (how predictably `the` is followed
   vs. how varied `that`'s successors are). The grammar audit emits ONE global
   bigram entropy; FWAN emits a **per-node** entropy vector and its summary
-  (mean / sd / min-entropy node), a strictly finer object.
-- **Directionality / asymmetry** — edge reciprocity and the
-  forward-vs-reverse weight asymmetry of the transition matrix (the
+  (mean / sd / min-entropy node) over the **source** nodes that actually have a
+  successor distribution (out-degree > 0; pure sinks are excluded and counted
+  separately — §13 P4), a strictly finer object.
+- **Directionality / asymmetry** — edge reciprocity, the
+  forward-vs-reverse weight asymmetry over **reciprocated** pairs, AND the share
+  of **one-directional** edges (the maximally asymmetric structure the
+  reciprocated-only mean cannot see — §13 P4) of the transition matrix (the
   arXiv:1406.4469 networks are explicitly *directed*; flat bigram counts collapse
   `of the` vs `the of` into two unrelated rows with no asymmetry summary).
 - **Network-level descriptors** — graph density (realized / possible directed
@@ -172,8 +176,9 @@ is finite so it clears the R4 `validate_results_bounds` walk in
     "n_directed_edges": 312,       // distinct (wi -> wj) pairs observed
     "total_transitions": 1487,     // sum of edge weights (== run-segmentation bigram total; §13 P1)
     "density": 0.1854,             // n_directed_edges / (n_active_nodes*(n_active_nodes-1)); 0 if <2 nodes
-    "reciprocity": 0.41,           // share of directed edges whose reverse edge also exists
-    "weight_asymmetry_mean": 0.27  // mean |w(a->b)-w(b->a)| / (w(a->b)+w(b->a)) over reciprocated pairs
+    "reciprocity": 0.41,           // share of off-diagonal directed edges whose reverse edge also exists
+    "reciprocated_weight_asymmetry_mean": 0.27, // mean |w(a->b)-w(b->a)| / (w(a->b)+w(b->a)) over RECIPROCATED pairs only (§13 P4)
+    "one_directional_edge_share": 0.59  // share of off-diagonal edges with NO reverse edge (= 1 - reciprocity); the asymmetry the reciprocated-only mean cannot see (§13 P4)
   },
   "centrality": {
     // descriptive node rankings; top-K only (privacy-safe: function words, no content)
@@ -186,10 +191,12 @@ is finite so it clears the R4 `validate_results_bounds` walk in
   },
   "transition_entropy": {
     "global_bits": 5.84,           // entropy of the full transition matrix (not top-20)
-    "per_node_mean_bits": 1.97,    // mean over active nodes of outgoing-transition entropy
+    "per_node_mean_bits": 1.97,    // mean over SOURCE nodes (out-degree > 0) of outgoing-transition entropy; sinks excluded (§13 P4)
     "per_node_sd_bits": 0.88,
-    "min_entropy_node": ["the", 0.42],  // most predictable successor distribution
-    "max_entropy_node": ["and", 3.11]   // most varied successor distribution
+    "n_source_nodes": 39,          // active nodes with a successor distribution (out-degree > 0)
+    "n_sink_nodes": 2,             // active nodes that only appear as transition TARGETS (out-degree 0) — no successor distribution
+    "min_entropy_node": ["the", 0.42],  // most predictable successor distribution, over SOURCE nodes only (null iff every node is a sink) (§13 P4)
+    "max_entropy_node": ["and", 3.11]   // most varied successor distribution, over SOURCE nodes only
   },
   "motifs": {
     "two_cycles": 37,              // count of A<->B reciprocated pairs
@@ -505,7 +512,9 @@ calibration ladder). The default emits no decision.
 ## 13. Review findings — folded
 
 The review (`fwan-function-word-adjacency-findings.md`, GO-WITH-CHANGES) raised
-two load-bearing defects and two tightenings; all are folded here.
+two load-bearing defects and two tightenings; all are folded here. A later
+second-pass review (P4) caught two descriptor-semantics defects in the
+directionality and per-node-entropy summaries; those are folded too.
 
 - **[P1] AC-6 edge-total tie was untestable against the real API.** The grammar
   audit's public `function_bigrams` is `.most_common(20)`-truncated
@@ -529,3 +538,26 @@ two load-bearing defects and two tightenings; all are folded here.
   `length_floor_words` is pinned to the concrete integer **250** (not "~250"),
   and the band is gated on a concrete `total_transitions` floor (below it,
   `band.label == "insufficient structure"`, `band_offered == false`) — AC-12.
+- **[P4] per-node entropy summaries excluded sinks; asymmetry field zeroed on
+  max asymmetry.** Two descriptor-semantics defects:
+  - `min_entropy_node` / `max_entropy_node` / `per_node_mean_bits` were computed
+    over ALL active nodes, including pure **SINKS** (function words that appear
+    only as transition TARGETS, out-degree 0). A sink's all-zero outgoing row
+    makes `_entropy_bits` return `0.0`, so the sink always won `argmin` and
+    surfaced as `min_entropy_node` — `["all", -0.0]` on realistic prose — framed
+    as "the most predictable successor distribution" when it has **no** successor
+    distribution at all, while also diluting `per_node_mean_bits` (and thus the
+    `low_per_node_entropy_mean` band signal) downward. **Fix:** the per-node
+    summaries are computed over SOURCE nodes only (`out_degree > 0`); the sink
+    count is reported as `n_sink_nodes` (with `n_source_nodes`), `min/max_entropy_node`
+    are `null` iff every node is a sink, and `-0.0` is normalized to `0.0` on
+    emit. AC: a constructed sink does NOT become `min_entropy_node` and does not
+    dilute the mean.
+  - `weight_asymmetry_mean` was averaged ONLY over reciprocated pairs, so a fully
+    one-directional graph — the MAXIMALLY asymmetric structure — reported `0.0`
+    (the minimum), the inverse of the truth, under a name that reads as a global
+    asymmetry. **Fix:** the field is renamed `reciprocated_weight_asymmetry_mean`
+    (its true scope) and the directionality story is completed by co-reporting
+    `one_directional_edge_share` (= `1 - reciprocity`). AC: a one-directional
+    graph reports `reciprocity == 0.0`, `reciprocated_weight_asymmetry_mean == 0.0`,
+    `one_directional_edge_share == 1.0`.
