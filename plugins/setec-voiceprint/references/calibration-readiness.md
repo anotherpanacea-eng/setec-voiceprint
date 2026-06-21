@@ -114,6 +114,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `lambdag_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: spacy | CPU / stdlib (+ optional spaCy model) | 150 |
 | `manuscript_audit` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | stdlib; opt: spacy, sklearn, sentence_transformers, textstat, nltk, numpy | CPU / stdlib (+ optional spaCy model) | 200 |
 | `mimicry_cosplay_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
+| `model_family_attribution` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 50 |
 | `narratorial_distance_audit` | Heuristic (uncalibrated) | Yes | to override the perception/cognition verb set (optional) | req: spacy | CPU + spaCy model | 1500 |
 | `originality_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 24 |
 | `pov_voice_profile` | Heuristic (uncalibrated) | No | labeled corpus + valid `corpus_manifest.jsonl` (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 3000 |
