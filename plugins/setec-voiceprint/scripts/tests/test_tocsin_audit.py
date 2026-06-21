@@ -99,10 +99,17 @@ def test_ac1_result_shape_and_bounds():
     # exact §3 keys present
     for key in (
         "token_cohesiveness", "cohesiveness_sd", "mean_semantic_diff",
-        "n_perturbations", "deletion_fraction", "deletion_unit", "seed",
+        "n_perturbations", "deletion_fraction", "deletion_unit",
+        "effective_deletions", "seed",
         "target_tokens", "semantic_diff_backend", "band", "assumptions",
     ):
         assert key in r, f"missing results key {key!r}"
+    # effective_deletions is the count actually dropped per perturbation:
+    # floor(deletion_fraction * target_tokens). At a 400-word text @ 0.10 it is
+    # > 0 (deletion really happened, so the high-cohesiveness reading is real).
+    assert isinstance(r["effective_deletions"], int)
+    assert r["effective_deletions"] == int(0.10 * r["target_tokens"])
+    assert r["effective_deletions"] > 0
     assert 0.0 <= r["token_cohesiveness"] <= 1.0
     assert r["cohesiveness_sd"] >= 0.0
     assert 0.0 <= r["mean_semantic_diff"] <= 1.0
@@ -248,6 +255,94 @@ def test_ac3_band_is_descriptive_over_own_axis():
     for r in (high, low, mid):
         for f in r["band"]["flags"]:
             assert "ai" not in f and "human" not in f
+
+
+def test_ac3_real_jaccard_band_saturates_high_on_default_path():
+    """[review-fold] Pin the M1 DEFAULT (real jaccard) band's actual reachable
+    behavior — NOT a manufactured-via-stub reading. On the set-level Jaccard
+    proxy at the default deletion_fraction the set distance is bounded by
+    ~deletion_fraction and is far smaller on real prose, so token_cohesiveness
+    saturates near 1.0 and the default band only ever reaches
+    'high_cohesiveness'. This documents the saturation defect honestly: if a
+    future metric/threshold change makes the lower arms reachable on the default
+    path, THIS test changes with it (it is the regression anchor for the
+    disclosed limitation, the backstop for AC-3's stub-only band test)."""
+    # A real, varied English paragraph (TTR < 1), repeated to clear the floor.
+    para = (
+        "The question of responsibility cannot be separated from the structure "
+        "of agency. When we hold a person accountable we presuppose that the "
+        "action flowed from deliberation rather than compulsion, yet the "
+        "boundary between them is rarely sharp. Addiction, coercion, and "
+        "ignorance all erode the clean picture of a freely choosing self, and "
+        "philosophers have long debated whether responsibility requires the "
+        "ability to have done otherwise or merely that the action expresses the "
+        "agent's settled values. "
+    ) * 4
+    r = tc.audit_tocsin(para)  # NO injected stub — real jaccard default path
+    assert r["semantic_diff_backend"]["kind"] == "lexical_overlap_stdlib"
+    assert r["effective_deletions"] > 0  # deletion really happened
+    # Saturation: real prose sits near the ceiling on the default M1 path.
+    assert r["token_cohesiveness"] > 0.95
+    assert r["band"]["band"] == "high_cohesiveness"
+    # The disclosed limitation is recorded where the operator reads it.
+    assert "saturat" in r["assumptions"]["m1_saturation"].lower()
+    assert "m1_band_reachability" in r["band"]
+
+
+def test_clamp_bounds_injected_diff_into_unit_interval():
+    """[review-fold] The 'token_cohesiveness in [0,1] by construction at the
+    computing surface' invariant (spec §3.1 / AC-1 / claim-license) is enforced
+    on the LOAD-BEARING injected seam, not only by the M1 default. M2's
+    1 - cosine can reach [0,2] and a buggy backend can return anything; the
+    clamp delivers the bound. This test FAILS if the clamp is removed."""
+    text = _make_text(400)
+    # Injected diff well outside [0,1] in both directions.
+    over = tc.audit_tocsin(text, semantic_diff=lambda o, p: 1.5, n_perturbations=8)
+    under = tc.audit_tocsin(text, semantic_diff=lambda o, p: -0.5, n_perturbations=8)
+    assert 0.0 <= over["token_cohesiveness"] <= 1.0
+    assert 0.0 <= under["token_cohesiveness"] <= 1.0
+    assert 0.0 <= over["mean_semantic_diff"] <= 1.0
+    assert 0.0 <= under["mean_semantic_diff"] <= 1.0
+    # 1.5 clamps to 1.0 -> cohesiveness 0.0; -0.5 clamps to 0.0 -> cohesiveness 1.0.
+    assert math.isclose(over["token_cohesiveness"], 0.0, abs_tol=1e-12)
+    assert math.isclose(under["token_cohesiveness"], 1.0, abs_tol=1e-12)
+    # The clamped envelope is accepted by the R4 gate (bounded value is valid).
+    env = tc.compose_envelope(target_path="t.txt", target_words=400, results=over)
+    assert env["available"] is True
+
+
+def test_clamp_does_not_swallow_nan():
+    """[review-fold] The clamp must NOT convert NaN to 0.0 — a non-finite diff
+    from a broken backend must still reach the R4 gate and be rejected, not be
+    hidden by min/max. (Backstops AC-7's NaN test against the new clamp.)"""
+    bad = tc.audit_tocsin(
+        _make_text(400), semantic_diff=lambda o, p: float("nan"), n_perturbations=4
+    )
+    assert math.isnan(bad["token_cohesiveness"])  # NaN survived the clamp
+    with pytest.raises(OutputValidityError):
+        tc.compose_envelope(target_path="t.txt", target_words=400, results=bad)
+
+
+def test_zero_deletion_is_degenerate_not_high_cohesiveness():
+    """[review-fold] A <10-token target at the default fraction yields
+    floor(0.10 * n) == 0 deletions: NO perturbation changes the text, so the
+    cohesiveness reading is a vacuous 1.0. The band must report 'indeterminate'
+    with a 'no_deletion_degenerate' flag — NOT fire 'high_cohesiveness' (the
+    paper's 'more-LLM-like' DIRECTION) on a non-event. FAILS if the guard is
+    removed (the original fail-toward-the-inference-target artifact)."""
+    r = tc.audit_tocsin("one two three")  # 3 word tokens, default 0.10
+    assert r["effective_deletions"] == 0
+    assert r["band"]["band"] == "indeterminate"
+    assert "no_deletion_degenerate" in r["band"]["flags"]
+    assert r["band"]["band"] != "high_cohesiveness"
+    # Boundary: exactly 10 tokens -> floor(1.0) == 1 deletion -> NOT degenerate.
+    r10 = tc.audit_tocsin("a b c d e f g h i j")
+    assert r10["effective_deletions"] == 1
+    assert "no_deletion_degenerate" not in r10["band"]["flags"]
+    # A real-deletion text at the default fraction is not flagged degenerate.
+    real = tc.audit_tocsin(_make_text(400))
+    assert real["effective_deletions"] > 0
+    assert "no_deletion_degenerate" not in real["band"]["flags"]
 
 
 # ----------------------------------------------------------------------

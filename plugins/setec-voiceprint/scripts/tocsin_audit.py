@@ -159,16 +159,33 @@ def delete_tokens(
 # ----------------------------------------------------------------------
 
 
-def _provisional_band(token_cohesiveness: float) -> dict[str, Any]:
+def _provisional_band(
+    token_cohesiveness: float, *, effective_deletions: int
+) -> dict[str, Any]:
     """Descriptive band over the cohesiveness VALUE's own axis. NEVER over
     authorship. ``band ∈ {indeterminate, low_cohesiveness, high_cohesiveness}``
     is the only categorical leaf in the whole envelope. Ships ``heuristic`` +
     ``user-baseline-required`` so it is never read as a calibrated decision
-    boundary."""
+    boundary.
+
+    Degenerate-perturbation guard (fail toward NO reading, not toward the
+    inference direction): when ``effective_deletions == 0`` no perturbation
+    actually changed the text, so ``mean_semantic_diff`` is a vacuous 0.0 and
+    ``token_cohesiveness`` is a vacuous 1.0 — NOT a measured high. We force
+    ``band = "indeterminate"`` and flag ``no_deletion_degenerate`` rather than
+    let the value's ceiling fire ``high_cohesiveness`` (the paper's
+    'more-LLM-like' DIRECTION) on a non-event. This happens whenever
+    ``floor(deletion_fraction * target_tokens) < 1`` (e.g. any text with fewer
+    than ``1 / deletion_fraction`` word tokens — 10 at the default 0.10)."""
     th = PROVISIONAL_BAND_THRESHOLDS["token_cohesiveness"]
     band = "indeterminate"
     flags: list[str] = []
-    if token_cohesiveness > th["high_above"]:
+    if effective_deletions <= 0:
+        # Vacuous: no tokens were deleted, so the cohesiveness reading is an
+        # artifact of the non-event, not a property of the text. Refuse the
+        # band rather than read it maximally toward the inference target.
+        flags.append("no_deletion_degenerate")
+    elif token_cohesiveness > th["high_above"]:
         band = "high_cohesiveness"
         flags.append("cohesiveness_high")
     elif token_cohesiveness < th["low_below"]:
@@ -185,6 +202,16 @@ def _provisional_band(token_cohesiveness: float) -> dict[str, Any]:
         "orientation": (
             "high cohesiveness = meaning survives deletion (paper's "
             "'more LLM-like' DIRECTION); NOT 'is AI'"
+        ),
+        "m1_band_reachability": (
+            "On the M1 stdlib set-level Jaccard proxy at the default "
+            "deletion_fraction, token_cohesiveness saturates near 1.0 for "
+            "real prose (set-distance <= ~deletion_fraction, and TTR < 1 keeps "
+            "it well below even that), so on the M1 default path this band "
+            "effectively only reaches 'high_cohesiveness'; the "
+            "'low_cohesiveness' / 'indeterminate' arms become reachable only "
+            "under a larger deletion_fraction or the M2 embedding backend. "
+            "Read the M1 band as a saturation note, not a 3-way classifier."
         ),
     }
 
@@ -243,11 +270,29 @@ def audit_tocsin(
         "metric": "1 - jaccard(token_sets)",
     }
 
+    # Effective deletions per perturbation: floor(fraction * n). When this is 0
+    # NO perturbation changes the text, so every diff is a vacuous 0.0 and the
+    # cohesiveness reading is an artifact of the non-event (the band guards on
+    # this — see _provisional_band). Recorded in the payload so the operator
+    # sees that zero tokens were actually deleted.
+    effective_deletions = int(math.floor(deletion_fraction * len(tokens)))
+
     rng = random.Random(seed)
     diffs: list[float] = []
     for _ in range(n_perturbations):
         perturbed = delete_tokens(tokens, deletion_fraction, rng)
-        d = float(diff_fn(tokens, perturbed))
+        # Clamp the injected per-perturbation semantic difference into [0, 1] AT
+        # THE COMPUTING SURFACE (mirrors how cosine is clamped at its source per
+        # output_schema's comment) so token_cohesiveness is bounded [0, 1] "by
+        # construction" as the spec §3.1/AC-1 and the claim-license assert. The
+        # M1 Jaccard proxy already lands in [0, 1]; the clamp delivers the bound
+        # on the load-bearing INJECTED seam (M2's 1 - cosine can reach [0, 2],
+        # and a buggy backend can return anything). NaN/inf is deliberately NOT
+        # clamped: it must survive to the R4 gate (validate_results_bounds),
+        # which rejects a non-finite metric — clamping it to 0.0 would hide a
+        # broken backend.
+        raw = float(diff_fn(tokens, perturbed))
+        d = raw if (math.isnan(raw) or math.isinf(raw)) else min(1.0, max(0.0, raw))
         diffs.append(d)
 
     mean_diff = sum(diffs) / len(diffs)
@@ -263,7 +308,9 @@ def audit_tocsin(
     else:
         cohesiveness_sd = 0.0
 
-    band = _provisional_band(token_cohesiveness)
+    band = _provisional_band(
+        token_cohesiveness, effective_deletions=effective_deletions
+    )
 
     return {
         "token_cohesiveness": token_cohesiveness,
@@ -272,6 +319,7 @@ def audit_tocsin(
         "n_perturbations": int(n_perturbations),
         "deletion_fraction": float(deletion_fraction),
         "deletion_unit": deletion_unit,
+        "effective_deletions": effective_deletions,
         "seed": int(seed),
         "target_tokens": len(tokens),
         "semantic_diff_backend": backend_block,
@@ -295,6 +343,16 @@ def audit_tocsin(
                 "cohesiveness is register- and length-dependent; thresholds "
                 "are PROVISIONAL / operator-side"
             ),
+            "m1_saturation": (
+                "on the M1 set-level Jaccard proxy at the default "
+                "deletion_fraction the set-distance is bounded by "
+                "~deletion_fraction (and far smaller once TTR < 1), so "
+                "token_cohesiveness saturates near 1.0 for real prose and the "
+                "default M1 band reaches only 'high_cohesiveness'; the lower "
+                "arms need a larger deletion_fraction or the M2 embedding "
+                "backend. The M1 axis's per-input signal lives mostly in "
+                "cohesiveness_sd, not the near-ceiling point value"
+            ),
         },
     }
 
@@ -311,7 +369,14 @@ DEFAULT_LICENSES = (
     "axis. In the literature LLM text tends to HIGHER cohesiveness than human "
     "text, so the scalar is discrimination evidence on an axis the paper "
     "reports as orthogonal to surprisal / curvature. It is a measurement, not "
-    "a verdict."
+    "a verdict. NOTE the M1 stdlib proxy saturates: at the default "
+    "deletion_fraction the set-level Jaccard distance is bounded by "
+    "~deletion_fraction and is far smaller on real prose (TTR < 1), so the M1 "
+    "token_cohesiveness sits near 1.0 for most inputs and its default band "
+    "reaches only 'high_cohesiveness' — the M1 per-input signal is carried "
+    "mostly by the dispersion (cohesiveness_sd); the lower band arms and a "
+    "wider-moving scalar require a larger deletion_fraction or the M2 "
+    "embedding backend."
 )
 
 DEFAULT_DOES_NOT_LICENSE = (
@@ -354,6 +419,20 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "differ.",
             "Cohesiveness is register- and length-dependent; below the length "
             "floor (200 words) the surface warns rather than over-claims.",
+            "M1 SATURATION: on the stdlib set-level Jaccard proxy at the "
+            "default deletion_fraction, token_cohesiveness saturates near 1.0 "
+            "for real prose (set-distance <= ~deletion_fraction, and TTR < 1 "
+            "drives it far lower), so the M1 default band reaches only "
+            "'high_cohesiveness' — the 'low_cohesiveness'/'indeterminate' arms "
+            "are reachable only under a larger deletion_fraction or the M2 "
+            "embedding backend. The M1 scalar's discrimination signal on this "
+            "axis is carried mostly by its dispersion (cohesiveness_sd), not "
+            "the near-ceiling point value. Treat the M1 band as a saturation "
+            "note, not a 3-way classifier.",
+            "When floor(deletion_fraction * target_tokens) == 0 no tokens are "
+            "deleted; the band reports 'indeterminate' with flag "
+            "'no_deletion_degenerate' rather than a vacuous 'high_cohesiveness' "
+            "(effective_deletions records the count actually deleted).",
         ],
         references=[
             "Wang, Cheng, et al. 2024, 'Zero-Shot Detection of LLM-Generated "
