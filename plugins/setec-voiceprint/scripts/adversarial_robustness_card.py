@@ -388,6 +388,16 @@ def _claim_license(card: dict[str, Any]) -> ClaimLicense:
             "and quality of fixtures supplied. A single-fixture "
             "card answers \"how does this signal move under THIS \"\n            \"transformation\" — useful but narrower than a "
             "multi-fixture card.",
+            "No card licenses a claim that any detector reliably "
+            "separates AI from human prose: a determined paraphraser / "
+            "humanizer can collapse any of these signals (Sadasivan et "
+            "al. 2023, arXiv:2303.11156). See "
+            "references/POSTURE_no_overclaim_separability.md.",
+        ],
+        references=[
+            "references/POSTURE_no_overclaim_separability.md",
+            "Sadasivan et al. 2023, 'Can AI-Generated Text be Reliably "
+            "Detected?' (arXiv:2303.11156)",
         ],
     )
     # B.3: append state-routed caveats when the operator supplied

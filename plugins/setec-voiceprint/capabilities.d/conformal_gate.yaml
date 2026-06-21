@@ -11,7 +11,11 @@ entries:
     finite-sample conformal p-value and a prediction set at coverage 1-alpha. Turns
     "the band reads uncalibrated" into "abstain, with a guaranteed error rate at this
     operating point." A methodology wrapper, NOT a detector; an empty or full prediction
-    set is a licensed abstention. The p-value is NOT P(AI).
+    set is a licensed abstention. The p-value is NOT P(AI). With --fpr-bound q it
+    instead emits the conformal threshold whose reference-class false-positive rate
+    is bounded by q under exchangeability (Multiscaled Conformal Prediction,
+    arXiv:2505.05084) — a reference-class FPR ceiling the operator applies, not P(AI)
+    and not a guarantee on the positive (AI) class.
 
     '
   use_when:
@@ -20,6 +24,8 @@ entries:
   - You want to convert an uncalibrated signal into a finite-sample, distribution-free
     decision
   - You want a two-class prediction set (supply --calibration-positive)
+  - You want an operating point whose reference-class false-positive rate is bounded
+    by a target ceiling q (supply --fpr-bound; one-tailed --direction only)
   do_not_use_when:
   - You want an AI/human verdict (the conformal p-value is a membership statistic,
     not P(AI))
@@ -28,10 +34,13 @@ entries:
   inputs:
     required:
     - --calibration nonconformity scores for the reference class (JSON list or newline-delimited)
-    - --score the target nonconformity score
+    - --score the target nonconformity score (required for the gate; optional with
+      --fpr-bound, which can emit a threshold without a target)
     optional:
     - --calibration-positive nonconformity scores for a positive class (two-class
       mode)
+    - --fpr-bound q reference-class false-positive ceiling in (0, 1); emits the
+      conformal threshold bounded by q (one-tailed direction only)
   outputs:
     schema_version: '1.0'
     artifacts:
@@ -49,5 +58,9 @@ entries:
   - description: Two-class prediction set, two-sided nonconformity
     cmd: python3 plugins/setec-voiceprint/scripts/conformal_gate.py --calibration
       ref.txt --calibration-positive ai.txt --score 4.2 --direction two_sided --json
+  - description: FPR-bound threshold (reference-class false-positive ceiling 0.05)
+    cmd: python3 plugins/setec-voiceprint/scripts/conformal_gate.py --calibration
+      ref.txt --fpr-bound 0.05 --direction higher_is_nonconforming --json
   references:
   - plugins/setec-voiceprint/specs/20-conformal-abstention-gate.md
+  - plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md

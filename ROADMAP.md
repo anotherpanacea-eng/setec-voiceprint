@@ -28,6 +28,7 @@ These all merged to `main` this cycle (version + changelog cut at the next relea
 - **Rank-Turbulence Delta** — `rank_turbulence_audit` on the `voice_coherence` surface (PR #226, spec 23 M1; arXiv:2604.19499). Token-decomposed, interpretable per-word divergence.
 - **Dependency-distance distribution** — `dependency_distance_audit` on `voice_coherence` (PR #227, spec 24; arXiv:2211.14620). Interpretable syntactic-shape geometry over the existing parse.
 - **Originality / DJ-Search** — `originality_audit` on `set_level_diversity` (PR #225, spec 22 M1; arXiv:2410.04265). Reconstructibility/novelty vs the impostor reference pool, stdlib.
+- **Cross-document homogenization & originality** — `corpus_novelty_audit` + `skeleton_overlap_audit` on `set_level_diversity` (spec 28 M1, 2026-06-20; arXiv:2410.04265 / 2504.09373). Set-wide DJ-Search novelty *distribution* (leave-one-out, no aggregate score) + a model-free QUDsim-style cross-document discourse-skeleton overlap matrix (topic-robust, stdlib `difflib`). No-verdict, descriptive-only, never a selection signal; M2 LLM-parsed QUD lens gated/POC-pending.
 - **Embedding-explanation** — `cosine_explanation` on the `embedding_explanation` surface (**PR #231 — OPEN, awaiting Codex re-review of a P2 fix; not yet merged**; arXiv:2510.05362 / 2409.07072). Named side-by-side for the LUAR cosine; the opaque embedding distance becomes human-checkable.
 - **ArgScope fallacy scan** — `fallacy_scan` on `argument_pattern_scan` (PR #229, spec 26 M1; arXiv:2202.13758 / 2406.12402). Candidate rhetorical-move flags as a descriptive tally.
 - **ArgScope warrant probe** — `warrant_probe` on `argument_pattern_scan` (PR #230, spec 26 M2; arXiv:2412.15177). Toulmin critical-question coverage.
@@ -40,7 +41,7 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 **New axes (capabilities SETEC structurally lacks):**
 
 - **Model-family attribution** ("which LLM wrote this?") — NEW axis; spec 28 written + adversarially reviewed. Advisory ranked family posterior with abstention, never a verdict; M1 stdlib (named-feature per-family centroids). arXiv:2309.13322 / 2504.11369 / 2410.16107.
-- **Hivemind / cross-document homogenization** — `homogeneity_audit` (pool pairwise-cosine + effective modes) plus single-doc hivemind-proximity; M1 stdlib metric, M2 LUAR semantic lens POC-gated. Spec drafted this cycle. arXiv:2510.22954 / 2504.09373 (QUDsim).
+- **Hivemind / cross-document homogenization** — `homogeneity_audit` (pool pairwise-cosine + effective modes) plus single-doc hivemind-proximity; **M1 stdlib local-stylometric metric SHIPPED (spec 30, no band, no verdict, status: heuristic)**, M2 LUAR / text-embedding-3-small semantic lens POC-gated (deferred). arXiv:2510.22954 / 2504.09373 (QUDsim).
 
 **Shortlist tail (A1–A6):**
 
@@ -56,13 +57,13 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 - **Gram2Vec interpretable vectorizer** — `style_vectorizer` on `voice_coherence`. **M1 BUILT** (spec 30; stdlib named-feature vector reusing `stylometry_core.extract_features(include_spacy=False)` — function words / char n-grams / punctuation / paragraph-dialogue / pronoun-modal-negation). Glass-box: every dimension is a human-named feature; emits **no aggregate scalar at all**, so there is structurally nothing to threshold or rank on (the strongest no-verdict guarantee). Single mode = full inventory (all 135 function words, no cap); `--baseline-dir` adds a per-dimension reference distribution + a PROVISIONAL band (mean ± k·sd), held-out disjoint. M2 (follow-up) adds the two spaCy-gated families (`pos_trigrams` / `dependency_ngrams`) behind `--with-spacy` — named dimensions only, no verdict. arXiv:2406.12131.
 - **Glimpse / LambdaG** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2403.08462.
 
-**Eval-discipline / anti-Goodhart hardening (protocol upgrades, not surfaces):**
+**Eval-discipline / anti-Goodhart hardening (protocol upgrades, not surfaces) — _M1 in-progress (spec 28, branch `feat/eval-discipline-bundle`)_:**
 
-- **Topic-leakage controls** — topic-controlled splits so style signal isn't topic leakage. arXiv:2104.08530 / 2407.19164.
-- **Multiscale conformal FPR bound** — explicit FPR upper-bound mode for `conformal_gate`. arXiv:2505.05084.
-- **Local-Bayesian likelihood calibration** — fixes biased token-likelihood aggregation in `surprisal_audit`. arXiv:2605.06294.
-- **Short-PHD** — stabilizes intrinsic-dimension reads on short texts. arXiv:2504.02873.
-- **"Don't over-claim separability" guardrail doc** — the theoretical reliability bound; belongs in the posture docs. arXiv:2303.11156.
+- **Topic-leakage controls** — topic-controlled splits so style signal isn't topic leakage. arXiv:2104.08530 / 2407.19164. _M1 done: `topic` manifest field + `topic_disjoint_split` + `topic_leakage_diagnostic` + `--topic-split` in `validation_harness`._
+- **Multiscale conformal FPR bound** — explicit FPR upper-bound mode for `conformal_gate`. arXiv:2505.05084. _M1 done: `threshold_at_fpr_bound` + `--fpr-bound` (single-scale ceiling; multiscale/Mondrian is the named follow-on)._
+- **Local-Bayesian likelihood / Simpson calibration** — detect-and-refuse when a pooled AUC ranking inverts within strata. arXiv:2605.06294. _M1 done: `simpson_inversion_check` + `--simpson-check FIELD` in `validation_harness` (consumes per-stratum scores; emits its own refusal — **not** a `surprisal_audit` change)._
+- **Short-PHD** — stabilizes intrinsic-dimension reads on short texts. arXiv:2504.02873. _M1 done: `estimate_phd_short` + `audit(short_text_mode="auto")` in `intrinsic_dimension_audit` (default-preserving on long text)._
+- **"Don't over-claim separability" guardrail doc** — the theoretical reliability bound; belongs in the posture docs. arXiv:2303.11156. _M1 done: `references/POSTURE_no_overclaim_separability.md` + the structural absence test._
 
 ## Status reconciliation (2026-06-13)
 

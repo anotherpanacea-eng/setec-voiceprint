@@ -1,0 +1,64 @@
+entries:
+- id: skeleton_overlap_audit
+  script_path: plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py
+  surface: set_level_diversity
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: set-level-diversity
+  purpose: 'Cross-document discourse-skeleton reuse — the QUDsim axis (spec 28, M1b; arXiv:2504.09373).
+    Compares documents by their ORDERED discourse skeleton, not their words, with a model-free
+    proxy: each discourse unit gets a content-word-free rhetorical-move signature (discourse-marker
+    bucket x length-tercile x terminal-punctuation class), discretized to a symbol, forming an
+    ordered skeleton string per document. Cross-document overlap is a normalized longest-common-subsequence
+    ratio (stdlib difflib) over the symbol strings, yielding a descriptive {mean/median/max} pairwise
+    overlap, a top-k pair table (with the shared aligned skeleton run), skeleton-similarity groups,
+    and a readable per-document skeleton. Topic-robust by construction (content words excluded), so
+    high overlap cannot be an artifact of a shared subject. The M1b skeleton is a PROXY; the true
+    LLM-parsed QUD lens is the gated M2 --qud-lens model (fail-loud missing_dependency, POC-gated).
+    NOT an AI/human or plagiarism determination: high overlap = shared discourse template, NOT ''AI''
+    (a shared genre, a tight prompt, or a house style all raise it legitimately); measurements only,
+    no band/verdict; --report-threshold only GROUPS for display; the claim-license refuses provenance
+    / plagiarism / selection.
+
+    '
+  use_when:
+  - You want to read how much a CORPUS reuses the same discourse template (structural homogenization),
+    independent of topic
+  - You suspect lexically diverse but structurally identical documents (the "everything has the same
+    bones" axis no per-document surface can see)
+  - The corpus has >= --min-docs (default 3) documents, each a few sentences long
+  do_not_use_when:
+  - You want an AI-provenance call (high skeleton-overlap is NOT 'AI'; this is not an AI signal)
+  - You want a plagiarism / derivative-work / copyright determination (it is a structural measurement)
+  - The corpus is < --min-docs or a deliberately templated genre where shared structure is expected
+    and not diagnostic (overlap is corpus- and register-dependent)
+  inputs:
+    corpus: a --corpus-dir of texts OR a --manifest (JSONL; id + text|text_path)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: 'stdlib only; no models for the default --qud-lens proxy (re/difflib/collections/statistics;
+      sentence segmentation has a pure-regex fallback). --qud-lens model is a gated optional LLM lens
+      (python_optional), off by default and fail-loud when its client is absent.'
+    length_floor_words: 24
+  registers:
+  - blog_essay
+  - testimony_policy
+  - technical_documentation
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Cross-document skeleton overlap across a corpus directory
+    cmd: python3 plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py --corpus-dir corpora/essays
+      --json
+  - description: Skeleton overlap from a manifest, grouping pairs at/above 0.85 for display
+    cmd: python3 plugins/setec-voiceprint/scripts/skeleton_overlap_audit.py --manifest corpus_manifest.jsonl
+      --report-threshold 0.85 --json
+  references:
+  - specs/28-cross-doc-originality.md
+  - 'QUDsim — Quantifying Discourse Template Reuse in LLM-generated text (arXiv:2504.09373): https://arxiv.org/abs/2504.09373'

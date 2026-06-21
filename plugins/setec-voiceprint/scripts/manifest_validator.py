@@ -157,6 +157,13 @@ KNOWN_FIELDS = {
     # Impostor-corpus fields (see ALLOWED_CORPUS_ROLE etc. above).
     "corpus_role", "impostor_for", "register_match", "topic_match",
     "consent_status", "era", "acquired_via", "content_hash",
+    # Eval-discipline: operator-declared topic / content-bucket group key
+    # (spec 28). Free-text, open-set (no enum, no validation) like a tag —
+    # it is the bucket the topic-leakage split partitions on. DISTINCT from
+    # `topic_match` (impostor-corpus closeness, high/medium/low): `topic`
+    # is the content bucket a record's prose belongs to. Topic is parsed,
+    # never inferred — SETEC asserts no semantics it cannot license.
+    "topic",
 }
 
 

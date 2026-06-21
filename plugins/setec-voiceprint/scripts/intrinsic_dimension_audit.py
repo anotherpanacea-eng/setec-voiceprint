@@ -260,6 +260,86 @@ def estimate_phd(
     return diagnostics
 
 
+# Number of independent seeded sub-cloud fits aggregated by Short-PHD on
+# short text. Each fit reuses estimate_phd over a distinct seed schedule;
+# the aggregate is the median PHD with the inter-fit spread (Short-PHD,
+# arXiv:2504.02873). Default chosen for a stable median without making the
+# N-MST cost punishing on a short cloud.
+DEFAULT_SHORT_PHD_N_BOOTSTRAP = 9
+
+
+def estimate_phd_short(
+    points: np.ndarray,
+    *,
+    n_bootstrap: int = DEFAULT_SHORT_PHD_N_BOOTSTRAP,
+    alpha: float = DEFAULT_ALPHA,
+    sample_fractions: Sequence[float] = DEFAULT_SAMPLE_FRACTIONS,
+    n_seeds: int = DEFAULT_N_SEEDS,
+    seed: int = DEFAULT_SEED,
+) -> dict[str, Any]:
+    """Short-PHD stabilization (arXiv:2504.02873) for short clouds.
+
+    Instead of one log-log slope fit, run ``n_bootstrap`` independent
+    seeded ``estimate_phd`` fits (each with a distinct base seed) and
+    aggregate: the reported ``phd`` is the MEDIAN of the valid per-fit
+    PHDs, accompanied by a ``phd_stability`` block (median, IQR,
+    n_fits_valid, the per-fit values). A wide IQR means the scalar is not
+    reliably estimable at this length — the honest interval the single
+    fragile fit hides.
+
+    Fully deterministic given ``seed`` (each fit's base seed is
+    ``seed + 100003 * i``). Same ``None``-on-degenerate contract: if no
+    fit yields a finite PHD, ``phd`` is ``None`` and the stability block
+    records zero valid fits. This WIDENS the estimate; it never rescues a
+    cloud too small to fit any scaling law (that still returns
+    ``phd=None``)."""
+    per_fit: list[dict[str, Any]] = []
+    phds: list[float] = []
+    for i in range(max(1, int(n_bootstrap))):
+        fit = estimate_phd(
+            points,
+            alpha=alpha,
+            sample_fractions=sample_fractions,
+            n_seeds=n_seeds,
+            seed=seed + 100003 * i,
+        )
+        per_fit.append(
+            {"seed": seed + 100003 * i, "phd": fit["phd"], "slope": fit["slope"]}
+        )
+        if fit["phd"] is not None and math.isfinite(fit["phd"]):
+            phds.append(float(fit["phd"]))
+
+    if phds:
+        ordered = sorted(phds)
+        median_phd = float(np.median(ordered))
+        q1 = float(np.percentile(ordered, 25))
+        q3 = float(np.percentile(ordered, 75))
+        iqr = q3 - q1
+    else:
+        median_phd = None
+        q1 = q3 = iqr = None
+
+    # Reuse the single-fit diagnostics from the canonical (base-seed) fit
+    # so the result keeps the same fit-shape keys consumers already read.
+    base_fit = estimate_phd(
+        points, alpha=alpha, sample_fractions=sample_fractions,
+        n_seeds=n_seeds, seed=seed,
+    )
+    base_fit["phd"] = median_phd
+    base_fit["phd_stability"] = {
+        "method": "short_phd_bootstrap_aggregation",
+        "reference": "arXiv:2504.02873",
+        "n_bootstrap": int(n_bootstrap),
+        "n_fits_valid": len(phds),
+        "median": median_phd,
+        "iqr": iqr,
+        "q1": q1,
+        "q3": q3,
+        "per_fit_phd": [f["phd"] for f in per_fit],
+    }
+    return base_fit
+
+
 # ----------------------------------------------------------------------
 # Audit (injectable embedder)
 # ----------------------------------------------------------------------
@@ -275,6 +355,8 @@ def audit(
     sample_fractions: Sequence[float] = DEFAULT_SAMPLE_FRACTIONS,
     n_seeds: int = DEFAULT_N_SEEDS,
     seed: int = DEFAULT_SEED,
+    short_text_mode: str = "auto",
+    short_phd_n_bootstrap: int = DEFAULT_SHORT_PHD_N_BOOTSTRAP,
 ) -> dict[str, Any]:
     """Run the PHD audit. Returns the ``results`` dict for ``build_output``.
 
@@ -286,10 +368,21 @@ def audit(
     ``embedding_model_id`` / ``embedding_identifier_block`` record provenance
     for the chosen embedder (the model id is reported in ``results``).
 
-    The audit is **uncalibrated**: it reports the scalar PHD, the point count,
-    and the embedding-model id. It emits **no band and no threshold** — there
-    is no shipped operating point separating AI from human prose, and the
-    claim-license refuses any such verdict.
+    ``short_text_mode`` controls the Short-PHD stabilization path
+    (arXiv:2504.02873):
+
+      * ``"auto"`` (default) — route to Short-PHD ONLY when
+        ``n_points < MIN_STABLE_POINTS`` (200). On long text the single-fit
+        path is taken and the output is **bit-for-bit unchanged** vs. the
+        pre-Short-PHD audit.
+      * ``"always"`` — force Short-PHD regardless of length.
+      * ``"never"`` — force the single fit regardless of length.
+
+    Short-PHD WIDENS the estimate into an honest stability interval; it adds
+    a ``fit.phd_stability`` block and KEEPS the
+    ``short_text_phd_estimate_unstable`` caveat. The audit stays
+    **uncalibrated**: no band, no threshold, no verdict — Short-PHD changes
+    *how stably* the scalar is estimated, not whether it licenses a verdict.
     """
     caveats: list[str] = []
 
@@ -305,13 +398,32 @@ def audit(
     if n_points < MIN_STABLE_POINTS:
         caveats.append("short_text_phd_estimate_unstable")
 
-    estimate = estimate_phd(
-        points,
-        alpha=alpha,
-        sample_fractions=sample_fractions,
-        n_seeds=n_seeds,
-        seed=seed,
+    if short_text_mode not in ("auto", "always", "never"):
+        raise ValueError(
+            f"short_text_mode must be 'auto', 'always', or 'never'; "
+            f"got {short_text_mode!r}"
+        )
+    use_short_phd = short_text_mode == "always" or (
+        short_text_mode == "auto" and n_points < MIN_STABLE_POINTS
     )
+
+    if use_short_phd:
+        estimate = estimate_phd_short(
+            points,
+            n_bootstrap=short_phd_n_bootstrap,
+            alpha=alpha,
+            sample_fractions=sample_fractions,
+            n_seeds=n_seeds,
+            seed=seed,
+        )
+    else:
+        estimate = estimate_phd(
+            points,
+            alpha=alpha,
+            sample_fractions=sample_fractions,
+            n_seeds=n_seeds,
+            seed=seed,
+        )
     phd = estimate["phd"]
     if phd is None:
         caveats.append("phd_estimate_unavailable_degenerate_or_too_small")
@@ -344,6 +456,14 @@ def audit(
             "sample_fractions": estimate["sample_fractions"],
             "n_seeds": estimate["n_seeds"],
             "seed": estimate["seed"],
+            # Short-PHD only: the stability spread over the bootstrap fits.
+            # Absent on the single-fit (long-text / "never") path, so that
+            # output is bit-for-bit unchanged.
+            **(
+                {"phd_stability": estimate["phd_stability"]}
+                if "phd_stability" in estimate
+                else {}
+            ),
         },
         # No "band", no "verdict", no "threshold" keys: by design.
         "caveats": caveats,
@@ -393,11 +513,19 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "within one fixed model, not across embedders.",
             "Short text destabilizes the estimate (too few embedding units "
             "for a reliable log-log scaling fit).",
+            "On short text the PHD is reported as a bootstrap-aggregated "
+            "estimate with an explicit stability spread (Short-PHD, "
+            "arXiv:2504.02873; see fit.phd_stability); a wide spread means "
+            "the scalar is not reliably estimable at this length. No new "
+            "license is granted — the surface stays uncalibrated.",
         ],
         references=[
             "Tulchinskii et al. 2023, 'Intrinsic Dimension Estimation for "
             "Robust Detection of AI-Generated Texts' (arXiv:2306.04723)",
+            "Tulchinskii et al. 2025, Short-PHD: PHD stabilization on short "
+            "texts (arXiv:2504.02873)",
             "plugins/setec-voiceprint/specs/14-intrinsic-dimension-phd.md",
+            "plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md",
         ],
     )
 

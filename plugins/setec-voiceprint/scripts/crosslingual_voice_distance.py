@@ -264,9 +264,24 @@ def render_report(payload: dict[str, Any]) -> str:
         f"- **Cosine distance:** {r['cosine_distance']}",
         f"- **Baseline cohesion (per-file cosine):** {r['per_baseline_file']}",
         f"- **Top contributing n-grams:** {r['top_contributing_ngrams']}",
-        "",
-        payload["claim_license_rendered"] or "",
     ]
+    # The opt-in learned-encoder block must appear in the MARKDOWN report too, not only the JSON
+    # envelope — otherwise `--encoder muar` without `--json` silently drops it (Codex P2).
+    eb = r.get("encoder_block")
+    if eb:
+        lines += ["", f"## Learned-encoder block — `{eb.get('encoder_id')}` (opt-in `--encoder`)", ""]
+        if eb.get("available"):
+            lines += [
+                f"- **Cosine distribution (target vs baseline centroid):** "
+                f"{eb.get('cosine_distribution')}",
+                f"- **Windows:** {eb.get('n_windows')} target / "
+                f"{eb.get('n_baseline_windows')} baseline",
+            ]
+        else:
+            lines.append(f"_Encoder block unavailable — {eb.get('note', 'no cosine produced')}._")
+        if eb.get("claim_license_caveat"):
+            lines += ["", eb["claim_license_caveat"]]
+    lines += ["", payload["claim_license_rendered"] or ""]
     return "\n".join(lines) + "\n"
 
 
@@ -284,10 +299,108 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="Character n-gram order (default: 3).")
     p.add_argument("--top-k", type=int, default=200,
                    help="Top-K most frequent n-grams to profile (default: 200).")
+    p.add_argument("--encoder", choices=("muar",), default=None,
+                   help="OPT-IN, default OFF. Additionally report a learned "
+                        "mUAR (multilingual authorship, arXiv:2509.16531) "
+                        "cosine block BESIDE the parser-free distance — it "
+                        "does NOT replace delta and does NOT relax the "
+                        "same-language --lang refusal. Requires transformers "
+                        "(imported lazily, only on this flag); the default "
+                        "invocation stays zero-dependency / import-time stdlib.")
     p.add_argument("--json", action="store_true",
                    help="Emit the JSON envelope instead of a markdown report.")
     p.add_argument("--out", help="Write output to this path instead of stdout.")
     return p
+
+
+def _encoder_cosine_block(
+    target_text: str,
+    baseline_texts: list[str],
+    *,
+    encoder_alias: str,
+    device: str | None = None,
+) -> dict[str, Any]:
+    """Compute a learned-encoder cosine block BESIDE the parser-free
+    distance (spec 28 M1, opt-in `--encoder muar`).
+
+    POSTURE / [P2] finding folded: the `voice_fingerprint` import is
+    LAZY and IN-BRANCH — it lives ONLY inside this function, never at
+    the crosslingual module's top level, so the default invocation stays
+    import-time stdlib (spec 19's zero-dependency, any-Unicode identity)
+    and pulls neither `transformers` NOR `voice_fingerprint` /
+    `semantic_trajectory_audit`. The `voice_fingerprint` import chain is
+    itself import-time stdlib (it pulls `semantic_trajectory_audit` ->
+    `embedding_backend`, whose torch / transformers deps are lazy), so
+    this in-branch import does not drag torch in eagerly; `transformers`
+    is only touched when the encoder actually loads weights.
+
+    The two-corpus cosine computation is REUSED from `voice_fingerprint`
+    (`run_two_corpus` / `_centroid` / `cosine_distribution` via the
+    shared windowing) — NOT reimplemented. There is ONE mUAR load path,
+    shared with `voice_fingerprint --model muar`.
+
+    Returns an encoder block carrying `encoder_id`, the cosine
+    distribution target-vs-baseline-centroid, and a per-encoder
+    claim-license caveat. It does NOT replace `delta`, emits NO new
+    scalar / band / verdict, and does NOT relax the cross-language
+    refusal — the `--lang` shared-provenance contract is unchanged.
+    """
+    # LAZY, in-branch import — the [P2] guard. Importing voice_fingerprint
+    # here (not at module top) keeps the default crosslingual path stdlib.
+    import voice_fingerprint as vf  # type: ignore
+
+    encoder_id = vf.MODEL_ALIASES.get(encoder_alias, encoder_alias)
+    try:
+        encoder = vf._load_encoder(encoder_alias, device=device)
+    except vf.VoiceFingerprintError as exc:
+        # The OPT-IN encoder couldn't load — a missing style-embedding tier, or a SPEC-ONLY/unreleased
+        # encoder such as `muar` (no public checkpoint). Surface the block as unavailable with the
+        # reason; the parser-free distance above is unaffected. Do NOT let it traceback the whole run
+        # (Codex P1: `--encoder muar` raised an uncaught VoiceFingerprintError here).
+        return {"encoder_id": encoder_id, "available": False, "note": str(exc)}
+
+    # Window both corpora with voice_fingerprint's SHARED windowing, then
+    # reuse its two-corpus computation (target windows vs. baseline
+    # centroid). The crosslingual surface has no windowing of its own; we
+    # use the paragraph strategy (voice_fingerprint's default) so the
+    # units match the authorship_embedding surface.
+    target_windows = vf.split_windows(target_text, "paragraph", window_size=200)
+    baseline_windows = vf._window_corpus(baseline_texts, "paragraph", 200)
+
+    if len(target_windows) < 1 or len(baseline_windows) < 1:
+        # Not enough windows for a centroid comparison — surface the
+        # encoder block as unavailable rather than fabricating a number.
+        return {
+            "encoder_id": encoder_id,
+            "available": False,
+            "note": (
+                "Too few paragraph windows for a learned-encoder cosine "
+                "block (need >=1 target and >=1 baseline window). The "
+                "parser-free distance above is unaffected."
+            ),
+        }
+
+    two_corpus = vf.run_two_corpus(target_windows, baseline_windows, encoder)
+    return {
+        "encoder_id": encoder_id,
+        "available": True,
+        "cosine_distribution": two_corpus["cosine_distribution"],
+        "n_windows": two_corpus["n_windows"],
+        "n_baseline_windows": two_corpus["n_baseline_windows"],
+        "claim_license_caveat": (
+            f"Learned-encoder block under mUAR (`{encoder_id}`, "
+            "arXiv:2509.16531), a MULTILINGUAL authorship manifold. This "
+            "is a model-bound cosine DISTRIBUTION beside the parser-free "
+            "distance — NOT a same-author / different-author / AI verdict, "
+            "NO threshold, NO new scalar. Cosines are within-encoder and "
+            "NOT comparable to the parser-free delta or to another "
+            "encoder. Multilingual representation is a CAPABILITY, not a "
+            "LICENSE: it does NOT relax the same-language --lang refusal — "
+            "cross-language comparison remains a separate, calibrated, "
+            "explicitly-flagged claim, never the silent default here. "
+            "Ships PROVISIONAL — uncalibrated."
+        ),
+    }
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -324,6 +437,15 @@ def main(argv: list[str] | None = None) -> int:
         results["lang"] = args.lang
         results["target_profile"] = aux_profile(target_text)
         results["baseline_profile"] = aux_profile("\n".join(baseline_texts))
+        # OPT-IN learned-encoder block (spec 28 M1). Default OFF: the
+        # parser-free distance above is the surface. When --encoder is
+        # supplied, a learned cosine block is added BESIDE it (never
+        # replacing `delta`); the voice_fingerprint import is lazy and
+        # in-branch, so the default path stays import-time stdlib.
+        if args.encoder:
+            results["encoder_block"] = _encoder_cosine_block(
+                target_text, baseline_texts, encoder_alias=args.encoder,
+            )
         baseline_meta = build_baseline_metadata(
             n_files=len(loaded), words=baseline_words, files_loaded=loaded,
             extra={"lang": args.lang},
