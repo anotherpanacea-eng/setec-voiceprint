@@ -61,6 +61,16 @@ def test_file_path_py_gates_md_advises(tmp_path):
     assert r["gated"] is False and r["absent"] == 2                    # advised, not gated
 
 
+def test_path_qualified_claim_does_not_resolve_via_unrelated_basename(tmp_path):
+    # Codex #249: a PATH-QUALIFIED ref must match its relative path exactly. `helper.py` exists at
+    # `tools/helper.py`, but `missing/subdir/helper.py` must NOT resolve through that shared basename
+    # — that's exactly the wrong anchor the gate exists to catch.
+    root = _make_repo(tmp_path)
+    assert _lint("uses `missing/subdir/helper.py`", root)["gated"] is True
+    assert _lint("uses `tools/helper.py`", root)["gated"] is False     # exact path still resolves
+    assert _lint("uses `helper.py`", root)["gated"] is False           # bare basename still advisory
+
+
 def test_sibling_spec_present_vs_absent(tmp_path):
     root = _make_repo(tmp_path)
     assert _lint("mirrors spec 12", root)["gated"] is False

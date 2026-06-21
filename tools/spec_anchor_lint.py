@@ -185,10 +185,14 @@ def extract_references(text: str) -> list[Reference]:
 def _resolve_path(rel: str, idx: RepoIndex) -> str | None:
     if rel in idx.rel_paths:
         return rel
-    base = rel.rsplit("/", 1)[-1]
-    hits = idx.basenames.get(base, [])
-    # >=1 hit = present. An AMBIGUOUS basename (multiple matches, e.g. __init__.py)
-    # is present-but-ambiguous, never "absent" — gating it would be a false positive.
+    # A PATH-QUALIFIED claim (contains "/") must match its relative path EXACTLY. Falling back to an
+    # unrelated file that merely shares a basename (`missing/subdir/worker.py` -> `real/worker.py`)
+    # would pass exactly the wrong anchors this gate exists to catch (Codex P1). Basename fallback is
+    # ONLY for a bare basename (no "/"); an ambiguous bare basename stays present-but-advisory, never
+    # "absent" (gating it would be a false positive, e.g. __init__.py).
+    if "/" in rel:
+        return None
+    hits = idx.basenames.get(rel, [])
     return hits[0] if hits else None
 
 
