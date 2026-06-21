@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""lambdag_audit.py — LambdaG grammar likelihood-ratio AV signal (spec 31).
+"""lambdag_audit.py — LambdaG grammar likelihood-ratio AV signal (spec 32).
 
 A **white-box, model-free** authorship-verification signal. Build a count-based n-gram language
 model over a document's **POS-tag sequences**, then score a query document's grammar
@@ -77,7 +77,7 @@ EOS = "</s>"
 
 # PROVISIONAL leaning-band thresholds on lambda_g_per_token (nats/n-gram). These
 # are placeholder operator-side values; real thresholds await the FPR-targeted
-# same-vs-different-author calibration study (spec 31 § Calibration posture).
+# same-vs-different-author calibration study (spec 32 § Calibration posture).
 PROVISIONAL_BAND_THRESHOLDS = {
     "author_leaning_above": 0.05,
     "background_leaning_below": -0.05,
@@ -327,10 +327,21 @@ def _load_corpus(
     persona: str | None,
     split: str | None,
     register: str | None,
+    use: str | None,
+    ai_status: str | None,
 ) -> list[dict[str, Any]]:
     """Load one corpus (reference or background) via the real stylometry_core
     loaders. A directory wins if given; otherwise the manifest is filtered by the
-    fixed loader kwargs. Raises CorpusError when nothing matched."""
+    fixed loader kwargs. Raises CorpusError when nothing matched.
+
+    `use` / `ai_status` are passed through EXPLICITLY (default `None` from the
+    caller) rather than letting `load_entries_from_manifest` fall back to its own
+    `use="baseline"` / `ai_status="pre_ai_human"` defaults. For this surface the
+    reference is the operator's OWN writing, which is rarely tagged `use:baseline`
+    and never `ai_status:pre_ai_human` — silently applying the loader defaults
+    would drop the whole reference corpus and raise 'reference corpus is empty'.
+    The operator opts into those filters via --reference-use / --reference-ai-status
+    (and the background equivalents), mirroring voice_distance.py's --use/--ai-status."""
     if directory:
         entries = load_entries_from_dir(directory)
     elif manifest:
@@ -339,6 +350,8 @@ def _load_corpus(
             persona=persona,
             split=split,
             register=register,
+            use=use,
+            ai_status=ai_status,
         )
     else:
         raise CorpusError(
@@ -352,16 +365,26 @@ def _load_corpus(
 
 def assert_disjoint(reference: list[dict[str, Any]], background: list[dict[str, Any]]) -> None:
     """Anti-Goodhart held-out-disjoint guard: the reference and background document
-    SETS must not share an id. A shared doc would train the reference LM on a
+    SETS must not share a SOURCE FILE. A shared doc would train the reference LM on a
     document the background also models (or vice versa), inflating |λ_G| — the
     train-on-the-test-set Goodhart the LR must not do. Self-scoring a corpus
-    against itself is the degenerate full-overlap case and is refused here too."""
-    ref_ids = [e["id"] for e in reference]
-    bg_ids = {e["id"] for e in background}
-    overlap = sorted({i for i in ref_ids if i in bg_ids})
-    if overlap:
-        shown = ", ".join(overlap[:10])
-        more = "" if len(overlap) <= 10 else f" (+{len(overlap) - 10} more)"
+    against itself is the degenerate full-overlap case and is refused here too.
+
+    Overlap is keyed on each entry's `path` (the resolved source file), NOT its
+    `id`. The dir loader derives `id` from `path.stem`, so two genuinely distinct
+    files in two distinct directories that happen to share a basename (ref/intro.txt
+    vs bg/intro.txt) would collide on `id` and be FALSELY refused. Their `path`
+    values are always distinct, so path-keying never false-positives on a filename
+    coincidence; the manifest path (where a shared id is the SAME doc and resolves
+    to the same `path`) is still correctly refused. The operator-facing message
+    still names the recognizable `id`(s)."""
+    bg_paths = {e["path"] for e in background}
+    offenders = sorted(
+        {e.get("id", e["path"]) for e in reference if e["path"] in bg_paths}
+    )
+    if offenders:
+        shown = ", ".join(offenders[:10])
+        more = "" if len(offenders) <= 10 else f" (+{len(offenders) - 10} more)"
         raise CorpusError(
             f"reference and background document sets overlap on id(s): {shown}{more}. "
             f"They must be held-out disjoint — a doc in both inflates the likelihood "
@@ -436,12 +459,14 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
         reference = _load_corpus(
             label="reference", directory=args.reference_dir, manifest=args.manifest,
             persona=args.reference_persona, split=args.reference_split,
-            register=args.reference_register,
+            register=args.reference_register, use=args.reference_use,
+            ai_status=args.reference_ai_status,
         )
         background = _load_corpus(
             label="background", directory=args.background_dir, manifest=args.manifest,
             persona=args.background_persona, split=args.background_split,
-            register=args.background_register,
+            register=args.background_register, use=args.background_use,
+            ai_status=args.background_ai_status,
         )
         # 7: held-out disjoint (and self-scoring refusal).
         assert_disjoint(reference, background)
@@ -499,9 +524,21 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reference-persona", help="Manifest filter: reference persona value.")
     ap.add_argument("--reference-split", help="Manifest filter: reference split value.")
     ap.add_argument("--reference-register", help="Manifest filter: reference register value.")
+    # use / ai_status default to None (no filter) — UNLIKE the loader's own
+    # use="baseline"/ai_status="pre_ai_human" defaults — so the documented
+    # persona-only manifest example does not silently drop a reference author
+    # whose entries aren't tagged baseline/pre_ai_human. Opt in explicitly.
+    ap.add_argument("--reference-use", default=None,
+                    help="Manifest filter: reference use tag (default: no filter).")
+    ap.add_argument("--reference-ai-status", default=None,
+                    help="Manifest filter: reference ai_status (default: no filter).")
     ap.add_argument("--background-persona", help="Manifest filter: background persona value.")
     ap.add_argument("--background-split", help="Manifest filter: background split value.")
     ap.add_argument("--background-register", help="Manifest filter: background register value.")
+    ap.add_argument("--background-use", default=None,
+                    help="Manifest filter: background use tag (default: no filter).")
+    ap.add_argument("--background-ai-status", default=None,
+                    help="Manifest filter: background ai_status (default: no filter).")
     ap.add_argument("--n", type=int, default=DEFAULT_N,
                     help=f"LM order, 2..4 (default {DEFAULT_N}).")
     ap.add_argument("--smoothing-k", type=float, default=DEFAULT_SMOOTHING_K,

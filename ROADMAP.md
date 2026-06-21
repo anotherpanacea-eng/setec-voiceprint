@@ -33,7 +33,7 @@ These all merged to `main` this cycle (version + changelog cut at the next relea
 - **ArgScope fallacy scan** — `fallacy_scan` on `argument_pattern_scan` (PR #229, spec 26 M1; arXiv:2202.13758 / 2406.12402). Candidate rhetorical-move flags as a descriptive tally.
 - **ArgScope warrant probe** — `warrant_probe` on `argument_pattern_scan` (PR #230, spec 26 M2; arXiv:2412.15177). Toulmin critical-question coverage.
 - **ArgScope B5 collapse-dynamics** — disappearing-guard + discounting-straw-men flags on `argument_decision_audit` (PR #217 / #215, spec 21; arXiv:2606.01736 / 2406.12402). Heuristic, directional, excluded from the aggregate and verdict band (already noted in the 2026-06-17 pass; the discounting-straw-men flag is cited to arXiv:2406.12402).
-- **LambdaG grammar likelihood-ratio** — `lambdag_audit` on `voice_coherence` (spec 31 M1; arXiv:2403.08462). Model-free n-gram LM over POS sequences scoring a query's grammar log-LR against a reference-author vs background pair (the likelihood-ratio sibling of Burrows Delta). Stdlib (the spaCy POS parse is the only model-gated step; abstains without it); signed log-LR + a 3-level PROVISIONAL *leaning* band, **no same/different-author verdict**, never ranks authors, held-out-disjoint anti-Goodhart guard. M2 (richer/learned POS alphabet + KN smoothing) deferred behind a lazy import.
+- **LambdaG grammar likelihood-ratio** — `lambdag_audit` on `voice_coherence` (spec 32 M1; arXiv:2403.08462). Model-free n-gram LM over POS sequences scoring a query's grammar log-LR against a reference-author vs background pair (the likelihood-ratio sibling of Burrows Delta). Stdlib (the spaCy POS parse is the only model-gated step; abstains without it); signed log-LR + a 3-level PROVISIONAL *leaning* band, **no same/different-author verdict**, never ranks authors, held-out-disjoint anti-Goodhart guard. M2 (richer/learned POS alphabet + KN smoothing) deferred behind a lazy import.
 
 ### Planned / horizon (spec'd or shortlisted, not built)
 
@@ -55,7 +55,7 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 - **Neurobiber 96-feature family** — fast Biber features as a new `voice_profile` family (dual-use with model attribution). arXiv:2502.18590.
 - **GECScore** — black-box grammar-error-count signal; **gated behind `fairness_dialect_guardrails`** (inverts on ESL/dialect prose). arXiv:2405.04286.
 - **FWAN** — function-word adjacency networks; **deferred, overlaps `function_word_grammar_audit`**. arXiv:1406.4469.
-- **Glimpse / Gram2Vec** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2406.12131. (**LambdaG M1 BUILT** — `lambdag_audit`, spec 31; see the Shipped section above.)
+- **Glimpse / Gram2Vec** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2406.12131. (**LambdaG M1 BUILT** — `lambdag_audit`, spec 32; see the Shipped section above.)
 
 **Eval-discipline / anti-Goodhart hardening (protocol upgrades, not surfaces) — _M1 in-progress (spec 28, branch `feat/eval-discipline-bundle`)_:**
 

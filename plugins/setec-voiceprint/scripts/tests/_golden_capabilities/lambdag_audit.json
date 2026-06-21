@@ -55,7 +55,7 @@
     }
   ],
   "references": [
-    "plugins/setec-voiceprint/specs/31-lambdag.md",
+    "specs/32-lambdag.md",
     "Grammar as a Behavioral Biometric: Using Cognitively Motivated Grammar Models for Authorship Verification (LambdaG, arXiv:2403.08462): https://arxiv.org/abs/2403.08462"
   ]
 }

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Tests for lambdag_audit.py (spec 31) — the LambdaG grammar likelihood-ratio AV signal.
+"""Tests for lambdag_audit.py (spec 32) — the LambdaG grammar likelihood-ratio AV signal.
 
 The n-gram LM is pure stdlib (collections + math), so the LR-math acceptances (5, 6, 11) run on
 hand-built FIXTURE POS streams with NO parser — the core is CI-runnable without spaCy. The
-end-to-end-with-parser cases are skipif(not HAS_SPACY). Covers the spec-31 numbered acceptances:
+end-to-end-with-parser cases are skipif(not HAS_SPACY). Covers the spec-32 numbered acceptances:
 deterministic output, envelope shape, the no-verdict recursive-walk + never-selects posture guards
 (3-4), the LR math pins both directions (5), finite add-k smoothing (6), the held-out-disjoint
 anti-Goodhart guard + self-scoring refusal (7), the corpus-relativity caveat (8), graceful
@@ -214,14 +214,19 @@ def test_claim_license_refuses_same_author_and_ai_human():
 # ---------------------------------------------------------------------------
 
 def test_disjoint_passes_on_disjoint_sets():
-    ref = [{"id": "a", "text": "x"}, {"id": "b", "text": "y"}]
-    bg = [{"id": "c", "text": "z"}, {"id": "d", "text": "w"}]
+    ref = [{"id": "a", "path": "/ref/a.txt", "text": "x"},
+           {"id": "b", "path": "/ref/b.txt", "text": "y"}]
+    bg = [{"id": "c", "path": "/bg/c.txt", "text": "z"},
+          {"id": "d", "path": "/bg/d.txt", "text": "w"}]
     lg.assert_disjoint(ref, bg)  # no raise
 
 
 def test_overlap_raises_naming_offender():
-    ref = [{"id": "a", "text": "x"}, {"id": "shared", "text": "y"}]
-    bg = [{"id": "shared", "text": "z"}, {"id": "d", "text": "w"}]
+    # A genuinely shared source file (same path) IS the train-on-test overlap.
+    ref = [{"id": "a", "path": "/c/a.txt", "text": "x"},
+           {"id": "shared", "path": "/c/shared.txt", "text": "y"}]
+    bg = [{"id": "shared", "path": "/c/shared.txt", "text": "z"},
+          {"id": "d", "path": "/c/d.txt", "text": "w"}]
     with pytest.raises(lg.CorpusError) as exc:
         lg.assert_disjoint(ref, bg)
     assert "shared" in str(exc.value)
@@ -229,9 +234,27 @@ def test_overlap_raises_naming_offender():
 
 def test_self_scoring_is_refused():
     """A corpus scored against itself is the full-overlap degenerate case."""
-    corpus = [{"id": "a", "text": "x"}, {"id": "b", "text": "y"}]
+    corpus = [{"id": "a", "path": "/c/a.txt", "text": "x"},
+              {"id": "b", "path": "/c/b.txt", "text": "y"}]
     with pytest.raises(lg.CorpusError):
         lg.assert_disjoint(corpus, corpus)
+
+
+def test_same_stem_in_two_dirs_is_not_falsely_refused(tmp_path):
+    """mode-6 regression: two genuinely distinct files in two distinct dirs that
+    share a basename (ref/doc.txt vs bg/doc.txt) collide on the stem-derived `id`
+    but have distinct `path`s — assert_disjoint must NOT false-positive. Loads via
+    the REAL dir loader so the stem-id derivation is exercised, not mocked."""
+    from stylometry_core import load_entries_from_dir  # type: ignore
+    ref_dir = tmp_path / "ref"; ref_dir.mkdir()
+    bg_dir = tmp_path / "bg"; bg_dir.mkdir()
+    (ref_dir / "doc.txt").write_text("Reference author text for the doc file.", encoding="utf-8")
+    (bg_dir / "doc.txt").write_text("Distinct background text in this doc file.", encoding="utf-8")
+    ref = load_entries_from_dir(str(ref_dir))
+    bg = load_entries_from_dir(str(bg_dir))
+    assert ref[0]["id"] == bg[0]["id"] == "doc"  # ids collide (stem-derived)
+    assert ref[0]["path"] != bg[0]["path"]       # but paths are distinct
+    lg.assert_disjoint(ref, bg)  # must NOT raise
 
 
 # ---------------------------------------------------------------------------
@@ -403,6 +426,55 @@ def test_never_selects_with_multi_author_manifest(tmp_path):
     keys = set(_walk_keys(env))
     assert keys.isdisjoint(_RANKING_KEYS)
     assert env["results"]["reference_summary"]["n_docs"] == 1
+
+
+@_needs_parser
+def test_manifest_untagged_reference_is_not_silently_dropped(tmp_path):
+    """P1 regression: the documented persona-only manifest example must load a
+    reference author whose entries are NOT tagged use:baseline / ai_status:pre_ai_human
+    (the operator's own writing usually isn't). Before the fix, _load_corpus let the
+    loader fall back to use='baseline'/ai_status='pre_ai_human', dropping every such
+    entry and raising 'reference corpus is empty'. The entries here carry ONLY id +
+    path + persona — no use, no ai_status — so this test FAILS if the loader defaults
+    leak back in."""
+    a1 = tmp_path / "a1.txt"; a1.write_text(_REF_TEXT, encoding="utf-8")
+    b1 = tmp_path / "b1.txt"; b1.write_text(_BG_TEXT, encoding="utf-8")
+    q = tmp_path / "q.txt"; q.write_text(_QUERY_TEXT, encoding="utf-8")
+    manifest = tmp_path / "m.jsonl"
+    manifest.write_text(
+        json.dumps({"id": "a1", "path": "a1.txt", "persona": "me"}) + "\n"
+        + json.dumps({"id": "b1", "path": "b1.txt", "persona": "pool"}) + "\n",
+        encoding="utf-8",
+    )
+    rc, env = _envelope([str(q), "--manifest", str(manifest),
+                         "--reference-persona", "me",
+                         "--background-persona", "pool", "--json"])
+    assert rc == 0 and env["available"] is True, env.get("reason")
+    assert env["results"]["reference_summary"]["n_docs"] == 1
+    assert env["results"]["background_summary"]["n_docs"] == 1
+
+
+@_needs_parser
+def test_manifest_use_filter_still_honored_when_passed(tmp_path):
+    """P1 fix must not over-correct: when the operator DOES pass --reference-use, the
+    filter is honored (an entry not matching that use is dropped). Guards against the
+    'always None' degenerate that would make --reference-use a no-op."""
+    a1 = tmp_path / "a1.txt"; a1.write_text(_REF_TEXT, encoding="utf-8")
+    b1 = tmp_path / "b1.txt"; b1.write_text(_BG_TEXT, encoding="utf-8")
+    q = tmp_path / "q.txt"; q.write_text(_QUERY_TEXT, encoding="utf-8")
+    manifest = tmp_path / "m.jsonl"
+    manifest.write_text(
+        json.dumps({"id": "a1", "path": "a1.txt", "persona": "me", "use": "validation"}) + "\n"
+        + json.dumps({"id": "b1", "path": "b1.txt", "persona": "pool"}) + "\n",
+        encoding="utf-8",
+    )
+    # Ask for use=baseline on the reference, but the only 'me' entry is use=validation.
+    rc, env = _envelope([str(q), "--manifest", str(manifest),
+                         "--reference-persona", "me", "--reference-use", "baseline",
+                         "--background-persona", "pool", "--json"])
+    assert env["available"] is False
+    assert env["reason_category"] == "bad_input"
+    assert "reference corpus is empty" in env["reason"]
 
 
 @_needs_parser

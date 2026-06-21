@@ -271,7 +271,7 @@ Euclidean / Mahalanobis-style norm of per-function-word z-scores against baselin
 
 `lambdag_audit:lambda_g` / `:lambda_g_per_token` · authorship-verification · ↔ · **heuristic**
 
-Log-likelihood-ratio of a query's POS-sequence grammar under a count-based n-gram LM trained on a **reference-author** corpus vs one trained on a **background** corpus: `lambda_g = logL_ref − logL_bg` (nats; `lambda_g_per_token` length-normalized). `> 0` = grammar more probable under the reference author. The LR sibling of Burrows Delta (same `voice_coherence` surface). Signed real ∈ ℝ; PROVISIONAL 3-level *leaning* band, **no same/different-author verdict**. Corpus-relative (a thin/mismatched background inflates or flips the sign). Reference/background must be **held-out disjoint** (anti-Goodhart). Parser-tier (spaCy `en_core_web_sm`; abstains without it). Length floor 150 words. Spec 31 (arXiv:2403.08462).
+Log-likelihood-ratio of a query's POS-sequence grammar under a count-based n-gram LM trained on a **reference-author** corpus vs one trained on a **background** corpus: `lambda_g = logL_ref − logL_bg` (nats; `lambda_g_per_token` length-normalized). `> 0` = grammar more probable under the reference author. The LR sibling of Burrows Delta (same `voice_coherence` surface). Signed real ∈ ℝ; PROVISIONAL 3-level *leaning* band, **no same/different-author verdict**. Corpus-relative (a thin/mismatched background inflates or flips the sign). Reference/background must be **held-out disjoint** (anti-Goodhart). Parser-tier (spaCy `en_core_web_sm`; abstains without it). Length floor 150 words. Spec 32 (arXiv:2403.08462).
 
 ---
 

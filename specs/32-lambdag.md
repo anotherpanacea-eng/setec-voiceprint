@@ -1,4 +1,4 @@
-# 31 — lambdag — LambdaG grammar likelihood-ratio AV signal
+# 32 — lambdag — LambdaG grammar likelihood-ratio AV signal
 
 > A **white-box, model-free** authorship-verification signal: build an n-gram language model
 > over a document's **POS-tag sequences**, score a query document's grammar log-likelihood
