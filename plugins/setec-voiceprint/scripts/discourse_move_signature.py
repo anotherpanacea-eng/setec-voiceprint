@@ -132,6 +132,209 @@ _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 
 CATEGORIES = tuple(_PATTERNS.keys())
 
+
+# --- PDTB explicit-connective relation layer -------------------
+#
+# An ADDITIVE, parallel read alongside the marker typology above.
+# Each PDTB top-level relation sense (Comparison / Contingency /
+# Expansion / Temporal) is matched independently over the full text
+# from a static connective lexicon, and the document's explicit
+# discourse-relation *mix* is emitted as descriptive stylometric
+# shape (counts / per-1k densities / fractions / entropy). This is
+# the EXPLICIT-CONNECTIVE PROXY of arXiv:2307.03378 ("Side-by-side
+# Transformers for Implicit Discourse Relation Classification,
+# PDTB-3", arXiv:2307.03378): the paper's actual contribution — a
+# trained classifier for IMPLICIT (unsignalled) relations — is the
+# gated model-CPU M2 seam (see the M2 note below `audit_explicit
+# _relations`), NOT this stdlib M1 layer.
+#
+# Design (spec §3.2, D1/D2):
+#   * Top-level 4-way taxonomy only (D4); second-level senses
+#     (Cause vs Condition, Contrast vs Concession, …) need argument
+#     spans the surface form alone can't supply → M2.
+#   * Each connective is assigned a SINGLE majority top-level class
+#     from PDTB-3 frequency (D1). M1 does not disambiguate
+#     polysemous connectives per-occurrence (that needs the Arg1/
+#     Arg2 spans → M2); instead the genuinely cross-bucket
+#     connectives are tracked in `_AMBIGUOUS_CONNECTIVES` so
+#     `ambiguous_connective_fraction` can report their share as an
+#     honesty/confidence valve.
+#   * This is a PARALLEL independent count over the full text (D2),
+#     NOT a re-bucketing of `classify_sentence` (which is per-
+#     sentence first-match). A sentence with two connectives
+#     contributes two relation occurrences. The two layers answer
+#     different questions and are allowed to disagree.
+#
+# Majority-class assignments for the balanced-polysemous connectives
+# ("as", "while", "since", "so", "after") follow PDTB-3 published
+# top-level frequency: "while"→Comparison (Concession/Contrast
+# dominate its explicit use), "since"→Temporal (Asynchronous edges
+# the Cause reading in explicit use), "as"→Temporal, "so"→
+# Contingency (Result), "after"→Temporal. Any reasonable assignment
+# is acceptable because `ambiguous_connective_fraction` flags them
+# (spec §10); the value is corpus-independent (anti-Goodhart, spec
+# §6 guard 15) — a static linguistic inventory, never fit to any
+# SETEC validation/impostor corpus.
+
+RELATION_BUCKETS = ("comparison", "contingency", "expansion", "temporal")
+
+_PDTB_CONNECTIVES: dict[str, tuple[re.Pattern[str], ...]] = {
+    # Comparison — Contrast / Concession / Similarity.
+    "comparison": (
+        re.compile(
+            r"\b(?:however|but|yet|although|though|whereas|nevertheless"
+            r"|nonetheless|conversely|similarly|likewise|while)\b",
+            re.I,
+        ),
+        re.compile(
+            r"\b(?:in contrast|on the other hand|by comparison|even though)\b",
+            re.I,
+        ),
+    ),
+    # Contingency — Cause / Condition / Purpose / Negative-condition.
+    "contingency": (
+        re.compile(
+            r"\b(?:because|therefore|thus|hence|consequently|if|unless|so)\b",
+            re.I,
+        ),
+        re.compile(
+            r"\b(?:as a result|so that|in order to|for this reason)\b",
+            re.I,
+        ),
+    ),
+    # Expansion — Conjunction / Instantiation / Restatement / …
+    "expansion": (
+        re.compile(
+            r"\b(?:and|also|furthermore|moreover|specifically|namely"
+            r"|instead|rather|besides|indeed|or)\b",
+            re.I,
+        ),
+        re.compile(
+            r"\b(?:in addition|for example|for instance|in particular"
+            r"|that is|in other words)\b",
+            re.I,
+        ),
+    ),
+    # Temporal — Synchronous / Asynchronous.
+    "temporal": (
+        re.compile(
+            r"\b(?:then|next|after|before|when|meanwhile|subsequently"
+            r"|finally|previously|simultaneously|until|once|since|as)\b",
+            re.I,
+        ),
+        re.compile(r"\b(?:as soon as)\b", re.I),
+    ),
+}
+
+# Genuinely cross-bucket PDTB connectives (Comparison(Concession) vs
+# Temporal(Synchronous) for "while"; Contingency(Cause) vs Temporal
+# (Asynchronous) for "since"; Contingency/Temporal/Comparison for
+# "as"; Result vs Purpose-ish for "so"; …). Each is assigned a
+# single majority class above; this set drives
+# `ambiguous_connective_fraction`. Matched case-insensitively as
+# whole words to mirror the lexicon's `\b…\b` matching.
+#
+# INVARIANT (mode-6 / honesty): every member here MUST also be a
+# lexicon match (i.e. counted in `n_explicit_connectives`), so the
+# ambiguous count is a strict subset of the explicit count and the
+# reported fraction is a true share in [0, 1] — never an artifact of
+# counting a word that the relation buckets don't. A regression test
+# (`test_ambiguous_set_is_subset_of_lexicon`) pins this. ("still" /
+# "yet" as bare intensifiers are deliberately excluded unless they
+# are also a counted relation connective.)
+_AMBIGUOUS_CONNECTIVES: frozenset[str] = frozenset({
+    "while", "since", "as", "so", "after", "before", "when", "yet",
+})
+
+# NOTE: the ambiguous count is no longer a separate `findall` over an
+# `_AMBIGUOUS_RE` — that re-counted bare `as` inside `as a result` /
+# `as soon as` and could exceed the explicit count. It is now read off
+# the SAME consumed, non-overlapping spans as the explicit count (see
+# `audit_explicit_relations`), so the subset/honesty invariant holds
+# by construction.
+
+
+# --- Single-pass, non-overlapping, longest-match-first matcher -----
+#
+# THE LOAD-BEARING ONE-OCCURRENCE-ONE-BUCKET INVARIANT (spec §2):
+# every text span is consumed by EXACTLY ONE connective and bucketed
+# ONCE. The naive design (an independent ``findall`` per pattern) is
+# wrong: a multi-word connective whose constituent words are also
+# single-word lexicon connectives gets multi-counted, and a bare
+# single-word connective embedded in a longer phrase from a DIFFERENT
+# bucket leaks into the wrong bucket. Concretely, with independent
+# passes: ``as a result`` -> contingency:1 + a spurious temporal:1
+# (bare ``as``); ``as soon as`` -> temporal:3 (bare ``as`` twice +
+# the phrase once); ``so that`` -> contingency:2; ``even though`` ->
+# comparison:2. That inflates ``n_explicit_connectives`` and skews
+# every downstream value (fractions / density / entropy / ambiguous
+# fraction / baseline z-scores).
+#
+# Fix: extract every surface form from ``_PDTB_CONNECTIVES`` (kept as
+# the single source of truth so the corpus-independence and
+# ambiguous-subset invariants still hold), order them LONGEST-FIRST
+# globally, and compile ONE combined alternation. ``re.finditer``
+# consumes each span exactly once and, because alternatives are tried
+# in order, the longest form at any start position wins
+# (``as soon as`` beats ``as``; ``as a result`` beats ``as``). The
+# ambiguous count is read off the SAME consumed spans, so it is a
+# strict subset of the explicit count by construction.
+
+_ALT_RE = re.compile(r"^\\b\(\?:(.*)\)\\b$", re.S)
+
+
+def _extract_surface_forms(
+) -> tuple[tuple[str, str], ...]:
+    """Flatten ``_PDTB_CONNECTIVES`` into ``(surface_form, bucket)``
+    pairs, ordered longest-form-first so the combined alternation is
+    longest-match-first (e.g. ``as soon as`` is tried before ``as``).
+    Derived from the compiled lexicon patterns so the lexicon stays
+    the single source of truth.
+    """
+    pairs: list[tuple[str, str]] = []
+    for bucket, patterns in _PDTB_CONNECTIVES.items():
+        for pattern in patterns:
+            m = _ALT_RE.match(pattern.pattern)
+            if m is None:  # pragma: no cover - guards lexicon shape
+                raise ValueError(
+                    f"PDTB lexicon pattern for {bucket!r} is not a "
+                    f"simple \\b(?:...)\\b alternation: "
+                    f"{pattern.pattern!r}"
+                )
+            for form in m.group(1).split("|"):
+                pairs.append((form, bucket))
+    # Longest surface form first (more words, then more chars), so a
+    # multi-word connective always out-competes a single-word form
+    # that is its substring. Stable tie-break on the form keeps the
+    # ordering deterministic.
+    pairs.sort(key=lambda fb: (-len(fb[0].split()), -len(fb[0]), fb[0]))
+    return tuple(pairs)
+
+
+_SURFACE_FORMS: tuple[tuple[str, str], ...] = _extract_surface_forms()
+
+# One combined alternation, longest-first. We recover the bucket from
+# the matched text via ``_FORM_TO_BUCKET`` (below) rather than from N
+# named groups, because a bare-string lookup is simpler and Python
+# caps named groups at 100.
+_COMBINED_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(f) for f, _ in _SURFACE_FORMS) + r")\b",
+    re.I,
+)
+
+# Map a matched (lowercased) surface form back to its bucket. Built
+# from the same source so it cannot drift. A surface form appears in
+# exactly one bucket in the current lexicon; if a future edit puts the
+# same form in two buckets, the longest-first order above still makes
+# the match deterministic and this map takes the first-seen bucket.
+_FORM_TO_BUCKET: dict[str, str] = {}
+for _form, _bucket in _SURFACE_FORMS:
+    _FORM_TO_BUCKET.setdefault(_form.lower(), _bucket)
+
+
+_RELATION_ENTROPY_MAX_BITS = math.log2(len(RELATION_BUCKETS))  # 2.0 for 4 buckets
+
+
 _SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
 _WORD_RE = re.compile(r"\b\w+\b")
 
@@ -185,6 +388,123 @@ def classify_sentence(sentence: str) -> str | None:
                 earliest_pos = pos
                 earliest_category = category
     return earliest_category
+
+
+def audit_explicit_relations(text: str, n_words: int) -> dict[str, Any]:
+    """Explicit-connective PDTB relation distribution (M1).
+
+    A parallel, independent count over the full text (NOT a re-
+    bucketing of ``classify_sentence``): each PDTB connective
+    surface form is matched from ``_PDTB_CONNECTIVES`` and bucketed
+    to its majority top-level relation class (Comparison /
+    Contingency / Expansion / Temporal). Emits the document's
+    explicit discourse-relation *mix* as descriptive shape — counts,
+    per-1k densities, fractions, and Shannon entropy over the four
+    fractions.
+
+    Descriptive, NO-VERDICT: every leaf is a VALUE (count / density
+    / fraction / entropy); ``calibration_status`` is ``uncalibrated``
+    because there is no calibrated reference for a "normal" explicit-
+    relation mix (spec §3.3, D3). The implicit-relation layer (the
+    subject of arXiv:2307.03378) is out of M1 scope by construction.
+
+    ``n_words`` is passed in (already computed by the caller) so the
+    densities share the host's word count exactly.
+    """
+    # ONE non-overlapping, longest-match-first pass over the combined
+    # lexicon (see `_COMBINED_RE`). Each text span is consumed exactly
+    # once and bucketed exactly once, enforcing the spec §2 one-
+    # occurrence-one-bucket invariant. The naive per-pattern `findall`
+    # loop double/triple-counts overlapping connectives (`as soon as`,
+    # `as a result`, `so that`, `even though`) — this pass does not.
+    counts: Counter[str] = Counter()
+    # Always seed every bucket (zero-filled) so all four are present
+    # even when nothing fires.
+    for bucket in RELATION_BUCKETS:
+        counts[bucket] = 0
+    n_ambiguous = 0
+    for m in _COMBINED_RE.finditer(text):
+        form = " ".join(m.group(0).lower().split())
+        bucket = _FORM_TO_BUCKET.get(form)
+        if bucket is None:  # pragma: no cover - defensive
+            continue
+        counts[bucket] += 1
+        # The ambiguous count is read off the SAME consumed spans, so
+        # it is a strict subset of the explicit count by construction
+        # (the honesty invariant — no bare `as` re-counted inside
+        # `as a result` / `as soon as`).
+        if form in _AMBIGUOUS_CONNECTIVES:
+            n_ambiguous += 1
+
+    n_explicit = sum(counts.values())
+
+    density_per_1k = {
+        b: (1000.0 * counts[b] / n_words) if n_words else 0.0
+        for b in RELATION_BUCKETS
+    }
+    if n_explicit > 0:
+        fractions = {b: counts[b] / n_explicit for b in RELATION_BUCKETS}
+    else:
+        fractions = {b: 0.0 for b in RELATION_BUCKETS}
+
+    # Shannon entropy in bits over the relation fractions; 0.0 when
+    # all mass is in one bucket, max (2.0) when the four are equal.
+    relation_entropy = _entropy({b: counts[b] for b in RELATION_BUCKETS})
+
+    ambiguous_fraction = (
+        n_ambiguous / n_explicit if n_explicit > 0 else 0.0
+    )
+    # An ambiguous connective is also a lexicon match, so its share
+    # of explicit connectives is bounded by 1.0; clamp defensively
+    # against any matching skew (e.g. an ambiguous form the bucket
+    # lexicon spells differently) so the field cannot exceed [0, 1].
+    ambiguous_fraction = min(1.0, max(0.0, ambiguous_fraction))
+
+    block: dict[str, Any] = {
+        "calibration_status": "uncalibrated",
+        "n_explicit_connectives": n_explicit,
+        "buckets": list(RELATION_BUCKETS),
+        "counts": {b: counts[b] for b in RELATION_BUCKETS},
+        "density_per_1k": density_per_1k,
+        "fractions": fractions,
+        "relation_entropy_bits": relation_entropy,
+        "relation_entropy_max_bits": _RELATION_ENTROPY_MAX_BITS,
+        "ambiguous_connective_fraction": ambiguous_fraction,
+    }
+    if n_explicit == 0:
+        # Present-but-zero is an informative descriptive fact about
+        # the writer (no explicitly-signalled relations), not an
+        # error (spec D7).
+        block["reason"] = "no explicit PDTB connectives matched"
+    return block
+
+
+# --- M2 seam (NOT built in M1) ---------------------------------
+#
+# arXiv:2307.03378's actual contribution is a TRAINED transformer
+# that types the relation between two argument spans with NO
+# explicit connective — the IMPLICIT case (the majority of the PDTB
+# corpus). That is model-CPU (transformer inference, needs
+# `transformers`/`torch` + upstream argument-span segmentation), so
+# it is the gated M2 seam, not this stdlib M1 layer.
+#
+# Seam contract (mirrors the repo's established lazy-import +
+# importorskip pattern — e.g. the lazy transformers import in
+# `surprisal_backend.py` / `voice_fingerprint.py`, gated in tests by
+# `pytest.importorskip` as in `test_voice_fingerprint.py`):
+#   * M2 lands an `implicit_relation_distribution` block under (or
+#     beside) `relation_distribution`, behind a lazy
+#     `importlib.import_module` inside the function and a
+#     `--include-implicit` CLI flag that DEFAULTS OFF.
+#   * When the dep/model is absent, M1 still runs and the implicit
+#     block is simply absent — no crash (the `available`/optional-
+#     dep pattern already in the codebase).
+#   * M2 tests gate behind `pytest.importorskip("transformers")` so
+#     CI without the model stays green and the M1 explicit layer is
+#     always exercised.
+#   * The capability fragment records the M2 dep under
+#     `dependencies.python_optional` only when M2 ships; M1 leaves
+#     it empty.
 
 
 def audit_discourse_moves(text: str) -> dict[str, Any]:
@@ -276,6 +596,11 @@ def audit_discourse_moves(text: str) -> dict[str, Any]:
     else:
         band = "Heavily scaffolded"
 
+    # Additive PDTB explicit-connective relation layer (parallel,
+    # independent read over the full text — NOT a re-bucketing of
+    # the move sequence above). Descriptive shape, no verdict.
+    relation_distribution = audit_explicit_relations(text, n_words)
+
     return {
         "task_surface": TASK_SURFACE,
         "tool": TOOL_NAME,
@@ -292,6 +617,7 @@ def audit_discourse_moves(text: str) -> dict[str, Any]:
         },
         "move_sequence_entropy_bits": full_entropy,
         "marked_only_entropy_bits": marked_entropy,
+        "relation_distribution": relation_distribution,
         "compression": {
             "band": band,
             "compression_fraction": round(compression_fraction, 3),
@@ -350,6 +676,9 @@ def audit_baseline_discourse(
     skipped_files: list[dict[str, str]] = []
     per_file: list[dict[str, Any]] = []
     pooled_density_by_cat: dict[str, list[float]] = {c: [] for c in CATEGORIES}
+    pooled_relation_density: dict[str, list[float]] = {
+        b: [] for b in RELATION_BUCKETS
+    }
     pooled_bigrams: Counter[str] = Counter()
     next_anon_id = 1
     for p in paths:
@@ -397,6 +726,12 @@ def audit_baseline_discourse(
         next_anon_id += 1
         for cat, density in a["category_densities_per_1k"].items():
             pooled_density_by_cat[cat].append(density)
+        rel = a.get("relation_distribution", {})
+        rel_density = rel.get("density_per_1k", {})
+        for bucket in RELATION_BUCKETS:
+            pooled_relation_density[bucket].append(
+                rel_density.get(bucket, 0.0)
+            )
         for bigram_str, count in a["move_sequence_bigrams"].items():
             pooled_bigrams[bigram_str] += count
 
@@ -415,6 +750,10 @@ def audit_baseline_discourse(
         cat: _mean_sd(vals)
         for cat, vals in pooled_density_by_cat.items()
     }
+    aggregate_relation = {
+        bucket: _mean_sd(vals)
+        for bucket, vals in pooled_relation_density.items()
+    }
 
     return {
         "n_files": len(per_file),
@@ -422,6 +761,7 @@ def audit_baseline_discourse(
         "skipped_files": skipped_files,
         "per_file_summaries": per_file,
         "aggregate_density_by_category": aggregate,
+        "aggregate_relation_density_by_bucket": aggregate_relation,
         "pooled_bigrams": dict(pooled_bigrams),
         "include_filenames": include_filenames,
     }
@@ -446,9 +786,27 @@ def compare_to_baseline(
             continue
         z = (target_dens.get(cat, 0.0) - bucket["mean"]) / sd
         z_scores[cat] = z
+
+    # PDTB relation-bucket z-scores (parallel, same guard). These
+    # measure distance from the OPERATOR'S OWN corpus (a self-
+    # baseline), not a population norm and not a verdict threshold.
+    relation_z: dict[str, float | None] = {}
+    agg_rel = baseline_block.get("aggregate_relation_density_by_bucket", {})
+    target_rel = target.get("relation_distribution", {}).get(
+        "density_per_1k", {}
+    )
+    for rb in RELATION_BUCKETS:
+        bucket = agg_rel.get(rb, {})
+        sd = bucket.get("sd", 0.0)
+        if sd <= 0 or bucket.get("n", 0) < 2:
+            relation_z[rb] = None
+            continue
+        relation_z[rb] = (target_rel.get(rb, 0.0) - bucket["mean"]) / sd
+
     return {
         "available": True,
         "category_density_z_scores": z_scores,
+        "relation_density_z_scores": relation_z,
     }
 
 
@@ -456,44 +814,88 @@ def compare_to_baseline(
 
 
 def _claim_license(audit: dict[str, Any]) -> ClaimLicense:
+    licenses = (
+        "Discourse-marker typology and move-sequence pattern of "
+        "the input: per-category marker densities (contrast, "
+        "concession, consequence, elaboration, exemplification, "
+        "sequencing, reframing, epistemic stance, boosting, "
+        "hedging, self-correction, metadiscourse) and move-"
+        "sequence bigram counts. Surfaces *what kind* of "
+        "scaffolding the writer uses, not just *how much*."
+    )
+    does_not_license = (
+        "An AI-provenance verdict. Heavy scaffolding is "
+        "characteristic of legal/policy memos, academic prose, "
+        "AI-edited drafts, and well-scaffolded human essayists "
+        "alike. The differential diagnosis of cause is the "
+        "confounder audit's job (which consumes this output as "
+        "evidence). Nor does the audit license claims about "
+        "which moves are 'good' or 'bad' — the typology is "
+        "descriptive."
+    )
+    additional_caveats = [
+        "Marker patterns are case-insensitive English regexes. "
+        "Idiomatic markers (e.g. \"the better question is\") "
+        "are pattern-matched literally; metaphorical or unusual "
+        "wordings will be missed.",
+        "First-match wins for sentence classification: a "
+        "sentence with multiple markers gets typed by the "
+        "earliest one. Move-sequence bigrams capture the "
+        "between-sentence pattern regardless.",
+        "Heuristic thresholds (band call) are calibration-"
+        "pending; treat the band as a cue, not a verdict.",
+    ]
+
+    # PDTB explicit-connective relation layer (additive). Only
+    # extend the license when the relation block is present (it
+    # always is on an available audit, but guard defensively).
+    if "relation_distribution" in audit:
+        licenses += (
+            " When explicit connectives are present, the writer's "
+            "EXPLICIT PDTB top-level discourse-relation mix "
+            "(Comparison / Contingency / Expansion / Temporal) as a "
+            "descriptive distribution — per-1k densities, fractions, "
+            "and relation entropy."
+        )
+        does_not_license += (
+            " It also does not license any claim about IMPLICIT "
+            "discourse relations. The relation layer is an explicit-"
+            "connective PROXY: it maps only explicitly-signalled "
+            "connectives to their PDTB majority top-level class. It "
+            "does not extract argument spans, does not disambiguate "
+            "polysemous connectives per-occurrence, and does not see "
+            "the (larger) implicit-relation layer that the trained "
+            "classifier of arXiv:2307.03378 targets. A relation "
+            "distribution is characteristic of register and genre "
+            "(legal/policy prose is Contingency-dense; narrative is "
+            "Temporal-dense) and licenses no inference about "
+            "authorship or argument quality."
+        )
+        additional_caveats.extend([
+            "Explicit-connective proxy only; implicit (unsignalled) "
+            "relations are invisible to this M1 layer (they are the "
+            "subject of the gated model, arXiv:2307.03378).",
+            "Polysemous connectives (while, since, as, …) are each "
+            "assigned a single majority PDTB class; "
+            "`ambiguous_connective_fraction` reports their share, so "
+            "a high value flags low confidence in the relation mix.",
+            "The relation distribution is uncalibrated "
+            "(`calibration_status: \"uncalibrated\"`); baseline "
+            "relation z-scores, when present, measure distance from "
+            "the supplied corpus (a self-baseline), not a population "
+            "norm and not a verdict threshold.",
+        ])
+
     lic = ClaimLicense(
         task_surface=TASK_SURFACE,
-        licenses=(
-            "Discourse-marker typology and move-sequence pattern of "
-            "the input: per-category marker densities (contrast, "
-            "concession, consequence, elaboration, exemplification, "
-            "sequencing, reframing, epistemic stance, boosting, "
-            "hedging, self-correction, metadiscourse) and move-"
-            "sequence bigram counts. Surfaces *what kind* of "
-            "scaffolding the writer uses, not just *how much*."
-        ),
-        does_not_license=(
-            "An AI-provenance verdict. Heavy scaffolding is "
-            "characteristic of legal/policy memos, academic prose, "
-            "AI-edited drafts, and well-scaffolded human essayists "
-            "alike. The differential diagnosis of cause is the "
-            "confounder audit's job (which consumes this output as "
-            "evidence). Nor does the audit license claims about "
-            "which moves are 'good' or 'bad' — the typology is "
-            "descriptive."
-        ),
+        licenses=licenses,
+        does_not_license=does_not_license,
         comparison_set={
             "n_words": audit.get("n_words"),
             "n_sentences": audit.get("n_sentences"),
             "band": audit.get("compression", {}).get("band"),
         },
-        additional_caveats=[
-            "Marker patterns are case-insensitive English regexes. "
-            "Idiomatic markers (e.g. \"the better question is\") "
-            "are pattern-matched literally; metaphorical or unusual "
-            "wordings will be missed.",
-            "First-match wins for sentence classification: a "
-            "sentence with multiple markers gets typed by the "
-            "earliest one. Move-sequence bigrams capture the "
-            "between-sentence pattern regardless.",
-            "Heuristic thresholds (band call) are calibration-"
-            "pending; treat the band as a cue, not a verdict.",
-        ],
+        additional_caveats=additional_caveats,
     )
     # B.3: state-routed caveats when --ai-status was passed.
     return with_state_caveats(
@@ -509,7 +911,8 @@ _RESULTS_KEYS = (
     "category_counts", "category_densities_per_1k",
     "total_marker_density_per_1k", "move_sequence",
     "move_sequence_bigrams", "move_sequence_entropy_bits",
-    "marked_only_entropy_bits", "compression",
+    "marked_only_entropy_bits", "relation_distribution",
+    "compression",
 )
 
 
@@ -624,6 +1027,44 @@ def render_report(
             lines.append(f"- `{sig}`")
         lines.append("")
 
+    rel = audit.get("relation_distribution")
+    if rel is not None:
+        lines.append("## Explicit discourse-relation profile")
+        lines.append("")
+        n_exp = rel.get("n_explicit_connectives", 0)
+        if n_exp == 0:
+            lines.append(
+                "_No explicit PDTB connectives matched — the writer "
+                "signals discourse relations implicitly (or this is a "
+                "short / non-argumentative passage). Explicit-only "
+                "proxy; implicit relations are out of scope._"
+            )
+            lines.append("")
+        else:
+            lines.append(
+                f"**Explicit connectives:** {n_exp}  "
+                f"**Relation entropy:** "
+                f"{rel.get('relation_entropy_bits', 0.0):.2f} / "
+                f"{rel.get('relation_entropy_max_bits', 0.0):.2f} bits  "
+                f"**Ambiguous-connective share:** "
+                f"{rel.get('ambiguous_connective_fraction', 0.0):.2f}  "
+                f"(`calibration_status: "
+                f"{rel.get('calibration_status', 'uncalibrated')}`)"
+            )
+            lines.append("")
+            lines.append("| relation | count | density / 1k | fraction |")
+            lines.append("|---|---:|---:|---:|")
+            counts = rel.get("counts", {})
+            dens = rel.get("density_per_1k", {})
+            fracs = rel.get("fractions", {})
+            for b in rel.get("buckets", list(RELATION_BUCKETS)):
+                lines.append(
+                    f"| {b} | {counts.get(b, 0)} | "
+                    f"{dens.get(b, 0.0):.2f} | "
+                    f"{fracs.get(b, 0.0):.3f} |"
+                )
+            lines.append("")
+
     bigrams = audit.get("move_sequence_bigrams", {})
     if bigrams:
         # Top 10 most-frequent bigrams.
@@ -647,6 +1088,23 @@ def render_report(
             z_str = f"{z:+.2f}" if isinstance(z, (int, float)) else "n/a"
             lines.append(f"| {cat} | {z_str} |")
         lines.append("")
+
+        rel_zs = baseline_comparison.get("relation_density_z_scores")
+        if rel_zs:
+            lines.append("### Relation-bucket z-scores")
+            lines.append("")
+            lines.append(
+                "_Distance from the supplied corpus (self-baseline), "
+                "not a population norm or a verdict threshold._"
+            )
+            lines.append("")
+            lines.append("| relation | z-score |")
+            lines.append("|---|---:|")
+            for b in RELATION_BUCKETS:
+                z = rel_zs.get(b)
+                z_str = f"{z:+.2f}" if isinstance(z, (int, float)) else "n/a"
+                lines.append(f"| {b} | {z_str} |")
+            lines.append("")
 
     lines.append(_claim_license_block(audit))
     lines.append("")
