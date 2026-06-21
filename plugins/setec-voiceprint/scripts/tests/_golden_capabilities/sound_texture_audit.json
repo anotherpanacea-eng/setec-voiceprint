@@ -42,7 +42,7 @@
   },
   "purpose": "Descriptive sound-texture profile of prose \u2014 alliteration / assonance / consonance adjacency density and a consonant-class (plosive / fricative / sibilant / nasal / liquid / glide) profile \u2014 via an orthographic-onset proxy. The sonic layer the shipped suite (sentence-length variance only) is blind to. NOT a phonetic transcription, NOT an AI detector, NOT a quality judgment: measurements only (no band/verdict); the claim-license refuses AI-provenance / voice-identity / quality inference. Optional baseline-dir reports each metric as a deviation from the writer's own baseline.\n",
   "references": [
-    "plugins/setec-voiceprint/specs/17-sound-texture-audit.md"
+    "specs/17-sound-texture-audit.md"
   ],
   "registers": [
     "literary_fiction",

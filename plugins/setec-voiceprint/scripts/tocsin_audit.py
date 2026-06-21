@@ -437,7 +437,7 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
         references=[
             "Wang, Cheng, et al. 2024, 'Zero-Shot Detection of LLM-Generated "
             "Text using Token Cohesiveness' (TOCSIN, arXiv:2409.16914)",
-            "plugins/setec-voiceprint/specs/31-tocsin-token-cohesiveness.md",
+            "specs/31-tocsin-token-cohesiveness.md",
         ],
     )
 

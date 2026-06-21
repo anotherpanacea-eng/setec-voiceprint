@@ -45,4 +45,4 @@ entries:
     cmd: python3 plugins/setec-voiceprint/scripts/formulaicity_audit.py target.md
       --phrases-file my.txt
   references:
-  - plugins/setec-voiceprint/specs/09-formulaicity-audit.md
+  - specs/09-formulaicity-audit.md

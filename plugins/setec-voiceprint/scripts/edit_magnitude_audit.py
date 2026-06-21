@@ -391,7 +391,7 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "imported, or downloaded here.",
             "Base model roberta-large is MIT-licensed; the operator confirms "
             "their chosen base-model license at calibration time.",
-            "plugins/setec-voiceprint/specs/13-editlens-edit-magnitude.md",
+            "specs/13-editlens-edit-magnitude.md",
         ],
     )
 

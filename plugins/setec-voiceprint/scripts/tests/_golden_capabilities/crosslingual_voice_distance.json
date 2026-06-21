@@ -56,7 +56,7 @@
     }
   ],
   "references": [
-    "plugins/setec-voiceprint/specs/19-crosslingual-voice-distance.md",
+    "specs/19-crosslingual-voice-distance.md",
     "specs/28-styledistance-encoder-upgrade.md"
   ]
 }

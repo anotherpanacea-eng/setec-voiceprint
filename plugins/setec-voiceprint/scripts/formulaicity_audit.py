@@ -154,7 +154,7 @@ def _claim_license() -> ClaimLicense:
             "Descriptive only — no band, no verdict, no threshold.",
         ],
         references=[
-            "plugins/setec-voiceprint/specs/09-formulaicity-audit.md",
+            "specs/09-formulaicity-audit.md",
         ],
     )
 

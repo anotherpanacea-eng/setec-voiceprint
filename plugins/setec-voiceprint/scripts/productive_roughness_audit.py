@@ -465,7 +465,7 @@ def _claim_license(
             "degrading silently.",
         ],
         references=[
-            "plugins/setec-voiceprint/specs/10-productive-roughness-audit.md",
+            "specs/10-productive-roughness-audit.md",
         ],
     )
 

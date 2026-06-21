@@ -46,4 +46,4 @@ entries:
     cmd: python3 plugins/setec-voiceprint/scripts/document_layout_audit.py target.md
       --json
   references:
-  - plugins/setec-voiceprint/specs/07-document-layout-audit.md
+  - specs/07-document-layout-audit.md

@@ -64,6 +64,6 @@ entries:
     cmd: python3 plugins/setec-voiceprint/scripts/homogeneity_audit.py --target draft.md --centroid-dir
       corpora/ai_pool --json
   references:
-  - plugins/setec-voiceprint/specs/30-homogeneity-audit.md
+  - specs/30-homogeneity-audit.md
   - 'Artificial Hivemind — Jiang, Choi, Sap et al., NeurIPS 2025 D&B (arXiv:2510.22954): https://arxiv.org/abs/2510.22954'
   - 'QUDsim — discourse-structure reuse across LLM text (arXiv:2504.09373): https://arxiv.org/abs/2504.09373'

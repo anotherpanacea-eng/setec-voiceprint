@@ -56,6 +56,6 @@ entries:
   - description: Token-cohesiveness over a single target (M1 stdlib proxy, JSON envelope)
     cmd: python3 plugins/setec-voiceprint/scripts/tocsin_audit.py --target target.md --json
   references:
-  - plugins/setec-voiceprint/specs/31-tocsin-token-cohesiveness.md
+  - specs/31-tocsin-token-cohesiveness.md
   - 'Zero-Shot Detection of LLM-Generated Text using Token Cohesiveness (TOCSIN) — Wang,
     Cheng et al. 2024 (arXiv:2409.16914): https://arxiv.org/abs/2409.16914'
