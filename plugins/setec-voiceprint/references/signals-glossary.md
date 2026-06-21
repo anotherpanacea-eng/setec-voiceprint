@@ -148,6 +148,36 @@ The interpretable (glass-box) document vector: every dimension a human-named sty
 
 ---
 
+## Function-word-network signals
+
+The graph-structure read of the function-word transition network (`function_word_adjacency_audit`, spec 32; arXiv:1406.4469). The four band-driving signals below are PROVISIONAL / operator-side structure-concentration cues (`calibration_status.n_calibrated == 0`); the band is suppressed below the `total_transitions` floor (200). M1 stdlib + numpy, no networkx, no model. Polarity arrows mark the structure-concentration direction the cue fires on; **none is a verdict** — they drive a descriptive band only, and there is no derived band score. The raw graph measurements (`results.graph` / `results.centrality` / `results.transition_entropy` / `results.motifs`) are reported as values, not thresholded.
+
+### Low global transition entropy
+
+`function_word_adjacency_audit:band.flagged_signals[low_global_transition_entropy]` · function-word-network · ↓ · **heuristic**
+
+Fires when the Shannon entropy (bits) of the FULL function-word transition matrix (`results.transition_entropy.global_bits`, computed over the whole distribution, not the grammar audit's top-20 view) is below the provisional cut (4.0 bits). Lower = a more concentrated / predictable transition structure. Range `[0, ∞)` bits. Floor: band offered only at `total_transitions >= 200`.
+
+### High PageRank concentration
+
+`function_word_adjacency_audit:band.flagged_signals[high_pagerank_concentration]` · function-word-network · ↑ · **heuristic**
+
+Fires when the Gini concentration of the PageRank centrality vector (`results.centrality.pagerank_gini`) exceeds the provisional cut (0.65). Higher = centrality mass concentrated on a few function-word hubs. PageRank is damped power iteration (damping 0.85, dangling nodes uniform). Range `[0, 1]`.
+
+### Low per-node entropy mean
+
+`function_word_adjacency_audit:band.flagged_signals[low_per_node_entropy_mean]` · function-word-network · ↓ · **heuristic**
+
+Fires when the mean over active nodes of each node's outgoing-transition entropy (`results.transition_entropy.per_node_mean_bits`) is below the provisional cut (1.5 bits). Lower = each function word's successor distribution is more predictable. Range `[0, ∞)` bits.
+
+### Low graph density
+
+`function_word_adjacency_audit:band.flagged_signals[low_graph_density]` · function-word-network · ↓ · **heuristic**
+
+Fires when the directed graph density (`results.graph.density` = realized off-diagonal edges / possible) is below the provisional cut (0.10). Lower = a sparser transition network. Range `[0, 1]`. Confounded by length / function-word-set coverage (`n_active_nodes`, `total_transitions` co-reported); NOT length-controlled.
+
+---
+
 ## Tier 3: Trajectory signals
 
 Layer A continuation; requires sentence-transformers (preferred) or TF-IDF fallback.
