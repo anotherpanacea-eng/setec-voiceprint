@@ -117,6 +117,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `pov_voice_profile` | Heuristic (uncalibrated) | No | labeled corpus + valid `corpus_manifest.jsonl` (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 3000 |
 | `productive_roughness_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | req: spacy | CPU + spaCy model | 1000 |
 | `punctuation_cadence_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | stdlib | CPU / stdlib (+ optional spaCy model) | 2000 |
+| `rank_space_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `rank_turbulence_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 200 |
 | `reference_ecology_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `repetition_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
