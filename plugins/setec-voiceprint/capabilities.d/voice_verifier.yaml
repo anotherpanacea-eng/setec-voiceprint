@@ -1,0 +1,96 @@
+entries:
+- id: voice_verifier
+  script_path: plugins/setec-voiceprint/scripts/voice_verifier.py
+  surface: voice_verifier
+  status: literature_anchored
+  handoff: experimental
+  consumers: []
+  min_setec_version: "1.117.0"
+  json_delivery: stdout
+  family: llm-verifier
+  purpose: 'LLM-as-verifier authorship surface — one ADVISORY stylometric-consistency
+    signal over a query/reference text pair (Huang et al. 2024 "Can LLMs Identify
+    Authorship?", InstructAV, CAVE). A model-based SECOND OPINION beside the
+    stylometric general_imposters harness: a pluggable LLM judge reads the two texts
+    as prose and emits a 5-band ordinal band (consistent / leans_consistent /
+    cannot_determine / leans_inconsistent / inconsistent) plus a CAVE-style decomposed
+    per-feature rationale with verbatim span pointers. Descriptive, no verdict: the
+    band vocabulary contains NO same-author / different-author / AI / human token,
+    there is no probability / score / confidence numeric, and the result ships
+    uncalibrated, bound to a named judge model + prompt fingerprint. Never a held-out
+    validator, a voicewright selection / fitness signal, a reward, or a training
+    target. `cannot_determine` is the designed gray-zone outcome, not an error. The
+    mock / manifest judges are stdlib (M1); the anthropic / openai / gemini API kinds
+    read the prose (M2, lazy SDK).
+
+    '
+  use_when:
+  - You want a model-based second opinion on whether two texts read as stylometrically
+    consistent, to corroborate or contrast against general_imposters / voice_distance
+  - You have a query text and a register-comparable reference text (authorship
+    verification is pairwise)
+  - You can accept a refusal — cannot_determine is a designed outcome, and the band
+    is uncalibrated and judge+prompt-relative
+  do_not_use_when:
+  - You need an authorship verdict (same-author / different-author), an AI-vs-human
+    determination, or a probability / score — the surface refuses all of them
+  - You have only one text — this is a pairwise AV second opinion, not an "is this
+    AI" classifier
+  - You would wire the band into a selection / held-out / fitness / reward / training
+    target — anti-Goodhart, it is read-only advisory context for the human
+  inputs:
+  - flag: --query
+    type: path
+    required: true
+  - flag: --reference
+    type: path
+    required: true
+  - flag: --judge
+    type: enum
+    required: false
+    values:
+    - manifest
+    - mock
+    - anthropic
+    - openai
+    - gemini
+  - flag: --manifest
+    type: path
+    required: false
+  - flag: --judge-model
+    type: string
+    required: false
+  - flag: --json
+    type: bool
+    required: false
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - voice_verifier JSON envelope (stdout under --json)
+  compute:
+    tier: api_llm
+    cost_note: mock / manifest are free + stdlib (M1); the anthropic / openai / gemini
+      API kinds cost per the provider (one pairwise comparison per call, M2)
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional: []
+    sdks_optional:
+    - anthropic
+    - openai
+    - google-genai
+  examples:
+  - description: Model-free CI / dry-run via the deterministic mock judge
+    cmd: python3 plugins/setec-voiceprint/scripts/voice_verifier.py --query draft.txt
+      --reference baseline.txt --judge mock --json
+  - description: Consume a pre-computed VerifierResult from an out-of-band judge
+    cmd: python3 plugins/setec-voiceprint/scripts/voice_verifier.py --query draft.txt
+      --reference baseline.txt --judge manifest --manifest verifier_result.json --json
+  references:
+  - https://arxiv.org/abs/2403.08213
+  - https://arxiv.org/abs/2407.12882
+  - https://arxiv.org/abs/2406.16672
+  - plugins/setec-voiceprint/references/signals-glossary.md
