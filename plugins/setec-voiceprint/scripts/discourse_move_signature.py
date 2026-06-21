@@ -246,9 +246,91 @@ _AMBIGUOUS_CONNECTIVES: frozenset[str] = frozenset({
     "while", "since", "as", "so", "after", "before", "when", "yet",
 })
 
-_AMBIGUOUS_RE = re.compile(
-    r"\b(?:" + "|".join(sorted(_AMBIGUOUS_CONNECTIVES)) + r")\b", re.I
+# NOTE: the ambiguous count is no longer a separate `findall` over an
+# `_AMBIGUOUS_RE` — that re-counted bare `as` inside `as a result` /
+# `as soon as` and could exceed the explicit count. It is now read off
+# the SAME consumed, non-overlapping spans as the explicit count (see
+# `audit_explicit_relations`), so the subset/honesty invariant holds
+# by construction.
+
+
+# --- Single-pass, non-overlapping, longest-match-first matcher -----
+#
+# THE LOAD-BEARING ONE-OCCURRENCE-ONE-BUCKET INVARIANT (spec §2):
+# every text span is consumed by EXACTLY ONE connective and bucketed
+# ONCE. The naive design (an independent ``findall`` per pattern) is
+# wrong: a multi-word connective whose constituent words are also
+# single-word lexicon connectives gets multi-counted, and a bare
+# single-word connective embedded in a longer phrase from a DIFFERENT
+# bucket leaks into the wrong bucket. Concretely, with independent
+# passes: ``as a result`` -> contingency:1 + a spurious temporal:1
+# (bare ``as``); ``as soon as`` -> temporal:3 (bare ``as`` twice +
+# the phrase once); ``so that`` -> contingency:2; ``even though`` ->
+# comparison:2. That inflates ``n_explicit_connectives`` and skews
+# every downstream value (fractions / density / entropy / ambiguous
+# fraction / baseline z-scores).
+#
+# Fix: extract every surface form from ``_PDTB_CONNECTIVES`` (kept as
+# the single source of truth so the corpus-independence and
+# ambiguous-subset invariants still hold), order them LONGEST-FIRST
+# globally, and compile ONE combined alternation. ``re.finditer``
+# consumes each span exactly once and, because alternatives are tried
+# in order, the longest form at any start position wins
+# (``as soon as`` beats ``as``; ``as a result`` beats ``as``). The
+# ambiguous count is read off the SAME consumed spans, so it is a
+# strict subset of the explicit count by construction.
+
+_ALT_RE = re.compile(r"^\\b\(\?:(.*)\)\\b$", re.S)
+
+
+def _extract_surface_forms(
+) -> tuple[tuple[str, str], ...]:
+    """Flatten ``_PDTB_CONNECTIVES`` into ``(surface_form, bucket)``
+    pairs, ordered longest-form-first so the combined alternation is
+    longest-match-first (e.g. ``as soon as`` is tried before ``as``).
+    Derived from the compiled lexicon patterns so the lexicon stays
+    the single source of truth.
+    """
+    pairs: list[tuple[str, str]] = []
+    for bucket, patterns in _PDTB_CONNECTIVES.items():
+        for pattern in patterns:
+            m = _ALT_RE.match(pattern.pattern)
+            if m is None:  # pragma: no cover - guards lexicon shape
+                raise ValueError(
+                    f"PDTB lexicon pattern for {bucket!r} is not a "
+                    f"simple \\b(?:...)\\b alternation: "
+                    f"{pattern.pattern!r}"
+                )
+            for form in m.group(1).split("|"):
+                pairs.append((form, bucket))
+    # Longest surface form first (more words, then more chars), so a
+    # multi-word connective always out-competes a single-word form
+    # that is its substring. Stable tie-break on the form keeps the
+    # ordering deterministic.
+    pairs.sort(key=lambda fb: (-len(fb[0].split()), -len(fb[0]), fb[0]))
+    return tuple(pairs)
+
+
+_SURFACE_FORMS: tuple[tuple[str, str], ...] = _extract_surface_forms()
+
+# One combined alternation, longest-first. We recover the bucket from
+# the matched text via ``_FORM_TO_BUCKET`` (below) rather than from N
+# named groups, because a bare-string lookup is simpler and Python
+# caps named groups at 100.
+_COMBINED_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(f) for f, _ in _SURFACE_FORMS) + r")\b",
+    re.I,
 )
+
+# Map a matched (lowercased) surface form back to its bucket. Built
+# from the same source so it cannot drift. A surface form appears in
+# exactly one bucket in the current lexicon; if a future edit puts the
+# same form in two buckets, the longest-first order above still makes
+# the match deterministic and this map takes the first-seen bucket.
+_FORM_TO_BUCKET: dict[str, str] = {}
+for _form, _bucket in _SURFACE_FORMS:
+    _FORM_TO_BUCKET.setdefault(_form.lower(), _bucket)
+
 
 _RELATION_ENTROPY_MAX_BITS = math.log2(len(RELATION_BUCKETS))  # 2.0 for 4 buckets
 
@@ -329,17 +411,32 @@ def audit_explicit_relations(text: str, n_words: int) -> dict[str, Any]:
     ``n_words`` is passed in (already computed by the caller) so the
     densities share the host's word count exactly.
     """
+    # ONE non-overlapping, longest-match-first pass over the combined
+    # lexicon (see `_COMBINED_RE`). Each text span is consumed exactly
+    # once and bucketed exactly once, enforcing the spec §2 one-
+    # occurrence-one-bucket invariant. The naive per-pattern `findall`
+    # loop double/triple-counts overlapping connectives (`as soon as`,
+    # `as a result`, `so that`, `even though`) — this pass does not.
     counts: Counter[str] = Counter()
-    for bucket, patterns in _PDTB_CONNECTIVES.items():
-        n_matches = 0
-        for pattern in patterns:
-            n_matches += len(pattern.findall(text))
-        # Always seed the key (zero-filled) so all four buckets are
-        # present even when nothing fires.
-        counts[bucket] = n_matches
+    # Always seed every bucket (zero-filled) so all four are present
+    # even when nothing fires.
+    for bucket in RELATION_BUCKETS:
+        counts[bucket] = 0
+    n_ambiguous = 0
+    for m in _COMBINED_RE.finditer(text):
+        form = " ".join(m.group(0).lower().split())
+        bucket = _FORM_TO_BUCKET.get(form)
+        if bucket is None:  # pragma: no cover - defensive
+            continue
+        counts[bucket] += 1
+        # The ambiguous count is read off the SAME consumed spans, so
+        # it is a strict subset of the explicit count by construction
+        # (the honesty invariant — no bare `as` re-counted inside
+        # `as a result` / `as soon as`).
+        if form in _AMBIGUOUS_CONNECTIVES:
+            n_ambiguous += 1
 
     n_explicit = sum(counts.values())
-    n_ambiguous = len(_AMBIGUOUS_RE.findall(text))
 
     density_per_1k = {
         b: (1000.0 * counts[b] / n_words) if n_words else 0.0

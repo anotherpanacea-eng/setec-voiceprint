@@ -442,6 +442,63 @@ class TestRelationDistribution:
                 f"bucket — it would inflate the ambiguous fraction"
             )
 
+    def test_overlapping_multiword_connectives_count_once(self):
+        """Regression (P2 findings #1/#2): a multi-word connective
+        whose constituent words are ALSO single-word lexicon
+        connectives must be counted EXACTLY once and in EXACTLY one
+        bucket. The naive per-pattern ``findall`` loop double/triple-
+        counted these via the bare ``as`` / ``so`` / ``though``
+        substrings, leaking into wrong buckets and inflating
+        ``n_explicit_connectives``. One combined longest-match-first
+        non-overlapping pass fixes the one-occurrence-one-bucket
+        invariant (spec §2). Counts hand-verified.
+        """
+        cases = [
+            # text, n_words, expected non-zero counts
+            ("As a result, we shipped.", 5, {"contingency": 1}),
+            ("As soon as the bell rang, we left.", 8, {"temporal": 1}),
+            ("We trained so that we would win.", 7, {"contingency": 1}),
+            ("It held even though it was strained.", 7, {"comparison": 1}),
+        ]
+        for text, nw, expected in cases:
+            rel = dms.audit_explicit_relations(text, n_words=nw)
+            nonzero = {
+                b: c for b, c in rel["counts"].items() if c
+            }
+            assert nonzero == expected, (
+                f"{text!r}: got {nonzero}, expected {expected}"
+            )
+            assert rel["n_explicit_connectives"] == sum(expected.values())
+            # No bare `as`/`so` leaked an extra ambiguous span: the
+            # whole phrase is consumed, none of these phrases is itself
+            # a standalone ambiguous-list member.
+            assert rel["ambiguous_connective_fraction"] == 0.0
+
+    def test_as_soon_as_does_not_triple_count(self):
+        """Regression (P2 finding #2): ``as soon as`` previously
+        scored temporal:3 (bare ``as`` twice + the phrase once). It
+        must be exactly one temporal occurrence."""
+        rel = dms.audit_explicit_relations(
+            "As soon as the bell rang, we left.", n_words=8
+        )
+        assert rel["counts"]["temporal"] == 1
+        assert rel["n_explicit_connectives"] == 1
+
+    def test_two_overlapping_connectives_total_is_exact(self):
+        """Regression (P2 finding #1): a two-connective sentence
+        (``As a result`` + ``As soon as``) previously reported
+        ``n_explicit_connectives`` = 5 (temporal:4). It must report
+        exactly 2 — contingency:1, temporal:1."""
+        rel = dms.audit_explicit_relations(
+            "As a result, X happened. As soon as Y, we left.",
+            n_words=10,
+        )
+        assert rel["n_explicit_connectives"] == 2
+        assert rel["counts"]["contingency"] == 1
+        assert rel["counts"]["temporal"] == 1
+        assert rel["counts"]["comparison"] == 0
+        assert rel["counts"]["expansion"] == 0
+
     def test_relation_layer_is_parallel_not_rebucketing(self):
         """D2 / findings P3 #3 — the relation layer is an independent
         whole-text count, NOT a re-bucketing of `classify_sentence`
