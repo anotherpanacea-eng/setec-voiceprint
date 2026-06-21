@@ -244,8 +244,8 @@ def shuffle_sentences(sentences: list[str], seed: int) -> tuple[str, bool]:
     return candidate, candidate != base
 
 
-def shuffle_words(text: str, seed: int) -> str:
-    """Return a single string with all whitespace-split tokens randomly
+def shuffle_words(text: str, seed: int) -> tuple[str, bool]:
+    """Return ``(shuffled_text, order_changed)``: every whitespace token
     permuted across the whole passage (seeded).
 
     Scope (REVIEW Rec-1 / Open Question #4 resolved): this is a SINGLE
@@ -255,10 +255,45 @@ def shuffle_words(text: str, seed: int) -> str:
     sentence membership intact). The passage-level choice is recorded here so
     the scope is explicit rather than inferred. Deterministic for a given
     ``seed``; preserves the exact token multiset.
+
+    Identity-permutation guard (sibling of ``shuffle_sentences``, Codex round-9
+    P2): a single seeded shuffle of a short/degenerate token list can land on
+    the identity (e.g. a 1-token passage, an all-identical-token passage, or a
+    permutation that happens to reproduce the original join), so ``ppl_word``
+    would silently re-score the original ordering and dilute the reported
+    word-shuffle jump. When more than one distinct token is present we therefore
+    deterministically re-roll (incrementing the seed) until the *string* order
+    actually changes, so ``ppl_word`` always measures a real word-order
+    perturbation. ``order_changed`` is ``False`` only when no perturbation is
+    possible — fewer than 2 tokens, or every token textually identical so that
+    every permutation reproduces the original join. The caller surfaces that as
+    a caveat rather than reporting a phantom jump.
     """
     tokens = text.split()
-    random.Random(seed).shuffle(tokens)
-    return " ".join(tokens)
+    base = " ".join(tokens)
+    if len(tokens) < 2:
+        return base, False
+    # All tokens identical (or otherwise collapse to the same join under every
+    # permutation): no order change is observable. Bail with a flag so the
+    # caller can caveat instead of silently scoring the original twice.
+    if len(set(tokens)) < 2:
+        return base, False
+    # Re-roll deterministically until the joined order differs from the
+    # original. Bounded by len(tokens) + a small constant: for any list with
+    # >= 2 distinct elements a non-identity permutation exists, and consecutive
+    # seeds explore distinct permutations, so this terminates quickly.
+    max_rerolls = len(tokens) + 16
+    for offset in range(max_rerolls):
+        order = list(tokens)
+        random.Random(seed + offset).shuffle(order)
+        candidate = " ".join(order)
+        if candidate != base:
+            return candidate, True
+    # Defensive fallback (should be unreachable for >= 2 distinct tokens):
+    # rotate by one, which is guaranteed non-identity for distinct elements.
+    rotated = tokens[1:] + tokens[:1]
+    candidate = " ".join(rotated)
+    return candidate, candidate != base
 
 
 # =====================================================================
@@ -389,7 +424,19 @@ def score_window(
         # textually identical), so ppl_sent re-scores the original ordering.
         # Surface it rather than reporting a phantom sentence-shuffle jump.
         caveats.append("sentence_shuffle_no_distinct_order")
-    word_shuffled = shuffle_words(text, seed)
+    word_shuffled, word_order_changed = shuffle_words(text, seed)
+    n_tokens = len(text.split())
+    if n_tokens < 2:
+        # Fewer than 2 whitespace tokens cannot be word-shuffled into a
+        # different order; the word-shuffle degenerates to the original. Surface
+        # it — the word-level features carry no information here.
+        caveats.append("single_token_no_word_shuffle")
+    elif not word_order_changed:
+        # >= 2 tokens but no order change was possible (every token is textually
+        # identical), so ppl_word re-scores the original ordering. Surface it
+        # rather than reporting a phantom word-shuffle jump — the sibling of
+        # sentence_shuffle_no_distinct_order on the word side.
+        caveats.append("word_shuffle_no_distinct_order")
 
     if injected_perplexities is not None:
         ppl_orig, ppl_sent, ppl_word = injected_perplexities

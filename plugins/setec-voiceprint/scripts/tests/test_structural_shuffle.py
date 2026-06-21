@@ -103,10 +103,11 @@ def test_shuffle_sentences_deterministic():
 
 
 def test_shuffle_words_deterministic():
-    a = ss.shuffle_words(_THREE_SENTENCES, seed=0)
-    b = ss.shuffle_words(_THREE_SENTENCES, seed=0)
-    assert a == b
-    assert any(ss.shuffle_words(_THREE_SENTENCES, seed=s) != a for s in range(1, 12))
+    a, a_changed = ss.shuffle_words(_THREE_SENTENCES, seed=0)
+    b, b_changed = ss.shuffle_words(_THREE_SENTENCES, seed=0)
+    assert a == b  # same seed -> same order
+    assert a_changed and b_changed
+    assert any(ss.shuffle_words(_THREE_SENTENCES, seed=s)[0] != a for s in range(1, 12))
 
 
 def test_shuffle_sentences_same_words():
@@ -117,7 +118,8 @@ def test_shuffle_sentences_same_words():
 
 
 def test_shuffle_words_same_words():
-    shuffled = ss.shuffle_words(_THREE_SENTENCES, seed=3)
+    shuffled, changed = ss.shuffle_words(_THREE_SENTENCES, seed=3)
+    assert changed
     assert sorted(shuffled.split()) == sorted(_THREE_SENTENCES.split())
 
 
@@ -174,6 +176,99 @@ def test_identical_sentences_surface_caveat():
     backend = StubBackend("M", default_bits=[1.0, 1.0])
     results = ss.score_window(text, backend=backend, seed=0)
     assert "sentence_shuffle_no_distinct_order" in results["caveats"]
+
+
+# ============================================================
+# Word-shuffle identity guard (sibling of the sentence guard).
+# REGRESSION: the round-9 P2 re-roll + no-distinct-order caveat was applied to
+# shuffle_sentences only; the word side was left untreated, so a degenerate
+# word-shuffle silently re-scored the original ordering with NO operator signal.
+# ============================================================
+
+
+def test_shuffle_words_returns_order_changed_flag():
+    """shuffle_words must mirror shuffle_sentences and return (text, changed).
+    Pre-fix it returned a bare str, so this unpacking would fail."""
+    shuffled, changed = ss.shuffle_words(_THREE_SENTENCES, seed=ss.DEFAULT_SEED)
+    assert isinstance(shuffled, str)
+    assert isinstance(changed, bool)
+    assert changed is True
+    assert shuffled != _THREE_SENTENCES, "word shuffle returned the identity"
+
+
+def test_shuffle_words_single_token_no_order_change():
+    """A 1-token passage cannot be word-shuffled; order_changed MUST be False
+    and the text is returned unchanged (no phantom jump)."""
+    shuffled, changed = ss.shuffle_words("solo", seed=ss.DEFAULT_SEED)
+    assert changed is False
+    assert shuffled == "solo"
+
+
+def test_shuffle_words_identical_tokens_no_order_change():
+    """When every whitespace token is textually identical no order change is
+    observable; order_changed MUST be False instead of claiming a real
+    perturbation (the word-side sibling of test_identical_sentences)."""
+    shuffled, changed = ss.shuffle_words("na na na na na na", seed=ss.DEFAULT_SEED)
+    assert changed is False
+    assert shuffled == "na na na na na na"
+
+
+def test_shuffle_words_seed0_short_input_non_identity():
+    """REGRESSION (sibling of test_two_sentence_seed0_non_identity_permutation):
+    a short distinct-token input under the DEFAULT seed can land on the identity
+    for a single random.shuffle. With the re-roll guard the joined order MUST
+    actually change and order_changed MUST be True."""
+    found_reroll_case = False
+    for txt in ("a b", "a b c", "x y z w"):
+        shuffled, changed = ss.shuffle_words(txt, seed=ss.DEFAULT_SEED)
+        assert changed is True, f"{txt!r}: word shuffle returned the identity"
+        assert shuffled != txt, f"{txt!r}: joined order did not change"
+        assert sorted(shuffled.split()) == sorted(txt.split())
+        # Confirm at least one of these would have been an identity under a
+        # single un-re-rolled shuffle (proving the guard does real work).
+        import random as _r
+        toks = txt.split()
+        single = list(toks)
+        _r.Random(ss.DEFAULT_SEED).shuffle(single)
+        if " ".join(single) == txt:
+            found_reroll_case = True
+    assert found_reroll_case, (
+        "test fixture no longer exercises the re-roll path; pick a short input "
+        "whose single seed-0 shuffle is the identity"
+    )
+
+
+def test_score_window_word_identity_surfaces_caveat():
+    """END-TO-END REGRESSION: a passage whose word-shuffle is the identity
+    (all-identical tokens) must surface `word_shuffle_no_distinct_order`. Pre-fix
+    score_window scored the original ordering twice for ppl_word with NO caveat —
+    exactly the failure the sentence guard already prevents on its sibling."""
+    text = "na na na na na na"
+    backend = StubBackend("M", default_bits=[1.0, 1.0])
+    results = ss.score_window(text, backend=backend, seed=ss.DEFAULT_SEED)
+    assert "word_shuffle_no_distinct_order" in results["caveats"]
+    # ppl_word must NOT be silently presented as a real shuffle jump.
+    assert results["ppl_word"] == results["ppl_orig"]
+
+
+def test_score_window_single_token_surfaces_caveat():
+    """A single-token passage cannot be word-shuffled; surface
+    `single_token_no_word_shuffle` rather than a phantom word-shuffle jump."""
+    backend = StubBackend("M", default_bits=[1.0, 1.0])
+    results = ss.score_window("solo", backend=backend, seed=ss.DEFAULT_SEED)
+    assert "single_token_no_word_shuffle" in results["caveats"]
+
+
+def test_score_window_word_shuffle_real_change_no_caveat():
+    """A normal multi-distinct-token passage must NOT carry either word-identity
+    caveat — the guard fires only on the degenerate case."""
+    s1 = "The cat sat on the mat."
+    s2 = "The dog ran in the park."
+    text = f"{s1} {s2}"
+    backend = StubBackend("M", default_bits=[1.0, 1.0])
+    results = ss.score_window(text, backend=backend, seed=ss.DEFAULT_SEED)
+    assert "word_shuffle_no_distinct_order" not in results["caveats"]
+    assert "single_token_no_word_shuffle" not in results["caveats"]
 
 
 # ============================================================

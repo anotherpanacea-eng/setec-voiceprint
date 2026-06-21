@@ -145,7 +145,8 @@ unaffected (no model loads); the expansion is documented here per R1.
    raw value rather than a claimed discriminative feature. M1 emits it; no number is asserted.
 5. **Emit** — feature dict + `ppl_orig`, `ppl_sent`, `ppl_word`, `model_id`, `seed`, `score_version`
    (`"structural_shuffle_v1"`), wrapped in `build_output()` with the `ClaimLicense` block. No
-   threshold, no verdict band; ships `"uncalibrated"`.
+   threshold, no verdict band, and no carried band value; the uncalibrated posture is surfaced via
+   the `no_calibrated_thresholds_supplied` caveat.
 
 ---
 
@@ -194,7 +195,7 @@ is broken). On Code-Mac, the model would load via the standard HF cache. M2 is `
   - `results.ppl_orig`, `results.ppl_sent`, `results.ppl_word` — raw perplexities (≥ 0).
   - `results.features` — `{ppl_sum, ppl_diff, ppl_ratio, ppl_log_ratio, ppl_pct_change}`.
   - `results.score_version` — `"structural_shuffle_v1"`.
-  - No `verdict_band` absent operator thresholds; the default carried band is `"uncalibrated"`.
+  - No `verdict_band` and no carried band value absent operator thresholds; the uncalibrated posture is surfaced via the `no_calibrated_thresholds_supplied` caveat (the envelope carries no `band`/`verdict_band`/`verdict` key — pinned by `test_no_default_verdict_band`).
 - **Claim license:**
   - Licenses: "perplexity shift under sentence and word shuffling under scorer model M; higher
     values indicate greater order-dependence — a candidate (heuristic) signal for human authorship.
@@ -225,7 +226,7 @@ is broken). On Code-Mac, the model would load via the standard HF cache. M2 is `
    family's silent-inversion failure mode).
 7. `test_envelope_shape` — `task_surface`, `tool`, `results.features`, `results.ppl_orig`,
    `results.model_id`, `results.seed`.
-8. `test_no_default_verdict_band` — no `verdict_band` key / `"uncalibrated"`; no shipped threshold.
+8. `test_no_default_verdict_band` — no `band` / `verdict_band` key carried at all (no `"uncalibrated"` value either); no shipped threshold.
 9. `test_no_verdict_keys` — recursive key walk finds no `is_ai` / `is_human` / `verdict` / `score` /
    `selection` / etc.
 10. `test_claim_license_refuses_verdict` — `does_not_license` contains "verdict".
