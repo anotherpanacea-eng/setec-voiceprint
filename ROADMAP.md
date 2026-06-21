@@ -34,6 +34,7 @@ These all merged to `main` this cycle (version + changelog cut at the next relea
 - **ArgScope fallacy scan** — `fallacy_scan` on `argument_pattern_scan` (PR #229, spec 26 M1; arXiv:2202.13758 / 2406.12402). Candidate rhetorical-move flags as a descriptive tally.
 - **ArgScope warrant probe** — `warrant_probe` on `argument_pattern_scan` (PR #230, spec 26 M2; arXiv:2412.15177). Toulmin critical-question coverage.
 - **ArgScope B5 collapse-dynamics** — disappearing-guard + discounting-straw-men flags on `argument_decision_audit` (PR #217 / #215, spec 21; arXiv:2606.01736 / 2406.12402). Heuristic, directional, excluded from the aggregate and verdict band (already noted in the 2026-06-17 pass; the discounting-straw-men flag is cited to arXiv:2406.12402).
+- **LambdaG grammar likelihood-ratio** — `lambdag_audit` on `voice_coherence` (spec 32 M1; arXiv:2403.08462). Model-free n-gram LM over POS sequences scoring a query's grammar log-LR against a reference-author vs background pair (the likelihood-ratio sibling of Burrows Delta). Stdlib (the spaCy POS parse is the only model-gated step; abstains without it); signed log-LR + a 3-level PROVISIONAL *leaning* band, **no same/different-author verdict**, never ranks authors, held-out-disjoint anti-Goodhart guard. M2 (richer/learned POS alphabet + KN smoothing) deferred behind a lazy import.
 
 ### Planned / horizon (spec'd or shortlisted, not built)
 
@@ -56,7 +57,7 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 - **GECScore** — black-box grammar-error-count signal; **gated behind `fairness_dialect_guardrails`** (inverts on ESL/dialect prose). arXiv:2405.04286.
 - **FWAN** — function-word adjacency networks; **deferred, overlaps `function_word_grammar_audit`**. arXiv:1406.4469.
 - **Gram2Vec interpretable vectorizer** — `style_vectorizer` on `voice_coherence`. **M1 BUILT** (spec 30; stdlib named-feature vector reusing `stylometry_core.extract_features(include_spacy=False)` — function words / char n-grams / punctuation / paragraph-dialogue / pronoun-modal-negation). Glass-box: every dimension is a human-named feature; emits **no aggregate scalar at all**, so there is structurally nothing to threshold or rank on (the strongest no-verdict guarantee). Single mode = full inventory (all 135 function words, no cap); `--baseline-dir` adds a per-dimension reference distribution + a PROVISIONAL band (mean ± k·sd), held-out disjoint. M2 (follow-up) adds the two spaCy-gated families (`pos_trigrams` / `dependency_ngrams`) behind `--with-spacy` — named dimensions only, no verdict. arXiv:2406.12131.
-- **Glimpse / LambdaG** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2403.08462.
+- **Glimpse / LambdaG** — interpretable stdlib companions to Delta / white-box-on-API-logprobs. arXiv:2412.11506 / 2403.08462. (**LambdaG M1 BUILT** — `lambdag_audit`, spec 32; see the Shipped section above.)
 
 **Eval-discipline / anti-Goodhart hardening (protocol upgrades, not surfaces) — _M1 in-progress (spec 28, branch `feat/eval-discipline-bundle`)_:**
 
