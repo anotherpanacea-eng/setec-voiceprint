@@ -38,7 +38,7 @@
   },
   "purpose": "Descriptive structural/formatting profile of a document \u2014 heading cadence, section-length variance, list/blockquote/code/link/table usage. A publishing-format fingerprint, not stylometry: emits measurements only (no band, no verdict) and refuses voice/authorship/AI inference.\n",
   "references": [
-    "plugins/setec-voiceprint/specs/07-document-layout-audit.md"
+    "specs/07-document-layout-audit.md"
   ],
   "registers": [
     "blog_essay",

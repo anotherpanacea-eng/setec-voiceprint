@@ -1,0 +1,61 @@
+entries:
+- id: tocsin_audit
+  script_path: plugins/setec-voiceprint/scripts/tocsin_audit.py
+  surface: token_cohesiveness
+  status: literature_anchored
+  handoff: experimental
+  consumers: []
+  family: discrimination-perturbation
+  purpose: 'TOCSIN token-cohesiveness signal (M1, stdlib): how stable a text''s token
+    set is under repeated seeded random token deletion. Draws n_perturbations random-deletion
+    perturbations, measures each one''s semantic difference from the original via an
+    INJECTABLE semantic_diff callable (M1 default = a stdlib token-set Jaccard distance,
+    no model; M2 swaps in an embedding 1-cosine behind the same seam), and reports
+    token_cohesiveness = 1 - mean(semantic_diff) in [0,1] with its dispersion. In the
+    literature LLM text exhibits HIGHER cohesiveness than human text (Wang, Cheng et al.
+    2024, arXiv:2409.16914), an axis the paper reports as orthogonal to surprisal /
+    curvature. Descriptive only: emits VALUES + a PROVISIONAL band over the value''s OWN
+    axis (indeterminate / low_cohesiveness / high_cohesiveness) carrying
+    calibration_status heuristic + calibration_anchor user-baseline-required. There is NO
+    is_ai / is_human / label / verdict / decision key; the claim-license refuses any
+    authorship verdict. Deterministic (single seeded random.Random, default seed 1729).
+
+    '
+  use_when:
+  - You want a perturbation-based discrimination axis the literature reports as orthogonal
+    to surprisal / curvature
+  - You're assembling a multi-signal evidence pack and want a token-cohesiveness reading
+  - Target is >= 200 words (the lexical-overlap proxy is stable enough to report)
+  do_not_use_when:
+  - You want an AI/human verdict (this surface ships uncalibrated and refuses one)
+  - You need values comparable across semantic-diff backends (M1 stdlib proxy != M2 embedding)
+  - Target is short or highly formulaic (apparent stability is inflated; below the 200-word
+    floor the surface warns)
+  inputs:
+    target: prose text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout markdown report (default), --json envelope, or --out PATH
+  compute:
+    tier: core
+    cost_note: stdlib only; no models. Deterministic; tokenize + seeded deletion +
+      set arithmetic. The M2 embedding semantic_diff path raises the tier to surprisal.
+    length_floor_words: 200
+  registers:
+  - blog_essay
+  - testimony_policy
+  - literary_fiction
+  dependencies:
+    python: []
+    python_optional:
+    - transformers
+    - torch
+    - numpy
+  examples:
+  - description: Token-cohesiveness over a single target (M1 stdlib proxy, JSON envelope)
+    cmd: python3 plugins/setec-voiceprint/scripts/tocsin_audit.py --target target.md --json
+  references:
+  - specs/31-tocsin-token-cohesiveness.md
+  - 'Zero-Shot Detection of LLM-Generated Text using Token Cohesiveness (TOCSIN) — Wang,
+    Cheng et al. 2024 (arXiv:2409.16914): https://arxiv.org/abs/2409.16914'

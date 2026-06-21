@@ -6,10 +6,11 @@
   "handoff": "none",
   "consumers": [],
   "family": "syntactic-shape",
-  "purpose": "Descriptive syntactic-SHAPE profile: the DISTRIBUTION of dependency distances (the linear span of each syntactic link, d = |i - head.i|) \u2014 the histogram, the adjacent-link share (d=1), and the long-range tail (d>=threshold). The scalar MDD (per-sentence mean/SD) already ships as variance_audit.mdd_stats and is REUSED here, not re-implemented; the distribution is the additive contribution (arXiv:2211.14620). Parser-tier (reuses the shared spaCy pipeline); abstains (available:false / missing_dependency) without it. NOT a verdict: not authorship/AI, not a quality/readability score, and NOT length-controlled (MDD covaries with sentence length; mean_sentence_length co-reported). Claim-license refuses those inferences; thresholds operator-side / PROVISIONAL.\n",
+  "purpose": "Descriptive syntactic-SHAPE profile: the DISTRIBUTION of dependency distances (the linear span of each syntactic link, d = |i - head.i|) \u2014 the histogram, the adjacent-link share (d=1), the long-range tail (d>=threshold), and the SHAPE descriptors of the pooled per-link distribution (results.shape: population variance/sd, Fisher-Pearson skewness g1, excess kurtosis g2, and the p50/p90/p99/max tail quantiles \u2014 the geometry of the curve, distinct from mdd_sd and the histogram). The scalar MDD (per-sentence mean/SD) already ships as variance_audit.mdd_stats and is REUSED here, not re-implemented; the distribution and its shape are the additive contribution (arXiv:2211.14620). Parser-tier (reuses the shared spaCy pipeline); abstains (available:false / missing_dependency) without it. NOT a verdict: not authorship/AI, not a quality/readability score (skew/kurtosis are descriptive moments, not a complexity score), and NOT length-controlled (MDD covaries with sentence length; mean_sentence_length co-reported). Claim-license refuses those inferences; thresholds operator-side / PROVISIONAL.\n",
   "use_when": [
     "You want a descriptive syntactic-complexity profile (how long-range a writer's dependencies run)",
     "You want the dependency-distance distribution, not just the mean (which mdd_stats already gives)",
+    "You want the curve SHAPE \u2014 skew / heavy tail / tail quantiles \u2014 not just the histogram or the mean",
     "Target is English, >= ~150 words, and a dependency parser is installed"
   ],
   "do_not_use_when": [
@@ -53,7 +54,8 @@
     }
   ],
   "references": [
-    "plugins/setec-voiceprint/specs/24-dependency-distance.md",
+    "specs/24-dependency-distance.md",
+    "specs/31-dependency-distance-distribution.md",
     "The distribution of syntactic dependency distances (arXiv:2211.14620): https://arxiv.org/abs/2211.14620"
   ]
 }

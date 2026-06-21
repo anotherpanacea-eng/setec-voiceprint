@@ -47,4 +47,4 @@ entries:
     cmd: python3 plugins/setec-voiceprint/scripts/reference_ecology_audit.py target.md
       --json
   references:
-  - plugins/setec-voiceprint/specs/08-reference-ecology-audit.md
+  - specs/08-reference-ecology-audit.md

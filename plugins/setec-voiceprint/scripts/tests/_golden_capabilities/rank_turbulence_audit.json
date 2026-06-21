@@ -52,7 +52,7 @@
     }
   ],
   "references": [
-    "plugins/setec-voiceprint/specs/23-rank-turbulence-delta.md",
+    "specs/23-rank-turbulence-delta.md",
     "Rank-Turbulence Delta \u2014 Interpretable Stylometric Delta (arXiv:2604.19499): https://arxiv.org/abs/2604.19499",
     "Allotaxonometry and rank-turbulence divergence \u2014 Dodds et al. 2020 (arXiv:2002.09770): https://arxiv.org/abs/2002.09770"
   ]

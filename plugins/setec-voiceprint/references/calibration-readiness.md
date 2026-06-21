@@ -107,6 +107,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `fallacy_scan` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 120 |
 | `fast_detect_curvature` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `formulaicity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
+| `function_word_adjacency_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 250 |
 | `general_imposters` | Literature-anchored | No | labeled corpus + valid `corpus_manifest.jsonl` (required) | req: scipy | CPU / stdlib (+ optional spaCy model) | — |
 | `homogeneity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: numpy | CPU / stdlib (+ optional spaCy model) | 15 |
 | `intrinsic_dimension_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch, numpy, scipy | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 500 |
@@ -125,8 +126,11 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `skeleton_overlap_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 24 |
 | `sound_texture_audit` | Heuristic (uncalibrated) | Yes | register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `specdetect_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch; opt: numpy | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
+| `style_vectorizer` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 500 |
+| `tocsin_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib; opt: transformers, torch, numpy | CPU / stdlib (+ optional spaCy model) | 200 |
 | `voice_fingerprint` | Empirical (provisional) | Yes | register-matched personal baseline corpus (optional) | req: transformers; opt: sentence_transformers | CPU (+ optional power-ups) | 500 |
 | `voice_profile` | Empirical (provisional) | No | register-matched personal baseline corpus (required) | stdlib; opt: spacy | CPU / stdlib (+ optional spaCy model) | 2000 |
+| `voice_verifier` | Literature-anchored | No | labeled corpus + valid `corpus_manifest.jsonl` (required); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | — |
 | `warrant_probe` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 120 |
 | `watermark_probe` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 

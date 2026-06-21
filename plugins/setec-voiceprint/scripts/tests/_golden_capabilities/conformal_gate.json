@@ -48,8 +48,8 @@
   },
   "purpose": "A split-conformal abstention layer over any signal: given operator-supplied calibration nonconformity scores and a target score, emit a distribution-free, finite-sample conformal p-value and a prediction set at coverage 1-alpha. Turns \"the band reads uncalibrated\" into \"abstain, with a guaranteed error rate at this operating point.\" A methodology wrapper, NOT a detector; an empty or full prediction set is a licensed abstention. The p-value is NOT P(AI). With --fpr-bound q it instead emits the conformal threshold whose reference-class false-positive rate is bounded by q under exchangeability (Multiscaled Conformal Prediction, arXiv:2505.05084) \u2014 a reference-class FPR ceiling the operator applies, not P(AI) and not a guarantee on the positive (AI) class.\n",
   "references": [
-    "plugins/setec-voiceprint/specs/20-conformal-abstention-gate.md",
-    "plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md"
+    "specs/20-conformal-abstention-gate.md",
+    "specs/28-eval-discipline-bundle.md"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/conformal_gate.py",
   "status": "heuristic",

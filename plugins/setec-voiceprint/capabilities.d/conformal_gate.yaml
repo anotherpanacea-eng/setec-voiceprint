@@ -62,5 +62,5 @@ entries:
     cmd: python3 plugins/setec-voiceprint/scripts/conformal_gate.py --calibration
       ref.txt --fpr-bound 0.05 --direction higher_is_nonconforming --json
   references:
-  - plugins/setec-voiceprint/specs/20-conformal-abstention-gate.md
-  - plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md
+  - specs/20-conformal-abstention-gate.md
+  - specs/28-eval-discipline-bundle.md

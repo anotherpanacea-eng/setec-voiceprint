@@ -1,0 +1,65 @@
+entries:
+- id: function_word_adjacency_audit
+  script_path: plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py
+  surface: voice_coherence
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: function-word-network
+  purpose: 'Descriptive function-word adjacency NETWORK: model the target''s function-word
+    transitions as a directed graph (nodes = the 135 canonical FUNCTION_WORDS, edges =
+    adjacent-in-text transition frequencies) and emit graph-structural descriptors —
+    node centralities (in/out-degree + a PageRank stationary centrality), per-node and
+    global transition entropy, directionality (reciprocity / weight asymmetry), network
+    density, and small directed motifs (2-cycles, length-3 directed walks, self-loops).
+    The STRUCTURE view of the SAME function-word transitions function_word_grammar_audit
+    reads as flat top-20 bigrams; the grammar audit owns the bigram COUNTS, FWAN owns the
+    GRAPH READ. To avoid two sources of truth, FWAN builds its adjacency from the identical
+    content-word-delimited runs the grammar audit segments and ties total_transitions to
+    the run-segmentation bigram total (NOT the truncated function_bigrams public field).
+    Clean-room of the FEATURE CONSTRUCTION from arXiv:1406.4469 (function-word adjacency
+    networks for authorship attribution); the paper''s attribution CLASSIFIER is NOT
+    reproduced (that would be a verdict). M1 = stdlib + numpy (NO networkx, NO model, NO GPU;
+    every descriptor computed on a numpy adjacency matrix). NOT a verdict: not authorship/AI,
+    not a quality/readability score, and NOT length-controlled (density / centrality
+    concentration covary with text length and function-word-set coverage; n_active_nodes and
+    total_transitions co-reported). The band is a descriptive structure-concentration phrase
+    from NAMED provisional signals + calibration_status (no bare derived score; suppressed
+    below the transition floor). Claim-license refuses those inferences; thresholds
+    operator-side / PROVISIONAL.
+
+    '
+  use_when:
+  - You want the graph STRUCTURE of a writer's function-word transitions (hubs, directionality, motifs), not just frequencies or flat bigrams
+  - You want node centralities / per-node transition entropy / network density that the flat top-20 bigram view cannot express
+  - Target is English, >= ~250 words, and you want a stdlib (model-free) structural stylometry read
+  do_not_use_when:
+  - You want an authorship/AI verdict or attribution (the paper's classifier is deliberately NOT reproduced)
+  - You want a writing-quality or readability judgment, or a length-controlled reading
+  - Non-English text (the FUNCTION_WORDS set is English)
+  inputs:
+    target: prose/markdown text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: pure CPU; stdlib + numpy adjacency matrix (no model, no GPU, no networkx); sub-second on document-sized inputs.
+    length_floor_words: 250
+  registers:
+  - blog_essay
+  - testimony_policy
+  - technical_documentation
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Function-word adjacency network of a document
+    cmd: python3 plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py target.md --json
+  - description: With a wider centrality ranking and a custom PageRank damping
+    cmd: python3 plugins/setec-voiceprint/scripts/function_word_adjacency_audit.py target.md
+      --top-k 25 --pagerank-damping 0.9
+  references:
+  - specs/32-function-word-adjacency.md
+  - 'Authorship Attribution Using Word Network Features (Segarra, Eisen, Ribeiro; arXiv:1406.4469): https://arxiv.org/abs/1406.4469'

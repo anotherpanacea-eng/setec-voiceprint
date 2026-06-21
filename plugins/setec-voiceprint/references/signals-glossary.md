@@ -135,6 +135,47 @@ Per-sentence mean dependency distance via spaCy parse; then SD across sentences.
 
 The *distribution* of dependency distances `d = |i − head.i|` (histogram + adjacent-link share `d=1` + long-range tail `d ≥ 7`); the scalar MDD mean/SD is reused from `mdd_stats` (above). Descriptive, no verdict. Range `[0, 1]` (shares). Length floor 150 tokens. Parser-tier (spaCy `en_core_web_sm`; abstains without it). NOT length-controlled — `mean_sentence_length` co-reported. Spec 24 (arXiv:2211.14620).
 
+### Dependency-distance distribution SHAPE (variance / skew / kurtosis / tail quantiles)
+
+`dependency_distance_audit:shape` · syntactic-shape · — · **heuristic**
+
+The *geometry of the DDD curve* — descriptors of the **pooled per-link** distance distribution, distinct from the histogram and from `mdd_sd`: population `variance`/`sd`, Fisher-Pearson skewness `g1` and excess kurtosis `g2`, and nearest-rank tail quantiles `p50`/`p90`/`p99`/`max`. The shape `sd` is the within-POOL per-link SD — **not** `mdd_sd` (which is the across-SENTENCE SD of per-sentence MDD means). Right-skew (`g1>0`) and heavy tail (`g2>0`) are the expected curve shape. Descriptive, **no verdict, no band** — skew/kurtosis are moments, not a complexity score. `skewness`/`excess_kurtosis` are `null` (not `0.0`) when `sd==0` or `n_links<3`. `variance`/`sd`/`quantiles` range `[0, ∞)`; `skewness`/`excess_kurtosis` signed. M1 stdlib (no numpy/scipy). Parser-tier (inherits spec-24's spaCy gate). Spec 31 (arXiv:2211.14620).
+### Named-feature style vector (gram2vec)
+
+`style_vectorizer:vector_flat` (+ optional `baseline_reference.per_dimension[].z` / `.band`) · stylometric-vector · — · **heuristic**
+
+The interpretable (glass-box) document vector: every dimension a human-named stylometric feature (function words, char n-grams 3/4/5, punctuation, paragraph/dialogue, pronoun/modal/negation), reused verbatim from `stylometry_core.extract_features(include_spacy=False)`. **No aggregate scalar** — there is nothing to threshold or rank on (the strongest no-verdict guarantee). Single mode emits the FULL family inventory (all 135 function words, no cap); `--baseline-dir` adds a per-dimension reference distribution + a PROVISIONAL band (mean ± k·sd), held-out disjoint. `z` is signed (`null` when `sd==0`); frequencies/rates `≥ 0`. Length floor 500 words. Stdlib (M1); spaCy POS/dependency families are M2. Spec 30 (arXiv:2406.12131).
+
+---
+
+## Function-word-network signals
+
+The graph-structure read of the function-word transition network (`function_word_adjacency_audit`, spec 32; arXiv:1406.4469). The four band-driving signals below are PROVISIONAL / operator-side structure-concentration cues (`calibration_status.n_calibrated == 0`); the band is suppressed below the `total_transitions` floor (200). M1 stdlib + numpy, no networkx, no model. Polarity arrows mark the structure-concentration direction the cue fires on; **none is a verdict** — they drive a descriptive band only, and there is no derived band score. The raw graph measurements (`results.graph` / `results.centrality` / `results.transition_entropy` / `results.motifs`) are reported as values, not thresholded.
+
+### Low global transition entropy
+
+`function_word_adjacency_audit:band.flagged_signals[low_global_transition_entropy]` · function-word-network · ↓ · **heuristic**
+
+Fires when the Shannon entropy (bits) of the FULL function-word transition matrix (`results.transition_entropy.global_bits`, computed over the whole distribution, not the grammar audit's top-20 view) is below the provisional cut (4.0 bits). Lower = a more concentrated / predictable transition structure. Range `[0, ∞)` bits. Floor: band offered only at `total_transitions >= 200`.
+
+### High PageRank concentration
+
+`function_word_adjacency_audit:band.flagged_signals[high_pagerank_concentration]` · function-word-network · ↑ · **heuristic**
+
+Fires when the Gini concentration of the PageRank centrality vector (`results.centrality.pagerank_gini`) exceeds the provisional cut (0.65). Higher = centrality mass concentrated on a few function-word hubs. PageRank is damped power iteration (damping 0.85, dangling nodes uniform). Range `[0, 1]`.
+
+### Low per-node entropy mean
+
+`function_word_adjacency_audit:band.flagged_signals[low_per_node_entropy_mean]` · function-word-network · ↓ · **heuristic**
+
+Fires when the mean over active nodes of each node's outgoing-transition entropy (`results.transition_entropy.per_node_mean_bits`) is below the provisional cut (1.5 bits). Lower = each function word's successor distribution is more predictable. Range `[0, ∞)` bits.
+
+### Low graph density
+
+`function_word_adjacency_audit:band.flagged_signals[low_graph_density]` · function-word-network · ↓ · **heuristic**
+
+Fires when the directed graph density (`results.graph.density` = realized off-diagonal edges / possible) is below the provisional cut (0.10). Lower = a sparser transition network. Range `[0, 1]`. Confounded by length / function-word-set coverage (`n_active_nodes`, `total_transitions` co-reported); NOT length-controlled.
+
 ---
 
 ## Tier 3: Trajectory signals
@@ -188,6 +229,8 @@ Sample SD of the per-token surprisal series. Bits. Length floor 300. The most se
 `tier4.surprisal.autocorrelation.lag_1` · tier4-surprisal · ↑ · **literature_anchored** · diveye_basani_chen_tmlr_2026
 
 `ACF(1) = Cov(X_t, X_{t+1}) / Var(X)` over the surprisal series. Range `[-1, 1]`. Length floor 500 tokens (≥ 30-token series). AI prose tends positive → predictability streaks.
+
+> **DivEye diversity signals (spec 32, M1 — not yet a surface).** `scripts/diveye_signals.py` adds the four DivEye temporal / distribution-shape signals beyond the three above — the delta (1st-order difference) series, the acceleration (2nd-order difference) series, the Shannon entropy of the surprisal histogram, and the lag-1 ACF of the acceleration series — and `aggregate_diveye_signals` assembling the full nine-signal DivEye vector (reusing the F1–F4/F9 surprisal moments). It is a stdlib math helper over an injected surprisal series (`TASK_SURFACE = None`, no `--tier4` surface), not a registered detection surface; the discrimination surface + classifier are the experiment-gated M2 seam. arXiv:2509.18880 (PROVISIONAL on this checkout — see `specs/32-diveye-surprisal-diversity.md`).
 
 ---
 
@@ -616,6 +659,7 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 |---|---|
 | tier1-variance | 9 |
 | tier2-syntax | 3 |
+| function-word-network | 4 |
 | tier3-trajectory | 4 |
 | tier4-surprisal | 3 |
 | aic-7-discourse-leak | 4 |
@@ -634,7 +678,7 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | repetition | 2 |
 | narrative-decision | 33 (+1 aggregate) |
 | argument-decision | 6 (+1 aggregate) |
-| **TOTAL** | **99** |
+| **TOTAL** | **103** |
 
 ## Calibration-status distribution (v1.66.0 + ND v0.1.0 + AD v0.1.0)
 
@@ -643,9 +687,9 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | calibrated | 0 | Per Stylometry-to-the-people policy; no corpus-derived thresholds shipped as load-bearing defaults |
 | literature_anchored | 45 | 6 prior (mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl) + 34 from the narrative-decision family (33 per-signal + aggregate), anchored to Russell et al. 2026 + 5 from the argument-decision family (4 per-signal + aggregate), anchored to Kim et al. 2026 |
 | empirically_oriented | 8 | The six 2026-05-10 EditLens-measured variance signals + pos_bigram_entropy + Burrows Delta + per_feature_cosine |
-| heuristic | 45 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) + the 2 lambdag_audit grammar-LR signals (lambda_g, lambda_g_per_token) |
+| heuristic | 49 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) + the 2 lambdag_audit grammar-LR signals (lambda_g, lambda_g_per_token) + the 4 function_word_adjacency_audit band signals (low_global_transition_entropy, high_pagerank_concentration, low_per_node_entropy_mean, low_graph_density) |
 | structural_only | 1 | function_word_ratio |
-| **TOTAL** | **99** |
+| **TOTAL** | **103** |
 
 ## Related references
 

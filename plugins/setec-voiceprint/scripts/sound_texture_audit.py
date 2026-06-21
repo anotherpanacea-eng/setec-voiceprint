@@ -242,7 +242,7 @@ def _claim_license() -> ClaimLicense:
             "no verdict, no threshold.",
         ],
         references=[
-            "plugins/setec-voiceprint/specs/17-sound-texture-audit.md",
+            "specs/17-sound-texture-audit.md",
         ],
     )
 

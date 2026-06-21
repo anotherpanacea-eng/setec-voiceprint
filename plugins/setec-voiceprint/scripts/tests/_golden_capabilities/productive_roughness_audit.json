@@ -43,7 +43,7 @@
   },
   "purpose": "Strictly baseline-relative productive-roughness deviation profile \u2014 fragment rate, sentence-initial coordinating-conjunction rate, contraction rate, adjacent-word-repetition rate, interjection/aside rate, very-short- sentence rate. Reports each as the draft's deviation (draft, baseline mean \u00b1 sd, z) from the WRITER'S OWN baseline, never an absolute roughness or quality judgment.\n",
   "references": [
-    "plugins/setec-voiceprint/specs/10-productive-roughness-audit.md"
+    "specs/10-productive-roughness-audit.md"
   ],
   "registers": [
     "all_fiction",
