@@ -59,9 +59,15 @@ code.
 CLI
 ---
     python3 plugins/setec-voiceprint/scripts/structural_shuffle_audit.py TARGET \\
-        [--scorer gpt_neo_2_7b] [--seed INT] \\
+        --scorer SCORER [--seed INT] \\
         [--surprisal-dtype auto|fp32|fp16|bf16] [--device DEVICE] \\
         [--json] [--out PATH] [--out-md PATH]
+
+``--scorer`` is REQUIRED and has no default: the planned M2 scorer
+(``gpt_neo_2_7b``) is not yet in ``surprisal_backend.MODEL_ALIASES``, so it
+would resolve to a bogus HF id and the run would fail rather than audit. Pass a
+scorer that resolves on this checkout — an on-rig alias (``gpt2``,
+``gpt2_medium``, ``tinyllama``, …) or a full HF id.
 """
 
 from __future__ import annotations
@@ -94,9 +100,15 @@ SCORE_VERSION = "structural_shuffle_v1"
 DEFAULT_SEED = 0
 # The M2 scorer per the ROADMAP. NOT yet in surprisal_backend.MODEL_ALIASES —
 # it is added at M0/M2 behind the CPU-first verification gate. M1 ships against
-# an injected stub backend and never loads a model, so the default below is a
-# label only (the CLI's model path is the M2 seam).
-DEFAULT_SCORER = "gpt_neo_2_7b"
+# an injected stub backend and never loads a model, so this is a DOCUMENTATION
+# label only — it is deliberately NOT wired as the argparse default (Codex
+# round-9 P2). Because the alias is absent from MODEL_ALIASES, defaulting the
+# CLI to it would have ``resolve_model_arg`` pass it through as a literal HF id,
+# so the documented/default command would FAIL backend construction instead of
+# producing an audit. ``--scorer`` is therefore required: the operator must
+# pass a scorer that actually resolves (an on-rig alias or a full HF id), so we
+# never advertise a default command that cannot run.
+PLANNED_M2_SCORER = "gpt_neo_2_7b"
 # Below this many words the perplexity estimate (and so the shuffle delta) is
 # too noisy to be stable; mirrors the surprisal-tier length floor.
 MIN_STABLE_WORDS = 50
@@ -183,16 +195,48 @@ def split_sentences(text: str) -> list[str]:
     return [p.strip() for p in parts if p.strip()]
 
 
-def shuffle_sentences(sentences: list[str], seed: int) -> str:
-    """Return a single string with the sentences randomly permuted (seeded).
+def shuffle_sentences(sentences: list[str], seed: int) -> tuple[str, bool]:
+    """Return ``(shuffled_text, order_changed)``: the sentences permuted (seeded).
 
     Deterministic for a given ``seed``. Joining is by a single space; the
     permutation preserves every sentence verbatim (no words added or dropped),
     which ``test_shuffle_sentences_same_words`` pins.
+
+    Identity-permutation guard (Codex round-9 P2): a single seeded shuffle of a
+    short list can land on the identity (e.g. two sentences under seed 0), so
+    ``ppl_sent`` would silently re-score the original ordering and dilute the
+    reported shuffle jump. When more than one sentence is present we therefore
+    deterministically re-roll (incrementing the seed) until the *string* order
+    actually changes, so ``ppl_sent`` always measures a real sentence-order
+    perturbation. ``order_changed`` is ``False`` only when no perturbation is
+    possible — a single (or zero) sentence, or every sentence textually
+    identical so that every permutation reproduces the original join. The
+    caller surfaces that as a caveat rather than reporting a phantom jump.
     """
-    order = list(sentences)
-    random.Random(seed).shuffle(order)
-    return " ".join(order)
+    base = " ".join(sentences)
+    if len(sentences) < 2:
+        return base, False
+    # All sentences identical (or otherwise collapse to the same join under
+    # every permutation): no order change is observable. Bail with a flag so
+    # the caller can caveat instead of silently scoring the original twice.
+    if len(set(sentences)) < 2:
+        return base, False
+    # Re-roll deterministically until the joined order differs from the
+    # original. Bounded by len(sentences) + a small constant: for any list with
+    # >= 2 distinct elements a non-identity permutation exists, and consecutive
+    # seeds explore distinct permutations, so this terminates quickly.
+    max_rerolls = len(sentences) + 16
+    for offset in range(max_rerolls):
+        order = list(sentences)
+        random.Random(seed + offset).shuffle(order)
+        candidate = " ".join(order)
+        if candidate != base:
+            return candidate, True
+    # Defensive fallback (should be unreachable for >= 2 distinct sentences):
+    # rotate by one, which is guaranteed non-identity for distinct elements.
+    rotated = sentences[1:] + sentences[:1]
+    candidate = " ".join(rotated)
+    return candidate, candidate != base
 
 
 def shuffle_words(text: str, seed: int) -> str:
@@ -334,7 +378,12 @@ def score_window(
         # different order; the sentence-shuffle degenerates to the original.
         # Surface it — the sentence-level features carry no information here.
         caveats.append("single_sentence_no_sentence_shuffle")
-    sent_shuffled = shuffle_sentences(sentences, seed)
+    sent_shuffled, sent_order_changed = shuffle_sentences(sentences, seed)
+    if len(sentences) >= 2 and not sent_order_changed:
+        # >= 2 sentences but no order change was possible (every sentence is
+        # textually identical), so ppl_sent re-scores the original ordering.
+        # Surface it rather than reporting a phantom sentence-shuffle jump.
+        caveats.append("sentence_shuffle_no_distinct_order")
     word_shuffled = shuffle_words(text, seed)
 
     if injected_perplexities is not None:
@@ -509,13 +558,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("target", help="Path to target text file (UTF-8).")
     parser.add_argument(
-        "--scorer", default=DEFAULT_SCORER,
+        "--scorer", required=True,
         help=(
-            "Scorer model alias or HF id (default "
-            f"{DEFAULT_SCORER}). NOTE: gpt_neo_2_7b is the M2 scorer and is "
-            "added to MODEL_ALIASES only behind the CPU-first verification "
-            "gate; on a checkout without it, pass an on-rig alias (e.g. "
-            "gpt2_medium) or a full HF id."
+            "REQUIRED scorer model alias or HF id (no default). The planned "
+            f"M2 scorer {PLANNED_M2_SCORER!r} is NOT yet in MODEL_ALIASES (it "
+            "lands behind the CPU-first verification gate), so it would "
+            "resolve to a bogus HF id and FAIL rather than audit — hence no "
+            "default is advertised. Pass a scorer that resolves on this "
+            "checkout: an on-rig alias (e.g. gpt2_medium, tinyllama) or a "
+            "full HF id (e.g. EleutherAI/gpt-neo-2.7B)."
         ),
     )
     parser.add_argument(
@@ -585,6 +636,7 @@ def main(argv: list[str] | None = None) -> int:
     # fires cleanly rather than surfacing a deep ImportError.
     try:
         from surprisal_backend import (  # type: ignore
+            MODEL_ALIASES,
             SurprisalBackend,
             SurprisalBackendError,
             resolve_model_arg,
@@ -593,9 +645,32 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: surprisal backend unavailable: {exc}", file=sys.stderr)
         return 2
 
+    # Guard the scorer arg BEFORE loading weights (Codex round-9 P2). A bare
+    # token that is neither a known MODEL_ALIASES key nor a plausible HF id
+    # (which always contains a '/') would otherwise be passed through verbatim
+    # and fail with a confusing weight-download error deep in the backend. The
+    # planned-but-unlanded M2 alias gpt_neo_2_7b is exactly this case, so we
+    # name it explicitly and fail loudly rather than claim an audit can run.
+    resolved_scorer = resolve_model_arg(args.scorer)
+    if resolved_scorer not in MODEL_ALIASES and "/" not in resolved_scorer:
+        hint = (
+            "the planned M2 scorer is not yet registered; pass a full HF id "
+            "(e.g. EleutherAI/gpt-neo-2.7B)"
+            if resolved_scorer == PLANNED_M2_SCORER
+            else "pass a known alias or a full 'org/model' HF id"
+        )
+        print(
+            f"error: scorer {args.scorer!r} does not resolve — it is not a "
+            f"known MODEL_ALIASES key and does not look like a HuggingFace id "
+            f"('org/model'). Known aliases: {', '.join(sorted(MODEL_ALIASES))}. "
+            f"{hint}.",
+            file=sys.stderr,
+        )
+        return 3
+
     try:
         backend = SurprisalBackend(
-            model_id=resolve_model_arg(args.scorer),
+            model_id=resolved_scorer,
             dtype=args.surprisal_dtype,
             device=args.device,
         )

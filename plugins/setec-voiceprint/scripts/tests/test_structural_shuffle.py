@@ -94,11 +94,12 @@ def test_split_sentences_empty():
 
 def test_shuffle_sentences_deterministic():
     sents = ss.split_sentences(_THREE_SENTENCES)
-    a = ss.shuffle_sentences(sents, seed=0)
-    b = ss.shuffle_sentences(sents, seed=0)
+    a, a_changed = ss.shuffle_sentences(sents, seed=0)
+    b, b_changed = ss.shuffle_sentences(sents, seed=0)
     assert a == b  # same seed -> same order
+    assert a_changed and b_changed
     # A different seed should (for >= 3 sentences) generally differ. Find one.
-    assert any(ss.shuffle_sentences(sents, seed=s) != a for s in range(1, 12))
+    assert any(ss.shuffle_sentences(sents, seed=s)[0] != a for s in range(1, 12))
 
 
 def test_shuffle_words_deterministic():
@@ -110,13 +111,69 @@ def test_shuffle_words_deterministic():
 
 def test_shuffle_sentences_same_words():
     sents = ss.split_sentences(_THREE_SENTENCES)
-    shuffled = ss.shuffle_sentences(sents, seed=3)
+    shuffled, changed = ss.shuffle_sentences(sents, seed=3)
+    assert changed
     assert sorted(shuffled.split()) == sorted(" ".join(sents).split())
 
 
 def test_shuffle_words_same_words():
     shuffled = ss.shuffle_words(_THREE_SENTENCES, seed=3)
     assert sorted(shuffled.split()) == sorted(_THREE_SENTENCES.split())
+
+
+# ============================================================
+# Codex round-9 P2 #2: sentence-shuffle must change order
+# ============================================================
+
+
+def test_two_sentence_seed0_non_identity_permutation():
+    """REGRESSION (Codex round-9 P2): a 2-sentence input under the DEFAULT seed
+    0 lands on the identity for a single `random.shuffle`, so ppl_sent would
+    silently re-score the original order. With the re-roll guard the joined
+    order MUST actually change and `order_changed` MUST be True."""
+    sents = ["The cat sat on the mat.", "The dog ran in the park."]
+    original = " ".join(sents)
+    shuffled, changed = ss.shuffle_sentences(sents, seed=ss.DEFAULT_SEED)
+    assert changed is True
+    assert shuffled != original, "seed-0 sentence shuffle returned the identity"
+    # Same multiset of sentences, just reordered.
+    assert sorted(shuffled.split()) == sorted(original.split())
+
+
+def test_score_window_two_sentence_seed0_measures_order_change():
+    """End-to-end: score_window over a 2-sentence input at seed 0 must feed a
+    genuinely reordered string to ppl_sent (not the original twice). With a
+    per-text stub, a reordered sent string scores differently from the
+    original; an identity (pre-fix) would score identically."""
+    s1 = "The cat sat on the mat."
+    s2 = "The dog ran in the park."
+    text = f"{s1} {s2}"
+    reordered = f"{s2} {s1}"
+    backend = StubBackend(
+        "M",
+        bits_by_text={text: [1.0, 1.0], reordered: [3.0, 3.0]},
+        default_bits=[1.0, 1.0],
+    )
+    results = ss.score_window(text, backend=backend, seed=0)
+    # ppl_orig = 2**1 = 2.0; ppl_sent must reflect the REORDERED string
+    # (2**3 = 8.0), proving a real order change was scored, not the original.
+    assert results["ppl_orig"] == pytest.approx(2.0)
+    assert results["ppl_sent"] == pytest.approx(8.0)
+    assert "sentence_shuffle_no_distinct_order" not in results["caveats"]
+
+
+def test_identical_sentences_surface_caveat():
+    """When every sentence is textually identical no order change is possible;
+    surface a caveat instead of silently scoring the original twice."""
+    sents = ["Same sentence.", "Same sentence.", "Same sentence."]
+    shuffled, changed = ss.shuffle_sentences(sents, seed=0)
+    assert changed is False
+    assert shuffled == " ".join(sents)
+    # And score_window surfaces it as a caveat.
+    text = "Same sentence. Same sentence. Same sentence."
+    backend = StubBackend("M", default_bits=[1.0, 1.0])
+    results = ss.score_window(text, backend=backend, seed=0)
+    assert "sentence_shuffle_no_distinct_order" in results["caveats"]
 
 
 # ============================================================
@@ -382,7 +439,9 @@ def test_missing_torch_graceful(monkeypatch, tmp_path, capsys):
 
     monkeypatch.setattr("builtins.__import__", fake_import)
 
-    rc = ss.main([str(target)])
+    # --scorer is required; supply one so we reach the torch gate (the path
+    # under test) rather than exiting at argparse.
+    rc = ss.main([str(target), "--scorer", "gpt2"])
     assert rc == 2
     err = capsys.readouterr().err
     assert "surprisal tier" in err
@@ -391,7 +450,65 @@ def test_missing_torch_graceful(monkeypatch, tmp_path, capsys):
 
 
 def test_cli_returns_nonzero_on_missing_target(tmp_path):
-    assert ss.main([str(tmp_path / "nonexistent.txt")]) == 1
+    # --scorer is required, so supply one; the missing-target check fires first.
+    assert ss.main([str(tmp_path / "nonexistent.txt"), "--scorer", "gpt2"]) == 1
+
+
+# ============================================================
+# Codex round-9 P2 #1: default/required scorer must resolve
+# ============================================================
+
+
+def test_scorer_arg_is_required(tmp_path, capsys):
+    """REGRESSION (Codex round-9 P2): the CLI must NOT advertise a default
+    scorer that cannot resolve. With no default, omitting --scorer is an
+    argparse usage error (SystemExit 2), not a run that fails deep in the
+    backend on a bogus HF id."""
+    target = tmp_path / "t.txt"
+    target.write_text("the cat sat on the mat " * 50, encoding="utf-8")
+    with pytest.raises(SystemExit) as exc:
+        ss.main([str(target)])
+    assert exc.value.code == 2  # argparse "required argument" exit
+    err = capsys.readouterr().err
+    assert "scorer" in err.lower()
+
+
+def test_no_argparse_default_scorer():
+    """There is no argparse default that would let the documented/default
+    command run against the unlanded gpt_neo_2_7b alias. The planned scorer is
+    a doc label only (PLANNED_M2_SCORER), NOT wired as a default, and is not a
+    resolvable MODEL_ALIASES key."""
+    assert not hasattr(ss, "DEFAULT_SCORER")
+    assert ss.PLANNED_M2_SCORER == "gpt_neo_2_7b"
+    import surprisal_backend as sb
+    assert ss.PLANNED_M2_SCORER not in sb.MODEL_ALIASES
+
+
+def test_unlanded_alias_fails_loudly_not_silently(tmp_path, capsys):
+    """REGRESSION (Codex round-9 P2): explicitly passing the not-yet-landed
+    gpt_neo_2_7b bare alias must FAIL loudly (rc 3) with a clear message —
+    never silently pass it through to a confusing weight-download error and
+    never claim an audit ran. (torch IS installed in CI, so this exercises the
+    resolve guard, which fires BEFORE any weights load.)"""
+    target = tmp_path / "t.txt"
+    target.write_text("the cat sat on the mat " * 50, encoding="utf-8")
+    rc = ss.main([str(target), "--scorer", "gpt_neo_2_7b"])
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "does not resolve" in err
+    assert "gpt_neo_2_7b" in err
+    assert "Traceback" not in err
+
+
+def test_bare_unknown_token_scorer_fails_loudly(tmp_path, capsys):
+    """A bare token that is neither a known alias nor a 'org/model' HF id must
+    be rejected before weight loading rather than passed through verbatim."""
+    target = tmp_path / "t.txt"
+    target.write_text("the cat sat on the mat " * 50, encoding="utf-8")
+    rc = ss.main([str(target), "--scorer", "not_a_real_model"])
+    assert rc == 3
+    err = capsys.readouterr().err
+    assert "does not resolve" in err
 
 
 # ============================================================
