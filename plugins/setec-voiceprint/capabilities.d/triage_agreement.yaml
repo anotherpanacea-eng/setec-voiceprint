@@ -43,4 +43,4 @@ entries:
     cmd: python3 plugins/setec-voiceprint/scripts/triage_agreement.py labels.csv --format
       csv --bootstrap 5000
   references:
-  - plugins/setec-voiceprint/specs/18-triage-agreement.md
+  - specs/18-triage-agreement.md

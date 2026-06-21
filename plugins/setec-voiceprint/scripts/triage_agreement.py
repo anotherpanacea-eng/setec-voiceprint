@@ -185,7 +185,7 @@ def _claim_license() -> ClaimLicense:
             "point estimate.",
         ],
         references=[
-            "plugins/setec-voiceprint/specs/18-triage-agreement.md",
+            "specs/18-triage-agreement.md",
         ],
     )
 

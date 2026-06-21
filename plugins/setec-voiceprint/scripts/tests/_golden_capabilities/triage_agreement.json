@@ -37,7 +37,7 @@
   },
   "purpose": "Measures the agreement between the framework's surfaced candidates and an operator's triage judgments on a labeled item set: confusion matrix, percent agreement, Cohen's kappa, the prevalence-and-bias-adjusted kappa (PABAK), and a seeded bootstrap CI on kappa. Closes the loop the framework keeps open on principle (\"source triage is judgment work\"). Measures CONCORDANCE, not correctness \u2014 it never decides who is right.\n",
   "references": [
-    "plugins/setec-voiceprint/specs/18-triage-agreement.md"
+    "specs/18-triage-agreement.md"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/triage_agreement.py",
   "status": "heuristic",

@@ -35,7 +35,7 @@
   },
   "purpose": "Clean-room EditLens-style document-level edit-magnitude estimate \u2014 a RoBERTa-family regressor trained with MSE against a BERTScore-style similarity proxy between pre/post-edit pairs, framed as a SAME-CORPUS calibrated estimate with explicit OOD caveats, never an absolute \"% AI\". Uncalibrated by default (score only, no band); a calibrated model is operator-supplied via --model and applies only to the corpus it was calibrated on. The claim-license refuses an absolute %-AI / dosage claim, cross-corpus generalization, and per-sentence localization, and states the OOD-collapse caveat (degree estimation works in-distribution, collapses toward binary out-of-distribution).\n",
   "references": [
-    "plugins/setec-voiceprint/specs/13-editlens-edit-magnitude.md"
+    "specs/13-editlens-edit-magnitude.md"
   ],
   "registers": [
     "blog_essay",

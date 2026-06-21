@@ -215,7 +215,7 @@ def _claim_license(lang: str) -> ClaimLicense:
             "distance, not a calibrated band.",
         ],
         references=[
-            "plugins/setec-voiceprint/specs/19-crosslingual-voice-distance.md",
+            "specs/19-crosslingual-voice-distance.md",
         ],
     )
 

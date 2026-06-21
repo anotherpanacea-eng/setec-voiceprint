@@ -59,7 +59,7 @@
     }
   ],
   "references": [
-    "plugins/setec-voiceprint/specs/30-homogeneity-audit.md",
+    "specs/30-homogeneity-audit.md",
     "Artificial Hivemind \u2014 Jiang, Choi, Sap et al., NeurIPS 2025 D&B (arXiv:2510.22954): https://arxiv.org/abs/2510.22954",
     "QUDsim \u2014 discourse-structure reuse across LLM text (arXiv:2504.09373): https://arxiv.org/abs/2504.09373"
   ]

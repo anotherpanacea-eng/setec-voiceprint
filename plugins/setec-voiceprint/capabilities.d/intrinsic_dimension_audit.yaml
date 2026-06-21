@@ -50,5 +50,5 @@ entries:
     python_optional: []
   examples: []
   references:
-  - plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md
+  - specs/28-eval-discipline-bundle.md
   _seeded_at: '2026-06-06'

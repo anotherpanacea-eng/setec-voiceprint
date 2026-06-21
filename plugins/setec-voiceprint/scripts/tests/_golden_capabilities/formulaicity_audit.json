@@ -38,7 +38,7 @@
   },
   "purpose": "Descriptive phraseological-texture profile \u2014 density of common generic/stock phrases (clich\u00e9s, filler transitions, hedge boilerplate, corporate idiom) from a small, user-extensible built-in list. NOT an AI detector and NOT a quality judgment: measurements only (no band/verdict), and the claim-license refuses AI-provenance / voice / quality inference.\n",
   "references": [
-    "plugins/setec-voiceprint/specs/09-formulaicity-audit.md"
+    "specs/09-formulaicity-audit.md"
   ],
   "registers": [
     "blog_essay",

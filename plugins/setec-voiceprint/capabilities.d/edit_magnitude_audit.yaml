@@ -51,4 +51,4 @@ entries:
     python_optional: []
   examples: []
   references:
-  - plugins/setec-voiceprint/specs/13-editlens-edit-magnitude.md
+  - specs/13-editlens-edit-magnitude.md

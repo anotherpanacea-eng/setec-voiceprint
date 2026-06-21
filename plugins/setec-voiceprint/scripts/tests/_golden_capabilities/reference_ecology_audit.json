@@ -38,7 +38,7 @@
   },
   "purpose": "Descriptive reference-ecology profile of a document \u2014 citation style and density (parenthetical / DOI / arXiv / et al.), footnote refs+defs, attribution constructions, quotation density, and external-link domain breadth. A thematic/register profile, NOT stylometry: emits measurements only (no band, no verdict) and refuses voice/authorship/AI inference, with an explicit topic-leakage caveat (reference ecology shifts with subject).\n",
   "references": [
-    "plugins/setec-voiceprint/specs/08-reference-ecology-audit.md"
+    "specs/08-reference-ecology-audit.md"
   ],
   "registers": [
     "academic_philosophy",

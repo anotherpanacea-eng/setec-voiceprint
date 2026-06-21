@@ -60,5 +60,5 @@ entries:
     cmd: python3 plugins/setec-voiceprint/scripts/crosslingual_voice_distance.py target.txt
       --baseline-dir baselines/es/ --lang es --char-ngram 4 --json
   references:
-  - plugins/setec-voiceprint/specs/19-crosslingual-voice-distance.md
+  - specs/19-crosslingual-voice-distance.md
   - specs/28-styledistance-encoder-upgrade.md

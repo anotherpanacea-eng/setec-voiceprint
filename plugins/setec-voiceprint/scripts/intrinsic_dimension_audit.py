@@ -524,8 +524,8 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "Robust Detection of AI-Generated Texts' (arXiv:2306.04723)",
             "Tulchinskii et al. 2025, Short-PHD: PHD stabilization on short "
             "texts (arXiv:2504.02873)",
-            "plugins/setec-voiceprint/specs/14-intrinsic-dimension-phd.md",
-            "plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md",
+            "specs/14-intrinsic-dimension-phd.md",
+            "specs/28-eval-discipline-bundle.md",
         ],
     )
 

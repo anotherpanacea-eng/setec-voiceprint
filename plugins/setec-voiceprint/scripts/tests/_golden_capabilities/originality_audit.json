@@ -52,7 +52,7 @@
     }
   ],
   "references": [
-    "plugins/setec-voiceprint/specs/22-set-level-diversity.md",
+    "specs/22-set-level-diversity.md",
     "DJ Search / Creativity Index \u2014 AI as Humanity's Salieri (arXiv:2410.04265): https://arxiv.org/abs/2410.04265"
   ]
 }

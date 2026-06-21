@@ -51,7 +51,7 @@
     }
   ],
   "references": [
-    "plugins/setec-voiceprint/specs/31-tocsin-token-cohesiveness.md",
+    "specs/31-tocsin-token-cohesiveness.md",
     "Zero-Shot Detection of LLM-Generated Text using Token Cohesiveness (TOCSIN) \u2014 Wang, Cheng et al. 2024 (arXiv:2409.16914): https://arxiv.org/abs/2409.16914"
   ]
 }

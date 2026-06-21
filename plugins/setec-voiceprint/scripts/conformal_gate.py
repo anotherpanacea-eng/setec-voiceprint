@@ -322,8 +322,8 @@ def _claim_license() -> ClaimLicense:
             "p-value says 'unlike the reference,' not 'AI.'",
         ],
         references=[
-            "plugins/setec-voiceprint/specs/20-conformal-abstention-gate.md",
-            "plugins/setec-voiceprint/specs/28-eval-discipline-bundle.md",
+            "specs/20-conformal-abstention-gate.md",
+            "specs/28-eval-discipline-bundle.md",
             "Multiscaled Conformal Prediction (arXiv:2505.05084) — the "
             "FPR-upper-bound operating mode; v1 ships the single-scale ceiling.",
         ],

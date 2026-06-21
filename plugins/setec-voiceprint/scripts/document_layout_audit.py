@@ -222,7 +222,7 @@ def _claim_license() -> ClaimLicense:
             "Descriptive only — no band, no verdict, no threshold.",
         ],
         references=[
-            "plugins/setec-voiceprint/specs/07-document-layout-audit.md",
+            "specs/07-document-layout-audit.md",
         ],
     )
 
