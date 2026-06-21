@@ -60,7 +60,9 @@ Value in `[0, 1]`. `gec_sim = 1.0` ⇒ the corrector changed nothing (zero error
 - `StubGecBackend(corrections: dict[str, str] | None)` — returns its input unchanged by default (zero errors → `gec_sim = 1.0`), or a canned correction for a fixture input. **This is the M1 default and the CI path: model-free, over INJECTED scores.**
 - `LanguageToolBackend` / `GecTorBackend` — the M2 real backends, lazily constructed (LanguageTool needs `java` on PATH; GECToR needs `torch`). **Not built in M1** — referenced as the M2 seam only.
 
-`audit_gecscore(text, *, backend=None, ...)` defaults to `StubGecBackend()`. No model is imported at module load or touched in any test.
+`audit_gecscore(text, *, backend=None, ...)` defaults to `StubGecBackend()` (the injection seam tests drive). No model is imported at module load or touched in any test.
+
+**Production CLI abstains on the stub (round-10 Codex P1; #62/#259 posture class).** The identity stub returns its input unchanged, so reporting its `gecscore` would make EVERY real target read `gecscore = 1.0` / `low_error_density` — a non-run masquerading as a clean score. `StubGecBackend` is therefore flagged `is_stub = True`, and the **production CLI** (`main` / `_main_single` / `_main_batch`) reports a `gecscore` only when a REAL corrector is wired (`backend_is_real(backend)`: present AND not `is_stub`). With no real backend (the M1 default) the CLI emits an `available: false` / `missing_dependency` abstaining envelope — it never reports a stub identity score as a completed measurement. The stub stays test-only (injected explicitly). A real backend is threaded through `main(..., backend=...)` (the M2 seam) to restore the reporting path.
 
 ### Provisional band (descriptive, over the value's OWN axis)
 
@@ -80,7 +82,7 @@ Value in `[0, 1]`. `gec_sim = 1.0` ⇒ the corrector changed nothing (zero error
 
 **Acceptance (all M1, no real GEC model):**
 - **AC-1 (math).** `gec_sim(s, s) == 1.0`; `gec_sim(s, "")` handled as the empty-correction edge (max distance → `gec_sim == 0.0`); a known-error fixture pair → `gec_sim` and `gec_n_corrections` match hand-computed values.
-- **AC-2 (CLI).** Happy path exits 0 with a schema-1.0 envelope (`gecscore`, `gec_n_corrections`, `band`, `claim_license`, `fairness_guardrails`); missing/unreadable target → `bad_input` exit 3; empty target → `text_too_short` exit 3; below the 50-word floor → exit 0 + a `floor` warning.
+- **AC-2 (CLI).** With a REAL backend wired the happy path exits 0 with a schema-1.0 envelope (`gecscore`, `gec_n_corrections`, `band`, `claim_license`, `fairness_guardrails`); missing/unreadable target → `bad_input` exit 3; empty target → `text_too_short` exit 3; below the 50-word floor → exit 0 + a `floor` warning. With NO real backend wired (the M1 default — only the identity stub is present), the production CLI ABSTAINS: `available: false` / `missing_dependency` exit 3, never a stub `gecscore = 1.0` reported as a measurement (round-10 Codex P1; #62/#259 posture class).
 - **AC-3 (no-verdict).** A recursive key + categorical-value walk over the FULL envelope finds no `is_ai`/`is_human`/`verdict`/`label`/`decision`; the only categorical leaf is `band.band` in the allowed set; the band names a property, never a class.
 - **AC-4 (sign pinned).** `GEC_AI_DIRECTION == "gt"`, asserted; flipping it would flip the band, so it is a fixed linguistic prior, not a tuned parameter.
 - **AC-5 (separation guard).** A comment-/string-stripped source scan finds none of the forbidden selection/scoring imports (`fitness`, `setec_signals`, `loop`, `cosplay`, `splits`, `provenance`, `qlora`, `reviser`) — `gecscore` is an evidence column, never a selection signal.

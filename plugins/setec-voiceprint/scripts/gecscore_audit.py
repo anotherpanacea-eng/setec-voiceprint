@@ -143,10 +143,18 @@ class GecBackend:
     backend that knows its own span count (LanguageTool reports matches); when
     absent, the audit falls back to a stdlib opcode-based span count over the
     original/corrected pair. ``kind``/``id`` identify the regime in provenance —
-    values are NOT comparable across backends."""
+    values are NOT comparable across backends.
+
+    ``is_stub`` marks a backend that does NOT run a real grammar corrector (the M1
+    identity fixture). The production CLI refuses to report a gecscore from a
+    ``is_stub`` backend (a non-run identity correction makes every target read
+    ``gecscore=1.0`` / ``low_error_density`` — a fake clean score), emitting an
+    ``available: false`` / ``missing_dependency`` abstaining envelope instead.
+    Real M2 backends (LanguageTool/GECToR) leave it ``False``."""
 
     kind: str = "abstract"
     id: str | None = None
+    is_stub: bool = False
 
     def correct(self, text: str) -> str:  # pragma: no cover - abstract
         raise NotImplementedError
@@ -159,9 +167,13 @@ class StubGecBackend(GecBackend):
     gec_sim 1.0). A ``corrections`` map ``{original: corrected}`` lets a fixture
     inject a canned correction; an optional ``span_counts`` map overrides the
     reported ``gec_n_corrections`` for a fixture (otherwise the opcode-based count
-    is used). No model is loaded — this is the seam tests drive."""
+    is used). No model is loaded — this is the seam tests drive. It is a STUB,
+    never a real corrector: ``is_stub = True`` so the production CLI abstains
+    rather than reporting an identity-correction ``gecscore=1.0`` as a completed
+    measurement (the no-run-masquerading-as-clean-score failure mode)."""
 
     kind = "stub_identity"
+    is_stub = True
 
     def __init__(
         self,
@@ -334,6 +346,31 @@ def _fairness_caveats(report: dict[str, Any]) -> list[str]:
 class GecScoreInputError(ValueError):
     """Raised by ``audit_gecscore`` on an unusable input (no word tokens). The CLI
     maps this to a structured ``build_error_output`` envelope, never a traceback."""
+
+
+# The exact prose the production CLI emits when only the M1 identity stub is wired
+# (no real grammar corrector). Pinned as a module constant so a test asserts the
+# production path NEVER reports a stub identity score as a completed measurement.
+NO_REAL_BACKEND_REASON = (
+    "no real grammar corrector is wired: the only backend available is the M1 "
+    "identity stub (StubGecBackend), whose identity correction makes every target "
+    "read gecscore=1.0 / low_error_density without running any corrector — a "
+    "non-run masquerading as a clean score. The production CLI ABSTAINS rather "
+    "than report a fake measurement. Wire a real backend (the M2 "
+    "LanguageTool/GECToR seam) to produce a gecscore; the identity stub is "
+    "test-only (inject it explicitly in tests)."
+)
+
+
+def backend_is_real(backend: GecBackend | None) -> bool:
+    """A backend is REAL (production-reportable) iff it is present AND not flagged
+    ``is_stub``. The M1 default (``None`` → identity stub) and any ``is_stub``
+    backend are NOT real: the production CLI must abstain rather than report their
+    identity-correction gecscore. Real M2 backends (LanguageTool/GECToR) leave
+    ``is_stub`` False, so they pass."""
+    if backend is None:
+        return False
+    return not getattr(backend, "is_stub", False)
 
 
 def audit_gecscore(
@@ -725,7 +762,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-def main(argv: list[str] | None = None) -> int:
+def main(argv: list[str] | None = None, *, backend: GecBackend | None = None) -> int:
+    """CLI entrypoint. ``backend`` is the M2 INJECTION seam: the production CLI
+    reports a gecscore only when a REAL corrector is wired (``backend_is_real``).
+    With no backend (the M1 default) the only thing available is the identity
+    stub, so the CLI ABSTAINS with an available:false / missing_dependency
+    envelope — it never reports a stub identity-correction gecscore=1.0 as a
+    completed measurement (Codex P1, round 10; #62/#259 posture class)."""
     args = build_arg_parser().parse_args(argv)
 
     if not args.target and not args.batch:
@@ -736,11 +779,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     if args.batch:
-        return _main_batch(args)
-    return _main_single(args)
+        return _main_batch(args, backend=backend)
+    return _main_single(args, backend=backend)
 
 
-def _main_single(args: argparse.Namespace) -> int:
+def _main_single(args: argparse.Namespace, *, backend: GecBackend | None = None) -> int:
     target_path = Path(args.target).expanduser()
     try:
         target_text = target_path.read_text(encoding="utf-8")
@@ -749,6 +792,21 @@ def _main_single(args: argparse.Namespace) -> int:
             task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
             target_path=str(target_path),
             reason=f"cannot read --target: {exc}", reason_category="bad_input",
+        )
+        _emit(envelope, args, as_markdown=False)
+        return 3
+
+    # Production guard (Codex P1, round 10; posture class #62/#259): the production
+    # CLI must NOT report a gecscore from the M1 identity stub. With no real
+    # corrector wired, the identity correction makes EVERY target read
+    # gecscore=1.0 / low_error_density — a non-run masquerading as a clean score.
+    # Abstain with an available:false / missing_dependency envelope instead. The
+    # stub stays test-only (injected explicitly in tests / a future M2 backend).
+    if not backend_is_real(backend):
+        envelope = build_error_output(
+            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+            target_path=str(target_path),
+            reason=NO_REAL_BACKEND_REASON, reason_category="missing_dependency",
         )
         _emit(envelope, args, as_markdown=False)
         return 3
@@ -773,7 +831,9 @@ def _main_single(args: argparse.Namespace) -> int:
         )
 
     try:
-        results = audit_gecscore(target_text, declared_conditions=args.declared)
+        results = audit_gecscore(
+            target_text, backend=backend, declared_conditions=args.declared
+        )
     except GecScoreInputError as exc:
         envelope = build_error_output(
             task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
@@ -797,14 +857,32 @@ def _main_single(args: argparse.Namespace) -> int:
     return 0
 
 
-def _main_batch(args: argparse.Namespace) -> int:
+def _main_batch(args: argparse.Namespace, *, backend: GecBackend | None = None) -> int:
     manifest_path = Path(args.batch).expanduser()
+    # Production guard (Codex P1, round 10): the batch CLI is the feature-column
+    # ingestion path. With no real corrector wired, EVERY row would carry the
+    # identity-stub gecscore=1.0 / low_error_density — a whole column of fake clean
+    # scores. Abstain before reading the manifest (an available:false /
+    # missing_dependency envelope), rather than emit the false column.
+    if not backend_is_real(backend):
+        envelope = build_error_output(
+            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+            target_path=str(manifest_path),
+            reason=NO_REAL_BACKEND_REASON, reason_category="missing_dependency",
+        )
+        text_out = json.dumps(envelope, indent=2, default=str)
+        if args.out:
+            Path(args.out).write_text(text_out + "\n", encoding="utf-8")
+            sys.stderr.write(f"Wrote output to {args.out}\n")
+        else:
+            sys.stdout.write(text_out + "\n")
+        return 3
     try:
         rows = _load_batch_manifest(manifest_path)
     except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
         sys.stderr.write(f"[gecscore_audit] --batch manifest error: {exc}\n")
         return 3
-    out_rows = run_batch(rows, base_dir=manifest_path.parent)
+    out_rows = run_batch(rows, backend=backend, base_dir=manifest_path.parent)
     n_below_floor = sum(1 for r in out_rows if r.get("below_floor"))
     payload = {
         "tool": TOOL_NAME,

@@ -52,6 +52,24 @@ def _make_text(n_words: int) -> str:
 
 _ALLOWED_BANDS = {"indeterminate", "low_error_density", "high_error_density"}
 
+
+class _RealStubBackend(g.GecBackend):
+    """A test-only REAL (non-stub) corrector: ``is_stub = False`` so it passes the
+    production CLI's ``backend_is_real`` gate and exercises the happy path. It
+    optionally applies a canned ``corrections`` map (identity otherwise). It stands
+    in for the M2 LanguageTool/GECToR seam in CLI tests WITHOUT being the M1 stub,
+    so the abstain-on-stub guard (Codex P1, round 10) is the only thing separating
+    a reported score from a refused one."""
+
+    kind = "test_real"
+    is_stub = False
+
+    def __init__(self, corrections: dict[str, str] | None = None) -> None:
+        self._corrections = dict(corrections or {})
+
+    def correct(self, text: str) -> str:
+        return self._corrections.get(text, text)
+
 # Forbidden *key* substrings (recursive key walk).
 _BANNED_KEY_SUBSTRINGS = (
     "is_ai", "is_human", "ai_generated", "human_written", "label",
@@ -231,9 +249,14 @@ def test_ac1_stub_span_count_override():
 # AC-2 — CLI happy path + error envelopes + exit codes.
 # ----------------------------------------------------------------------
 
-def _run_cli(argv, tmp_path):
+def _run_cli(argv, tmp_path, *, backend="real"):
+    """Drive main() via a JSON --out file. ``backend`` defaults to a REAL test
+    backend so the happy/error-path tests exercise their own branches rather than
+    short-circuiting on the production abstain-on-stub guard; pass ``backend=None``
+    to exercise the production default (no real corrector → abstain)."""
     out_path = tmp_path / "env.json"
-    rc = g.main(argv + ["--json", "--out", str(out_path)])
+    be = _RealStubBackend() if backend == "real" else backend
+    rc = g.main(argv + ["--json", "--out", str(out_path)], backend=be)
     env = json.loads(out_path.read_text(encoding="utf-8")) if out_path.exists() else None
     return rc, env
 
@@ -282,6 +305,96 @@ def test_ac2_cli_requires_target_or_batch():
     assert g.main([]) == 2  # neither
     # mutually exclusive
     assert g.main(["--target", "x", "--batch", "y"]) == 2
+
+
+# ----------------------------------------------------------------------
+# REGRESSION (Codex P1, round 10; #62/#259 posture class): the production CLI
+# must NOT report a gecscore from the M1 identity stub. With no real corrector
+# wired, the identity correction makes every target read gecscore=1.0 /
+# low_error_density — a non-run masquerading as a clean score. The default/
+# production path must ABSTAIN (available:false / missing_dependency) instead.
+# ----------------------------------------------------------------------
+
+def test_regression_single_cli_default_abstains_not_fake_one(tmp_path):
+    """Production default (NO backend injected): the single-target CLI abstains
+    rather than report the identity-stub gecscore=1.0 / low_error_density.
+
+    Pre-fix this exited 0 with available:True, gecscore==1.0, band
+    low_error_density (the flagged non-run-as-clean-score)."""
+    target = tmp_path / "t.txt"
+    target.write_text(_make_text(120), encoding="utf-8")
+    rc, env = _run_cli(["--target", str(target)], tmp_path, backend=None)
+    assert rc == 3
+    assert env["available"] is False
+    assert env["reason_category"] == "missing_dependency"
+    # The abstain envelope carries NO reported gecscore / band at all — and in
+    # particular never the fake 1.0 / low_error_density a stub run would emit.
+    assert "gecscore" not in env.get("results", {})
+    assert env.get("results", {}).get("band") != "low_error_density"
+    # The reason names the stub explicitly so the stub is clearly a stub.
+    assert "stub" in env["reason"].lower()
+
+
+def test_regression_batch_cli_default_abstains_not_fake_column(tmp_path):
+    """Production default (NO backend injected): the batch CLI abstains rather than
+    emit a whole column of identity-stub gecscore=1.0 / low_error_density rows.
+
+    Pre-fix this exited 0 with a 'batch' payload whose every row carried
+    gecscore==1.0 and band low_error_density."""
+    manifest = tmp_path / "m.jsonl"
+    manifest.write_text(
+        "\n".join(json.dumps({"id": i, "text": _make_text(80)}) for i in ("a", "b")),
+        encoding="utf-8",
+    )
+    out = tmp_path / "rows.json"
+    rc = g.main(["--batch", str(manifest), "--out", str(out)], backend=None)
+    assert rc == 3
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    assert payload["available"] is False
+    assert payload["reason_category"] == "missing_dependency"
+    # Not a batch payload of fake rows.
+    assert payload.get("mode") != "batch"
+    assert "rows" not in payload
+
+
+def test_regression_bare_main_default_never_emits_fake_one(tmp_path):
+    """The exact flagged shape, driven through the BARE production entrypoint
+    (``g.main`` with no backend kwarg at all — what a shell invocation does).
+
+    Pre-fix: rc==0, available:True, results.gecscore==1.0, band low_error_density
+    (the identity stub reported as a completed clean measurement).
+    Post-fix: rc==3, available:False, missing_dependency, NO gecscore."""
+    target = tmp_path / "t.txt"
+    target.write_text(_make_text(120), encoding="utf-8")
+    out = tmp_path / "env.json"
+    rc = g.main(["--target", str(target), "--json", "--out", str(out)])
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert rc == 3, "bare production CLI must abstain, not report a stub score"
+    assert env["available"] is False
+    assert env["reason_category"] == "missing_dependency"
+    # The specific fake values a stub identity run would have produced are absent.
+    assert env.get("results", {}).get("gecscore") != 1.0
+    assert "gecscore" not in env.get("results", {})
+
+
+def test_regression_stub_backend_is_marked_stub_and_real_is_not():
+    """The stub must be CLEARLY a stub: StubGecBackend.is_stub is True (so the
+    production CLI abstains) and a real backend leaves it False (so it reports)."""
+    assert g.StubGecBackend().is_stub is True
+    assert g.backend_is_real(g.StubGecBackend()) is False
+    assert g.backend_is_real(None) is False
+    assert g.backend_is_real(_RealStubBackend()) is True
+
+
+def test_regression_cli_reports_when_real_backend_injected(tmp_path):
+    """The other half of the guard: with a REAL backend wired the CLI DOES report
+    a gecscore (the abstain is specific to the stub, not a blanket refusal)."""
+    target = tmp_path / "t.txt"
+    target.write_text(_make_text(120), encoding="utf-8")
+    rc, env = _run_cli(["--target", str(target)], tmp_path, backend=_RealStubBackend())
+    assert rc == 0
+    assert env["available"] is True
+    assert "gecscore" in env["results"]
 
 
 # ----------------------------------------------------------------------
@@ -424,7 +537,8 @@ def test_ac6_single_cli_folds_fairness_into_warnings(tmp_path):
     target = tmp_path / "t.txt"
     target.write_text(_make_text(120), encoding="utf-8")
     rc = g.main(["--target", str(target), "--declare", "nonnative_english",
-                 "--json", "--out", str(tmp_path / "o.json")])
+                 "--json", "--out", str(tmp_path / "o.json")],
+                backend=_RealStubBackend())
     assert rc == 0
     env = json.loads((tmp_path / "o.json").read_text(encoding="utf-8"))
     assert any("FAIRNESS GATE" in w for w in env["warnings"])
@@ -443,7 +557,8 @@ def test_ac7_batch_three_rows(tmp_path):
     ]
     manifest.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
     out = tmp_path / "rows.json"
-    rc = g.main(["--batch", str(manifest), "--out", str(out)])
+    rc = g.main(["--batch", str(manifest), "--out", str(out)],
+                backend=_RealStubBackend())
     assert rc == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
     assert payload["mode"] == "batch"
@@ -478,7 +593,8 @@ def test_ac7_batch_subfloor_row_flagged(tmp_path):
         encoding="utf-8",
     )
     out = tmp_path / "rows.json"
-    rc = g.main(["--batch", str(manifest), "--out", str(out)])
+    rc = g.main(["--batch", str(manifest), "--out", str(out)],
+                backend=_RealStubBackend())
     assert rc == 0
     payload = json.loads(out.read_text(encoding="utf-8"))
     short_row = payload["rows"][0]

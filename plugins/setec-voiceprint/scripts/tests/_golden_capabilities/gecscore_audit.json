@@ -50,7 +50,7 @@
   },
   "examples": [
     {
-      "description": "GECScore over a single target (M1 stub corrector, JSON envelope)",
+      "description": "GECScore over a single target (JSON envelope). With no real grammar corrector wired (M1 default), the CLI abstains (available:false / missing_dependency) rather than report a stub identity gecscore=1.0; a real M2 backend is required to report a score.",
       "cmd": "python3 plugins/setec-voiceprint/scripts/gecscore_audit.py --target target.md --json"
     },
     {
