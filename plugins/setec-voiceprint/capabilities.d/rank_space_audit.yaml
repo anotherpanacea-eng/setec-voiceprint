@@ -17,10 +17,15 @@ entries:
     the literature (Su et al. 2023, arXiv:2306.05540) log-rank is hypothesized more
     scale-robust than raw log-likelihood, so LRR may discriminate where surprisal_mean
     collapses — discrimination EVIDENCE on the rank axis. Descriptive only: VALUES +
-    a PROVISIONAL band over the LRR value''s OWN axis (indeterminate / low_lrr / high_lrr)
-    carrying calibration_status heuristic + calibration_anchor user-baseline-required.
-    There is NO is_ai / is_human / label / verdict / decision key; the claim-license
-    refuses any authorship verdict and surfaces the ESL/non-native false-positive mode.
+    NO verdict band shipped (spec 32 §3.5 / §9 / §5: band uncalibrated, thresholds
+    None by default; calibration_status uncalibrated). A descriptive band over the
+    LRR value''s OWN axis (low_lrr / indeterminate / high_lrr) carrying calibration_status
+    heuristic + calibration_anchor user-baseline-required + the
+    thresholds_operator_supplied_not_framework_calibrated caveat appears ONLY when the
+    operator supplies both --threshold-low and --threshold-high (their own calibrated
+    operating point); no framework numeric cutoff is invented. There is NO is_ai /
+    is_human / label / verdict / decision key; the claim-license refuses any authorship
+    verdict and surfaces the ESL/non-native false-positive mode.
 
     '
   use_when:

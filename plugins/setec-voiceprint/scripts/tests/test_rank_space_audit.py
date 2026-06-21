@@ -114,6 +114,76 @@ def test_band_requires_both_thresholds():
     assert one["band"]["thresholds"] is None
 
 
+# --- Catalog/golden purpose must MATCH the code's actual default posture. ---
+# Regression for the preflight drift finding: the capabilities.d YAML purpose and
+# its byte-mirrored golden fragment described, *as the default*, "a PROVISIONAL
+# band over the LRR value's OWN axis (indeterminate / low_lrr / high_lrr) carrying
+# calibration_status heuristic" — but the code's default (no operator thresholds)
+# is band="uncalibrated", calibration_status="uncalibrated", thresholds=None, with
+# NO low_lrr/indeterminate/high_lrr leaf and NO "heuristic" status. The heuristic
+# band is operator-gated. These tests pin the catalog prose to the runtime default
+# so the discoverability catalog (which Codex reads as the surface contract) can't
+# overstate what ships. They FAIL against the pre-fix YAML/golden.
+import json  # noqa: E402
+
+import capabilities as cap  # type: ignore  # noqa: E402
+
+_CAP_DIR = SCRIPTS.parent / "capabilities.d"
+_GOLDEN = SCRIPTS / "tests" / "_golden_capabilities" / "rank_space_audit.json"
+
+
+def _rank_space_purpose_from_yaml() -> str:
+    m = cap.load_manifest(_CAP_DIR)
+    entry = {e["id"]: e for e in m["entries"]}["rank_space_audit"]
+    return entry["purpose"]
+
+
+def _rank_space_purpose_from_golden() -> str:
+    return json.loads(_GOLDEN.read_text(encoding="utf-8"))["purpose"]
+
+
+def _runtime_default_band() -> dict:
+    return ra.audit_rank_space("x", distributions_fn=_single_window_fn)["band"]
+
+
+def test_catalog_purpose_matches_runtime_default_posture():
+    band = _runtime_default_band()
+    # Establish the runtime ground truth the prose must not contradict.
+    assert band["band"] == "uncalibrated"
+    assert band["calibration_status"] == "uncalibrated"
+    assert band["thresholds"] is None
+
+    for label, purpose in (
+        ("yaml", _rank_space_purpose_from_yaml()),
+        ("golden", _rank_space_purpose_from_golden()),
+    ):
+        # Normalize whitespace so YAML line-folding doesn't matter for matching.
+        flat = " ".join(purpose.lower().split())
+        # The default posture MUST be advertised as uncalibrated / no shipped band.
+        assert "no verdict band shipped" in flat, (
+            f"{label} purpose no longer states the default ships no verdict band"
+        )
+        assert "band uncalibrated" in flat and "thresholds none by default" in flat, (
+            f"{label} purpose must state the default is band uncalibrated, "
+            f"thresholds None by default (the runtime ground truth above)"
+        )
+        # The heuristic band must be tied to OPERATOR-supplied thresholds, not sold
+        # as the default. Pre-fix prose said "Descriptive only: VALUES + a
+        # PROVISIONAL band ... carrying calibration_status heuristic" with no gate.
+        assert "heuristic" in flat, f"{label} purpose dropped the heuristic mention"
+        heuristic_idx = flat.index("heuristic")
+        gate_window = flat[max(0, heuristic_idx - 400):heuristic_idx + 400]
+        assert "operator supplies" in gate_window or "--threshold" in gate_window, (
+            f"{label} purpose advertises a heuristic band without tying it to "
+            f"operator-supplied thresholds — overstates the default posture"
+        )
+        # Guard against the exact pre-fix phrasing reappearing: the heuristic band
+        # advertised as the unconditional default.
+        assert "values + a provisional band over the lrr value's own axis" not in flat, (
+            f"{label} purpose still advertises a default PROVISIONAL heuristic band"
+        )
+
+
 # The load-bearing chunking finding: a multi-window stub must REFUSE with a
 # specific text_too_long message (naming the scorer context window), NOT silently
 # mis-rank and NOT the generic "rank computation failed" string.
