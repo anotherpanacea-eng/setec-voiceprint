@@ -135,6 +135,12 @@ Per-sentence mean dependency distance via spaCy parse; then SD across sentences.
 
 The *distribution* of dependency distances `d = |i − head.i|` (histogram + adjacent-link share `d=1` + long-range tail `d ≥ 7`); the scalar MDD mean/SD is reused from `mdd_stats` (above). Descriptive, no verdict. Range `[0, 1]` (shares). Length floor 150 tokens. Parser-tier (spaCy `en_core_web_sm`; abstains without it). NOT length-controlled — `mean_sentence_length` co-reported. Spec 24 (arXiv:2211.14620).
 
+### Dependency-distance distribution SHAPE (variance / skew / kurtosis / tail quantiles)
+
+`dependency_distance_audit:shape` · syntactic-shape · — · **heuristic**
+
+The *geometry of the DDD curve* — descriptors of the **pooled per-link** distance distribution, distinct from the histogram and from `mdd_sd`: population `variance`/`sd`, Fisher-Pearson skewness `g1` and excess kurtosis `g2`, and nearest-rank tail quantiles `p50`/`p90`/`p99`/`max`. The shape `sd` is the within-POOL per-link SD — **not** `mdd_sd` (which is the across-SENTENCE SD of per-sentence MDD means). Right-skew (`g1>0`) and heavy tail (`g2>0`) are the expected curve shape. Descriptive, **no verdict, no band** — skew/kurtosis are moments, not a complexity score. `skewness`/`excess_kurtosis` are `null` (not `0.0`) when `sd==0` or `n_links<3`. `variance`/`sd`/`quantiles` range `[0, ∞)`; `skewness`/`excess_kurtosis` signed. M1 stdlib (no numpy/scipy). Parser-tier (inherits spec-24's spaCy gate). Spec 31 (arXiv:2211.14620).
+
 ---
 
 ## Tier 3: Trajectory signals

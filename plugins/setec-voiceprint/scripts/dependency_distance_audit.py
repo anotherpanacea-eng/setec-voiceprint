@@ -5,7 +5,11 @@ A descriptive **syntactic-shape** profile: the linear span of each syntactic lin
 `d = |token.i - token.head.i|`. The *scalar* MDD (per-sentence mean + SD) already ships as
 `variance_audit.mdd_stats` (the `mdd_sd` signal) and is **reused** here, never re-implemented. The
 new, additive contribution is the **distribution** (the subject of arXiv:2211.14620): the
-dependency-distance histogram, the adjacent-link share (d=1), and the long-range tail (d>=K).
+dependency-distance histogram, the adjacent-link share (d=1), the long-range tail (d>=K), and the
+**shape** descriptors of the pooled per-link distribution (`results["shape"]`): population
+variance/sd, Fisher-Pearson skewness (g1) and excess kurtosis (g2), and tail quantiles
+(p50/p90/p99/max). The shape `sd` is the within-POOL per-link SD — a DIFFERENT quantity from the
+reused `mdd_sd` (the across-SENTENCE SD of per-sentence means). All stdlib, no new model dependency.
 
 Parser-tier: reuses the shared spaCy pipeline (`variance_audit._NLP` / `HAS_SPACY` / `en_core_web_sm`).
 There is no faithful parse-free dependency distance, so without the parser the surface ABSTAINS
@@ -19,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import statistics
 import sys
 from collections import Counter
@@ -39,6 +44,80 @@ SCRIPT_VERSION = "1.0"
 
 DEFAULT_LONG_THRESHOLD = 7
 DEFAULT_MAX_BUCKET = 15
+
+
+def _nearest_rank_quantile(sorted_d: list[int], q: float) -> float:
+    """Nearest-rank percentile of an ascending-sorted, non-empty list (q in [0, 1]).
+    rank = ceil(q * N), clamped to [1, N]; index = rank - 1. Returns the value as a float."""
+    n = len(sorted_d)
+    rank = max(1, min(n, math.ceil(q * n)))
+    return float(sorted_d[rank - 1])
+
+
+def _distance_shape(distances: list[int]) -> dict[str, Any]:
+    """Distribution-SHAPE descriptors of the POOLED per-link distance list (arXiv:2211.14620):
+    population variance/sd, Fisher-Pearson moment skewness (g1) and excess kurtosis (g2), and
+    nearest-rank tail quantiles (p50/p90/p99/max). Pure stdlib (statistics + arithmetic) over the one
+    `distances` list the audit already builds — NO numpy/scipy, NO re-parse, model-free (CI-runnable).
+
+    Population moments (N, not N-1): this is a descriptive summary of THIS document's observed
+    distribution, not a sample estimate of a super-population. `sd` here is the within-POOL per-link
+    SD — a DIFFERENT quantity from `mdd_sd` (the across-SENTENCE SD of per-sentence MDD means).
+
+    Degenerate handling (no fabricated values): `skewness` / `excess_kurtosis` are `None` (not 0.0)
+    when `sd == 0` (all distances equal -> standardized moments undefined) or `n_links < 3` (the
+    third/fourth standardized moments are undefined for n < 3). `variance` / `sd` / `quantiles` stay
+    defined (0.0 / the single value) for any non-empty list. Raises ValueError on an empty list (the
+    caller guarantees >= 1 link, so this is a defensive guard, never reached in the normal path)."""
+    n = len(distances)
+    if n == 0:
+        raise ValueError("_distance_shape: empty distances list")
+
+    mean = sum(distances) / n
+    # Central moments m2/m3/m4 (population): m_k = mean((d - mean)^k).
+    m2 = sum((d - mean) ** 2 for d in distances) / n
+    variance = m2                                   # statistics.pvariance(distances), inlined for one pass
+    sd = variance ** 0.5
+
+    if n < 3 or sd == 0.0:
+        skewness: float | None = None
+        excess_kurtosis: float | None = None
+    else:
+        m3 = sum((d - mean) ** 3 for d in distances) / n
+        m4 = sum((d - mean) ** 4 for d in distances) / n
+        skewness = m3 / (sd ** 3)                   # Fisher-Pearson g1 (population)
+        excess_kurtosis = m4 / (m2 ** 2) - 3.0      # g2 (excess; normal -> 0)
+
+    sorted_d = sorted(distances)
+    quantiles = {
+        "p50": _nearest_rank_quantile(sorted_d, 0.50),
+        "p90": _nearest_rank_quantile(sorted_d, 0.90),
+        "p99": _nearest_rank_quantile(sorted_d, 0.99),
+        "max": float(sorted_d[-1]),
+    }
+
+    return {
+        "variance": round(variance, 6),
+        "sd": round(sd, 6),
+        "skewness": (round(skewness, 6) if skewness is not None else None),
+        "excess_kurtosis": (round(excess_kurtosis, 6) if excess_kurtosis is not None else None),
+        "quantiles": quantiles,
+        "n_links": n,                               # == results["n_links"]; echoed so shape self-describes
+        "assumptions": {
+            "population": "pooled per-link distances (NOT per-sentence means); population moments "
+                          "(N, not N-1)",
+            "distinct_from_mdd_sd": "mdd_sd is the across-SENTENCE SD of per-sentence MDD means; "
+                                    "shape.sd is the within-POOL SD of per-LINK distances — a "
+                                    "different quantity",
+            "skew_kurtosis": "Fisher-Pearson g1 / excess g2; right-skew (g1>0) and heavy tail (g2>0) "
+                             "are the expected DDD shape (arXiv:2211.14620), reported descriptively "
+                             "with no band",
+            "degenerate": "skewness/excess_kurtosis are null when sd==0 or n_links<3 (undefined "
+                          "moments), not 0.0 — absence is reported as null, never a fabricated value",
+            "quantiles": "nearest-rank percentiles of the pooled per-link distances; more robust to "
+                         "sentence COUNT than a share, but NOT to sentence LENGTH",
+        },
+    }
 
 
 def audit_dependency_distance(text: str, *, long_threshold: int = DEFAULT_LONG_THRESHOLD,
@@ -80,6 +159,10 @@ def audit_dependency_distance(text: str, *, long_threshold: int = DEFAULT_LONG_T
         "n_links": n_links,
         "n_sentences": len(sentence_lengths),
         "n_tokens": sum(sentence_lengths),
+        # Distribution-SHAPE descriptors of the pooled per-link distances (arXiv:2211.14620): the
+        # geometry of the curve (variance/skew/kurtosis/tail-quantiles), DISTINCT from mdd_sd and the
+        # histogram. Additive, descriptive, no verdict/band. Stdlib over the same `distances` list.
+        "shape": _distance_shape(distances),
         "assumptions": {
             "method": "dependency-distance distribution (arXiv:2211.14620); d = |i - head.i|",
             "link_set": "punctuation kept (non-space); ROOT/self-links excluded — matches "
@@ -96,15 +179,20 @@ def _claim_license() -> dict[str, str]:
     return {
         "licenses": (
             "The distribution of dependency distances of the target — the histogram, the adjacent "
-            "(d=1) and long-range (d>=threshold) shares — plus the per-sentence MDD mean/SD reused "
-            "from mdd_stats. A descriptive syntactic-complexity profile."
+            "(d=1) and long-range (d>=threshold) shares, and the SHAPE descriptors of the pooled "
+            "per-link distribution (variance/sd, Fisher-Pearson skewness g1, excess kurtosis g2, and "
+            "the p50/p90/p99/max tail quantiles) — plus the per-sentence MDD mean/SD reused from "
+            "mdd_stats. A descriptive syntactic-complexity profile, reported as values with no band."
         ),
         "does_not_license": (
             "Any AI/human or authorship verdict; any writing-quality or readability judgment; "
             "cross-language comparison (MDD norms are language-specific); a length-controlled "
             "reading — MDD and the long-range share covary mechanically with sentence length and "
-            "genre (mean_sentence_length is co-reported so the confound is visible). No verdict; "
-            "thresholds operator-side / PROVISIONAL."
+            "genre (mean_sentence_length is co-reported so the confound is visible). The shape "
+            "moments are descriptive: skewness/excess_kurtosis are NOT a complexity *score* and "
+            "NOT an AI signal — they are the observed geometry of this document's distance "
+            "distribution, with no band and no baseline. No verdict; thresholds operator-side / "
+            "PROVISIONAL."
         ),
     }
 
