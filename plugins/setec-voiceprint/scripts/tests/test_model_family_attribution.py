@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Tests for model_family_attribution.py (spec 32, M1).
+"""Tests for model_family_attribution.py (spec 34, M1).
 
 Stdlib, deterministic, torch-free, CI-runnable end to end. Covers the spec-32 test contract:
 deterministic raw ranking; the no-posterior / no-verdict guards; REAL abstention (each gate trips with
@@ -406,6 +406,42 @@ def test_manifest_row_missing_family_is_bad_input(tmp_path):
     rc, env = _envelope(["--target", str(tgt), "--reference-manifest", str(man)])
     assert env["available"] is False
     assert env["reason_category"] == "bad_input"
+
+
+@pytest.mark.parametrize("bad_rel", [5, [1, 2], {"k": "v"}, True])
+def test_manifest_non_string_text_path_is_bad_input(tmp_path, bad_rel):
+    """A truthy non-string 'text_path' (int/list/dict/bool) must map to a bad_input envelope,
+    NOT escape as an uncaught TypeError from `base / rel`. Sibling of the 'family'/'text'
+    isinstance guards: the file-pointer field was the one left unguarded (#255 P1). Two rows so
+    the loader is fully reached (>=2 families)."""
+    tgt = tmp_path / "t.txt"
+    tgt.write_text("the cat sat on the mat " * 20)
+    man = tmp_path / "m.jsonl"
+    man.write_text(
+        json.dumps({"family": "modelX", "text_path": bad_rel}) + "\n"
+        + json.dumps({"family": "modelY", "text_path": bad_rel}) + "\n"
+    )
+    rc, env = _envelope(["--target", str(tgt), "--reference-manifest", str(man)])
+    assert env["available"] is False
+    assert env["reason_category"] == "bad_input"
+    assert rc == 3
+
+
+@pytest.mark.parametrize("bad_rel", [5, [1, 2], {"k": "v"}])
+def test_manifest_non_string_path_alias_is_bad_input(tmp_path, bad_rel):
+    """Same guard via the 'path' alias (the `or row.get('path')` branch), so the alias sibling
+    is covered too, not just 'text_path' (#255 P1)."""
+    tgt = tmp_path / "t.txt"
+    tgt.write_text("the cat sat on the mat " * 20)
+    man = tmp_path / "m.jsonl"
+    man.write_text(
+        json.dumps({"family": "modelX", "path": bad_rel}) + "\n"
+        + json.dumps({"family": "modelY", "path": bad_rel}) + "\n"
+    )
+    rc, env = _envelope(["--target", str(tgt), "--reference-manifest", str(man)])
+    assert env["available"] is False
+    assert env["reason_category"] == "bad_input"
+    assert rc == 3
 
 
 # --- target length floor ------------------------------------------------------

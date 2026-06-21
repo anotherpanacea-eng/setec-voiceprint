@@ -1,9 +1,12 @@
-# 32-model-family-attribution
+# 34-model-family-attribution
 
 > **Spec number PROVISIONAL.** Authored as `28-model-family-attribution` on branch
 > `spec/28-model-family-attribution`; `28` collides with three other specs already on `main`
-> (`28-cross-doc-originality`, `28-eval-discipline-bundle`, `28-styledistance-encoder-upgrade`), so this
-> build renumbers it to the next free slot, `32`. Renumber to the canonical number at gate-pass.
+> (`28-cross-doc-originality`, `28-eval-discipline-bundle`, `28-styledistance-encoder-upgrade`).
+> `32` (an earlier renumber target) is now itself a collision on `main`
+> (`32-diveye-surprisal-diversity`, `32-function-word-adjacency`), so this build renumbers to `34` —
+> the next slot free against current `main` and all open spec branches (`33` is taken by
+> `feat/detect-paraphrase`). Renumber to the canonical number at gate-pass.
 
 > "Which model family does this read most like?" — an **abstention-first ranked similarity** of a target
 > against operator-supplied per-family reference corpora, over **standardized** interpretable stylometric

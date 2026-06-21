@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""model_family_attribution.py — abstention-first, raw per-family similarity ranking (spec 32, M1).
+"""model_family_attribution.py — abstention-first, raw per-family similarity ranking (spec 34, M1).
 
 "Which model family does this prose read most like?" — answered as a **raw, un-normalized,
 abstention-gated similarity ranking** of a `--target` against operator-supplied per-family reference
@@ -8,7 +8,7 @@ normalized posterior (nothing sums to 1 over families — that manufactures a P(
 "produced by <family>" attribution, no AI-vs-human ruling. Raw ranked evidence for a human, under heavy,
 *real* abstention. Pure stdlib (spaCy only gates the optional `mdd` feature); deterministic; no model.
 
-Method (spec 32 §M1):
+Method (spec 34 §M1):
   1. Resolve the named feature set ONCE (intersection across target + all references) — burstiness_B /
      MATTR / MTLD / function_word_ratio / mean_dependency_distance. `mdd` needs spaCy; if spaCy is absent
      it is dropped for EVERYONE (the comparison subspace is fixed at run start, never per-doc).
@@ -469,6 +469,15 @@ def _load_family_manifest(path: Path) -> dict[str, list[tuple[str, Path | None]]
         if not rel:
             raise ValueError(
                 f"manifest line {line_no}: row has neither inline 'text' nor 'text_path'/'path'"
+            )
+        if not isinstance(rel, str):
+            # Guard the file-pointer field exactly like 'family'/'text': a truthy non-string
+            # 'text_path'/'path' (int/list/dict/bool) would make `base / rel` raise TypeError,
+            # which is NOT caught by _run's (OSError, UnicodeDecodeError, ValueError) handler and
+            # would escape as a traceback. A structurally broken pointer is bad input.
+            raise ValueError(
+                f"manifest line {line_no}: 'text_path'/'path' must be a string, got "
+                f"{type(rel).__name__}"
             )
         fp = (base / rel)
         text = fp.read_text(encoding="utf-8")  # missing -> FileNotFoundError; non-UTF-8 -> UnicodeDecodeError
