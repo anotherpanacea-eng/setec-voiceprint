@@ -64,8 +64,13 @@ Most cycles are:
 
 A retrospective over 350 review findings (68 P1 / 115 P2) found the same handful of
 mistakes recurring. Codex review is token-gated (≈one round per 5-hour window), so the
-goal is **first-pass-clean**: run this before you call a build done, and re-run it on
-every fix — *a fix is a build*.
+goal is **first-pass-clean**.
+
+**Reader split (2026-06-21):** a *builder* carries only **mode-1** below — grep-verify every
+anchor before asserting it, stop if absent (the one build-TIME-irreducible rule; deferring it
+to review means the build is already wasted). The full 9-mode list is the *reviewer's*
+checklist — the build→panel lenses run it against the diff, and re-run it on every fix (*a fix
+is a build*). See the fleet `BUILD-PREFLIGHT.md` → "Reader split."
 
 **Root cause (~40% of P1s):** the spec/build *asserts* something about existing source —
 an API, a field, a `file:line`, an env-var, a compute tier, a sibling spec, an invariant —
