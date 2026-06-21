@@ -167,6 +167,48 @@ def test_ac1_known_error_pair_hand_computed():
     )
 
 
+def test_metric_is_difflib_ratio_autojunk_off():
+    """The metric is the difflib Gestalt similarity RATIO with autojunk=False —
+    NOT a max(len)-normalized edit distance (the docs/name were corrected to match
+    the code). Pin it on a >1KB prose pair where the junk heuristic genuinely bites,
+    so a silent re-introduction of autojunk (or a switch to a different
+    normalization) is caught."""
+    import difflib
+
+    base = _make_text(220)  # > 1KB → difflib's popular-char heuristic is reachable
+    errored = base
+    for good, bad in [
+        ("responsibility", "responsability"), ("accountable", "acountable"),
+        ("deliberation", "deliberration"), ("compulsion", "compultion"),
+        ("boundary", "boundery"), ("separated", "seperated"),
+    ]:
+        errored = errored.replace(good, bad, 1)
+    expected = difflib.SequenceMatcher(None, errored, base, autojunk=False).ratio()
+    autojunk_on = difflib.SequenceMatcher(None, errored, base).ratio()
+    # The two modes MUST diverge on this fixture (else the test is vacuous) — and
+    # gec_similarity must track the autojunk=False value, not the autojunk=True one.
+    assert not math.isclose(autojunk_on, expected, rel_tol=1e-9), (
+        "fixture no longer triggers the autojunk heuristic — strengthen it"
+    )
+    assert math.isclose(g.gec_similarity(errored, base), expected, rel_tol=1e-12)
+    assert not math.isclose(
+        g.gec_similarity(errored, base), autojunk_on, rel_tol=1e-9
+    )
+    # gec_similarity == 1 - sequence_dissimilarity by construction (the accurate
+    # name); the legacy 'normalized_edit_distance' alias points at the same fn.
+    assert g.gec_similarity(errored, base) == 1.0 - g.sequence_dissimilarity(errored, base)
+    assert g.normalized_edit_distance is g.sequence_dissimilarity
+
+
+def test_autojunk_off_is_symmetric_and_pinned():
+    """autojunk=False removes the order-dependence the junk heuristic can introduce
+    and pins the metric to the plain ratio. gec_similarity(a, b) == gec_similarity(
+    b, a) on a long pair, and equals the autojunk-off ratio."""
+    a = _make_text(200)
+    b = a.replace("deliberation", "deliberration", 2)
+    assert math.isclose(g.gec_similarity(a, b), g.gec_similarity(b, a), rel_tol=1e-12)
+
+
 def test_ac1_stub_backend_injects_canned_correction():
     text = _make_text(120)
     corrected = text.replace("responsibility", "responsability")  # one error
@@ -410,6 +452,44 @@ def test_ac7_batch_three_rows(tmp_path):
     assert ids == ["a", "b", "c"]
     for row in payload["rows"]:
         assert "gecscore" in row and "gec_n_corrections" in row and "band" in row
+
+
+def test_ac7_batch_rows_carry_calibration_context():
+    """REVIEW: batch is the feature-column ingestion path, so the band must never
+    travel naked. Each scored row carries calibration_status + the pinned direction
+    + a word count + an esl_inversion_caveat, and the payload header carries the
+    corpus-level fairness obligation."""
+    rows = g.run_batch([{"id": "a", "text": _make_text(80)}])
+    row = rows[0]
+    assert row["calibration_status"] == "heuristic"
+    assert row["gec_ai_direction"] == g.GEC_AI_DIRECTION
+    assert "words" in row and row["words"] >= 50
+    assert row["below_floor"] is False
+    assert "INVERT" in row["esl_inversion_caveat"].upper()
+
+
+def test_ac7_batch_subfloor_row_flagged(tmp_path):
+    """The 50-word floor is enforced on the corpus path too (Change 4 / REVIEW): a
+    sub-floor passage is FLAGGED (not silently given a definite band) so a
+    downstream consumer can filter / down-weight it."""
+    manifest = tmp_path / "m.jsonl"
+    manifest.write_text(
+        json.dumps({"id": "short", "text": "just a dozen words here below the fifty word floor today"}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "rows.json"
+    rc = g.main(["--batch", str(manifest), "--out", str(out)])
+    assert rc == 0
+    payload = json.loads(out.read_text(encoding="utf-8"))
+    short_row = payload["rows"][0]
+    assert short_row["words"] < g.LENGTH_FLOOR_WORDS
+    assert short_row["below_floor"] is True
+    # And the corpus-level header makes the fairness gate + floor structural.
+    assert payload["fairness_required"] is True
+    assert "fairness_dialect_guardrails" in payload["fairness_command"]
+    assert payload["calibration_status"] == "heuristic"
+    assert payload["length_floor_words"] == g.LENGTH_FLOOR_WORDS
+    assert payload["n_below_floor"] == 1
 
 
 def test_ac7_batch_path_rows(tmp_path):

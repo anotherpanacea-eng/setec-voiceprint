@@ -7,16 +7,19 @@ entries:
   consumers: []
   family: gecscore
   purpose: 'GECScore grammar-error-density signal (M1, stdlib, model-free): how little
-    a grammar-error corrector changes a text. Reports gecscore = 1 - normalized character
-    edit distance between the text and its grammar-corrected form, in [0,1], plus the
-    raw correction-span count (gec_n_corrections). The grammar corrector is the only
+    a grammar-error corrector changes a text. Reports gecscore = the difflib Gestalt
+    character-similarity ratio (autojunk off; 2*M/(len(s)+len(corrected)), NOT a max(len)-
+    normalized edit distance) between the text and its grammar-corrected form, in [0,1],
+    plus the raw correction-span count (gec_n_corrections). The grammar corrector is the only
     load-bearing model dependency, so it is the M1/M2 seam: M1 runs over an INJECTED
     corrector (StubGecBackend, no model); M2 swaps in LanguageTool (Java on PATH) or
     GECToR (torch) behind the same correct(text)->str seam. In the literature AI text
     tends to HIGHER gecscore (near-zero error density) than human text (GECScore,
-    arXiv:2405.04286, [UNVERIFIED] preprint — the claimed ~98.7% AUROC is a LEAD, not
-    a prior asserted here), an axis orthogonal to the probability (Binoculars/surprisal/
-    curvature/spectral) and distributional (glass-box stylometry) surfaces. The detection
+    arXiv:2405.04286; the paper''s claimed 98.62% avg AUROC across XSum + WritingPrompts
+    is VERIFIED from the primary source but is the paper''s own claim, NOT reproduced on
+    SETEC''s corpus — a LEAD, not a prior asserted here), an axis orthogonal to the
+    probability (Binoculars/surprisal/curvature/spectral) and distributional (glass-box
+    stylometry) surfaces. The detection
     direction is PINNED as GEC_AI_DIRECTION = "gt" (higher gecscore = the AI-like
     direction) and asserted in a test — silent sign inversion is the detection family''s
     shared failure mode. Descriptive only: emits VALUES + a PROVISIONAL band over the
@@ -79,5 +82,6 @@ entries:
   references:
   - specs/32-gec-linguistic-error-axis.md
   - 'GECScore — Detecting Machine-Generated Texts by Multi-Population Aware Optimization
-    for Grammatical Error Correction, arXiv:2405.04286 (2024 preprint, [UNVERIFIED]):
+    for Grammatical Error Correction, arXiv:2405.04286 (2024 preprint; the 98.62% avg
+    AUROC claim is confirmed from the primary source but [UNVERIFIED on SETEC''s corpus]):
     https://arxiv.org/abs/2405.04286'

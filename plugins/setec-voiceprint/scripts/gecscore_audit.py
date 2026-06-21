@@ -10,19 +10,26 @@ corrector change the text?** AI prose, RLHF-polished to near-zero grammar error,
 changed little (high similarity → high gecscore); human prose retains residual
 micro-errors (comma splices, subject-verb-distance mismatches, idiomatic fragments)
 and is changed more (lower gecscore). The GECScore lead is arXiv:2405.04286
-([UNVERIFIED] 2024 preprint; its claimed ~98.7% avg AUROC is NOT confirmed from a
-primary source and is a LEAD, never a target). Evidence, not verdict.
+(2024 preprint; [VERIFIED from the primary source: the paper claims a 98.62% avg
+AUROC across XSum + WritingPrompts] — but that is the paper's own claim, NOT
+independently reproduced on SETEC's corpus, so it is a LEAD, never a target).
+Evidence, not verdict.
 
 Spec: ``specs/32-gec-linguistic-error-axis.md``.
 
 MECHANISM
 =========
-``gec_sim(s) = 1 - normalized_edit_distance(s, GEC(s))`` in [0, 1], where the edit
-distance is the stdlib character-level difflib distance
-(``1 - SequenceMatcher(None, s, corrected).ratio()``) normalized by
-``max(len(s), len(corrected))``. ``gec_sim = 1.0`` ⇒ the corrector changed nothing
-(zero detected errors). A secondary raw count ``gec_n_corrections`` (distinct
-correction spans) complements the normalized similarity on short passages.
+``gec_sim(s) = SequenceMatcher(None, s, GEC(s), autojunk=False).ratio()`` in [0, 1]
+— the stdlib ``difflib`` character-level Gestalt-pattern similarity ratio, where
+``ratio() = 2*M / (len(s) + len(corrected))`` (M = total matched characters,
+normalized by the SUM of the two lengths — NOT by ``max(len)`` and NOT a
+Levenshtein edit distance). Equivalently ``1 - dissimilarity`` where
+``dissimilarity = 1 - ratio()``. ``autojunk=False`` is passed so difflib's
+length-triggered "popular character" heuristic (which perturbs ``ratio()`` on prose
+>200 chars and can flip the band) never fires. ``gec_sim = 1.0`` ⇒ the corrector
+changed nothing (zero detected errors). A secondary raw count
+``gec_n_corrections`` (distinct correction spans) complements the similarity on
+short passages.
 
 DIRECTION (PINNED — silent inversion is the family's shared failure mode)
 ========================================================================
@@ -179,33 +186,49 @@ class StubGecBackend(GecBackend):
 # ----------------------------------------------------------------------
 
 
-def normalized_edit_distance(original: str, corrected: str) -> float:
-    """Character-level normalized edit distance in [0, 1].
+def sequence_dissimilarity(original: str, corrected: str) -> float:
+    """Character-level Gestalt-pattern DISSIMILARITY in [0, 1].
 
-    ``1 - difflib.SequenceMatcher(None, original, corrected).ratio()`` (stdlib,
-    deterministic). 0.0 = identical; 1.0 = maximally different. Empty edge: two
-    empty strings differ by 0.0 (nothing to correct → identical); a non-empty
-    string vs. an empty correction differs by 1.0 (everything deleted)."""
+    ``1 - difflib.SequenceMatcher(None, original, corrected, autojunk=False).ratio()``
+    (stdlib, deterministic). This is NOT a Levenshtein edit distance and is NOT
+    normalized by ``max(len)``: ``ratio() = 2*M / (len(a) + len(b))`` (M = matched
+    chars, normalized by the SUM of lengths). 0.0 = identical; 1.0 = maximally
+    different. ``autojunk=False`` disables difflib's length-triggered "popular
+    character" heuristic, which otherwise perturbs ``ratio()`` on prose >200 chars
+    (and can flip the descriptive band) for reasons unrelated to grammar; with it
+    off the metric is the plain Gestalt ratio. Empty edge: two empty strings differ
+    by 0.0 (nothing to correct → identical); a non-empty string vs. an empty
+    correction differs by 1.0 (everything deleted)."""
     if not original and not corrected:
         return 0.0
     if not original or not corrected:
         return 1.0
-    ratio = difflib.SequenceMatcher(None, original, corrected).ratio()
+    ratio = difflib.SequenceMatcher(
+        None, original, corrected, autojunk=False
+    ).ratio()
     return 1.0 - ratio
 
 
+# Back-compat alias: the metric was historically (and mis-)named
+# ``normalized_edit_distance``. It is a Gestalt-pattern dissimilarity, not a
+# max(len)-normalized edit distance; the accurate name is ``sequence_dissimilarity``.
+normalized_edit_distance = sequence_dissimilarity
+
+
 def gec_similarity(original: str, corrected: str) -> float:
-    """``gec_sim = 1 - normalized_edit_distance`` in [0, 1]. 1.0 = the corrector
+    """``gec_sim = difflib.SequenceMatcher(None, s, GEC(s), autojunk=False).ratio()``
+    in [0, 1] — equivalently ``1 - sequence_dissimilarity``. 1.0 = the corrector
     changed nothing (zero detected errors); lower = more rewritten (more errors)."""
-    return 1.0 - normalized_edit_distance(original, corrected)
+    return 1.0 - sequence_dissimilarity(original, corrected)
 
 
 def count_correction_spans(original: str, corrected: str) -> int:
     """Number of distinct edit spans between original and corrected — the count of
     non-``equal`` opcodes from difflib (replace / delete / insert). A raw integer
     (NOT normalized), complementing the similarity on short passages. Identical
-    input/correction → 0 spans."""
-    sm = difflib.SequenceMatcher(None, original, corrected)
+    input/correction → 0 spans. ``autojunk=False`` keeps the span count consistent
+    with :func:`sequence_dissimilarity` (no length-triggered junk heuristic)."""
+    sm = difflib.SequenceMatcher(None, original, corrected, autojunk=False)
     return sum(1 for tag, *_ in sm.get_opcodes() if tag != "equal")
 
 
@@ -351,7 +374,11 @@ def audit_gecscore(
     backend_block = {
         "kind": getattr(be, "kind", "unknown"),
         "id": getattr(be, "id", None),
-        "metric": "1 - normalized_char_edit_distance(s, GEC(s))",
+        "metric": (
+            "difflib.SequenceMatcher(None, s, GEC(s), autojunk=False).ratio() "
+            "(Gestalt char similarity = 2*M/(len(s)+len(GEC(s))); NOT a max(len)-"
+            "normalized edit distance)"
+        ),
     }
 
     results: dict[str, Any] = {
@@ -365,9 +392,11 @@ def audit_gecscore(
         "band": band,
         "assumptions": {
             "method": (
-                "GECScore grammar-error-density similarity (arXiv:2405.04286, "
-                "[UNVERIFIED] preprint — the claimed 98.7% AUROC is a LEAD, not a "
-                "prior asserted here)"
+                "GECScore grammar-error-density similarity = difflib Gestalt ratio "
+                "(autojunk off) between the text and its GEC-corrected form "
+                "(arXiv:2405.04286 — the paper's claimed 98.62% avg AUROC is "
+                "VERIFIED from the primary source but is the paper's own claim, NOT "
+                "reproduced on SETEC's corpus, so it is a LEAD, not a prior)"
             ),
             "orientation": (
                 "higher gecscore = fewer grammar errors (corrector changes less) = "
@@ -410,15 +439,17 @@ def audit_gecscore(
 DEFAULT_LICENSES = (
     "the grammar-error density of the text as a GECScore similarity — how little a "
     "grammar-error corrector changes it (GECScore, arXiv:2405.04286). It reports "
-    "the scalar gecscore in [0,1] (1 - normalized character edit distance between "
-    "the text and its grammar-corrected form), the raw correction-span count "
-    "(gec_n_corrections), and a DESCRIPTIVE band over that value's own axis. In "
-    "the literature AI text tends to HIGHER gecscore (near-zero error density) "
-    "than human text, so the scalar is discrimination evidence on an axis "
-    "orthogonal to the probability (Binoculars/surprisal/curvature) and "
-    "distributional (glass-box stylometry) surfaces. It is a measurement, not a "
-    "verdict. The claimed ~98.7% AUROC from the preprint is UNVERIFIED and is a "
-    "lead, not a prior — it is not asserted as fact here."
+    "the scalar gecscore in [0,1] (the difflib Gestalt character-similarity ratio, "
+    "autojunk off, between the text and its grammar-corrected form — "
+    "2*M/(len(s)+len(corrected)), NOT a max(len)-normalized edit distance), the raw "
+    "correction-span count (gec_n_corrections), and a DESCRIPTIVE band over that "
+    "value's own axis. In the literature AI text tends to HIGHER gecscore "
+    "(near-zero error density) than human text, so the scalar is discrimination "
+    "evidence on an axis orthogonal to the probability (Binoculars/surprisal/"
+    "curvature) and distributional (glass-box stylometry) surfaces. It is a "
+    "measurement, not a verdict. The paper's claimed 98.62% avg AUROC (XSum + "
+    "WritingPrompts) is VERIFIED from the primary source but is the paper's own "
+    "claim, NOT reproduced on SETEC's corpus — a lead, not a prior asserted here."
 )
 
 DEFAULT_DOES_NOT_LICENSE = (
@@ -471,15 +502,19 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "M1 uses an INJECTED corrector (StubGecBackend); values from the M2 "
             "LanguageTool/GECToR backends are NOT comparable to M1 or to each "
             "other (gec_backend records the regime).",
-            "The 98.7% AUROC from arXiv:2405.04286 is UNVERIFIED (2024 preprint) "
-            "and is a lead, not a prior; no SETEC result asserts it as fact.",
+            "The paper's 98.62% avg AUROC (arXiv:2405.04286, XSum + WritingPrompts) "
+            "is VERIFIED from the primary source but is the paper's own claim, NOT "
+            "reproduced on SETEC's corpus — a lead, not a prior; no SETEC result "
+            "asserts it as a SETEC-measured number.",
             "gecscore is a read-only EVIDENCE column — it never feeds SETEC "
             "fitness / selection / scoring (anti-Goodhart; pinned by a "
             "separation-guard source scan).",
         ],
         references=[
-            "GECScore, arXiv:2405.04286 (2024 preprint, [UNVERIFIED] — "
-            "https://arxiv.org/abs/2405.04286)",
+            "GECScore, arXiv:2405.04286 (2024 preprint; the 98.62% avg AUROC claim "
+            "is confirmed from the primary source but is [UNVERIFIED on SETEC's "
+            "corpus] — not independently reproduced here) — "
+            "https://arxiv.org/abs/2405.04286",
             "specs/32-gec-linguistic-error-axis.md",
         ],
     )
@@ -596,10 +631,19 @@ def run_batch(
     backend: GecBackend | None = None,
     base_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
-    """Score each manifest row → ``{id, gecscore, gec_n_corrections, band}``.
+    """Score each manifest row → a feature-column row that carries the calibration
+    context so the descriptive ``band`` never travels naked downstream.
 
-    The fairness gate is NOT co-emitted per-row (it is a report-level surface, not
-    a per-passage column) — batch mode is the feature-column extraction path."""
+    Each scored row is ``{id, gecscore, gec_n_corrections, band, calibration_status,
+    gec_ai_direction, words, below_floor[, esl_inversion_caveat]}``. The per-row
+    fairness BLOCK is not co-emitted (the guardrail is a corpus-level surface, not a
+    per-passage column) — but the row carries ``calibration_status: "heuristic"``,
+    the pinned direction, the word count + sub-floor flag (so a consumer can filter
+    or down-weight short/uncalibrated passages), and a one-line ESL-inversion
+    caveat. The corpus-level fairness obligation is surfaced in the payload header
+    by :func:`_main_batch` (``fairness_required`` + the exact guardrail command),
+    so a bare ``band`` is never consumed as a calibrated/fairness-cleared
+    categorical."""
     out: list[dict[str, Any]] = []
     for i, row in enumerate(rows):
         rid = row.get("id", f"row_{i}")
@@ -611,19 +655,37 @@ def run_batch(
             text = p.read_text(encoding="utf-8", errors="ignore")
         if not text:
             out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
-                        "band": "indeterminate", "skipped": "empty_text"})
+                        "band": "indeterminate", "calibration_status": "heuristic",
+                        "skipped": "empty_text"})
             continue
         try:
             r = audit_gecscore(text, backend=backend, include_fairness=False)
         except GecScoreInputError:
             out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
-                        "band": "indeterminate", "skipped": "no_word_tokens"})
+                        "band": "indeterminate", "calibration_status": "heuristic",
+                        "skipped": "no_word_tokens"})
             continue
+        n_words = len(word_tokens(text))
         out.append({
             "id": rid,
             "gecscore": r["gecscore"],
             "gec_n_corrections": r["gec_n_corrections"],
             "band": r["band"]["band"],
+            # Carry the calibration context so the band is never read as a
+            # calibrated decision boundary downstream (REVIEW: batch is the
+            # feature-column ingestion path).
+            "calibration_status": r["band"]["calibration_status"],
+            "gec_ai_direction": GEC_AI_DIRECTION,
+            "words": n_words,
+            # LENGTH_FLOOR is enforced on the corpus path too: below it the
+            # similarity is noisy at a small denominator, so the row is flagged
+            # (not dropped) for a downstream consumer to filter / down-weight.
+            "below_floor": n_words < LENGTH_FLOOR_WORDS,
+            "esl_inversion_caveat": (
+                "gecscore INVERTS on ESL/dialect prose (polished non-native English "
+                "scores near 1.0, the AI direction); run fairness_dialect_"
+                "guardrails on this corpus before evaluative use"
+            ),
         })
     return out
 
@@ -743,17 +805,35 @@ def _main_batch(args: argparse.Namespace) -> int:
         sys.stderr.write(f"[gecscore_audit] --batch manifest error: {exc}\n")
         return 3
     out_rows = run_batch(rows, base_dir=manifest_path.parent)
+    n_below_floor = sum(1 for r in out_rows if r.get("below_floor"))
     payload = {
         "tool": TOOL_NAME,
         "version": SCRIPT_VERSION,
         "task_surface": TASK_SURFACE,
         "mode": "batch",
         "n_rows": len(out_rows),
+        # Corpus-level calibration + fairness obligation (the band per row carries
+        # calibration_status; this header makes the fairness gate a STRUCTURAL
+        # requirement on the corpus path, not only a prose note).
+        "calibration_status": "heuristic",
+        "gec_ai_direction": GEC_AI_DIRECTION,
+        "length_floor_words": LENGTH_FLOOR_WORDS,
+        "n_below_floor": n_below_floor,
+        "fairness_required": True,
+        "fairness_command": (
+            "python3 plugins/setec-voiceprint/scripts/fairness_dialect_guardrails.py "
+            "(run on this corpus before any evaluative/disciplinary use — gecscore "
+            "INVERTS on ESL/dialect prose)"
+        ),
         "rows": out_rows,
         "note": (
-            "batch mode is the feature-column extraction path; the fairness gate "
-            "is a report-level surface and is NOT co-emitted per row — run "
-            "fairness_dialect_guardrails on the corpus separately"
+            "batch mode is the feature-column extraction path. Each row carries "
+            "calibration_status='heuristic', the pinned gec_ai_direction, its word "
+            "count and a below_floor flag, and an esl_inversion_caveat — so a bare "
+            "band is never consumed as calibrated/fairness-cleared. The fairness "
+            "guardrail is a corpus-level surface (not a per-row column): "
+            "fairness_required=true above; run fairness_dialect_guardrails on the "
+            "corpus before weighting these bands evaluatively."
         ),
     }
     text_out = json.dumps(payload, indent=2, default=str)

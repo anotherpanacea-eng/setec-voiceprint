@@ -4,7 +4,7 @@
 **Task surface (NEW):** `gecscore_discrimination`
 **Family:** `gecscore`
 **Status:** `literature_anchored` (signal *direction* anchored in arXiv:2405.04286); band stays `heuristic` (threshold un-anchored) — two distinct objects.
-**arXiv lead:** GECScore, arXiv:2405.04286 `[UNVERIFIED — 2024 preprint; the claimed ~98.7% avg AUROC is NOT confirmed from a primary source]`. Cited here, in the PR body, and in the `changelog.d/` fragment per the fleet rule.
+**arXiv lead:** GECScore, arXiv:2405.04286. The paper's claimed **98.62% avg AUROC** (across XSum + WritingPrompts) is now **confirmed from the primary source** (the abstract) — but it is the paper's own claim, `[UNVERIFIED on SETEC's corpus]` (not independently reproduced here), so it remains a LEAD, never a target. Cited here, in the PR body, and in the `changelog.d/` fragment per the fleet rule.
 
 > **Provenance / adaptation note.** This spec was authored for the Code-PC checkout (`D:\Code-PC\setec-voiceprint`, `py -3.12`). All paths here are adapted to the Code-Mac live checkout (`/Users/anotherpanacea/Documents/Code-Mac/setec-voiceprint`, `python3`). The Code-PC corpus paths in the M2 section (`D:\Code-PC\_litprose_frontier_2026-06-20`, `D:\hf_cache`) are retained verbatim only as M2 build notes — M2 is NOT built here.
 
@@ -13,7 +13,7 @@
 > - **Change 2 (de-dup completeness): rule out `rewriting_invariance_audit.py`.** Folded into §2: the Raidar surface (`rewriting_invariance`, `edit_distance_ratio` = `1 - difflib.SequenceMatcher.ratio`) is the closest surface by metric implementation but a DIFFERENT phenomenon — it measures how much an *LLM rewrite-to-improve* changes the text; GECScore measures how much a *grammar-error corrector* changes it. Different corrected form, different axis; ruled out.
 > - **Change 3 (rig clarity): interpreter.** M1 is pure-stdlib `python3` (no `py -3.12`). The LanguageTool/GECToR backends are the M2 model-CPU seam (LanguageTool needs Java on PATH; GECToR needs torch). M1 needs neither.
 > - **Change 4 (soundness): word-count floor.** `LENGTH_FLOOR_WORDS = 50` (matching `rewriting_invariance_audit.py`); below it the normalized edit distance is noisy, so the surface WARNS (does not refuse).
-> - **Change 5 (preprint verification): M0 paper status flagged.** The 98.7% AUROC is `[UNVERIFIED]` everywhere and is a LEAD, never a target. No M1 acceptance or claim asserts a paper number as fact. The GEC-model / similarity-metric verification (Change 5's `GEC_M2_notes.md` preflight) is an M2 task, noted in §M2.
+> - **Change 5 (preprint verification): M0 paper status flagged.** The paper's **98.62%** avg AUROC is now confirmed from the primary source (abstract) but is the paper's own claim, `[UNVERIFIED on SETEC's corpus]` — a LEAD, never a target. No M1 acceptance or claim asserts a paper number as a SETEC-measured fact. Which GEC model and which similarity metric produced the 98.62% claim (Change 5's `GEC_M2_notes.md` preflight) is still the open M2 task, noted in §M2.
 >
 > **Spec slot:** `specs/` already carries multiple `28-*`/`30-*`/`31-*` files; this lands at the next clean integer, `specs/32-gec-linguistic-error-axis.md`.
 
@@ -46,11 +46,12 @@ The GEC corrector is the **only** load-bearing model/compute dependency, so it i
 ### Score definition
 
 ```
-gec_sim(s) = 1 - normalized_edit_distance(s, GEC_correct(s))
-           = 1 - (edit_distance(s, GEC_correct(s)) / max(len(s), len(GEC_correct(s))))
+gec_sim(s) = SequenceMatcher(None, s, GEC_correct(s), autojunk=False).ratio()
+           = 2*M / (len(s) + len(GEC_correct(s)))   # M = matched chars
+           = 1 - sequence_dissimilarity(s, GEC_correct(s))
 ```
 
-Value in `[0, 1]`. `gec_sim = 1.0` ⇒ the corrector changed nothing (zero errors detected). Edit distance is the **character-level** difflib distance (`1 - SequenceMatcher(None, s, corrected).ratio()`, stdlib, deterministic), normalized by `max(len(s), len(corrected))`. The feature column is `gecscore`; the detection direction is `GEC_AI_DIRECTION = "gt"` (high `gecscore` is the paper's AI-like direction). Secondary feature: `gec_n_corrections` — the number of distinct correction spans the corrector applied (a raw count, complementing the normalized similarity for short passages).
+Value in `[0, 1]`. `gec_sim = 1.0` ⇒ the corrector changed nothing (zero errors detected). The similarity is the **character-level** stdlib `difflib.SequenceMatcher` **Gestalt-pattern ratio** (`autojunk=False`, deterministic) — `ratio() = 2*M / (len(s) + len(corrected))`, normalized by the **SUM** of the two lengths, **NOT** a Levenshtein edit distance and **NOT** normalized by `max(len)` (an earlier draft mislabeled it as a max(len)-normalized edit distance; the implementation has always been `ratio()`). `autojunk=False` is passed so difflib's length-triggered "popular character" heuristic — which perturbs `ratio()` on prose >200 chars and can flip the band — never fires. The feature column is `gecscore`; the detection direction is `GEC_AI_DIRECTION = "gt"` (high `gecscore` is the paper's AI-like direction). Secondary feature: `gec_n_corrections` — the number of distinct correction spans the corrector applied (a raw count, complementing the similarity for short passages).
 
 ### The injectable GEC backend (the M1/M2 seam)
 
@@ -94,7 +95,7 @@ Value in `[0, 1]`. `gec_sim = 1.0` ⇒ the corrector changed nothing (zero error
 
 ### M2 — real GEC backend, corpus experiment, AUC (NOT built here)
 
-Wire `LanguageToolBackend` (default; `shutil.which("java")` preflight, exit 2 if absent) and `GecTorBackend` (`--gec-backend gector`, torch CPU). Run `--batch` over the 212-window lit-horror frontier corpus (`D:\Code-PC\_litprose_frontier_2026-06-20`, Code-PC) and a RAID Books subset; report per-class/per-generator `gec_sim`, standalone AUC, Spearman vs. Binoculars, paraphrase-robustness, and the polished-human null. **Preflight (Change 5):** before the run, verify from arXiv:2405.04286 which GEC model and which similarity metric produced the 98.7% claim, recorded in a `GEC_M2_notes.md`. A null result (AUC ≈ 0.5 on lit-horror) is reported honestly and does NOT block the M1 plumbing. The model/GPU/Java seam is the M2 boundary; M1 ships none of it.
+Wire `LanguageToolBackend` (default; `shutil.which("java")` preflight, exit 2 if absent) and `GecTorBackend` (`--gec-backend gector`, torch CPU). Run `--batch` over the 212-window lit-horror frontier corpus (`D:\Code-PC\_litprose_frontier_2026-06-20`, Code-PC) and a RAID Books subset; report per-class/per-generator `gec_sim`, standalone AUC, Spearman vs. Binoculars, paraphrase-robustness, and the polished-human null. **Preflight (Change 5):** before the run, verify from arXiv:2405.04286 which GEC model and which similarity metric produced the (now primary-source-confirmed) 98.62% claim, recorded in a `GEC_M2_notes.md`. A null result (AUC ≈ 0.5 on lit-horror) is reported honestly and does NOT block the M1 plumbing. The model/GPU/Java seam is the M2 boundary; M1 ships none of it.
 
 ---
 
@@ -106,4 +107,4 @@ Wire `LanguageToolBackend` (default; `shutil.which("java")` preflight, exit 2 if
 
 ## 6. Honest framing
 
-**Status: literature_anchored** for the *direction* (the GEC-similarity axis and its sign are grounded in arXiv:2405.04286); the *threshold* is `heuristic` (un-anchored). The 98.7% AUROC is `[UNVERIFIED]` and is a lead, not a prior — no SETEC result or external communication may cite it until confirmed against the paper's primary tables; M2's first-party numbers supersede it on SETEC's corpus. **Does not license** a binary AI/human verdict, a claim that near-zero error density proves AI authorship (polished/copy-edited/professional-non-native prose also scores near 1.0), or a robustness claim against adversarial error injection.
+**Status: literature_anchored** for the *direction* (the GEC-similarity axis and its sign are grounded in arXiv:2405.04286); the *threshold* is `heuristic` (un-anchored). The paper's 98.62% avg AUROC is now confirmed from the primary source (abstract) but is the paper's own claim, `[UNVERIFIED on SETEC's corpus]` — a lead, not a prior; no SETEC result asserts it as a SETEC-measured number, and M2's first-party numbers supersede it on SETEC's corpus. **Does not license** a binary AI/human verdict, a claim that near-zero error density proves AI authorship (polished/copy-edited/professional-non-native prose also scores near 1.0), or a robustness claim against adversarial error injection.
