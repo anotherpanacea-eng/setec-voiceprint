@@ -140,6 +140,11 @@ The *distribution* of dependency distances `d = |i − head.i|` (histogram + adj
 `dependency_distance_audit:shape` · syntactic-shape · — · **heuristic**
 
 The *geometry of the DDD curve* — descriptors of the **pooled per-link** distance distribution, distinct from the histogram and from `mdd_sd`: population `variance`/`sd`, Fisher-Pearson skewness `g1` and excess kurtosis `g2`, and nearest-rank tail quantiles `p50`/`p90`/`p99`/`max`. The shape `sd` is the within-POOL per-link SD — **not** `mdd_sd` (which is the across-SENTENCE SD of per-sentence MDD means). Right-skew (`g1>0`) and heavy tail (`g2>0`) are the expected curve shape. Descriptive, **no verdict, no band** — skew/kurtosis are moments, not a complexity score. `skewness`/`excess_kurtosis` are `null` (not `0.0`) when `sd==0` or `n_links<3`. `variance`/`sd`/`quantiles` range `[0, ∞)`; `skewness`/`excess_kurtosis` signed. M1 stdlib (no numpy/scipy). Parser-tier (inherits spec-24's spaCy gate). Spec 31 (arXiv:2211.14620).
+### Named-feature style vector (gram2vec)
+
+`style_vectorizer:vector_flat` (+ optional `baseline_reference.per_dimension[].z` / `.band`) · stylometric-vector · — · **heuristic**
+
+The interpretable (glass-box) document vector: every dimension a human-named stylometric feature (function words, char n-grams 3/4/5, punctuation, paragraph/dialogue, pronoun/modal/negation), reused verbatim from `stylometry_core.extract_features(include_spacy=False)`. **No aggregate scalar** — there is nothing to threshold or rank on (the strongest no-verdict guarantee). Single mode emits the FULL family inventory (all 135 function words, no cap); `--baseline-dir` adds a per-dimension reference distribution + a PROVISIONAL band (mean ± k·sd), held-out disjoint. `z` is signed (`null` when `sd==0`); frequencies/rates `≥ 0`. Length floor 500 words. Stdlib (M1); spaCy POS/dependency families are M2. Spec 30 (arXiv:2406.12131).
 
 ---
 
