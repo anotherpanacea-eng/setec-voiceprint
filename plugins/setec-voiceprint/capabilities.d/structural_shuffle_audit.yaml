@@ -7,7 +7,7 @@ entries:
   consumers: []
   family: shuffle-perplexity
   purpose: 'Perplexity shift under sentence/word shuffling (Luminol-AIDetect,
-    arXiv:2604.25860 [UNVERIFIED 2026 preprint]). Scores a target and two shuffled
+    La Cava & Tagarelli, arXiv:2604.25860 2026, confirmed). Scores a target and two shuffled
     variants (sentence-permuted, word-permuted) under a single causal LM and reports
     5 features describing the perplexity jump (ppl_sum, ppl_diff, ppl_ratio,
     ppl_log_ratio, ppl_pct_change). A larger jump means the text''s predictability
@@ -15,8 +15,8 @@ entries:
     human authorship. A structural, order-dependence axis orthogonal in mechanism to
     Binoculars'' cross-perplexity ratio, Fast-DetectGPT''s curvature, and DivEye''s
     surprisal moments (those score the natural ordering; this scores permuted
-    variants). Heuristic: the preprint is UNVERIFIED and lit-fiction calibration is
-    empirical, not assumed — no FPR/AUC number is asserted as fact.
+    variants). Heuristic: lit-fiction calibration is
+    empirical, not assumed — the paper''s benchmark numbers are not carried as fact.
 
     '
   use_when:
@@ -31,9 +31,11 @@ entries:
   - The author is ESL / non-native English — non-idiomatic, less order-dependent
     prose can show a small perplexity delta and FALSELY resemble the AI profile
     (the GECScore failure mode)
-  - The register is literary fiction and you expect the paper's news-domain FPR —
-    lit-fiction (high human burstiness, long deliberate sentences) calibration is an
-    EMPIRICAL question; the 0.001 FPR claim is UNVERIFIED and not carried as fact
+  - The register is literary fiction and you expect the paper's reported FPR —
+    the paper claims up to 17x lower FPR than prior methods on its own benchmark
+    (8 domains / 11 attacks / 18 languages); lit-fiction (high human burstiness,
+    long deliberate sentences) calibration is an EMPIRICAL question and that
+    figure is not carried as fact
   - The text may be in the model's training set (memorization biases the perplexities)
   - You can't install the surprisal tier (transformers + torch)
   inputs:

@@ -3,15 +3,18 @@
 
 A Surface-5 discrimination-evidence capability that probes how much a text's
 predictability depends on the *ordering* of its parts. Following the
-Luminol-AIDetect method (arXiv:2604.25860, 2026 — **PROVISIONAL / UNVERIFIED
-preprint**; see the prior-art fallback below), it scores three variants of a
-window under a single causal LM:
+Luminol-AIDetect method (La Cava & Tagarelli, arXiv:2604.25860, 2026 —
+**paper confirmed 2026-06-21**: title, authors, and the
+shuffle->perplexity->feature method verified against arXiv), it scores three
+variants of a window under a single causal LM:
 
   * ``ppl_orig`` — the text at its natural ordering,
   * ``ppl_sent`` — the same text with its sentences randomly permuted,
   * ``ppl_word`` — the same text with all its words randomly permuted,
 
 and reports 5 scalar features describing the perplexity *jump* under shuffling.
+(The paper specifies "a handful of perplexity-based scalar features"; these
+exact 5 are our scalarization of that signal, not a verbatim copy of its set.)
 
 The hypothesis (the paper's, the SETEC experiment confirms it empirically):
 human prose draws meaning from syntactic and narrative flow, so permuting it
@@ -51,10 +54,11 @@ The shuffle-perplexity idea is not unique to Luminol. The perturbation-based
 detection paradigm is established: DetectGPT (Mitchell et al. 2023,
 arXiv:2301.11305) perturbs the *lexical* surface and measures the log-prob
 curvature drop; this audit extends the same perturb-and-rescore paradigm to
-*order* perturbation. If arXiv 2604.25860 turns out not to exist or to differ,
-the method stands as an independent reimplementation of an order-perturbation
-probe in the DetectGPT family — no paper-specific number is asserted in this
-code.
+*order* perturbation. arXiv 2604.25860 is confirmed (La Cava & Tagarelli,
+2026); the method also stands on its own as an order-perturbation probe in the
+DetectGPT family, and no paper-specific number is asserted in this code (the
+paper's headline "up to 17x lower FPR" is its own-benchmark result, not a
+SETEC lit-fiction claim).
 
 CLI
 ---
@@ -137,10 +141,11 @@ DEFAULT_DOES_NOT_LICENSE = (
     "reports the features only and emits no verdict band. Any AI-likely / "
     "human-likely label requires operator-supplied thresholds calibrated for "
     "this model, corpus, and register, applied downstream. Register caveat: "
-    "the upstream near-zero false-positive-rate claim is on academic-news / "
-    "general text and is UNVERIFIED; literary-fiction (high human burstiness, "
-    "long deliberate sentences) calibration is an EMPIRICAL question, not "
-    "assumed — the paper's news-domain 0.001 FPR is NOT carried as fact. "
+    "the paper reports up to 17x lower FPR than prior methods on its own "
+    "benchmark (8 domains / 11 adversarial attacks / 18 languages) — a "
+    "relative claim on its data, not a SETEC result; literary-fiction (high "
+    "human burstiness, long deliberate sentences) calibration is an EMPIRICAL "
+    "question, not assumed — no paper FPR figure is carried as fact. "
     "ESL / non-native-English failure mode: text written by non-native English "
     "speakers with non-idiomatic, less order-dependent sentence structure may "
     "show a small perplexity delta and FALSELY resemble the AI profile (the "
@@ -464,8 +469,9 @@ def compose_envelope(
         },
         additional_caveats=caveats,
         references=[
-            "Luminol-AIDetect, arXiv:2604.25860 (2026) "
-            "[PROVISIONAL — UNVERIFIED preprint; M0 confirmation gates M2]",
+            "Luminol-AIDetect (La Cava & Tagarelli), arXiv:2604.25860 (2026) "
+            "[paper confirmed 2026-06-21; lit-fiction calibration is the M2 "
+            "empirical question]",
             "Mitchell et al. 2023, 'DetectGPT: Zero-Shot Machine-Generated "
             "Text Detection using Probability Curvature' (arXiv:2301.11305) "
             "— the perturbation-based detection paradigm this order-shuffle "
