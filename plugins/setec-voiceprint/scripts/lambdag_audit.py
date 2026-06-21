@@ -178,6 +178,19 @@ def build_lm(sentences: list[list[str]], *, n: int, k: float) -> GrammarLM:
     return lm
 
 
+def share_vocab(*lms: GrammarLM) -> None:
+    """Give every LM the SAME vocabulary (the union of their observed tags). The add-k denominator
+    is `total + k * vocab_size`; if the reference and background LMs kept their own observed
+    vocabularies, a tag seen in one corpus but not the other made the two denominators differ and the
+    log-likelihood RATIO biased even for tags both models score identically (Codex P1). A shared
+    vocabulary makes the smoothing support identical, so λ_G reflects only grammar differences."""
+    shared: set[str] = set()
+    for lm in lms:
+        shared |= lm.vocab
+    for lm in lms:
+        lm.vocab = shared
+
+
 def _ngram_label(context: tuple[str, ...], tag: str) -> str:
     return "-".join(list(context) + [tag])
 
@@ -194,6 +207,9 @@ def score_query(
     `bg_lm` MUST share the same `n` (the caller builds both from the same --n)."""
     if ref_lm.n != bg_lm.n:
         raise ValueError("reference and background LMs must share n")
+    # Force a shared add-k support so the likelihood RATIO is unbiased regardless of which corpus
+    # happened to observe which tags (Codex P1). Idempotent if the caller already shared.
+    share_vocab(ref_lm, bg_lm)
     n = ref_lm.n
 
     logL_ref = 0.0
@@ -479,6 +495,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
     ref_lm = build_lm(_entries_to_sentences(reference), n=args.n, k=args.smoothing_k)
     bg_lm = build_lm(_entries_to_sentences(background), n=args.n, k=args.smoothing_k)
+    share_vocab(ref_lm, bg_lm)   # identical add-k support so the ratio is unbiased (Codex P1)
     if ref_lm.n_sentences == 0:
         return _err(target, "reference corpus produced no parseable sentences", "bad_input")
     if bg_lm.n_sentences == 0:

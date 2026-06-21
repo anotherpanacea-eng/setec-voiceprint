@@ -110,6 +110,22 @@ def test_identical_lms_give_zero():
     assert r["lambda_g_per_token"] == 0.0
 
 
+def test_ref_and_bg_share_one_vocab_for_unbiased_ratio():
+    """Codex P1: ref and bg must use ONE add-k support — a tag observed in only one corpus would
+    otherwise give the two models different smoothing denominators and bias the likelihood ratio."""
+    ref = lg.build_lm([["NOUN", "VERB", "NOUN"]], n=2, k=0.5)
+    bg = lg.build_lm([["NOUN", "ADJ", "VERB"], ["DET", "NOUN", "ADP"]], n=2, k=0.5)
+    assert ref.vocab != bg.vocab and ref.vocab_size != bg.vocab_size   # different observed tags
+    lg.share_vocab(ref, bg)
+    assert ref.vocab == bg.vocab and ref.vocab_size == bg.vocab_size
+    # score_query enforces it even when the caller builds the LMs separately and forgets to share
+    ref2 = lg.build_lm([["NOUN", "VERB", "NOUN"]], n=2, k=0.5)
+    bg2 = lg.build_lm([["NOUN", "ADJ", "VERB"], ["DET", "NOUN", "ADP"]], n=2, k=0.5)
+    assert ref2.vocab_size != bg2.vocab_size
+    lg.score_query([["NOUN", "VERB", "NOUN"]], ref2, bg2, top_k=5)
+    assert ref2.vocab_size == bg2.vocab_size
+
+
 def test_lambda_g_equals_difference_of_halves():
     """5b: lambda_g == logL_ref_nats − logL_bg_nats to float tolerance."""
     ref, bg = _ref_bg_lms()
