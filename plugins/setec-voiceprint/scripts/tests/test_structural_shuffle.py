@@ -607,6 +607,83 @@ def test_bare_unknown_token_scorer_fails_loudly(tmp_path, capsys):
 
 
 # ============================================================
+# Codex round-10 P2: scorer validation must precede the torch gate
+# (the MODEL-FREE CI path — torch absent — must still refuse a bad
+# scorer with rc=3, not misdiagnose it as rc=2 "deps missing")
+# ============================================================
+
+
+def _hide_torch(monkeypatch):
+    """Make ``import torch`` raise ImportError, simulating the model-free CI
+    environment where the surprisal tier is not installed."""
+    real_import = (
+        __builtins__["__import__"] if isinstance(__builtins__, dict)
+        else __builtins__.__import__
+    )
+
+    def fake_import(name, *args, **kwargs):
+        if name == "torch" or name.startswith("torch."):
+            raise ImportError("No module named 'torch'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+
+def test_unlanded_alias_fails_loudly_without_torch(monkeypatch, tmp_path, capsys):
+    """REGRESSION (Codex round-10 P2): on the model-free CI path (torch ABSENT)
+    the unlanded gpt_neo_2_7b alias must STILL fail with rc=3 (invalid scorer),
+    NOT rc=2 (deps missing). Pre-fix the torch gate ran before scorer
+    validation, so torch-absent CI short-circuited to rc=2 and CI went red.
+    Scorer validation only needs the torch-free MODEL_ALIASES + resolve_model_arg,
+    so it must precede the torch gate and be reachable without torch."""
+    _hide_torch(monkeypatch)
+    target = tmp_path / "t.txt"
+    target.write_text("the cat sat on the mat " * 50, encoding="utf-8")
+    rc = ss.main([str(target), "--scorer", "gpt_neo_2_7b"])
+    assert rc == 3, "torch-absent CI must refuse a bad scorer (rc 3), not rc 2"
+    err = capsys.readouterr().err
+    assert "does not resolve" in err
+    assert "gpt_neo_2_7b" in err
+    # Must be the scorer refusal, not the dependency hint.
+    assert "surprisal tier" not in err
+    assert "Traceback" not in err
+
+
+def test_bare_unknown_scorer_fails_loudly_without_torch(monkeypatch, tmp_path, capsys):
+    """REGRESSION (Codex round-10 P2, sibling): a bare unknown token must also
+    fail with rc=3 on the model-free CI path (torch absent), not be misdiagnosed
+    as a missing dependency (rc=2). Pins that the scorer-arg guard is reachable
+    before the heavy torch check."""
+    _hide_torch(monkeypatch)
+    target = tmp_path / "t.txt"
+    target.write_text("the cat sat on the mat " * 50, encoding="utf-8")
+    rc = ss.main([str(target), "--scorer", "not_a_real_model"])
+    assert rc == 3, "torch-absent CI must refuse a bad scorer (rc 3), not rc 2"
+    err = capsys.readouterr().err
+    assert "does not resolve" in err
+    assert "surprisal tier" not in err
+
+
+def test_valid_scorer_without_torch_still_reports_missing_tier(
+    monkeypatch, tmp_path, capsys
+):
+    """Ordering must NOT regress the missing-torch hint: a VALID scorer with
+    torch absent must still reach the torch gate and return rc=2 with the
+    surprisal-tier install hint (the scorer validation passes, then the
+    dependency check fires). This guards against over-correcting the reorder."""
+    _hide_torch(monkeypatch)
+    target = tmp_path / "t.txt"
+    target.write_text("the cat sat on the mat " * 50, encoding="utf-8")
+    rc = ss.main([str(target), "--scorer", "gpt2"])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "surprisal tier" in err
+    assert "pip install" in err
+    assert "does not resolve" not in err
+    assert "Traceback" not in err
+
+
+# ============================================================
 # 13. Capabilities entry present (drift linter)
 # ============================================================
 

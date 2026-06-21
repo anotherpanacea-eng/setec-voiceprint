@@ -665,45 +665,28 @@ def main(argv: list[str] | None = None) -> int:
 
     target_words = count_words(target_text)
 
-    # Fail cleanly when torch (the surprisal tier) is absent — a
-    # dependency_check-style install hint, no traceback. We probe before
-    # constructing the backend so the message names the missing tier. M1 is
-    # model-free but the CLI scoring path is the M2 model seam, so the real
-    # run needs the surprisal tier; tests inject perplexities and never hit
-    # this path. (Mirrors fast_detect_curvature.)
-    try:
-        import torch  # type: ignore  # noqa: F401
-    except ImportError:
-        print(
-            "error: structural-shuffle scoring needs the surprisal tier "
-            "(transformers + torch), which is not installed.\n"
-            "  Install with: pip install -r requirements-surprisal.txt\n"
-            "  (opt-in Tier-4 / surprisal dependency layer; see "
-            "scripts/calibration/RUNBOOK_tier4_install.md for the wheel "
-            "decision tree and a smoke test).",
-            file=sys.stderr,
-        )
-        return 2
-
-    # Defer the backend import until after the torch gate so the install hint
-    # fires cleanly rather than surfacing a deep ImportError.
+    # Guard the scorer arg BEFORE the heavy-dependency (torch) check (Codex
+    # round-10 P2). The round-9 fix placed this validation AFTER the torch
+    # gate, so on the model-free CI path (torch absent) the gate short-circuits
+    # to rc=2 and a bad scorer is misdiagnosed as a missing dependency instead
+    # of getting the rc=3 invalid/unlanded-scorer refusal. The validation only
+    # needs MODEL_ALIASES + resolve_model_arg, both of which are torch-free
+    # (surprisal_backend imports torch lazily, never at module load), so it is
+    # fully reachable without torch installed. A bare token that is neither a
+    # known MODEL_ALIASES key nor a plausible HF id (which always contains a
+    # '/') would otherwise be passed through verbatim and fail with a confusing
+    # weight-download error deep in the backend. The planned-but-unlanded M2
+    # alias gpt_neo_2_7b is exactly this case, so we name it explicitly and
+    # fail loudly rather than claim an audit can run.
     try:
         from surprisal_backend import (  # type: ignore
             MODEL_ALIASES,
-            SurprisalBackend,
-            SurprisalBackendError,
             resolve_model_arg,
         )
     except ImportError as exc:  # pragma: no cover - exercised only on broken env
         print(f"error: surprisal backend unavailable: {exc}", file=sys.stderr)
         return 2
 
-    # Guard the scorer arg BEFORE loading weights (Codex round-9 P2). A bare
-    # token that is neither a known MODEL_ALIASES key nor a plausible HF id
-    # (which always contains a '/') would otherwise be passed through verbatim
-    # and fail with a confusing weight-download error deep in the backend. The
-    # planned-but-unlanded M2 alias gpt_neo_2_7b is exactly this case, so we
-    # name it explicitly and fail loudly rather than claim an audit can run.
     resolved_scorer = resolve_model_arg(args.scorer)
     if resolved_scorer not in MODEL_ALIASES and "/" not in resolved_scorer:
         hint = (
@@ -720,6 +703,42 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 3
+
+    # Fail cleanly when torch (the surprisal tier) is absent — a
+    # dependency_check-style install hint, no traceback. We probe before
+    # constructing the backend so the message names the missing tier. M1 is
+    # model-free but the CLI scoring path is the M2 model seam, so the real
+    # run needs the surprisal tier; tests inject perplexities and never hit
+    # this path. (Mirrors fast_detect_curvature.) This runs AFTER the
+    # torch-free scorer validation above so an invalid/unlanded scorer is
+    # refused (rc=3) before a legitimately-missing torch is reported (rc=2),
+    # which keeps the model-free CI path green.
+    try:
+        import torch  # type: ignore  # noqa: F401
+    except ImportError:
+        print(
+            "error: structural-shuffle scoring needs the surprisal tier "
+            "(transformers + torch), which is not installed.\n"
+            "  Install with: pip install -r requirements-surprisal.txt\n"
+            "  (opt-in Tier-4 / surprisal dependency layer; see "
+            "scripts/calibration/RUNBOOK_tier4_install.md for the wheel "
+            "decision tree and a smoke test).",
+            file=sys.stderr,
+        )
+        return 2
+
+    # Defer the heavy backend import until after the torch gate so the install
+    # hint fires cleanly rather than surfacing a deep ImportError. (MODEL_ALIASES
+    # + resolve_model_arg were already imported above for the torch-free
+    # scorer validation; SurprisalBackend itself touches torch on construction.)
+    try:
+        from surprisal_backend import (  # type: ignore
+            SurprisalBackend,
+            SurprisalBackendError,
+        )
+    except ImportError as exc:  # pragma: no cover - exercised only on broken env
+        print(f"error: surprisal backend unavailable: {exc}", file=sys.stderr)
+        return 2
 
     try:
         backend = SurprisalBackend(
