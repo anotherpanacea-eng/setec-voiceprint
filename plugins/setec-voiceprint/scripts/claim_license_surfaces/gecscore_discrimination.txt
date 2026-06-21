@@ -1,0 +1,1 @@
+GECScore grammar-error-density similarity under a grammar-error corrector (GECScore, arXiv:2405.04286 [UNVERIFIED] — discrimination evidence, uncalibrated, non-verdict; INVERTS on ESL/dialect prose, gated behind fairness_dialect_guardrails)

@@ -1,0 +1,784 @@
+#!/usr/bin/env python3
+"""gecscore_audit.py — GECScore grammar-error-density signal (spec 32, M1).
+
+A grammar-error-density discrimination signal, structurally orthogonal to both of
+SETEC's existing detection surfaces — the *probability* surface (Binoculars /
+surprisal / curvature / spectral) and the *distributional* surface (the 13-signal
+glass-box stylometry). It asks neither how the model decodes the text nor how the
+surface distribution compares to a baseline, but: **how much does a grammar-error
+corrector change the text?** AI prose, RLHF-polished to near-zero grammar error, is
+changed little (high similarity → high gecscore); human prose retains residual
+micro-errors (comma splices, subject-verb-distance mismatches, idiomatic fragments)
+and is changed more (lower gecscore). The GECScore lead is arXiv:2405.04286
+([UNVERIFIED] 2024 preprint; its claimed ~98.7% avg AUROC is NOT confirmed from a
+primary source and is a LEAD, never a target). Evidence, not verdict.
+
+Spec: ``specs/32-gec-linguistic-error-axis.md``.
+
+MECHANISM
+=========
+``gec_sim(s) = 1 - normalized_edit_distance(s, GEC(s))`` in [0, 1], where the edit
+distance is the stdlib character-level difflib distance
+(``1 - SequenceMatcher(None, s, corrected).ratio()``) normalized by
+``max(len(s), len(corrected))``. ``gec_sim = 1.0`` ⇒ the corrector changed nothing
+(zero detected errors). A secondary raw count ``gec_n_corrections`` (distinct
+correction spans) complements the normalized similarity on short passages.
+
+DIRECTION (PINNED — silent inversion is the family's shared failure mode)
+========================================================================
+``GEC_AI_DIRECTION = "gt"``: HIGHER gec_sim ⇒ fewer errors ⇒ the paper's
+"more AI-like" DIRECTION. This is a fixed linguistic prior, NOT a tuned parameter,
+and it is asserted in a unit test — flipping the sign would flip the band.
+
+INJECTABLE GEC BACKEND (the M1/M2 seam)
+=======================================
+The grammar corrector is the ONLY load-bearing model/compute dependency, so it is
+the seam. ``audit_gecscore`` takes an injectable ``backend`` exposing
+``correct(text) -> str`` (and optional ``count_corrections``). M1 default =
+``StubGecBackend`` (returns input unchanged → gec_sim 1.0, or a canned fixture
+correction) — model-free, CI-runnable, over INJECTED scores. M2 swaps in
+``LanguageToolBackend`` (Java on PATH) or ``GecTorBackend`` (torch) behind the SAME
+seam — no model is imported at module load or touched in tests.
+
+ESL / DIALECT INVERSION (gated — fold from REVIEW_gec Change 1, CRITICAL)
+========================================================================
+The ROADMAP gates GECScore behind ``fairness_dialect_guardrails`` because the
+surface INVERTS on ESL/dialect prose: a polished non-native author writes low-error
+English and scores near 1.0 — the SAME direction as AI. This module co-emits a
+``fairness_dialect_guardrails`` caution block (``results.fairness_guardrails``),
+detecting code-switching heuristically on the target and routing any declared
+background conditions, and surfaces the posture cap as a caveat. The inversion is
+named FIRST-CLASS in the claim-license ``does_not_license`` text, not a footnote.
+
+POSTURE (no verdict)
+====================
+Descriptive only: VALUES (``gecscore`` + ``gec_n_corrections``) + a PROVISIONAL
+``band`` over the value's OWN axis (``indeterminate`` / ``low_error_density`` /
+``high_error_density``) carrying ``calibration_status: heuristic`` +
+``calibration_anchor: user-baseline-required``, and a claim-license that refuses any
+AI/human or thresholded verdict. There is NO ``is_ai`` / ``is_human`` / ``label`` /
+``verdict`` / ``decision`` key. The band names the MEASURED property (grammar-error
+density), never the inference target (authorship). ``gecscore`` is a read-only
+evidence column — it never feeds ``fitness`` / ``setec_signals`` / selection /
+scoring (a comment-stripped source scan pins this).
+
+CLI:
+
+    python3 scripts/gecscore_audit.py --target TARGET [--declare COND ...] [--json]
+    python3 scripts/gecscore_audit.py --batch MANIFEST [--declare COND ...] [--out PATH]
+"""
+
+from __future__ import annotations
+
+import argparse
+import difflib
+import json
+import sys
+from pathlib import Path
+from typing import Any, Callable
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from claim_license import ClaimLicense  # type: ignore  # noqa: E402
+from output_schema import (  # noqa: E402
+    build_error_output,
+    build_output,
+)
+from stylometry_core import word_tokens  # type: ignore  # noqa: E402
+
+# NOTE (separation guard, AC-5): this module deliberately imports NOTHING from the
+# SETEC fitness / selection / scoring family. gecscore is a read-only evidence
+# column reported to the operator, never a selection signal. fairness_dialect_
+# guardrails is imported lazily inside the co-emit helper (it is a peer evidence
+# surface, not a selection signal) so a structural import scan of THIS module's
+# top level stays clean and the M1 import is model-free.
+
+TASK_SURFACE = "gecscore_discrimination"
+TOOL_NAME = "gecscore_audit"
+SCRIPT_VERSION = "1.0"
+
+# PINNED detection direction. HIGHER gec_sim ⇒ fewer grammar errors ⇒ the paper's
+# "more AI-like" DIRECTION (arXiv:2405.04286). A fixed linguistic prior, asserted
+# in a test — silent sign inversion is the detection family's shared failure mode.
+# This is NOT a verdict ("gt" names the direction, not a decision boundary).
+GEC_AI_DIRECTION = "gt"
+
+# Word floor (matches rewriting_invariance_audit.py). Below it the normalized edit
+# distance is noisy at a small denominator, so the surface WARNS rather than refuses.
+LENGTH_FLOOR_WORDS = 50
+
+# PROVISIONAL band thresholds on the gecscore VALUE's own axis. Fixture-derived
+# first-reading numbers, NOT a calibrated operating point: calibration_status is
+# "heuristic", calibration_anchor is "user-baseline-required". Disjoint from any
+# held-out validation corpus (anti-Goodhart); promotion past "heuristic" goes only
+# through scripts/calibration/ against a labeled corpus, never by tuning here.
+PROVISIONAL_BAND_THRESHOLDS: dict[str, dict[str, float]] = {
+    "gecscore": {
+        # HIGH gecscore = near-zero error density (paper's "more AI-like"
+        # DIRECTION; NOT "is AI"). LOW gecscore = many corrections (human-leaning).
+        "low_error_above": 0.97,
+        "high_error_below": 0.90,
+    },
+}
+
+
+# ----------------------------------------------------------------------
+# Injectable GEC backend (the M1/M2 seam).
+# ----------------------------------------------------------------------
+
+
+class GecBackend:
+    """Protocol for a grammar-error corrector. One method: ``correct(text) -> str``.
+
+    Optionally exposes ``count_corrections(original, corrected) -> int`` for a
+    backend that knows its own span count (LanguageTool reports matches); when
+    absent, the audit falls back to a stdlib opcode-based span count over the
+    original/corrected pair. ``kind``/``id`` identify the regime in provenance —
+    values are NOT comparable across backends."""
+
+    kind: str = "abstract"
+    id: str | None = None
+
+    def correct(self, text: str) -> str:  # pragma: no cover - abstract
+        raise NotImplementedError
+
+
+class StubGecBackend(GecBackend):
+    """The M1 default: model-free, CI-runnable, over INJECTED scores.
+
+    With no ``corrections`` map it returns its input unchanged (zero errors →
+    gec_sim 1.0). A ``corrections`` map ``{original: corrected}`` lets a fixture
+    inject a canned correction; an optional ``span_counts`` map overrides the
+    reported ``gec_n_corrections`` for a fixture (otherwise the opcode-based count
+    is used). No model is loaded — this is the seam tests drive."""
+
+    kind = "stub_identity"
+
+    def __init__(
+        self,
+        corrections: dict[str, str] | None = None,
+        *,
+        span_counts: dict[str, int] | None = None,
+    ) -> None:
+        self._corrections = dict(corrections or {})
+        self._span_counts = dict(span_counts or {})
+
+    def correct(self, text: str) -> str:
+        return self._corrections.get(text, text)
+
+    def count_corrections(self, original: str, corrected: str) -> int:
+        if original in self._span_counts:
+            return self._span_counts[original]
+        return count_correction_spans(original, corrected)
+
+
+# ----------------------------------------------------------------------
+# Similarity / span math (stdlib, deterministic).
+# ----------------------------------------------------------------------
+
+
+def normalized_edit_distance(original: str, corrected: str) -> float:
+    """Character-level normalized edit distance in [0, 1].
+
+    ``1 - difflib.SequenceMatcher(None, original, corrected).ratio()`` (stdlib,
+    deterministic). 0.0 = identical; 1.0 = maximally different. Empty edge: two
+    empty strings differ by 0.0 (nothing to correct → identical); a non-empty
+    string vs. an empty correction differs by 1.0 (everything deleted)."""
+    if not original and not corrected:
+        return 0.0
+    if not original or not corrected:
+        return 1.0
+    ratio = difflib.SequenceMatcher(None, original, corrected).ratio()
+    return 1.0 - ratio
+
+
+def gec_similarity(original: str, corrected: str) -> float:
+    """``gec_sim = 1 - normalized_edit_distance`` in [0, 1]. 1.0 = the corrector
+    changed nothing (zero detected errors); lower = more rewritten (more errors)."""
+    return 1.0 - normalized_edit_distance(original, corrected)
+
+
+def count_correction_spans(original: str, corrected: str) -> int:
+    """Number of distinct edit spans between original and corrected — the count of
+    non-``equal`` opcodes from difflib (replace / delete / insert). A raw integer
+    (NOT normalized), complementing the similarity on short passages. Identical
+    input/correction → 0 spans."""
+    sm = difflib.SequenceMatcher(None, original, corrected)
+    return sum(1 for tag, *_ in sm.get_opcodes() if tag != "equal")
+
+
+# ----------------------------------------------------------------------
+# Provisional band (descriptive, over the value's OWN axis — NOT a verdict).
+# ----------------------------------------------------------------------
+
+
+def _provisional_band(gecscore: float, *, gec_n_corrections: int) -> dict[str, Any]:
+    """Descriptive band over the gecscore VALUE's own axis (grammar-error
+    density). NEVER over authorship. ``band ∈ {indeterminate, low_error_density,
+    high_error_density}`` is the only categorical leaf in the whole envelope.
+    Ships ``heuristic`` + ``user-baseline-required`` so it is never read as a
+    calibrated decision boundary.
+
+    Orientation: HIGH gecscore ⇒ near-zero error density ⇒ ``low_error_density``
+    (the paper's "more-AI-like" DIRECTION, ``GEC_AI_DIRECTION = "gt"``); LOW
+    gecscore ⇒ many corrections ⇒ ``high_error_density`` (the human-leaning
+    direction). The band names the MEASURED property, never "is AI"."""
+    th = PROVISIONAL_BAND_THRESHOLDS["gecscore"]
+    band = "indeterminate"
+    flags: list[str] = []
+    if gecscore > th["low_error_above"]:
+        band = "low_error_density"
+        flags.append("near_zero_error_density")
+    elif gecscore < th["high_error_below"]:
+        band = "high_error_density"
+        flags.append("residual_errors_present")
+    return {
+        "band": band,
+        "flags": flags,
+        "calibration_status": "heuristic",
+        "calibration_anchor": "user-baseline-required",
+        "thresholds_used": {"gecscore": dict(th)},
+        "direction": GEC_AI_DIRECTION,
+        "orientation": (
+            "HIGH gecscore = near-zero grammar-error density (low_error_density; "
+            "the paper's 'more AI-like' DIRECTION, GEC_AI_DIRECTION='gt'); LOW "
+            "gecscore = residual errors (high_error_density). NOT 'is AI'"
+        ),
+        "gec_n_corrections": gec_n_corrections,
+    }
+
+
+# ----------------------------------------------------------------------
+# Co-emitted fairness / dialect gate (REVIEW_gec Change 1, CRITICAL).
+# ----------------------------------------------------------------------
+
+
+def co_emit_fairness_guardrails(
+    target_text: str | None,
+    *,
+    declared_conditions: list[str] | None = None,
+) -> dict[str, Any]:
+    """Run ``fairness_dialect_guardrails`` over the target and return its caution
+    report. This is the STRUCTURAL gate the ROADMAP requires (not a prose
+    footnote): GECScore inverts on ESL/dialect prose, so the surface co-emits the
+    guardrail's per-condition flags + posture cap. Code-switching is detected
+    heuristically from ``target_text``; declared background conditions
+    (``nonnative_english``, ``dialect_features``, …) are routed through.
+
+    Imported lazily here (a peer evidence surface, not a selection signal) so the
+    M1 module-top import stays model-free and the separation-guard scan stays
+    clean."""
+    import fairness_dialect_guardrails as fdg  # type: ignore
+
+    return fdg.build_caution_report(
+        target_text=target_text,
+        declared_conditions=list(declared_conditions or []),
+        baseline_backgrounds={},  # M1 has no validation baseline → conservative
+    )
+
+
+def _fairness_caveats(report: dict[str, Any]) -> list[str]:
+    """Turn the guardrail recommendation into gecscore caveats so the ESL/dialect
+    inversion is visible where the operator reads the result."""
+    rec = report.get("recommendation", {})
+    caveats: list[str] = []
+    if rec.get("refuses_evaluative_use"):
+        uncovered = rec.get("uncovered_conditions") or []
+        caveats.append(
+            "FAIRNESS GATE: fairness_dialect_guardrails flags "
+            f"{', '.join(uncovered) or 'a linguistic-background condition'} with "
+            "no comparable validation baseline; gecscore INVERTS on ESL/dialect "
+            "prose (polished non-native English scores near 1.0, the AI "
+            f"direction). Posture capped at '{rec.get('posture_cap')}', "
+            "evaluative/disciplinary use refused (see results.fairness_guardrails)."
+        )
+    elif rec.get("n_flags", 0) > 0:
+        caveats.append(
+            "FAIRNESS NOTE: a linguistic-background condition is present but the "
+            "baseline covers it; gecscore can still invert on ESL/dialect prose — "
+            "read results.fairness_guardrails before weighting this signal."
+        )
+    return caveats
+
+
+# ----------------------------------------------------------------------
+# Audit (injectable backend).
+# ----------------------------------------------------------------------
+
+
+class GecScoreInputError(ValueError):
+    """Raised by ``audit_gecscore`` on an unusable input (no word tokens). The CLI
+    maps this to a structured ``build_error_output`` envelope, never a traceback."""
+
+
+def audit_gecscore(
+    text: str,
+    *,
+    backend: GecBackend | None = None,
+    declared_conditions: list[str] | None = None,
+    include_fairness: bool = True,
+) -> dict[str, Any]:
+    """Compute the GECScore audit. Returns the ``results`` dict for
+    ``build_output``.
+
+    ``backend`` is the INJECTION point: any object with ``correct(text) -> str``
+    (and optionally ``count_corrections``). M1 default = :class:`StubGecBackend`
+    (model-free, no model loaded). M2 callers inject a LanguageTool/GECToR backend
+    behind the SAME seam.
+
+    Raises :class:`GecScoreInputError` on a target with no countable word tokens."""
+    tokens = word_tokens(text)
+    if not tokens:
+        raise GecScoreInputError("target has no countable word tokens")
+
+    be = backend if backend is not None else StubGecBackend()
+    corrected = be.correct(text)
+    if not isinstance(corrected, str):
+        raise GecScoreInputError(
+            f"backend.correct returned {type(corrected).__name__}, expected str"
+        )
+
+    gecscore = gec_similarity(text, corrected)
+    if hasattr(be, "count_corrections"):
+        n_corrections = int(be.count_corrections(text, corrected))  # type: ignore[attr-defined]
+    else:
+        n_corrections = count_correction_spans(text, corrected)
+
+    band = _provisional_band(gecscore, gec_n_corrections=n_corrections)
+
+    backend_block = {
+        "kind": getattr(be, "kind", "unknown"),
+        "id": getattr(be, "id", None),
+        "metric": "1 - normalized_char_edit_distance(s, GEC(s))",
+    }
+
+    results: dict[str, Any] = {
+        "gecscore": gecscore,
+        "gec_n_corrections": n_corrections,
+        "gec_ai_direction": GEC_AI_DIRECTION,
+        "target_tokens": len(tokens),
+        "target_chars": len(text),
+        "corrected_chars": len(corrected),
+        "gec_backend": backend_block,
+        "band": band,
+        "assumptions": {
+            "method": (
+                "GECScore grammar-error-density similarity (arXiv:2405.04286, "
+                "[UNVERIFIED] preprint — the claimed 98.7% AUROC is a LEAD, not a "
+                "prior asserted here)"
+            ),
+            "orientation": (
+                "higher gecscore = fewer grammar errors (corrector changes less) = "
+                "the paper's 'more AI-like' DIRECTION; orthogonal axis to the "
+                "probability and distributional surfaces, NOT a verdict"
+            ),
+            "m1_stub": (
+                "M1 uses an INJECTED corrector (StubGecBackend); the real "
+                "LanguageTool/GECToR backends are the M2 model-CPU seam (Java / "
+                "torch). gec_backend records which regime produced the value — "
+                "values are NOT comparable across backends"
+            ),
+            "esl_dialect_inversion": (
+                "gecscore INVERTS on ESL/dialect prose: a polished non-native "
+                "author writes low-error English and scores near 1.0 (the AI "
+                "direction). This is surfaced structurally via the co-emitted "
+                "fairness_dialect_guardrails block, not a footnote"
+            ),
+            "adversarial": (
+                "deliberate error injection (typos) trivially moves gecscore "
+                "toward the human range — the named adversarial Achilles heel"
+            ),
+        },
+    }
+
+    if include_fairness:
+        fairness = co_emit_fairness_guardrails(
+            text, declared_conditions=declared_conditions
+        )
+        results["fairness_guardrails"] = fairness
+        results["fairness_caveats"] = _fairness_caveats(fairness)
+
+    return results
+
+
+# ----------------------------------------------------------------------
+# Claim license (refuses any verdict; names the ESL/dialect inversion first-class).
+# ----------------------------------------------------------------------
+
+DEFAULT_LICENSES = (
+    "the grammar-error density of the text as a GECScore similarity — how little a "
+    "grammar-error corrector changes it (GECScore, arXiv:2405.04286). It reports "
+    "the scalar gecscore in [0,1] (1 - normalized character edit distance between "
+    "the text and its grammar-corrected form), the raw correction-span count "
+    "(gec_n_corrections), and a DESCRIPTIVE band over that value's own axis. In "
+    "the literature AI text tends to HIGHER gecscore (near-zero error density) "
+    "than human text, so the scalar is discrimination evidence on an axis "
+    "orthogonal to the probability (Binoculars/surprisal/curvature) and "
+    "distributional (glass-box stylometry) surfaces. It is a measurement, not a "
+    "verdict. The claimed ~98.7% AUROC from the preprint is UNVERIFIED and is a "
+    "lead, not a prior — it is not asserted as fact here."
+)
+
+DEFAULT_DOES_NOT_LICENSE = (
+    "any AI/human authorship verdict, label, or thresholded decision. The surface "
+    "ships uncalibrated: the band is PROVISIONAL (calibration_status heuristic, "
+    "calibration_anchor user-baseline-required) and names the MEASURED property "
+    "(grammar-error density), never the inference target (authorship). There is no "
+    "is_ai / is_human / classification / prediction / verdict / decision key. "
+    "ESL / NON-NATIVE FALSE-POSITIVE FAILURE MODE (load-bearing, not a footnote): "
+    "a non-native English author who writes polished, low-error prose scores HIGH "
+    "on gecscore — the SAME direction as AI — so the surface INVERTS on ESL and "
+    "non-standard-dialect prose; this is why the ROADMAP gates GECScore behind "
+    "fairness_dialect_guardrails, whose caution block is co-emitted in "
+    "results.fairness_guardrails and must be read before weighting this signal. "
+    "Near-zero grammar-error density does NOT prove AI authorship (copy-edited "
+    "fiction and professional non-native authors also score near 1.0), and the "
+    "signal is NOT robust to adversarial error injection (deliberate typos move "
+    "gecscore toward the human range — the named Achilles heel). The M1 value uses "
+    "an INJECTED stub corrector (the model-free seam); a real LanguageTool/GECToR "
+    "run (M2) is not comparable across backends (gec_backend records the regime). "
+    "Below the length floor (50 words) the normalized distance is noisy and the "
+    "surface warns. It is one axis among many for the multi-signal evidence pack, "
+    "with the human in the loop; promotion of the band past heuristic goes only "
+    "through scripts/calibration/ against a labeled corpus, never by tuning on a "
+    "held-out set."
+)
+
+
+def _claim_license(results: dict[str, Any]) -> ClaimLicense:
+    backend = results.get("gec_backend", {})
+    return ClaimLicense(
+        task_surface=TASK_SURFACE,
+        licenses=DEFAULT_LICENSES,
+        does_not_license=DEFAULT_DOES_NOT_LICENSE,
+        comparison_set={
+            "mode": "single_document_uncalibrated",
+            "gec_backend": backend.get("kind"),
+            "gec_ai_direction": GEC_AI_DIRECTION,
+        },
+        additional_caveats=[
+            "Uncalibrated — provisional band, no verdict, no shipped operating "
+            "point (calibration_status heuristic).",
+            "ESL/dialect INVERSION is the primary false-positive failure mode and "
+            "is surfaced structurally via the co-emitted fairness_dialect_"
+            "guardrails block (results.fairness_guardrails), not a footnote — read "
+            "it before weighting gecscore on prose of uncertain linguistic "
+            "background.",
+            "Adversarial error injection (typos) trivially defeats gecscore by "
+            "moving it toward the human range — the named Achilles heel.",
+            "M1 uses an INJECTED corrector (StubGecBackend); values from the M2 "
+            "LanguageTool/GECToR backends are NOT comparable to M1 or to each "
+            "other (gec_backend records the regime).",
+            "The 98.7% AUROC from arXiv:2405.04286 is UNVERIFIED (2024 preprint) "
+            "and is a lead, not a prior; no SETEC result asserts it as fact.",
+            "gecscore is a read-only EVIDENCE column — it never feeds SETEC "
+            "fitness / selection / scoring (anti-Goodhart; pinned by a "
+            "separation-guard source scan).",
+        ],
+        references=[
+            "GECScore, arXiv:2405.04286 (2024 preprint, [UNVERIFIED] — "
+            "https://arxiv.org/abs/2405.04286)",
+            "specs/32-gec-linguistic-error-axis.md",
+        ],
+    )
+
+
+def compose_envelope(
+    *,
+    target_path: Path | str | None,
+    target_words: int,
+    results: dict[str, Any],
+    warnings: list[str] | None = None,
+) -> dict[str, Any]:
+    return build_output(
+        task_surface=TASK_SURFACE,
+        tool=TOOL_NAME,
+        version=SCRIPT_VERSION,
+        target_path=target_path,
+        target_words=target_words,
+        baseline=None,
+        results=results,
+        claim_license=_claim_license(results),
+        available=True,
+        warnings=warnings,
+    )
+
+
+# ----------------------------------------------------------------------
+# Markdown renderer.
+# ----------------------------------------------------------------------
+
+
+def render_markdown(envelope: dict[str, Any]) -> str:
+    results = envelope["results"]
+    target = envelope["target"]
+    band = results.get("band", {})
+    backend = results.get("gec_backend", {})
+    fairness = results.get("fairness_guardrails", {})
+    rec = fairness.get("recommendation", {}) if fairness else {}
+    lines: list[str] = [
+        "# GECScore Grammar-Error-Density Audit",
+        "",
+        f"- **Target:** `{target.get('path')}` ({target.get('words')} words)",
+        f"- **GEC backend:** `{backend.get('kind')}` ({backend.get('metric')})",
+        f"- **Direction (pinned):** `GEC_AI_DIRECTION = "
+        f"{results.get('gec_ai_direction')!r}` "
+        "(higher gecscore = fewer errors = the paper's AI-like direction)",
+        "",
+        "## Result",
+        "",
+        f"**gecscore:** {results.get('gecscore'):.4f}",
+        f"**gec_n_corrections:** {results.get('gec_n_corrections')}",
+        f"**Band (DESCRIPTIVE, over the value's own axis):** "
+        f"`{band.get('band')}` "
+        f"(calibration_status: `{band.get('calibration_status')}`, "
+        f"anchor: `{band.get('calibration_anchor')}`)",
+        "",
+        "_Higher gecscore = near-zero grammar-error density (the paper's "
+        "'more AI-like' DIRECTION); NOT 'is AI'. Uncalibrated: the band is "
+        "provisional, no verdict, no shipped threshold._",
+        "",
+        "## Fairness / dialect guardrails (co-emitted — CRITICAL)",
+        "",
+        f"**Overall:** `{rec.get('overall', 'no_conditions_flagged')}`  "
+        f"**Posture cap:** {rec.get('posture_cap') or '(none)'}  "
+        f"**Refuses evaluative use:** "
+        f"{'**yes**' if rec.get('refuses_evaluative_use') else 'no'}",
+        "",
+        "_gecscore INVERTS on ESL/dialect prose: polished non-native English "
+        "scores near 1.0 (the AI direction). The ROADMAP gates GECScore behind "
+        "fairness_dialect_guardrails; read the block above before weighting this "
+        "signal._",
+        "",
+        "## Claim license",
+        "",
+        (envelope.get("claim_license_rendered") or "").rstrip(),
+        "",
+    ]
+    return "\n".join(lines)
+
+
+# ----------------------------------------------------------------------
+# Batch mode (one row per manifest passage — the M2 corpus-run shape).
+# ----------------------------------------------------------------------
+
+
+def _load_batch_manifest(path: Path) -> list[dict[str, Any]]:
+    """Load a batch manifest: JSONL (one ``{"id":..., "text":...}`` per line) or
+    a JSON list of the same. ``id`` and ``text`` are required per row; a missing
+    ``text`` falls back to reading a ``path`` field."""
+    raw = path.read_text(encoding="utf-8")
+    rows: list[dict[str, Any]] = []
+    suffix = path.suffix.lower()
+    if suffix == ".jsonl":
+        for lineno, line in enumerate(raw.splitlines(), start=1):
+            s = line.strip()
+            if not s:
+                continue
+            obj = json.loads(s)
+            if not isinstance(obj, dict):
+                raise ValueError(f"manifest line {lineno} is not an object")
+            rows.append(obj)
+    else:
+        data = json.loads(raw)
+        entries = data if isinstance(data, list) else data.get("entries", [])
+        for obj in entries:
+            if isinstance(obj, dict):
+                rows.append(obj)
+    return rows
+
+
+def run_batch(
+    rows: list[dict[str, Any]],
+    *,
+    backend: GecBackend | None = None,
+    base_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    """Score each manifest row → ``{id, gecscore, gec_n_corrections, band}``.
+
+    The fairness gate is NOT co-emitted per-row (it is a report-level surface, not
+    a per-passage column) — batch mode is the feature-column extraction path."""
+    out: list[dict[str, Any]] = []
+    for i, row in enumerate(rows):
+        rid = row.get("id", f"row_{i}")
+        text = row.get("text")
+        if text is None and row.get("path"):
+            p = Path(row["path"])
+            if base_dir is not None and not p.is_absolute():
+                p = base_dir / p
+            text = p.read_text(encoding="utf-8", errors="ignore")
+        if not text:
+            out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
+                        "band": "indeterminate", "skipped": "empty_text"})
+            continue
+        try:
+            r = audit_gecscore(text, backend=backend, include_fairness=False)
+        except GecScoreInputError:
+            out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
+                        "band": "indeterminate", "skipped": "no_word_tokens"})
+            continue
+        out.append({
+            "id": rid,
+            "gecscore": r["gecscore"],
+            "gec_n_corrections": r["gec_n_corrections"],
+            "band": r["band"]["band"],
+        })
+    return out
+
+
+# ----------------------------------------------------------------------
+# CLI.
+# ----------------------------------------------------------------------
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        description=(
+            "GECScore grammar-error-density audit (M1, stdlib, model-free): how "
+            "little a grammar-error corrector changes a text. Descriptive "
+            "discrimination evidence on an axis orthogonal to the probability and "
+            "distributional surfaces — NO verdict. M1 runs over an injected "
+            "corrector (the real LanguageTool/GECToR backends are the M2 seam)."
+        ),
+    )
+    p.add_argument("--target", help="Path to a single target text file (UTF-8).")
+    p.add_argument(
+        "--batch", metavar="MANIFEST",
+        help="Path to a batch manifest (JSONL or JSON list of {id, text|path}); "
+             "emits one row per passage (the M2 corpus-run shape).",
+    )
+    p.add_argument(
+        "--declare", action="append", dest="declared", default=[],
+        help="Declare a linguistic-background condition for the co-emitted "
+             "fairness_dialect_guardrails gate (e.g. nonnative_english, "
+             "dialect_features). Repeat for multiple.",
+    )
+    p.add_argument(
+        "--json", action="store_true",
+        help="Emit the JSON envelope instead of a markdown report (single target).",
+    )
+    p.add_argument("--out", default=None, help="Write output to this path instead of stdout.")
+    return p
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+
+    if not args.target and not args.batch:
+        sys.stderr.write("[gecscore_audit] one of --target or --batch is required\n")
+        return 2
+    if args.target and args.batch:
+        sys.stderr.write("[gecscore_audit] --target and --batch are mutually exclusive\n")
+        return 2
+
+    if args.batch:
+        return _main_batch(args)
+    return _main_single(args)
+
+
+def _main_single(args: argparse.Namespace) -> int:
+    target_path = Path(args.target).expanduser()
+    try:
+        target_text = target_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        envelope = build_error_output(
+            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+            target_path=str(target_path),
+            reason=f"cannot read --target: {exc}", reason_category="bad_input",
+        )
+        _emit(envelope, args, as_markdown=False)
+        return 3
+
+    word_count = len(word_tokens(target_text))
+    if word_count == 0:
+        envelope = build_error_output(
+            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+            target_path=str(target_path), target_words=0,
+            reason="target has no countable word tokens",
+            reason_category="text_too_short",
+        )
+        _emit(envelope, args, as_markdown=False)
+        return 3
+
+    warnings: list[str] = []
+    if word_count < LENGTH_FLOOR_WORDS:
+        warnings.append(
+            f"target is {word_count} words, below the {LENGTH_FLOOR_WORDS}-word "
+            "floor; the normalized edit distance is noisy on short text — "
+            "reported but not over-claimed"
+        )
+
+    try:
+        results = audit_gecscore(target_text, declared_conditions=args.declared)
+    except GecScoreInputError as exc:
+        envelope = build_error_output(
+            task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+            target_path=str(target_path), target_words=word_count,
+            reason=str(exc), reason_category="bad_input",
+        )
+        _emit(envelope, args, as_markdown=False)
+        return 3
+
+    # Fold the fairness gate's posture-cap into the envelope warnings so the
+    # ESL/dialect inversion is visible at the top level too.
+    warnings = warnings + list(results.get("fairness_caveats", []))
+
+    envelope = compose_envelope(
+        target_path=target_path,
+        target_words=word_count,
+        results=results,
+        warnings=warnings or None,
+    )
+    _emit(envelope, args, as_markdown=not args.json)
+    return 0
+
+
+def _main_batch(args: argparse.Namespace) -> int:
+    manifest_path = Path(args.batch).expanduser()
+    try:
+        rows = _load_batch_manifest(manifest_path)
+    except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as exc:
+        sys.stderr.write(f"[gecscore_audit] --batch manifest error: {exc}\n")
+        return 3
+    out_rows = run_batch(rows, base_dir=manifest_path.parent)
+    payload = {
+        "tool": TOOL_NAME,
+        "version": SCRIPT_VERSION,
+        "task_surface": TASK_SURFACE,
+        "mode": "batch",
+        "n_rows": len(out_rows),
+        "rows": out_rows,
+        "note": (
+            "batch mode is the feature-column extraction path; the fairness gate "
+            "is a report-level surface and is NOT co-emitted per row — run "
+            "fairness_dialect_guardrails on the corpus separately"
+        ),
+    }
+    text_out = json.dumps(payload, indent=2, default=str)
+    if args.out:
+        Path(args.out).write_text(text_out + "\n", encoding="utf-8")
+        sys.stderr.write(f"Wrote {len(out_rows)} rows to {args.out}\n")
+    else:
+        sys.stdout.write(text_out + "\n")
+    return 0
+
+
+def _emit(envelope: dict[str, Any], args: argparse.Namespace, *, as_markdown: bool) -> None:
+    if as_markdown:
+        text_out = render_markdown(envelope)
+    else:
+        text_out = json.dumps(envelope, indent=2, default=str)
+    if args.out:
+        Path(args.out).write_text(
+            text_out + ("\n" if not text_out.endswith("\n") else ""),
+            encoding="utf-8",
+        )
+        sys.stderr.write(f"Wrote output to {args.out}\n")
+    if not args.out or args.json:
+        sys.stdout.write(text_out + ("\n" if not text_out.endswith("\n") else ""))
+
+
+if __name__ == "__main__":
+    sys.exit(main())
