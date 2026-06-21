@@ -72,9 +72,24 @@ _STDLIB_FEATURES = ("burstiness_B", "mattr", "mtld", "function_word_ratio")
 _SPACY_FEATURES = ("mean_dependency_distance",)
 ALL_FEATURES = _STDLIB_FEATURES + _SPACY_FEATURES
 
-# `human` is a permitted reference LABEL but may NEVER occupy the reported top slot (the AI/human axis
-# belongs to the discrimination surfaces, which also refuse it). A `human`-top case abstains.
-HUMAN_LABEL = "human"
+# A `human`-class label is a permitted reference LABEL but may NEVER occupy the reported top slot (the
+# AI/human axis belongs to the discrimination surfaces, which also refuse it). A human-top case abstains.
+# The gate is the single load-bearing red line for an attribution surface, so it must NOT be defeatable by
+# a one-character relabel: the comparison is case/space-insensitive AND matches a small reserved synonym
+# set, not one exact string. `_is_human_label` is the single chokepoint every check routes through.
+HUMAN_LABEL = "human"  # canonical label (back-compat / docs)
+RESERVED_HUMAN_LABELS = frozenset({
+    "human", "humans", "human_writers", "human-writers", "humanwritten", "human_written",
+    "human-written", "people", "person", "organic", "non_ai", "non-ai", "nonai", "not_ai", "not-ai",
+})
+
+
+def _is_human_label(family: str) -> bool:
+    """True when `family` names the reserved human class. Casefolded + stripped + inner whitespace/hyphen
+    collapsed, then matched against RESERVED_HUMAN_LABELS, so neither case (`Human`) nor a near-synonym
+    (`humans`, `human_writers`, `people`) can route a 'reads most like HUMAN' ruling around the gate."""
+    norm = "_".join(family.strip().casefold().replace("-", "_").split())
+    return norm in RESERVED_HUMAN_LABELS
 
 
 # ---- feature extraction (named, model-free) ----------------------------------
@@ -193,7 +208,12 @@ def rank_families(
 
     Abstention is the DEFAULT: the ranking is always emitted as raw evidence, but `attribution_available`
     is True only when none of the gates trip.
+
+    `min_docs` is a HARD floor: a caller may RAISE it but never lower it below MIN_DOCS_PER_FAMILY — a
+    smaller value is clamped up here so the small-n protection cannot be opted out of (the over-claim
+    axis the spec's P2 rework refuses), at the function level and not only at the CLI.
     """
+    min_docs = max(MIN_DOCS_PER_FAMILY, min_docs)
     if not families:
         raise ValueError("no reference families supplied")
 
@@ -279,11 +299,12 @@ def rank_families(
             f"top-2 margin {top_margin} below the ambiguity threshold {margin_threshold} — the top "
             f"two families ({top['family']}, {runner_up['family']}) are too close to separate"
         )
-    if top["family"] == HUMAN_LABEL:
+    if _is_human_label(top["family"]):
         reasons.append(
-            "the `human` label would occupy the reported top slot — `human` may never be the top "
-            "(a high `human` similarity is not a human certificate; the AI/human axis belongs to the "
-            "discrimination surfaces, which also refuse it)"
+            f"a reserved human-class label (`{top['family']}`) would occupy the reported top slot — a "
+            "human-class label may never be the top (a high `human` similarity is not a human "
+            "certificate; the AI/human axis belongs to the discrimination surfaces, which also refuse "
+            "it). The match is case/synonym-normalized, so a relabel cannot route around it."
         )
 
     attribution_available = not reasons
@@ -537,6 +558,25 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     results["target_words"] = target_words
     results["spacy_available"] = HAS_SPACY
 
+    # Target length floor: the SAME --min-words floor applied to reference docs guards the TARGET too.
+    # Stylometric features (MATTR/MTLD/burstiness/fwr) on a sub-floor target are unstable, so a too-short
+    # target can NEVER reach attribution_available=True — it is forced to abstain with an explicit reason
+    # (the ranking stays as raw evidence, mirroring the abstention-first posture). The advertised
+    # length_floor_words guards the input being judged, not only the references.
+    if target_words < args.min_words:
+        too_short = (
+            f"the --target is {target_words} words, below the --min-words {args.min_words} length floor "
+            "— stylometric features are unstable on so short a target, so attribution is withheld and the "
+            "ranking is raw evidence only"
+        )
+        if results["attribution_available"]:
+            results["attribution_available"] = False
+            results["reason"] = too_short
+        else:
+            results["reason"] = f"{too_short}; {results['reason']}"
+        results["target_below_min_words"] = True
+        warnings.append(too_short)
+
     if n_dropped_self:
         warnings.append(
             f"dropped {n_dropped_self} reference doc(s) whose path matches --target (self-exclusion); "
@@ -597,7 +637,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument(
         "--min-docs", type=int, default=MIN_DOCS_PER_FAMILY,
-        help=f"Hard minimum docs per family; a thinner family forces abstention (default {MIN_DOCS_PER_FAMILY}).",
+        help=(
+            f"Minimum docs per family; a thinner family forces abstention (default {MIN_DOCS_PER_FAMILY}). "
+            f"This is a HARD floor: an operator may RAISE it but never lower it below "
+            f"{MIN_DOCS_PER_FAMILY} (the small-n over-claim protection cannot be opted out of); a smaller "
+            f"value is clamped up to {MIN_DOCS_PER_FAMILY}."
+        ),
     )
     ap.add_argument(
         "--min-words", type=int, default=DEFAULT_MIN_WORDS,
@@ -613,6 +658,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.min_docs < 1:
         sys.stderr.write("[model_family_attribution] --min-docs must be >= 1\n")
         return 2
+    # The MIN_DOCS_PER_FAMILY floor is HARD: the operator may only RAISE it. A smaller value would let a
+    # 3-doc family return attribution_available=True, defeating the small-n over-claim protection the
+    # spec's P2 rework added — exactly the over-claim axis this surface is built to refuse. Clamp up.
+    if args.min_docs < MIN_DOCS_PER_FAMILY:
+        sys.stderr.write(
+            f"[model_family_attribution] --min-docs {args.min_docs} is below the hard floor "
+            f"{MIN_DOCS_PER_FAMILY}; clamping up to {MIN_DOCS_PER_FAMILY}\n"
+        )
+        args.min_docs = MIN_DOCS_PER_FAMILY
 
     envelope = _run(args)
     text = json.dumps(envelope, indent=2, sort_keys=True, default=str)

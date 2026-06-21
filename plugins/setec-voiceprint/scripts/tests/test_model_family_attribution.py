@@ -137,6 +137,34 @@ def test_thin_family_abstains():
     assert "below the 5-doc floor" in res["reason"]
 
 
+def test_min_docs_floor_is_hard_cannot_be_lowered():
+    """The MIN_DOCS_PER_FAMILY floor is HARD: a caller may RAISE it but never lower it below 5. A 3-doc
+    family with min_docs=2 must STILL abstain (the request is clamped up to 5), so the small-n over-claim
+    protection cannot be opted out of. Without the clamp, rank_families(..., min_docs=2) would return
+    attribution_available=True for 3-doc families — the posture leak the spec's P2 rework refuses."""
+    fams = {"familyA": _family(_A_BASE, n=3), "familyB": _family(_B_BASE, n=3)}
+    res = mfa.rank_families(dict(_A_BASE), fams, min_docs=2)
+    # clamped up to the hard floor -> both 3-doc families are thin -> abstain
+    assert res["min_docs_per_family"] == mfa.MIN_DOCS_PER_FAMILY
+    assert res["attribution_available"] is False
+    assert f"below the {mfa.MIN_DOCS_PER_FAMILY}-doc floor" in res["reason"]
+    # raising the floor IS honored (operator may be stricter)
+    fat = {"familyA": _family(_A_BASE, n=6), "familyB": _family(_B_BASE, n=6)}
+    res_raise = mfa.rank_families(dict(_A_BASE), fat, min_docs=8)
+    assert res_raise["min_docs_per_family"] == 8
+    assert res_raise["attribution_available"] is False  # 6 < 8 -> thin
+
+
+def test_cli_min_docs_clamped_up_to_floor(tmp_path, capsys):
+    """The CLI mirrors the hard floor: `--min-docs 2` is clamped up to MIN_DOCS_PER_FAMILY (with a stderr
+    notice), so an operator cannot lower the small-n protection from the command line either."""
+    root = _good_dir(tmp_path, n=6)
+    tgt = tmp_path / "t.txt"
+    tgt.write_text("the cat sat on the mat and ran fast " * 22)
+    rc, env = _envelope(["--target", str(tgt), "--reference-dir", str(root), "--min-docs", "2"])
+    assert env["results"]["min_docs_per_family"] == mfa.MIN_DOCS_PER_FAMILY
+
+
 def test_relative_ood_abstains_not_a_fixed_floor():
     """An outlier target (drawn from a 6th, unreferenced profile) trips the RELATIVE within-scatter
     gate. Crucially this is relative: the SAME absolute distance is in-distribution for a family with a
@@ -164,16 +192,37 @@ def test_relative_ood_abstains_not_a_fixed_floor():
 
 
 def test_near_tie_trips_margin():
-    """A target sitting (nearly) equidistant between two well-separated family centroids produces a
-    top-2 similarity margin below threshold — the two families are too close to separate FOR THIS
-    TARGET, so the surface abstains."""
-    fams = _two_families()
-    # midpoint between the two family bases -> ~equal distance to each -> ~equal similarity -> tiny margin
-    mid = {k: (_A_BASE[k] + _B_BASE[k]) / 2.0 for k in _A_BASE}
+    """The margin gate must trip on an IN-DISTRIBUTION near-tie, ISOLATED from the relative-OOD gate.
+
+    Two families that overlap heavily on a SINGLE axis (function_word_ratio), with within-scatter (±0.30)
+    large relative to the centroid gap (0.10). The target sits at the fwr midpoint, so it is ~equidistant
+    from both centroids (tiny top-2 margin) YET well inside each family's own scatter (NOT out-of-
+    distribution). attribution_available is therefore False because of the MARGIN gate alone — we assert
+    out_of_distribution is False and 'out-of-distribution' is NOT in the reason, so the test cannot pass
+    on the OOD gate instead. The earlier version put the target at the midpoint of two WELL-SEPARATED
+    families, which sits far from both centroids and trips OOD first; attribution_available=False was then
+    satisfied by OOD, and the test could not tell the margin gate from the OOD gate."""
+    def _fam_on_fwr(fwr_center, n=8, spread=0.30):
+        # n docs spread symmetrically along function_word_ratio only; centroid == fwr_center, with a
+        # large within-scatter so an in-between target stays in-distribution.
+        docs = []
+        for i in range(n):
+            eps = (i - (n - 1) / 2) / ((n - 1) / 2)  # symmetric in [-1, 1]
+            docs.append(_feat(0.0, 0.70, 60.0, fwr_center + eps * spread))
+        return docs
+
+    fams = {"familyA": _fam_on_fwr(0.35), "familyB": _fam_on_fwr(0.45)}  # gap 0.10 << scatter 0.30
+    mid = _feat(0.0, 0.70, 60.0, 0.40)  # equidistant on the fwr axis -> tiny margin
     res = mfa.rank_families(mid, fams, margin_threshold=0.05)
     assert res["top_margin"] < 0.05
+    assert res["out_of_distribution"] is False, (
+        "the near-tie target must stay IN-distribution so the margin gate is isolated from OOD"
+    )
     assert res["attribution_available"] is False
     assert "margin" in res["reason"]
+    assert "out-of-distribution" not in res["reason"], (
+        "the OOD gate must not co-trip — attribution_available=False must be due to MARGIN alone"
+    )
 
 
 def test_human_would_be_top_abstains():
@@ -187,22 +236,68 @@ def test_human_would_be_top_abstains():
     assert "human" in res["reason"]
 
 
+@pytest.mark.parametrize(
+    "label", ["human", "Human", "HUMAN", "humans", "human_writers", "human-writers", "people", "organic"]
+)
+def test_human_gate_not_defeatable_by_relabel(label):
+    """The never-an-AI/human-verdict gate must NOT be defeatable by a one-character relabel. A reserved
+    human-class label in ANY case or near-synonym form (`Human`, `humans`, `human_writers`, `people`, ...)
+    occupying the top slot forces abstention — not only the exact lowercase string `human`. Previously the
+    gate was an exact case-sensitive compare, so `Human`/`humans`/`human_writers` returned
+    attribution_available=True with that label as the reported TOP slot."""
+    fams = {label: _family(_A_BASE, n=6), "modelX": _family(_B_BASE, n=6)}
+    res = mfa.rank_families(dict(_A_BASE), fams)
+    assert res["family_ranking"][0]["family"] == label  # the human-class label is closest -> would be top
+    assert res["attribution_available"] is False, (
+        f"a {label!r}-top case must abstain — the human gate must be relabel-proof"
+    )
+    assert "human-class label" in res["reason"]
+
+
+def test_non_human_label_does_not_trip_human_gate():
+    """The normalized human gate must not over-match: an ordinary family label that merely CONTAINS a
+    human-ish substring (e.g. `humane_llm`, `superhuman`) is NOT the reserved human class and may be top."""
+    for label in ("humane_llm", "superhuman", "gpt_humanlike"):
+        assert mfa._is_human_label(label) is False, f"{label!r} must NOT match the reserved human class"
+    fams = {"humane_llm": _family(_A_BASE, n=6), "modelX": _family(_B_BASE, n=6)}
+    res = mfa.rank_families(dict(_A_BASE), fams)
+    assert res["family_ranking"][0]["family"] == "humane_llm"
+    assert res["attribution_available"] is True  # not a human-class label -> gate does not trip
+
+
 # --- standardization: a large-scale feature does not dominate -----------------
 
-def test_standardization_prevents_mtld_domination():
-    """Two families differing MAINLY on a small-scale feature (function_word_ratio) but with a large,
-    SHARED MTLD spread. A raw (un-standardized) mean would let MTLD swamp the discriminative small-scale
-    feature; robust-z standardization rescues it. The target shares familyA's function_word_ratio, so it
-    must rank familyA top despite MTLD noise."""
-    # familyA: low fwr; familyB: high fwr. Both families carry wide MTLD scatter (huge raw scale).
-    a_docs = [_feat(0.0, 0.7, 50.0 + d, 0.20) for d in (-40, -20, 0, 20, 40, 10)]
-    b_docs = [_feat(0.0, 0.7, 50.0 + d, 0.60) for d in (-40, -20, 0, 20, 40, 10)]
+def test_standardization_prevents_mtld_domination(monkeypatch):
+    """MTLD must be DISCRIMINATIVE-BUT-MISLEADING so the test fails if standardization is removed.
+
+    The two families now differ on MTLD too (A~50, B~60), not just on a small-scale feature. The target's
+    RAW MTLD (58) sits nearer familyB, but its function_word_ratio (0.20) matches familyA. With robust-z
+    standardization the small-scale fwr separates the families and the target ranks familyA top (correct);
+    WITHOUT standardization the large raw MTLD scale dominates and the target flips to familyB. The earlier
+    construction shared an IDENTICAL MTLD distribution across both families, so MTLD cancelled between the
+    centroids and the test passed with OR without standardization — a tautology that could not distinguish
+    working standardization from absent standardization."""
+    a_docs = [_feat(0.0, 0.7, 50.0 + d, 0.20) for d in (-2, -1, 0, 1, 2, 0)]
+    b_docs = [_feat(0.0, 0.7, 60.0 + d, 0.60) for d in (-2, -1, 0, 1, 2, 0)]
     fams = {"familyA": a_docs, "familyB": b_docs}
-    # target: familyA's fwr (0.20), but an MTLD value that happens to sit nearer familyB's docs.
-    tgt = _feat(0.0, 0.7, 70.0, 0.20)
+    # target: familyA's fwr (0.20), but a raw MTLD (58) that sits NEARER familyB's docs.
+    tgt = _feat(0.0, 0.7, 58.0, 0.20)
+
+    # WITH standardization: the small-scale fwr separates the families -> familyA top (correct).
     res = mfa.rank_families(tgt, fams)
     assert res["family_ranking"][0]["family"] == "familyA", (
         "MTLD's large raw scale dominated the ranking — standardization is not working"
+    )
+
+    # WITHOUT standardization (identity scalers): raw MTLD dominates -> ranking flips to familyB. This
+    # sub-assertion makes the test FAIL if standardization is removed (the previous version did not).
+    monkeypatch.setattr(
+        mfa, "_robust_scalers", lambda pooled, feature_set: {name: (0.0, 1.0) for name in feature_set}
+    )
+    res_raw = mfa.rank_families(tgt, fams)
+    assert res_raw["family_ranking"][0]["family"] == "familyB", (
+        "without standardization the raw MTLD scale should dominate and flip the ranking to familyB — "
+        "if it does not, this test cannot detect a removed standardization step"
     )
 
 
@@ -311,6 +406,41 @@ def test_manifest_row_missing_family_is_bad_input(tmp_path):
     rc, env = _envelope(["--target", str(tgt), "--reference-manifest", str(man)])
     assert env["available"] is False
     assert env["reason_category"] == "bad_input"
+
+
+# --- target length floor ------------------------------------------------------
+
+def test_short_target_forced_to_abstain(tmp_path):
+    """The advertised --min-words length floor (length_floor_words: 50) guards the TARGET, not only the
+    reference docs. A sub-floor target can NEVER reach attribution_available=True — it is forced to abstain
+    with an explicit too-short reason and a warning, and the family_ranking stays as raw evidence.
+    Previously the floor was applied only to reference docs, so a 3-word target produced a full ranking and
+    could in principle be attributed."""
+    root = _good_dir(tmp_path, n=6)
+    tgt = tmp_path / "t.txt"
+    tgt.write_text("cat sat mat")  # 3 words, well below the 50-word floor
+    rc, env = _envelope(["--target", str(tgt), "--reference-dir", str(root)])
+    assert env["available"] is True  # the run completes; it abstains, it does not error
+    r = env["results"]
+    assert r["target_words"] == 3
+    assert r["attribution_available"] is False
+    assert r.get("target_below_min_words") is True
+    assert "length floor" in r["reason"]
+    warns = " ".join(env.get("warnings") or [])
+    assert "length floor" in warns
+
+
+def test_at_floor_target_is_not_forced_to_abstain_by_length(tmp_path):
+    """A target AT/above the floor is not abstained on length grounds — the length guard fires only below
+    --min-words, so it does not suppress legitimate in-floor targets."""
+    root = _good_dir(tmp_path, n=6)
+    tgt = tmp_path / "t.txt"
+    tgt.write_text("the cat sat on the mat and ran fast " * 22)  # comfortably above 50 words
+    rc, env = _envelope(["--target", str(tgt), "--reference-dir", str(root)])
+    r = env["results"]
+    assert r["target_words"] >= 50
+    assert "target_below_min_words" not in r
+    assert "length floor" not in r["reason"]
 
 
 # --- self-exclusion -----------------------------------------------------------

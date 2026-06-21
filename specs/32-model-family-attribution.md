@@ -51,15 +51,23 @@ over-claim-prone axis, so the design refuses the verdict and surfaces raw ranked
   emits **nothing that sums to 1 over families** — a normalized posterior manufactures a P(family) reading
   and looks confident even when every family fits badly.
 - **Not an attribution verdict.** No "produced by <family>" key or claim; the claim license refuses it.
-- **Not an AI-vs-human verdict.** A `human` reference (if supplied) is ranked like any label, but it may
-  **never occupy the reported top slot** — if it would, the surface abstains. A high `human` similarity is
-  not a human certificate; the AI/human axis belongs to the discrimination surfaces, which also refuse it.
+- **Not an AI-vs-human verdict.** A `human`-class reference (if supplied) is ranked like any label, but it
+  may **never occupy the reported top slot** — if it would, the surface abstains. A high `human` similarity
+  is not a human certificate; the AI/human axis belongs to the discrimination surfaces, which also refuse
+  it. **The human-class gate is relabel-proof:** the match is case/space/hyphen-normalized AND covers a
+  small reserved synonym set (`human`, `humans`, `human_writers`, `people`, `organic`, `non_ai`, …) routed
+  through the single `_is_human_label` chokepoint, so a one-character relabel (`Human`, `humans`) cannot
+  route a 'reads most like HUMAN' ruling around the gate. It does not over-match (`humane_llm`,
+  `superhuman` are ordinary labels).
 - **Abstention-first, and REAL.** Abstains (`attribution_available: false`, ranking demoted to
-  evidence-only) when: (a) < 2 reference families; (b) any family has fewer than `MIN_DOCS_PER_FAMILY` (≥5)
-  docs or below the length floor; (c) **relative OOD** — the target's distance to the top family's centroid
-  is not within that family's own within-scatter (the target is an outlier even relative to the family's
-  members, so the true source is plausibly absent); (d) the top-2 margin is below an ambiguity threshold;
-  (e) `human` would be top. Abstention is the default, not the exception.
+  evidence-only) when: (a) < 2 reference families; (b) any family has fewer than `MIN_DOCS_PER_FAMILY` (≥5,
+  a HARD floor an operator may only RAISE) docs, or a reference doc is below the length floor; (c) **the
+  TARGET is below the `--min-words` length floor** — the same floor that drops short reference docs guards
+  the input being judged (sub-floor stylometry is unstable), so a too-short target can never be attributed;
+  (d) **relative OOD** — the target's distance to the top family's centroid is not within that family's own
+  within-scatter (the target is an outlier even relative to the family's members, so the true source is
+  plausibly absent); (e) the top-2 margin is below an ambiguity threshold; (f) a `human`-class label would
+  be top. Abstention is the default, not the exception.
 - **Weak, low-dimensional evidence.** ~5 features over operator corpora ≠ the Biber paper's ~96 features
   over large corpora; the `assumptions` block and the license say so explicitly.
 - **Corpus/set-dependent, uncalibrated, self-excluding.** Only as good as the references; a missing family
@@ -173,3 +181,31 @@ X" operating point. The default is, and stays, abstention-first advisory evidenc
 - **Path note:** references the `main` analogues (`general_imposters` self-exclusion, `idiolect_detector`
   loader, `variance_audit` features) — the originally-cited `originality_audit`/`cosine_explanation` live
   on unmerged branches and are not present when this surface builds from `main`.
+
+## Fold log (2026-06-21, second-pass review → 5 P2 folds)
+
+- **P2 min-docs floor was soft.** `--min-docs` was validated only `>= 1` and passed straight through, so
+  `--min-docs 2` returned `attribution_available=True` for 3-doc families — defeating the small-n
+  protection. Made HARD at the root: `rank_families` clamps `min_docs = max(MIN_DOCS_PER_FAMILY, min_docs)`
+  (operator may only RAISE), the CLI clamps + warns on stderr, and the `--min-docs` help says so. Tests
+  pin that the floor cannot be lowered below 5 (function + CLI) and that raising IS honored.
+- **P2 standardization test was a tautology.** `test_standardization_prevents_mtld_domination` gave both
+  families an IDENTICAL MTLD distribution, so MTLD cancelled between centroids and the test passed with OR
+  without standardization. Rebuilt MTLD as discriminative-but-misleading (A~50, B~60; target raw-MTLD 58
+  nearer B, fwr=A's) + a monkeypatched identity-scaler sub-assertion that the ranking FLIPS to familyB
+  without standardization — the test now FAILS if standardization is removed.
+- **P2 margin test co-tripped OOD.** `test_near_tie_trips_margin` put the target midway between two
+  WELL-SEPARATED families, so it sat far from both centroids and tripped relative-OOD first;
+  `attribution_available=False` was satisfied by OOD, not margin. Rebuilt as an IN-distribution near-tie
+  (two families overlapping on a single axis with within-scatter ≫ centroid gap), asserting
+  `out_of_distribution is False` and `'out-of-distribution' not in reason` so the margin gate is isolated
+  and shown independently reachable.
+- **P2 human gate defeatable by relabel.** The never-an-AI/human-verdict gate was an exact case-sensitive
+  `== "human"` compare, so `Human`/`humans`/`human_writers`/`people` returned `attribution_available=True`
+  with that label as the reported top. Replaced with `_is_human_label` (casefold + space/hyphen-normalize +
+  a reserved synonym set); spec posture + tests pin that a relabel cannot route around it and that ordinary
+  labels (`humane_llm`, `superhuman`) are not over-matched.
+- **P2 length floor skipped the target.** The advertised `length_floor_words: 50` floor was applied only to
+  reference docs; a 3-word target produced a full ranking. The same `--min-words` floor now guards the
+  target: a sub-floor target is forced to abstain with an explicit too-short reason + warning +
+  `target_below_min_words` flag (ranking stays raw evidence, per the abstention-first posture).
