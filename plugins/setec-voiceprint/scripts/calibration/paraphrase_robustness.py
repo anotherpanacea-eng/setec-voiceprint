@@ -355,7 +355,7 @@ def _cell(
 
 def run_report(
     *,
-    paraphraser: Paraphraser,
+    paraphraser: Paraphraser | None,
     scorer: Scorer,
     detectors: list[str],
     machine_texts: list[str],
@@ -364,6 +364,7 @@ def run_report(
     warnings: list[str] | None = None,
     min_length_ratio: float = 0.5,
     report_label: str | None = None,
+    apply_paraphraser: bool = True,
 ) -> dict[str, Any]:
     """Full pipeline. Returns the ``results`` payload (no envelope).
 
@@ -383,6 +384,8 @@ def run_report(
     # The label written into the report: the real (declared) paraphraser on the injected path,
     # else the live paraphraser's own label.
     label = report_label if report_label is not None else paraphraser.label
+    if apply_paraphraser and paraphraser is None:
+        raise ValueError("run_report: a paraphraser is required unless apply_paraphraser=False")
 
     # Rung-count guard at the orchestration boundary: refuse rungs < 1 up
     # front instead of clamping with max(1, ...). A clamp silently fabricated
@@ -420,18 +423,26 @@ def run_report(
 
     per_rung: list[dict[str, Any]] = []
     for rung in range(1, rungs + 1):
-        attacked: list[str] = []
-        for txt in machine_texts:
-            para = paraphraser.paraphrase(txt, rung=rung)
-            if len(para) < min_length_ratio * max(1, len(txt)):
-                warns.append(
-                    f"rung {rung}: paraphrase collapsed a machine window "
-                    f"(len {len(para)} < {min_length_ratio} * {len(txt)}); "
-                    f"kept original, not scored as attacked"
-                )
-                attacked.append(txt)
-            else:
-                attacked.append(para)
+        if apply_paraphraser:
+            attacked: list[str] = []
+            for txt in machine_texts:
+                para = paraphraser.paraphrase(txt, rung=rung)
+                if len(para) < min_length_ratio * max(1, len(txt)):
+                    warns.append(
+                        f"rung {rung}: paraphrase collapsed a machine window "
+                        f"(len {len(para)} < {min_length_ratio} * {len(txt)}); "
+                        f"kept original, not scored as attacked"
+                    )
+                    attacked.append(txt)
+                else:
+                    attacked.append(para)
+        else:
+            # Injected-scores path: the scorer ignores the candidate text (the attack ran
+            # EXTERNALLY), so do NOT fabricate a stdlib-proxy paraphrase or its corruption /
+            # length-ratio warnings — they'd be bound to unrelated proxy text yet attached to a
+            # report labeled as the REAL attack (false provenance). Score the unmodified windows;
+            # the injected scorer returns this rung's supplied scores regardless of the text.
+            attacked = machine_texts
         rung_scores = _score_rung(scorer, detectors, attacked, human_texts)
         per_detector: dict[str, Any] = {}
         for det in detectors:
@@ -569,9 +580,11 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
 
     The injected ``scores`` are the stage-2 detector outputs a GPU operator
     would produce in M2; here they are supplied so the orchestration and
-    AUC/Δ math run in CI. The ``paraphraser`` is still applied to produce the
-    attacked text (so the human-never-paraphrased / corruption guards run),
-    but the injected scorer ignores the text and returns the supplied scores."""
+    AUC/Δ math run in CI. No paraphraser is applied (``apply_paraphraser=False``):
+    the attack ran EXTERNALLY and the injected scorer ignores the candidate text,
+    so running an unrelated stdlib proxy would only fabricate corruption /
+    length-ratio warnings bound to proxy text yet attached to a report labeled as
+    the real attack. Corruption checks belong to the live-paraphraser path."""
     detectors = list(payload["detectors"])
     n_rungs = int(payload["n_rungs"])
     machine_texts = list(payload["machine_texts"])
@@ -672,15 +685,15 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
                 )
 
     scorer = _InjectedScorer(scores)
-    paraphraser = StdlibProxyParaphraser()
     return run_report(
-        paraphraser=paraphraser,
+        paraphraser=None,                 # the attack ran externally — no proxy to apply
         scorer=scorer,
         detectors=detectors,
         machine_texts=machine_texts,
         human_texts=human_texts,
         rungs=n_rungs,
-        report_label=paraphraser_label,   # name the real attack, not the guard-exercising proxy
+        report_label=paraphraser_label,   # name the real attack, not a guard-exercising proxy
+        apply_paraphraser=False,          # don't fabricate corruption warnings from unrelated proxy text
     )
 
 

@@ -299,6 +299,23 @@ def test_injected_report_names_the_declared_paraphraser_not_the_stdlib_proxy():
             pr.run_from_injected_scores(p)
 
 
+def test_injected_path_emits_no_proxy_corruption_warnings():
+    # Codex #261 round-3: the report is labeled the REAL attack, but run_report used to paraphrase
+    # each window with the stdlib PROXY and emit its "collapsed" corruption warnings — bound to
+    # unrelated proxy text yet attached to a report labeled e.g. "dipper_xxl". The injected path
+    # applies NO proxy (the attack ran externally; the scorer ignores text), so it must emit no
+    # paraphrase/corruption warning.
+    payload = _injected_payload_two_rungs()
+    n = len(payload["machine_texts"])
+    # whitespace-heavy windows the stdlib proxy WOULD collapse (its space-jitter halves them) —
+    # pre-fix this produced "paraphrase collapsed" warnings on the injected path.
+    payload["machine_texts"] = ["word" + " " * 60 + "word"] * n
+    payload["paraphraser_label"] = "dipper_xxl"
+    results = pr.run_from_injected_scores(payload)
+    assert results["paraphraser_label"] == "dipper_xxl"
+    assert not any("collapsed" in w or "paraphrase" in w for w in results.get("_warnings", []))
+
+
 # --------------------------- fixtures ----------------------------- #
 
 
