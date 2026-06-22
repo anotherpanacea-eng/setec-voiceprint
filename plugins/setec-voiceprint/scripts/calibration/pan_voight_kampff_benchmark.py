@@ -422,6 +422,68 @@ def predictions_with_operating_point(
     return preds
 
 
+# Reason a detector's thresholded cells stay null when --operating-point was
+# requested but the detector never reached an answering band (so no operating
+# point is actually in force). Distinct from the no-flag default reason.
+NO_REACHABLE_OPERATING_POINT_REASON = (
+    "operating_point_requested_but_no_reachable_threshold"
+)
+
+
+def resolve_operating_point(
+    rows: list[dict[str, Any]],
+    *,
+    operating_point_requested: bool,
+    operator_thresholds_supplied: bool,
+) -> dict[str, Any]:
+    """Resolve a detector's ACTUAL operating-point provenance — never a
+    fabricated one (findings 1 & 2; spec D8 / §5c three-way source).
+
+    An operating point is only *in force* for a detector when
+    ``--operating-point`` was requested AND the detector actually produced
+    at least one answering band (``ai_likely`` / ``human_likely``). Merely
+    passing the bare flag with no reachable threshold (every band
+    ``uncalibrated`` / ``indeterminate`` / ``None``) is NOT an operating
+    point and must not be stamped as one.
+
+    Returns ``{in_force, source, reason}``:
+      * ``in_force``  — whether thresholded cells should be computed (True)
+        or stay null (False).
+      * ``source``    — the honest provenance:
+          - ``"operator_supplied"`` when the operator passed thresholds
+            (``--threshold-low/--threshold-high``) and a band answered;
+          - ``"detector_calibrated"`` when the detector carried its own
+            thresholds (no operator thresholds) and a band answered;
+          - ``"none"`` otherwise (no flag, or flag-but-no-reachable-band).
+      * ``reason``    — null-cell reason when ``in_force`` is False.
+    """
+    if not operating_point_requested:
+        return {
+            "in_force": False,
+            "source": "none",
+            "reason": "no_operating_point_without_fitting_to_pan",
+        }
+    answered = any(
+        r.get("band") in ("ai_likely", "human_likely") for r in rows
+    )
+    if not answered:
+        # The flag was passed but no threshold was reachable for this
+        # detector: do NOT fabricate an "operator_supplied" provenance.
+        return {
+            "in_force": False,
+            "source": "none",
+            "reason": NO_REACHABLE_OPERATING_POINT_REASON,
+        }
+    return {
+        "in_force": True,
+        "source": (
+            "operator_supplied" if operator_thresholds_supplied
+            else "detector_calibrated"
+        ),
+        "reason": None,
+    }
+
+
 # =========================================================================
 # Report assembly
 # =========================================================================
@@ -438,6 +500,7 @@ def assemble_report(
     detector_registry: dict[str, dict[str, Any]],
     manifest_entries: list[dict[str, Any]],
     has_operating_point: bool,
+    operator_thresholds_supplied: bool = False,
     n_resamples: int,
     confidence_level: float,
     seed: int | None,
@@ -476,7 +539,17 @@ def assemble_report(
         metrics: dict[str, Any] = {
             k: rank_metrics[k] for k in pan_metrics.RANK_METRICS
         }
-        if has_operating_point:
+
+        # Resolve the detector's ACTUAL operating point. The thresholded
+        # cells are computed only when an operating point is genuinely in
+        # force (flag requested AND the detector reached an answering band)
+        # — never on a bare flag that fabricated nothing (findings 1 & 2).
+        op = resolve_operating_point(
+            rows,
+            operating_point_requested=has_operating_point,
+            operator_thresholds_supplied=operator_thresholds_supplied,
+        )
+        if op["in_force"]:
             preds = predictions_with_operating_point(
                 rows, has_operating_point=True
             )
@@ -497,13 +570,39 @@ def assemble_report(
                     "ci_low": None,
                     "ci_high": None,
                     "ci_method": None,
-                    "reason": "no_operating_point_without_fitting_to_pan",
+                    "reason": op["reason"],
                 }
-        metrics["pan_mean"] = {
-            "value": pan_metrics.pan_mean(
-                {k: metrics[k]["value"] for k in pan_metrics.PAN_METRIC_KEYS}
-            )
-        }
+
+        # pan_mean is the PAN headline only when all five constituents are
+        # real. When any thresholded cell is null-by-design (no operating
+        # point in force), do NOT average-in zeros and present a deflated
+        # PAN-comparable scalar (finding 3): null the value with a reason
+        # and surface partial / n_metrics_present so it can't be read as a
+        # leaderboard number.
+        present = [
+            k for k in pan_metrics.PAN_METRIC_KEYS
+            if metrics[k]["value"] is not None
+        ]
+        n_present = len(present)
+        if n_present == len(pan_metrics.PAN_METRIC_KEYS):
+            metrics["pan_mean"] = {
+                "value": pan_metrics.pan_mean(
+                    {k: metrics[k]["value"] for k in pan_metrics.PAN_METRIC_KEYS}
+                ),
+                "partial": False,
+                "n_metrics_present": n_present,
+            }
+        else:
+            metrics["pan_mean"] = {
+                "value": None,
+                "partial": True,
+                "n_metrics_present": n_present,
+                "reason": (
+                    "partial_suite_no_operating_point"
+                    if not op["in_force"]
+                    else "partial_suite_metric_undefined"
+                ),
+            }
 
         if per_instance_sink is not None:
             for r in rows:
@@ -521,14 +620,17 @@ def assemble_report(
             "probability_transform": PROBABILITY_TRANSFORM_NOTE,
             "metrics": metrics,
             "operating_point": {
-                "source": "operator_supplied" if has_operating_point else "none",
+                "source": op["source"],
+                "in_force": op["in_force"],
                 "threshold": None,
                 "note": (
                     "Thresholded metrics (c@1/f1/f05u) require an operating "
                     "point supplied via the detector's own two-threshold "
-                    "band; if none is supplied they are null and only the "
-                    "rank metrics (roc_auc) are reported. The harness NEVER "
-                    "fits a threshold to the PAN labels."
+                    "band; if none is in force they are null and only the "
+                    "rank metrics (roc_auc/brier) are reported. source is the "
+                    "ACTUAL provenance (operator_supplied | detector_calibrated "
+                    "| none) — never fabricated from a bare flag. The harness "
+                    "NEVER fits a threshold to the PAN labels."
                 ),
             },
         })
@@ -625,10 +727,19 @@ def render_markdown(report: dict[str, Any]) -> str:
             v = m.get(k, {}).get("value")
             return "—" if v is None else f"{v:.3f}"
 
+        def pan_mean_cell_md() -> str:
+            pm_cell = m.get("pan_mean", {})
+            if pm_cell.get("value") is None:
+                # Partial suite: render as a dash with the present-count so
+                # the scalar can't be mistaken for a PAN-comparable mean.
+                n = pm_cell.get("n_metrics_present")
+                return f"— (partial, {n}/5)" if n is not None else "—"
+            return f"{pm_cell['value']:.3f}"
+
         lines.append(
             f"| `{d['detector']}` | {cell('roc_auc')} | {cell('brier')} | "
             f"{cell('c_at_1')} | {cell('f1')} | {cell('f05u')} | "
-            f"{cell('pan_mean')} |"
+            f"{pan_mean_cell_md()} |"
         )
     lines += [
         "",
@@ -648,8 +759,38 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
     manifest_entries = load_manifest_entries(args.manifest)
     detector_ids = [d.strip() for d in args.detectors.split(",") if d.strip()]
 
-    binoculars_kwargs = getattr(args, "_binoculars_kwargs", {}) or {}
-    standin_kwargs = getattr(args, "_standin_kwargs", {}) or {}
+    binoculars_kwargs = dict(getattr(args, "_binoculars_kwargs", {}) or {})
+    standin_kwargs = dict(getattr(args, "_standin_kwargs", {}) or {})
+
+    # Wire the real CLI operating-point surface into every detector's
+    # two-threshold band. --threshold-low/--threshold-high are the ONLY
+    # operator-supplied operating point in M1; when both are passed they
+    # feed each scorer and the report records source "operator_supplied".
+    # (The underscore-prefixed _binoculars_kwargs/_standin_kwargs remain a
+    # test-only injection seam and are NOT a CLI surface.)
+    cli_low = getattr(args, "threshold_low", None)
+    cli_high = getattr(args, "threshold_high", None)
+    cli_thresholds_supplied = cli_low is not None and cli_high is not None
+    if cli_thresholds_supplied:
+        binoculars_kwargs.setdefault("threshold_low", cli_low)
+        binoculars_kwargs.setdefault("threshold_high", cli_high)
+        standin_kwargs.setdefault("threshold_low", cli_low)
+        standin_kwargs.setdefault("threshold_high", cli_high)
+
+    # An operator operating point is "supplied" when explicit two-sided
+    # thresholds reach a scorer — via the CLI (--threshold-low/-high) or
+    # the test-injection kwargs. Otherwise an answering band came from a
+    # detector's own calibrated thresholds (detector_calibrated), not the
+    # operator. This is what distinguishes the provenance label honestly.
+    def _has_two_thresholds(kw: dict[str, Any]) -> bool:
+        return kw.get("threshold_low") is not None and kw.get("threshold_high") is not None
+
+    operator_thresholds_supplied = (
+        cli_thresholds_supplied
+        or _has_two_thresholds(binoculars_kwargs)
+        or _has_two_thresholds(standin_kwargs)
+    )
+
     registry = build_detector_registry(
         detector_ids,
         binoculars_kwargs=binoculars_kwargs,
@@ -666,6 +807,7 @@ def run_benchmark(args: argparse.Namespace) -> dict[str, Any]:
         detector_registry=registry,
         manifest_entries=manifest_entries,
         has_operating_point=bool(getattr(args, "operating_point", False)),
+        operator_thresholds_supplied=operator_thresholds_supplied,
         n_resamples=args.n_resamples,
         confidence_level=args.confidence_level,
         seed=args.seed,
@@ -701,9 +843,32 @@ def main(argv: list[str] | None = None) -> int:
         "--operating-point", action="store_true", dest="operating_point",
         help=(
             "Use the detector's own two-threshold band as the operating "
-            "point for the thresholded metrics (c@1/f1/f05u). WITHOUT this, "
-            "thresholded cells are null (the harness never fits a threshold "
-            "to the PAN labels)."
+            "point for the thresholded metrics (c@1/f1/f05u). Requires a "
+            "reachable two-threshold band: supply --threshold-low/"
+            "--threshold-high (operator_supplied), or run a detector that "
+            "carries its own calibrated thresholds (detector_calibrated). "
+            "WITHOUT a reachable operating point — including --operating-point "
+            "passed with no thresholds — the thresholded cells stay null and "
+            "operating_point.source stays \"none\" (the harness never fits a "
+            "threshold to the PAN labels, and never fabricates a provenance)."
+        ),
+    )
+    parser.add_argument(
+        "--threshold-low", type=float, default=None, dest="threshold_low",
+        help=(
+            "Operator-supplied lower threshold for the two-threshold band "
+            "(feeds every detector's operating point). Scores below this are "
+            "answered on the detector's ai/human-likely side. Recorded as "
+            "operating_point.source = \"operator_supplied\". Only meaningful "
+            "with --operating-point."
+        ),
+    )
+    parser.add_argument(
+        "--threshold-high", type=float, default=None, dest="threshold_high",
+        help=(
+            "Operator-supplied upper threshold for the two-threshold band "
+            "(see --threshold-low). Both must be supplied for an "
+            "operator_supplied operating point."
         ),
     )
     parser.add_argument(

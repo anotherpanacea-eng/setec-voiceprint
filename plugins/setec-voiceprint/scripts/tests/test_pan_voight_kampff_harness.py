@@ -363,7 +363,7 @@ def test_ac14_labels_flow_one_way_report_is_terminal(tmp_path):
     # (never derived from labels).
     op = report["detectors"][0]["operating_point"]
     assert op["threshold"] is None
-    assert op["source"] in ("none", "operator_supplied")
+    assert op["source"] in ("none", "operator_supplied", "detector_calibrated")
     # No "best_detector" / "selected" / "fitted_threshold" key anywhere.
     blob = json.dumps(report)
     for banned in ("best_detector", "fitted_threshold", "selected_operating_point"):
@@ -436,9 +436,118 @@ def test_ac17_thresholded_present_with_operating_point(tmp_path):
         _binoculars_kwargs={},
         _standin_kwargs={"threshold_low": 0.78, "threshold_high": 0.80},
     )
-    m = report["detectors"][0]["metrics"]
+    d = report["detectors"][0]
+    m = d["metrics"]
     # At least one thresholded metric is now non-null.
     assert any(m[k]["value"] is not None for k in ("c_at_1", "f1", "f05u"))
+    # Operator-supplied thresholds reached the scorer -> honest provenance.
+    assert d["operating_point"]["source"] == "operator_supplied"
+    assert d["operating_point"]["in_force"] is True
+
+
+# ============================================================
+# Operating-point provenance honesty (findings 1 & 2) — driven
+# through the REAL main([...]) CLI, not the injection attrs.
+# ============================================================
+
+
+def test_operating_point_flag_no_thresholds_is_not_operator_supplied(tmp_path):
+    """--operating-point with NO reachable threshold (the bare flag, the
+    only state the old CLI could reach) must NOT stamp 'operator_supplied'
+    and must NOT fabricate 0.0 thresholded cells — it stays source 'none'
+    with the thresholded cells null. Drives the real main() entrypoint."""
+    manifest = _build_manifest(tmp_path)
+    out = tmp_path / "report.json"
+    rc = bench.main([
+        "--manifest", str(manifest),
+        "--detectors", "length_ratio_standin",
+        "--operating-point",  # bare: no --threshold-low/--threshold-high
+        "--out", str(out),
+        "--n-resamples", "0",
+    ])
+    assert rc == 0
+    report = json.loads(out.read_text())
+    d = report["detectors"][0]
+    op = d["operating_point"]
+    # The core bug: provenance must be honest, never fabricated.
+    assert op["source"] == "none"
+    assert op["in_force"] is False
+    # Thresholded cells stay null (not fabricated 0.0), with the distinct
+    # "flag passed but no reachable threshold" reason.
+    for k in ("c_at_1", "f1", "f05u"):
+        assert d["metrics"][k]["value"] is None
+        assert d["metrics"][k]["reason"] == (
+            "operating_point_requested_but_no_reachable_threshold"
+        )
+
+
+def test_operating_point_cli_thresholds_are_operator_supplied(tmp_path):
+    """--operating-point WITH --threshold-low/--threshold-high feeds the
+    detector's band from the CLI and records source 'operator_supplied'
+    with real thresholded cells — the flag now does what its help text
+    promises. Drives the real main() entrypoint."""
+    manifest = _build_manifest(tmp_path)
+    out = tmp_path / "report.json"
+    rc = bench.main([
+        "--manifest", str(manifest),
+        "--detectors", "length_ratio_standin",
+        "--operating-point",
+        "--threshold-low", "0.78",
+        "--threshold-high", "0.80",
+        "--out", str(out),
+        "--n-resamples", "0",
+    ])
+    assert rc == 0
+    report = json.loads(out.read_text())
+    d = report["detectors"][0]
+    op = d["operating_point"]
+    assert op["source"] == "operator_supplied"
+    assert op["in_force"] is True
+    assert any(
+        d["metrics"][k]["value"] is not None for k in ("c_at_1", "f1", "f05u")
+    )
+
+
+def test_default_run_pan_mean_is_partial_not_deflated(tmp_path):
+    """On the DEFAULT (no operating point) path, pan_mean must NOT be a
+    zero-deflated scalar that invites a wrong side-by-side against PAN's
+    published five-metric means — it is null with a partial marker
+    (finding 3). Drives the real main() entrypoint."""
+    manifest = _build_manifest(tmp_path)
+    out = tmp_path / "report.json"
+    md = tmp_path / "report.md"
+    rc = bench.main([
+        "--manifest", str(manifest),
+        "--detectors", "length_ratio_standin",
+        "--out", str(out),
+        "--markdown", str(md),
+        "--n-resamples", "0",
+    ])
+    assert rc == 0
+    report = json.loads(out.read_text())
+    pm_cell = report["detectors"][0]["metrics"]["pan_mean"]
+    assert pm_cell["value"] is None
+    assert pm_cell["partial"] is True
+    assert pm_cell["n_metrics_present"] == 2  # roc_auc + brier only
+    assert pm_cell["reason"] == "partial_suite_no_operating_point"
+    # The markdown render must not surface a concrete pan_mean number.
+    md_text = md.read_text()
+    assert "partial" in md_text
+
+
+def test_pan_mean_cell_partial_and_full():
+    """pan_metrics.pan_mean_cell: full suite -> real mean; any null
+    constituent -> null value with partial marker (finding 3)."""
+    full = {"roc_auc": 1.0, "brier": 0.9, "c_at_1": 0.8, "f1": 0.7, "f05u": 0.6}
+    cell = pm.pan_mean_cell(full)
+    assert cell["partial"] is False
+    assert cell["n_metrics_present"] == 5
+    assert cell["value"] == pytest.approx(pm.pan_mean(full))
+    partial = {"roc_auc": 1.0, "brier": 0.9, "c_at_1": None, "f1": None, "f05u": None}
+    pcell = pm.pan_mean_cell(partial)
+    assert pcell["value"] is None
+    assert pcell["partial"] is True
+    assert pcell["n_metrics_present"] == 2
 
 
 def test_ac18_baseline_sourcing(tmp_path):

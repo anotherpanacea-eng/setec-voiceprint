@@ -239,12 +239,46 @@ def pan_mean(values: dict[str, float | None]) -> float:
     Verbatim to TIRA ``evaluate_all``:
         ``float(np.mean([v or 0.0 for v in results.values()]))``
     over exactly the five metric values.
+
+    NOTE: this faithfully mirrors PAN's zero-counting formula and is the
+    correct headline ONLY when all five constituents are real. When some
+    are ``null`` by design (e.g. thresholded cells with no operating point
+    in force), this scalar is structurally deflated and must NOT be
+    presented as a PAN-comparable aggregate — callers use
+    ``pan_mean_cell`` instead, which nulls the partial case.
     """
     nums = [
         (values.get(k) if values.get(k) is not None else 0.0)
         for k in PAN_METRIC_KEYS
     ]
     return sum(float(v) for v in nums) / len(PAN_METRIC_KEYS)
+
+
+def pan_mean_cell(values: dict[str, float | None]) -> dict[str, Any]:
+    """The PAN aggregate as a report cell that is HONEST about partiality.
+
+    When all five constituents are present, ``value`` is the real PAN mean
+    and ``partial`` is False. When any is ``None`` (null-by-design, e.g. a
+    thresholded cell with no operating point in force), ``value`` is
+    ``None`` (NOT a zero-deflated number that invites a wrong side-by-side
+    against PAN's published five-metric means) and ``partial`` is True with
+    an ``n_metrics_present`` count. The zero-counting PAN formula is kept
+    only for the fully-populated case.
+    """
+    present = [k for k in PAN_METRIC_KEYS if values.get(k) is not None]
+    n_present = len(present)
+    if n_present == len(PAN_METRIC_KEYS):
+        return {
+            "value": pan_mean(values),
+            "partial": False,
+            "n_metrics_present": n_present,
+        }
+    return {
+        "value": None,
+        "partial": True,
+        "n_metrics_present": n_present,
+        "reason": "partial_suite_metric_null_by_design",
+    }
 
 
 def score_metric_with_ci(
@@ -338,5 +372,5 @@ def score_all(
         )
         metrics[name] = cell
         value_for_mean[name] = cell["value"]
-    metrics["pan_mean"] = {"value": pan_mean(value_for_mean)}
+    metrics["pan_mean"] = pan_mean_cell(value_for_mean)
     return metrics
