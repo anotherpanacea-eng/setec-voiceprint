@@ -496,6 +496,23 @@ def test_near_zero_cosine_abstains_on_fraction(tmp_path):
     assert _results(env)["coverage_band"] == "indeterminate"
 
 
+def test_negative_cosine_explained_exactly_reports_full_coverage():
+    # Codex P2: a NEGATIVE cosine the model reproduces EXACTLY (explained == cosine,
+    # residual == 0) used to report 0% explained / 100% residual, because the fraction
+    # divided by |cosine| while explained kept its sign (-0.8/0.8 = -1 -> clamped to 0).
+    # The signed denominator reports it as fully explained.
+    deco = ea.decompose(
+        -0.8, [{"feature": "f", "contribution": -0.8}], "injected_model", {"intercept": 0.0})
+    assert deco["explained_fraction"] == pytest.approx(1.0, abs=1e-6)
+    assert deco["residual_fraction"] == pytest.approx(0.0, abs=1e-6)
+    # ...but an explained part pointing the WRONG way (opposite sign to a negative
+    # cosine) is still 0% explained, not spuriously positive.
+    wrong = ea.decompose(
+        -0.8, [{"feature": "f", "contribution": 0.2}], "injected_model", {"intercept": 0.0})
+    assert wrong["explained_fraction"] == pytest.approx(0.0, abs=1e-6)
+    assert wrong["residual_fraction"] == pytest.approx(1.0, abs=1e-6)
+
+
 # --------------------------------------------------------------------------
 # Operator decision — explained_fraction gated behind calibration; side-by-side
 # is the default/headline view.

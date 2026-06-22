@@ -314,8 +314,9 @@ def decompose(
     ``intercept`` for an injected_model). Dropping it would make the reported R²
     describe a different fit than ``explained`` — the P2 faithfulness defect.
 
-    Fractions are ``explained / |cosine|`` clamped to [0, 1]. TWO abstentions
-    (never a fabricated split):
+    Fractions are ``explained / cosine`` (the SIGNED cosine, so a negative cosine
+    the model reproduces is correctly 100% explained, not 0%) clamped to [0, 1].
+    TWO abstentions (never a fabricated split):
       * ``unfit`` (no usable model) → ``coverage_band: indeterminate``, no
         fraction.
       * single-pair near-zero-cosine degeneracy (``|cosine| < 1e-3``) →
@@ -363,7 +364,14 @@ def decompose(
         deco["residual_fraction"] = None
         deco["fraction_abstained"] = "near-zero |cosine| — explained/|cosine| is unstable"
     else:
-        exp_frac = min(1.0, max(0.0, explained / abs(cosine)))
+        # SIGNED denominator: cosine = explained + residual, so the explained share is
+        # explained / cosine (not explained / |cosine|). With the magnitude denominator a
+        # NEGATIVE cosine the model reproduces exactly (explained == cosine < 0) gave
+        # explained/|cosine| == -1 → clamped to 0, falsely reporting 0% explained / 100%
+        # residual on a pair it explains perfectly. Dividing by the signed cosine yields 1.0
+        # there; an explained part pointing the WRONG way is still < 0 → clamped to 0 (0%
+        # explained), and over-explaining clamps to 1.0 — the [0,1] presentation is kept.
+        exp_frac = min(1.0, max(0.0, explained / cosine))
         deco["explained_fraction"] = round(exp_frac, 6)
         deco["residual_fraction"] = round(1.0 - exp_frac, 6)
     return deco
