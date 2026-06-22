@@ -352,9 +352,12 @@ def compose_envelope(
         register_match=["register-general (the named scales are provisional)"],
         additional_caveats=caveats,
         references=[
-            "Zhu & Jurgens 2025, 'Residualized Similarity' (arXiv:2510.05362)",
-            "Patel, Rao, et al. 2024, 'Latent-Space Interpretation for Stylometry' "
-            "(arXiv:2409.07072)",
+            "Zeng, Alipoormolabashi, Mun, Dey, Soni, Balasubramanian, Rambow & "
+            "Schwartz 2025, 'Residualized Similarity for Faithfully Explainable "
+            "Authorship Verification' (arXiv:2510.05362)",
+            "Alshomary, Ri, Apidianaki, Patel, Muresan & McKeown 2024, 'Latent "
+            "Space Interpretation for Stylistic Analysis and Explainable Authorship "
+            "Attribution' (arXiv:2409.07072)",
         ],
     )
 

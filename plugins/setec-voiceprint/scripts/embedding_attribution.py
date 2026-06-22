@@ -173,18 +173,26 @@ def _feature_vector(features: dict[str, Any]) -> tuple[list[str], list[float]]:
     return names, sims
 
 
-def _weight_vector(names: list[str], model: dict[str, Any] | None) -> tuple[list[float], str]:
+def _weight_vector(
+    names: list[str], model: dict[str, Any] | None
+) -> tuple[list[float], str, dict[str, Any]]:
     """The per-feature linear weight that turns a per-feature similarity into a
-    signed contribution (the fit's slope), plus the ``fit_source`` it came from.
+    signed contribution (the fit's slope), plus the ``fit_source`` it came from
+    and a ``fit_meta`` dict carrying the fit's intercept / R² where they exist.
 
     Three provenances (D3), in priority order:
       * ``injected_model``: the injected attribution_model carries an explicit
         ``weights`` map name -> float. Used as-is. This is the declared-input fit
         (resolves "you cannot partition without a fit" by making the fit an
-        INPUT, never an invented number).
+        INPUT, never an invented number). Its intercept (if any) is honoured from
+        the model's explicit ``intercept`` field downstream.
       * ``corpus_fit``: the model carries a ``corpus`` of {cosine, features} rows
         → a pure-numpy OLS of cosine on the per-feature similarities (reuses the
-        Residualized-Similarity linear residualization; CI-friendly).
+        Residualized-Similarity linear residualization; CI-friendly). The SAME
+        single OLS produces the slopes, the intercept, AND the reported R² — they
+        are threaded together so the explained part and the reported fit quality
+        describe one fit (BUILD-PREFLIGHT mode-5 single-source-of-truth: the two
+        paths cannot diverge).
       * ``unfit``: no usable model → no weights. The decomposition abstains
         (``coverage_band: indeterminate``), never fabricates a split.
     """
@@ -194,21 +202,27 @@ def _weight_vector(names: list[str], model: dict[str, Any] | None) -> tuple[list
                    if isinstance(wmap.get(n), (int, float)) and not isinstance(wmap.get(n), bool)
                    and math.isfinite(float(wmap[n]))]
         if len(weights) == len(names) and names:
-            return weights, "injected_model"
+            return weights, "injected_model", {}
     if isinstance(model, dict) and isinstance(model.get("corpus"), list):
         fit = _fit_weights(names, model["corpus"])
         if fit is not None:
-            return fit, "corpus_fit"
-    return [], "unfit"
+            slopes, intercept, r2 = fit
+            return slopes, "corpus_fit", {"intercept": intercept, "r2": r2}
+    return [], "unfit", {}
 
 
-def _fit_weights(names: list[str], corpus: list[Any]) -> list[float] | None:
-    """OLS of cosine on the per-feature similarities over a corpus of
-    {cosine, features} rows → one slope weight per named feature (intercept
-    dropped from the reported weights; carried only to fit). Pure numpy. Returns
-    None when numpy is absent or the corpus has too few usable rows (the
-    spec-27 ``fit_residual`` ``return None`` degradation pattern — the caller
-    then abstains rather than crashing)."""
+def _fit_weights(
+    names: list[str], corpus: list[Any]
+) -> tuple[list[float], float, float | None] | None:
+    """ONE OLS of cosine on the per-feature similarities over a corpus of
+    {cosine, features} rows → ``(slopes, intercept, r2)`` from a single fit: one
+    slope weight per named feature, PLUS the fitted intercept (the constant term)
+    and the fit's R². The intercept is part of the explained part — it must NOT be
+    dropped, or the reported R² (intercept-inclusive) would describe a different
+    fit than ``explained = intercept + Σ slope×sim`` (the P2 faithfulness defect).
+    Pure numpy. Returns None when numpy is absent or the corpus has too few usable
+    rows (the spec-27 ``fit_residual`` ``return None`` degradation pattern — the
+    caller then abstains rather than crashing)."""
     try:
         import numpy as np  # type: ignore
     except ImportError:
@@ -240,11 +254,19 @@ def _fit_weights(names: list[str], corpus: list[Any]) -> list[float] | None:
     X = np.column_stack([np.ones(len(xs)), np.asarray(xs, dtype=float)])
     y = np.asarray(ys, dtype=float)
     beta, *_ = np.linalg.lstsq(X, y, rcond=None)
-    # Drop the intercept (beta[0]); the per-feature slopes are the weights.
+    intercept = float(beta[0])
     slopes = [float(b) for b in beta[1:]]
-    if not all(math.isfinite(s) for s in slopes):
+    if not math.isfinite(intercept) or not all(math.isfinite(s) for s in slopes):
         return None
-    return slopes
+    # R² of the SAME fit (intercept-inclusive), so the reported fit quality and the
+    # explained part describe one regression.
+    pred = X @ beta
+    ss_res = float(np.sum((y - pred) ** 2))
+    ss_tot = float(np.sum((y - y.mean()) ** 2))
+    r2: float | None = None if ss_tot <= 0 else 1.0 - ss_res / ss_tot
+    if r2 is not None and not math.isfinite(r2):
+        r2 = None
+    return slopes, intercept, r2
 
 
 def feature_attribution(
@@ -277,10 +299,20 @@ def feature_attribution(
 # --------------------------------------------------------------------------
 
 def decompose(
-    cosine: float, rows: list[dict[str, Any]], fit_source: str, model: dict[str, Any] | None
+    cosine: float,
+    rows: list[dict[str, Any]],
+    fit_source: str,
+    model: dict[str, Any] | None,
+    fit_meta: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """explained = the fitted linear combination of named-feature similarities
-    (Σ contribution); ``residual = cosine - explained`` (the honest remainder).
+    """explained = the fit's intercept + the fitted linear combination of
+    named-feature similarities (intercept + Σ contribution); ``residual = cosine
+    - explained`` (the honest remainder).
+
+    The intercept is the SAME constant term as the OLS whose R² is reported
+    (``fit_meta['intercept']`` for a corpus_fit, the model's explicit
+    ``intercept`` for an injected_model). Dropping it would make the reported R²
+    describe a different fit than ``explained`` — the P2 faithfulness defect.
 
     Fractions are ``explained / |cosine|`` clamped to [0, 1]. TWO abstentions
     (never a fabricated split):
@@ -291,7 +323,8 @@ def decompose(
         unstable; reporting a ratio there would be a fabricated number — the
         spec's clamp/abstain decision).
     """
-    intercept = _fit_intercept(rows, model, fit_source)
+    fit_meta = fit_meta or {}
+    intercept = _fit_intercept(rows, model, fit_source, fit_meta)
     fit_provenance: dict[str, Any] = {
         "fit_source": fit_source,
         "model_id": "rrivera1849/LUAR-MUD",
@@ -301,9 +334,12 @@ def decompose(
         corpus = model.get("corpus")
         if isinstance(corpus, list):
             fit_provenance["n_corpus_rows"] = sum(1 for r in corpus if isinstance(r, dict))
-        r2 = _corpus_r2(rows, model)
-        if r2 is not None:
-            fit_provenance["r2"] = round(r2, 4)
+        # The R² is threaded from the SAME single OLS that produced the slopes
+        # and the intercept used in ``explained`` above — one fit, one R², no
+        # second regression that could silently disagree.
+        r2 = fit_meta.get("r2")
+        if isinstance(r2, (int, float)) and not isinstance(r2, bool) and math.isfinite(r2):
+            fit_provenance["r2"] = round(float(r2), 4)
 
     if fit_source == "unfit":
         return {
@@ -334,66 +370,32 @@ def decompose(
 
 
 def _fit_intercept(
-    rows: list[dict[str, Any]], model: dict[str, Any] | None, fit_source: str
+    rows: list[dict[str, Any]],
+    model: dict[str, Any] | None,
+    fit_source: str,
+    fit_meta: dict[str, Any] | None = None,
 ) -> float:
-    """The fit's intercept, if the injected model declares one (an OLS fit has a
-    constant term; without it explained+residual still reconstruct the cosine
-    exactly because residual is defined as cosine-explained). For an
-    injected_model an explicit ``intercept`` is honoured; otherwise 0.0."""
+    """The fit's intercept (the OLS constant term), applied to ``explained`` so
+    the explained part matches the very regression whose R² is reported.
+
+      * ``corpus_fit``: the intercept from the SINGLE OLS that also produced the
+        slopes and R² (threaded in ``fit_meta['intercept']``). Dropping it was the
+        P2 defect — it made ``explained`` an intercept-free fit while the reported
+        R² was intercept-inclusive, inflating the residual on high-cosine pairs.
+      * ``injected_model``: an explicit ``intercept`` field is honoured.
+      * otherwise 0.0.
+    """
+    fit_meta = fit_meta or {}
+    if fit_source == "corpus_fit":
+        ic = fit_meta.get("intercept")
+        if isinstance(ic, (int, float)) and not isinstance(ic, bool) and math.isfinite(ic):
+            return float(ic)
+        return 0.0
     if isinstance(model, dict):
         ic = model.get("intercept")
         if isinstance(ic, (int, float)) and not isinstance(ic, bool) and math.isfinite(ic):
             return float(ic)
     return 0.0
-
-
-def _corpus_r2(rows: list[dict[str, Any]], model: dict[str, Any] | None) -> float | None:
-    """The corpus R² of the OLS fit (a fit-quality provenance number, NOT a
-    per-pair operating point). Recomputed from the same corpus the weights came
-    from. None when numpy is absent or the corpus is unusable."""
-    if not isinstance(model, dict):
-        return None
-    corpus = model.get("corpus")
-    if not isinstance(corpus, list):
-        return None
-    try:
-        import numpy as np  # type: ignore
-    except ImportError:
-        return None
-    names = [r["feature"] for r in rows]
-    scales = {n: s for n, s in NAMED_FEATURES}
-    xs: list[list[float]] = []
-    ys: list[float] = []
-    for row in corpus:
-        if not isinstance(row, dict):
-            continue
-        cos = row.get("cosine")
-        feats = row.get("features", {})
-        if (not isinstance(cos, (int, float)) or isinstance(cos, bool)
-                or not math.isfinite(cos) or not isinstance(feats, dict)):
-            continue
-        vec: list[float] = []
-        ok = True
-        for name in names:
-            tc = ce._finite_pair(feats.get(name))
-            if tc is None:
-                ok = False
-                break
-            vec.append(ce.feature_similarity(tc[0], tc[1], scales[name]))
-        if ok:
-            xs.append(vec)
-            ys.append(float(cos))
-    if len(ys) < len(names) + 2:
-        return None
-    X = np.column_stack([np.ones(len(xs)), np.asarray(xs, dtype=float)])
-    y = np.asarray(ys, dtype=float)
-    beta, *_ = np.linalg.lstsq(X, y, rcond=None)
-    pred = X @ beta
-    ss_res = float(np.sum((y - pred) ** 2))
-    ss_tot = float(np.sum((y - y.mean()) ** 2))
-    if ss_tot <= 0:
-        return None
-    return 1.0 - ss_res / ss_tot
 
 
 # --------------------------------------------------------------------------
@@ -524,11 +526,13 @@ def compose_envelope(
         register_match=["register-general (the named scales are provisional)"],
         additional_caveats=caveats,
         references=[
-            "Patel, Rao, et al. 2024, 'Latent-Space Interpretation for Stylistic "
-            "Analysis and Explainable Authorship Attribution' (arXiv:2409.07072, "
-            "IARPA HIATUS / AUTHOR consortium)",
-            "Zhu & Jurgens 2025, 'Residualized Similarity for Faithfully "
-            "Explainable Authorship Verification' (arXiv:2510.05362, HIATUS)",
+            "Alshomary, Ri, Apidianaki, Patel, Muresan & McKeown 2024, "
+            "'Latent Space Interpretation for Stylistic Analysis and Explainable "
+            "Authorship Attribution' (arXiv:2409.07072, IARPA HIATUS / AUTHOR "
+            "consortium)",
+            "Zeng, Alipoormolabashi, Mun, Dey, Soni, Balasubramanian, Rambow & "
+            "Schwartz 2025, 'Residualized Similarity for Faithfully Explainable "
+            "Authorship Verification' (arXiv:2510.05362, EMNLP 2025 Findings)",
             "Rivera-Soto et al. 2021, LUAR (EMNLP 2021, rrivera1849/LUAR-MUD)",
             "specs/02 (voice_fingerprint / authorship_embedding)",
             "specs/27-embedding-explanation.md (cosine_explanation)",
@@ -712,9 +716,9 @@ def main(argv: list[str] | None = None) -> int:
             "bad_input", target_path)
         return _emit(env, out_path=out_json, md_path=None, to_stdout=args.json)
 
-    weights, fit_source = _weight_vector(names, model)
+    weights, fit_source, fit_meta = _weight_vector(names, model)
     attribution_rows = feature_attribution(names, sims, weights)
-    decomposition = decompose(cosine, attribution_rows, fit_source, model)
+    decomposition = decompose(cosine, attribution_rows, fit_source, model, fit_meta)
     band = coverage_band(decomposition)
     # The agreement (side-by-side) headline reuses spec-27's defined rule verbatim
     # over the SAME named features — the default view the operator reads first.

@@ -194,6 +194,61 @@ def test_real_faithfulness_nontrivial_fit_quality(tmp_path):
     assert fp["r2"] > 0.5, "the explanation must actually predict the cosine, not be decorative"
 
 
+def test_corpus_fit_intercept_dominated_tracks_reported_r2(tmp_path):
+    # The P2 fold: a corpus_fit's EXPLAINED part must use the SAME
+    # (intercept-inclusive) OLS whose R² is reported. Build an intercept-DOMINATED
+    # corpus — cosine ~0.70 (the normal LUAR same-author regime: high cosine) that
+    # the OLS fits PERFECTLY (r2≈1.0) with the level carried almost entirely by the
+    # intercept (~0.70) and only a small per-feature slope. Before the fix the
+    # intercept was DROPPED from `explained`, so explained≈0.01,
+    # residual_fraction≈0.98 and the band read `largely-unnamed` while r2≈1.0 — the
+    # reported coverage flatly contradicted the reported fit (the inversion the
+    # finding names). After the fix the intercept rides `explained`, so a perfect
+    # fit reads `well-named`.
+    pytest.importorskip("numpy")
+    scales = dict(ea.NAMED_FEATURES)
+    bscale = scales["burstiness_B"]
+
+    def feats(delta):
+        # burstiness carries the cosine VARIATION (a low, varying sim band); every
+        # other feature is pinned DIVERGENT (sim 0) so it cannot absorb the level —
+        # forcing the ~0.70 constant into the intercept.
+        return {"burstiness_B": [0.40, 0.40 + delta],
+                "mattr": [0.30, 0.95], "mtld": [40, 160],
+                "function_word_ratio": [0.20, 0.95],
+                "mean_dependency_distance": [1.0, 5.0]}
+
+    deltas = [0.24, 0.25, 0.26, 0.27]  # burstiness sims ~0.20..0.10 (low, varying)
+    corpus = []
+    for i in range(16):
+        d = deltas[i % 4]
+        sim_b = ea.ce.feature_similarity(0.40, 0.40 + d, bscale)
+        cos = round(0.70 + 0.10 * sim_b, 6)  # cosine genuinely tracks burstiness sim
+        corpus.append({"cosine": cos, "features": feats(d)})
+    # The target pair sits in the SAME regime (cosine high, features mostly divergent).
+    target_delta = 0.255
+    cos_t = round(0.70 + 0.10 * ea.ce.feature_similarity(0.40, 0.40 + target_delta, bscale), 6)
+    inputs = {"cosine": cos_t, "features": feats(target_delta),
+              "attribution_model": {"corpus": corpus}}
+    _, env = _run_injected(tmp_path, inputs)
+    r = _results(env)
+    deco = r["decomposition"]
+    fp = deco["fit_provenance"]
+    assert fp["fit_source"] == "corpus_fit"
+    # The OLS fits the cosine essentially perfectly.
+    assert fp["r2"] > 0.99, "intercept-dominated corpus should fit near-perfectly"
+    # The intercept rides `explained`: explained ≈ cosine, so residual ≈ 0.
+    # (Pre-fix this was ~0.01 — the dropped intercept — and the assert below failed.)
+    assert deco["explained_similarity"] == pytest.approx(cos_t, abs=0.02)
+    assert deco["residual_fraction"] < 0.10, (
+        "the fitted intercept must be IN the explained part — a near-perfect fit "
+        "cannot report a large residual")
+    # The reported coverage tracks the reported fit quality.
+    assert r["coverage_band"] == "well-named", (
+        "coverage must read well-named when r2≈1.0 (P2: the explained part and "
+        "the reported R² describe ONE intercept-inclusive fit)")
+
+
 def test_no_naninf_leaks_in_results(tmp_path):
     # AC-5: build_output's R4 gate (validate_results_bounds) passes — i.e. no
     # NaN/inf reached the envelope (build_output would have raised otherwise).
