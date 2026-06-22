@@ -133,6 +133,31 @@ def _band_to_non_response(band: str | None) -> bool:
     return band not in ("ai_likely", "human_likely")
 
 
+def _validate_threshold_band(
+    threshold_low: float | None, threshold_high: float | None
+) -> None:
+    """Reject a REVERSED two-threshold band (``low > high``) at construction time.
+
+    A reversed band silently collapses the ``[low, high]`` indeterminate zone to
+    empty and inverts the human/ai classification (every score lands in one of the
+    two answered bands at the wrong boundary), so a benchmark run would report
+    corrupt classifications instead of failing. ``low == high`` is a degenerate but
+    coherent hard threshold (a measure-zero indeterminate point) and is allowed; a
+    one-sided band (only one bound set) stays the caller's ``None``-guarded
+    "uncalibrated" case. Fail loud here, not as a runtime misclassification.
+    """
+    if (
+        threshold_low is not None
+        and threshold_high is not None
+        and threshold_low > threshold_high
+    ):
+        raise ValueError(
+            "threshold_low (%r) must be <= threshold_high (%r): a reversed band "
+            "collapses the indeterminate zone and corrupts the human/ai "
+            "classification" % (threshold_low, threshold_high)
+        )
+
+
 def make_binoculars_scorer(
     *,
     score_fn: Callable[[Any, str], list[float]] | None = None,
@@ -152,6 +177,7 @@ def make_binoculars_scorer(
     polarity is **lower = more AI** (binoculars' ``ratio < low ->
     ai_likely``), so the runner sign-flips for metrics.
     """
+    _validate_threshold_band(threshold_low, threshold_high)
     import binoculars_audit as bin_audit
 
     def score(text: str) -> dict[str, Any]:
@@ -207,6 +233,7 @@ def make_length_ratio_standin_scorer(
     If a two-threshold band is supplied, scores inside ``[low, high]`` are
     the label-free non-response zone, exactly like the model detectors.
     """
+    _validate_threshold_band(threshold_low, threshold_high)
 
     def score(text: str) -> dict[str, Any]:
         if not text:

@@ -224,6 +224,22 @@ def test_ac8_orientation_recorded_and_flips_with_polarity(tmp_path):
         assert row["oriented_score"] == row["raw_score"]
 
 
+def test_reversed_threshold_band_is_rejected():
+    # Codex P1: a REVERSED band (threshold_low > threshold_high) silently collapsed the
+    # [low, high] indeterminate zone to empty and inverted the human/ai classification —
+    # corrupt benchmark results rather than a failure. Both scorer factories now reject it
+    # at construction time (fail loud, not a runtime misclassification).
+    with pytest.raises(ValueError, match="reversed band"):
+        bench.make_length_ratio_standin_scorer(threshold_low=0.80, threshold_high=0.20)
+    with pytest.raises(ValueError, match="reversed band"):
+        bench.make_binoculars_scorer(threshold_low=0.80, threshold_high=0.20)
+    # A correctly-ordered band, a degenerate low == high, and a one-sided band all
+    # construct fine (the last stays the None-guarded "uncalibrated" case).
+    bench.make_length_ratio_standin_scorer(threshold_low=0.20, threshold_high=0.80)
+    bench.make_length_ratio_standin_scorer(threshold_low=0.50, threshold_high=0.50)
+    bench.make_length_ratio_standin_scorer(threshold_low=None, threshold_high=0.80)
+
+
 # ============================================================
 # Scorer (AC-9..AC-11)
 # ============================================================
