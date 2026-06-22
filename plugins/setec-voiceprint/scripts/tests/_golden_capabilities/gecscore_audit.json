@@ -1,0 +1,69 @@
+{
+  "id": "gecscore_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/gecscore_audit.py",
+  "surface": "gecscore_discrimination",
+  "status": "literature_anchored",
+  "handoff": "experimental",
+  "consumers": [],
+  "family": "gecscore",
+  "purpose": "GECScore grammar-error-density signal (M1, stdlib, model-free): how little a grammar-error corrector changes a text. Reports gecscore = the difflib Gestalt character-similarity ratio (autojunk off; 2*M/(len(s)+len(corrected)), NOT a max(len)- normalized edit distance) between the text and its grammar-corrected form, in [0,1], plus the raw correction-span count (gec_n_corrections). The grammar corrector is the only load-bearing model dependency, so it is the M1/M2 seam: M1 runs over an INJECTED corrector (StubGecBackend, no model); M2 swaps in LanguageTool (Java on PATH) or GECToR (torch) behind the same correct(text)->str seam. In the literature AI text tends to HIGHER gecscore (near-zero error density) than human text (GECScore, arXiv:2405.04286; the paper's claimed 98.62% avg AUROC across XSum + WritingPrompts is VERIFIED from the primary source but is the paper's own claim, NOT reproduced on SETEC's corpus — a LEAD, not a prior asserted here), an axis orthogonal to the probability (Binoculars/surprisal/curvature/spectral) and distributional (glass-box stylometry) surfaces. The detection direction is PINNED as GEC_AI_DIRECTION = \"gt\" (higher gecscore = the AI-like direction) and asserted in a test — silent sign inversion is the detection family's shared failure mode. Descriptive only: emits VALUES + a PROVISIONAL band over the value's OWN axis (indeterminate / low_error_density / high_error_density) carrying calibration_status heuristic + calibration_anchor user-baseline-required. There is NO is_ai / is_human / label / verdict / decision key; the claim-license refuses any authorship verdict. CRITICAL: gecscore INVERTS on ESL/dialect prose (a polished non-native author scores near 1.0, the AI direction), so the surface co-emits a fairness_dialect_guardrails caution block (results.fairness_guardrails) and names the inversion first-class in the claim-license — it is gated behind fairness_dialect_guardrails per the ROADMAP.\n",
+  "use_when": [
+    "You want a grammar-error-density discrimination axis orthogonal to the probability and distributional surfaces",
+    "You're assembling a multi-signal evidence pack and want a GECScore reading",
+    "Target is >= 50 words (below the floor the normalized edit distance is noisy)"
+  ],
+  "do_not_use_when": [
+    "You want an AI/human verdict (this surface ships uncalibrated and refuses one)",
+    "The prose may be ESL / non-native / non-standard-dialect (gecscore INVERTS — read the co-emitted fairness_dialect_guardrails block first)",
+    "You need robustness to adversarial error injection (deliberate typos defeat gecscore)",
+    "You need values comparable across GEC backends (M1 stub != M2 LanguageTool/GECToR)"
+  ],
+  "inputs": {
+    "target": "prose text file (UTF-8)"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, --batch JSONL/JSON rows, or --out PATH"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "stdlib only at M1 (difflib char-level similarity over an injected corrector; no model). The M2 real GEC backends are the model-CPU seam — LanguageTool needs Java on PATH; GECToR needs torch. Neither is loaded at M1.",
+    "length_floor_words": 50
+  },
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "literary_fiction"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "language_tool_python",
+      "transformers",
+      "torch"
+    ],
+    "surfaces": [
+      "fairness_dialect_guardrails"
+    ]
+  },
+  "examples": [
+    {
+      "description": "GECScore over a single target (JSON envelope). With no real grammar corrector wired (M1 default), the CLI abstains (available:false / missing_dependency) rather than report a stub identity gecscore=1.0; a real M2 backend is required to report a score.",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/gecscore_audit.py --target target.md --json"
+    },
+    {
+      "description": "GECScore with a declared ESL background (co-emits the fairness gate)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/gecscore_audit.py --target target.md --declare nonnative_english --json"
+    },
+    {
+      "description": "Batch feature-column extraction over a manifest (the M2 corpus-run shape)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/gecscore_audit.py --batch manifest.jsonl --out rows.json"
+    }
+  ],
+  "references": [
+    "specs/32-gec-linguistic-error-axis.md",
+    "GECScore — Detecting Machine-Generated Texts by Multi-Population Aware Optimization for Grammatical Error Correction, arXiv:2405.04286 (2024 preprint; the 98.62% avg AUROC claim is confirmed from the primary source but [UNVERIFIED on SETEC's corpus]): https://arxiv.org/abs/2405.04286"
+  ]
+}
