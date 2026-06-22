@@ -638,6 +638,25 @@ def test_ac7_batch_path_row_invalid_utf8_skipped_not_silently_stripped(tmp_path)
     assert rows[0]["gecscore"] is None
 
 
+def test_ac7_batch_missing_path_skipped_not_aborted(tmp_path):
+    """Codex #260 round-2: a missing / unreadable path row raises OSError, not UnicodeDecodeError —
+    the prior fix only caught the latter, so a missing path still aborted the WHOLE batch. It must
+    skip the one row with a recorded reason; a valid row alongside it must still be scored."""
+    good = tmp_path / "good.txt"
+    good.write_text(_make_text(80), encoding="utf-8")
+    manifest = tmp_path / "m.jsonl"
+    manifest.write_text(
+        json.dumps({"id": "missing", "path": "nope.txt"}) + "\n"
+        + json.dumps({"id": "ok", "path": "good.txt"}),
+        encoding="utf-8")
+    rows = g.run_batch(g._load_batch_manifest(manifest), base_dir=manifest.parent)
+    assert len(rows) == 2                          # the batch did NOT abort on the missing path
+    by = {r["id"]: r for r in rows}
+    assert by["missing"]["skipped"] == "unreadable_path"
+    assert by["missing"]["gecscore"] is None
+    assert by["ok"]["gecscore"] is not None        # the valid row still scored
+
+
 # ----------------------------------------------------------------------
 # AC-8 — calibration honesty + fragment shape.
 # ----------------------------------------------------------------------

@@ -702,6 +702,14 @@ def run_batch(
                             "band": "indeterminate", "calibration_status": "heuristic",
                             "skipped": "invalid_utf8"})
                 continue
+            except OSError:
+                # A missing / unreadable path (FileNotFoundError, PermissionError, IsADirectoryError,
+                # …) must skip the ONE row with a recorded reason, not abort the whole batch — the
+                # sibling of the invalid_utf8 skip above (a path row should never take down the run).
+                out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
+                            "band": "indeterminate", "calibration_status": "heuristic",
+                            "skipped": "unreadable_path"})
+                continue
         if not text:
             out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
                         "band": "indeterminate", "calibration_status": "heuristic",
