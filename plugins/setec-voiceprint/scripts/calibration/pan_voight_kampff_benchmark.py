@@ -64,6 +64,7 @@ from __future__ import annotations
 import argparse
 import datetime as _dt
 import json
+import math
 import sys
 from pathlib import Path
 from typing import Any, Callable
@@ -146,6 +147,17 @@ def _validate_threshold_band(
     one-sided band (only one bound set) stays the caller's ``None``-guarded
     "uncalibrated" case. Fail loud here, not as a runtime misclassification.
     """
+    # Finiteness FIRST: a NaN/infinite threshold bypasses the `low > high` ordering check below
+    # (every comparison with NaN is False, so a reversed band with a NaN bound passes) and then
+    # corrupts every band decision (`ratio < NaN` / `ratio > NaN` are all False). Reject non-finite
+    # (and non-numeric) bounds up front. bool is an int subclass — exclude it (a flag isn't a threshold).
+    for name, v in (("threshold_low", threshold_low), ("threshold_high", threshold_high)):
+        if v is None:
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not math.isfinite(float(v)):
+            raise ValueError(
+                "%s (%r) must be a finite number: a NaN/infinite threshold bypasses the low<=high "
+                "ordering guard and corrupts the human/ai band classification" % (name, v))
     if (
         threshold_low is not None
         and threshold_high is not None

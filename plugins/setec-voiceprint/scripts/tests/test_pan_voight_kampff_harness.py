@@ -240,6 +240,20 @@ def test_reversed_threshold_band_is_rejected():
     bench.make_length_ratio_standin_scorer(threshold_low=None, threshold_high=0.80)
 
 
+def test_nonfinite_threshold_band_is_rejected():
+    # Codex #267 round-2: NaN/infinite thresholds bypassed the low>high ordering guard (every
+    # comparison with NaN is False) and then corrupted every band decision. They must be rejected
+    # for being non-finite — including a reversed band hidden behind a NaN bound.
+    nan, inf = float("nan"), float("inf")
+    for low, high in [(nan, 0.8), (0.2, nan), (inf, 0.8), (0.2, -inf), (nan, 0.2)]:
+        with pytest.raises(ValueError, match="finite"):
+            bench.make_length_ratio_standin_scorer(threshold_low=low, threshold_high=high)
+        with pytest.raises(ValueError, match="finite"):
+            bench.make_binoculars_scorer(threshold_low=low, threshold_high=high)
+    # a finite band still constructs (one bound NaN-free on each side)
+    bench.make_length_ratio_standin_scorer(threshold_low=0.20, threshold_high=0.80)
+
+
 # ============================================================
 # Scorer (AC-9..AC-11)
 # ============================================================
