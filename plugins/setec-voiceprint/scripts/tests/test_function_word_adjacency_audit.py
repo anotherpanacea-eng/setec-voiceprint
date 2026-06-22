@@ -1,0 +1,409 @@
+#!/usr/bin/env python3
+"""Tests for function_word_adjacency_audit.py (spec 32) — the function-word adjacency NETWORK.
+
+M1 = stdlib + numpy, NO model, runs unconditionally in CI (no skipif). Covers the spec-32
+contract: the graph descriptors, the edge-total tie to the run-segmentation primitive (NOT the
+truncated function_bigrams public field — review P1), the no-verdict recursive-walk posture guard +
+the band.score REMOVAL (review P2), the hardened networkx-disjointness guard + concrete band floor
+(review P3), the anti-Goodhart import disjointness, and graceful abstention."""
+
+from __future__ import annotations
+
+import io
+import json
+import re
+import sys
+from contextlib import redirect_stdout
+from pathlib import Path
+
+import pytest
+
+SCRIPTS = Path(__file__).resolve().parents[1]
+REPO_ROOT = Path(__file__).resolve().parents[4]
+if str(SCRIPTS) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS))
+
+import function_word_adjacency_audit as fwan  # type: ignore  # noqa: E402
+import function_word_grammar_audit as ga  # type: ignore  # noqa: E402
+from output_schema import VALID_TASK_SURFACES, validate_results_bounds  # type: ignore  # noqa: E402
+
+# A text with MANY (> 20) distinct function-word bigrams so the grammar audit's
+# .most_common(20) truncation would DIVERGE from the true transition total — the
+# exact condition that makes the P1 tie load-bearing.
+_LONG_RUNS = ("it would have been to the one of those who could not have been "
+              "in the same way as if it were of all that we can do for them. "
+              "and yet there is to be no more than what we would have had if "
+              "only they had been able to do so with us and for him and her. ") * 4
+
+
+def _envelope(argv):
+    out = io.StringIO()
+    with redirect_stdout(out):
+        rc = fwan.main(argv)
+    return rc, json.loads(out.getvalue())
+
+
+# --- surface registration ---------------------------------------------------
+
+def test_surface_registered():
+    assert fwan.TASK_SURFACE == "voice_coherence" and "voice_coherence" in VALID_TASK_SURFACES
+
+
+# --- AC-1 deterministic -----------------------------------------------------
+
+def test_deterministic():
+    assert fwan.audit_function_word_adjacency(_LONG_RUNS) == \
+        fwan.audit_function_word_adjacency(_LONG_RUNS)
+
+
+# --- AC-2 envelope shape / finite leaves ------------------------------------
+
+def test_envelope_shape_and_bounds(tmp_path):
+    t = tmp_path / "t.txt"; t.write_text(_LONG_RUNS)
+    rc, env = _envelope([str(t), "--json"])
+    assert rc == 0 and env["available"] is True
+    assert env["schema_version"] == "1.0"
+    # 12-key success contract (no R3 error keys).
+    assert "reason" not in env and "reason_category" not in env
+    validate_results_bounds(env["results"])   # all numeric leaves finite
+
+
+# --- AC-3 + AC-4 no-verdict recursive walk + no band.score (POSTURE GUARDS) --
+
+_FORBIDDEN_KEYS = {
+    "is_ai", "is_human", "verdict", "selected", "selection",
+    "threshold", "decision", "class", "prediction",
+}
+
+
+def _walk_keys(obj, path=""):
+    """Yield (path, key) for every dict key, recursively."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield (path, k)
+            yield from _walk_keys(v, f"{path}/{k}")
+    elif isinstance(obj, list):
+        for i, it in enumerate(obj):
+            yield from _walk_keys(it, f"{path}[{i}]")
+
+
+def test_no_verdict_recursive_walk():
+    r = fwan.audit_function_word_adjacency(_LONG_RUNS)
+    bad = [f"{p}/{k}" for (p, k) in _walk_keys(r) if k in _FORBIDDEN_KEYS]
+    assert bad == [], bad
+    # `label` is allowed ONLY as band.label (a structure-concentration phrase),
+    # never anywhere else.
+    label_paths = [(p, k) for (p, k) in _walk_keys(r) if k == "label"]
+    assert label_paths == [("/band", "label")], label_paths
+
+
+def test_no_band_score_scalar():
+    # Review P2: the bare, formula-less band.score is REMOVED. No `score` key
+    # exists anywhere in results.
+    r = fwan.audit_function_word_adjacency(_LONG_RUNS)
+    score_paths = [f"{p}/{k}" for (p, k) in _walk_keys(r) if k == "score"]
+    assert score_paths == [], score_paths
+    # The band carries label + NAMED flagged_signals + calibration_status only.
+    band = r["band"]
+    assert set(band["flagged_signals"]).issubset(set(fwan._BAND_SIGNAL_NAMES))
+    assert band["calibration_status"]["n_calibrated"] == 0  # all-provisional at M1
+
+
+def test_band_label_in_fixed_vocabulary():
+    # On the floor-clearing text the band is offered with a structure-concentration label.
+    r = fwan.audit_function_word_adjacency(_LONG_RUNS)
+    assert r["band"]["label"] in {
+        "diffuse structure", "typical structure", "concentrated structure",
+        "insufficient structure",
+    }
+
+
+# --- AC-5 claim-license refuses verdict + names the classifier --------------
+
+def test_claim_license_refuses_verdict(tmp_path):
+    t = tmp_path / "t.txt"; t.write_text(_LONG_RUNS)
+    _, env = _envelope([str(t), "--json"])
+    lic = env["claim_license"]
+    assert lic is not None
+    dnl = lic["does_not_license"].lower()
+    assert "authorship" in dnl or "ai/human" in dnl
+    assert "classifier" in dnl              # arXiv:1406.4469 classifier NOT reproduced
+    assert "1406.4469" in " ".join(lic["references"])
+
+
+# --- AC-6 edge-total tie to the RUN SEGMENTATION (review P1) -----------------
+
+def test_edge_total_ties_to_grammar_audit_run_segmentation_not_truncated_field():
+    # The tie is to the GRAMMAR AUDIT's run segmentation, not FWAN's own recomputation
+    # (the prior version tied FWAN to itself, which couldn't catch a divergence).
+    # (0) structural single-source-of-truth: both audits share ONE run primitive, so the
+    #     segmentation cannot drift between them.
+    assert fwan.function_word_runs is ga.function_word_runs
+    runs = ga.function_word_runs(_LONG_RUNS)
+    r = fwan.audit_function_word_adjacency(_LONG_RUNS)
+    # (a) FWAN's edge total == the grammar audit's full bigram total over the SAME runs.
+    ga_full_total = sum(len(run) - 1 for run in runs)
+    assert r["graph"]["total_transitions"] == ga_full_total
+    # (b) and == the full recomputed directed-transition Counter over those runs.
+    full = fwan._bigram_counts(runs)
+    assert r["graph"]["total_transitions"] == sum(full.values())
+    # (c) the grammar audit's TRUNCATED public view diverges (so the tie is the
+    #     un-truncated total, not trivially anchored to a toy <=20-bigram text).
+    assert len(full) > 20, "fixture must have >20 distinct bigrams for the tie to bite"
+    pub = ga.audit_function_word_grammar(_LONG_RUNS)["function_bigrams"]  # top-20 view
+    assert sum(pub.values()) < r["graph"]["total_transitions"]
+    # (d) the shared segmentation excludes cross-sentence runs in the GRAMMAR AUDIT too
+    #     (not just FWAN): no fabricated `for`->`the` edge across a sentence boundary.
+    ga_runs = ga.function_word_runs("She waited for. The case sat on the shelf.")
+    assert not any(run[i] == "for" and run[i + 1] == "the"
+                   for run in ga_runs for i in range(len(run) - 1))
+
+
+def test_runs_use_len_ge_2_rule():
+    # Isolated function words between content words carry zero edges.
+    assert fwan.function_word_runs("the cat the dog the house the tree") == []
+    # A genuine run of >= 2 function words is kept.
+    assert fwan.function_word_runs("it would have been the one") == [
+        ["it", "would", "have", "been", "the", "one"]
+    ]
+
+
+def test_runs_do_not_cross_sentence_boundaries():
+    # Codex P1: the tokenizer discards punctuation, so a sentence boundary must still BREAK a run —
+    # else `... waited for. The ...` fabricates a false `for`->`the` cross-sentence adjacency edge.
+    runs = fwan.function_word_runs("She waited for. The case sat on the shelf.")
+
+    def adjacent(a, b):
+        return any(r[i] == a and r[i + 1] == b for r in runs for i in range(len(r) - 1))
+
+    assert not adjacent("for", "the")   # the cross-sentence edge is gone
+    assert adjacent("on", "the")        # the within-sentence edge is intact
+    # a blank-line paragraph break also breaks a run
+    assert fwan.function_word_runs("of the\n\nthe of") == [["of", "the"], ["the", "of"]]
+
+
+# --- AC-7 graph-descriptor pins ---------------------------------------------
+
+def test_pagerank_sums_to_one():
+    import numpy as np
+    runs = fwan.function_word_runs(_LONG_RUNS)
+    counts = fwan._bigram_counts(runs)
+    nodes = sorted({w for pair in counts for w in pair})
+    idx = {w: i for i, w in enumerate(nodes)}
+    M = np.zeros((len(nodes), len(nodes)))
+    for (a, b), c in counts.items():
+        M[idx[a], idx[b]] = c
+    pr = fwan._pagerank(M, fwan.DEFAULT_PAGERANK_DAMPING)
+    assert abs(float(pr.sum()) - 1.0) < 1e-6
+
+
+def test_n_active_nodes_counts_distinct_participating_function_words():
+    runs = fwan.function_word_runs(_LONG_RUNS)
+    counts = fwan._bigram_counts(runs)
+    distinct = {w for pair in counts for w in pair}
+    r = fwan.audit_function_word_adjacency(_LONG_RUNS)
+    assert r["graph"]["n_active_nodes"] == len(distinct)
+    assert r["graph"]["n_possible_nodes"] == 135
+
+
+def test_hub_dominated_more_concentrated_than_flat():
+    hub = ("of the to the in the on the at the by the from the with the as the "
+           "of the to the in the on the at the by the from the with the as the")
+    flat = ("of to in on at by from with as of to in on at by from with as "
+            "and but or so for nor yet and but or so for nor yet")
+    rh = fwan.audit_function_word_adjacency(hub)
+    rf = fwan.audit_function_word_adjacency(flat)
+    assert rh["centrality"]["pagerank_top1_share"] > rf["centrality"]["pagerank_top1_share"]
+    assert rh["centrality"]["pagerank_gini"] > rf["centrality"]["pagerank_gini"]
+
+
+def test_two_cycles_and_self_loops_exact():
+    # 'of the ... the of' yields a reciprocated of<->the pair -> exactly one 2-cycle.
+    tc = fwan.audit_function_word_adjacency(
+        "of the of the the of the of and so to be it is of the the of")
+    assert tc["motifs"]["two_cycles"] == 1
+    # 'that that' is a self-loop.
+    sl = fwan.audit_function_word_adjacency(
+        "that that and so it is to be or not to be that that")
+    assert sl["motifs"]["self_loops"] == 1
+
+
+# --- AC-8 anti-Goodhart import disjointness ---------------------------------
+
+def test_no_held_out_detector_imports():
+    src = (SCRIPTS / "function_word_adjacency_audit.py").read_text(encoding="utf-8")
+    # FWAN must not import the held-out detector / selection paths.
+    for forbidden in ("voice_distance", "surface_disagreement_resolver",
+                      "fast_detect_curvature", "binoculars"):
+        assert not re.search(rf"\bimport\s+{forbidden}\b", src), forbidden
+        assert not re.search(rf"\bfrom\s+{forbidden}\b", src), forbidden
+
+
+# --- AC-9 stdlib / NO networkx (review P3 — hardened) -----------------------
+
+def test_networkx_not_imported_by_fwan():
+    # Robust to networkx being importable in the env (3.6.1) and to a co-import
+    # pulling it: snapshot sys.modules, fresh-import FWAN, assert the import
+    # added no 'networkx*' key.
+    import importlib
+    before = set(sys.modules)
+    if "function_word_adjacency_audit" in sys.modules:
+        importlib.reload(sys.modules["function_word_adjacency_audit"])
+    else:  # pragma: no cover
+        importlib.import_module("function_word_adjacency_audit")
+    added = set(sys.modules) - before
+    assert not any(m == "networkx" or m.startswith("networkx.") for m in added), added
+
+
+def test_source_has_no_networkx_import():
+    src = (SCRIPTS / "function_word_adjacency_audit.py").read_text(encoding="utf-8")
+    assert "import networkx" not in src and "from networkx" not in src
+
+
+def test_networkx_absent_from_requirements():
+    # The Tier-1 stdlib contract lives at the dependency manifest: networkx is in
+    # NO requirements*.txt.
+    for req in REPO_ROOT.glob("requirements*.txt"):
+        body = req.read_text(encoding="utf-8")
+        assert "networkx" not in body, req
+
+
+# --- AC-10 graceful abstention ----------------------------------------------
+
+def test_missing_target_bad_input(tmp_path):
+    rc, env = _envelope([str(tmp_path / "nope.txt"), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
+
+
+def test_zero_transitions_bad_input(tmp_path):
+    t = tmp_path / "t.txt"; t.write_text("cat dog house tree mountain river ocean")
+    rc, env = _envelope([str(t), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
+
+
+# --- AC-11 length-confound visibility ---------------------------------------
+
+def test_length_confounders_present():
+    r = fwan.audit_function_word_adjacency(_LONG_RUNS)
+    assert "n_active_nodes" in r["graph"] and "total_transitions" in r["graph"]
+
+
+# --- AC-12 band floor (review P3) -------------------------------------------
+
+def test_band_suppressed_below_floor():
+    # A short text below the transition floor -> band suppressed, values still emitted.
+    short = "it would have been the one of those"
+    r = fwan.audit_function_word_adjacency(short)
+    assert r["graph"]["total_transitions"] < fwan.BAND_TRANSITION_FLOOR
+    assert r["band"]["band_offered"] is False
+    assert r["band"]["label"] == "insufficient structure"
+    assert r["band"]["flagged_signals"] == []
+    # raw values still present
+    assert "global_bits" in r["transition_entropy"]
+
+
+def test_band_offered_above_floor():
+    r = fwan.audit_function_word_adjacency(_LONG_RUNS)
+    assert r["graph"]["total_transitions"] >= fwan.BAND_TRANSITION_FLOOR
+    assert r["band"]["band_offered"] is True
+    assert r["band"]["label"] != "insufficient structure"
+
+
+# --- saturated / degenerate math (pre-flight mode 6) ------------------------
+
+def test_single_repeated_bigram_is_finite():
+    # Saturated: one bigram repeated -> a 2-node graph, all finite, band suppressed.
+    r = fwan.audit_function_word_adjacency("of the " * 3)
+    validate_results_bounds(r)
+    assert r["graph"]["n_active_nodes"] == 2
+    assert r["centrality"]["pagerank_gini"] >= 0.0
+
+
+def test_gini_empty_and_singleton():
+    import numpy as np
+    assert fwan._gini(np.zeros(0)) == 0.0
+    assert fwan._gini(np.array([0.0])) == 0.0
+    assert fwan._gini(np.array([5.0])) == 0.0
+
+
+# --- review P4: sink nodes excluded from the per-node entropy summaries ------
+
+def test_sink_node_not_picked_as_min_entropy_node():
+    # 'of the of to all cat' repeated: each run is ['of','the','of','to','all']
+    # (broken by the content word 'cat'). The edges are of->the, the->of, of->to,
+    # to->all, so `all` appears ONLY as a transition TARGET -> it is a pure SINK
+    # (out-degree 0). A sink has an all-zero outgoing row and `_entropy_bits`
+    # returns 0.0 for it, so under the old code it always won `argmin` and
+    # surfaced as `min_entropy_node` -> ["all", -0.0], a leaf with no successor
+    # distribution AND a negative zero. The source node `of` has two successors
+    # ({the, to}) so it carries genuine entropy and the sink-dilution is visible.
+    text = "of the of to all cat " * 8
+    r = fwan.audit_function_word_adjacency(text)
+    te = r["transition_entropy"]
+    # `all` is a genuine sink here (defends the fixture).
+    assert te["n_sink_nodes"] == 1
+    assert te["n_source_nodes"] == 3
+    # The sink is NOT the "most predictable successor distribution".
+    assert te["min_entropy_node"][0] != "all"
+    assert te["max_entropy_node"][0] != "all"
+    # No negative zero anywhere in the entropy block.
+    assert repr(te["min_entropy_node"][1]) != "-0.0"
+    assert repr(te["per_node_mean_bits"]) != "-0.0"
+    # per_node_mean_bits is the mean over SOURCE nodes only: it must equal the
+    # mean of the two real source-node entropies, NOT be diluted by the sink's 0.
+    import numpy as np
+    runs = fwan.function_word_runs(text)
+    counts = fwan._bigram_counts(runs)
+    nodes = sorted({w for pair in counts for w in pair})
+    idx = {w: i for i, w in enumerate(nodes)}
+    M = np.zeros((len(nodes), len(nodes)))
+    for (a, b), c in counts.items():
+        M[idx[a], idx[b]] = c
+    out_deg = M.sum(axis=1)
+    src_bits = [fwan._entropy_bits(M[i]) for i in range(len(nodes)) if out_deg[i] > 0]
+    assert te["per_node_mean_bits"] == round(float(np.mean(src_bits)), 6)
+    # And the diluted-with-sink mean (the buggy value) is strictly lower, proving
+    # the exclusion changed the number.
+    all_bits = [fwan._entropy_bits(M[i]) for i in range(len(nodes))]
+    assert round(float(np.mean(all_bits)), 6) < te["per_node_mean_bits"]
+
+
+def test_no_negative_zero_in_entropy_block_on_saturated_input():
+    # A 2-node saturated graph ('of the' repeated) has zero-entropy source rows;
+    # the rounded values must be +0.0, never -0.0, in the public envelope.
+    r = fwan.audit_function_word_adjacency("of the " * 3)
+    te = r["transition_entropy"]
+    for leaf in (te["global_bits"], te["per_node_mean_bits"],
+                 te["min_entropy_node"][1], te["max_entropy_node"][1]):
+        assert repr(leaf) != "-0.0", leaf
+
+
+# --- review P4: directionality story is complete on a one-directional graph --
+
+def test_one_directional_graph_reports_asymmetry_story():
+    # 'of the to in' repeated: every edge (of->the, the->to, to->in, in->of) is
+    # purely one-directional -> the MAXIMALLY asymmetric structure. The
+    # reciprocated-only mean cannot see it (it is 0.0 because there are no
+    # reciprocated pairs), so `one_directional_edge_share` carries the real story.
+    r = fwan.audit_function_word_adjacency("of the to in " * 60)
+    g = r["graph"]
+    assert g["reciprocity"] == 0.0
+    assert g["reciprocated_weight_asymmetry_mean"] == 0.0  # no reciprocated pairs
+    assert g["one_directional_edge_share"] == 1.0          # ALL edges one-way
+    # The field is renamed so a maintainer cannot read it as a global asymmetry:
+    # the old ambiguous name is gone from the envelope.
+    assert "weight_asymmetry_mean" not in g
+    assert "reciprocated_weight_asymmetry_mean" in g
+
+
+def test_reciprocated_and_one_directional_shares_are_complementary():
+    # A graph with BOTH reciprocated and one-directional edges: the reciprocated
+    # mean is defined, and the one-directional share is strictly between 0 and 1.
+    # 'of the of the' gives of<->the reciprocated; '... to in' tails add one-way.
+    r = fwan.audit_function_word_adjacency(
+        ("of the of the of the to in by from with " * 30))
+    g = r["graph"]
+    assert 0.0 <= g["one_directional_edge_share"] <= 1.0
+    assert g["reciprocated_weight_asymmetry_mean"] >= 0.0
+    # reciprocity + one_directional_edge_share account for every off-diagonal edge.
+    assert round(g["reciprocity"] + g["one_directional_edge_share"], 6) == 1.0

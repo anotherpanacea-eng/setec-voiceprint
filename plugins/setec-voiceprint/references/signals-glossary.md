@@ -31,7 +31,7 @@ Each entry block carries the signal's metadata on a single line:
 - [AIC-7: Discourse Leak / Assistant-Register Intrusion (4)](#aic-7-discourse-leak)
 - [AIC-8: Aesthetic Authority Laundering (2)](#aic-8-aesthetic-authority-laundering)
 - [AIC-9: Closure Inflation (1)](#aic-9-closure-inflation)
-- [Voice-distance signals (2)](#voice-distance-signals)
+- [Voice-distance signals (3)](#voice-distance-signals)
 - [Voice-drift signals (2)](#voice-drift-signals)
 - [POV-voice signals (2)](#pov-voice-signals)
 - [Mimicry / cosplay signals (2)](#mimicry-cosplay-signals)
@@ -148,6 +148,36 @@ The interpretable (glass-box) document vector: every dimension a human-named sty
 
 ---
 
+## Function-word-network signals
+
+The graph-structure read of the function-word transition network (`function_word_adjacency_audit`, spec 32; arXiv:1406.4469). The four band-driving signals below are PROVISIONAL / operator-side structure-concentration cues (`calibration_status.n_calibrated == 0`); the band is suppressed below the `total_transitions` floor (200). M1 stdlib + numpy, no networkx, no model. Polarity arrows mark the structure-concentration direction the cue fires on; **none is a verdict** — they drive a descriptive band only, and there is no derived band score. The raw graph measurements (`results.graph` / `results.centrality` / `results.transition_entropy` / `results.motifs`) are reported as values, not thresholded.
+
+### Low global transition entropy
+
+`function_word_adjacency_audit:band.flagged_signals[low_global_transition_entropy]` · function-word-network · ↓ · **heuristic**
+
+Fires when the Shannon entropy (bits) of the FULL function-word transition matrix (`results.transition_entropy.global_bits`, computed over the whole distribution, not the grammar audit's top-20 view) is below the provisional cut (4.0 bits). Lower = a more concentrated / predictable transition structure. Range `[0, ∞)` bits. Floor: band offered only at `total_transitions >= 200`.
+
+### High PageRank concentration
+
+`function_word_adjacency_audit:band.flagged_signals[high_pagerank_concentration]` · function-word-network · ↑ · **heuristic**
+
+Fires when the Gini concentration of the PageRank centrality vector (`results.centrality.pagerank_gini`) exceeds the provisional cut (0.65). Higher = centrality mass concentrated on a few function-word hubs. PageRank is damped power iteration (damping 0.85, dangling nodes uniform). Range `[0, 1]`.
+
+### Low per-node entropy mean
+
+`function_word_adjacency_audit:band.flagged_signals[low_per_node_entropy_mean]` · function-word-network · ↓ · **heuristic**
+
+Fires when the mean over active nodes of each node's outgoing-transition entropy (`results.transition_entropy.per_node_mean_bits`) is below the provisional cut (1.5 bits). Lower = each function word's successor distribution is more predictable. Range `[0, ∞)` bits.
+
+### Low graph density
+
+`function_word_adjacency_audit:band.flagged_signals[low_graph_density]` · function-word-network · ↓ · **heuristic**
+
+Fires when the directed graph density (`results.graph.density` = realized off-diagonal edges / possible) is below the provisional cut (0.10). Lower = a sparser transition network. Range `[0, 1]`. Confounded by length / function-word-set coverage (`n_active_nodes`, `total_transitions` co-reported); NOT length-controlled.
+
+---
+
 ## Tier 3: Trajectory signals
 
 Layer A continuation; requires sentence-transformers (preferred) or TF-IDF fallback.
@@ -199,6 +229,8 @@ Sample SD of the per-token surprisal series. Bits. Length floor 300. The most se
 `tier4.surprisal.autocorrelation.lag_1` · tier4-surprisal · ↑ · **literature_anchored** · diveye_basani_chen_tmlr_2026
 
 `ACF(1) = Cov(X_t, X_{t+1}) / Var(X)` over the surprisal series. Range `[-1, 1]`. Length floor 500 tokens (≥ 30-token series). AI prose tends positive → predictability streaks.
+
+> **DivEye diversity signals (spec 32, M1 — not yet a surface).** `scripts/diveye_signals.py` adds the four DivEye temporal / distribution-shape signals beyond the three above — the delta (1st-order difference) series, the acceleration (2nd-order difference) series, the Shannon entropy of the surprisal histogram, and the lag-1 ACF of the acceleration series — and `aggregate_diveye_signals` assembling the full nine-signal DivEye vector (reusing the F1–F4/F9 surprisal moments). It is a stdlib math helper over an injected surprisal series (`TASK_SURFACE = None`, no `--tier4` surface), not a registered detection surface; the discrimination surface + classifier are the experiment-gated M2 seam. arXiv:2509.18880 (PROVISIONAL on this checkout — see `specs/32-diveye-surprisal-diversity.md`).
 
 ---
 
@@ -277,6 +309,12 @@ Euclidean / Mahalanobis-style norm of per-function-word z-scores against baselin
 `voice_distance:cosines.function_words` (and other feature families) · voice-distance · ↑ · **empirically_oriented** · voice_profile_aggregation_v1
 
 `1 − cosine_similarity(draft, baseline)` per feature-family vector. Range `[0, 1]`. Complement to Burrows Delta; cosine catches relative-shape changes, Delta catches magnitude changes.
+
+### Grammar likelihood-ratio (LambdaG)
+
+`lambdag_audit:lambda_g` / `:lambda_g_per_token` · authorship-verification · ↔ · **heuristic**
+
+Log-likelihood-ratio of a query's POS-sequence grammar under a count-based n-gram LM trained on a **reference-author** corpus vs one trained on a **background** corpus: `lambda_g = logL_ref − logL_bg` (nats; `lambda_g_per_token` length-normalized). `> 0` = grammar more probable under the reference author. The LR sibling of Burrows Delta (same `voice_coherence` surface). Signed real ∈ ℝ; PROVISIONAL 3-level *leaning* band, **no same/different-author verdict**. Corpus-relative (a thin/mismatched background inflates or flips the sign). Reference/background must be **held-out disjoint** (anti-Goodhart). Parser-tier (spaCy `en_core_web_sm`; abstains without it). Length floor 150 words. Spec 32 (arXiv:2403.08462).
 
 ---
 
@@ -621,12 +659,14 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 |---|---|
 | tier1-variance | 9 |
 | tier2-syntax | 3 |
+| function-word-network | 4 |
 | tier3-trajectory | 4 |
 | tier4-surprisal | 3 |
 | aic-7-discourse-leak | 4 |
 | aic-8-laundering | 2 |
 | aic-9-closure-inflation | 1 |
 | voice-distance | 2 |
+| authorship-verification | 2 |
 | voice-drift | 2 |
 | pov-voice | 2 |
 | mimicry | 2 |
@@ -638,7 +678,7 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | repetition | 2 |
 | narrative-decision | 33 (+1 aggregate) |
 | argument-decision | 6 (+1 aggregate) |
-| **TOTAL** | **97** |
+| **TOTAL** | **103** |
 
 ## Calibration-status distribution (v1.66.0 + ND v0.1.0 + AD v0.1.0)
 
@@ -647,9 +687,9 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | calibrated | 0 | Per Stylometry-to-the-people policy; no corpus-derived thresholds shipped as load-bearing defaults |
 | literature_anchored | 45 | 6 prior (mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl) + 34 from the narrative-decision family (33 per-signal + aggregate), anchored to Russell et al. 2026 + 5 from the argument-decision family (4 per-signal + aggregate), anchored to Kim et al. 2026 |
 | empirically_oriented | 8 | The six 2026-05-10 EditLens-measured variance signals + pos_bigram_entropy + Burrows Delta + per_feature_cosine |
-| heuristic | 43 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) |
+| heuristic | 49 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) + the 2 lambdag_audit grammar-LR signals (lambda_g, lambda_g_per_token) + the 4 function_word_adjacency_audit band signals (low_global_transition_entropy, high_pagerank_concentration, low_per_node_entropy_mean, low_graph_density) |
 | structural_only | 1 | function_word_ratio |
-| **TOTAL** | **97** |
+| **TOTAL** | **103** |
 
 ## Related references
 
@@ -659,4 +699,6 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 - `references/calibration-findings-2026-05-10.md` — the EditLens v1 empirical anchor for six variance signals.
 - `scripts/calibration/PROVENANCE.md` — Stylometry-to-the-people policy statement.
 - `internal/SPEC_calibration_status_retier.md` — the v1.66.0 retier spec this glossary reflects.
+- `specs/34-model-family-attribution.md` — the `model_family_attribution` surface: a raw, abstention-gated per-family similarity *ranking* over the standardized `variance_audit` named features (burstiness_B / MATTR / MTLD / function-word ratio / mdd). It adds no new per-text *signal* to this inventory — it re-aggregates existing ones into a family-relative, no-verdict advisory ranking — so the totals above are unchanged.
+- `scripts/calibration/pan_voight_kampff_benchmark.py` — the **Voight-Kampff benchmark harness** (`pan_voight_kampff_to_manifest.py` + `pan_metrics.py` + the report assembler). It adds **no new signal** to this inventory: it RUNS the existing discrimination detectors (Binoculars first; the model-tier surfaces behind their deps) over the PAN@CLEF Voight-Kampff Subtask-1 dataset (Zenodo 14962653) and REPORTS the official PAN metric suite (`roc_auc`/`brier`/`c@1`/`f1`/`f0.5u`/`pan_mean`, anchored to the Apache-2.0 TIRA evaluator). It **licenses** "detector D achieves PAN-metric M on the PAN VK Subtask-1 labels" as external held-out validation; it **does not license** any per-document verdict, any calibration result, or any threshold/selection feedback (anti-Goodhart: writes only a report, never fits to PAN).
 - External primer (in development; Glass-Box Stylometry Sequence) — long-form pedagogy.

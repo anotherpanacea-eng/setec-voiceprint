@@ -80,9 +80,23 @@ class TestResultsPayload:
             "total_marker_density_per_1k",
             "move_sequence", "move_sequence_bigrams",
             "move_sequence_entropy_bits",
-            "marked_only_entropy_bits", "compression",
+            "marked_only_entropy_bits", "relation_distribution",
+            "compression",
         ):
             assert k in r, f"missing results key: {k}"
+
+    def test_relation_distribution_flows_into_results(self, envelope):
+        """The PDTB relation layer rides in `results` and survives the
+        R4 bounds walk (entropy fields are >= 0; fractions/counts/
+        densities are unmatched by the surprisal/probability gates)."""
+        rel = envelope["results"]["relation_distribution"]
+        assert rel["calibration_status"] == "uncalibrated"
+        assert rel["buckets"] == [
+            "comparison", "contingency", "expansion", "temporal",
+        ]
+        assert 0.0 <= rel["relation_entropy_bits"] <= rel[
+            "relation_entropy_max_bits"
+        ] == 2.0
 
     def test_no_legacy_top_level_keys(self, envelope):
         for legacy in (

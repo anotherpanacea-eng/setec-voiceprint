@@ -1,0 +1,80 @@
+entries:
+- id: rank_space_audit
+  script_path: plugins/setec-voiceprint/scripts/rank_space_audit.py
+  surface: binoculars_discrimination
+  status: literature_anchored
+  handoff: experimental
+  consumers: []
+  family: detectllm-rank
+  purpose: 'DetectLLM LRR rank-space surprisal signal (spec 32, M1): the log-likelihood
+    / log-rank ratio and the per-token log-rank moments (mean / SD / lag-1 ACF), a
+    near-free DERIVED column off the per-position vocab log-prob distributions a causal
+    LM already materializes in score_text_with_distributions (the same forward pass
+    Binoculars v2 uses — no second pass; log-rank is an argsort per position). Deepens
+    the Tier-4 surprisal family (surprisal_audit mean/sd/acf_lag1) on the SAME surface
+    rather than adding a new one. The rank math lives in rank_space_signals.py (pure
+    stdlib, no model); this surface resolves the scorer and emits the envelope. In
+    the literature (Su et al. 2023, arXiv:2306.05540) log-rank is hypothesized more
+    scale-robust than raw log-likelihood, so LRR may discriminate where surprisal_mean
+    collapses — discrimination EVIDENCE on the rank axis. Descriptive only: VALUES +
+    NO verdict band shipped (spec 32 §3.5 / §9 / §5: band uncalibrated, thresholds
+    None by default; calibration_status uncalibrated). A descriptive band over the
+    LRR value''s OWN axis (low_lrr / indeterminate / high_lrr) carrying calibration_status
+    heuristic + calibration_anchor user-baseline-required + the
+    thresholds_operator_supplied_not_framework_calibrated caveat appears ONLY when the
+    operator supplies both --threshold-low and --threshold-high (their own calibrated
+    operating point); no framework numeric cutoff is invented. There is NO is_ai /
+    is_human / label / verdict / decision key; the claim-license refuses any authorship
+    verdict and surfaces the ESL/non-native false-positive mode.
+
+    '
+  use_when:
+  - You want a rank-space discrimination signal derivable for free from the same forward
+    pass Binoculars v2 already runs (argsort per position, no second model load)
+  - You're stacking orthogonal surprisal-family signals (surprisal mean/sd/acf + LRR
+    + curvature)
+  - Target >= 50 words and roughly in-distribution for the scoring model
+  do_not_use_when:
+  - You need an AI/human verdict (this surface ships uncalibrated and refuses one)
+  - The target exceeds the scorer's context window (~1024 tokens / ~750 words for
+    gpt2). The rank series needs a single scoring window; a longer target is chunked
+    by the backend and REFUSED with a text_too_long message. Truncate it or use a
+    longer-context scorer (this caps the all_fiction/all_nonfiction registers to
+    single-window spans)
+  - The target is non-native / ESL or highly unconventional (log-rank is higher for
+    valid-but-unexpected word choices; the signal is NOT ESL-invariant)
+  - The scorer is weaker than the text's generator (single-model rank signals are proxy-scorer
+    dependent; the polarity can invert)
+  - You can't install the surprisal tier (transformers + torch)
+  inputs:
+    target: prose text file (UTF-8)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout markdown report (default), --json envelope, or --out PATH
+  compute:
+    tier: surprisal
+    cost_note: 'The rank math (rank_space_signals.py) is pure stdlib and model-free;
+      the registered surface scores the target via one small causal LM (~0.5-2 GB weights;
+      CPU works, GPU faster) reusing the existing score_text_with_distributions forward
+      pass — no second pass for LRR. NPR (the perturbation variant) is a GPU-gated M2
+      path and is not built here.'
+    length_floor_words: 50
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python:
+    - transformers
+    - torch
+    python_optional: []
+  examples:
+  - description: LRR + log-rank moments over a single target (JSON envelope)
+    cmd: python3 plugins/setec-voiceprint/scripts/rank_space_audit.py target.txt --json
+  - description: Custom scoring model + dtype
+    cmd: python3 plugins/setec-voiceprint/scripts/rank_space_audit.py target.txt --model
+      gpt2 --surprisal-dtype auto --json
+  references:
+  - specs/32-rank-space-detectllm.md
+  - 'DetectLLM: Leveraging Log Rank Information for Zero-Shot Detection of Machine-Generated
+    Text — Su, Zhuo, Wang, Nakov 2023 (arXiv:2306.05540): https://arxiv.org/abs/2306.05540'

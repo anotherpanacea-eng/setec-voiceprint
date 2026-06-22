@@ -1,0 +1,81 @@
+{
+  "id": "enthymeme_gapflag",
+  "script_path": "plugins/setec-voiceprint/scripts/enthymeme_gapflag.py",
+  "surface": "argument_pattern_scan",
+  "status": "literature_anchored",
+  "handoff": "experimental",
+  "consumers": [],
+  "family": "argument-pattern",
+  "purpose": "Model-free structural enthymeme (suppressed-premise) LOCATION flags for an argument-shaped nonfiction passage. The stdlib, location-first sibling of warrant_probe under the same argument_pattern_scan surface: where warrant_probe asks an LLM judge the Toulmin critical questions about a claim's warrant COVERAGE, this is a deterministic, model-free detector that points at WHERE a warrant is plausibly elided \u2014 a conclusion-marked (or paragraph-terminal-assertion) sentence whose inferential support in the local window is NOT bridged by an explicit warrant/connective marker and whose content is not a mere restatement of its grounds (the enthymematic JUMP). Each flag is a candidate suppressed-premise LOCATION (span pointer + structural jump_evidence: the matched conclusion marker, the absence of a warrant bridge, the ground window, the content-overlap value), emitted in document order. It surfaces; it NEVER authors \u2014 M1 emits the location, never the reconstructed premise text; the generative DeepA2 reconstruction (Betz & Richardson 2021, \"DeepA2: A Modular Framework for Deep Argument Analysis with Pretrained Neural Text2Text Language Models\", arXiv:2110.01509) is the strictly-gated M2. NOT a verdict: emits no soundness / completeness / \"incomplete\" / quality label, score, or aggregate; a flagged jump is frequently legitimate (most arguments leave most warrants implicit), so a higher gap_density is NOT \"worse\". gap_density ships as a VALUE + a PROVISIONAL band + calibration_status: uncalibrated, never a thresholded gate. Marker-based structural prior, not a parser (English-only, v1); thresholds operator-side / PROVISIONAL.\n",
+  "use_when": [
+    "You want to locate WHERE an argument jumps from grounds to a conclusion with no stated warrant",
+    "You want a model-free, deterministic, CI-runnable structural pass (no LLM judge, no GPU)",
+    "You want candidate suppressed-premise locations to triage for human review, not a reconstruction"
+  ],
+  "do_not_use_when": [
+    "You need the missing premise AUTHORED / filled / reconstructed (M1 never does this; that is the gated M2)",
+    "You need a soundness / completeness / \"incomplete argument\" / quality verdict (the surface refuses ALL of these \u2014 a flagged jump is a candidate location to examine, not a flaw, since most arguments legitimately leave warrants implicit)",
+    "You want a gap_density THRESHOLD as a pass/fail gate (the band is descriptive over the rate's own axis, ships uncalibrated, and a higher rate is not \"worse\"); or the text is non-English (the marker lexicons are English-only in v1)"
+  ],
+  "inputs": [
+    {
+      "flag": "--target",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--ground-window",
+      "type": "int",
+      "required": false
+    },
+    {
+      "flag": "--content-overlap-ceiling",
+      "type": "float",
+      "required": false
+    },
+    {
+      "flag": "--no-include-terminal",
+      "type": "bool",
+      "required": false
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "pure stdlib (re + sets); deterministic, CPU-only, no model / GPU / network / API. Runs in CI with no skip.",
+    "length_floor_words": 120
+  },
+  "registers": [
+    "op-ed",
+    "testimony_policy"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Flag candidate enthymeme locations in an argument",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/enthymeme_gapflag.py --target essay.txt --json"
+    },
+    {
+      "description": "Only explicit conclusion-marker jumps (suppress terminal-assertion flags)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/enthymeme_gapflag.py --target essay.txt --no-include-terminal --json"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "specs/32-deepa2-enthymeme-gapflag.md",
+    "DeepA2: A Modular Framework for Deep Argument Analysis (arXiv:2110.01509): https://arxiv.org/abs/2110.01509"
+  ]
+}
