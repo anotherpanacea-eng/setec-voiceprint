@@ -110,6 +110,11 @@ the single biggest defect source.
 the fix against modes 1–7 (a fix that adds a field can introduce a mode-1/2/4 defect), re-run
 the suite, *then* push. Round 2 should be empty because you caught the regression, not Codex.
 
+**Automated-build tree hygiene:** an agent that builds on a feature branch must restore main with
+`git reset --hard origin/main`, never a bare `git checkout main` — git carries the build's
+uncommitted/staged diff across a checkout, leaving the whole build as residue on the main worktree
+(recurred 2026-06-21/22). Commit + push the branch first, then reset-hard. (Fleet `BUILD-PREFLIGHT.md` → "Reader split.")
+
 ## Where work comes from: roadmap, briefs, and Issues
 
 Every change implements from a **written contract**, never from an
