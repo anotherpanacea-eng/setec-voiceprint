@@ -689,7 +689,19 @@ def run_batch(
             p = Path(row["path"])
             if base_dir is not None and not p.is_absolute():
                 p = base_dir / p
-            text = p.read_text(encoding="utf-8", errors="ignore")
+            # Strict decode (matching the manifest + single-file reads). errors="ignore"
+            # would silently DROP invalid UTF-8 bytes and score the mangled remainder,
+            # reporting a gecscore as if the passage were clean — a corruption the audit
+            # would never disclose. Skip the row with a recorded reason instead (the
+            # empty_text / no_word_tokens skip-with-reason pattern), so a bad-encoding
+            # passage is auditable, never a silently corrupted score.
+            try:
+                text = p.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
+                            "band": "indeterminate", "calibration_status": "heuristic",
+                            "skipped": "invalid_utf8"})
+                continue
         if not text:
             out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
                         "band": "indeterminate", "calibration_status": "heuristic",

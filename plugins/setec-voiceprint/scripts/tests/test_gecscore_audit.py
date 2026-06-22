@@ -621,6 +621,23 @@ def test_ac7_batch_path_rows(tmp_path):
     assert rows[0]["gecscore"] is not None
 
 
+def test_ac7_batch_path_row_invalid_utf8_skipped_not_silently_stripped(tmp_path):
+    """Codex P2: batch path-rows were read with errors="ignore", silently DROPPING
+    invalid UTF-8 bytes and scoring the mangled remainder — a corruption the audit
+    never disclosed. A bad-encoding file must be SKIPPED with a recorded reason (the
+    empty_text / no_word_tokens skip-with-reason pattern), never silently scored."""
+    bad = tmp_path / "bad.txt"
+    # valid-looking ASCII interleaved with bytes that are invalid in UTF-8 (0xFF / 0x80)
+    bad.write_bytes(b"the quick brown fox \xff\xfe jumps over \x80 the lazy dog " * 4)
+    manifest = tmp_path / "m.jsonl"
+    manifest.write_text(json.dumps({"id": "bad", "path": "bad.txt"}), encoding="utf-8")
+    rows = g.run_batch(g._load_batch_manifest(manifest), base_dir=manifest.parent)
+    assert len(rows) == 1
+    assert rows[0]["id"] == "bad"
+    assert rows[0]["skipped"] == "invalid_utf8"   # skipped, not silently stripped + scored
+    assert rows[0]["gecscore"] is None
+
+
 # ----------------------------------------------------------------------
 # AC-8 — calibration honesty + fragment shape.
 # ----------------------------------------------------------------------
