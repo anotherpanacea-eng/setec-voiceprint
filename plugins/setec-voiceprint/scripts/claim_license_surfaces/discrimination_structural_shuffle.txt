@@ -1,0 +1,1 @@
+Structural-shuffle perplexity-shift discrimination (Luminol-AIDetect, arXiv:2604.25860 [UNVERIFIED])

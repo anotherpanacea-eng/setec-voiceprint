@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build / review preflight — SETEC Docs</title>
+<style>
+  :root {
+    --fg: #1a1a1a;
+    --muted: #6b6b6b;
+    --bg: #fafaf7;
+    --rule: #d4d4d0;
+    --accent: #8b2c1c;
+    --code-bg: rgba(0, 0, 0, 0.05);
+  }
+  * { box-sizing: border-box; }
+  html { font-size: 16px; }
+  body {
+    font-family: ui-serif, Georgia, "Times New Roman", serif;
+    line-height: 1.55;
+    color: var(--fg);
+    background: var(--bg);
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+  }
+  main { max-width: 760px; margin: 0 auto; }
+  h1, h2, h3 {
+    font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.25;
+  }
+  h1 { font-size: 1.75rem; margin: 0 0 0.5rem; color: var(--accent); }
+  h2 {
+    font-size: 1.15rem;
+    margin: 2.25rem 0 0.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--rule);
+  }
+  h3 { font-size: 1rem; margin: 1.75rem 0 0.5rem; }
+  a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+  a:hover { background: rgba(139, 44, 28, 0.08); }
+  p, ul, ol { margin: 0.75rem 0; }
+  ul, ol { padding-left: 1.5rem; }
+  li { margin: 0.45rem 0; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.85em;
+    background: var(--code-bg);
+    padding: 0.1em 0.3em;
+    border-radius: 3px;
+  }
+  blockquote {
+    margin: 1rem 0;
+    padding: 0.5rem 1rem;
+    border-left: 3px solid var(--accent);
+    background: rgba(139, 44, 28, 0.04);
+    color: var(--fg);
+  }
+  hr { border: none; border-top: 1px solid var(--rule); margin: 2.25rem 0; }
+  strong { font-weight: 600; }
+  .lede { color: var(--muted); font-size: 0.95rem; }
+  .nav { font-family: ui-sans-serif, -apple-system, "Helvetica Neue", Arial, sans-serif; font-size: 0.85rem; margin-bottom: 1.5rem; }
+</style>
+</head>
+<body>
+<main>
+
+<p class="nav"><a href="index.html">&larr; SETEC Docs</a></p>
+
+<h1>Build / review preflight</h1>
+
+<p class="lede">The P1/P2 failure modes to root out before a PR exists — distilled from a retrospective over ~350 external code-review findings (&approx;68 P1, 115 P2, 167 P3) across several build and spec waves, in a workflow where one model builds and a second, independent model reviews every PR. Examples are sanitized to the abstract pattern; the <strong>CHECKs are the evergreen part.</strong></p>
+
+<p>The reviewer is token-gated to roughly one round per multi-hour window, so a P1/P2 that survives to review — or a new one a fix introduces in round 2 — costs a whole window. The goal is <strong>first-pass-clean</strong>.</p>
+
+<blockquote><strong>~40% of all P1s are the same mistake:</strong> the spec/build <em>asserts</em> something about existing source — an API, a field, a line number, an env-var, a flag, a sibling spec, a precedent, an invariant — that it never <strong>opened the file to verify.</strong> Pattern-matching a plausible API from memory is the single biggest defect source.</blockquote>
+
+<hr>
+
+<h2>The checklist (at a glance)</h2>
+
+<p>Reviewers run the full list against the diff. <strong>Builders carry only mode 1</strong> — the one failure that is build-time-irreducible. For a validator / gate / linter / parser / config PR, weight the adversarial lens on mode 10 + the <a href="#shallow-check">SHALLOW-CHECK trap</a>.</p>
+
+<ol>
+  <li><strong><a href="#mode-1">API-anchor drift</a></strong> — grep or open every symbol, field, API, env-var, flag, and sibling-spec before you cite it; if grep finds nothing, it does not exist. <em>(~40% of all P1s.)</em></li>
+  <li><strong><a href="#mode-2">Posture leaks</a></strong> — for a descriptive tool, ship no scalar or label that is one hand-edit from a threshold or that names the inference target; fail closed.</li>
+  <li><strong><a href="#mode-3">Capability-boundary overclaim</a></strong> — don't call a path pure / additive / lightweight unless <code>import</code> proves it and CI actually runs it.</li>
+  <li><strong><a href="#mode-4">Stale registration and count conventions</a></strong> — drop-in fragments over editing a shared file; no <code>==N</code> count literals anywhere.</li>
+  <li><strong><a href="#mode-5">Untestable or undelivered claims</a></strong> — every AC, and every "guarantee / invariant / bounded" word, needs a test that would FAIL if it were violated.</li>
+  <li><strong><a href="#mode-6">Math and data-structure errors</a></strong> — bounds hold on saturated / empty / tie input; immutables aren't "added to"; consumed iterables are materialized.</li>
+  <li><strong><a href="#mode-7">Process discipline</a></strong> — honor the PR-split; complete the paper trail; re-count every prose count against the diff.</li>
+  <li><strong><a href="#mode-8">Provenance and identity rebinding</a></strong> — imported data carries its own recorded provenance or null, never the current run's; no stamp without backing records.</li>
+  <li><strong><a href="#mode-9">Measurement validity</a></strong> — confirm the control isolates the named confound and is not correlated with (or identical to) the signal you are measuring.</li>
+  <li><strong><a href="#mode-10">Override and gate hygiene</a></strong> — a bogus id silences nothing; classify on parsed structure, not substrings; cover the format's full spec; the gate obeys its own rule; one matcher (a state machine), adopted everywhere.</li>
+</ol>
+
+<p>Plus the round-2 discipline:</p>
+
+<ul>
+  <li><strong><a href="#fix-loop">The fix loop</a></strong> — a fix <em>is</em> a build: re-run the whole checklist on it. Round 2 should be empty because <em>you</em>, not the reviewer, caught the regression.</li>
+  <li><strong><a href="#verify-min-runtime">Verify on the minimum runtime</a></strong> — test the floor (oldest supported shell + locale, pinned interpreter), not your comfortable dev shell.</li>
+  <li><strong><a href="#shallow-check">The SHALLOW-CHECK trap</a></strong> — a guard that's added but not complete: cover all siblings, shapes, and directions — not just the one site the reviewer named.</li>
+</ul>
+
+<hr>
+
+<h2>The modes in full</h2>
+
+<h3 id="mode-1">1. API-anchor drift</h3>
+<p>DOMINANT (~40% of P1s). Phantom APIs, wrong signatures, non-existent env-vars / tiers / flags, mis-cited precedents, dangling sibling-spec citations. Patterns that reach review:</p>
+<ul>
+  <li>a loader or flag that doesn't exist, asserted as an "established pattern."</li>
+  <li>env-vars asserted as a convention — none of them actually exist.</li>
+  <li>a config value claimed as a valid enum member when it isn't.</li>
+  <li>a function called with a config argument it doesn't take.</li>
+  <li>citing a sibling spec repeatedly as load-bearing when it doesn't exist yet.</li>
+  <li>a belief about what a module <em>is</em> ("module X is not a consumer of Y") that the imports flatly contradict — and the SAME false premise copied across several specs.</li>
+</ul>
+<p><strong>CHECK:</strong> for EVERY symbol / field / line / env-var / tier / flag / sibling-spec / precedent you cite, grep or open it. If grep returns nothing, <strong>it does not exist — do not assert it.</strong> Verify the actual <em>signature</em> (args, kwargs, return shape) AND the actual <em>return value</em> (including truncation / caps). Never describe a precedent file you have not opened this session.</p>
+
+<h3 id="mode-2">2. Posture leaks</h3>
+<p>A thresholdable scalar or verdict-adjacent label. For any tool meant to be <em>descriptive</em> rather than a classifier, the danger is shipping an artifact that quietly becomes a decision input.</p>
+<ul>
+  <li>a bare, formula-less <code>[0,1]</code> "concentration scalar" — the single most thresholdable artifact.</li>
+  <li>a label whose top value names the <em>inference target</em> instead of the <em>measured property</em>.</li>
+  <li>intermediate scores exposed as manifest fields, one hand-edit from a selection input.</li>
+  <li>an inverted threshold that fails <strong>open</strong> (re-admits exactly what it exists to remove).</li>
+</ul>
+<p><strong>CHECK:</strong> does the result carry ANY scalar thresholdable into a selection / verdict? Does any label name the inference TARGET vs the measured property? Is the fail-direction <strong>closed</strong>? Walk the output and confirm no field is one hand-edit from a back door.</p>
+
+<h3 id="mode-3">3. Capability-boundary overclaim</h3>
+<p>Claiming a component is dependency-free / pure / additive / lightweight when it isn't — or when it literally doesn't run.</p>
+<ul>
+  <li>a "no-dependency core" that is actually a learned predictor or needs the heavy import.</li>
+  <li>"purely additive, no second pass" — false (it added a pass).</li>
+  <li>a code path that calls into a surface not registered / valid, so it raises and the "core" never builds.</li>
+</ul>
+<p><strong>CHECK:</strong> prove the claimed-pure path is import-clean (does <code>import</code> pull the heavy dependency?). Does every claimed path actually RUN in CI? If the core needs the dependency, label it that way — don't claim the lighter tier.</p>
+
+<h3 id="mode-4">4. Stale registration and count conventions</h3>
+<p>Hand-maintained registries and counts that drift.</p>
+<ul>
+  <li><code>==N &rarr; N+1</code> count literals; a retired golden-file row; a registration manifest missing a required wrapper or field.</li>
+</ul>
+<p><strong>CHECK:</strong> prefer drop-in fragments over editing a shared file plus a count literal — a per-id fragment, <strong>NO <code>==N</code> literal anywhere</strong>, the manifest fragment matching a real sibling (open one). <code>git add</code> the fragment explicitly; run the drop-in + drift + docs-freshness gates.</p>
+
+<h3 id="mode-5">5. Untestable or undelivered claims</h3>
+<p>Two faces of one defect: a <em>test</em> that asserts something false, and a <em>docstring / spec</em> that promises a runtime property the code doesn't deliver.</p>
+<ul>
+  <li>"byte-for-byte identical" while the change adds fields to every record.</li>
+  <li>"copied from <code>test_X:116</code>" when line 116 says something else.</li>
+  <li>an AC asserting a refusal <em>envelope</em> the cited seam can't emit (it <code>sys.exit</code>s).</li>
+  <li>tests that pin the WRONG posture and thereby <em>mask</em> a real inversion.</li>
+  <li>a docstring promising a property the code does NOT deliver: a "finite-sample guarantee" that's actually bare empirical error; "permutation-invariant" logic that seeds by input order; an "N-min guarantee" computed <em>before</em> the filter that removes unusable items.</li>
+  <li>an invariant the stored state <strong>can't even check</strong> (only one side of a pair is recorded, so any id "passes") — an unverifiable invariant is a data-model gap, not a comment.</li>
+  <li>a <strong>tie / parity test that recomputes from the artifact UNDER TEST</strong> instead of the independent source it claims to tie to — it stays green when the two silently diverge. A parity test MUST read the other side (assert <code>a.fn is b.fn</code> for a genuinely shared primitive, or compute the expected value <em>from b</em>), never recompute from <code>a</code> and compare <code>a</code> to itself.</li>
+</ul>
+<p><strong>CHECK:</strong> every AC must be runnable against REAL behavior (frozen-fixture test for "byte-identical"; open line X before "copied from line X"). Every "guarantees / invariant / bounded / validated / N-min" word in a docstring OR spec must be backed by code that delivers it AND state that can support the check — if you can't write a test that would FAIL when the property is violated, you haven't delivered it.</p>
+
+<h3 id="mode-6">6. Math and data-structure errors</h3>
+<ul>
+  <li>"add to" an <strong>immutable</strong> structure (impossible from the caller — the structure itself must change).</li>
+  <li>a containment metric exceeding its own <code>[0,1]</code> bound on saturated input.</li>
+  <li>a generator iterated twice (exhausted on the 2nd pass).</li>
+</ul>
+<p><strong>CHECK:</strong> bounds hold on adversarial input (saturation, ties, empties); immutable structures aren't "added to"; once-consumed iterables are materialized. Run the edge cases, not just the happy path.</p>
+
+<h3 id="mode-7">7. Process discipline</h3>
+<ul>
+  <li>one commit bundling sub-PRs the spec wanted <strong>separate</strong> (defeats a per-PR review gate).</li>
+  <li>a missing changelog / glossary / doc paper-trail entry CI doesn't enforce but a reviewer reads.</li>
+  <li>a <strong>hand-typed count or enumeration in a doc that has already drifted</strong> — a "(12 items)" bullet missing the 13th the SAME diff adds. Any count / list in prose must be DERIVED or re-counted against the actual change (mode-4's no-<code>==N</code>-literal rule extends to docs).</li>
+</ul>
+<p><strong>CHECK:</strong> honor the spec's PR-split; complete the paper trail even where CI doesn't gate it; re-count every prose count against the diff (don't copy the spec's number).</p>
+
+<h3 id="mode-8">8. Provenance and identity rebinding</h3>
+<p>RECURRING. Imported or foreign data gets re-stamped with the <em>current run's</em> identity, falsely certifying it. A copied anti-pattern that recurs across files.</p>
+<ul>
+  <li>an imported manifest's judgment stamped with the <strong>current code's</strong> fingerprint, so a stale artifact reads as if produced today — and the <strong>identical</strong> bug in a second file.</li>
+  <li>a "this is a MIX / derived" stamp written with <strong>empty backing records</strong> — a provenance claim with nothing behind it.</li>
+</ul>
+<p><strong>CHECK:</strong> a result READ from a manifest / import carries its <strong>own recorded</strong> provenance (fingerprint, source, author list) or <strong>null</strong> — never the current run's. "Produced here" and "read from elsewhere" must stamp differently. Any "MIX / derived / attributed / verified-under-X" claim requires the backing records to actually exist (&ge; the asserted count); if they don't, <strong>refuse</strong> — don't fabricate the stamp.</p>
+
+<h3 id="mode-9">9. Measurement validity</h3>
+<p>The rarest and subtlest: the code runs, is internally consistent, and is <em>conceptually wrong</em> — it measures the wrong thing or defeats its own stated purpose.</p>
+<ul>
+  <li>a "topic control" variable that is actually a <em>style</em> dimension, so holding it fixed partials out the very signal being measured.</li>
+</ul>
+<p><strong>CHECK:</strong> does the control / normalization variable actually isolate the named confound, or is it correlated with — or identical to — the signal? Stratifying or normalizing on a dimension REMOVES that dimension from the result; confirm it is a confound you want gone, not the property you are trying to measure.</p>
+
+<h3 id="mode-10">10. Override and gate hygiene</h3>
+<p>The dominant class in validator / gate builds. A check, its OVERRIDE, and any meta-gate are themselves code that fails the same ways the checked artifact does. Whole review rounds land here — and almost none is a live crash; they are robustness / scope / claim defects a happy-path run and a naive diff-review both pass.</p>
+<ul>
+  <li><strong>Override too broad / wrong-scoped.</strong> An override must (a) validate its target id RESOLVES — a bogus id must silence NOTHING (a non-resolving marker was disabling the whole check); (b) be scoped to the right UNIT, not global — one legitimate per-id override silenced an entire map; (c) reject DECOYS — a marker in prose, in a code span, with a suffix collision (<code>slug-extra</code>), or an unrelated cross-reference must not satisfy it. Derive scope from a real ANCHOR (the active section heading), NOT "the nearest matching token."</li>
+  <li><strong>Substring classification / matching is fragile.</strong> Gating, classifying, or matching a marker on a raw <code>"&lt;!-- marker" in text</code> (or <code>grep -F</code>) also matches prose, code spans, and suffixes. Boundary-match the token, strip code spans, and classify on PARSED structure — never a bare substring.</li>
+  <li><strong>A new matcher must cover its format's FULL spec AND every accepted spelling.</strong> A first cut that stripped only single-backtick + fenced blocks and detected only the one-space spelling let the multi-backtick inline, tilde fence, zero-space, string-prefix, and digit-bearing variants sail straight through on the next round. When you "strip code spans," enumerate EVERY form of the format; when you match a marker / literal, match EVERY spelling the parser accepts (string prefixes, zero / extra whitespace, digits). A partial matcher reads as "closed the class" but isn't.</li>
+  <li><strong>The gate must obey its own rule (dogfood).</strong> A linter that bans hand-typed counts shipped a WRONG hand-typed count in its own changelog; a meta-linter false-positived on its own source and stayed green only via a silent exemption. A silent exemption that HIDES a real violation is load-bearing — remove the need for it, don't paper over it.</li>
+  <li><strong>Gate completeness vs the claim.</strong> If you harden / gate a class, gate it EVERYWHERE the class occurs, or scope the claim to what shipped. When a change says "closes the X class," grep the WHOLE tree for X and either fix all sites or name the survivors — and add a gate so the class can't return.</li>
+  <li><strong>Two implementations of one check must agree.</strong> A primary + degraded fallback (or a mirrored cross-language pair) must accept the SAME inputs, and the fallback must not be MORE permissive — a shell fallback honored a fenced-code decoy the primary path correctly rejected.</li>
+  <li><strong>Don't hand-roll a structured-format parser twice — collapse to ONE state machine + delegation.</strong> If you catch yourself regex-patching a matcher for a structured format (Markdown code spans, nested fences, HTML comments) — <em>especially in two languages</em> (a regex AND a shell <code>awk</code> / <code>sed</code>) — STOP: every edge is now two chances to diverge, and each regex patch breeds the next sibling. <em>When you've got a problem and you reach for a regex, you now have two problems.</em> Several rounds burned on multiline-inline / tilde-fence / triple-quote edges until the two parsers were replaced by ONE state-machine matcher that every caller (incl. the shell side, over a stdin CLI) DELEGATES to — the divergence class then vanished structurally, not patch-by-patch. <strong>A second edge-case finding on the same matcher is the signal to change the ABSTRACTION, not add another alternation.</strong> (The true ceiling is a real parser; a single state machine is the right <em>floor</em> only when no parser is available offline.)</li>
+  <li><strong>Introducing the single source of truth &ne; adopting it — migrate (and DELETE) every old copy.</strong> Collapsing a duplication class to one shared helper is only half done; the job finishes when you <code>grep</code> the OLD pattern everywhere and route EVERY instance through the helper, deleting the local copy. The sites most likely left behind are the ones hardened EARLIEST — built before the helper existed — which silently keep their own now-bypassable version. <strong>The grep for the dead pattern IS the completeness check</strong> — better still, add a lint rule that FAILS on the local pattern, so a stray copy cannot survive (the helper existing is not evidence the helper is used).</li>
+</ul>
+<p><strong>CHECK:</strong> for every override / exemption / gate — does a bogus id silence nothing? is scope a real anchor, not a token? do prose / code-span / suffix / cross-ref decoys fail in EVERY form (single + multi-backtick, fenced + tilde)? does the matcher catch every spelling (string prefixes, zero / extra whitespace, digit ids)? does the tool satisfy its own rule? is the class gated EVERYWHERE (grep, don't trust "I fixed the named site")? do the primary and fallback implementations accept the identical input set — confirmed on the MIN runtime, not just the dev shell? And: <strong>have I now patched this format-matcher more than once?</strong> If so, replace it with a state machine / parser before the next round — don't ship a third alternation.</p>
+
+<hr>
+
+<h2>Round-2 prevention</h2>
+
+<h3 id="fix-loop">The fix loop</h3>
+<p>A fix responding to a review finding <strong>is a build</strong> — give it the same pre-flight. After folding: (a) confirm the fix FULLY resolves the finding; (b) self-review the fix against modes 1–10 (a fix that adds a field can introduce a mode-1/2/4 defect; a docstring claim a mode-5/8; a control a mode-9; a matcher / override a mode-10); (c) re-run the full suite; THEN push. Round 2 should be empty because <em>you</em>, not the reviewer, caught the regression.</p>
+
+<h3 id="verify-min-runtime">Verify on the minimum runtime</h3>
+<p>A green dev-shell run is NOT a green min-runtime run, and the gap is a free review round. Shell gates commonly run under <code>set -euo pipefail</code> on macOS <code>/bin/bash</code> <strong>3.2</strong> in a <strong>UTF-8 locale</strong> — where an unbraced <code>$VAR</code> adjacent to a multibyte character is parsed as one (unbound) name and aborts under <code>set -u</code>, a break that newer bash and Linux CI both hide. Before "ready," run the shell aggregate on the oldest supported shell under <code>LC_ALL=…UTF-8</code>, and the interpreted languages on their pinned versions. Brace expansions adjacent to non-word characters; <strong>test the floor, not the ceiling.</strong></p>
+
+<h3 id="shallow-check">The SHALLOW-CHECK trap</h3>
+<p>The most common round-2 P1 is a fix that adds the <em>right kind</em> of check but stops short, so the next review round walks straight around it. The guard exists; it just doesn't cover the whole surface.</p>
+<ul>
+  <li><strong>count-only</strong>, not contents: <code>len(x) &gt;= 2</code> accepts <code>[{}, {}]</code> — validate every leg's required fields + recompute any integrity digest, don't just count.</li>
+  <li><strong>per-record</strong>, not cross-record: validating membership on each row still lets one key name two different sets across rows — bind the key to its member set.</li>
+  <li><strong>sampled</strong>, not exhaustive: a self-audit that tried string and list-of-non-dict inputs but not a non-iterable (<code>x: 1</code>) or a truthy-non-dict (<code>x: ["y"]</code>) declared the path clean; both then escaped as tracebacks. A sampled probe is NOT a clean bill.</li>
+  <li><strong>one type / branch</strong>, not all: a blank-string guard that misses whitespace; an <code>or {}</code> that misses a truthy non-dict; a boundary that handles <code>.</code> but not <code>,</code>.</li>
+  <li><strong>one site</strong>, not all siblings (RECURRING): the fix guards the exact field / branch the reviewer named but leaves an IDENTICAL-shape sibling on the same path open. When a fix reads as "guard field X against shape Y," grep for EVERY other field / site that takes shape Y down the same path and guard them in the same pass. (This recurses into the <em>review</em> too: a self-review that fingers only the site the reviewer would name can itself be a shallow check — the regression test is what exposes the missed sibling.)</li>
+  <li><strong>early-return before the whole-surface check</strong> (RECURRING): an <code>if not &lt;parsed_blocks&gt;: return ok</code> skips the checks that run on the RAW / prose surface, so a violation expressed in prose passes because parsing found "nothing to check." The prose / whole-surface checks must run even when structured parsing is empty; only genuinely block-bound checks may no-op.</li>
+  <li><strong>one direction of a membership invariant, not both:</strong> rejecting UNDECLARED keys while never requiring all DECLARED members be covered — an item omitted a declared member and passed. Check no-extra AND no-missing.</li>
+  <li><strong>a guard that lets input pass check A while disabling check B:</strong> a malformed item satisfied check A yet its unreadable field silently escaped check B. If passing A is the precondition for B to run, validate the input FULLY at A so B can never be skipped by a malformed-but-A-passing payload.</li>
+</ul>
+<p><strong>CHECK:</strong> ask "what's the SMALLEST input that satisfies my new guard but still breaks downstream?" and test THAT. Enumerate the input shapes (empty / whitespace / wrong-type-but-truthy / non-iterable / duplicate-across-records / forged-but-well-shaped) and cover the axis, not one point on it. And before pushing a fix, <strong>read the existing self-tests / regressions</strong> — a too-aggressive guard that breaks a legitimate pinned case is itself a round-2 regression.</p>
+
+</main>
+</body>
+</html>
