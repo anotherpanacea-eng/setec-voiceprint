@@ -231,7 +231,9 @@ def test_unregistered_detector_fails_loud():
         "scores": {
             "lrr": {
                 "machine": [[0.1], [0.2]],
-                "human": [[0.8, 0.9], [0.7, 0.6]],
+                # human is the fixed reference class: identical across rungs (so this
+                # fixture exercises the SIGN guard, not the new fixed-reference guard).
+                "human": [[0.8, 0.9], [0.8, 0.9]],
             }
         },
     }
@@ -448,6 +450,34 @@ def test_injected_score_count_must_match_human_corpus_size():
     }
     with pytest.raises(ValueError, match=r"one per human corpus window"):
         pr.run_from_injected_scores(payload)
+
+
+def test_injected_human_scores_must_be_fixed_across_rungs():
+    """Codex P1: the human windows are the FIXED reference class — never paraphrased —
+    so their injected scores must be IDENTICAL across every rung. A human list that
+    drifts rung-to-rung would let a reported AUC/TPR degradation come from moving the
+    supposedly fixed reference class instead of from the paraphrase attack on the
+    machine side. The machine side MAY change per rung (it is attacked); the human side
+    may not. Refuse a drifting human reference loudly."""
+    payload = {
+        "paraphraser_label": "proxy_stdlib",
+        "detectors": ["yules_k"],
+        "n_rungs": 1,
+        "machine_texts": ["m one", "m two"],
+        "human_texts": ["h a", "h b"],
+        "scores": {
+            "yules_k": {
+                "machine": [[1.0, 2.0], [1.5, 2.5]],   # machine MAY change per rung (attacked)
+                "human": [[0.3, 0.4], [0.3, 0.5]],     # human MUST NOT — rung 1 differs from rung 0
+            },
+        },
+    }
+    with pytest.raises(ValueError, match="fixed reference class"):
+        pr.run_from_injected_scores(payload)
+    # the same payload with a STABLE human reference passes the guard (it then proceeds
+    # into scoring); flip rung 1 back to match rung 0 and the fixed-reference error is gone.
+    payload["scores"]["yules_k"]["human"] = [[0.3, 0.4], [0.3, 0.4]]
+    pr.run_from_injected_scores(payload)
 
 
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])

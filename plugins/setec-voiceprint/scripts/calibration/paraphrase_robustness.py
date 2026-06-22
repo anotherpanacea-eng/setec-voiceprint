@@ -632,6 +632,24 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
                             f"[{pos}] must be finite; got {value!r}"
                         )
 
+    # Human windows are the FIXED reference class — never paraphrased (the posture
+    # invariant + spec 33). The injected human scores MUST therefore be identical across
+    # every rung: the same human windows scored by the same deterministic detector cannot
+    # change rung-to-rung. If they drift, a reported AUC/TPR degradation could come from
+    # moving the supposedly fixed reference class rather than from the paraphrase attack on
+    # the machine side — silently corrupting the only quantity this harness measures. Pin
+    # every rung's human list to rung 0's.
+    for det in detectors:
+        human_lists = scores[det]["human"]
+        for rung in range(1, len(human_lists)):
+            if human_lists[rung] != human_lists[0]:
+                raise ValueError(
+                    f"injected scores[{det!r}]['human'][rung {rung}] differs from rung 0: "
+                    f"the human reference class is never paraphrased and must be identical "
+                    f"across all rungs, else reported degradation can come from moving the "
+                    f"fixed reference class instead of from the paraphrase attack"
+                )
+
     scorer = _InjectedScorer(scores)
     paraphraser = StdlibProxyParaphraser()
     return run_report(
