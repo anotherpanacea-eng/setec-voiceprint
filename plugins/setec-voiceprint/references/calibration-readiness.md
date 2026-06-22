@@ -106,6 +106,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `distinct_diversity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 15 |
 | `document_layout_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `edit_magnitude_audit` | Heuristic (uncalibrated) | Yes | operator-calibrated model (--model PATH) (optional) | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 100 |
+| `enthymeme_gapflag` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 120 |
 | `fallacy_scan` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 120 |
 | `fast_detect_curvature` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |
 | `formulaicity_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
