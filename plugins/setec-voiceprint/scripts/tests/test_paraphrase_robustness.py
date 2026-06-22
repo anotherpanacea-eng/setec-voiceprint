@@ -278,6 +278,27 @@ def test_envelope_is_valid_and_validation_surface():
     assert "robust to paraphrase" in dnl
 
 
+def test_injected_report_names_the_declared_paraphraser_not_the_stdlib_proxy():
+    # Codex #261 round-2: the injected path hardcoded the stdlib proxy's label, so every injected
+    # curve was reported as "proxy_stdlib" regardless of the real attack (e.g. DIPPER). The report
+    # must name the payload-declared paraphraser, both top-level and per-rung.
+    payload = _injected_payload_two_rungs()
+    payload["paraphraser_label"] = "dipper_xxl"
+    results = pr.run_from_injected_scores(payload)
+    assert results["paraphraser_label"] == "dipper_xxl"
+    assert results["per_rung"] and all(r["paraphraser_label"] == "dipper_xxl" for r in results["per_rung"])
+    # An injected payload with no declared paraphraser is refused — injected curves may not travel
+    # unbound from the attack that generated them.
+    for bad_label in (None, "", "   "):
+        p = _injected_payload_two_rungs()
+        if bad_label is None:
+            p.pop("paraphraser_label", None)
+        else:
+            p["paraphraser_label"] = bad_label
+        with pytest.raises(ValueError, match="paraphraser_label"):
+            pr.run_from_injected_scores(p)
+
+
 # --------------------------- fixtures ----------------------------- #
 
 

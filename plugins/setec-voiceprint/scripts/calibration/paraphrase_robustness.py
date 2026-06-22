@@ -363,8 +363,14 @@ def run_report(
     rungs: int,
     warnings: list[str] | None = None,
     min_length_ratio: float = 0.5,
+    report_label: str | None = None,
 ) -> dict[str, Any]:
     """Full pipeline. Returns the ``results`` payload (no envelope).
+
+    ``report_label`` overrides the ``paraphraser_label`` written into the report. The
+    injected-scores path passes the payload-declared label here so the report names the REAL
+    paraphraser that produced the injected curves — not the stdlib proxy that is run only to
+    exercise the orchestration guards. Defaults to ``paraphraser.label`` (the live-paraphraser path).
 
     Rung 0 is the unattacked machine corpus. Rungs 1..``rungs`` apply
     ``paraphraser`` to EACH machine window (human windows are never touched).
@@ -374,6 +380,9 @@ def run_report(
     the cell carries ``auc`` / ``tpr_at_fpr05`` / ``tpr_at_fpr10`` and the Δ
     from rung 0. NO aggregate scalar is computed."""
     warns: list[str] = list(warnings) if warnings else []
+    # The label written into the report: the real (declared) paraphraser on the injected path,
+    # else the live paraphraser's own label.
+    label = report_label if report_label is not None else paraphraser.label
 
     # Rung-count guard at the orchestration boundary: refuse rungs < 1 up
     # front instead of clamping with max(1, ...). A clamp silently fabricated
@@ -439,12 +448,12 @@ def run_report(
             per_detector[det] = c
         per_rung.append({
             "rung": rung,
-            "paraphraser_label": paraphraser.label,
+            "paraphraser_label": label,
             "per_detector": per_detector,
         })
 
     results: dict[str, Any] = {
-        "paraphraser_label": paraphraser.label,
+        "paraphraser_label": label,
         "n_machine_windows": len(machine_texts),
         "n_human_windows": len(human_texts),
         "n_rungs": rungs,
@@ -569,6 +578,18 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
     human_texts = list(payload["human_texts"])
     scores = payload["scores"]
 
+    # The report must name the REAL paraphraser that produced the injected curves — its provenance
+    # binding. Without this the report hardcoded the stdlib proxy's label ("proxy_stdlib") for every
+    # injected run, mislabeling e.g. a DIPPER/GPT attack as the stdlib proxy. Require a non-empty
+    # declared label so injected scores can never travel unbound from the attack that generated them.
+    paraphraser_label = payload.get("paraphraser_label")
+    if not isinstance(paraphraser_label, str) or not paraphraser_label.strip():
+        raise ValueError(
+            "injected payload must declare a non-empty 'paraphraser_label' naming the paraphraser "
+            "that produced these scores (the binding between the injected curves and the attack); "
+            "the stdlib proxy applied here only exercises the orchestration guards, it is not the attack"
+        )
+
     # Validate the injected shape up front so a malformed table fails loudly
     # with a clear message instead of an IndexError deep in scoring. Each
     # detector needs one machine list AND one human list per rung 0..n_rungs
@@ -659,6 +680,7 @@ def run_from_injected_scores(payload: dict[str, Any]) -> dict[str, Any]:
         machine_texts=machine_texts,
         human_texts=human_texts,
         rungs=n_rungs,
+        report_label=paraphraser_label,   # name the real attack, not the guard-exercising proxy
     )
 
 
