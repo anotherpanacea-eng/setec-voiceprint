@@ -686,6 +686,13 @@ def run_batch(
         rid = row.get("id", f"row_{i}")
         text = row.get("text")
         if text is None and row.get("path"):
+            if not isinstance(row["path"], str):
+                # A non-string path (a number / list in a malformed manifest row) would raise
+                # TypeError in Path(...) BEFORE the read try below — skip the one row, don't abort.
+                out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
+                            "band": "indeterminate", "calibration_status": "heuristic",
+                            "skipped": "non_string_path"})
+                continue
             p = Path(row["path"])
             if base_dir is not None and not p.is_absolute():
                 p = base_dir / p
@@ -714,6 +721,13 @@ def run_batch(
             out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
                         "band": "indeterminate", "calibration_status": "heuristic",
                         "skipped": "empty_text"})
+            continue
+        if not isinstance(text, str):
+            # A truthy non-string `text` (a number / list in the row) passes `not text` and would
+            # crash word_tokens()/audit_gecscore() with a TypeError (not GecScoreInputError) — skip it.
+            out.append({"id": rid, "gecscore": None, "gec_n_corrections": None,
+                        "band": "indeterminate", "calibration_status": "heuristic",
+                        "skipped": "non_string_text"})
             continue
         try:
             r = audit_gecscore(text, backend=backend, include_fairness=False)

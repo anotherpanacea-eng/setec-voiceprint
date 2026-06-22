@@ -657,6 +657,26 @@ def test_ac7_batch_missing_path_skipped_not_aborted(tmp_path):
     assert by["ok"]["gecscore"] is not None        # the valid row still scored
 
 
+def test_ac7_batch_non_string_path_or_text_skipped_not_aborted(tmp_path):
+    """Codex #260 pre-screen siblings: a non-string `path` (Path(int) raises TypeError BEFORE the
+    read try) and a truthy non-string `text` (crashes word_tokens with TypeError, not
+    GecScoreInputError) must each skip the one row, not abort the batch."""
+    good = tmp_path / "good.txt"
+    good.write_text(_make_text(80), encoding="utf-8")
+    manifest = tmp_path / "m.jsonl"
+    manifest.write_text(
+        json.dumps({"id": "badpath", "path": 12345}) + "\n"
+        + json.dumps({"id": "badtext", "text": ["not", "a", "string"]}) + "\n"
+        + json.dumps({"id": "ok", "path": "good.txt"}),
+        encoding="utf-8")
+    rows = g.run_batch(g._load_batch_manifest(manifest), base_dir=manifest.parent)
+    assert len(rows) == 3                          # neither malformed row aborted the run
+    by = {r["id"]: r for r in rows}
+    assert by["badpath"]["skipped"] == "non_string_path"
+    assert by["badtext"]["skipped"] == "non_string_text"
+    assert by["ok"]["gecscore"] is not None
+
+
 # ----------------------------------------------------------------------
 # AC-8 — calibration honesty + fragment shape.
 # ----------------------------------------------------------------------
