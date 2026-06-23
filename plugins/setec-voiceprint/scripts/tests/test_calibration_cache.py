@@ -739,7 +739,8 @@ class TestEmbeddingDtypeCacheIdentity:
             "do_tier2": False,
             "do_tier3": True,
             "embedding_model": "mxbai",  # pluggable path on both sides
-            "embedding_dtype_resolved": None,  # present, just None
+            # embedding_dtype_resolved is pinned below (after args) to this
+            # host's resolved label — see the comment there.
             "embedding_device_requested": "cuda:0",
             "scorer_version": ct.SCORER_CACHE_VERSION,
             "sub_sample": None,
@@ -748,6 +749,14 @@ class TestEmbeddingDtypeCacheIdentity:
         args.tier3 = True
         args.embedding_model = "mxbai"
         args.embedding_device = "cuda:1"
+        # Pin the cache's resolved dtype to what THIS host resolves (torch →
+        # 'fp32', no torch → None) so the dtype identity MATCHES and the device
+        # change is the SOLE differing axis. The production check resolves the
+        # current label with the same helper, so the two agree on any host.
+        # Hardcoding None tripped the dtype check first (None → 'fp32') on a
+        # torch-equipped host, masking the device check this test targets and
+        # making the test environment-dependent.
+        cache_meta["embedding_dtype_resolved"] = ct._resolve_embedding_dtype_label(args)
         ok, reason = ct.cache_is_compatible(
             cache_meta, args,
             manifest_sha256="sha256:abc",
