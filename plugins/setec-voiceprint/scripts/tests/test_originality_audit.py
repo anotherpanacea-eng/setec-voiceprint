@@ -144,13 +144,65 @@ def test_short_target_warns(tmp_path):
 
 
 def test_manifest_reference(tmp_path):
-    doc = tmp_path / "a.txt"; doc.write_text(_REF[0][1])
+    # doc a is a SUPERSET of the target (target + extra tail) so the target is fully reconstructible
+    # from it, yet doc a is NOT a content-identical copy of the target (so it isn't self-excluded).
+    doc = tmp_path / "a.txt"; doc.write_text(_REF[0][1] + " plus a longer unique tail of words here")
     man = tmp_path / "m.jsonl"
     man.write_text(json.dumps({"id": "a", "text_path": "a.txt"}) + "\n"
                    + json.dumps({"id": "b", "text": "inline reference text not shared"}) + "\n")
-    tgt = tmp_path / "t.txt"; tgt.write_text(_REF[0][1])     # verbatim of doc a
+    tgt = tmp_path / "t.txt"; tgt.write_text(_REF[0][1])     # fully covered by (but != ) doc a
     _, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
     assert env["available"] is True and env["results"]["coverage"] == pytest.approx(1.0)
+
+
+# --- content-fingerprint self-exclusion (sibling of cross_doc_novelty_profile Codex P1) ----
+# An INLINE-text manifest row (_load_reference_manifest -> resolved_path None) that carries a copy
+# of the target is NOT caught by the path-only guard (None != target_abs), so the target would
+# reconstruct itself from its own copy and coverage collapses trivially to 1.0. A content
+# fingerprint over normalize_for_char_ngrams self-excludes it alongside the path check.
+
+def test_inline_copy_of_target_is_self_excluded(tmp_path):
+    # manifest has (a) an unrelated inline row and (b) an INLINE COPY of the target text.
+    man = tmp_path / "m.jsonl"
+    man.write_text(
+        json.dumps({"id": "other", "text": _REF[1][1]}) + "\n"
+        + json.dumps({"id": "self_copy", "text": _REF[0][1]}) + "\n")
+    tgt = tmp_path / "t.txt"; tgt.write_text(_REF[0][1])     # equals the self_copy inline row
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert rc == 0 and env["available"] is True
+    # the inline copy is dropped via the content fingerprint -> the target does NOT reconstruct
+    # itself; the only surviving row shares no long span, so originality is ~1.0 (NOT trivially 0).
+    assert env["results"]["coverage"] != pytest.approx(1.0)
+    assert env["results"]["originality"] == pytest.approx(1.0)
+    # the drop is surfaced through the existing n_dropped_self / warning honesty path.
+    assert env["results"]["assumptions"].get("n_dropped_self", 0) >= 1
+    assert any("self-exclusion" in w for w in (env.get("warnings") or []))
+
+
+def test_inline_copy_whitespace_case_variant_still_caught(tmp_path):
+    # the inline copy differs only by case + collapsed whitespace; the normalized fingerprint
+    # (normalize_for_char_ngrams: lowercase + collapse-whitespace + strip) still matches it.
+    variant = "  THE   Quick BROWN fox JUMPS over the LAZY dog AND then the CAT ran AWAY\n"
+    assert variant.strip().lower() != _REF[0][1]            # raw bytes differ (only normalized eq)
+    man = tmp_path / "m.jsonl"
+    man.write_text(
+        json.dumps({"id": "other", "text": _REF[1][1]}) + "\n"
+        + json.dumps({"id": "self_copy_variant", "text": variant}) + "\n")
+    tgt = tmp_path / "t.txt"; tgt.write_text(_REF[0][1])
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert rc == 0 and env["available"] is True
+    assert env["results"]["originality"] == pytest.approx(1.0)
+    assert env["results"]["assumptions"].get("n_dropped_self", 0) >= 1
+
+
+def test_content_self_exclusion_below_pool_floor_is_bad_input(tmp_path):
+    # fail-CLOSED: if dropping the inline copy empties the reference pool, route through the
+    # existing empty-pool bad_input path (a content match only DROPS, never re-admits).
+    man = tmp_path / "m.jsonl"
+    man.write_text(json.dumps({"id": "self_copy", "text": _REF[0][1]}) + "\n")
+    tgt = tmp_path / "t.txt"; tgt.write_text(_REF[0][1])
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert env["available"] is False and env["reason_category"] == "bad_input" and rc == 3
 
 
 # --- #225 P2 regressions ---------------------------------------------------
@@ -176,8 +228,10 @@ def test_span_cap_is_surfaced_not_hidden(tmp_path):
     """The per-span cap must be surfaced: when hit, longest_match_tokens is a lower bound and
     longest_match_capped is True (raising --max-span recovers the exact value)."""
     long_ref = " ".join(f"w{i}" for i in range(40))
-    rdir = tmp_path / "ref"; rdir.mkdir(); (rdir / "r.txt").write_text(long_ref)
-    tgt = tmp_path / "t.txt"; tgt.write_text(long_ref)            # full verbatim of the reference
+    # the reference is a SUPERSET of the target (target span + extra tail) so the target is fully
+    # covered, but the reference is NOT a content-identical copy (so it isn't self-excluded).
+    rdir = tmp_path / "ref"; rdir.mkdir(); (rdir / "r.txt").write_text(long_ref + " zzz extra tail")
+    tgt = tmp_path / "t.txt"; tgt.write_text(long_ref)            # fully covered by (but != ) the ref
     # cap below the true 40-token span -> capped True, longest == cap
     rc, env = _envelope(["--target", str(tgt), "--reference-dir", str(rdir),
                          "--min-ngram", "3", "--max-span", "10", "--json"])
@@ -219,8 +273,11 @@ def test_invalid_utf8_manifest_is_bad_input(tmp_path):
 def test_non_object_jsonl_rows_skipped_not_traceback(tmp_path):
     tgt = tmp_path / "t.txt"; tgt.write_text("alpha beta gamma delta epsilon zeta")
     man = tmp_path / "m.jsonl"
+    # the one valid object row is a SUPERSET of the target (not a content-identical copy) so it
+    # survives self-exclusion and is the lone surviving reference doc.
     man.write_text('[1,2,3]\n42\n"a bare string"\n'
-                   + json.dumps({"id": "a", "text": "alpha beta gamma delta epsilon zeta"}) + "\n")
+                   + json.dumps({"id": "a",
+                                 "text": "alpha beta gamma delta epsilon zeta and more"}) + "\n")
     rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
     assert env["available"] is True                       # the non-object rows are skipped, not fatal
     assert env["results"]["n_reference_docs"] == 1        # only the one valid object row is used

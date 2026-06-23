@@ -18,6 +18,7 @@ license refuses any AI/human or plagiarism determination; thresholds are operato
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -28,6 +29,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import stylometry_core as sc  # noqa: E402
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
 
@@ -89,6 +91,21 @@ def _load_reference_manifest(path: Path) -> list[tuple[str, str, Path | None]]:
             else:
                 sys.stderr.write(f"  manifest line {line_no}: {fp} not found; skipping\n")
     return out
+
+
+# ---- content fingerprint (self-exclusion for inline-text pool entries) -------
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the text under the SAME normalization the surface treats as content-equal
+    (``stylometry_core.normalize_for_char_ngrams``: lowercase, collapse whitespace, strip). Used to
+    self-exclude a pool entry whose *content* equals the target's even when its resolved_path is
+    None (an inline-``text`` manifest row from _load_reference_manifest).
+
+    Sibling of the Codex P1 fixed in cross_doc_novelty_profile.py: the path-only guard
+    (``pth != target_abs``) never fires on an inline copy of the target (pth=None), letting the
+    target reconstruct itself from its own copy (coverage trivially collapses to 1.0). The content
+    fingerprint closes that hole alongside the path check (path OR content -> exclude)."""
+    return hashlib.sha256(sc.normalize_for_char_ngrams(text).encode("utf-8")).hexdigest()
 
 
 # ---- DJ-Search coverage ------------------------------------------------------
@@ -246,9 +263,25 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
     # Self-exclusion: never let the target reconstruct itself if it sits in its own reference
     # pool (mirrors general_imposters' drop-self) — otherwise coverage trivially collapses to 1.0.
+    # Drop a pool entry by EITHER guard:
+    #   (a) PATH match — resolved_path == target's resolved_path (a reference FILE that IS the target).
+    #   (b) CONTENT match — normalized-content fingerprint == target's. This catches an inline-text
+    #       manifest row (resolved_path None) carrying a COPY of the target; the path guard alone
+    #       (None != target_abs) never self-excludes it. Sibling of the Codex P1 fixed in
+    #       cross_doc_novelty_profile.py. Path OR content -> exclude; a content match only DROPS,
+    #       never re-admits (fail-closed). If exclusion empties the pool, audit_originality raises
+    #       ValueError and the caller below maps it to the existing bad_input envelope.
     target_abs = target_path.resolve()
-    n_dropped_self = sum(1 for _, _, pth in loaded if pth == target_abs)
-    reference = [(src, text) for src, text, pth in loaded if pth != target_abs]
+    target_fingerprint = _content_fingerprint(target_text)
+    reference: list[tuple[str, str]] = []
+    n_dropped_self = 0
+    for src, text, pth in loaded:
+        path_match = pth is not None and pth == target_abs
+        content_match = _content_fingerprint(text) == target_fingerprint
+        if path_match or content_match:
+            n_dropped_self += 1
+        else:
+            reference.append((src, text))
 
     try:
         results = audit_originality(target_text, reference, min_ngram=args.min_ngram,
@@ -258,10 +291,15 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                                   version=SCRIPT_VERSION, target_path=str(target_path),
                                   reason=str(e), reason_category="bad_input")
 
+    # Surface the self-exclusion count (path OR content matches) through the assumptions block — the
+    # honesty pattern: a non-zero drop means the reported originality is measured against a pool that
+    # excludes the target's own copies.
+    results["assumptions"]["n_dropped_self"] = n_dropped_self
+
     warnings: list[str] = []
     if n_dropped_self:
-        warnings.append(f"dropped {n_dropped_self} reference doc(s) identical to the target path "
-                        "(self-exclusion); the target does not reconstruct itself")
+        warnings.append(f"dropped {n_dropped_self} reference doc(s) identical to the target by path "
+                        "or content (self-exclusion); the target does not reconstruct itself")
     if results["target_tokens"] < args.min_ngram:
         warnings.append(f"target has {results['target_tokens']} tokens (< min_ngram "
                         f"{args.min_ngram}); no span can match, originality is trivially 1.0")
