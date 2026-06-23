@@ -381,11 +381,25 @@ def run_report(
     the cell carries ``auc`` / ``tpr_at_fpr05`` / ``tpr_at_fpr10`` and the Δ
     from rung 0. NO aggregate scalar is computed."""
     warns: list[str] = list(warnings) if warnings else []
-    # The label written into the report: the real (declared) paraphraser on the injected path,
-    # else the live paraphraser's own label.
-    label = report_label if report_label is not None else paraphraser.label
+    # Validate orchestration arguments BEFORE deriving anything from them — the
+    # signature admits paraphraser=None, so dereferencing it first would raise a
+    # confusing AttributeError instead of the intended ValueError.
     if apply_paraphraser and paraphraser is None:
         raise ValueError("run_report: a paraphraser is required unless apply_paraphraser=False")
+    # The label written into the report: an explicit report_label (the injected
+    # path names the REAL declared paraphraser, not the guard-exercising proxy)
+    # wins; otherwise fall back to the live paraphraser's own label. With no
+    # paraphraser there is nothing to fall back to, so report_label is mandatory
+    # on that path — guard it, never dereference None.
+    if report_label is not None:
+        label = report_label
+    elif paraphraser is not None:
+        label = paraphraser.label
+    else:
+        raise ValueError(
+            "run_report: report_label is required when paraphraser is None "
+            "(no live paraphraser to derive the report label from)"
+        )
 
     # Rung-count guard at the orchestration boundary: refuse rungs < 1 up
     # front instead of clamping with max(1, ...). A clamp silently fabricated

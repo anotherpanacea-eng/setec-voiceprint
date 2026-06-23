@@ -398,6 +398,41 @@ def test_run_report_rungs_zero_no_phantom_rung():
         )
 
 
+def test_run_report_none_paraphraser_with_apply_raises_valueerror():
+    """[Codex #261 P2] run_report(paraphraser=None, apply_paraphraser=True) must
+    raise a clean ValueError, not an AttributeError. The guard previously sat
+    AFTER ``label = ... else paraphraser.label``, so the None deref fired first
+    and the intended ValueError was unreachable."""
+    with pytest.raises(ValueError, match="a paraphraser is required"):
+        pr.run_report(
+            paraphraser=None,
+            scorer=_ConstantScorer(),
+            detectors=["yules_k"],
+            machine_texts=["m one", "m two"],
+            human_texts=["h a", "h b", "h c"],
+            rungs=1,
+            apply_paraphraser=True,
+        )
+
+
+def test_run_report_none_paraphraser_no_label_raises_valueerror():
+    """[Codex #261 P2] The no-paraphraser path (apply_paraphraser=False) has no
+    live paraphraser to derive a label from, so report_label is mandatory there.
+    Omitting it must raise a clean ValueError, not the AttributeError from
+    dereferencing paraphraser.label."""
+    with pytest.raises(ValueError, match="report_label is required"):
+        pr.run_report(
+            paraphraser=None,
+            scorer=_ConstantScorer(),
+            detectors=["yules_k"],
+            machine_texts=["m one", "m two"],
+            human_texts=["h a", "h b", "h c"],
+            rungs=1,
+            apply_paraphraser=False,
+            report_label=None,
+        )
+
+
 def test_negative_n_rungs_refused_with_clear_message():
     """Negative n_rungs was already rejected (expected_lists clamped to 0), but
     now it fails up front with the same clear rung-count message rather than a
