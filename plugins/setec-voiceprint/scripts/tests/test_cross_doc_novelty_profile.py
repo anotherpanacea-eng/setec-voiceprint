@@ -411,6 +411,84 @@ def test_self_exclusion_empties_pool_bad_input(tmp_path):
     assert rc == 3
 
 
+def test_self_exclusion_drops_inline_copy_of_target(tmp_path):
+    """Codex P1 (cross_doc_novelty_profile.py:494): a manifest row carrying an INLINE copy of the
+    target text has resolved_path=None, so the path-only guard never self-excludes it. The
+    content-fingerprint guard must drop it: the target cannot position itself against a pool that
+    includes itself. Asserts the inline copy is excluded, self_excluded counts it, and n_pool drops.
+    """
+    tgt = _write_target(tmp_path, _GARDEN_TARGET, "target.txt")
+    # Manifest with an INLINE copy of the target text (path None) + 5 genuinely-other pool docs.
+    mf = tmp_path / "pool_with_inline_target.jsonl"
+    with mf.open("w", encoding="utf-8") as f:
+        f.write(json.dumps({"id": "inline_tgt_copy", "text": _GARDEN_TARGET}) + "\n")
+        f.write(json.dumps({"id": "p1", "text": _GARDEN_BASE}) + "\n")
+        f.write(json.dumps({"id": "p2", "text": _GARDEN_POOL_2}) + "\n")
+        f.write(json.dumps({"id": "p3", "text": _GARDEN_POOL_3}) + "\n")
+        f.write(json.dumps({"id": "p4", "text": _GARDEN_POOL_2 + " extra words added here."}) + "\n")
+        f.write(json.dumps({"id": "p5", "text": _GARDEN_BASE + " second copy for diversity."}) + "\n")
+
+    rc, env = _envelope([
+        "--target", str(tgt), "--reference-manifest", str(mf),
+        "--min-pool", "5", "--json",
+    ])
+    assert env["available"] is True, f"Expected success but got: {env.get('reason')}"
+    r = env["results"]
+    # The inline copy is dropped by content fingerprint; self_excluded counts it.
+    assert r["assumptions"]["self_excluded"] == 1
+    # n_pool is the 5 genuinely-other docs, not 6.
+    assert r["n_pool"] == 5
+
+
+def test_self_exclusion_inline_copy_with_whitespace_variation(tmp_path):
+    """The content fingerprint normalizes whitespace/case (normalize_for_char_ngrams), so an inline
+    copy that differs only by trivial whitespace/case is still recognized as the target and dropped.
+    """
+    tgt = _write_target(tmp_path, _GARDEN_TARGET, "target.txt")
+    # Inline copy with collapsed/extra whitespace and altered case — same normalized content.
+    inline_variant = ("  " + _GARDEN_TARGET.upper().replace(" ", "   ") + "  ")
+    mf = tmp_path / "pool_inline_variant.jsonl"
+    with mf.open("w", encoding="utf-8") as f:
+        f.write(json.dumps({"id": "inline_variant", "text": inline_variant}) + "\n")
+        f.write(json.dumps({"id": "p1", "text": _GARDEN_BASE}) + "\n")
+        f.write(json.dumps({"id": "p2", "text": _GARDEN_POOL_2}) + "\n")
+        f.write(json.dumps({"id": "p3", "text": _GARDEN_POOL_3}) + "\n")
+        f.write(json.dumps({"id": "p4", "text": _GARDEN_POOL_2 + " extra words added here."}) + "\n")
+        f.write(json.dumps({"id": "p5", "text": _GARDEN_BASE + " second copy for diversity."}) + "\n")
+
+    rc, env = _envelope([
+        "--target", str(tgt), "--reference-manifest", str(mf),
+        "--min-pool", "5", "--json",
+    ])
+    assert env["available"] is True, f"Expected success but got: {env.get('reason')}"
+    r = env["results"]
+    assert r["assumptions"]["self_excluded"] == 1
+    assert r["n_pool"] == 5
+
+
+def test_self_exclusion_inline_copy_empties_pool_bad_input(tmp_path):
+    """Fail-CLOSED: when dropping the inline copy of the target pushes the usable pool below
+    --min-pool, the surface abstains with bad_input rather than positioning the target against a
+    pool that still secretly contains itself.
+    """
+    tgt = _write_target(tmp_path, _GARDEN_TARGET, "target.txt")
+    mf = tmp_path / "pool_inline_target_small.jsonl"
+    with mf.open("w", encoding="utf-8") as f:
+        f.write(json.dumps({"id": "inline_tgt_copy", "text": _GARDEN_TARGET}) + "\n")
+        f.write(json.dumps({"id": "p1", "text": _GARDEN_BASE}) + "\n")
+        f.write(json.dumps({"id": "p2", "text": _GARDEN_POOL_2}) + "\n")
+    # 3 rows total. With --min-pool 3, the PRE-FIX code (which never drops the inline target copy)
+    # would keep all 3 and succeed. The fix drops the inline target → 2 usable < 3 → bad_input.
+    # This isolates the fix: it only abstains BECAUSE the inline copy is now excluded.
+    rc, env = _envelope([
+        "--target", str(tgt), "--reference-manifest", str(mf),
+        "--min-pool", "3", "--json",
+    ])
+    assert env["available"] is False
+    assert env["reason_category"] == "bad_input"
+    assert rc == 3
+
+
 # ---- AC-8: pool-floor abstention -----------------------------------------------
 
 def test_pool_floor_abstention(tmp_path):

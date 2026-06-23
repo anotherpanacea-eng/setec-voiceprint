@@ -27,6 +27,7 @@ Posture: descriptive, no-verdict, anti-Goodhart, ``calibration_status: provision
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import statistics
@@ -125,6 +126,22 @@ def _load_reference_manifest(path: Path) -> list[tuple[str, str, Path | None]]:
             else:
                 sys.stderr.write(f"  manifest line {line_no}: {fp} not found; skipping\n")
     return out
+
+
+# ---- content fingerprint (self-exclusion for inline-text pool entries) ---------
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the text under the SAME normalization the surface applies before feature
+    extraction (``stylometry_core.normalize_for_char_ngrams``: lowercase, collapse whitespace,
+    strip). Used to self-exclude a pool entry whose *content* equals the target's even when its
+    ``resolved_path`` is ``None`` (an inline-``text`` manifest row).
+
+    Codex P1 (cross_doc_novelty_profile.py:494): the path-only guard never fires on an inline copy
+    of the target (resolved_path=None), letting the target position itself against a pool that
+    includes itself. The content fingerprint closes that hole alongside the path check.
+    """
+    normalized = sc.normalize_for_char_ngrams(text)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
 
 # ---- z-position helpers --------------------------------------------------------
@@ -484,14 +501,22 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
             target_path=str(target_path),
             reason=f"cannot read {which}: {e}", reason_category="bad_input")
 
-    # Self-exclusion: drop any pool entry whose resolved_path == target's resolved_path.
-    # Apply .resolve() on BOTH sides. Only fires when both paths are non-None
-    # (an inline-text pool entry has resolved_path = None and is never self-excluded).
-    # Mirrors corpus_novelty_audit.py:118-121 guard.
+    # Self-exclusion: drop any pool entry that IS the target, by EITHER guard:
+    #   (a) PATH match — resolved_path == target's resolved_path. Apply .resolve() on BOTH sides.
+    #       Only fires when both paths are non-None. Mirrors corpus_novelty_audit.py:118-121.
+    #   (b) CONTENT match — normalized-content fingerprint == target's. This catches an inline-text
+    #       pool entry (resolved_path = None) that carries a copy of the target text; the path guard
+    #       alone never self-excludes it, letting the target position itself against a pool that
+    #       includes itself (Codex P1 cross_doc_novelty_profile.py:494). Path OR content → exclude.
+    # If self-exclusion drops the pool below --min-pool, the existing min_pool floor in
+    # audit_novelty_profile abstains with bad_input (fail-closed).
+    target_fingerprint = _content_fingerprint(target_text)
     self_excluded = 0
     filtered_pool: list[tuple[str, str, Path | None]] = []
     for src, text, rpath in pool:
-        if rpath is not None and rpath.resolve() == target_resolved:
+        path_match = rpath is not None and rpath.resolve() == target_resolved
+        content_match = _content_fingerprint(text) == target_fingerprint
+        if path_match or content_match:
             self_excluded += 1
         else:
             filtered_pool.append((src, text, rpath))
