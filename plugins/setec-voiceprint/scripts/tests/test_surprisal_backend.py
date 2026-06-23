@@ -54,6 +54,28 @@ _skip_no_torch = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def _no_mps_autodetect(monkeypatch):
+    """Make device auto-detect resolve to CPU on Apple-Silicon (MPS) hosts so
+    these mocked-model math tests run identically to CI (Linux, CPU).
+
+    ``SurprisalBackend._select_device`` picks MPS when
+    ``torch.backends.mps.is_available()`` is true, but the fake model's logits
+    aren't allocated on MPS, so the forward pass raises ``RuntimeError:
+    Placeholder storage has not been allocated on MPS device!`` — the tests
+    passed in CI (no MPS) but failed on a developer Mac. Disabling ONLY the MPS
+    branch (never CUDA) keeps every device-precedence test intact: those set an
+    explicit ``device`` / env var or mock ``torch.cuda.is_available`` — all
+    higher precedence than the MPS branch — and the auto-detect contract test
+    still exercises the real auto-detect path, which now lands on CPU."""
+    if not _HAS_TORCH:
+        return
+    import torch  # type: ignore
+    mps = getattr(torch.backends, "mps", None)
+    if mps is not None and hasattr(mps, "is_available"):
+        monkeypatch.setattr(mps, "is_available", lambda: False)
+
+
 # --------------- Alias resolution -------------------------------
 
 
@@ -763,9 +785,11 @@ def test_score_text_chunks_over_context_input(
     is the same as the input's first position, no loss there).
     """
     fake = mock.MagicMock()
-    # Tokenize to 10 distinct ids → over-context for a 4-position model.
+    # Tokenize to 10 tokens → over-context for a 4-position model. Every id is
+    # < vocab_size (8) so the next-token gather stays in bounds — a real
+    # tokenizer never emits an id >= the model's vocab.
     fake.AutoTokenizer.from_pretrained.return_value = _FakeTokenizer(
-        list(range(10))
+        [0, 1, 2, 3, 4, 5, 6, 7, 0, 1]
     )
     fake.AutoModelForCausalLM.from_pretrained.return_value = _FakeCausalLM(
         n_positions=4, vocab_size=8,
@@ -1326,7 +1350,9 @@ def test_score_texts_preserves_input_order_after_length_sort(
         _ShapeRecordingFakeTokenizer([0, 1, 2, 3, 4])
     )
     fake.AutoModelForCausalLM.from_pretrained.return_value = (
-        _ShapeRecordingFakeCausalLM(n_positions=200, vocab_size=8)
+        # vocab must exceed the largest id the shape-recording tokenizer emits
+        # (ids = range(len(text)//5)) — a real tokenizer never emits id >= vocab.
+        _ShapeRecordingFakeCausalLM(n_positions=200, vocab_size=256)
     )
     monkeypatch.setitem(sys.modules, "transformers", fake)
     b = sb.SurprisalBackend(model_id="tinyllama")
@@ -1358,7 +1384,8 @@ def test_score_texts_groups_length_similar_texts_in_forward_passes(
         _ShapeRecordingFakeTokenizer([0, 1, 2, 3, 4])
     )
     shape_model = _ShapeRecordingFakeCausalLM(
-        n_positions=200, vocab_size=8,
+        # vocab must exceed the largest tokenizer id (ids = range(len(text)//5)).
+        n_positions=200, vocab_size=256,
     )
     fake.AutoModelForCausalLM.from_pretrained.return_value = shape_model
     monkeypatch.setitem(sys.modules, "transformers", fake)
@@ -1403,7 +1430,9 @@ def test_score_texts_homogeneous_lengths_no_op_under_sort(
         _ShapeRecordingFakeTokenizer([0, 1, 2, 3, 4])
     )
     fake.AutoModelForCausalLM.from_pretrained.return_value = (
-        _ShapeRecordingFakeCausalLM(n_positions=200, vocab_size=8)
+        # vocab must exceed the largest id the shape-recording tokenizer emits
+        # (ids = range(len(text)//5)) — a real tokenizer never emits id >= vocab.
+        _ShapeRecordingFakeCausalLM(n_positions=200, vocab_size=256)
     )
     monkeypatch.setitem(sys.modules, "transformers", fake)
     b = sb.SurprisalBackend(model_id="tinyllama")

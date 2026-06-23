@@ -1,39 +1,58 @@
 {
-  "_seeded_at": "2026-05-28",
-  "compute": {
-    "cost_note": "TODO",
-    "length_floor_words": null,
-    "tier": "core"
-  },
-  "consumers": [],
-  "dependencies": {
-    "python": []
-  },
-  "do_not_use_when": [
-    "TODO"
-  ],
-  "examples": [],
-  "family": "TODO",
-  "handoff": "none",
   "id": "discourse_move_signature",
+  "script_path": "plugins/setec-voiceprint/scripts/discourse_move_signature.py",
+  "surface": "smoothing_diagnosis",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "discourse-relation-profile",
+  "purpose": "Typed discourse-marker typology + move-sequence bigrams (what KIND of scaffolding the writer uses, not just how much), PLUS \u2014 additive \u2014 the writer's EXPLICIT PDTB top-level discourse-relation mix (Comparison / Contingency / Expansion / Temporal) as a descriptive distribution: per-1k densities, fractions, and relation entropy. The relation layer is an explicit-connective PROXY (arXiv:2307.03378): it maps only explicitly-signalled connectives to their PDTB majority top-level class via a static, corpus-independent lexicon; it does not extract argument spans, does not disambiguate polysemous connectives per-occurrence (ambiguous_connective_fraction reports their share), and does not see the implicit-relation layer the trained classifier of arXiv:2307.03378 targets (that is the gated model-CPU M2 seam). NO VERDICT: every leaf is a VALUE (count / density / fraction / entropy); the relation distribution ships uncalibrated (calibration_status: uncalibrated) with no band. Consumed by confounder_audit.py as differentiating evidence; the differential diagnosis of cause is that audit's job, never this layer's.\n",
+  "use_when": [
+    "Differentiating institutional/legal prose (Contingency-dense) from narrative (Temporal-dense) as confounder evidence",
+    "Profiling a writer's explicit discourse-relation mix alongside the marker typology",
+    "You want what KIND of scaffolding/relation the writer uses, not just how much"
+  ],
+  "do_not_use_when": [
+    "You need an AI-provenance verdict or a writing-quality judgment",
+    "You need implicit (unsignalled) relation typing \u2014 that is the gated M2 model (arXiv:2307.03378)",
+    "Non-English text (the connective lexicon is English, case-insensitive regex)"
+  ],
   "inputs": {
-    "target": "TODO"
+    "target": "prose/markdown text file (UTF-8)"
   },
   "outputs": {
+    "schema_version": "1.0",
     "artifacts": [
-      "TODO"
-    ],
-    "schema_version": "1.0"
+      "stdout JSON envelope (default), --json, or --out PATH",
+      "markdown report (default text mode)"
+    ]
   },
-  "purpose": "typed discourse markers + move sequences.",
-  "references": [],
+  "compute": {
+    "tier": "core",
+    "cost_note": "stdlib regex (re / collections.Counter / math); no API / model costs.",
+    "length_floor_words": null
+  },
   "registers": [
-    "TODO"
+    "blog_essay",
+    "long_form_journalism",
+    "policy_memo"
   ],
-  "script_path": "plugins/setec-voiceprint/scripts/discourse_move_signature.py",
-  "status": "todo",
-  "surface": "smoothing_diagnosis",
-  "use_when": [
-    "TODO"
-  ]
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Typed discourse markers + explicit PDTB relation distribution",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/discourse_move_signature.py target.md --json"
+    },
+    {
+      "description": "With a self-baseline corpus (marker + relation z-scores)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/discourse_move_signature.py target.md --baseline-dir corpus/"
+    }
+  ],
+  "references": [
+    "Side-by-side Transformers for Implicit Discourse Relation Classification (PDTB-3), arXiv:2307.03378: https://arxiv.org/abs/2307.03378"
+  ],
+  "_seeded_at": "2026-05-28"
 }

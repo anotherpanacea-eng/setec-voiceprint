@@ -360,14 +360,24 @@ def pronoun_modal_negation_features(text: str, words: list[str]) -> dict[str, fl
     }
 
 
+def pos_tag_sentences(text: str) -> list[list[str]]:
+    """Per-sentence UPOS-tag streams for `text`: one list of `t.pos_` tags per
+    `doc.sents` sentence (spaces dropped). This is the single definition of the
+    per-sentence POS stream that `pos_trigram_features` (below) and
+    `lambdag_audit` both consume, so the two never drift to a second POS path.
+    Returns `[]` when the parser is unavailable (the caller guards HAS_SPACY)."""
+    if not HAS_SPACY or _NLP is None:
+        return []
+    doc = _NLP(text)
+    return [[t.pos_ for t in sent if not t.is_space] for sent in doc.sents]
+
+
 def pos_trigram_features(text: str) -> dict[str, float]:
     if not HAS_SPACY or _NLP is None:
         return {}
-    doc = _NLP(text)
     counts: Counter[str] = Counter()
     total = 0
-    for sent in doc.sents:
-        tags = [t.pos_ for t in sent if not t.is_space]
+    for tags in pos_tag_sentences(text):
         for a, b, c in zip(tags, tags[1:], tags[2:]):
             counts[f"pos:{a}-{b}-{c}"] += 1
             total += 1

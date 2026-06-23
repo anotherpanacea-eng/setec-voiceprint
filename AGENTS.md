@@ -64,8 +64,13 @@ Most cycles are:
 
 A retrospective over 350 review findings (68 P1 / 115 P2) found the same handful of
 mistakes recurring. Codex review is token-gated (≈one round per 5-hour window), so the
-goal is **first-pass-clean**: run this before you call a build done, and re-run it on
-every fix — *a fix is a build*.
+goal is **first-pass-clean**.
+
+**Reader split (2026-06-21):** a *builder* carries only **mode-1** below — grep-verify every
+anchor before asserting it, stop if absent (the one build-TIME-irreducible rule; deferring it
+to review means the build is already wasted). The full 9-mode list is the *reviewer's*
+checklist — the build→panel lenses run it against the diff, and re-run it on every fix (*a fix
+is a build*). See the fleet `BUILD-PREFLIGHT.md` → "Reader split."
 
 **Root cause (~40% of P1s):** the spec/build *asserts* something about existing source —
 an API, a field, a `file:line`, an env-var, a compute tier, a sibling spec, an invariant —
@@ -104,6 +109,11 @@ the single biggest defect source.
 **Fix loop:** after folding a Codex finding, confirm it fully resolves the finding, self-review
 the fix against modes 1–7 (a fix that adds a field can introduce a mode-1/2/4 defect), re-run
 the suite, *then* push. Round 2 should be empty because you caught the regression, not Codex.
+
+**Automated-build tree hygiene:** an agent that builds on a feature branch must restore main with
+`git reset --hard origin/main`, never a bare `git checkout main` — git carries the build's
+uncommitted/staged diff across a checkout, leaving the whole build as residue on the main worktree
+(recurred 2026-06-21/22). Commit + push the branch first, then reset-hard. (Fleet `BUILD-PREFLIGHT.md` → "Reader split.")
 
 ## Where work comes from: roadmap, briefs, and Issues
 

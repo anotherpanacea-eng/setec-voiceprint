@@ -1,0 +1,78 @@
+{
+  "id": "embedding_attribution",
+  "script_path": "plugins/setec-voiceprint/scripts/embedding_attribution.py",
+  "surface": "embedding_attribution",
+  "status": "literature_anchored",
+  "handoff": "experimental",
+  "consumers": [],
+  "family": "embedding-explanation",
+  "purpose": "The HIATUS glass-box explanation layer on the authorship_embedding LUAR cosine (from voice_fingerprint): it ATTRIBUTES the cosine where cosine_explanation only placed it side by side. Reports, per SETEC named interpretable feature (burstiness, MATTR, MTLD, function-word ratio, dependency distance), a SIGNED contribution to the modeled similarity (Latent-Space Interpretation, arXiv:2409.07072) and decomposes the cosine into an interpretable-feature-explained part and a FAITHFUL residual \u2014 the slice the named features genuinely do not capture (Residualized Similarity, arXiv:2510.05362). Program lineage: IARPA HIATUS / the AUTHOR consortium. DESCRIPTIVE only: it explains voice_fingerprint and never replaces its posture. Emits NO same-author / different-author / AI verdict (inherits authorship_embedding's refusals and adds none); the residual is an explanation-COVERAGE quantity, never authenticity / suspicion, and is never compared to a threshold. The DEFAULT/headline view is the side-by-side + per-feature agreement; the numeric explained_fraction is carried but gated behind calibration_status (ships uncalibrated \u2192 surfaced as not-yet-calibrated). Consciously extends spec 27 Open-Q1: it ships the explained_fraction the side-by-side withheld, reconciled by the calibration-gate + side-by-side-default. An unfit or near-zero-cosine input ABSTAINS (coverage_band: indeterminate) rather than fabricating a split.\n",
+  "use_when": [
+    "You have a LUAR cosine you want decomposed into signed named-feature contributions",
+    "You want a faithful explained/residual split of the cosine with explicit fit provenance",
+    "You want to know how much of the similarity the named lens accounts for (the coverage band) and where the neural signal does work the named lens does not capture"
+  ],
+  "do_not_use_when": [
+    "You need a same-author / different-author / AI-vs-human verdict (the surface refuses all of these \u2014 it inherits authorship_embedding's refusals and adds none)",
+    "You would read the residual or the `largely-unnamed` band as a suspicion / authenticity / AI-ness score (it is an explanation-coverage quantity, an inspection pointer, not a score)",
+    "You want a per-pair operating point from the explained_fraction (it ships uncalibrated; it is honest fit provenance, gated behind calibration_status, never a shipped threshold)"
+  ],
+  "inputs": [
+    {
+      "flag": "target",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--comparison",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--inputs-json",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      ".embedding_attribution.json",
+      ".embedding_attribution.md"
+    ]
+  },
+  "compute": {
+    "tier": "optional",
+    "cost_note": "the attribution + decomposition math is CPU/stdlib + numpy over injected vectors; the real-input path loads the LUAR style encoder via voice_fingerprint (~0.5\u20131.4 GB), so --inputs-json (precomputed) runs with no model",
+    "length_floor_words": 0
+  },
+  "registers": [
+    "all_fiction",
+    "all_nonfiction"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "transformers",
+      "numpy"
+    ]
+  },
+  "examples": [
+    {
+      "description": "Attribute a precomputed cosine + features + fit model (no model load)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/embedding_attribution.py target.txt --inputs-json inputs.json --json"
+    },
+    {
+      "description": "Real path (loads the LUAR encoder via voice_fingerprint)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/embedding_attribution.py target.txt --comparison other.txt"
+    }
+  ],
+  "references": [
+    "plugins/setec-voiceprint/references/signals-glossary.md"
+  ]
+}

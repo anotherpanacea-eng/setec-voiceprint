@@ -1,0 +1,50 @@
+{
+  "id": "model_family_attribution",
+  "script_path": "plugins/setec-voiceprint/scripts/model_family_attribution.py",
+  "surface": "model_family_attribution",
+  "status": "heuristic",
+  "handoff": "experimental",
+  "consumers": [],
+  "family": "attribution-advisory",
+  "purpose": "Abstention-first, raw per-family similarity RANKING of a target against operator-supplied per-family reference corpora, over a small set of standardized interpretable stylometric features (burstiness_B / MATTR / MTLD / function-word ratio / mean-dependency-distance, the last spaCy-gated). Answers \"which supplied model family does this prose read most like?\" as weak, low-dimensional ADVISORY EVIDENCE for a human \u2014 never a verdict. M1 emits only raw, un-normalized per-family similarities (nothing sums to 1 over families \u2014 a normalized posterior would manufacture a P(family) reading that looks confident on a bad fit), plus a real abstention gate: it abstains (attribution_available=false, ranking demoted to evidence-only) on fewer than 2 families, a family below the 5-doc floor, a RELATIVE out-of-distribution target (distance to the top family exceeds k times that family's own within-scatter, so the true source is plausibly absent), a top-2 margin below threshold, or a `human` label that would occupy the top slot. Features are robust-z standardized (median + MAD over the pooled reference) so a large-scale feature cannot dominate, and the comparison subspace is resolved ONCE (intersection across target + all references) so spaCy-gated mdd is uniformly in or out, never per-doc. Stdlib / CPU; deterministic; no embedding model (the LUAR/style-embedding backend is M2, gated). Self-excluding (the target is dropped from its own family corpus); ships uncalibrated with PROVISIONAL thresholds. Cites arXiv:2410.16107 (Biber-feature family separation \u2014 ~96 features over large corpora, vs M1's ~5 over operator corpora), arXiv:2309.13322 (From Text to Source \u2014 the attribution task), arXiv:2504.11369 (OpenTuringBench \u2014 the open-set / OOD framing the relative gate addresses).\n",
+  "use_when": [
+    "You have >= 2 operator-supplied per-family reference corpora and want a relative, advisory reading of which supplied family a target reads most like",
+    "You want raw ranked evidence under heavy abstention, NOT a posterior or a verdict",
+    "You are assembling a multi-signal evidence pack and want a family-relative axis distinct from the discrimination (machine-ness) surfaces"
+  ],
+  "do_not_use_when": [
+    "You want a \"produced by family X\" attribution or an AI-vs-human ruling (this surface refuses both and abstains when `human` would be top)",
+    "You want a calibrated probability or a normalized posterior over families (the similarities are raw and un-normalized; nothing sums to 1)",
+    "You only have one reference family, thin per-family corpora (< 5 docs), or expect the true source family may be absent and need a verdict anyway"
+  ],
+  "inputs": {
+    "target": "prose text file (UTF-8)",
+    "reference": "per-family reference corpora \u2014 a JSONL --reference-manifest ({family, text|text_path}) or a --reference-dir of <family>/<files> subdirs"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "pure stdlib; spaCy only gates the optional mean_dependency_distance feature.",
+    "length_floor_words": 50
+  },
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "literary_fiction"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "spacy"
+    ]
+  },
+  "examples": [],
+  "references": [
+    "specs/34-model-family-attribution.md"
+  ]
+}

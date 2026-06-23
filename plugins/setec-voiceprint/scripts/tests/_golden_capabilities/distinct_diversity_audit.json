@@ -1,0 +1,59 @@
+{
+  "id": "distinct_diversity_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/distinct_diversity_audit.py",
+  "surface": "set_level_diversity",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "set-level-diversity",
+  "purpose": "Set-level distinct-CLUSTER diversity (NoveltyBench axis): partitions a POOL of N responses to one prompt into near-duplicate equivalence clusters and reports the PARTITION \u2014 the distinct-cluster count (n_clusters), the cluster-size distribution (the 7-key n/mean/sd/min/p10/p50/p90 block), the explicit sorted cluster_sizes, a distinct_ratio (n_clusters / n_texts, oriented gt = MORE distinct), a utility-weighted distinctness at an operator-supplied discount, and one POSITIONAL representative per cluster (the earliest member by input order, with size + member_ids + an excerpt). NEVER a single \"diversity score\" \u2014 the distribution + representatives ARE the read. M1 lens = lexical-near-dup (stdlib word-shingle Jaccard >= threshold + single-link transitive closure; model-free, no numpy, deterministic). Clean-room of the set-partition read from NoveltyBench (arXiv:2504.05228); the paper's learned deduper is the POC-gated M2 --lens model-dedup seam. NOT an AI/human determination and NOT a model-quality call: measurements only, NO absolute band (like homogeneity_audit / originality_audit), no verdict, never a selection signal; the claim-license refuses any provenance call, any \"mode-collapsed model\" determination, and any claim that a representative is the \"best\" output. Distinct from its surface-mate skeleton_overlap_audit: this uses a CONTENT near-dup relation (word-shingle Jaccard) and reports a FULL partition INCLUDING singletons (how many distinct things were said); skeleton uses a STRUCTURAL discourse-template LCS relation and drops singletons (which docs reuse a template).\n",
+  "use_when": [
+    "You have a prompt-matched POOL of responses to ONE prompt and want its discrete distinct-cluster structure \u2014 how many genuinely distinct things were said + what each distinct thing looks like",
+    "You want a partition + per-cluster representatives that the continuous pairwise-cosine of homogeneity_audit cannot give (a count + representatives, not a spread)",
+    "The pool has at least min_set (default 10) texts of >= ~15 words each"
+  ],
+  "do_not_use_when": [
+    "You want an AI/human call or a \"this model is mode-collapsed / lacks diversity\" determination (low distinctness is NOT a model defect \u2014 a tight topical prompt / shared genre / single source collapses clusters with no model involvement)",
+    "The pool answers MIXED prompts (inflates apparent distinctness) or a single tight topical prompt (deflates it), or you have fewer than the set floor",
+    "You want the paper's learned-deduper figures (M1 is a stdlib lexical near-dup lens \u2014 NOT paper-comparable; the model/embedding deduper is a gated M2 seam)"
+  ],
+  "inputs": {
+    "pool": "a --manifest (JSONL; id + text|text_path) OR a --dir of texts (.txt/.md, recursive)",
+    "knobs": "--shingle-k (default 5), --near-dup-threshold (default 0.5), --utility-discount (default 0.0), --min-set (default 10), --lens lexical-near-dup (M1) | model-dedup (gated M2 seam)"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "M1 pure-stdlib lexical-near-dup lens (word-shingle Jaccard + single-link union-find); no models, no numpy, no API, deterministic. Strictly lighter than homogeneity_audit (which needs numpy only for effective_modes). The learned/embedding deduper (--lens model-dedup) is a POC-gated M2 seam (lazy-import + fail-loud missing_dependency), not in this build.",
+    "length_floor_words": 15,
+    "min_set": 10
+  },
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "technical_documentation"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": []
+  },
+  "examples": [
+    {
+      "description": "Distinct-cluster diversity over a manifest of prompt-matched responses",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/distinct_diversity_audit.py --manifest pool.jsonl --json"
+    },
+    {
+      "description": "Distinct-cluster diversity over a directory of pooled texts, stricter near-dup threshold",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/distinct_diversity_audit.py --dir corpora/pool --near-dup-threshold 0.7 --json"
+    }
+  ],
+  "references": [
+    "specs/33-distinct-diversity-audit.md",
+    "NoveltyBench \u2014 Evaluating Language Models for Humanlike Diversity (arXiv:2504.05228): https://arxiv.org/abs/2504.05228"
+  ]
+}

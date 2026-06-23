@@ -698,3 +698,21 @@ def test_vocab_bool_rejected_as_size(tmp_path):
     p.write_text("128", encoding="utf-8")
     assert wp._resolve_vocab(str(p)) == (None, 128)
     assert wp._resolve_vocab("256") == (None, 256)
+
+
+def test_capability_text_has_no_doubled_apostrophe():
+    # PR #240 sibling-site: in a PLAIN (unquoted) YAML scalar `''` is NOT collapsed to `'` — only
+    # single-quoted scalars are. watermark_probe.yaml's use_when items were authored unquoted with
+    # `module''s` / `partition''s`, so load_manifest() and the rendered "## Use when" emitted the
+    # doubled apostrophes verbatim. This is a PROPERTY check on the parsed prose (NOT a re-comparison
+    # to the golden — the committed golden was generated from the buggy loader and masked the defect).
+    from capabilities import load_manifest  # noqa: E402
+    cap_dir = _SCRIPTS.parent / "capabilities.d"
+    e = next(x for x in load_manifest(cap_dir)["entries"] if x["id"] == "watermark_probe")
+    assert "''" not in e["purpose"], "purpose carries a literal doubled apostrophe: %r" % (e["purpose"],)
+    for field in ("use_when", "do_not_use_when"):
+        for i, s in enumerate(e[field]):
+            assert "''" not in s, "%s[%d] carries a literal doubled apostrophe: %r" % (field, i, s)
+    # positive: the intended apostrophes now render correctly
+    assert "module's green-list" in e["use_when"][0]
+    assert "partition's tokenizer" in e["use_when"][2]
