@@ -616,6 +616,16 @@ def compose_envelope(
             "signal derived from them) are only as good as whatever produced the "
             "manifest, which this surface cannot verify. Read judge.judge_identity."
         )
+    elif judge_kind == "agent_host":
+        caveats.append(
+            "Judge backend is `agent_host` — the labels were produced by the HOST "
+            "runtime's model (see judge.judge_identity.host), not a pinned API "
+            "model@revision. The judgment is NON-DETERMINISTIC and host-version-fluid. "
+            "The identity is recorded as agent_host:<host>:<model> so a consumer can "
+            "assert it is disjoint from any generator it validates (the consumer's "
+            "drift gate must enforce judge model != generator model on holdout/selection "
+            "surfaces; see specs/35-host-delegated-judge.md)."
+        )
     caveats.append(
         "Verdict band is `uncalibrated` and the anchors are register-bound to "
         "public-debate forums (directional reference, not thresholds). No "
@@ -636,6 +646,9 @@ def compose_envelope(
             "judge_model": (
                 results["judge"]["judge_identity"].get("model") or "(unspecified)"
             ),
+            # host runtime id for agent_host (the firewall hook: lets a consumer assert
+            # judge model != generator model); null for non-delegated backends.
+            "judge_host": results["judge"]["judge_identity"].get("host"),
             "prompt_fingerprint_sha256": results["prompt_fingerprint_sha256"],
         },
         length_range_words=(MIN_ARGUMENT_WORDS, 8000),
@@ -725,9 +738,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("target", help="Path to target text file (UTF-8).")
     parser.add_argument(
-        "--judge", choices=("manifest", "mock", "anthropic", "openai", "gemini"),
+        "--judge",
+        choices=("manifest", "mock", "anthropic", "openai", "gemini", "agent_host"),
         default="manifest",
-        help="Judge backend for the per-paragraph role/mode labels.",
+        help="Judge backend for the per-paragraph role/mode labels. `agent_host` "
+             "delegates to the host runtime's model (no API key); see "
+             "specs/35-host-delegated-judge.md.",
     )
     parser.add_argument("--judge-manifest", type=Path, default=None,
                         help="JSON manifest of pre-computed labels (required for --judge=manifest).")

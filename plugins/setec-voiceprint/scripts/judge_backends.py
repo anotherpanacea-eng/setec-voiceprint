@@ -28,7 +28,11 @@ from typing import Any, Callable
 
 __all__ = ["PROVIDERS", "make_api_judge"]
 
-PROVIDERS = ("anthropic", "openai", "gemini")
+# `agent_host` delegates the judgment to the HOST agent runtime's model (Claude Code /
+# Codex / Gemini Antigravity) via a host-registered transport — no API key. See
+# specs/35-host-delegated-judge.md. NOTE: this tuple is the single source of truth read
+# by voice_verifier.py; the audit families (argument/narrative) read it too (M1).
+PROVIDERS = ("anthropic", "openai", "gemini", "agent_host")
 
 # (user_prompt, judge_input) -> user-message string
 BuildUserContent = Callable[[str, Any], str]
@@ -36,6 +40,55 @@ BuildUserContent = Callable[[str, Any], str]
 BuildResult = Callable[[dict, str, dict], Any]
 # raw model text -> parsed object (raises ValueError on a bad / non-object body)
 ExtractJson = Callable[[str], dict]
+
+# Host-delegated judge transport: (request_dict) -> judgment JSON text. The host
+# runtime registers one; tests inject `_HOST_JUDGE_OVERRIDE`. Resolution order:
+# in-process override, `SETEC_HOST_JUDGE="module:function"`, `SETEC_HOST_JUDGE_CMD`.
+HostJudge = Callable[[dict], str]
+_HOST_JUDGE_OVERRIDE: "HostJudge | None" = None
+
+
+def _resolve_host_judge(judge_error: type[Exception]) -> "HostJudge":
+    """Resolve the host judge transport, or raise ``judge_error`` with a hint."""
+    if _HOST_JUDGE_OVERRIDE is not None:
+        return _HOST_JUDGE_OVERRIDE
+    entry = os.environ.get("SETEC_HOST_JUDGE")
+    if entry:
+        import importlib
+        mod_name, sep, fn_name = entry.partition(":")
+        if not sep or not mod_name or not fn_name:
+            raise judge_error(
+                "SETEC_HOST_JUDGE must be 'module:function' (a callable "
+                "request->json-text the host registers)."
+            )
+        try:
+            return getattr(importlib.import_module(mod_name), fn_name)
+        except Exception as exc:  # noqa: BLE001
+            raise judge_error(f"SETEC_HOST_JUDGE {entry!r} did not resolve: {exc}") from exc
+    cmd = os.environ.get("SETEC_HOST_JUDGE_CMD")
+    if cmd:
+        import json as _json
+        import subprocess
+
+        def _cmd_transport(request: dict) -> str:
+            proc = subprocess.run(
+                cmd, shell=True, input=_json.dumps(request),
+                capture_output=True, text=True,
+            )
+            if proc.returncode != 0:
+                raise judge_error(
+                    f"SETEC_HOST_JUDGE_CMD failed (exit {proc.returncode}): "
+                    f"{proc.stderr.strip()[:200]}"
+                )
+            return proc.stdout
+
+        return _cmd_transport
+    raise judge_error(
+        "agent_host backend needs a host transport: register one in-process "
+        "(judge_backends._HOST_JUDGE_OVERRIDE) or set SETEC_HOST_JUDGE='module:function' "
+        "or SETEC_HOST_JUDGE_CMD. In an agent runtime (Claude Code / Codex / Gemini "
+        "Antigravity) this is the host's subagent/MCP-sampling adapter — no API key needed."
+    )
 
 
 def make_api_judge(
@@ -196,5 +249,33 @@ def _provider_setup(
             return (resp.text or ""), {}
 
         return client, call, read
+
+    if provider == "agent_host":
+        # Delegate to the host runtime's model via a registered transport (no API key).
+        # Resolved eagerly here so a missing transport fails at build time (like a missing
+        # SDK), wrapped as judge_error. The transport returns the model's JSON text; the
+        # rest of the pipeline (extract_json / build_result / non-JSON wrapping) is shared.
+        host_judge = _resolve_host_judge(judge_error)
+        host_id = os.environ.get("SETEC_HOST", "agent_host")
+
+        def call(content: str) -> Any:
+            return host_judge({
+                "system": system_preamble,
+                "content": content,
+                "response_format": "json_object",
+                "no_verdict": (
+                    "Return ONLY a JSON object with the requested fields. Do NOT emit a "
+                    "same/different-author or AI/human verdict — this is descriptive, "
+                    "no-verdict labeling."
+                ),
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            })
+
+        def read(resp: Any) -> tuple[str, dict]:
+            text = resp if isinstance(resp, str) else str(resp)
+            return text, {"delegated": True, "host": host_id}
+
+        return host_judge, call, read
 
     raise judge_error(f"unknown api judge provider: {provider!r}")

@@ -418,6 +418,15 @@ def compose_envelope(
             f"Judge output had {n} validation warning(s); see "
             f"results.validation_warnings for the full list."
         )
+    if results["judge"]["judge_identity"].get("kind") == "agent_host":
+        caveats.append(
+            "Judge backend is `agent_host` — the labels were produced by the HOST "
+            "runtime's model (see judge.judge_identity.host), not a pinned API "
+            "model@revision; the judgment is NON-DETERMINISTIC and host-version-fluid. "
+            "Identity is recorded as agent_host:<host>:<model> so a consumer can assert "
+            "disjointness from any generator it validates (consumer drift gate enforces "
+            "judge model != generator model; see specs/35-host-delegated-judge.md)."
+        )
     if results["aggregate"]["verdict_band"] == "uncalibrated":
         caveats.append(
             "Verdict band is `uncalibrated`. The aggregate score is "
@@ -442,6 +451,8 @@ def compose_envelope(
                 results["judge"]["judge_identity"].get("model")
                 or "(unspecified)"
             ),
+            # host runtime id for agent_host (firewall hook); null otherwise.
+            "judge_host": results["judge"]["judge_identity"].get("host"),
             "prompt_fingerprint_sha256": results["prompt_fingerprint_sha256"],
         },
         length_range_words=(MIN_FICTION_WORDS, 25_000),
@@ -584,7 +595,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--judge",
-        choices=("manifest", "mock", "anthropic", "openai", "gemini"),
+        choices=("manifest", "mock", "anthropic", "openai", "gemini", "agent_host"),
         default="manifest",
         help=(
             "Judge backend. 'manifest' (default) reads "
