@@ -36,7 +36,8 @@
         "mock",
         "anthropic",
         "openai",
-        "gemini"
+        "gemini",
+        "agent_host"
       ]
     },
     {
@@ -74,7 +75,7 @@
   },
   "compute": {
     "tier": "api_llm",
-    "cost_note": "$0.03\u20130.20 per doc via Anthropic / OpenAI / Gemini (per-paragraph labeling); free with --judge manifest",
+    "cost_note": "$0.03\u20130.20 per doc via Anthropic / OpenAI / Gemini (per-paragraph labeling); free with --judge manifest; key-free with --judge agent_host (delegates to the host runtime's model \u2014 Claude Code / Codex / Gemini Antigravity; see spec 35)",
     "length_floor_words": 300
   },
   "registers": [
