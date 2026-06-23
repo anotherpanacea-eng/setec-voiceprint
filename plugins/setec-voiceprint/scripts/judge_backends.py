@@ -26,13 +26,88 @@ from __future__ import annotations
 import os
 from typing import Any, Callable
 
-__all__ = ["PROVIDERS", "make_api_judge"]
+__all__ = [
+    "PROVIDERS",
+    "make_api_judge",
+    "NON_CONCRETE_JUDGE_MODELS",
+    "JudgeDisjointnessError",
+    "judge_identity_is_concrete",
+    "assert_judge_generator_disjoint",
+]
 
 # `agent_host` delegates the judgment to the HOST agent runtime's model (Claude Code /
 # Codex / Gemini Antigravity) via a host-registered transport — no API key. See
 # specs/35-host-delegated-judge.md. NOTE: this tuple is the single source of truth read
 # by voice_verifier.py; the audit families (argument/narrative) read it too (M1).
 PROVIDERS = ("anthropic", "openai", "gemini", "agent_host")
+
+# A judge model recorded as one of these sentinels is NOT a concrete model identity —
+# nobody named the model the host actually used. The "host-resolved" placeholder
+# (judge_backends defaults it when the host doesn't expose an id) is the headline case.
+# A non-concrete identity CANNOT satisfy the judge-model != generator-model disjointness
+# firewall — it must FAIL CLOSED, never silently pass (Codex P1, spec 35).
+NON_CONCRETE_JUDGE_MODELS = frozenset({"host-resolved", "(unspecified)", "unknown", ""})
+
+
+class JudgeDisjointnessError(RuntimeError):
+    """A judge identity cannot be PROVEN disjoint from the generator model.
+
+    Raised fail-closed on a disjointness-required (holdout / selection-critical) path
+    either because the judge model is a non-concrete sentinel (so disjointness is
+    unprovable) or because the concrete judge model equals the generator model.
+    """
+
+
+def judge_identity_is_concrete(judge_identity: dict | None) -> bool:
+    """True iff ``judge_identity`` names a CONCRETE model the firewall can reason about.
+
+    A missing identity, a missing/blank model, or a non-concrete sentinel (e.g. the
+    ``host-resolved`` placeholder) is NOT concrete — disjointness from a generator
+    cannot be established, so callers on a disjointness-required path must fail closed.
+    """
+    if not judge_identity:
+        return False
+    model = judge_identity.get("model")
+    if not isinstance(model, str):
+        return False
+    return model.strip() not in NON_CONCRETE_JUDGE_MODELS
+
+
+def assert_judge_generator_disjoint(
+    judge_identity: dict | None, generator_model: str | None
+) -> str:
+    """Fail CLOSED unless the judge model is concrete AND differs from the generator.
+
+    The producer-side counterpart to the consumer drift gate spec 35 names: where a
+    judge is routed into a HOLDOUT validator or a selection signal, the judge model
+    must be provably ``!=`` the generator model. This refuses two ways the firewall
+    can be defeated:
+
+    * a non-concrete judge identity (the ``host-resolved`` placeholder, a blank model)
+      — disjointness is *unprovable*, so it must not pass; and
+    * a concrete judge model equal to ``generator_model`` — the generator grading its
+      own homework, the exact circularity the firewall exists to block.
+
+    Returns the concrete judge model on success (so a caller can record what it
+    enforced against). Raises :class:`JudgeDisjointnessError` otherwise.
+    """
+    if not judge_identity_is_concrete(judge_identity):
+        recorded = (judge_identity or {}).get("model")
+        raise JudgeDisjointnessError(
+            "judge model is not a concrete identity "
+            f"(recorded as {recorded!r}); a host-delegated judge that does not name "
+            "the model it used CANNOT be proven disjoint from the generator — "
+            "refusing on a disjointness-required (holdout/selection) path. Have the "
+            "host report its model (structured transport response or SETEC_HOST_MODEL)."
+        )
+    judge_model = judge_identity["model"].strip()  # type: ignore[index]
+    if generator_model is not None and judge_model == generator_model.strip():
+        raise JudgeDisjointnessError(
+            f"judge model {judge_model!r} == generator model — the generator would "
+            "grade its own output; refusing on a disjointness-required path."
+        )
+    return judge_model
+
 
 # (user_prompt, judge_input) -> user-message string
 BuildUserContent = Callable[[str, Any], str]
@@ -257,6 +332,10 @@ def _provider_setup(
         # rest of the pipeline (extract_json / build_result / non-JSON wrapping) is shared.
         host_judge = _resolve_host_judge(judge_error)
         host_id = os.environ.get("SETEC_HOST", "agent_host")
+        # The host may name the concrete model it used (the disjointness firewall needs
+        # it). A structured transport response wins; failing that, `SETEC_HOST_MODEL`.
+        env_model = os.environ.get("SETEC_HOST_MODEL")
+        env_revision = os.environ.get("SETEC_HOST_MODEL_REVISION")
 
         def call(content: str) -> Any:
             return host_judge({
@@ -273,8 +352,36 @@ def _provider_setup(
             })
 
         def read(resp: Any) -> tuple[str, dict]:
-            text = resp if isinstance(resp, str) else str(resp)
-            return text, {"delegated": True, "host": host_id}
+            # A transport may return bare judgment text, or a structured envelope
+            # {text|content|judgment, model, revision} that NAMES the concrete model
+            # the host used. A concrete model overrides the "host-resolved" placeholder
+            # (it lands in judge_identity.model — see make_api_judge's identity merge),
+            # so a consumer can enforce judge model != generator model. The placeholder
+            # stays only when nobody names a concrete model (fail-closed at the gate).
+            extras: dict = {"delegated": True, "host": host_id}
+            if isinstance(resp, dict):
+                text = (
+                    resp.get("text")
+                    if resp.get("text") is not None
+                    else resp.get("content")
+                    if resp.get("content") is not None
+                    else resp.get("judgment", "")
+                )
+                text = text if isinstance(text, str) else str(text)
+                reported_model = resp.get("model")
+                reported_revision = resp.get("revision") or resp.get("model_revision")
+            else:
+                text = resp if isinstance(resp, str) else str(resp)
+                reported_model = None
+                reported_revision = None
+            model_id = reported_model or env_model
+            revision_id = reported_revision or env_revision
+            if model_id:
+                # overrides make_api_judge's placeholder `model` (extras win the merge)
+                extras["model"] = model_id
+            if revision_id:
+                extras["model_revision"] = revision_id
+            return text, extras
 
         return host_judge, call, read
 

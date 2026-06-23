@@ -155,6 +155,84 @@ def test_import_stays_stdlib():
     assert judge_backends._HOST_JUDGE_OVERRIDE is None  # default: nothing registered
 
 
+# --- Codex P1 (judge_backends.py:277): record the ACTUAL delegated model, and make
+# the placeholder fail the disjointness firewall CLOSED ---------------------------
+
+
+# 9. structured provenance: when the host REPORTS a concrete model, it overrides the
+# "host-resolved" placeholder in judge_identity.model (so a consumer can read it).
+def test_host_reported_model_overrides_placeholder():
+    def _structured(req):
+        return {"text": json.dumps({}), "model": "claude-opus-4-8", "revision": "2026-01"}
+
+    with host_transport(_structured):
+        judge = _make("agent_host", None, build_result=lambda payload, raw, identity, ji: identity)
+        ident = judge("x")
+    assert ident["kind"] == "agent_host"
+    # the placeholder must NOT survive once the host names its model
+    assert ident["model"] == "claude-opus-4-8"
+    assert ident.get("model_revision") == "2026-01"
+    # and the payload text is still extracted from the structured response
+    out = None
+    with host_transport(_structured):
+        out = _make("agent_host", None, build_result=lambda payload, *a: payload)("x")
+    assert out == {}
+
+
+# 9b. SETEC_HOST_MODEL env carries the host-reported concrete identity when the
+# transport returns bare text (no structured model field).
+def test_host_model_env_overrides_placeholder():
+    prev = judge_backends._HOST_JUDGE_OVERRIDE
+    saved_env = {
+        k: os.environ.pop(k, None)
+        for k in ("SETEC_HOST_JUDGE", "SETEC_HOST_JUDGE_CMD", "SETEC_HOST_MODEL")
+    }
+    judge_backends._HOST_JUDGE_OVERRIDE = lambda req: json.dumps({})
+    os.environ["SETEC_HOST_MODEL"] = "gpt-5.4"
+    try:
+        judge = _make("agent_host", None, build_result=lambda payload, raw, identity, ji: identity)
+        ident = judge("x")
+        assert ident["model"] == "gpt-5.4"
+    finally:
+        judge_backends._HOST_JUDGE_OVERRIDE = prev
+        for k, v in saved_env.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
+
+
+# 10. FAIL-CLOSED: the bare "host-resolved" placeholder is an UNKNOWN concrete model
+# and MUST NOT satisfy the judge!=generator disjointness firewall.
+def test_placeholder_fails_disjointness_closed():
+    placeholder_identity = {"kind": "agent_host", "model": "host-resolved", "host": "claude-code"}
+    try:
+        judge_backends.assert_judge_generator_disjoint(placeholder_identity, "any-generator")
+        raise AssertionError("placeholder must NOT pass a disjointness-required check")
+    except judge_backends.JudgeDisjointnessError as exc:
+        assert "host-resolved" in str(exc) or "concrete" in str(exc)
+    # the predicate agrees: a placeholder is not a concrete identity
+    assert judge_backends.judge_identity_is_concrete(placeholder_identity) is False
+
+
+# 10b. a SAME-MODEL host (concrete judge identity == generator model) is DETECTABLE
+# from the emitted judge_identity and REFUSED by the disjointness check.
+def test_same_model_host_refused():
+    same = {"kind": "agent_host", "model": "claude-opus-4-8", "host": "claude-code"}
+    try:
+        judge_backends.assert_judge_generator_disjoint(same, "claude-opus-4-8")
+        raise AssertionError("a judge model == generator model must be refused")
+    except judge_backends.JudgeDisjointnessError as exc:
+        assert "claude-opus-4-8" in str(exc)
+    # a genuinely disjoint concrete identity passes and returns the concrete model
+    disjoint = {"kind": "agent_host", "model": "claude-opus-4-8", "host": "claude-code"}
+    assert (
+        judge_backends.assert_judge_generator_disjoint(disjoint, "gpt-5.4")
+        == "claude-opus-4-8"
+    )
+    assert judge_backends.judge_identity_is_concrete(disjoint) is True
+
+
 if __name__ == "__main__":
     import traceback
     failed = 0
