@@ -1,0 +1,70 @@
+entries:
+- id: paraphrase_robustness
+  script_path: plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py
+  surface: validation
+  status: empirically_oriented
+  handoff: internal
+  consumers: []
+  family: paraphrase-stress
+  purpose: 'Detector-level AUC-DEGRADATION harness: for a labeled corpus, measure
+    how much each detector''s P(machine > human) separation degrades when the machine
+    windows are paraphrased (human windows are the fixed reference class, never attacked).
+    The corpus-level / population-ranking counterpart of paraphrase_ladder''s per-(signal
+    x rung) single-text decay curve — the two measure at different levels and do not
+    overlap. M1 is model-free orchestration over INJECTED detector scores (CI-runnable,
+    no model imported at load); the GPU re-scoring over binoculars_audit / surprisal_backend
+    / fast_detect_curvature / variance_audit is the M2 seam. Per (detector x rung) it
+    emits the discriminative AUC (WMW-U via validation_harness.fallback_roc_auc, ORIENTED
+    by each detector''s known machine-vs-human sign so a "machine lower" signal is not
+    read as inverted), TPR at FPR budgets {0.05, 0.10}, and the delta from the unattacked
+    rung 0. The sign/direction is pinned in a test (the silent-inversion guard). NOT a
+    detector and NOT a verdict: emits NO aggregate robustness or accuracy scalar (no
+    robustness_score / auc_retained / area_under_decay / is_robust / overall_robustness),
+    sets no threshold, feeds no calibration or selector. The bundled M1 paraphraser is a
+    deterministic stdlib lexical proxy (proxy_stdlib), honestly weaker than a neural
+    paraphraser — a flat curve under it is a LOWER bound on degradation, never robustness.
+    The ClaimLicense refuses any "robust to paraphrase" claim, quoting Sadasivan''s
+    separability ceiling (arXiv:2303.11156). calibration_status heuristic.
+
+    '
+  use_when:
+  - You have a labeled machine/human corpus and a paraphrase attack, and want the per-detector
+    AUC degradation curve and the FPR/TPR operating-point shift across attack rungs
+  - You want the honest-FPR read (TPR at FPR=0.05 and 0.10 before and after attack), not
+    AUC alone
+  - You are stress-testing the structural-detection thesis against the Sadasivan TV bound
+  do_not_use_when:
+  - You want a single robustness or accuracy number — this surface refuses any aggregate score
+  - You want a provenance verdict for a document — it is not a detector
+  - You want proof a detector is paraphrase-robust — a flat stdlib-proxy curve is never that
+  - You want a per-(signal x rung) single-text decay curve — that is paraphrase_ladder, a
+    different measurement level
+  inputs:
+    target: an injected-scores JSON (detectors, n_rungs, machine_texts, human_texts, and
+      per-(detector, rung) machine/human score lists); the M2 GPU operator supplies real
+      detector scores instead
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: M1 is stdlib + the pure-Python WMW-U AUC helper; CPU only, no model loads,
+      no API costs (detector re-scoring is the GPU-gated M2 seam)
+    length_floor_words: null
+  registers:
+  - all_fiction
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Run the harness over an injected-scores JSON (M1, model-free)
+    cmd: python3 plugins/setec-voiceprint/scripts/calibration/paraphrase_robustness.py
+      --injected-scores scores.json --json
+  references:
+  - specs/33-paraphrase-robustness.md
+  - plugins/setec-voiceprint/references/signals-glossary.md
+  - 'Sadasivan et al. 2023, Can AI-Generated Text Be Reliably Detected?; arXiv:2303.11156: https://arxiv.org/abs/2303.11156'
+  - 'Krishna et al. 2023, Paraphrasing Evades Detectors (DIPPER); arXiv:2303.13408: https://arxiv.org/abs/2303.13408'
+  - 'Hans et al. 2024, Binoculars; arXiv:2401.12070: https://arxiv.org/abs/2401.12070'
