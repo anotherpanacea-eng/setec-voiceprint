@@ -653,6 +653,14 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 
 ---
 
+## Document segmentation (1)
+
+Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `document_segmentation` surface, 2026-06-23). Slides a sentence-anchored window over ONE text and reports where the style shifts most — each boundary carries a character offset, an ordinal band, and verbatim excerpts. NEVER an authorship claim. The boundary band is the one "signal" this surface emits; it is **not** a numeric signal in the standard sense (no polarity arrow; no absolute calibration; descriptive only).
+
+- `boundaries[*].band` · document-segmentation · — · **heuristic** · within-document MAD-relative ordinal band (`none / slight_shift / moderate_shift / marked_shift`); no absolute calibrated cut; `calibration_status: provisional`. NOT an authorship/identity signal; a register-shift magnitude only. PAN Multi-Author Writing Style Analysis task lineage (arXiv:2602.09147).
+
+---
+
 ## Totals
 
 | Family | Count |
@@ -678,18 +686,19 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | repetition | 2 |
 | narrative-decision | 33 (+1 aggregate) |
 | argument-decision | 6 (+1 aggregate) |
-| **TOTAL** | **103** |
+| document-segmentation | 1 |
+| **TOTAL** | **104** |
 
-## Calibration-status distribution (v1.66.0 + ND v0.1.0 + AD v0.1.0)
+## Calibration-status distribution (v1.66.0 + ND v0.1.0 + AD v0.1.0 + DS v1.0)
 
 | Status | Count | Notes |
 |---|---|---|
 | calibrated | 0 | Per Stylometry-to-the-people policy; no corpus-derived thresholds shipped as load-bearing defaults |
 | literature_anchored | 45 | 6 prior (mattr, shannon_entropy, surprisal_mean / sd / acf_lag1, pos_bigram_kl) + 34 from the narrative-decision family (33 per-signal + aggregate), anchored to Russell et al. 2026 + 5 from the argument-decision family (4 per-signal + aggregate), anchored to Kim et al. 2026 |
 | empirically_oriented | 8 | The six 2026-05-10 EditLens-measured variance signals + pos_bigram_entropy + Burrows Delta + per_feature_cosine |
-| heuristic | 49 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) + the 2 lambdag_audit grammar-LR signals (lambda_g, lambda_g_per_token) + the 4 function_word_adjacency_audit band signals (low_global_transition_entropy, high_pagerank_concentration, low_per_node_entropy_mean, low_graph_density) |
+| heuristic | 50 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) + the 2 lambdag_audit grammar-LR signals (lambda_g, lambda_g_per_token) + the 4 function_word_adjacency_audit band signals (low_global_transition_entropy, high_pagerank_concentration, low_per_node_entropy_mean, low_graph_density) + the 1 document-segmentation boundary band (boundaries[*].band) |
 | structural_only | 1 | function_word_ratio |
-| **TOTAL** | **103** |
+| **TOTAL** | **104** |
 
 ## Related references
 

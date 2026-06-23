@@ -354,6 +354,8 @@ These I'd not build as separate surfaces. The reasons are structural, not prefer
 
 The Tier 4 specialized surfaces (Dialogue, Narratorial Distance, Productive Roughness) ship when their domains pull on them, not on the cathedral schedule. The Tier 5 adjacent surfaces (Document Layout, Reference Ecology, Allusion Habit, Stockness) ship as separate non-voice surfaces with explicit claim-language guards, on the same demand-driven cadence. The Tier 6 deferred items are not commitments. The 2.0 refactor target (Compression-of-Choice) is the architectural horizon, not a v1 deliverable.
 
+**Status update (2026-06-23):** `within_doc_segmentation` (spec tier4b, board resolution 2026-06-23) shipped as a new `document_segmentation` surface — the within-document register-discontinuity locator described in § Multi-author / multi-source segmentation above (Tier 4 Trustworthiness). M1 (stylometric cosine distance, stdlib, model-free). Mechanical never-authorship guarantee via `FORBIDDEN_RESULT_KEYS` + `assert_no_authorship` guard. `calibration_status: provisional`.
+
 ## Trustworthiness expansion
 
 The `Stylometric surface expansion` section above catalogues *new things to measure*. This section catalogues *failure-mode control, interpretability, adversarial realism, and user workflow discipline* — the parts that stop a sophisticated stylometric tool from becoming a numerically impressive overclaimer. The shipped suite answers "what does this text look like stylometrically?" Trustworthiness work answers a different question:
