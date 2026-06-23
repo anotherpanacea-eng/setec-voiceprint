@@ -280,7 +280,7 @@ def test_envelope_shape(tmp_path):
     """build_output envelope has all required keys; results has required sub-keys."""
     from output_schema import build_output
     fix = _make_full_fixture(tmp_path)
-    hsd._validate_baseline_set(fix["entries"], fix["target_path"], "writer:j")
+    hsd._validate_baseline_set(fix["entries"], fix["target_path"], "writer:j", "house:a")
     results = hsd.decompose(fix["target_text"], fix["entries"], margin=0.15)
     results.pop("_level_stats", None)
 
@@ -374,7 +374,7 @@ def test_leakage_guard_author_leak(tmp_path):
                           _write_file(tmp_path, "l2.txt", text_c)),
     ]
     with pytest.raises(hsd.HouseStyleError, match="leakage"):
-        hsd._validate_baseline_set(entries, None, "writer:target", min_words=100)
+        hsd._validate_baseline_set(entries, None, "writer:target", "house:x", min_words=100)
 
 
 # ---------------------------------------------------------------------------
@@ -409,7 +409,7 @@ def test_leakage_guard_path_identity(tmp_path):
                           _write_file(tmp_path, "oc.txt", other_b)),
     ]
     with pytest.raises(hsd.HouseStyleError, match="leakage"):
-        hsd._validate_baseline_set(entries, target_path, "writer:j", min_words=100)
+        hsd._validate_baseline_set(entries, target_path, "writer:j", "house:a", min_words=100)
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +467,7 @@ def test_missing_isolating_level_different_context(tmp_path):
                           _write_file(tmp_path, "m.txt", text)),
     ]
     with pytest.raises(hsd.HouseStyleError, match="different_context|isolating"):
-        hsd._validate_baseline_set(entries, None, "writer:j", min_words=100)
+        hsd._validate_baseline_set(entries, None, "writer:j", "house:a", min_words=100)
 
 
 def test_missing_isolating_level_house(tmp_path):
@@ -478,7 +478,7 @@ def test_missing_isolating_level_house(tmp_path):
                           _write_file(tmp_path, "ba.txt", text)),
     ]
     with pytest.raises(hsd.HouseStyleError, match="different_authors_same_org|isolating"):
-        hsd._validate_baseline_set(entries, None, "writer:j", min_words=100)
+        hsd._validate_baseline_set(entries, None, "writer:j", "house:a", min_words=100)
 
 
 # ---------------------------------------------------------------------------
@@ -501,7 +501,7 @@ def test_too_few_authors_house_level(tmp_path):
                           _write_file(tmp_path, "l1.txt", text)),
     ]
     with pytest.raises(hsd.HouseStyleError, match="distinct author"):
-        hsd._validate_baseline_set(entries, None, "writer:j", min_authors=3, min_words=100)
+        hsd._validate_baseline_set(entries, None, "writer:j", "house:a", min_authors=3, min_words=100)
 
 
 # ---------------------------------------------------------------------------
@@ -523,7 +523,7 @@ def test_too_few_words_level(tmp_path):
                           _write_file(tmp_path, "m.txt", stub)),
     ]
     with pytest.raises(hsd.HouseStyleError, match="words"):
-        hsd._validate_baseline_set(entries, None, "writer:j", min_words=2000)
+        hsd._validate_baseline_set(entries, None, "writer:j", "house:a", min_words=2000)
 
 
 def test_single_entry_variance_floor(tmp_path):
@@ -546,7 +546,7 @@ def test_single_entry_variance_floor(tmp_path):
     ]
     with pytest.raises(hsd.HouseStyleError, match="doc"):
         hsd._validate_baseline_set(
-            entries, None, "writer:j", min_words=100, min_variance_docs=2
+            entries, None, "writer:j", "house:a", min_words=100, min_variance_docs=2
         )
 
 
@@ -747,3 +747,179 @@ def test_anti_goodhart_held_out_disjoint():
     # The ORIENTATION constant encodes the sign convention that M2 must honour
     # if/when it is built — it is a shared contract, not a calibrated parameter.
     assert hsd.ORIENTATION == "positive_idiolect_borne"
+
+
+# ---------------------------------------------------------------------------
+# Test 18 — Codex P1: target identity REQUIRED + per-level membership bound
+# (Codex P1 house_style_decomposition.py:326 — the isolating levels were not
+#  bound to a target author/org: --target-author defaulted to "" so the leak
+#  check was inert, and org_id was never checked for house membership.)
+# ---------------------------------------------------------------------------
+
+import dataclasses  # noqa: E402
+
+
+def _replace_entry(entries, entry_id, **changes):
+    """Return a copy of `entries` with the entry whose .id == entry_id mutated."""
+    out = []
+    for e in entries:
+        if e.id == entry_id:
+            out.append(dataclasses.replace(e, **changes))
+        else:
+            out.append(e)
+    return out
+
+
+def test_empty_target_author_refused(tmp_path):
+    """Empty --target-author is NOT an inert no-op — it RAISES (fail-closed)."""
+    fix = _make_full_fixture(tmp_path)
+    with pytest.raises(hsd.HouseStyleError, match="target author"):
+        hsd._validate_baseline_set(fix["entries"], fix["target_path"], "", "house:a")
+
+
+def test_empty_target_org_refused(tmp_path):
+    """Empty --target-org is NOT an inert no-op — it RAISES (fail-closed)."""
+    fix = _make_full_fixture(tmp_path)
+    with pytest.raises(hsd.HouseStyleError, match="organization|target org"):
+        hsd._validate_baseline_set(fix["entries"], fix["target_path"], "writer:j", "")
+
+
+def test_membership_wrong_author_under_same_author_level(tmp_path):
+    """A DIFFERENT-author entry filed under same_author_same_org → membership refusal.
+
+    Pre-fix: same_author_same_org was unchecked, so a foreign author could be
+    smuggled into the writer's own-work level and confound the read.
+    """
+    fix = _make_full_fixture(tmp_path)
+    # j_ha is a same_author_same_org entry (should be writer:j); relabel its author.
+    entries = _replace_entry(fix["entries"], "j_ha", author_id="writer:impostor")
+    with pytest.raises(hsd.HouseStyleError, match="membership"):
+        hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
+
+
+def test_membership_different_context_must_be_target_author(tmp_path):
+    """different_context (idiolect level) must be the TARGET author; a foreign author → refusal."""
+    fix = _make_full_fixture(tmp_path)
+    entries = _replace_entry(fix["entries"], "j_ba", author_id="writer:someone_else")
+    with pytest.raises(hsd.HouseStyleError, match="membership"):
+        hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
+
+
+def test_membership_house_level_wrong_org_refused(tmp_path):
+    """different_authors_same_org with an entry NOT at the target house → membership refusal.
+
+    Pre-fix: org_id was never checked, so a different-house author could pose as
+    the target's house and make foreign house style look like the target's house.
+    """
+    fix = _make_full_fixture(tmp_path)
+    # k is a different_authors_same_org entry at house:a; move it to a different house.
+    entries = _replace_entry(fix["entries"], "k", org_id="house:other")
+    with pytest.raises(hsd.HouseStyleError, match="membership"):
+        hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
+
+
+def test_membership_house_level_null_org_refused(tmp_path):
+    """different_authors_same_org with a NULL org_id → membership refusal (fail-closed).
+
+    A house level with no org cannot be verified as the target house; a missing
+    org must fail CLOSED, not be admitted by default.
+    """
+    fix = _make_full_fixture(tmp_path)
+    entries = _replace_entry(fix["entries"], "k", org_id=None)
+    with pytest.raises(hsd.HouseStyleError, match="membership"):
+        hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
+
+
+def test_membership_outside_org_must_differ_from_target(tmp_path):
+    """same_genre_outside_org with an entry AT the target house → membership refusal.
+
+    The 'outside org' level must isolate a DIFFERENT house; an entry stamped with
+    the target org defeats the genre-vs-house separation.
+    """
+    fix = _make_full_fixture(tmp_path)
+    # oa is a same_genre_outside_org entry at house:x; relabel it to the target house.
+    entries = _replace_entry(fix["entries"], "oa", org_id="house:a")
+    with pytest.raises(hsd.HouseStyleError, match="membership"):
+        hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
+
+
+def test_valid_fixture_passes_membership(tmp_path):
+    """The clean worked-example fixture satisfies the full identity-membership gate."""
+    fix = _make_full_fixture(tmp_path)
+    # Must NOT raise.
+    hsd._validate_baseline_set(fix["entries"], fix["target_path"], "writer:j", "house:a")
+
+
+def test_cli_requires_target_org_bad_input(tmp_path):
+    """A real CLI run WITHOUT --target-org → bad_input envelope (no inert run)."""
+    fix = _make_full_fixture(tmp_path)
+    # Write a manifest pointing at the fixture's already-written files.
+    manifest_lines = []
+    for e in fix["entries"]:
+        row = {
+            "id": e.id,
+            "level": e.level,
+            "author_id": e.author_id,
+            "org_id": e.org_id,
+            "text_path": str(e.resolved_path),
+        }
+        manifest_lines.append(json.dumps(row))
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+
+    argv = [
+        "--target", str(fix["target_path"]),
+        "--target-author", "writer:j",
+        # NO --target-org
+        "--baseline-manifest", str(manifest),
+        "--json",
+    ]
+    out = StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = out
+    try:
+        rc = hsd.main(argv)
+    finally:
+        sys.stdout = old_stdout
+
+    assert rc == 1
+    env = json.loads(out.getvalue())
+    assert env["available"] is False
+    assert env.get("reason_category") == "bad_input"
+    assert "org" in json.dumps(env).lower()
+
+
+def test_cli_full_run_with_identity_succeeds(tmp_path):
+    """A real CLI run WITH both --target-author and --target-org succeeds (available:true)."""
+    fix = _make_full_fixture(tmp_path)
+    manifest_lines = []
+    for e in fix["entries"]:
+        row = {
+            "id": e.id,
+            "level": e.level,
+            "author_id": e.author_id,
+            "org_id": e.org_id,
+            "text_path": str(e.resolved_path),
+        }
+        manifest_lines.append(json.dumps(row))
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text("\n".join(manifest_lines) + "\n", encoding="utf-8")
+
+    argv = [
+        "--target", str(fix["target_path"]),
+        "--target-author", "writer:j",
+        "--target-org", "house:a",
+        "--baseline-manifest", str(manifest),
+        "--json",
+    ]
+    out = StringIO()
+    old_stdout = sys.stdout
+    sys.stdout = out
+    try:
+        rc = hsd.main(argv)
+    finally:
+        sys.stdout = old_stdout
+
+    assert rc == 0, out.getvalue()
+    env = json.loads(out.getvalue())
+    assert env["available"] is True

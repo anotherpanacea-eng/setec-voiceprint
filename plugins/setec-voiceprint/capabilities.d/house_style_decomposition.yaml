@@ -22,7 +22,11 @@ entries:
     Leakage guard: entries at house/genre/broad levels must not carry the target author_id;
     every entry must supply text_path (inline text is forbidden — it bypasses the path-identity
     leakage check). Requires BOTH isolating levels (different_context + different_authors_same_org)
-    and min-authors=3 at multi-author levels.
+    and min-authors=3 at multi-author levels. Both --target-author AND --target-org are REQUIRED
+    (fail-loud bad_input if absent); every entry''s author_id/org_id is bound to its level''s
+    identity membership (same_author_same_org/different_context = target author; the *_same_org
+    levels = target org; the outside/different-context levels = a different org) so a mislabeled
+    corpus is refused, not silently confounded.
 
     '
   use_when:
@@ -43,7 +47,9 @@ entries:
   - You want to de-anonymize a writer across pseudonymous venues
   - For within-one-manuscript chapter distinctiveness, use chapter_distinctiveness_audit instead
   inputs:
-    target: a --target text file (UTF-8) + --target-author (author_id for the leakage guard)
+    target: a --target text file (UTF-8) + --target-author (author_id) + --target-org (house/org
+      id); both identities are REQUIRED and drive the leakage guard plus the per-level
+      author/org membership check
     baseline: --baseline-set DIR (DIR/<level>/<author_id>/*.txt|*.md) OR --baseline-manifest
       JSONL (id + level + author_id + org_id + text_path per entry; inline text forbidden)
     knobs: '--min-authors 3, --min-words 2000, --margin 0.15, --lens delta (M1) | embedding
@@ -70,11 +76,12 @@ entries:
   examples:
   - description: Decompose a target chapter against a curated nested baseline set directory
     cmd: python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --target
-      chapter.txt --target-author writer:jane-smith --baseline-set baselines/ --json
+      chapter.txt --target-author writer:jane-smith --target-org house:acme-press
+      --baseline-set baselines/ --json
   - description: Decompose using a JSONL manifest, with a tighter attribution margin
     cmd: python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --target
-      chapter.txt --target-author writer:jane-smith --baseline-manifest baseline.jsonl
-      --margin 0.20 --json
+      chapter.txt --target-author writer:jane-smith --target-org house:acme-press
+      --baseline-manifest baseline.jsonl --margin 0.20 --json
   - description: Verify the built-in worked-example golden pins
     cmd: python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --check-all
   references:

@@ -72,6 +72,42 @@ _AUTHOR_LEAK_CHECKED_LEVELS = frozenset({
     "broad_reference",
 })
 
+# Per-level IDENTITY-MEMBERSHIP rules, bound to the target writer + house.
+# Each present level must structurally MATCH the partition it claims to represent;
+# otherwise a mislabeled corpus silently confounds the idiolect-vs-house read (and a
+# de-anonymization-shaped ladder slips the leakage guard). Validated fail-CLOSED at load:
+# every entry's author_id/org_id is checked against its level's required membership, and
+# any mismatch RAISES HouseStyleError -> bad_input. Derived from the spec's level
+# semantics (setec-scratch/spec-wave-4/tier4a-house-style-decomposition.md:112-117,207):
+#   same_author_same_org       = the writer's OTHER work through THIS house
+#                                  -> author == target, org == target_org
+#   different_context          = the writer's work in a DIFFERENT venue (idiolect level)
+#                                  -> author == target, org != target_org (a different venue)
+#   different_authors_same_org = OTHER writers through THIS house (house-style level)
+#                                  -> author != target, org == target_org
+#   same_genre_outside_org     = same genre, OTHER houses
+#                                  -> author != target, org != target_org
+#   broad_reference            = broad reference shell (org unconstrained; null allowed)
+#                                  -> author != target (already in _AUTHOR_LEAK_CHECKED_LEVELS)
+# Author membership: True => entry author MUST equal target author; False => MUST differ;
+# None => unconstrained (no per-author rule beyond the leak guard).
+_LEVEL_AUTHOR_IS_TARGET: dict[str, bool] = {
+    "same_author_same_org": True,
+    "different_context": True,
+    "different_authors_same_org": False,
+    "same_genre_outside_org": False,
+    "broad_reference": False,
+}
+# Org membership: True => entry org MUST equal target org; False => MUST differ from it;
+# None => unconstrained (broad_reference — null org allowed).
+_LEVEL_ORG_IS_TARGET: dict[str, bool | None] = {
+    "same_author_same_org": True,
+    "different_context": False,
+    "different_authors_same_org": True,
+    "same_genre_outside_org": False,
+    "broad_reference": None,
+}
+
 # M1 model-free families (include_spacy=False omits pos_trigrams + dependency_ngrams).
 M1_FAMILIES: tuple[str, ...] = (
     "function_words",
@@ -284,12 +320,35 @@ def _validate_baseline_set(
     entries: list[BaselineEntry],
     target_path: Path | None,
     target_author: str,
+    target_org: str,
     *,
     min_authors: int = DEFAULT_MIN_AUTHORS,
     min_words: int = DEFAULT_MIN_WORDS,
     min_variance_docs: int = DEFAULT_MIN_VARIANCE_DOCS,
 ) -> None:
-    """Enforce all acceptance gates.  Raises ``HouseStyleError`` on violation."""
+    """Enforce all acceptance gates.  Raises ``HouseStyleError`` on violation.
+
+    ``target_author`` and ``target_org`` are the target writer's and target house's
+    identities.  BOTH are REQUIRED (fail-loud): the leakage guard and the per-level
+    identity-membership check are inert / undefined without them, so an empty value is
+    a ``HouseStyleError`` (``bad_input``), not a silently-skipped check.  Each present
+    level's entries are then validated against ``_LEVEL_AUTHOR_IS_TARGET`` /
+    ``_LEVEL_ORG_IS_TARGET`` so a mislabeled corpus (a different author filed under a
+    same-author level, or a wrong-house entry filed under a house level) is REFUSED.
+    """
+    # Gate -1 — target identity REQUIRED (no inert empty default; fail-CLOSED).
+    if not target_author or not target_author.strip():
+        raise HouseStyleError(
+            "target author identity is required (--target-author); without it the "
+            "leakage guard and per-level author-membership check are inert"
+        )
+    if not target_org or not target_org.strip():
+        raise HouseStyleError(
+            "target organization identity is required (--target-org); without it the "
+            "per-level house-membership (org) check is inert and a wrong-house entry "
+            "could masquerade as the target house"
+        )
+
     by_level: dict[str, list[BaselineEntry]] = {}
     for e in entries:
         by_level.setdefault(e.level, []).append(e)
@@ -332,6 +391,39 @@ def _validate_baseline_set(
                         f"'{level}' baseline (entry '{e.id}'); "
                         f"the house-style baseline must not contain the target writer"
                     )
+
+        # Gate 1b — per-level IDENTITY MEMBERSHIP (fail-CLOSED).
+        # Bind every entry's author_id / org_id to the partition its level claims, so a
+        # mislabeled corpus cannot quietly confound the read.  (Superset of the author-leak
+        # check above: the leak check guards the three non-author levels; this binds ALL
+        # five levels, including the same-author levels that the leak check exempts.)
+        author_rule = _LEVEL_AUTHOR_IS_TARGET.get(level)
+        org_rule = _LEVEL_ORG_IS_TARGET.get(level)
+        for e in level_entries:
+            if author_rule is True and e.author_id != target_author:
+                raise HouseStyleError(
+                    f"membership: level '{level}' must contain ONLY the target author "
+                    f"'{target_author}', but entry '{e.id}' has author_id "
+                    f"'{e.author_id}'; the {level} level is the target writer's own work"
+                )
+            if author_rule is False and e.author_id == target_author:
+                raise HouseStyleError(
+                    f"membership: level '{level}' must NOT contain the target author "
+                    f"'{target_author}', but entry '{e.id}' does; the {level} level "
+                    f"must isolate the house / reference, not the target writer"
+                )
+            if org_rule is True and e.org_id != target_org:
+                raise HouseStyleError(
+                    f"membership: level '{level}' must belong to the target house "
+                    f"'{target_org}', but entry '{e.id}' has org_id {e.org_id!r}; "
+                    f"the {level} level must represent the target's own house"
+                )
+            if org_rule is False and e.org_id is not None and e.org_id == target_org:
+                raise HouseStyleError(
+                    f"membership: level '{level}' must NOT belong to the target house "
+                    f"'{target_org}', but entry '{e.id}' does; the {level} level must "
+                    f"isolate a DIFFERENT venue / house from the target's"
+                )
 
         # Gate 2 — min authors for multi-author levels.
         if level in {"different_authors_same_org", "same_genre_outside_org"}:
@@ -735,6 +827,7 @@ def run_check_all() -> int:
             entries,
             fixture["target_path"],
             "writer:j",
+            "house:a",
             min_authors=DEFAULT_MIN_AUTHORS,
             min_words=DEFAULT_MIN_WORDS,
         )
@@ -787,7 +880,22 @@ def main(argv: list[str] | None = None) -> int:
         "--target-author",
         required=False,
         default="",
-        help="Author ID of the target writer (used for the leakage guard).",
+        help=(
+            "Author ID of the target writer. REQUIRED for a real run (validated "
+            "fail-loud): drives both the leakage guard and the per-level "
+            "author-membership check."
+        ),
+    )
+    parser.add_argument(
+        "--target-org",
+        required=False,
+        default="",
+        help=(
+            "Organization / house ID of the target writer's house. REQUIRED for a "
+            "real run (validated fail-loud): binds the house levels "
+            "(same_author_same_org / different_authors_same_org) to the target's own "
+            "house so a wrong-house entry cannot masquerade as the target house."
+        ),
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument(
@@ -936,12 +1044,13 @@ def main(argv: list[str] | None = None) -> int:
         _emit(err, args)
         return 1
 
-    # Acceptance + leakage gates.
+    # Acceptance + leakage + identity-membership gates.
     try:
         _validate_baseline_set(
             entries,
             target_path,
             args.target_author,
+            args.target_org,
             min_authors=args.min_authors,
             min_words=args.min_words,
         )

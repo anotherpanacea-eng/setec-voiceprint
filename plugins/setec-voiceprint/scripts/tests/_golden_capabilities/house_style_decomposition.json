@@ -6,7 +6,7 @@
   "handoff": "none",
   "consumers": [],
   "family": "voice-coherence-adjacent",
-  "purpose": "Nested-baseline idiolect-vs-house attribution-of-variation (spec-wave-4 Tier-4a): runs the target's stylometric feature vector against a curated ORDERED LADDER of baselines (same_author_same_org / different_context / different_authors_same_org / same_genre_outside_org / broad_reference) and reports, per feature family, the per-level Burrows-Delta, the signed idiolect-vs-house contrast (D[different_authors_same_org] - D[different_context] with positive = idiolect-borne), and a descriptive attribution label (idiolect_borne / house_borne / shared_or_indistinct). NEVER a verdict, an authorship call, or a probability. M1 = pure-stdlib Burrows-Delta (no numpy/spaCy/torch; reuses stylometry_core.compare_to_baseline(include_spacy=False)). M2 (lazy-import seam, off by default) = model-based dimensionality-reduction lens (--lens embedding \u2192 missing_dependency whether or not torch is importable; M1 wires no embedding subspace). The read is the per-level matrix + per-family labels; shared_or_indistinct is the designed center, not an error. Calibration PROVISIONAL (margin=0.15 is an operator knob, not a calibrated cut). Leakage guard: entries at house/genre/broad levels must not carry the target author_id; every entry must supply text_path (inline text is forbidden \u2014 it bypasses the path-identity leakage check). Requires BOTH isolating levels (different_context + different_authors_same_org) and min-authors=3 at multi-author levels.\n",
+  "purpose": "Nested-baseline idiolect-vs-house attribution-of-variation (spec-wave-4 Tier-4a): runs the target's stylometric feature vector against a curated ORDERED LADDER of baselines (same_author_same_org / different_context / different_authors_same_org / same_genre_outside_org / broad_reference) and reports, per feature family, the per-level Burrows-Delta, the signed idiolect-vs-house contrast (D[different_authors_same_org] - D[different_context] with positive = idiolect-borne), and a descriptive attribution label (idiolect_borne / house_borne / shared_or_indistinct). NEVER a verdict, an authorship call, or a probability. M1 = pure-stdlib Burrows-Delta (no numpy/spaCy/torch; reuses stylometry_core.compare_to_baseline(include_spacy=False)). M2 (lazy-import seam, off by default) = model-based dimensionality-reduction lens (--lens embedding \u2192 missing_dependency whether or not torch is importable; M1 wires no embedding subspace). The read is the per-level matrix + per-family labels; shared_or_indistinct is the designed center, not an error. Calibration PROVISIONAL (margin=0.15 is an operator knob, not a calibrated cut). Leakage guard: entries at house/genre/broad levels must not carry the target author_id; every entry must supply text_path (inline text is forbidden \u2014 it bypasses the path-identity leakage check). Requires BOTH isolating levels (different_context + different_authors_same_org) and min-authors=3 at multi-author levels. Both --target-author AND --target-org are REQUIRED (fail-loud bad_input if absent); every entry's author_id/org_id is bound to its level's identity membership (same_author_same_org/different_context = target author; the *_same_org levels = target org; the outside/different-context levels = a different org) so a mislabeled corpus is refused, not silently confounded.\n",
   "use_when": [
     "You have a writer''s target text and a curated nested baseline ladder with BOTH isolating levels (different_context AND different_authors_same_org) and >= 3 distinct authors at the house level",
     "You want to know which feature families (function_words, char_ngrams_3/4/5, punctuation, paragraph_dialogue, pronoun_modal_negation) are idiolect-borne vs house-borne for THIS specific target+ladder combination",
@@ -21,7 +21,7 @@
     "For within-one-manuscript chapter distinctiveness, use chapter_distinctiveness_audit instead"
   ],
   "inputs": {
-    "target": "a --target text file (UTF-8) + --target-author (author_id for the leakage guard)",
+    "target": "a --target text file (UTF-8) + --target-author (author_id) + --target-org (house/org id); both identities are REQUIRED and drive the leakage guard plus the per-level author/org membership check",
     "baseline": "--baseline-set DIR (DIR/<level>/<author_id>/*.txt|*.md) OR --baseline-manifest JSONL (id + level + author_id + org_id + text_path per entry; inline text forbidden)",
     "knobs": "--min-authors 3, --min-words 2000, --margin 0.15, --lens delta (M1) | embedding (gated M2 seam; refuses fail-loud in M1)"
   },
@@ -50,11 +50,11 @@
   "examples": [
     {
       "description": "Decompose a target chapter against a curated nested baseline set directory",
-      "cmd": "python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --target chapter.txt --target-author writer:jane-smith --baseline-set baselines/ --json"
+      "cmd": "python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --target chapter.txt --target-author writer:jane-smith --target-org house:acme-press --baseline-set baselines/ --json"
     },
     {
       "description": "Decompose using a JSONL manifest, with a tighter attribution margin",
-      "cmd": "python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --target chapter.txt --target-author writer:jane-smith --baseline-manifest baseline.jsonl --margin 0.20 --json"
+      "cmd": "python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --target chapter.txt --target-author writer:jane-smith --target-org house:acme-press --baseline-manifest baseline.jsonl --margin 0.20 --json"
     },
     {
       "description": "Verify the built-in worked-example golden pins",
