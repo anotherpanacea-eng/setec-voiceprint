@@ -67,6 +67,7 @@ FIXED_FAMILIES = {
     "punctuation",
     "paragraph_dialogue",
     "pronoun_modal_negation",
+    "biber_features",
 }
 
 DEFAULT_LIMITS = {
@@ -97,6 +98,7 @@ FAMILY_WEIGHTS = {
     "pronoun_modal_negation": 1.0,
     "pos_trigrams": 1.0,
     "dependency_ngrams": 1.0,
+    "biber_features": 1.0,
 }
 
 
@@ -403,10 +405,13 @@ def extract_features(
     text: str,
     *,
     include_spacy: bool = True,
+    include_biber: bool = False,
+    biber_vector: "dict[str, float] | None" = None,
+    biber_tagger: "Any | None" = None,
     allow_non_prose: bool = False,
-    strip_rules: str | list[str] | None = None,
+    strip_rules: "str | list[str] | None" = None,
     strip_aggressive: bool = False,
-) -> dict[str, Any]:
+) -> "dict[str, Any]":
     text, preprocessing = strip_non_prose(
         text,
         strip_rules,
@@ -434,6 +439,17 @@ def extract_features(
             features["pos_trigrams"] = pos
         if dep:
             features["dependency_ngrams"] = dep
+    if include_biber:
+        if biber_vector is None and biber_tagger is None:
+            # Fail-loud: opt-in requested but nothing to derive the vector from.
+            # Never a silent no-op — that would let the family vanish unnoticed.
+            raise ValueError("include_biber requires biber_vector or biber_tagger")
+        biber = biber_vector
+        if biber is None and biber_tagger is not None:
+            biber = biber_tagger(text)  # injectable seam; M1 tests pass a stub
+        if biber:  # gate exactly like `if pos:` / `if dep:`
+            from biber_features import biber_family_features  # lazy; stdlib-only
+            features["biber_features"] = biber_family_features(biber)
     return {
         "summary": {
             "n_words": len(words),
@@ -555,15 +571,26 @@ def extract_entry_features(
     entries: list[dict[str, Any]],
     *,
     include_spacy: bool = True,
+    include_biber: bool = False,
+    biber_tagger: "Any | None" = None,
     allow_non_prose: bool = False,
-    strip_rules: str | list[str] | None = None,
+    strip_rules: "str | list[str] | None" = None,
     strip_aggressive: bool = False,
 ) -> list[dict[str, Any]]:
     out = []
     for entry in entries:
+        # Per-entry precomputed biber_vector (offline/cached path, §4.3):
+        # if the entry carries "biber_vector" and include_biber is True,
+        # pass it as biber_vector= so tagging is skipped for this entry.
+        entry_biber_vector: "dict[str, float] | None" = (
+            entry.get("biber_vector") if include_biber else None
+        )
         feat = extract_features(
             entry["text"],
             include_spacy=include_spacy,
+            include_biber=include_biber,
+            biber_vector=entry_biber_vector,
+            biber_tagger=biber_tagger,
             allow_non_prose=allow_non_prose,
             strip_rules=strip_rules,
             strip_aggressive=strip_aggressive,
@@ -793,19 +820,25 @@ def compare_to_baseline(
     baseline_entries: list[dict[str, Any]],
     *,
     include_spacy: bool = True,
-    limits: dict[str, int] | None = None,
+    include_biber: bool = False,
+    biber_vector: "dict[str, float] | None" = None,
+    biber_tagger: "Any | None" = None,
+    limits: "dict[str, int] | None" = None,
     include_clusters: bool = True,
     cluster_min_features: int = 2,
     allow_non_prose: bool = False,
-    strip_rules: str | list[str] | None = None,
+    strip_rules: "str | list[str] | None" = None,
     strip_aggressive: bool = False,
-) -> dict[str, Any]:
+) -> "dict[str, Any]":
     if not baseline_entries:
         raise ValueError("Baseline contains no usable entries")
 
     target_features = extract_features(
         target_text,
         include_spacy=include_spacy,
+        include_biber=include_biber,
+        biber_vector=biber_vector,
+        biber_tagger=biber_tagger,
         allow_non_prose=allow_non_prose,
         strip_rules=strip_rules,
         strip_aggressive=strip_aggressive,
@@ -813,6 +846,8 @@ def compare_to_baseline(
     baseline_features = extract_entry_features(
         baseline_entries,
         include_spacy=include_spacy,
+        include_biber=include_biber,
+        biber_tagger=biber_tagger,
         allow_non_prose=allow_non_prose,
         strip_rules=strip_rules,
         strip_aggressive=strip_aggressive,
@@ -980,16 +1015,20 @@ def build_profile(
     baseline_entries: list[dict[str, Any]],
     *,
     include_spacy: bool = True,
-    limits: dict[str, int] | None = None,
+    include_biber: bool = False,
+    biber_tagger: "Any | None" = None,
+    limits: "dict[str, int] | None" = None,
     allow_non_prose: bool = False,
-    strip_rules: str | list[str] | None = None,
+    strip_rules: "str | list[str] | None" = None,
     strip_aggressive: bool = False,
-) -> dict[str, Any]:
+) -> "dict[str, Any]":
     if not baseline_entries:
         raise ValueError("Baseline contains no usable entries")
     baseline_features = extract_entry_features(
         baseline_entries,
         include_spacy=include_spacy,
+        include_biber=include_biber,
+        biber_tagger=biber_tagger,
         allow_non_prose=allow_non_prose,
         strip_rules=strip_rules,
         strip_aggressive=strip_aggressive,

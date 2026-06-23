@@ -185,3 +185,42 @@ class TestWarningsPropagate:
             result, target_path=Path("draft.md"),
         )
         assert envelope["warnings"] == ["Small baseline: <20K words."]
+
+
+# ---------------------------------------------------------------------------
+# AC10 (neurobiber-v2): biber_features opt-in is OFF by default; the existing
+# compare_to_baseline consumer path produces no 'biber_features' key anywhere
+# in the results envelope when --include-biber is not passed.
+# Recursive key walk (NOT substring) — mirrors the _walk_keys / _FORBIDDEN_KEYS
+# pattern from test_dependency_distance_audit.py:151-159.
+# ---------------------------------------------------------------------------
+
+def _walk_keys_vd(obj):
+    """Yield every dict key reachable in a nested payload (lists too)."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield k
+            yield from _walk_keys_vd(v)
+    elif isinstance(obj, (list, tuple)):
+        for item in obj:
+            yield from _walk_keys_vd(item)
+
+
+class TestBiberFeaturesAbsentByDefault:
+    """AC10: biber_features does not appear in the default voice_distance envelope.
+
+    This protects the downstream drift gate for apodictic and setec-voicewright:
+    their pinned contract fixtures are against the default (no --include-biber)
+    output, which must be byte-identical before and after this change.
+    """
+
+    def test_biber_features_absent_from_default_envelope(self):
+        """'biber_features' not in any key of the default build_audit_payload envelope."""
+        envelope = vd.build_audit_payload(
+            _fake_result(), target_path=Path("draft.md"),
+        )
+        keys = set(_walk_keys_vd(envelope["results"]))
+        assert "biber_features" not in keys, (
+            "'biber_features' key found in default voice_distance results envelope "
+            "(include_biber defaults to False — this key must NOT appear without --include-biber)"
+        )

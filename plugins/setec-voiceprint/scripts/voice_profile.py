@@ -267,6 +267,9 @@ def main() -> int:
                         help="Rows to show per table (default 20).")
     parser.add_argument("--no-spacy", action="store_true",
                         help="Skip POS and dependency feature families.")
+    parser.add_argument("--include-biber", action="store_true",
+                        help="Add the Biber lexico-grammatical register feature family "
+                             "(requires a Neurobiber tagger; M2/model-CPU only).")
     parser.add_argument("--allow-non-prose", action="store_true",
                         help="Skip default corpus-hygiene stripping. Use "
                              "only when intentionally profiling code-heavy "
@@ -322,6 +325,7 @@ def main() -> int:
     profile = build_profile(
         entries,
         include_spacy=not args.no_spacy,
+        include_biber=args.include_biber,
         limits=build_limits(args),
         allow_non_prose=args.allow_non_prose,
         strip_rules=args.strip_rules,

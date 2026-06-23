@@ -637,6 +637,9 @@ def main() -> int:
                         help="Skip the cluster aggregation pass.")
     parser.add_argument("--no-spacy", action="store_true",
                         help="Skip POS and dependency feature families.")
+    parser.add_argument("--include-biber", action="store_true",
+                        help="Add the Biber lexico-grammatical register feature family "
+                             "(requires a Neurobiber tagger; M2/model-CPU only).")
     parser.add_argument("--allow-non-prose", action="store_true",
                         help="Skip default corpus-hygiene stripping. Use "
                              "only when intentionally measuring code-heavy "
@@ -748,6 +751,7 @@ def main() -> int:
         target_text,
         baseline_entries,
         include_spacy=not args.no_spacy,
+        include_biber=args.include_biber,
         limits=build_limits(args),
         include_clusters=not args.no_clusters,
         cluster_min_features=args.cluster_min_features,
