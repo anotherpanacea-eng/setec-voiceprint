@@ -693,6 +693,7 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 
 ## Related references
 
+- `cross_doc_novelty_profile` (`set_level_diversity`) — per-feature cross-document novelty PROFILE: for ONE target vs a reference POOL, reports a mean/SD z-position per named stdlib stylometry feature (the 7 `extract_features(include_spacy=False)` families), plus a per-family |z| distribution summary. M1 model-free, no verdict, no band, no single score. The feature-wise complement to `distinct_diversity_audit` (which gives a cluster-wise partition). Ships no new per-text signal — it re-positions existing stdlib features relative to a pool — so the totals above are unchanged. Clean-room of the GENIE per-feature-vs-population position read (arXiv:2606.12790) combined with the NoveltyBench no-single-scalar posture (arXiv:2504.05228). `calibration_status: provisional`.
 - `references/aic-flags.md` — pattern-resolution layer for the 9 AIC flag families.
 - `references/source-triage.md` — voice-attribution layer; per-instance refinement once frequency-elevation flags fire.
 - `references/laundering-vocabulary.md` — the four laundering moves (calibration / procedural / audit / aesthetic-authority).
