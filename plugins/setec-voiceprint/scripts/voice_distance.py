@@ -26,7 +26,7 @@ from stylometry_core import (
 )
 
 from claim_license import ClaimLicense  # type: ignore
-from output_schema import build_baseline_metadata, build_output  # type: ignore
+from output_schema import build_baseline_metadata, build_error_output, build_output  # type: ignore
 
 
 # Task-surface tag. See variance_audit.TASK_SURFACE for the framework
@@ -746,12 +746,38 @@ def main() -> int:
         )
         return 1
 
+    # --include-biber requires the M2 Neurobiber tagger which is not present
+    # in this M1 build. Emit a clean missing_dependency envelope rather than
+    # crashing with ValueError inside compare_to_baseline (Codex P1).
+    if args.include_biber:
+        from biber_features import _try_load_real_tagger  # lazy; never crashes  # noqa: F401
+        _biber_tagger = _try_load_real_tagger()
+        if _biber_tagger is None:
+            envelope = build_error_output(
+                task_surface=TASK_SURFACE,
+                tool=TOOL_NAME,
+                version=SCRIPT_VERSION,
+                target_path=target_path,
+                reason=(
+                    "--include-biber requires the M2 Neurobiber tagger, which is "
+                    "not available in this build. Install the neurobiber package "
+                    "and re-run, or omit --include-biber to use the M1 feature "
+                    "families (function words, character n-grams, POS, dependencies)."
+                ),
+                reason_category="missing_dependency",
+            )
+            print(json.dumps(envelope, indent=2, default=str))
+            return 3
+    else:
+        _biber_tagger = None
+
     target_text = read_text(target_path)
     result = compare_to_baseline(
         target_text,
         baseline_entries,
         include_spacy=not args.no_spacy,
         include_biber=args.include_biber,
+        biber_tagger=_biber_tagger,
         limits=build_limits(args),
         include_clusters=not args.no_clusters,
         cluster_min_features=args.cluster_min_features,

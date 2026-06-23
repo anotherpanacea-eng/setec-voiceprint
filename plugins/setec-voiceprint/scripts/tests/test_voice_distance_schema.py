@@ -224,3 +224,89 @@ class TestBiberFeaturesAbsentByDefault:
             "'biber_features' key found in default voice_distance results envelope "
             "(include_biber defaults to False — this key must NOT appear without --include-biber)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Codex P1 regression: voice_distance --include-biber must emit a clean
+# missing_dependency envelope (available:false) rather than crashing with
+# ValueError when no real Biber tagger is configured (always the case in
+# the M1 build — there is no real tagger yet).
+# Ref: Codex P1 finding on voice_distance.py:754
+# ---------------------------------------------------------------------------
+
+def _run_vd_main(argv: list[str]) -> int:
+    """Invoke vd.main() with a patched sys.argv."""
+    import sys as _sys
+    orig = _sys.argv
+    _sys.argv = argv
+    try:
+        return vd.main()
+    finally:
+        _sys.argv = orig
+
+
+class TestIncludeBiberMissingDependencyCLI:
+    """Codex P1: voice_distance --include-biber with no tagger must NOT crash.
+
+    Pre-fix: compare_to_baseline raises ValueError (include_biber requires
+    biber_vector or biber_tagger) and the script exits unclean with a traceback.
+    Post-fix: the CLI intercepts the missing-tagger condition BEFORE calling
+    compare_to_baseline and emits available:false / reason_category=missing_dependency.
+    """
+
+    def test_include_biber_no_tagger_emits_missing_dependency(
+        self, tmp_path, capsys
+    ):
+        """--include-biber with no M2 tagger → available:false, missing_dependency."""
+        import json as _json
+
+        # Build a minimal two-file baseline so load_entries succeeds.
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        (baseline_dir / "a.md").write_text(
+            "The committee deliberated through the afternoon. " * 20,
+            encoding="utf-8",
+        )
+        (baseline_dir / "b.md").write_text(
+            "Members reviewed the budget on Tuesday. " * 20,
+            encoding="utf-8",
+        )
+        target = tmp_path / "target.md"
+        target.write_text(
+            "Officials noted that the process followed established guidelines. " * 10,
+            encoding="utf-8",
+        )
+
+        rc = _run_vd_main([
+            "voice_distance.py",
+            str(target),
+            "--baseline-dir", str(baseline_dir),
+            "--no-spacy",
+            "--include-biber",
+            "--json",
+        ])
+
+        captured = capsys.readouterr()
+        # Must not crash (no uncaught ValueError → non-zero rc from exception)
+        # The error envelope exits with EXIT_CONTRACT (3 per setec_run convention)
+        # or at minimum does NOT raise an unhandled exception.
+        assert rc != 0, (
+            "Expected a non-zero exit code (missing_dependency envelope), "
+            f"got rc={rc}"
+        )
+        # The JSON envelope must be on stdout.
+        assert captured.out.strip(), (
+            "Expected a JSON envelope on stdout; got nothing"
+        )
+        envelope = _json.loads(captured.out)
+        assert envelope["available"] is False, (
+            f"Expected available:false, got available={envelope['available']}"
+        )
+        assert envelope["reason_category"] == "missing_dependency", (
+            f"Expected reason_category='missing_dependency', "
+            f"got {envelope['reason_category']!r}"
+        )
+        # Reason must mention the Biber tagger so users understand the gap.
+        assert "biber" in envelope["reason"].lower() or "tagger" in envelope["reason"].lower(), (
+            f"Expected 'biber' or 'tagger' in reason, got: {envelope['reason']!r}"
+        )

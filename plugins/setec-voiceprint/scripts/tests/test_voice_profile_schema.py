@@ -375,3 +375,61 @@ class TestBiberFeaturesAbsentByDefault:
             "'biber_features' key found in default voice_profile results envelope "
             "(include_biber defaults to False — this key must NOT appear without --include-biber)"
         )
+
+
+# ---------------------------------------------------------------------------
+# Codex P1 regression: voice_profile --include-biber must emit a clean
+# missing_dependency envelope (available:false) rather than crashing with
+# ValueError when no real Biber tagger is configured (always the case in
+# the M1 build — there is no real tagger yet).
+# Ref: Codex P1 finding on voice_distance.py:754 (same posture, both CLIs)
+# ---------------------------------------------------------------------------
+
+class TestIncludeBiberMissingDependencyCLI:
+    """Codex P1: voice_profile --include-biber with no tagger must NOT crash.
+
+    Pre-fix: build_profile raises ValueError (include_biber requires
+    biber_vector or biber_tagger) and the script exits unclean with a traceback.
+    Post-fix: the CLI intercepts the missing-tagger condition BEFORE calling
+    build_profile and emits available:false / reason_category=missing_dependency.
+    """
+
+    def test_include_biber_no_tagger_emits_missing_dependency(
+        self, tmp_path, capsys
+    ):
+        """--include-biber with no M2 tagger → available:false, missing_dependency."""
+        import json as _json
+
+        baseline_dir = _write_baseline(tmp_path)
+
+        rc = _run_main([
+            "voice_profile.py",
+            "--baseline-dir", str(baseline_dir),
+            "--no-spacy",
+            "--include-biber",
+            "--json",
+            "--allow-public-output",
+        ])
+
+        captured = capsys.readouterr()
+        # Must not crash with an unhandled ValueError.
+        assert rc != 0, (
+            "Expected a non-zero exit code (missing_dependency envelope), "
+            f"got rc={rc}"
+        )
+        # The JSON envelope must be on stdout.
+        assert captured.out.strip(), (
+            "Expected a JSON envelope on stdout; got nothing"
+        )
+        envelope = _json.loads(captured.out)
+        assert envelope["available"] is False, (
+            f"Expected available:false, got available={envelope['available']}"
+        )
+        assert envelope["reason_category"] == "missing_dependency", (
+            f"Expected reason_category='missing_dependency', "
+            f"got {envelope['reason_category']!r}"
+        )
+        # Reason must mention the Biber tagger so users understand the gap.
+        assert "biber" in envelope["reason"].lower() or "tagger" in envelope["reason"].lower(), (
+            f"Expected 'biber' or 'tagger' in reason, got: {envelope['reason']!r}"
+        )
