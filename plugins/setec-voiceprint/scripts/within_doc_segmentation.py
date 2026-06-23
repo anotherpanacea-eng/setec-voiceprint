@@ -297,6 +297,11 @@ def _cosine_similarity(
     return max(-1.0, min(1.0, sim))  # explicit clamp
 
 
+def _is_zero_norm(vec: dict[str, float], feature_names: list[str]) -> bool:
+    """Return True if all feature values in vec are 0.0 (zero-norm vector)."""
+    return all(vec.get(name, 0.0) == 0.0 for name in feature_names)
+
+
 def _adjacent_distance_profile(
     z_vecs: list[dict[str, float]],
     feature_names: list[str],
@@ -305,11 +310,19 @@ def _adjacent_distance_profile(
 
     d_i = (1 - cosine_similarity(z[i], z[i+1])) / 2.0  →  [0, 1]
     A zero-norm window → d_i = 0.0 (no shift, never None).
+
+    Zero-norm special case (Codex P1 fix): when either vector has zero norm,
+    treat the pair as identical (distance 0.0) rather than using the
+    (1 - 0.0) / 2.0 = 0.5 path.  Empty/zero feature vectors carry no
+    stylometric signal — they must not contribute a spurious 0.5 distance.
     """
     profile: list[float] = []
     for i in range(len(z_vecs) - 1):
-        sim = _cosine_similarity(z_vecs[i], z_vecs[i + 1], feature_names)
-        d_i = (1.0 - sim) / 2.0
+        if _is_zero_norm(z_vecs[i], feature_names) or _is_zero_norm(z_vecs[i + 1], feature_names):
+            d_i = 0.0
+        else:
+            sim = _cosine_similarity(z_vecs[i], z_vecs[i + 1], feature_names)
+            d_i = (1.0 - sim) / 2.0
         profile.append(d_i)
     return profile
 
@@ -465,29 +478,37 @@ def analyze_document(
     # 7. Band thresholds (the same k drives both band assignment and peak detection)
     T_slight, T_moderate, T_marked = _band_thresholds(profile, peak_k)
 
-    # 8. Boundary detection: local peaks above T_moderate
+    # 8. Zero-MAD guard (Codex P1 fix): when the within-document MAD is 0 the
+    #    profile is flat — there are no relative peaks, every threshold collapses
+    #    to the median, and the >= comparisons would classify equal-valued plateaus
+    #    as marked_shift.  Skip boundary detection entirely for a flat profile.
+    profile_mad = _mad(profile, _median(profile))
+    flat_profile = (profile_mad == 0.0)
+
+    # 9. Boundary detection: local peaks above T_moderate (skipped when profile is flat)
     boundaries: list[dict[str, Any]] = []
-    n_pairs = len(profile)
-    for i, d_i in enumerate(profile):
-        # Local-peak condition: d_i >= neighbors; edges are -inf
-        left = profile[i - 1] if i > 0 else float("-inf")
-        right = profile[i + 1] if i < n_pairs - 1 else float("-inf")
-        is_peak = d_i >= left and d_i >= right
-        if not is_peak:
-            continue
-        if d_i < T_moderate:
-            continue
-        band = _assign_band(d_i, T_slight, T_moderate, T_marked)
-        # char_offset = char_start of window i+1 (the seam where the next window begins)
-        char_offset = windows[i + 1]["char_start"]
-        boundaries.append({
-            "char_offset": char_offset,
-            "between_windows": [i, i + 1],
-            "distance": d_i,
-            "band": band,
-            "excerpt_before": _excerpt_before(text, char_offset),
-            "excerpt_after": _excerpt_after(text, char_offset),
-        })
+    if not flat_profile:
+        n_pairs = len(profile)
+        for i, d_i in enumerate(profile):
+            # Local-peak condition: d_i >= neighbors; edges are -inf
+            left = profile[i - 1] if i > 0 else float("-inf")
+            right = profile[i + 1] if i < n_pairs - 1 else float("-inf")
+            is_peak = d_i >= left and d_i >= right
+            if not is_peak:
+                continue
+            if d_i < T_moderate:
+                continue
+            band = _assign_band(d_i, T_slight, T_moderate, T_marked)
+            # char_offset = char_start of window i+1 (the seam where the next window begins)
+            char_offset = windows[i + 1]["char_start"]
+            boundaries.append({
+                "char_offset": char_offset,
+                "between_windows": [i, i + 1],
+                "distance": d_i,
+                "band": band,
+                "excerpt_before": _excerpt_before(text, char_offset),
+                "excerpt_after": _excerpt_after(text, char_offset),
+            })
 
     # Sort boundaries by char_offset
     boundaries.sort(key=lambda b: b["char_offset"])

@@ -807,3 +807,138 @@ class TestCLIEnvelope:
         assert out_f.exists()
         env = json.loads(out_f.read_text(encoding="utf-8"))
         assert env.get("available") is True
+
+
+# ---------------------------------------------------------------------------
+# Regression: Codex P1 — zero-MAD guard + zero-norm cosine fix
+# ---------------------------------------------------------------------------
+
+class TestZeroMadAndZeroNormRegression:
+    """Regression tests for Codex P1 (within_doc_segmentation.py:478).
+
+    (a) ZERO-MAD GUARD: a uniform/flat document (N identical sentences) must
+        produce ZERO boundaries — the within-doc MAD is 0, there are no
+        relative peaks, so classify-then-band must not fire.
+
+    (b) ZERO-NORM COSINE: when either feature-vector has zero norm, the
+        derived cosine distance must be 0.0 (treat empty/zero vectors as
+        identical → no shift), NOT 0.5.
+    """
+
+    # --- (a) Uniform document → zero boundaries ----------------------------
+
+    def _make_uniform(self, n: int = 20) -> str:
+        """Return a document of N identical, content-rich sentences."""
+        return (
+            "The quick brown fox jumps over the lazy dog near the river. " * n
+        )
+
+    def test_uniform_document_zero_boundaries(self):
+        """Uniform document (20 identical sentences) must produce ZERO boundaries.
+
+        Pre-fix: analyze_document returned 6–17 'marked_shift' boundaries with
+        distance 0.0 because MAD==0 collapses all thresholds to the median
+        (also 0.0), so d_i >= T_moderate is 0.0 >= 0.0 = True for every local peak.
+        """
+        text = self._make_uniform(20)
+        results = w.analyze_document(
+            text,
+            window_sentences=3,
+            stride_sentences=1,
+            peak_k=2.5,
+            min_windows=3,
+        )
+        assert results["boundaries"] == [], (
+            f"Uniform document must produce ZERO boundaries; "
+            f"got {len(results['boundaries'])} boundaries with distances "
+            f"{[b['distance'] for b in results['boundaries']]}"
+        )
+
+    def test_uniform_document_no_marked_shift_at_distance_zero(self):
+        """No boundary may have band='marked_shift' and distance==0.0 simultaneously.
+
+        This is the exact broken case from the Codex P1 report: 'marked_shift'
+        on a flat profile where every d_i == 0.0.
+        """
+        text = self._make_uniform(20)
+        results = w.analyze_document(
+            text,
+            window_sentences=3,
+            stride_sentences=1,
+            peak_k=2.5,
+            min_windows=3,
+        )
+        for b in results["boundaries"]:
+            assert not (b["distance"] == 0.0 and b["band"] == "marked_shift"), (
+                f"Boundary with distance==0.0 classified as 'marked_shift' — "
+                "flat-profile zero-MAD guard has not fired"
+            )
+
+    def test_all_zero_profile_yields_no_boundaries(self):
+        """Direct unit test: analyze_document on a truly all-zero profile gives no boundaries.
+
+        We construct a text where all windows produce identical feature vectors so
+        all adjacent cosine distances are 0.0 → flat profile → MAD == 0 → guard fires.
+        """
+        # A perfectly uniform text using the same sentence repeated enough times
+        # to exceed min_windows and still yield all-zero profile (after z-scoring)
+        text = self._make_uniform(30)
+        results = w.analyze_document(
+            text,
+            window_sentences=5,
+            stride_sentences=2,
+            peak_k=2.5,
+            min_windows=3,
+        )
+        assert results["boundaries"] == [], (
+            f"All-zero-profile text must yield no boundaries; "
+            f"got {len(results['boundaries'])}"
+        )
+
+    # --- (b) Zero-norm cosine → distance 0.0, not 0.5 ----------------------
+
+    def test_zero_norm_cosine_returns_similarity_zero(self):
+        """_cosine_similarity returns 0.0 when either vector has zero norm (current behavior).
+
+        The pre-fix bug is in the DERIVED DISTANCE: (1 - 0.0) / 2 = 0.5,
+        not in _cosine_similarity itself which already returns 0.0.
+        This test pins that the similarity itself is 0.0 for a zero-norm vector.
+        """
+        a_zero = {}  # zero vector (all features absent → norm = 0)
+        b_nonzero = {"feat_x": 1.0}
+        feature_names = ["feat_x"]
+        sim = w._cosine_similarity(a_zero, b_nonzero, feature_names)
+        assert sim == 0.0, (
+            f"_cosine_similarity with zero-norm vector must return 0.0; got {sim}"
+        )
+
+    def test_zero_norm_pair_distance_is_zero(self):
+        """When either z-vector has zero norm, the derived distance must be 0.0.
+
+        Pre-fix: (1 - cosine_sim) / 2 = (1 - 0.0) / 2 = 0.5 — incorrect;
+        zero/empty vectors should be treated as identical → distance 0.0.
+        """
+        # Build two windows where one has zero-norm z-vector by monkeypatching
+        # _z_score_features or by testing _adjacent_distance_profile directly.
+        zero_vec = {"feat_a": 0.0, "feat_b": 0.0}
+        nonzero_vec = {"feat_a": 1.0, "feat_b": 0.5}
+        feature_names = ["feat_a", "feat_b"]
+
+        # Direct call: the distance profile for a zero-norm adjacent pair
+        profile = w._adjacent_distance_profile([zero_vec, nonzero_vec], feature_names)
+        assert len(profile) == 1
+        assert profile[0] == 0.0, (
+            f"Zero-norm pair must yield distance 0.0; "
+            f"got {profile[0]} (pre-fix was 0.5 because cosine_sim=0.0 → (1-0)/2=0.5)"
+        )
+
+    def test_both_zero_norm_distance_is_zero(self):
+        """Two zero-norm vectors → distance 0.0 (both empty = identical)."""
+        zero_a = {}
+        zero_b = {}
+        feature_names = ["feat_x", "feat_y"]
+        profile = w._adjacent_distance_profile([zero_a, zero_b], feature_names)
+        assert len(profile) == 1
+        assert profile[0] == 0.0, (
+            f"Two zero-norm vectors must yield distance 0.0; got {profile[0]}"
+        )
