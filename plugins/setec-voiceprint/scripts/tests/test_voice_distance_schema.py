@@ -310,3 +310,53 @@ class TestIncludeBiberMissingDependencyCLI:
         assert "biber" in envelope["reason"].lower() or "tagger" in envelope["reason"].lower(), (
             f"Expected 'biber' or 'tagger' in reason, got: {envelope['reason']!r}"
         )
+
+    def test_include_biber_abstains_when_neurobiber_importable(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        """Codex round-2 P2: --include-biber with a PRESENT neurobiber still abstains cleanly.
+
+        Pre-fix: _try_load_real_tagger() raised NotImplementedError as soon as
+        `neurobiber` was importable, escaping the CLI guard as an uncaught
+        traceback. Post-fix: the deferred M2 adapter returns None, so the CLI
+        emits available:false / missing_dependency with rc=3.
+        """
+        import json as _json
+        import types as _types
+
+        # Package PRESENT — inject a stub so `import neurobiber` SUCCEEDS.
+        monkeypatch.setitem(sys.modules, "neurobiber", _types.ModuleType("neurobiber"))
+
+        baseline_dir = tmp_path / "baseline"
+        baseline_dir.mkdir()
+        (baseline_dir / "a.md").write_text(
+            "The committee deliberated through the afternoon. " * 20,
+            encoding="utf-8",
+        )
+        (baseline_dir / "b.md").write_text(
+            "Members reviewed the budget on Tuesday. " * 20,
+            encoding="utf-8",
+        )
+        target = tmp_path / "target.md"
+        target.write_text(
+            "Officials noted that the process followed established guidelines. " * 10,
+            encoding="utf-8",
+        )
+
+        # Must NOT raise (pre-fix: NotImplementedError escapes vd.main()).
+        rc = _run_vd_main([
+            "voice_distance.py",
+            str(target),
+            "--baseline-dir", str(baseline_dir),
+            "--no-spacy",
+            "--include-biber",
+            "--json",
+        ])
+
+        captured = capsys.readouterr()
+        assert rc == 3, (
+            f"Expected rc=3 (missing_dependency envelope), got rc={rc}"
+        )
+        envelope = _json.loads(captured.out)
+        assert envelope["available"] is False
+        assert envelope["reason_category"] == "missing_dependency"

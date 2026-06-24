@@ -340,8 +340,12 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 def _try_load_real_tagger() -> Callable[[str], dict[str, float]] | None:
     """Attempt to load the real Neurobiber tagger (M2 path).
 
-    Returns None when torch/transformers/neurobiber are absent (the M1/CI
-    default). Keeps the import lazy — never called in CI.
+    ALWAYS returns None in this M1 build — the M2 NeurobiberTagger adapter is
+    not yet implemented. This holds whether or not the ``neurobiber`` package is
+    importable: a present dependency is a deferred-integration state, NOT a
+    usable tagger. Returning None (rather than raising) keeps the CLI guard's
+    missing_dependency abstention intact — installing the named package must not
+    turn a clean rc=3 envelope into an uncaught traceback (Codex round-2 P2).
 
     M2 body (deferred, out of scope for this build): instantiate a
     _NeurobiberTagger whose _load() does:
@@ -349,15 +353,14 @@ def _try_load_real_tagger() -> Callable[[str], dict[str, float]] | None:
         import transformers
         ...
     modelled on voice_fingerprint._LUAREncoder._load() (voice_fingerprint.py:196-201).
+    Until that adapter exists, the importability of ``neurobiber`` is irrelevant
+    and this function stays a no-op.
     """
-    try:
-        import neurobiber  # type: ignore  # noqa: F401
-        raise NotImplementedError(
-            "M2 neurobiber tagger integration is deferred; "
-            "implement _NeurobiberTagger here when the package is ready."
-        )
-    except ImportError:
-        return None
+    # M2 NeurobiberTagger adapter is deferred — there is no real tagger to load
+    # yet, so abstain unconditionally. Do NOT probe `import neurobiber` here:
+    # raising on a present package would escape the CLI's missing_dependency
+    # guard and crash voice_distance/voice_profile/biber_features (Codex round-2).
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:

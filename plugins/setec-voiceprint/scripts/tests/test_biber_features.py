@@ -776,3 +776,62 @@ def test_real_neurobiber_tagger_smoke():
     # M2 implementation stub — this test body is a placeholder for when
     # the real _NeurobiberTagger is wired in.
     pytest.skip("M2 NeurobiberTagger not yet implemented (deferred)")
+
+
+# ===========================================================================
+# Codex round-2 P2 — installing the named dependency must NOT turn the clean
+# missing_dependency abstention into an uncaught traceback.
+#
+# Round-1 added the CLI guard, but _try_load_real_tagger() raised
+# NotImplementedError as soon as `neurobiber` was importable — escaping the
+# `except ImportError` handler and crashing the guard in all three CLIs.
+# Ref: Codex round-2 P2 finding on biber_features.py:355.
+# ===========================================================================
+
+class TestPackagePresentDoesNotCrash:
+    """The M2 adapter is deferred; a *present* neurobiber must still abstain.
+
+    Pre-fix: with a stub `neurobiber` in sys.modules, _try_load_real_tagger()
+    raises NotImplementedError, which propagates out of the CLI guard as an
+    uncaught traceback (rc != 3, no JSON envelope).
+    Post-fix: _try_load_real_tagger() returns None unconditionally (the M2
+    adapter does not exist yet), so the CLI emits a clean
+    available:false / missing_dependency envelope with rc=3.
+    """
+
+    def test_try_load_returns_none_when_neurobiber_importable(self, monkeypatch):
+        """biber_features._try_load_real_tagger() returns None even if neurobiber imports."""
+        import types as _types
+
+        # Inject a stub `neurobiber` so `import neurobiber` SUCCEEDS (the
+        # package-present path the round-2 finding reproduces).
+        monkeypatch.setitem(sys.modules, "neurobiber", _types.ModuleType("neurobiber"))
+
+        # Must NOT raise NotImplementedError; the deferred M2 adapter abstains.
+        result = bf._try_load_real_tagger()
+        assert result is None, (
+            "Installing/importing neurobiber must not produce a tagger while the "
+            f"M2 adapter is deferred; expected None, got {result!r}"
+        )
+
+    def test_cli_abstains_when_neurobiber_importable(self, tmp_path, monkeypatch):
+        """biber_features CLI with a present neurobiber → rc=3 / missing_dependency (no traceback)."""
+        import io
+        import json as _json
+        import types as _types
+        from contextlib import redirect_stdout
+
+        # Package PRESENT — but the real CLI must NOT be monkeypatched at the
+        # _try_load_real_tagger seam; we exercise the function's own logic.
+        monkeypatch.setitem(sys.modules, "neurobiber", _types.ModuleType("neurobiber"))
+
+        t = tmp_path / "target.txt"
+        t.write_text(TARGET_TEXT, encoding="utf-8")
+        out = io.StringIO()
+        # Must NOT raise (pre-fix: NotImplementedError escapes main()).
+        with redirect_stdout(out):
+            rc = bf.main([str(t), "--json"])
+        env = _json.loads(out.getvalue())
+        assert env["available"] is False
+        assert env["reason_category"] == "missing_dependency"
+        assert rc == 3
