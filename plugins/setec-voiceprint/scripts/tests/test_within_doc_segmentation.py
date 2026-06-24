@@ -833,12 +833,21 @@ class TestZeroMadAndZeroNormRegression:
             "The quick brown fox jumps over the lazy dog near the river. " * n
         )
 
-    def test_uniform_document_zero_boundaries(self):
-        """Uniform document (20 identical sentences) must produce ZERO boundaries.
+    def test_uniform_document_no_zero_distance_boundary(self):
+        """A repeated-sentence document must never spawn a distance-0 plateau boundary.
 
-        Pre-fix: analyze_document returned 6–17 'marked_shift' boundaries with
-        distance 0.0 because MAD==0 collapses all thresholds to the median
-        (also 0.0), so d_i >= T_moderate is 0.0 >= 0.0 = True for every local peak.
+        Pre-P1: analyze_document returned 6–17 'marked_shift' boundaries with
+        distance 0.0 because MAD==0 collapsed all thresholds to the median (also
+        0.0), so d_i >= T_moderate held (0.0 >= 0.0) for every flat-plateau peak.
+
+        NOTE (Codex P2): this text is NOT truly flat. The sliding window runs out
+        of sentences at the document tail, so the final window's feature vector
+        differs sharply and the second-to-last seam carries a genuine non-zero
+        spike (~0.996). The fix must STILL detect that real edge spike (max != min
+        ⇒ not flat ⇒ fall through to the strict-above-median rule) while never
+        promoting a distance-0 plateau window into a boundary. We therefore assert
+        the invariant the P1 bug actually violated: no boundary sits on a
+        distance-0 plateau.
         """
         text = self._make_uniform(20)
         results = w.analyze_document(
@@ -848,11 +857,18 @@ class TestZeroMadAndZeroNormRegression:
             peak_k=2.5,
             min_windows=3,
         )
-        assert results["boundaries"] == [], (
-            f"Uniform document must produce ZERO boundaries; "
-            f"got {len(results['boundaries'])} boundaries with distances "
-            f"{[b['distance'] for b in results['boundaries']]}"
+        zero_dist_boundaries = [b for b in results["boundaries"] if b["distance"] == 0.0]
+        assert zero_dist_boundaries == [], (
+            "No distance-0 plateau window may become a boundary; "
+            f"got {len(zero_dist_boundaries)} zero-distance boundaries "
+            f"out of {len(results['boundaries'])} total"
         )
+        # Every emitted boundary must be a genuine (strictly positive) shift.
+        for b in results["boundaries"]:
+            assert b["distance"] > 0.0, (
+                f"Boundary at {b['between_windows']} has non-positive distance "
+                f"{b['distance']} — a flat plateau leaked through"
+            )
 
     def test_uniform_document_no_marked_shift_at_distance_zero(self):
         """No boundary may have band='marked_shift' and distance==0.0 simultaneously.
@@ -874,14 +890,19 @@ class TestZeroMadAndZeroNormRegression:
                 "flat-profile zero-MAD guard has not fired"
             )
 
-    def test_all_zero_profile_yields_no_boundaries(self):
-        """Direct unit test: analyze_document on a truly all-zero profile gives no boundaries.
+    def test_all_zero_profile_yields_no_boundaries(self, monkeypatch):
+        """A TRULY all-zero profile (max == min == 0) yields no boundaries.
 
-        We construct a text where all windows produce identical feature vectors so
-        all adjacent cosine distances are 0.0 → flat profile → MAD == 0 → guard fires.
+        Codex P2: the flatness guard keys on max == min, not MAD == 0, so we must
+        feed a profile that is genuinely flat. We patch _adjacent_distance_profile
+        to return all zeros; the flatness guard fires and zero boundaries are
+        emitted. (Constructing such a profile from real text is unreliable because
+        the sliding window's tail seam carries a genuine edge spike — see
+        test_uniform_document_no_zero_distance_boundary.)
         """
-        # A perfectly uniform text using the same sentence repeated enough times
-        # to exceed min_windows and still yield all-zero profile (after z-scoring)
+        monkeypatch.setattr(
+            w, "_adjacent_distance_profile", lambda *_a, **_k: [0.0, 0.0, 0.0, 0.0, 0.0]
+        )
         text = self._make_uniform(30)
         results = w.analyze_document(
             text,
@@ -891,7 +912,7 @@ class TestZeroMadAndZeroNormRegression:
             min_windows=3,
         )
         assert results["boundaries"] == [], (
-            f"All-zero-profile text must yield no boundaries; "
+            f"Truly all-zero (flat) profile must yield no boundaries; "
             f"got {len(results['boundaries'])}"
         )
 
@@ -942,3 +963,97 @@ class TestZeroMadAndZeroNormRegression:
         assert profile[0] == 0.0, (
             f"Two zero-norm vectors must yield distance 0.0; got {profile[0]}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Regression: Codex P2 — sparse-spike zero-MAD profile must NOT be suppressed
+# ---------------------------------------------------------------------------
+
+class TestSparseSpikeZeroMadRegression:
+    """Regression for Codex P2 (within_doc_segmentation.py:488).
+
+    Zero MAD does NOT imply a flat profile. MAD == 0 whenever >= half the
+    distances equal the median, even with a real outlier: [0,0,0,1,0,0] has
+    MAD 0 and a maximal shift of 1. The round-1 fix gated the whole boundary
+    pass on MAD == 0, which suppressed that genuine isolated spike (false
+    negative). The fix:
+
+      - flatness is detected by max == min (a TRULY uniform profile) → 0 boundaries;
+      - a non-flat zero-MAD profile falls back to a strict-above-median peak rule
+        so an isolated spike is still emitted as a boundary.
+
+    These tests drive a *controlled* profile through the real boundary-detection
+    path (flatness guard + peak loop + banding + offsets) by patching
+    `_adjacent_distance_profile`, so the assertions pin the boundary logic
+    independent of the feature pipeline.
+    """
+
+    # Long, lexically varied text → many windows; the profile is patched below.
+    _TEXT = (
+        "Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu. "
+        "Nu xi omicron pi rho sigma tau upsilon phi chi psi omega. "
+        "One two three four five six seven eight nine ten eleven twelve. "
+        "Red orange yellow green blue indigo violet black white grey brown. "
+        "North south east west up down left right near far high low. "
+        "Spring summer autumn winter morning noon evening night dawn dusk. "
+        "Mercury venus earth mars jupiter saturn uranus neptune pluto comet. "
+        "Apple banana cherry date elderberry fig grape kiwi lemon mango. "
+        "Iron copper silver gold zinc tin lead nickel cobalt chromium. "
+    )
+
+    def _spike_profile(self, *_a, **_k):
+        # [0,0,0,1,0,0] shape: median 0, MAD 0, but a real spike at index 3.
+        return [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+
+    def _uniform_profile(self, *_a, **_k):
+        # Truly flat: max == min.
+        return [0.3, 0.3, 0.3, 0.3, 0.3, 0.3]
+
+    def _analyze_with_profile(self, profile_fn, monkeypatch):
+        monkeypatch.setattr(w, "_adjacent_distance_profile", profile_fn)
+        return w.analyze_document(
+            self._TEXT,
+            window_sentences=1,
+            stride_sentences=1,
+            peak_k=2.5,
+            min_windows=3,
+        )
+
+    def test_sparse_spike_is_detected_as_boundary(self, monkeypatch):
+        """[0,0,0,1,0,0]-shaped profile (zero MAD, non-flat) → the spike IS a boundary.
+
+        Pre-fix: MAD == 0 gated the whole boundary pass off → ZERO boundaries
+        (the genuine shift of 1.0 was a false negative).
+        """
+        results = self._analyze_with_profile(self._spike_profile, monkeypatch)
+        boundaries = results["boundaries"]
+        assert len(boundaries) == 1, (
+            "Sparse-spike zero-MAD profile must yield exactly one boundary "
+            f"(the spike at index 3); got {len(boundaries)}: "
+            f"{[(b['between_windows'], b['distance']) for b in boundaries]}"
+        )
+        b = boundaries[0]
+        assert b["between_windows"] == [3, 4], (
+            f"Boundary must sit at the spike seam (windows 3→4); got {b['between_windows']}"
+        )
+        assert b["distance"] == 1.0
+        assert b["band"] in w.BAND_VOCAB
+
+    def test_uniform_profile_still_zero_boundaries(self, monkeypatch):
+        """Truly flat profile (max == min) → still ZERO boundaries (round-1 case stays green)."""
+        results = self._analyze_with_profile(self._uniform_profile, monkeypatch)
+        assert results["boundaries"] == [], (
+            "Truly uniform profile (max == min) must produce ZERO boundaries; "
+            f"got {len(results['boundaries'])}"
+        )
+
+    def test_is_flat_profile_distinguishes_spike_from_uniform(self):
+        """_is_flat_profile keys on max == min, NOT MAD == 0."""
+        # Sparse spike: zero MAD but NOT flat.
+        spike = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0]
+        assert w._mad(spike, w._median(spike)) == 0.0  # zero MAD
+        assert w._is_flat_profile(spike) is False  # but not flat
+        # Truly uniform: flat.
+        assert w._is_flat_profile([0.3, 0.3, 0.3, 0.3]) is True
+        # Empty profile: treated as flat (no variation).
+        assert w._is_flat_profile([]) is True

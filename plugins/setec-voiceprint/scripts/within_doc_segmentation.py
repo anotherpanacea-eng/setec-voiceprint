@@ -367,6 +367,25 @@ def _assign_band(d: float, T_slight: float, T_moderate: float, T_marked: float) 
     return "none"
 
 
+def _is_flat_profile(profile: list[float]) -> bool:
+    """True iff the profile carries no within-document variation at all.
+
+    A TRULY flat profile has every distance equal (``max == min``) — only then
+    are there no relative peaks to detect and we may legitimately emit zero
+    boundaries.
+
+    Codex P2 fix (within_doc_segmentation.py:488): a *zero-MAD* profile is NOT
+    the same as a flat one. MAD == 0 whenever ≥ half the distances equal the
+    median, which holds even for a sparse genuine spike such as
+    ``[0, 0, 0, 1, 0, 0]`` (median 0, MAD 0, but a real shift of 1). Gating on
+    MAD == 0 suppressed those isolated boundaries (false negatives). Flatness
+    must be detected by ``max == min``, never by ``MAD == 0``.
+    """
+    if not profile:
+        return True
+    return max(profile) == min(profile)
+
+
 # ---------- Excerpt extraction (spec § Method step 5e) ---------------------
 
 def _excerpt_before(text: str, char_offset: int, n_tokens: int = 20) -> str:
@@ -478,14 +497,23 @@ def analyze_document(
     # 7. Band thresholds (the same k drives both band assignment and peak detection)
     T_slight, T_moderate, T_marked = _band_thresholds(profile, peak_k)
 
-    # 8. Zero-MAD guard (Codex P1 fix): when the within-document MAD is 0 the
-    #    profile is flat — there are no relative peaks, every threshold collapses
-    #    to the median, and the >= comparisons would classify equal-valued plateaus
-    #    as marked_shift.  Skip boundary detection entirely for a flat profile.
-    profile_mad = _mad(profile, _median(profile))
-    flat_profile = (profile_mad == 0.0)
+    # 8. Flatness guard (Codex P1 → P2 fix): a TRULY flat profile (max == min)
+    #    carries no within-document variation — every threshold collapses to the
+    #    median and the >= comparisons would classify equal-valued plateaus as
+    #    marked_shift.  Skip boundary detection only for that genuinely flat case.
+    #
+    #    NOTE (Codex P2): flatness is detected by max == min, NOT by MAD == 0.
+    #    A zero-MAD profile is not necessarily flat: MAD == 0 whenever >= half the
+    #    distances equal the median, so a sparse genuine spike like [0,0,0,1,0,0]
+    #    has MAD 0 yet a real shift of 1.  Gating on MAD == 0 turned those isolated
+    #    boundaries into false negatives.  For a non-flat zero-MAD profile we fall
+    #    back to a strict-above-median peak rule so the isolated spike survives.
+    profile_median = _median(profile)
+    profile_mad = _mad(profile, profile_median)
+    flat_profile = _is_flat_profile(profile)
 
-    # 9. Boundary detection: local peaks above T_moderate (skipped when profile is flat)
+    # 9. Boundary detection: local peaks above the acceptance threshold
+    #    (skipped only when the profile is genuinely flat).
     boundaries: list[dict[str, Any]] = []
     if not flat_profile:
         n_pairs = len(profile)
@@ -496,7 +524,14 @@ def analyze_document(
             is_peak = d_i >= left and d_i >= right
             if not is_peak:
                 continue
-            if d_i < T_moderate:
+            if profile_mad == 0.0:
+                # Non-flat zero-MAD profile: every MAD-relative threshold has
+                # collapsed to the median, so the band ladder is degenerate.
+                # Accept only peaks STRICTLY above the median (the isolated
+                # spike) — a plateau value equal to the median is not a shift.
+                if d_i <= profile_median:
+                    continue
+            elif d_i < T_moderate:
                 continue
             band = _assign_band(d_i, T_slight, T_moderate, T_marked)
             # char_offset = char_start of window i+1 (the seam where the next window begins)
