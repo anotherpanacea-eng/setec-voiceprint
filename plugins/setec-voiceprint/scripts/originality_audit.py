@@ -18,6 +18,7 @@ license refuses any AI/human or plagiarism determination; thresholds are operato
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -89,6 +90,34 @@ def _load_reference_manifest(path: Path) -> list[tuple[str, str, Path | None]]:
             else:
                 sys.stderr.write(f"  manifest line {line_no}: {fp} not found; skipping\n")
     return out
+
+
+# ---- content fingerprint (self-exclusion for inline-text pool entries) -------
+
+_FP_SEP = "\x1f"  # ASCII unit separator: a non-token byte that bounds the serialized token stream
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the CANONICAL TOKEN STREAM the matcher reconstructs over — a separator-safe
+    serialization of ``_tokens(text)`` (the lowercased ``[a-z0-9]+`` runs DJ-Search matches). Used
+    to self-exclude a pool entry whose *content* equals the target's even when its resolved_path is
+    None (an inline-``text`` manifest row from _load_reference_manifest).
+
+    Two pool entries with the SAME token stream are reconstruction-equivalent: the matcher (``_tokens``)
+    is case- AND punctuation-insensitive, so it covers the target span-for-span from either copy. The
+    fingerprint must therefore live in the matcher's own equivalence class — fingerprinting under
+    ``normalize_for_char_ngrams`` (which lowercases + collapses whitespace but PRESERVES punctuation)
+    was too tight: a punctuation-only variant of the target (e.g. ``"alpha, beta..."`` vs ``"alpha
+    beta..."``) has identical ``_tokens`` yet a different normalize_for_char_ngrams string, so it
+    escaped self-exclusion and let the target reconstruct itself (coverage trivially 1.0) — Codex
+    round-2 P1. Joining with ``\\x1f`` (a non-token byte; ``[a-z0-9]+`` can never contain it) keeps
+    ``["ab"]`` and ``["a","b"]`` distinct.
+
+    Sibling of the Codex P1 fixed in cross_doc_novelty_profile.py: the path-only guard
+    (``pth != target_abs``) never fires on an inline copy of the target (pth=None), letting the
+    target reconstruct itself from its own copy. The content fingerprint closes that hole alongside
+    the path check (path OR content -> exclude)."""
+    return hashlib.sha256(_FP_SEP.join(_tokens(text)).encode("utf-8")).hexdigest()
 
 
 # ---- DJ-Search coverage ------------------------------------------------------
@@ -246,9 +275,27 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
 
     # Self-exclusion: never let the target reconstruct itself if it sits in its own reference
     # pool (mirrors general_imposters' drop-self) — otherwise coverage trivially collapses to 1.0.
+    # Drop a pool entry by EITHER guard:
+    #   (a) PATH match — resolved_path == target's resolved_path (a reference FILE that IS the target).
+    #   (b) CONTENT match — token-stream fingerprint == target's (sha256 over _tokens, the matcher's
+    #       own case/punctuation-insensitive normalization — Codex round-2 P1). This catches an
+    #       inline-text manifest row (resolved_path None) carrying a COPY of the target, including a
+    #       punctuation- or case-only variant that the matcher reconstructs span-for-span; the path
+    #       guard alone (None != target_abs) never self-excludes it. Sibling of the Codex P1 fixed in
+    #       cross_doc_novelty_profile.py. Path OR content -> exclude; a content match only DROPS,
+    #       never re-admits (fail-closed). If exclusion empties the pool, audit_originality raises
+    #       ValueError and the caller below maps it to the existing bad_input envelope.
     target_abs = target_path.resolve()
-    n_dropped_self = sum(1 for _, _, pth in loaded if pth == target_abs)
-    reference = [(src, text) for src, text, pth in loaded if pth != target_abs]
+    target_fingerprint = _content_fingerprint(target_text)
+    reference: list[tuple[str, str]] = []
+    n_dropped_self = 0
+    for src, text, pth in loaded:
+        path_match = pth is not None and pth == target_abs
+        content_match = _content_fingerprint(text) == target_fingerprint
+        if path_match or content_match:
+            n_dropped_self += 1
+        else:
+            reference.append((src, text))
 
     try:
         results = audit_originality(target_text, reference, min_ngram=args.min_ngram,
@@ -258,10 +305,15 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                                   version=SCRIPT_VERSION, target_path=str(target_path),
                                   reason=str(e), reason_category="bad_input")
 
+    # Surface the self-exclusion count (path OR content matches) through the assumptions block — the
+    # honesty pattern: a non-zero drop means the reported originality is measured against a pool that
+    # excludes the target's own copies.
+    results["assumptions"]["n_dropped_self"] = n_dropped_self
+
     warnings: list[str] = []
     if n_dropped_self:
-        warnings.append(f"dropped {n_dropped_self} reference doc(s) identical to the target path "
-                        "(self-exclusion); the target does not reconstruct itself")
+        warnings.append(f"dropped {n_dropped_self} reference doc(s) identical to the target by path "
+                        "or content (self-exclusion); the target does not reconstruct itself")
     if results["target_tokens"] < args.min_ngram:
         warnings.append(f"target has {results['target_tokens']} tokens (< min_ngram "
                         f"{args.min_ngram}); no span can match, originality is trivially 1.0")
