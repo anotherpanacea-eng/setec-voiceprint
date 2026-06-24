@@ -180,8 +180,8 @@ def test_inline_copy_of_target_is_self_excluded(tmp_path):
 
 
 def test_inline_copy_whitespace_case_variant_still_caught(tmp_path):
-    # the inline copy differs only by case + collapsed whitespace; the normalized fingerprint
-    # (normalize_for_char_ngrams: lowercase + collapse-whitespace + strip) still matches it.
+    # the inline copy differs only by case + collapsed whitespace; the token-stream fingerprint
+    # (sha256 over _tokens: lowercased [a-z0-9]+ runs) still matches it.
     variant = "  THE   Quick BROWN fox JUMPS over the LAZY dog AND then the CAT ran AWAY\n"
     assert variant.strip().lower() != _REF[0][1]            # raw bytes differ (only normalized eq)
     man = tmp_path / "m.jsonl"
@@ -193,6 +193,30 @@ def test_inline_copy_whitespace_case_variant_still_caught(tmp_path):
     assert rc == 0 and env["available"] is True
     assert env["results"]["originality"] == pytest.approx(1.0)
     assert env["results"]["assumptions"].get("n_dropped_self", 0) >= 1
+
+
+def test_inline_copy_punctuation_variant_still_caught(tmp_path):
+    # Codex round-2 P1: DJ-Search's matcher (_tokens) is PUNCTUATION-insensitive ([a-z0-9]+ runs),
+    # so a punctuation-only variant of the target tokenizes IDENTICALLY and reconstructs the target
+    # span-for-span (coverage would collapse to 1.0). The self-exclusion fingerprint must therefore
+    # be taken under the SAME token normalization the matcher uses — NOT normalize_for_char_ngrams,
+    # which preserves punctuation and would fingerprint this copy DIFFERENTLY (leaving it in the pool).
+    variant = "the quick, brown fox jumps over the lazy dog; and then the cat ran away."
+    # punctuation-only divergence: same token stream, but normalize_for_char_ngrams keeps the marks.
+    assert oa._tokens(variant) == oa._tokens(_REF[0][1])    # matcher sees them as identical
+    assert variant != _REF[0][1]                            # but the raw text differs (punctuation)
+    man = tmp_path / "m.jsonl"
+    man.write_text(
+        json.dumps({"id": "other", "text": _REF[1][1]}) + "\n"
+        + json.dumps({"id": "self_copy_punct", "text": variant}) + "\n")
+    tgt = tmp_path / "t.txt"; tgt.write_text(_REF[0][1])
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert rc == 0 and env["available"] is True
+    # the punctuation variant is self-excluded -> the target does NOT reconstruct itself.
+    assert env["results"]["coverage"] != pytest.approx(1.0)
+    assert env["results"]["originality"] == pytest.approx(1.0)
+    assert env["results"]["assumptions"].get("n_dropped_self", 0) >= 1
+    assert any("self-exclusion" in w for w in (env.get("warnings") or []))
 
 
 def test_content_self_exclusion_below_pool_floor_is_bad_input(tmp_path):

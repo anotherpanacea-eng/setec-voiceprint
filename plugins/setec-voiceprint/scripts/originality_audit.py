@@ -29,7 +29,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import stylometry_core as sc  # noqa: E402
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
 
@@ -95,17 +94,30 @@ def _load_reference_manifest(path: Path) -> list[tuple[str, str, Path | None]]:
 
 # ---- content fingerprint (self-exclusion for inline-text pool entries) -------
 
+_FP_SEP = "\x1f"  # ASCII unit separator: a non-token byte that bounds the serialized token stream
+
+
 def _content_fingerprint(text: str) -> str:
-    """sha256 of the text under the SAME normalization the surface treats as content-equal
-    (``stylometry_core.normalize_for_char_ngrams``: lowercase, collapse whitespace, strip). Used to
-    self-exclude a pool entry whose *content* equals the target's even when its resolved_path is
+    """sha256 of the CANONICAL TOKEN STREAM the matcher reconstructs over — a separator-safe
+    serialization of ``_tokens(text)`` (the lowercased ``[a-z0-9]+`` runs DJ-Search matches). Used
+    to self-exclude a pool entry whose *content* equals the target's even when its resolved_path is
     None (an inline-``text`` manifest row from _load_reference_manifest).
+
+    Two pool entries with the SAME token stream are reconstruction-equivalent: the matcher (``_tokens``)
+    is case- AND punctuation-insensitive, so it covers the target span-for-span from either copy. The
+    fingerprint must therefore live in the matcher's own equivalence class — fingerprinting under
+    ``normalize_for_char_ngrams`` (which lowercases + collapses whitespace but PRESERVES punctuation)
+    was too tight: a punctuation-only variant of the target (e.g. ``"alpha, beta..."`` vs ``"alpha
+    beta..."``) has identical ``_tokens`` yet a different normalize_for_char_ngrams string, so it
+    escaped self-exclusion and let the target reconstruct itself (coverage trivially 1.0) — Codex
+    round-2 P1. Joining with ``\\x1f`` (a non-token byte; ``[a-z0-9]+`` can never contain it) keeps
+    ``["ab"]`` and ``["a","b"]`` distinct.
 
     Sibling of the Codex P1 fixed in cross_doc_novelty_profile.py: the path-only guard
     (``pth != target_abs``) never fires on an inline copy of the target (pth=None), letting the
-    target reconstruct itself from its own copy (coverage trivially collapses to 1.0). The content
-    fingerprint closes that hole alongside the path check (path OR content -> exclude)."""
-    return hashlib.sha256(sc.normalize_for_char_ngrams(text).encode("utf-8")).hexdigest()
+    target reconstruct itself from its own copy. The content fingerprint closes that hole alongside
+    the path check (path OR content -> exclude)."""
+    return hashlib.sha256(_FP_SEP.join(_tokens(text)).encode("utf-8")).hexdigest()
 
 
 # ---- DJ-Search coverage ------------------------------------------------------
@@ -265,9 +277,11 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     # pool (mirrors general_imposters' drop-self) — otherwise coverage trivially collapses to 1.0.
     # Drop a pool entry by EITHER guard:
     #   (a) PATH match — resolved_path == target's resolved_path (a reference FILE that IS the target).
-    #   (b) CONTENT match — normalized-content fingerprint == target's. This catches an inline-text
-    #       manifest row (resolved_path None) carrying a COPY of the target; the path guard alone
-    #       (None != target_abs) never self-excludes it. Sibling of the Codex P1 fixed in
+    #   (b) CONTENT match — token-stream fingerprint == target's (sha256 over _tokens, the matcher's
+    #       own case/punctuation-insensitive normalization — Codex round-2 P1). This catches an
+    #       inline-text manifest row (resolved_path None) carrying a COPY of the target, including a
+    #       punctuation- or case-only variant that the matcher reconstructs span-for-span; the path
+    #       guard alone (None != target_abs) never self-excludes it. Sibling of the Codex P1 fixed in
     #       cross_doc_novelty_profile.py. Path OR content -> exclude; a content match only DROPS,
     #       never re-admits (fail-closed). If exclusion empties the pool, audit_originality raises
     #       ValueError and the caller below maps it to the existing bad_input envelope.
