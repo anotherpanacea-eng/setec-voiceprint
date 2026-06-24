@@ -223,11 +223,11 @@ def _make_full_fixture(tmp_path: Path) -> dict:
                           _write_file(tmp_path, "j_ha.txt", j_house_a)),
         hsd.BaselineEntry("j_hb", j_house_b, "same_author_same_org", "writer:j", "house:a",
                           _write_file(tmp_path, "j_hb.txt", j_house_b)),
-        hsd.BaselineEntry("j_ba", j_blog_a, "different_context", "writer:j", None,
+        hsd.BaselineEntry("j_ba", j_blog_a, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "j_ba.txt", j_blog_a)),
-        hsd.BaselineEntry("j_bb", j_blog_b, "different_context", "writer:j", None,
+        hsd.BaselineEntry("j_bb", j_blog_b, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "j_bb.txt", j_blog_b)),
-        hsd.BaselineEntry("j_bc", j_blog_c, "different_context", "writer:j", None,
+        hsd.BaselineEntry("j_bc", j_blog_c, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "j_bc.txt", j_blog_c)),
         hsd.BaselineEntry("k", k_text, "different_authors_same_org", "writer:k", "house:a",
                           _write_file(tmp_path, "k.txt", k_text)),
@@ -357,13 +357,13 @@ def test_leakage_guard_author_leak(tmp_path):
 
     # The target author appears in the house level — a leakage violation.
     entries = [
-        hsd.BaselineEntry("a", text_a, "different_context", "writer:target", None,
+        hsd.BaselineEntry("a", text_a, "different_context", "writer:target", "venue:blog",
                           _write_file(tmp_path, "a.txt", text_a)),
-        hsd.BaselineEntry("b", blog, "different_context", "writer:target", None,
+        hsd.BaselineEntry("b", blog, "different_context", "writer:target", "venue:blog",
                           _write_file(tmp_path, "b.txt", blog)),
-        hsd.BaselineEntry("c", blog2, "different_context", "writer:target", None,
+        hsd.BaselineEntry("c", blog2, "different_context", "writer:target", "venue:blog",
                           _write_file(tmp_path, "c.txt", blog2)),
-        hsd.BaselineEntry("d", blog3, "different_context", "writer:target", None,
+        hsd.BaselineEntry("d", blog3, "different_context", "writer:target", "venue:blog",
                           _write_file(tmp_path, "d.txt", blog3)),
         # TARGET author in house level — leakage.
         hsd.BaselineEntry("leak1", text_b, "different_authors_same_org", "writer:target",
@@ -393,11 +393,11 @@ def test_leakage_guard_path_identity(tmp_path):
     other_b = _make_text(False, False, 26)
 
     entries = [
-        hsd.BaselineEntry("ba", blog_a, "different_context", "writer:j", None,
+        hsd.BaselineEntry("ba", blog_a, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "ba.txt", blog_a)),
-        hsd.BaselineEntry("bb", blog_b, "different_context", "writer:j", None,
+        hsd.BaselineEntry("bb", blog_b, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "bb.txt", blog_b)),
-        hsd.BaselineEntry("bc", blog_c, "different_context", "writer:j", None,
+        hsd.BaselineEntry("bc", blog_c, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "bc.txt", blog_c)),
         # This entry's resolved_path == target_path — path identity leak.
         hsd.BaselineEntry("same_as_target", target_text,
@@ -490,7 +490,7 @@ def test_too_few_authors_house_level(tmp_path):
     text = _make_text(False, False, 35)
     blog = _make_text(True, True, 35)
     entries = [
-        hsd.BaselineEntry("ba", blog, "different_context", "writer:j", None,
+        hsd.BaselineEntry("ba", blog, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "ba.txt", blog)),
         # Only 2 distinct authors in house level (need ≥ 3).
         hsd.BaselineEntry("k1", text, "different_authors_same_org", "writer:k", "house:a",
@@ -513,7 +513,7 @@ def test_too_few_words_level(tmp_path):
     blog = _make_text(True, True, 35)
     stub = "Too short text."  # well below 2000 words
     entries = [
-        hsd.BaselineEntry("ba", blog, "different_context", "writer:j", None,
+        hsd.BaselineEntry("ba", blog, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "ba.txt", blog)),
         hsd.BaselineEntry("k", stub, "different_authors_same_org", "writer:k", "house:a",
                           _write_file(tmp_path, "k.txt", stub)),
@@ -532,7 +532,7 @@ def test_single_entry_variance_floor(tmp_path):
     house = _make_text(False, False, 35)
     broad = _make_text(False, True, 35)
     entries = [
-        hsd.BaselineEntry("ba", blog, "different_context", "writer:j", None,
+        hsd.BaselineEntry("ba", blog, "different_context", "writer:j", "venue:blog",
                           _write_file(tmp_path, "ba.txt", blog)),
         hsd.BaselineEntry("k", house, "different_authors_same_org", "writer:k", "house:a",
                           _write_file(tmp_path, "k.txt", house)),
@@ -848,6 +848,62 @@ def test_valid_fixture_passes_membership(tmp_path):
     fix = _make_full_fixture(tmp_path)
     # Must NOT raise.
     hsd._validate_baseline_set(fix["entries"], fix["target_path"], "writer:j", "house:a")
+
+
+# ---------------------------------------------------------------------------
+# Test 18b — Codex P1 ROUND 2 (house_style_decomposition.py:421): a must-differ
+# level (org_rule is False) admitted a NULL/BLANK org_id as "different" even
+# though a missing org cannot PROVE a different house. Both different_context
+# and same_genre_outside_org must fail CLOSED on a null/blank org.
+# ---------------------------------------------------------------------------
+
+def test_membership_different_context_null_org_refused(tmp_path):
+    """different_context (idiolect level, org_rule=False) with a NULL org → refusal.
+
+    Pre-round-2: the must-differ check only rejected org_id == target_org, so a
+    null org_id passed as 'a different venue' though membership is unprovable. A
+    null org under a must-differ level must fail CLOSED.
+    """
+    fix = _make_full_fixture(tmp_path)
+    # j_ba is a different_context entry; strip its org to null.
+    entries = _replace_entry(fix["entries"], "j_ba", org_id=None)
+    with pytest.raises(hsd.HouseStyleError, match="membership"):
+        hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
+
+
+def test_membership_different_context_blank_org_refused(tmp_path):
+    """different_context with a BLANK (whitespace) org → refusal (fail-closed)."""
+    fix = _make_full_fixture(tmp_path)
+    entries = _replace_entry(fix["entries"], "j_ba", org_id="   ")
+    with pytest.raises(hsd.HouseStyleError, match="membership"):
+        hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
+
+
+def test_membership_outside_org_null_org_refused(tmp_path):
+    """same_genre_outside_org (org_rule=False) with a NULL org → refusal.
+
+    The 'outside org' level must isolate a DIFFERENT, KNOWN house; a null org
+    cannot prove the entry is outside the target house, so it must fail CLOSED.
+    """
+    fix = _make_full_fixture(tmp_path)
+    # oa is a same_genre_outside_org entry at house:x; strip its org to null.
+    entries = _replace_entry(fix["entries"], "oa", org_id=None)
+    with pytest.raises(hsd.HouseStyleError, match="membership"):
+        hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
+
+
+def test_membership_different_context_valid_differing_org_passes(tmp_path):
+    """different_context with a NON-BLANK org that genuinely differs still passes.
+
+    The fail-closed tightening must not reject a legitimately different, named
+    venue — only the unprovable null/blank/same-org cases.
+    """
+    fix = _make_full_fixture(tmp_path)
+    # j_ba already carries a non-null differing org in the fixture; re-stamp a
+    # different (still non-target) venue and confirm it remains accepted.
+    entries = _replace_entry(fix["entries"], "j_ba", org_id="house:blog")
+    # Must NOT raise.
+    hsd._validate_baseline_set(entries, fix["target_path"], "writer:j", "house:a")
 
 
 def test_cli_requires_target_org_bad_input(tmp_path):

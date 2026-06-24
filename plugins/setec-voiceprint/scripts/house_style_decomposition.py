@@ -82,11 +82,12 @@ _AUTHOR_LEAK_CHECKED_LEVELS = frozenset({
 #   same_author_same_org       = the writer's OTHER work through THIS house
 #                                  -> author == target, org == target_org
 #   different_context          = the writer's work in a DIFFERENT venue (idiolect level)
-#                                  -> author == target, org != target_org (a different venue)
+#                                  -> author == target, org NON-BLANK and != target_org
+#                                     (a null/blank org cannot prove a different venue)
 #   different_authors_same_org = OTHER writers through THIS house (house-style level)
 #                                  -> author != target, org == target_org
 #   same_genre_outside_org     = same genre, OTHER houses
-#                                  -> author != target, org != target_org
+#                                  -> author != target, org NON-BLANK and != target_org
 #   broad_reference            = broad reference shell (org unconstrained; null allowed)
 #                                  -> author != target (already in _AUTHOR_LEAK_CHECKED_LEVELS)
 # Author membership: True => entry author MUST equal target author; False => MUST differ;
@@ -98,8 +99,9 @@ _LEVEL_AUTHOR_IS_TARGET: dict[str, bool] = {
     "same_genre_outside_org": False,
     "broad_reference": False,
 }
-# Org membership: True => entry org MUST equal target org; False => MUST differ from it;
-# None => unconstrained (broad_reference — null org allowed).
+# Org membership: True => entry org MUST equal target org; False => entry org MUST be
+# NON-BLANK and differ from it (a null/blank org cannot prove a different house, so it
+# fails CLOSED); None => unconstrained (broad_reference — null org allowed).
 _LEVEL_ORG_IS_TARGET: dict[str, bool | None] = {
     "same_author_same_org": True,
     "different_context": False,
@@ -418,12 +420,24 @@ def _validate_baseline_set(
                     f"'{target_org}', but entry '{e.id}' has org_id {e.org_id!r}; "
                     f"the {level} level must represent the target's own house"
                 )
-            if org_rule is False and e.org_id is not None and e.org_id == target_org:
-                raise HouseStyleError(
-                    f"membership: level '{level}' must NOT belong to the target house "
-                    f"'{target_org}', but entry '{e.id}' does; the {level} level must "
-                    f"isolate a DIFFERENT venue / house from the target's"
-                )
+            if org_rule is False:
+                # Fail-CLOSED: a must-differ level needs a NON-BLANK org that is
+                # provably != target_org. A null/blank org cannot prove a different
+                # house, so it is REFUSED (not silently admitted as "different").
+                entry_org = (e.org_id or "").strip()
+                if not entry_org:
+                    raise HouseStyleError(
+                        f"membership: level '{level}' must isolate a DIFFERENT venue / "
+                        f"house from the target's '{target_org}', but entry '{e.id}' has "
+                        f"a missing/blank org_id; a null org cannot PROVE a different "
+                        f"house, so it is refused (fail-closed)"
+                    )
+                if entry_org == target_org:
+                    raise HouseStyleError(
+                        f"membership: level '{level}' must NOT belong to the target house "
+                        f"'{target_org}', but entry '{e.id}' does; the {level} level must "
+                        f"isolate a DIFFERENT venue / house from the target's"
+                    )
 
         # Gate 2 — min authors for multi-author levels.
         if level in {"different_authors_same_org", "same_genre_outside_org"}:
@@ -779,11 +793,11 @@ def _build_worked_example_fixture(tmp_dir: Path | None = None) -> dict[str, Any]
                       _write("j_house_a.txt", j_house_a)),
         BaselineEntry("j_house_b", j_house_b, "same_author_same_org", "writer:j", "house:a",
                       _write("j_house_b.txt", j_house_b)),
-        BaselineEntry("j_blog_a", j_blog_a, "different_context", "writer:j", None,
+        BaselineEntry("j_blog_a", j_blog_a, "different_context", "writer:j", "venue:blog",
                       _write("j_blog_a.txt", j_blog_a)),
-        BaselineEntry("j_blog_b", j_blog_b, "different_context", "writer:j", None,
+        BaselineEntry("j_blog_b", j_blog_b, "different_context", "writer:j", "venue:blog",
                       _write("j_blog_b.txt", j_blog_b)),
-        BaselineEntry("j_blog_c", j_blog_c, "different_context", "writer:j", None,
+        BaselineEntry("j_blog_c", j_blog_c, "different_context", "writer:j", "venue:blog",
                       _write("j_blog_c.txt", j_blog_c)),
         BaselineEntry("k_house", k_text, "different_authors_same_org", "writer:k", "house:a",
                       _write("k_house.txt", k_text)),
