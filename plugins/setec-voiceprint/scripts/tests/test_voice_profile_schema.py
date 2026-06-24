@@ -335,3 +335,137 @@ class TestJsonOutFileDelivery:
         import json as _json
         payload = _json.loads(artifact.read_text(encoding="utf-8"))
         assert payload["tool"] == "voice_profile"
+
+
+# ---------------------------------------------------------------------------
+# AC10 (neurobiber-v2): biber_features opt-in is OFF by default; the existing
+# build_profile / build_audit_payload consumer path produces no 'biber_features'
+# key anywhere in the results envelope when --include-biber is not passed.
+# Recursive key walk (NOT substring) — mirrors the _walk_keys / _FORBIDDEN_KEYS
+# pattern from test_dependency_distance_audit.py:151-159.
+# ---------------------------------------------------------------------------
+
+def _walk_keys_vp(obj):
+    """Yield every dict key reachable in a nested payload (lists too)."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            yield k
+            yield from _walk_keys_vp(v)
+    elif isinstance(obj, (list, tuple)):
+        for item in obj:
+            yield from _walk_keys_vp(item)
+
+
+class TestBiberFeaturesAbsentByDefault:
+    """AC10: biber_features does not appear in the default voice_profile envelope.
+
+    This protects the downstream drift gate for apodictic and setec-voicewright:
+    their pinned contract fixtures are against the default (no --include-biber)
+    output, which must be byte-identical before and after this change.
+    """
+
+    def test_biber_features_absent_from_default_envelope(self):
+        """'biber_features' not in any key of the default build_audit_payload envelope."""
+        envelope = vp.build_audit_payload(
+            _fake_profile(),
+            target_path=Path("baselines/personal/"),
+        )
+        keys = set(_walk_keys_vp(envelope["results"]))
+        assert "biber_features" not in keys, (
+            "'biber_features' key found in default voice_profile results envelope "
+            "(include_biber defaults to False — this key must NOT appear without --include-biber)"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Codex P1 regression: voice_profile --include-biber must emit a clean
+# missing_dependency envelope (available:false) rather than crashing with
+# ValueError when no real Biber tagger is configured (always the case in
+# the M1 build — there is no real tagger yet).
+# Ref: Codex P1 finding on voice_distance.py:754 (same posture, both CLIs)
+# ---------------------------------------------------------------------------
+
+class TestIncludeBiberMissingDependencyCLI:
+    """Codex P1: voice_profile --include-biber with no tagger must NOT crash.
+
+    Pre-fix: build_profile raises ValueError (include_biber requires
+    biber_vector or biber_tagger) and the script exits unclean with a traceback.
+    Post-fix: the CLI intercepts the missing-tagger condition BEFORE calling
+    build_profile and emits available:false / reason_category=missing_dependency.
+    """
+
+    def test_include_biber_no_tagger_emits_missing_dependency(
+        self, tmp_path, capsys
+    ):
+        """--include-biber with no M2 tagger → available:false, missing_dependency."""
+        import json as _json
+
+        baseline_dir = _write_baseline(tmp_path)
+
+        rc = _run_main([
+            "voice_profile.py",
+            "--baseline-dir", str(baseline_dir),
+            "--no-spacy",
+            "--include-biber",
+            "--json",
+            "--allow-public-output",
+        ])
+
+        captured = capsys.readouterr()
+        # Must not crash with an unhandled ValueError.
+        assert rc != 0, (
+            "Expected a non-zero exit code (missing_dependency envelope), "
+            f"got rc={rc}"
+        )
+        # The JSON envelope must be on stdout.
+        assert captured.out.strip(), (
+            "Expected a JSON envelope on stdout; got nothing"
+        )
+        envelope = _json.loads(captured.out)
+        assert envelope["available"] is False, (
+            f"Expected available:false, got available={envelope['available']}"
+        )
+        assert envelope["reason_category"] == "missing_dependency", (
+            f"Expected reason_category='missing_dependency', "
+            f"got {envelope['reason_category']!r}"
+        )
+        # Reason must mention the Biber tagger so users understand the gap.
+        assert "biber" in envelope["reason"].lower() or "tagger" in envelope["reason"].lower(), (
+            f"Expected 'biber' or 'tagger' in reason, got: {envelope['reason']!r}"
+        )
+
+    def test_include_biber_abstains_when_neurobiber_importable(
+        self, tmp_path, capsys, monkeypatch
+    ):
+        """Codex round-2 P2: --include-biber with a PRESENT neurobiber still abstains cleanly.
+
+        Pre-fix: _try_load_real_tagger() raised NotImplementedError as soon as
+        `neurobiber` was importable, escaping the CLI guard as an uncaught
+        traceback. Post-fix: the deferred M2 adapter returns None, so the CLI
+        emits available:false / missing_dependency with rc=3.
+        """
+        import json as _json
+        import types as _types
+
+        # Package PRESENT — inject a stub so `import neurobiber` SUCCEEDS.
+        monkeypatch.setitem(sys.modules, "neurobiber", _types.ModuleType("neurobiber"))
+
+        baseline_dir = _write_baseline(tmp_path)
+
+        # Must NOT raise (pre-fix: NotImplementedError escapes vp.main()).
+        rc = _run_main([
+            "voice_profile.py",
+            "--baseline-dir", str(baseline_dir),
+            "--no-spacy",
+            "--include-biber",
+            "--json",
+            "--allow-public-output",
+        ])
+
+        captured = capsys.readouterr()
+        assert rc == 3, (
+            f"Expected rc=3 (missing_dependency envelope), got rc={rc}"
+        )
+        envelope = _json.loads(captured.out)
+        assert envelope["available"] is False
+        assert envelope["reason_category"] == "missing_dependency"

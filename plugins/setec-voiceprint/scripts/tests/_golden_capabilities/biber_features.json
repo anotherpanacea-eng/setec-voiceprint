@@ -1,0 +1,72 @@
+{
+  "id": "biber_features",
+  "script_path": "plugins/setec-voiceprint/scripts/biber_features.py",
+  "surface": "voice_coherence",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "register-panel",
+  "purpose": "Descriptive Biber lexico-grammatical register panel: a fixed 96-feature panel of Biber register rates (past-tense verbs, nominalizations, attributive adjectives, first-person pronouns, agentless passives, hedges, amplifiers, ...) for a target passage, computed via the Neurobiber neural tagger (arXiv:2502.18590 \u2014 ~56x faster than rule-based Biber taggers, AV-competitive). Adds one new optional family (biber_features) to the stylometry_core per-document family pipeline alongside pos_trigrams/dependency_ngrams, emitted ONLY when include_biber=True is passed (default OFF \u2014 existing voice_distance/voice_profile envelopes are byte-identical). On the comparative path (compare_to_baseline / build_profile) reports per-feature z-deviations, Burrows-delta, cosine distances, and the standard provisional band \u2014 no verdict, no authorship or AI/human call. On the standalone path (biber_features.py) emits the full 96-rate panel plus calibration_status: provisional. Dual-use: Biber features separate human-vs-LLM AND LLM-vs-LLM (arXiv:2410.16107) \u2014 that inference is REFUSED; the claim license explicitly names that paper and refuses model-family attribution, AI/human provenance, and authorship. M1 (this build): model-free CI over an injected/stub tagger; M2 (deferred): the real Neurobiber tagger behind a lazy torch/transformers import.\n",
+  "use_when": [
+    "You want a descriptive register profile (how a text distributes across Biber lexico-grammatical features)",
+    "You want to compare a target to a baseline on a named, interpretable register panel",
+    "Target is English, >= ~150 words, and include_biber=True is passed (or --include-biber on the CLI)",
+    "You want the M1 structural envelope without the real model (injected/stub vector)"
+  ],
+  "do_not_use_when": [
+    "You want an authorship/AI/human verdict or model-family attribution (refused by claim license)",
+    "Default voice_distance or voice_profile runs (biber is OFF by default; existing envelopes are unchanged)",
+    "Non-English text (Biber panel and Neurobiber are English-specific)",
+    "Torch/transformers absent and you need real (not stub) feature rates (M2 dependency)"
+  ],
+  "inputs": {
+    "target": "prose/markdown text file (UTF-8)",
+    "biber_tagger": "injectable callable str -> dict[feature_id, float] (M1 tests; M2 real tagger)",
+    "biber_vector": "optional precomputed per-entry vector (offline/cached path)"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout JSON envelope (default), --json, or --out PATH",
+      "biber_panel (standalone): 96 named feature rates + calibration_status + assumptions",
+      "families.biber_features (comparative): family_distance keys + n_features=96"
+    ]
+  },
+  "compute": {
+    "tier": "optional",
+    "cost_note": "small CPU Biber tagger (Neurobiber); model load is M2 \u2014 M1 runs over an injected/stub vector",
+    "length_floor_words": 150
+  },
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "technical_documentation",
+    "literary_fiction"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [
+      "torch",
+      "transformers"
+    ]
+  },
+  "examples": [
+    {
+      "description": "Standalone Biber register panel (abstains without real tagger in M1)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/biber_features.py target.md --json"
+    },
+    {
+      "description": "Comparative voice_distance with Biber family (M2; requires tagger)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/voice_distance.py target.md --baseline-dir baselines/ --include-biber --json"
+    },
+    {
+      "description": "Voice profile with Biber family (M2; requires tagger)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/voice_profile.py --baseline-dir baselines/ --include-biber --json-out ai-prose-baselines-private/profile.json"
+    }
+  ],
+  "references": [
+    "setec-scratch/spec-wave-4/neurobiber-v2.md",
+    "Neurobiber: Fast and Interpretable Stylistic Feature Extraction (arXiv:2502.18590): https://arxiv.org/abs/2502.18590",
+    "Do LLMs Write Like Humans? Variation in Grammatical and Rhetorical Styles (arXiv:2410.16107, dual-use): https://arxiv.org/abs/2410.16107"
+  ]
+}
