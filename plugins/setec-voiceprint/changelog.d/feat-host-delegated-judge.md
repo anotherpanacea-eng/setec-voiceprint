@@ -18,8 +18,11 @@
   firewall has a real model to compare. The placeholder remains only when nobody names a
   model — and `judge_backends.assert_judge_generator_disjoint()` then **fails closed**:
   a non-concrete identity (the placeholder) is refused on a disjointness-required
-  (holdout/selection) path rather than silently treated as disjoint, and a concrete
-  judge model equal to the generator is refused as self-grading. Spec
+  (holdout/selection) path rather than silently treated as disjoint, a **missing /
+  blank / non-concrete generator identity** is refused symmetrically (disjointness is
+  unprovable without the other identity — a `None` generator no longer slips any judge
+  through), and a concrete judge model equal to the generator is refused as
+  self-grading. Spec
   [35-host-delegated-judge](../../specs/35-host-delegated-judge.md). Motivated by the M2
   finding that a host subagent judges authorship at 0.90 (vs a local 3B's 0.50 and the
   LUAR embedding's 0.85).

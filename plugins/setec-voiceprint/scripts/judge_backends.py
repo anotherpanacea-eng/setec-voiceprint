@@ -84,7 +84,11 @@ def assert_judge_generator_disjoint(
     can be defeated:
 
     * a non-concrete judge identity (the ``host-resolved`` placeholder, a blank model)
-      — disjointness is *unprovable*, so it must not pass; and
+      — disjointness is *unprovable*, so it must not pass;
+    * a missing / blank / non-concrete GENERATOR identity — disjointness is equally
+      *unprovable* without the other identity, so it must not pass either (symmetric
+      to the judge side: comparing against ``None`` would let any judge slip through);
+      and
     * a concrete judge model equal to ``generator_model`` — the generator grading its
       own homework, the exact circularity the firewall exists to block.
 
@@ -100,8 +104,20 @@ def assert_judge_generator_disjoint(
             "refusing on a disjointness-required (holdout/selection) path. Have the "
             "host report its model (structured transport response or SETEC_HOST_MODEL)."
         )
+    # The generator identity must be concrete too: with no (or a blank/sentinel)
+    # generator model there is NOTHING to compare against, so disjointness cannot be
+    # proven — fail closed using the same non-concrete sentinel set as the judge side.
+    if not isinstance(generator_model, str) or (
+        generator_model.strip() in NON_CONCRETE_JUDGE_MODELS
+    ):
+        raise JudgeDisjointnessError(
+            "generator model is not a concrete identity "
+            f"(recorded as {generator_model!r}); disjointness from the judge CANNOT be "
+            "proven without naming the generator — refusing on a disjointness-required "
+            "(holdout/selection) path. Provide the concrete generator model identity."
+        )
     judge_model = judge_identity["model"].strip()  # type: ignore[index]
-    if generator_model is not None and judge_model == generator_model.strip():
+    if judge_model == generator_model.strip():
         raise JudgeDisjointnessError(
             f"judge model {judge_model!r} == generator model — the generator would "
             "grade its own output; refusing on a disjointness-required path."

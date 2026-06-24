@@ -233,6 +233,32 @@ def test_same_model_host_refused():
     assert judge_backends.judge_identity_is_concrete(disjoint) is True
 
 
+# 10c. FAIL-CLOSED on a MISSING generator identity: disjointness cannot be PROVEN
+# without the other identity, so a concrete judge paired with a None / blank /
+# whitespace-only generator MUST be refused (symmetric to the judge-side check),
+# never silently returned as if it were disjoint (Codex P1 round-2).
+def test_missing_generator_fails_disjointness_closed():
+    concrete_judge = {"kind": "openai", "model": "gpt-5.4"}
+    # None generator: identity unknown, disjointness unprovable -> REFUSE
+    try:
+        judge_backends.assert_judge_generator_disjoint(concrete_judge, None)
+        raise AssertionError("a None generator must NOT pass a disjointness-required check")
+    except judge_backends.JudgeDisjointnessError as exc:
+        assert "generator" in str(exc)
+    # whitespace-only generator: a non-concrete identity -> REFUSE (same sentinel logic)
+    for blank in ("", "   ", "\t", "\n"):
+        try:
+            judge_backends.assert_judge_generator_disjoint(concrete_judge, blank)
+            raise AssertionError(f"a blank generator {blank!r} must be refused")
+        except judge_backends.JudgeDisjointnessError as exc:
+            assert "generator" in str(exc)
+    # a genuinely distinct concrete generator still PASSES and returns the judge model
+    assert (
+        judge_backends.assert_judge_generator_disjoint(concrete_judge, "claude-opus-4-8")
+        == "gpt-5.4"
+    )
+
+
 if __name__ == "__main__":
     import traceback
     failed = 0
