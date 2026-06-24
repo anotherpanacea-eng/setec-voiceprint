@@ -1,3 +1,0 @@
-### Changed
-
-**`acquisition_core.compose_manifest_entry` accepts `corpus_role=None` to omit the field.** `corpus_role` is optional in the manifest schema; the composer now emits it only when set (default stays `"impostor"`), and the impostor-only fields remain gated on `corpus_role == "impostor"`. This is the shared-core hook that lets `acquire_blog` (and any future acquisition script) write a non-impostor (test/drift) bucket without post-hoc field stripping. Backward-compatible: all existing callers pass no `corpus_role` and get the unchanged impostor entry (guarded by a new `test_compose_corpus_role_none_omits_role_and_impostor_fields` plus the existing impostor-shape assertions).
