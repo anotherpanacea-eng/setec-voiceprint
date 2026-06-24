@@ -1,40 +1,27 @@
 {
-  "compute": {
-    "cost_note": "$0.05\u20130.30 per doc via Anthropic / OpenAI / Gemini; free with --judge manifest",
-    "length_floor_words": 2000,
-    "tier": "api_llm"
-  },
+  "id": "narrative_decision_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/narrative_decision_audit.py",
+  "surface": "narrative_decision_audit",
+  "status": "literature_anchored",
+  "handoff": "experimental",
   "consumers": [
     "apodictic",
     "setec-voicewright"
   ],
-  "dependencies": {
-    "python": [],
-    "python_optional": [],
-    "sdks_optional": [
-      "anthropic",
-      "openai",
-      "google-genai"
-    ]
-  },
+  "min_setec_version": "1.107.0",
+  "json_delivery": "stdout",
+  "family": "narrative-decision",
+  "purpose": "Score a story's narrative decisions (themes, plot, pacing, sensory register, reader engagement) against Russell et al. 2026's reported human / AI group means. Distinct from the texture-level AIC families \u2014 these are discourse-level decisions that require structural rewrites to remove.\n",
+  "use_when": [
+    "Target is long-form fiction \u2265 2000 words",
+    "You want evidence that survives LAMP-style stylistic rewriting",
+    "You're stacking signals with Tier 1 / AIC / Binoculars"
+  ],
   "do_not_use_when": [
     "Target is an essay, op-ed, or under ~2000 words",
     "You need a binary verdict from one audit alone",
     "You don't have access to an LLM judge (or a pre-computed feature manifest)"
   ],
-  "examples": [
-    {
-      "cmd": "python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt --judge manifest --judge-manifest features.json",
-      "description": "Single-doc audit with pre-computed values"
-    },
-    {
-      "cmd": "python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt --judge anthropic --judge-model claude-sonnet-4-6",
-      "description": "Direct API spot-check"
-    }
-  ],
-  "family": "narrative-decision",
-  "handoff": "experimental",
-  "id": "narrative_decision_audit",
   "inputs": [
     {
       "flag": "target",
@@ -50,7 +37,8 @@
         "mock",
         "anthropic",
         "openai",
-        "gemini"
+        "gemini",
+        "agent_host"
       ]
     },
     {
@@ -70,30 +58,43 @@
     }
   ],
   "outputs": {
+    "schema_version": "1.0",
     "artifacts": [
       ".narrative.json",
       ".narrative.md"
-    ],
-    "schema_version": "1.0"
+    ]
   },
-  "purpose": "Score a story's narrative decisions (themes, plot, pacing, sensory register, reader engagement) against Russell et al. 2026's reported human / AI group means. Distinct from the texture-level AIC families \u2014 these are discourse-level decisions that require structural rewrites to remove.\n",
+  "compute": {
+    "tier": "api_llm",
+    "cost_note": "$0.05\u20130.30 per doc via Anthropic / OpenAI / Gemini; free with --judge manifest; key-free with --judge agent_host (delegates to the host runtime's model; see spec 35)",
+    "length_floor_words": 2000
+  },
+  "registers": [
+    "long_form_fiction"
+  ],
+  "dependencies": {
+    "python": [],
+    "python_optional": [],
+    "sdks_optional": [
+      "anthropic",
+      "openai",
+      "google-genai"
+    ]
+  },
+  "examples": [
+    {
+      "description": "Single-doc audit with pre-computed values",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt --judge manifest --judge-manifest features.json"
+    },
+    {
+      "description": "Direct API spot-check",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/narrative_decision_audit.py story.txt --judge anthropic --judge-model claude-sonnet-4-6"
+    }
+  ],
   "references": [
     "plugins/setec-voiceprint/references/narrative-decision-audit-spec.md",
     "plugins/setec-voiceprint/references/narrative-decision-replication-spec.md",
     "plugins/setec-voiceprint/references/storyscope-prompts/",
     "plugins/setec-voiceprint/references/apodictic-handoff-storyscope.md"
-  ],
-  "registers": [
-    "long_form_fiction"
-  ],
-  "script_path": "plugins/setec-voiceprint/scripts/narrative_decision_audit.py",
-  "status": "literature_anchored",
-  "surface": "narrative_decision_audit",
-  "use_when": [
-    "Target is long-form fiction \u2265 2000 words",
-    "You want evidence that survives LAMP-style stylistic rewriting",
-    "You're stacking signals with Tier 1 / AIC / Binoculars"
-  ],
-  "min_setec_version": "1.107.0",
-  "json_delivery": "stdout"
+  ]
 }

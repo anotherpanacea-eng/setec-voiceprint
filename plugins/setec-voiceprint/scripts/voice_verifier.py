@@ -603,7 +603,11 @@ def build_verifier(
     if kind == "mock":
         return _mock_backend(mock_band)
     if kind in judge_backends.PROVIDERS:
-        if not model:
+        if kind == "agent_host":
+            # Host runtime resolves the model; provenance recorded via make_api_judge's
+            # judge_identity (kind=agent_host, host=...). See specs/35-host-delegated-judge.md.
+            model = model or "host-resolved"
+        elif not model:
             raise VerifierError(f"{kind} verifier requires --judge-model")
         api = judge_backends.make_api_judge(
             kind,

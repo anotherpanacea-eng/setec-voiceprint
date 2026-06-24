@@ -371,8 +371,11 @@ def build_judge(
         return _manifest_judge(Path(manifest_path))
     if kind == "mock":
         return _mock_judge(mock_option_index)
-    if kind in ("anthropic", "openai", "gemini"):
-        if not model:
+    if kind in judge_backends.PROVIDERS:
+        if kind == "agent_host":
+            # The host runtime resolves the model; no --judge-model required.
+            model = model or "host-resolved"
+        elif not model:
             raise JudgeError(
                 f"{kind} judge requires --judge-model"
             )
