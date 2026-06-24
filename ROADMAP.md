@@ -20,6 +20,14 @@ The two "What's left" lists below otherwise still stand: R12 calibration, the AI
 
 Supplements the 2026-06-17 pass above for the **post-1.117.0** window — a large arXiv-capability-review build batch plus a refreshed planned/horizon list. The shortlist provenance is `setec-scratch/arxiv-capability-review/` (every arXiv id below verified real against the arXiv API). Where this conflicts with older sections, this is authoritative. **No-verdict posture is unchanged:** every detector-flavored item below emits descriptive per-signal values/bands, never a label.
 
+## Status reconciliation (2026-06-23)
+
+Supplements the 2026-06-19 pass above. Where this conflicts with older sections, this is authoritative.
+
+### Shipped since 2026-06-19 status pass
+
+- **`house_style_decomposition` (spec-wave-4 Tier-4a) — nested-baseline idiolect-vs-house attribution-of-variation.** New `house_style_decomposition` surface. Runs the target's stylometric feature vector against a curated ORDERED LADDER of nested baselines (`same_author_same_org` / `different_context` / `different_authors_same_org` / `same_genre_outside_org` / `broad_reference`) and reports per-level Burrows-Delta, signed idiolect-vs-house contrast, and descriptive attribution labels (`idiolect_borne` / `house_borne` / `shared_or_indistinct`). M1 pure-stdlib (`compare_to_baseline(include_spacy=False)`), no numpy/spaCy/torch. Leakage guard: target author_id + path-identity, with inline-text FORBIDDEN (bypasses path-identity check). `--lens embedding` (M2 seam) refuses fail-loud even when torch is importable. Calibration PROVISIONAL; `status: heuristic`. 17 CI-runnable tests incl. unconditional no-verdict recursive key-walk. Reference: Burrows (2002), *Computers and the Humanities* 37(3).
+
 ### Shipped since 1.117.0
 
 These all merged to `main` this cycle (version + changelog cut at the next release per the repo's release-not-PR convention):

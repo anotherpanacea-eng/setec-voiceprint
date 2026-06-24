@@ -1,0 +1,90 @@
+entries:
+- id: house_style_decomposition
+  script_path: plugins/setec-voiceprint/scripts/house_style_decomposition.py
+  surface: house_style_decomposition
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: voice-coherence-adjacent
+  purpose: 'Nested-baseline idiolect-vs-house attribution-of-variation (spec-wave-4 Tier-4a):
+    runs the target''s stylometric feature vector against a curated ORDERED LADDER of baselines
+    (same_author_same_org / different_context / different_authors_same_org /
+    same_genre_outside_org / broad_reference) and reports, per feature family, the per-level
+    Burrows-Delta, the signed idiolect-vs-house contrast (D[different_authors_same_org] -
+    D[different_context] with positive = idiolect-borne), and a descriptive attribution label
+    (idiolect_borne / house_borne / shared_or_indistinct). NEVER a verdict, an authorship call,
+    or a probability. M1 = pure-stdlib Burrows-Delta (no numpy/spaCy/torch; reuses
+    stylometry_core.compare_to_baseline(include_spacy=False)). M2 (lazy-import seam, off by
+    default) = model-based dimensionality-reduction lens (--lens embedding → missing_dependency
+    whether or not torch is importable; M1 wires no embedding subspace). The read is the
+    per-level matrix + per-family labels; shared_or_indistinct is the designed center, not an
+    error. Calibration PROVISIONAL (margin=0.15 is an operator knob, not a calibrated cut).
+    Leakage guard: entries at house/genre/broad levels must not carry the target author_id;
+    every entry must supply text_path (inline text is forbidden — it bypasses the path-identity
+    leakage check). Requires BOTH isolating levels (different_context + different_authors_same_org)
+    and min-authors=3 at multi-author levels. Both --target-author AND --target-org are REQUIRED
+    (fail-loud bad_input if absent); every entry''s author_id/org_id is bound to its level''s
+    identity membership (same_author_same_org/different_context = target author; the *_same_org
+    levels = target org; the outside/different-context levels = a different org) so a mislabeled
+    corpus is refused, not silently confounded.
+
+    '
+  use_when:
+  - You have a writer''s target text and a curated nested baseline ladder with BOTH isolating
+    levels (different_context AND different_authors_same_org) and >= 3 distinct authors at the
+    house level
+  - You want to know which feature families (function_words, char_ngrams_3/4/5, punctuation,
+    paragraph_dialogue, pronoun_modal_negation) are idiolect-borne vs house-borne for THIS
+    specific target+ladder combination
+  - You want a within-ladder descriptive contrast, NOT a verdict or population determination
+  do_not_use_when:
+  - You want an authorship determination (same_author / different_author), an AI/human call,
+    or a "real voice" / "true voice" certificate — refused mechanically
+  - You have a single-author "house" baseline (< 3 distinct house authors); the partition is
+    undefined
+  - A level is topic-mismatched to the target (inflates delta with no style cause)
+  - The isolating levels are absent or below the word floors
+  - You want to de-anonymize a writer across pseudonymous venues
+  - For within-one-manuscript chapter distinctiveness, use chapter_distinctiveness_audit instead
+  inputs:
+    target: a --target text file (UTF-8) + --target-author (author_id) + --target-org (house/org
+      id); both identities are REQUIRED and drive the leakage guard plus the per-level
+      author/org membership check
+    baseline: --baseline-set DIR (DIR/<level>/<author_id>/*.txt|*.md) OR --baseline-manifest
+      JSONL (id + level + author_id + org_id + text_path per entry; inline text forbidden)
+    knobs: '--min-authors 3, --min-words 2000, --margin 0.15, --lens delta (M1) | embedding
+      (gated M2 seam; refuses fail-loud in M1)'
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: 'M1 pure-stdlib Burrows-Delta over nested baselines; no numpy, no spaCy, no
+      torch (compare_to_baseline(include_spacy=False) path). The M2 embedding lens
+      (--lens embedding) is a lazy-import seam that refuses fail-loud even when torch is
+      importable — M1 wires no embedding subspace.'
+    length_floor_words: 300
+  registers:
+  - blog_essay
+  - technical_documentation
+  - literary_prose
+  dependencies:
+    python: []
+    python_optional:
+    - torch
+  examples:
+  - description: Decompose a target chapter against a curated nested baseline set directory
+    cmd: python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --target
+      chapter.txt --target-author writer:jane-smith --target-org house:acme-press
+      --baseline-set baselines/ --json
+  - description: Decompose using a JSONL manifest, with a tighter attribution margin
+    cmd: python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --target
+      chapter.txt --target-author writer:jane-smith --target-org house:acme-press
+      --baseline-manifest baseline.jsonl --margin 0.20 --json
+  - description: Verify the built-in worked-example golden pins
+    cmd: python3 plugins/setec-voiceprint/scripts/house_style_decomposition.py --check-all
+  references:
+  - setec-scratch/spec-wave-4/tier4a-house-style-decomposition.md
+  - 'Burrows (2002) "Delta": a Measure of Stylistic Difference and a Guide to Likely Authorship,
+    Computers and the Humanities 37(3)'

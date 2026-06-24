@@ -33,6 +33,7 @@ Each entry block carries the signal's metadata on a single line:
 - [AIC-9: Closure Inflation (1)](#aic-9-closure-inflation)
 - [Voice-distance signals (3)](#voice-distance-signals)
 - [Voice-drift signals (2)](#voice-drift-signals)
+- [House-style decomposition (7 per level; 7 per family)](#house-style-decomposition-signals)
 - [POV-voice signals (2)](#pov-voice-signals)
 - [Mimicry / cosplay signals (2)](#mimicry-cosplay-signals)
 - [Semantic preservation signals (3)](#semantic-preservation-signals)
@@ -333,6 +334,30 @@ Per-feature coefficient of variation across time periods: `SD(period_means) / me
 `voice_drift_tracker:stable_features` · voice-drift · ↓ · **heuristic**
 
 Inverse of voice drift: features with low cross-period CV. The durable idiolect surface.
+
+---
+
+## House-style decomposition signals
+
+Nested-baseline idiolect-vs-house attribution-of-variation from `house_style_decomposition.py`. Requires a curated baseline ladder with BOTH isolating levels (`different_context` + `different_authors_same_org`) and ≥ 3 distinct authors at the house level. **No verdict, no authorship call, no probability.** Calibration PROVISIONAL; all signals are `heuristic` (margin=0.15 is an operator knob, not a calibrated cut). Within-this-ladder contrasts only — not population-calibrated.
+
+### Per-level Burrows-Delta (per M1 family, per level)
+
+`house_style_decomposition:per_level_family_delta.<level>.<family>` · house-style · — · **heuristic**
+
+Burrows-Delta from the target to each present baseline level, per feature family (`function_words`, `char_ngrams_3/4/5`, `punctuation`, `paragraph_dialogue`, `pronoun_modal_negation`). Smaller delta = target is closer to that level's baseline for that family. Not comparable across different ladder configurations.
+
+### Signed idiolect-vs-house contrast (per M1 family)
+
+`house_style_decomposition:idiolect_house_contrast.<family>` · house-style · — · **heuristic**
+
+`D[different_authors_same_org] − D[different_context]` per family. POSITIVE = idiolect-borne (target tracks its own cross-house idiolect more than the house's other authors). NEGATIVE = house-borne (target tracks the house's other authors more). `|contrast| < margin` → `shared_or_indistinct`. Sign convention fixed: `positive_idiolect_borne`.
+
+### Attribution labels (per M1 family)
+
+`house_style_decomposition:attribution.<family>` · house-style · — · **heuristic**
+
+Descriptive label from the closed vocab `{idiolect_borne, house_borne, shared_or_indistinct}`. NEVER an authorship determination. `shared_or_indistinct` is the designed center. Spec-wave-4 Tier-4a; refs: Burrows (2002) "Delta" (*Computers and the Humanities* 37(3)), `setec-scratch/spec-wave-4/tier4a-house-style-decomposition.md`.
 
 ---
 
@@ -666,6 +691,7 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 | aic-8-laundering | 2 |
 | aic-9-closure-inflation | 1 |
 | voice-distance | 2 |
+| house-style-decomposition | 7 (per-family attribution; 7 × N per-level deltas reported separately) |
 | authorship-verification | 2 |
 | voice-drift | 2 |
 | pov-voice | 2 |
