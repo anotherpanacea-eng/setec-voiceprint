@@ -30,7 +30,6 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
-import stylometry_core as sc  # noqa: E402
 from stylometry_core import FUNCTION_WORDS  # noqa: E402
 
 TASK_SURFACE = "voice_coherence"
@@ -158,11 +157,22 @@ def _claim_license() -> dict[str, str]:
 
 
 def _content_fingerprint(text: str) -> str:
-    """sha256 of the text under the SAME normalization the surface treats as content-equal
-    (``stylometry_core.normalize_for_char_ngrams``: lowercase, collapse whitespace, strip). Used to
-    self-exclude a baseline entry whose *content* equals the target's even when its path does not
-    match the target (an inline-``text`` manifest row, or a copy of the target stored at a different
-    path).
+    """sha256 of the canonical token stream under the RTD tokenizer's OWN normalization — the same
+    ``_TOKEN.findall(text.lower())`` (``[a-z]+`` over lowercased text) that ``_counts`` consumes,
+    taken over the FULL vocabulary *before* the function-word filter. Used to self-exclude a
+    baseline entry whose *content* equals the target's even when its path does not match the target
+    (an inline-``text`` manifest row, or a copy of the target stored at a different path).
+
+    Why the tokenizer's normalization, not ``normalize_for_char_ngrams`` (Codex P1 round-2):
+    ``normalize_for_char_ngrams`` only lowercases / collapses whitespace / strips, so it PRESERVES
+    punctuation and hyphens. RTD compares ``[a-z]+`` word counts, so two texts that differ only by
+    punctuation (``"We, are here; and they"`` vs ``"We are here and they"``) or by hyphen-vs-space
+    (``"state-of-the-art"`` vs ``"state of the art"``) yield IDENTICAL token streams, identical
+    counts, and RTD 0.0 — yet the old fingerprint differed, so a punctuation-/hyphen-only copy of
+    the target slipped past the content guard and self-positioned. Fingerprinting the actual token
+    stream matches the surface's own matcher: content-equal-under-RTD <=> equal fingerprint. The
+    stream is joined with ``"\\n"`` (a non-``[a-z]`` separator that can never appear inside a token),
+    so re-segmentation cannot collide (``"ab c"`` != ``"a bc"``).
 
     Sibling of the Codex P1 fixed in cross_doc_novelty_profile.py / originality_audit.py /
     corpus_novelty_audit.py: the path-only guard never fires on an inline copy of the target (no
@@ -171,7 +181,7 @@ def _content_fingerprint(text: str) -> str:
     closes that hole alongside the path check (path OR content -> drop; fail-closed: a match only
     ever DROPS, never re-admits — if exclusion empties the baseline, the caller routes through the
     existing empty-baseline bad_input path)."""
-    return hashlib.sha256(sc.normalize_for_char_ngrams(text).encode("utf-8")).hexdigest()
+    return hashlib.sha256("\n".join(_TOKEN.findall(text.lower())).encode("utf-8")).hexdigest()
 
 
 def _load_baseline(args: argparse.Namespace, target_resolved: Path,
