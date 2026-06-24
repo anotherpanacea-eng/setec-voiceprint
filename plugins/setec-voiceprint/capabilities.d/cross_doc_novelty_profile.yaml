@@ -1,0 +1,67 @@
+entries:
+- id: cross_doc_novelty_profile
+  script_path: plugins/setec-voiceprint/scripts/cross_doc_novelty_profile.py
+  surface: set_level_diversity
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: set-level-diversity
+  purpose: 'Per-feature cross-document novelty PROFILE (GENIE axis, arXiv:2606.12790): for ONE
+    target document against a supplied reference POOL, reports — per reused stdlib stylometry feature
+    — the target''s z-position relative to the pool''s distribution of that feature, plus the
+    per-feature mean/SD/n and a per-family |z| distribution summary. The per-feature distribution
+    + per-feature position table ARE the read — NEVER a single "novelty score", NEVER a verdict,
+    NEVER a band. Clean-room of GENIE''s per-feature-vs-population position idea, using the fixed
+    stdlib feature families (function_words / punctuation / paragraph_dialogue /
+    pronoun_modal_negation / char_ngrams_3/4/5) from extract_features(include_spacy=False) as the
+    named feature set. M1 is model-free (mean/SD z, stdlib, no torch/spaCy), deterministic, and
+    CI-runnable. The FEATURE-WISE COMPLEMENT to the cluster-wise distinct_diversity_audit (that one
+    partitions a SET into near-dup equivalence classes; this one asks, for ONE target vs a pool,
+    which named stylometric features make it atypical). Neither subsumes the other — they are
+    orthogonal reads. Robust median/MAD z is an explicitly DEFERRED M2 seam. NOT an AI/human call;
+    NOT a plagiarism/derivative determination; NOT a selection/ranking signal; NO absolute band;
+    thresholds are operator-side / PROVISIONAL.
+
+    '
+  use_when:
+  - You have ONE target document and a prompt-matched reference POOL (>= min_pool, default 5, usable
+    docs of >= length_floor_words, default 100) and want to know WHICH named stylometric features
+    make the target atypical relative to the pool's distribution
+  - You want a per-feature read (which features differ, by how much) that a cluster partition
+    (distinct_diversity_audit) or a global pairwise-cosine spread (homogeneity_audit) cannot give
+  - You need a model-free, CI-runnable M1 read with no torch/spaCy dependency
+  do_not_use_when:
+  - You want an AI/human/authorship/derivative determination — a per-feature z-position is a
+    measurement relative to THIS pool, not a provenance call; low novelty is NOT AI, high novelty
+    is NOT human
+  - The pool is single-source or mixed-prompt (inflates or deflates apparent atypicality); a
+    prompt-matched pool is required
+  - Target or pool is below the length floors (target < 100 words, or usable pool < 5 docs after
+    length-floor filtering)
+  - "You want GENIE's learned task-feature figures — this M1 stdlib stylometric lens is NOT
+    comparable to GENIE's learned task-specific features (arXiv:2606.12790)"
+  inputs:
+    target: a --target path (single file; required)
+    pool: a --reference-manifest (JSONL; id + text|text_path) OR a --reference-dir of texts (.txt/.md,
+      recursive)
+    knobs: --length-floor-words (default 100), --min-pool (default 5), --lens stylometric (M1) |
+      embedding (POC-gated M2 seam, fails loud)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: 'M1 pure-stdlib stylometric lens (extract_features(include_spacy=False) — 7 families:
+      function_words / punctuation / paragraph_dialogue / pronoun_modal_negation / char_ngrams_3/4/5);
+      no models, no numpy beyond arithmetic, no API, deterministic. The embedding M2 lens is a
+      POC-gated seam (lazy-import + fail-loud missing_dependency), not in this build.'
+    length_floor_words: 100
+    min_pool: 5
+  dependencies:
+    python: []
+    python_optional: []
+  references:
+  - specs/wave-4/cross-doc-novelty.md
+  - 'GENIE: Generative Note Information Extraction (arXiv:2606.12790): https://arxiv.org/abs/2606.12790'
+  - 'NoveltyBench: Evaluating Language Models for Humanlike Diversity (arXiv:2504.05228): https://arxiv.org/abs/2504.05228'
