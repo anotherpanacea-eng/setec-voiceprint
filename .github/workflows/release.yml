@@ -44,6 +44,16 @@ jobs:
               grab { print }
             ' CHANGELOG.md > release-notes.md || true
           fi
+          # GitHub release bodies are capped at 125000 chars; a big consolidated
+          # release (many changelog.d fragments) can exceed it → HTTP 422 "body is
+          # too long" (hit at v1.118.0: a 145k section). Truncate at a line boundary
+          # under a safe ceiling and point to the full CHANGELOG.
+          LIMIT=123000
+          if [ -s release-notes.md ] && [ "$(wc -c < release-notes.md)" -gt "$LIMIT" ]; then
+            head -c "$LIMIT" release-notes.md | sed '$d' > release-notes.trunc.md
+            printf '\n\n_…release notes truncated to fit GitHub'\''s 125k limit; full changelog: https://github.com/%s/blob/%s/CHANGELOG.md_\n' "$GITHUB_REPOSITORY" "$TAG" >> release-notes.trunc.md
+            mv release-notes.trunc.md release-notes.md
+          fi
           if [ -s release-notes.md ]; then
             echo "have_notes=true" >> "$GITHUB_OUTPUT"
           else
