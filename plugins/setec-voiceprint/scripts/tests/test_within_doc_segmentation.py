@@ -1057,3 +1057,151 @@ class TestSparseSpikeZeroMadRegression:
         assert w._is_flat_profile([0.3, 0.3, 0.3, 0.3]) is True
         # Empty profile: treated as flat (no variation).
         assert w._is_flat_profile([]) is True
+
+
+# ---------------------------------------------------------------------------
+# Regression: Codex round-3 P2 — zero-MAD band must be "unscaled", not "marked_shift"
+# ---------------------------------------------------------------------------
+
+class TestZeroMadUnscaledBandRegression:
+    """Regression for Codex round-3 P2 (within_doc_segmentation.py:536).
+
+    The round-2 fix correctly ACCEPTS a peak strictly above the median on a
+    non-flat zero-MAD profile, but it still passed the ORIGINAL thresholds to
+    `_assign_band`. When MAD == 0 the band ladder collapses
+    (`T_slight == T_moderate == T_marked == median`), so every accepted peak —
+    even a 1e-12 deviation — satisfied `d_i >= T_marked` and was labeled
+    `marked_shift`. That replaced the round-1 false negative with a false
+    STRONGEST-severity label.
+
+    The fix: on the non-flat zero-MAD path, do NOT reuse the collapsed
+    thresholds. Emit the explicit honest band `"unscaled"` — a discontinuity is
+    present but its severity is unscalable against a zero-dispersion profile.
+    This applies identically to a 1e-12 spike and a 0.9 spike (neither over- nor
+    under-claimed). The ordinal ladder (none/slight/moderate/marked) is reserved
+    for MAD > 0 profiles, and is byte-unchanged.
+
+    These tests drive a *controlled* profile through the real boundary-detection
+    path (flatness guard + peak loop + banding) by patching
+    `_adjacent_distance_profile`.
+    """
+
+    # Long, lexically varied text → many windows; the profile is patched below.
+    _TEXT = (
+        "Alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu. "
+        "Nu xi omicron pi rho sigma tau upsilon phi chi psi omega. "
+        "One two three four five six seven eight nine ten eleven twelve. "
+        "Red orange yellow green blue indigo violet black white grey brown. "
+        "North south east west up down left right near far high low. "
+        "Spring summer autumn winter morning noon evening night dawn dusk. "
+        "Mercury venus earth mars jupiter saturn uranus neptune pluto comet. "
+    )
+
+    def _analyze_with_profile(self, profile, monkeypatch):
+        monkeypatch.setattr(w, "_adjacent_distance_profile", lambda *_a, **_k: list(profile))
+        return w.analyze_document(
+            self._TEXT,
+            window_sentences=1,
+            stride_sentences=1,
+            peak_k=2.5,
+            min_windows=3,
+        )
+
+    def test_unscaled_is_in_band_vocab(self):
+        """The new band token is whitelisted so the firewall guard accepts it."""
+        assert "unscaled" in w.BAND_VOCAB
+
+    def test_tiny_positive_spike_is_unscaled_not_marked(self, monkeypatch):
+        """[0,0,0,1e-12,0,0]-shaped (zero-MAD, non-flat) → band 'unscaled', NOT 'marked_shift'.
+
+        Pre-fix: the 1e-12 deviation was accepted (strictly above median) and then
+        labeled 'marked_shift' because the collapsed thresholds gave 1e-12 >= T_marked
+        (== median == 0). This is the exact Codex round-3 P2 false strongest-severity
+        label.
+        """
+        results = self._analyze_with_profile([0.0, 0.0, 0.0, 1e-12, 0.0, 0.0], monkeypatch)
+        boundaries = results["boundaries"]
+        assert len(boundaries) == 1, (
+            "Tiny-positive-spike zero-MAD profile must yield exactly one boundary; "
+            f"got {len(boundaries)}"
+        )
+        b = boundaries[0]
+        assert b["between_windows"] == [3, 4]
+        assert b["distance"] == 1e-12
+        assert b["band"] == "unscaled", (
+            f"Tiny 1e-12 zero-MAD spike must be 'unscaled', never 'marked_shift'; "
+            f"got {b['band']!r}"
+        )
+        assert b["band"] != "marked_shift"
+        # The firewall guard must accept it (band is whitelisted).
+        w.assert_no_authorship(results)
+
+    def test_genuine_large_zero_mad_spike_is_unscaled(self, monkeypatch):
+        """[0,0,0,0.9,0,0]-shaped (zero-MAD, non-flat, genuine large spike) → 'unscaled'.
+
+        Honest: the severity is unscalable against a zero-dispersion profile, so a
+        large spike is reported with the same 'unscaled' tag as a tiny one — neither
+        over- nor under-claimed. It must NOT be promoted to 'marked_shift' (no scaled
+        ordinal exists) and must NOT be demoted to 'none'.
+        """
+        results = self._analyze_with_profile([0.0, 0.0, 0.0, 0.9, 0.0, 0.0], monkeypatch)
+        boundaries = results["boundaries"]
+        assert len(boundaries) == 1
+        b = boundaries[0]
+        assert b["between_windows"] == [3, 4]
+        assert b["distance"] == 0.9
+        assert b["band"] == "unscaled", (
+            f"Genuine large zero-MAD spike must be 'unscaled'; got {b['band']!r}"
+        )
+
+    def test_truly_uniform_still_zero_boundaries(self, monkeypatch):
+        """Truly flat profile (max == min) → still ZERO boundaries (round-1/2 case stays green)."""
+        results = self._analyze_with_profile([0.3, 0.3, 0.3, 0.3, 0.3, 0.3], monkeypatch)
+        assert results["boundaries"] == [], (
+            f"Truly uniform profile must produce ZERO boundaries; "
+            f"got {len(results['boundaries'])}"
+        )
+
+    def test_normal_mad_profile_keeps_ordinal_band(self, monkeypatch):
+        """A normal MAD>0 profile still gets an ORDINAL band (slight/moderate/marked).
+
+        Proves the round-3 change is scoped to the zero-MAD case only: when MAD > 0
+        the band ladder is non-degenerate and `_assign_band` is still used. No
+        boundary on a MAD>0 profile may be labeled 'unscaled'.
+        """
+        # MAD > 0 (the deviations 0.0/0.02/0.01/0.8/0.0/0.03 are not >= half-equal),
+        # with one strong outlier that lands in the top ordinal rung.
+        results = self._analyze_with_profile(
+            [0.10, 0.12, 0.11, 0.90, 0.10, 0.13], monkeypatch
+        )
+        boundaries = results["boundaries"]
+        assert boundaries, "A MAD>0 profile with a strong outlier must yield a boundary"
+        # The strong outlier sits in an ORDINAL band — never 'unscaled'.
+        ordinal_bands = {"none", "slight_shift", "moderate_shift", "marked_shift"}
+        for b in boundaries:
+            assert b["band"] in ordinal_bands, (
+                f"MAD>0 profile must use an ordinal band; got {b['band']!r}"
+            )
+            assert b["band"] != "unscaled", (
+                "MAD>0 profile must never produce 'unscaled' — the change is "
+                "scoped to zero-MAD only"
+            )
+        # The 0.90 outlier should be the strongest ordinal rung available here.
+        peak = max(boundaries, key=lambda b: b["distance"])
+        assert peak["distance"] == 0.90
+        assert peak["band"] == "marked_shift"
+
+    def test_no_collapsed_threshold_marked_shift_reachable(self, monkeypatch):
+        """Defensive: no zero-MAD boundary may EVER be labeled 'marked_shift'.
+
+        Sweeps several non-flat zero-MAD spike magnitudes; every boundary must be
+        'unscaled'. Pins that the collapsed-threshold _assign_band path is no longer
+        reachable for MAD == 0.
+        """
+        for spike in (1e-12, 1e-6, 0.001, 0.5, 0.9, 1.0):
+            results = self._analyze_with_profile([0.0, 0.0, 0.0, spike, 0.0, 0.0], monkeypatch)
+            for b in results["boundaries"]:
+                assert b["band"] == "unscaled", (
+                    f"Zero-MAD spike {spike} produced band {b['band']!r}; "
+                    "must be 'unscaled' (collapsed-threshold marked_shift is unreachable)"
+                )

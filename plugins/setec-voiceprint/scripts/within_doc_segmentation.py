@@ -66,9 +66,22 @@ DEFAULT_MIN_WINDOWS = 3
 LENGTH_FLOOR_WORDS = 30
 
 # ---------- Layer 2: BAND_VOCAB whitelist -----------------------------------
-# The strongest band is "marked_shift". There is NO "different_author" band —
-# mirroring voice_verifier.VERIFIER_BANDS whose strongest is "inconsistent".
-BAND_VOCAB: tuple[str, ...] = ("none", "slight_shift", "moderate_shift", "marked_shift")
+# The strongest *scaled* band is "marked_shift". There is NO "different_author"
+# band — mirroring voice_verifier.VERIFIER_BANDS whose strongest is "inconsistent".
+#
+# "unscaled" is the honest band for the NON-FLAT zero-MAD case: a register
+# discontinuity IS present (a peak strictly above the median) but its SEVERITY
+# cannot be scaled against a zero-dispersion within-document profile. When MAD == 0
+# the median + {1, k, 4}*MAD ladder collapses to the median, so the ordinal
+# (slight/moderate/marked) ladder is meaningless. Rather than reuse the collapsed
+# thresholds — which would label even a 1e-12 deviation "marked_shift" (a false
+# strongest-severity claim) — we emit "unscaled": severity unscalable, neither
+# over- nor under-claimed. It is NOT an ordinal rung above "marked_shift"; it is a
+# sideways "magnitude not comparable" tag (Codex round-3 P2,
+# within_doc_segmentation.py:536).
+BAND_VOCAB: tuple[str, ...] = (
+    "none", "slight_shift", "moderate_shift", "marked_shift", "unscaled",
+)
 
 # ---------- Layer 1: authorship-claim firewall ------------------------------
 
@@ -357,7 +370,14 @@ def _band_thresholds(profile: list[float], peak_k: float) -> tuple[float, float,
 
 
 def _assign_band(d: float, T_slight: float, T_moderate: float, T_marked: float) -> str:
-    """Map a continuous distance to BAND_VOCAB."""
+    """Map a continuous distance to the ORDINAL band ladder (none → marked_shift).
+
+    Valid ONLY when MAD > 0, i.e. the thresholds are non-degenerate
+    (T_slight < T_moderate < T_marked). On a zero-MAD profile the three
+    thresholds collapse to the median and this function would label every peak
+    "marked_shift"; the caller MUST take the "unscaled" path instead (Codex
+    round-3 P2). "unscaled" is therefore NOT returned here.
+    """
     if d >= T_marked:
         return "marked_shift"
     if d >= T_moderate:
@@ -526,14 +546,25 @@ def analyze_document(
                 continue
             if profile_mad == 0.0:
                 # Non-flat zero-MAD profile: every MAD-relative threshold has
-                # collapsed to the median, so the band ladder is degenerate.
-                # Accept only peaks STRICTLY above the median (the isolated
-                # spike) — a plateau value equal to the median is not a shift.
+                # collapsed to the median (T_slight == T_moderate == T_marked ==
+                # median), so the ordinal band ladder is DEGENERATE. Accept only
+                # peaks STRICTLY above the median (the isolated spike) — a plateau
+                # value equal to the median is not a shift.
                 if d_i <= profile_median:
                     continue
-            elif d_i < T_moderate:
-                continue
-            band = _assign_band(d_i, T_slight, T_moderate, T_marked)
+                # Codex round-3 P2 (within_doc_segmentation.py:536): do NOT pass
+                # the collapsed thresholds to _assign_band — every accepted peak
+                # (even a 1e-12 deviation) would then satisfy d_i >= T_marked and
+                # be mislabeled "marked_shift" (a false strongest-severity claim).
+                # Emit the honest "unscaled" band instead: a discontinuity is
+                # present but its severity is unscalable against a zero-dispersion
+                # profile. Applies identically to a 1e-12 spike and a 0.9 spike —
+                # neither over- nor under-claimed.
+                band = "unscaled"
+            else:
+                if d_i < T_moderate:
+                    continue
+                band = _assign_band(d_i, T_slight, T_moderate, T_marked)
             # char_offset = char_start of window i+1 (the seam where the next window begins)
             char_offset = windows[i + 1]["char_start"]
             boundaries.append({
@@ -581,7 +612,13 @@ def analyze_document(
             ),
             "no_band_absolute": (
                 "bands are within-document MAD-relative (median + k*MAD), not absolute calibrated "
-                "cuts; the same k drives both band assignment and peak detection"
+                "cuts; the same k drives both band assignment and peak detection. When the "
+                "within-document MAD is 0 (zero dispersion) the median + {1,k,4}*MAD ladder "
+                "collapses to the median and the ordinal slight/moderate/marked rungs become "
+                "meaningless; a peak strictly above the median is then reported with band "
+                "'unscaled' — the discontinuity is present but its severity is unscalable against "
+                "a zero-dispersion profile (neither over- nor under-claimed), not an ordinal rung "
+                "above 'marked_shift'"
             ),
             "posture": "descriptive / no-verdict / never an authorship or identity claim",
             "posture_guarantee": (

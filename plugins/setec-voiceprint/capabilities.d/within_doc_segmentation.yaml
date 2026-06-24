@@ -14,7 +14,8 @@ entries:
     authors" claim, or any authorship inference. The "never an authorship claim" guarantee is MECHANICAL:
     FORBIDDEN_RESULT_KEYS frozenset + FORBIDDEN_SUBSTRINGS tuple + recursive assert_no_authorship()
     guard (raises AuthorshipClaimError) called immediately before build_output, backed by a BAND_VOCAB
-    whitelist (none / slight_shift / moderate_shift / marked_shift; no "author" token) and an
+    whitelist (none / slight_shift / moderate_shift / marked_shift; plus unscaled for the
+    zero-dispersion zero-MAD case where ordinal severity is unscalable; no "author" token) and an
     available:false policy_refused refusal path. M1 lens = stylometric cosine distance (stdlib,
     model-free, deterministic). M2 embedding boundary lens is a POC-gated --lens embedding seam
     (lazy-import + fail-loud missing_dependency), not in this build. Single input only; cross-document

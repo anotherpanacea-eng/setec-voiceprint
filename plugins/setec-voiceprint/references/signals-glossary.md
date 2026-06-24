@@ -657,7 +657,7 @@ Theory-based argument-quality dimensions from Lauscher, Ng, Napoles & Tetreault 
 
 Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `document_segmentation` surface, 2026-06-23). Slides a sentence-anchored window over ONE text and reports where the style shifts most — each boundary carries a character offset, an ordinal band, and verbatim excerpts. NEVER an authorship claim. The boundary band is the one "signal" this surface emits; it is **not** a numeric signal in the standard sense (no polarity arrow; no absolute calibration; descriptive only).
 
-- `boundaries[*].band` · document-segmentation · — · **heuristic** · within-document MAD-relative ordinal band (`none / slight_shift / moderate_shift / marked_shift`); no absolute calibrated cut; `calibration_status: provisional`. NOT an authorship/identity signal; a register-shift magnitude only. PAN Multi-Author Writing Style Analysis task lineage (arXiv:2602.09147).
+- `boundaries[*].band` · document-segmentation · — · **heuristic** · within-document MAD-relative ordinal band (`none / slight_shift / moderate_shift / marked_shift`), plus `unscaled` for the zero-dispersion (zero-MAD) case: a discontinuity is present but the median + k*MAD ladder has collapsed, so its severity is unscalable (neither over- nor under-claimed — never silently promoted to `marked_shift`). No absolute calibrated cut; `calibration_status: provisional`. NOT an authorship/identity signal; a register-shift magnitude only. PAN Multi-Author Writing Style Analysis task lineage (arXiv:2602.09147).
 
 ---
 
