@@ -134,6 +134,113 @@ def test_self_exclusion_not_collapsed(tmp_path):
     assert any("self-exclusion" in w for w in (env.get("warnings") or []))
 
 
+def test_self_exclusion_inline_text_copy_dropped(tmp_path):
+    # Content-fingerprint self-exclusion (sibling of the Codex P1 fixed in
+    # cross_doc_novelty_profile.py / originality_audit.py / corpus_novelty_audit.py): a manifest
+    # row carrying an INLINE copy of the target text (no path) must be dropped, so the target does
+    # not reconstruct itself into its own baseline.
+    tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
+    man = tmp_path / "m.jsonl"
+    man.write_text(json.dumps({"id": "selfcopy", "text": _STYLE_A}) + "\n"
+                   + json.dumps({"id": "other", "text": _STYLE_B}) + "\n")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert rc == 0
+    assert env["results"]["assumptions"]["dropped_self"] == 1     # the inline self-copy is dropped
+    assert env["results"]["n_baseline_docs"] == 1                 # only style B remains in the baseline
+    assert env["results"]["rtd"] > 0.0                            # NOT collapsed by self-inclusion
+    assert any("self-exclusion" in w for w in (env.get("warnings") or []))
+
+
+def test_self_exclusion_inline_whitespace_case_variant_dropped(tmp_path):
+    # A tokenization-equal inline copy (case + whitespace variant) is still caught, because the
+    # fingerprint is taken over the RTD tokenizer's stream (_TOKEN.findall(text.lower()) = [a-z]+
+    # over lowercased text), which subsumes case and whitespace — not a raw-byte equality.
+    variant = ("  " + _STYLE_A.upper().replace(" ", "   ")).rstrip() + "  "
+    assert variant != _STYLE_A                                    # genuinely a different raw string
+    tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
+    man = tmp_path / "m.jsonl"
+    man.write_text(json.dumps({"id": "variant", "text": variant}) + "\n"
+                   + json.dumps({"id": "other", "text": _STYLE_B}) + "\n")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert rc == 0
+    assert env["results"]["assumptions"]["dropped_self"] == 1     # normalized-equal variant dropped
+    assert env["results"]["n_baseline_docs"] == 1
+
+
+def test_self_exclusion_file_copy_at_different_path_dropped(tmp_path):
+    # A file row whose CONTENT equals the target but at a DIFFERENT path (so the path-only guard
+    # never fires) must be dropped via content match.
+    tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
+    copy = tmp_path / "elsewhere_copy.txt"; copy.write_text(_STYLE_A)
+    other = tmp_path / "other.txt"; other.write_text(_STYLE_B)
+    man = tmp_path / "m.jsonl"
+    man.write_text(json.dumps({"id": "copy", "text_path": "elsewhere_copy.txt"}) + "\n"
+                   + json.dumps({"id": "other", "text_path": "other.txt"}) + "\n")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert rc == 0
+    assert env["results"]["assumptions"]["dropped_self"] == 1     # different-path content copy dropped
+    assert env["results"]["n_baseline_docs"] == 1
+    assert env["results"]["rtd"] > 0.0
+
+
+def test_self_exclusion_punctuation_only_variant_dropped(tmp_path):
+    # Codex P1 round-2: the fingerprint must be taken under the RTD tokenizer's OWN normalization
+    # (_TOKEN = [a-z]+ over text.lower()), not normalize_for_char_ngrams (which preserves
+    # punctuation). A baseline copy that differs from the target ONLY by punctuation tokenizes to
+    # an IDENTICAL [a-z]+ stream -> identical counts -> RTD 0.0; it MUST be self-excluded, or a
+    # punctuation-only copy reconstructs the target into its own baseline.
+    punct = _STYLE_A.replace(" cat ", " cat, ").replace(" dog ", " dog; ").replace(" sun ", " sun. ")
+    assert punct != _STYLE_A                                       # genuinely a different raw string
+    assert rt._content_fingerprint(punct) == rt._content_fingerprint(_STYLE_A)  # same [a-z]+ stream
+    tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
+    man = tmp_path / "m.jsonl"
+    man.write_text(json.dumps({"id": "punct", "text": punct}) + "\n"
+                   + json.dumps({"id": "other", "text": _STYLE_B}) + "\n")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert rc == 0
+    assert env["results"]["assumptions"]["dropped_self"] == 1     # punctuation-only copy dropped
+    assert env["results"]["n_baseline_docs"] == 1                 # only style B remains
+    assert env["results"]["rtd"] > 0.0                            # NOT collapsed by self-inclusion
+    # --all-words mode: the fingerprint is the FULL token stream (mode-independent), so the same
+    # punctuation-only copy is dropped here too.
+    rc2, env2 = _envelope(["--target", str(tgt), "--manifest", str(man), "--all-words", "--json"])
+    assert rc2 == 0
+    assert env2["results"]["assumptions"]["dropped_self"] == 1
+    assert env2["results"]["n_baseline_docs"] == 1
+    assert env2["results"]["rtd"] > 0.0
+
+
+def test_self_exclusion_hyphen_vs_space_variant_dropped(tmp_path):
+    # Codex P1 round-2 (hyphen variant): _TOKEN = [a-z]+ splits hyphenated words, so a copy that
+    # differs only by hyphen-vs-space tokenizes to an IDENTICAL stream -> identical RTD counts. It
+    # must be self-excluded for BOTH modes. (normalize_for_char_ngrams kept hyphens, so the old
+    # fingerprint missed this.)
+    hyph = _STYLE_A.replace(" cat and ", " cat-and ").replace(" sun and ", " sun-and ")
+    assert hyph != _STYLE_A
+    assert rt._content_fingerprint(hyph) == rt._content_fingerprint(_STYLE_A)  # same [a-z]+ stream
+    tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
+    man = tmp_path / "m.jsonl"
+    man.write_text(json.dumps({"id": "hyph", "text": hyph}) + "\n"
+                   + json.dumps({"id": "other", "text": _STYLE_B}) + "\n")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
+    assert rc == 0
+    assert env["results"]["assumptions"]["dropped_self"] == 1     # hyphen variant dropped (default)
+    assert env["results"]["n_baseline_docs"] == 1
+    rc2, env2 = _envelope(["--target", str(tgt), "--manifest", str(man), "--all-words", "--json"])
+    assert rc2 == 0
+    assert env2["results"]["assumptions"]["dropped_self"] == 1     # hyphen variant dropped (all-words)
+    assert env2["results"]["n_baseline_docs"] == 1
+
+
+def test_content_fingerprint_separator_safe(tmp_path):
+    # The fingerprint hashes the token STREAM with a separator that cannot appear inside a [a-z]+
+    # token, so a re-segmentation does not collide: "ab c" and "a bc" share the concatenation "abc"
+    # but are different token streams and must NOT be treated as content-equal.
+    assert rt._content_fingerprint("ab c") != rt._content_fingerprint("a bc")
+    # Distinct content with different word order is also distinct (stream, not bag).
+    assert rt._content_fingerprint("the cat sat") != rt._content_fingerprint("sat cat the")
+
+
 def test_empty_baseline_bad_input(tmp_path):
     empty = tmp_path / "empty"; empty.mkdir()
     tgt = tmp_path / "t.txt"; tgt.write_text(_STYLE_A)
