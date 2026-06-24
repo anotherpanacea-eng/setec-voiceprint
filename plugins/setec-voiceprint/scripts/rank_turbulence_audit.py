@@ -16,6 +16,7 @@ shift it (especially in `--all-words` mode). Thresholds operator-side / PROVISIO
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -29,6 +30,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
+import stylometry_core as sc  # noqa: E402
 from stylometry_core import FUNCTION_WORDS  # noqa: E402
 
 TASK_SURFACE = "voice_coherence"
@@ -155,9 +157,31 @@ def _claim_license() -> dict[str, str]:
     }
 
 
-def _load_baseline(args: argparse.Namespace, target_resolved: Path) -> tuple[str, int, int]:
-    """Concatenated baseline text, doc count, and dropped-self count. Self-exclusion: any
-    baseline file resolving to the target path is dropped (mirrors voice_distance)."""
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the text under the SAME normalization the surface treats as content-equal
+    (``stylometry_core.normalize_for_char_ngrams``: lowercase, collapse whitespace, strip). Used to
+    self-exclude a baseline entry whose *content* equals the target's even when its path does not
+    match the target (an inline-``text`` manifest row, or a copy of the target stored at a different
+    path).
+
+    Sibling of the Codex P1 fixed in cross_doc_novelty_profile.py / originality_audit.py /
+    corpus_novelty_audit.py: the path-only guard never fires on an inline copy of the target (no
+    path) or on an exact copy at a different path, letting the target reconstruct itself into its
+    own baseline and corrupt the rank-turbulence signal (self-positioning). The content fingerprint
+    closes that hole alongside the path check (path OR content -> drop; fail-closed: a match only
+    ever DROPS, never re-admits — if exclusion empties the baseline, the caller routes through the
+    existing empty-baseline bad_input path)."""
+    return hashlib.sha256(sc.normalize_for_char_ngrams(text).encode("utf-8")).hexdigest()
+
+
+def _load_baseline(args: argparse.Namespace, target_resolved: Path,
+                   target_text: str) -> tuple[str, int, int]:
+    """Concatenated baseline text, doc count, and dropped-self count. Self-exclusion (mirrors
+    voice_distance, hardened against the content-fingerprint Codex P1): a baseline entry is dropped
+    when its resolved path equals the target path OR its normalized content fingerprint equals the
+    target's — covering an inline-``text`` row (no path) and an exact copy stored at a different
+    path. Fail-closed: a match only drops; the empty-baseline case is handled by the caller."""
+    target_fp = _content_fingerprint(target_text)
     texts: list[str] = []
     dropped = 0
     if args.reference_dir or args.baseline_dir:
@@ -165,10 +189,11 @@ def _load_baseline(args: argparse.Namespace, target_resolved: Path) -> tuple[str
         for p in sorted(x for x in root.rglob("*") if x.is_file()):
             if p.suffix.lower() not in (".txt", ".md"):
                 continue
-            if p.resolve() == target_resolved:
+            text = p.read_text(encoding="utf-8", errors="replace")
+            if p.resolve() == target_resolved or _content_fingerprint(text) == target_fp:
                 dropped += 1
                 continue
-            texts.append(p.read_text(encoding="utf-8", errors="replace"))
+            texts.append(text)
     else:
         base = Path(args.manifest).resolve().parent
         for raw in Path(args.manifest).read_text(encoding="utf-8").splitlines():
@@ -182,16 +207,20 @@ def _load_baseline(args: argparse.Namespace, target_resolved: Path) -> tuple[str
             if not isinstance(row, dict):
                 continue   # #226: skip a valid-JSON-but-non-object row (no .get), don't traceback
             if isinstance(row.get("text"), str):
+                if _content_fingerprint(row["text"]) == target_fp:
+                    dropped += 1          # inline copy of the target — drop (path-only guard misses it)
+                    continue
                 texts.append(row["text"])
                 continue
             rel = row.get("text_path") or row.get("path")
             if rel:
                 fp = (base / rel)
                 if fp.is_file():
-                    if fp.resolve() == target_resolved:
-                        dropped += 1
+                    text = fp.read_text(encoding="utf-8", errors="replace")
+                    if fp.resolve() == target_resolved or _content_fingerprint(text) == target_fp:
+                        dropped += 1      # path match OR exact copy at a different path
                         continue
-                    texts.append(fp.read_text(encoding="utf-8", errors="replace"))
+                    texts.append(text)
     return "\n\n".join(texts), len(texts), dropped
 
 
@@ -208,7 +237,7 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     # _load_baseline calls read_text(), which raises OSError on a missing path and UnicodeDecodeError
     # on a non-UTF-8 manifest file.
     try:
-        baseline_text, n_docs, dropped = _load_baseline(args, target_path.resolve())
+        baseline_text, n_docs, dropped = _load_baseline(args, target_path.resolve(), target_text)
     except (OSError, UnicodeDecodeError) as e:
         which = "--reference-dir/--baseline-dir" if (args.reference_dir or args.baseline_dir) else "--manifest"
         return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
@@ -230,7 +259,8 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
     results["assumptions"]["dropped_self"] = dropped
     warnings = []
     if dropped:
-        warnings.append(f"dropped {dropped} baseline doc(s) identical to the target path (self-exclusion)")
+        warnings.append(f"dropped {dropped} baseline doc(s) identical to the target by path or content "
+                        f"(self-exclusion)")
     if args.all_words:
         warnings.append("--all-words mode is TOPICAL, not stylometric (RTD over content words moves with topic)")
 
