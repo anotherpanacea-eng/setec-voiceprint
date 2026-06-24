@@ -1,0 +1,75 @@
+entries:
+- id: within_doc_segmentation
+  script_path: plugins/setec-voiceprint/scripts/within_doc_segmentation.py
+  surface: document_segmentation
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: document-segmentation
+  purpose: 'Within-document register-discontinuity locator: slides a deterministic sentence-anchored
+    window over ONE text, measures the stylometric distance between adjacent windows (stdlib
+    function-word + char-3/4/5-gram + sentence-shape features), and emits the internal span
+    boundaries where the register shifts most — each as a stylistic_shift / register_discontinuity
+    boundary with character offsets and an ordinal band. NEVER emits an author count, a "different
+    authors" claim, or any authorship inference. The "never an authorship claim" guarantee is MECHANICAL:
+    FORBIDDEN_RESULT_KEYS frozenset + FORBIDDEN_SUBSTRINGS tuple + recursive assert_no_authorship()
+    guard (raises AuthorshipClaimError) called immediately before build_output, backed by a BAND_VOCAB
+    whitelist (none / slight_shift / moderate_shift / marked_shift; plus unscaled for the
+    zero-dispersion zero-MAD case where ordinal severity is unscalable; no "author" token) and an
+    available:false policy_refused refusal path. M1 lens = stylometric cosine distance (stdlib,
+    model-free, deterministic). M2 embedding boundary lens is a POC-gated --lens embedding seam
+    (lazy-import + fail-loud missing_dependency), not in this build. Single input only; cross-document
+    comparison is un-expressible by CLI construction (no --reference / --compare / --manifest flag).
+    Posture: descriptive / no-verdict / anti-Goodhart; calibration_status PROVISIONAL.
+
+    '
+  use_when:
+  - You have a SINGLE text and want to know where inside it the style shifts most (internal
+    register-discontinuity boundaries with character offsets and verbatim excerpts)
+  - You want to locate likely edit seams, genre switches, or mode transitions within one document
+    without making any authorship claim
+  - The text has at least min_windows (default 3) usable sentence-anchored windows
+  do_not_use_when:
+  - You want an authorship / "different authors" / author-count determination — the surface
+    refuses this by construction; a register boundary is NOT an authorship boundary
+  - You have two or more documents to compare cross-document (there is no second input; the
+    cross-document question is un-expressible through this CLI)
+  - The text is below the window floor (< ~30 words / < 3 usable windows)
+  - You want calibrated absolute thresholds — bands are within-document MAD-relative
+    (median + k*MAD), not absolute calibrated cuts; calibration_status is always provisional
+  inputs:
+    text: a single --input path (.txt / .md) or positional arg, or '-' for stdin; NO --reference
+      / --compare / --manifest flag exists
+    knobs: '--window-sentences (default 5), --stride-sentences (default 2), --peak-k (default 2.5),
+      --min-windows (default 3), --lens stylometric (M1) | embedding (gated M2 seam, not in this build)'
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: 'M1 pure-stdlib stylometric lens (function-word + char-3/4/5-gram + sentence-shape
+      features; within-document z-score; adjacent cosine distance; MAD peak detection); no models,
+      no numpy, no API, deterministic. The M2 embedding/semantic lens is a POC-gated --lens embedding
+      seam (lazy-import + fail-loud missing_dependency), not in this build.'
+    length_floor_words: 30
+    min_windows: 3
+  registers:
+  - blog_essay
+  - technical_documentation
+  - testimony_policy
+  - literary_fiction
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Within-document register-discontinuity boundaries for a single text file
+    cmd: python3 plugins/setec-voiceprint/scripts/within_doc_segmentation.py input.txt --json
+  - description: Narrower windows and higher peak threshold
+    cmd: python3 plugins/setec-voiceprint/scripts/within_doc_segmentation.py input.txt --window-sentences
+      3 --peak-k 3.0 --json
+  references:
+  - specs/tier4b-within-doc-segmentation.md
+  - 'Overview of PAN 2026: Voight-Kampff Generative AI Detection, Text Watermarking, Multi-Author
+    Writing Style Analysis, Generative Plagiarism Detection, and Reasoning Trajectory Detection
+    (arXiv:2602.09147): https://arxiv.org/abs/2602.09147'

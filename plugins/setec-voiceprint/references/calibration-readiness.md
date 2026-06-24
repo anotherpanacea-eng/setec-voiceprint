@@ -144,6 +144,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `voice_verifier` | Literature-anchored | No | labeled corpus + valid `corpus_manifest.jsonl` (required); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | — |
 | `warrant_probe` | Literature-anchored | Yes | pre-computed judge feature manifest (optional); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 120 |
 | `watermark_probe` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | — |
+| `within_doc_segmentation` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 30 |
 
 ### Runway & calibration tooling
 
