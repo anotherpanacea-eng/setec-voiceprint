@@ -18,7 +18,6 @@ refuses any AI/human, plagiarism, or selection determination; thresholds are ope
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import statistics
 import sys
@@ -29,7 +28,6 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-import stylometry_core as sc  # noqa: E402
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
 from originality_audit import (  # noqa: E402
@@ -47,23 +45,6 @@ SCRIPT_VERSION = "1.0"
 
 DEFAULT_MIN_DOCS = 3
 DEFAULT_MUTUAL_SHARE = 0.5
-
-
-# ---- content fingerprint (self-exclusion for inline-text duplicate docs) ------
-
-def _content_fingerprint(text: str) -> str:
-    """sha256 of the text under the SAME normalization the surface treats as content-equal
-    (``stylometry_core.normalize_for_char_ngrams``: lowercase, collapse whitespace, strip). Used to
-    self-exclude, during doc i's leave-one-out, a corpus entry whose *content* equals doc i's even
-    when its resolved_path is None (an inline-``text`` manifest row from _load_reference_manifest).
-
-    Third sibling of the Codex P1 fixed in cross_doc_novelty_profile.py / originality_audit.py: the
-    per-doc self-exclusion loop already dropped the exact index (j==i) and PATH-duplicates
-    (abs_j == abs_i), but an inline copy of doc i at a different index (abs_j=None) was never dropped,
-    so doc i reconstructs itself from its own inline copy — collapsing its novelty to 0.0 and
-    violating 'a doc never reconstructs itself'. The content fingerprint closes that hole alongside
-    the index and path checks (index OR path OR content -> drop)."""
-    return hashlib.sha256(sc.normalize_for_char_ngrams(text).encode("utf-8")).hexdigest()
 
 
 def _distribution(values: list[float]) -> dict[str, Any]:
@@ -113,8 +94,7 @@ def audit_corpus_novelty(
     """Leave-one-out DJ-Search novelty distribution over a loaded corpus.
 
     `loaded` is the §S2 loader's `list[tuple[source, text, resolved_path]]` (3-tuples). For each doc i,
-    its reference is the rest of the corpus with self-duplicates dropped (the exact index, PATH-dups,
-    AND CONTENT-dups — an inline copy of doc i at a different index), stripped to the 2-tuples
+    its reference is the rest of the corpus with self-path duplicates dropped, stripped to the 2-tuples
     `audit_originality` expects (mirrors originality_audit.py:249-251). Deterministic. Raises ValueError
     if no document yields a usable target+reference (caller maps to bad_input)."""
     per_document: list[dict[str, Any]] = []
@@ -129,22 +109,14 @@ def audit_corpus_novelty(
             # An empty-token target contributes no distribution point (no span can match); skip it
             # rather than crash. If EVERY doc is empty, originalities stays empty -> caller bad_input.
             continue
-        # Self-exclusion: drop any doc that IS this doc, by ANY guard — drop this exact index (j==i),
-        # OR a PATH-duplicate (abs_j == abs_i, a doc appearing twice at the same resolved path), OR a
-        # CONTENT-duplicate (normalized-content fingerprint == doc i's). The content guard catches an
-        # inline-`text` manifest row (abs_j=None) carrying a copy of doc i at a different index, which
-        # the index+path guards never drop — letting doc i reconstruct itself from its own copy (Codex
-        # P1, third sibling). Index OR path OR content -> drop (fail-closed: only drops, never
-        # re-admits). Then strip 3-tuples -> 2-tuples for audit_originality.
-        fp_i = _content_fingerprint(text_i)
+        # Self-exclusion: drop any doc whose resolved path equals this doc's (a doc appearing twice),
+        # AND drop this exact index. Then strip 3-tuples -> 2-tuples for audit_originality.
         reference: list[tuple[str, str]] = []
         dropped_self_i = 0
         for j, (src_j, text_j, abs_j) in enumerate(loaded):
             if j == i:
                 continue
-            path_dup = abs_i is not None and abs_j is not None and abs_j == abs_i
-            content_dup = _content_fingerprint(text_j) == fp_i
-            if path_dup or content_dup:
+            if abs_i is not None and abs_j is not None and abs_j == abs_i:
                 dropped_self_i += 1
                 continue
             reference.append((src_j, text_j))
@@ -176,18 +148,13 @@ def audit_corpus_novelty(
     # Mutual-reconstructibility census over ordered pairs (A,B): does B cover >= mutual_share of A?
     # B covers A = audit_originality(A, [B]).coverage. Descriptive count/fraction only — NO per-pair
     # boolean is emitted (findings P3: keeps the threshold from becoming a back-door gate).
-    # Self-exclusion mirrors the per-doc loop above (index OR path OR content -> skip the pair), so a
-    # doc's own inline copy at a different index is never counted as B-covers-A self-reconstruction.
     for i, (src_i, text_i, abs_i) in enumerate(loaded):
         if not _tokens(text_i):
             continue
-        fp_i = _content_fingerprint(text_i)
         for j, (src_j, text_j, abs_j) in enumerate(loaded):
             if j == i:
                 continue
             if abs_i is not None and abs_j is not None and abs_j == abs_i:
-                continue
-            if _content_fingerprint(text_j) == fp_i:
                 continue
             if not _tokens(text_j):
                 continue
@@ -215,9 +182,8 @@ def audit_corpus_novelty(
             "corpus_dependence": "reconstructibility is corpus- and register-dependent — a "
                                  "templated genre or a single-source pool inflates apparent "
                                  "homogenization; ESL/dialect is not adjudicated here",
-            "self_exclusion": f"dropped {total_dropped_self} self-duplicate(s) — path-equal or "
-                              "content-equal (incl. inline copies of a doc at a different index) — "
-                              "across the leave-one-out iterations (a doc never reconstructs itself)",
+            "self_exclusion": f"dropped {total_dropped_self} self-path duplicate(s) across the "
+                              "leave-one-out iterations (a doc never reconstructs itself)",
             "dropped_self": total_dropped_self,
             # findings P3: the share threshold is SURFACED (operator-visible), not a verdict band.
             "mutual_share": mutual_share,
@@ -290,9 +256,8 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
                         f"(of {n_raw} loaded) before the distribution")
     dropped = results["assumptions"]["dropped_self"]
     if dropped:
-        warnings.append(f"dropped {dropped} self-duplicate(s) — path-equal or content-equal (incl. "
-                        "inline copies of a doc at a different index) — across leave-one-out "
-                        "iterations (self-exclusion); no document reconstructs itself")
+        warnings.append(f"dropped {dropped} self-path duplicate(s) across leave-one-out iterations "
+                        "(self-exclusion); no document reconstructs itself")
     warnings = warnings or None
 
     return build_output(

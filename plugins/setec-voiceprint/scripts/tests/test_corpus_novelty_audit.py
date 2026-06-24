@@ -188,84 +188,39 @@ def test_self_exclusion_duplicate_doc(tmp_path):
     assert by_id["a"]["originality"] == pytest.approx(1.0)
 
 
-def test_self_exclusion_drops_inline_content_copy(tmp_path):
-    """Third sibling of the cross_doc_novelty_profile / originality_audit Codex P1: the per-doc
-    self-exclusion loop dropped the exact index and PATH-duplicates, but NOT an inline-`text`
-    manifest row (resolved_path None) carrying a CONTENT copy of document i sitting at a different
-    index. Document i then reconstructs itself from its own inline copy, trivially collapsing its
-    novelty to 0.0 and violating the surface contract ('a doc never reconstructs itself').
-
-    Here doc 'a' (a file) has an inline content-copy 'a_inline' (text None) at a different index,
-    plus two genuinely-disjoint docs. With the content-fingerprint guard, the inline copy is dropped
-    when scoring 'a': 'a' does NOT reconstruct itself (originality stays 1.0 against the disjoint
-    rest), and dropped_self counts the content drop. PRE-FIX: 'a' reconstructs itself -> 0.0."""
-    a = tmp_path / "a.txt"
-    a.write_text(_DOC)
-    b = tmp_path / "b.txt"
-    b.write_text(_DISJOINT)
-    c = tmp_path / "c.txt"
-    c.write_text("a third entirely separate line about mountains rivers valleys and open skies now")
-    man = tmp_path / "m.jsonl"
-    man.write_text("\n".join(json.dumps(r) for r in [
-        {"id": "a", "text_path": "a.txt"},
-        {"id": "a_inline", "text": _DOC},        # inline CONTENT copy of 'a', resolved_path None
-        {"id": "b", "text_path": "b.txt"},
-        {"id": "c", "text_path": "c.txt"},
-    ]) + "\n")
-    rc, env = _envelope(["--manifest", str(man), "--min-ngram", "8", "--json"])
-    assert rc == 0
-    by_id = {row["id"]: row for row in env["results"]["per_document"]}
-    # 'a' must NOT reconstruct itself from its inline copy: novelty is not trivially collapsed.
-    assert by_id["a"]["originality"] == pytest.approx(1.0)
-    # the content drop is reflected in the honesty count (inclusive of content-dropped duplicates).
-    assert env["results"]["assumptions"]["dropped_self"] >= 1
-
-
-def test_self_exclusion_inline_copy_whitespace_case_variant(tmp_path):
-    """The content fingerprint normalizes whitespace/case (normalize_for_char_ngrams), so an inline
-    copy of doc 'a' that differs only by trivial whitespace/case is STILL recognized as a copy of
-    'a' and dropped when scoring 'a' — 'a' does not reconstruct itself via a near-identical twin."""
-    a = tmp_path / "a.txt"
-    a.write_text(_DOC)
-    b = tmp_path / "b.txt"
-    b.write_text(_DISJOINT)
-    c = tmp_path / "c.txt"
-    c.write_text("a third entirely separate line about mountains rivers valleys and open skies now")
-    variant = "  " + _DOC.upper().replace(" ", "   ") + "  "  # same normalized content as _DOC
-    man = tmp_path / "m.jsonl"
-    man.write_text("\n".join(json.dumps(r) for r in [
-        {"id": "a", "text_path": "a.txt"},
-        {"id": "a_variant", "text": variant},    # whitespace/case variant of 'a', resolved_path None
-        {"id": "b", "text_path": "b.txt"},
-        {"id": "c", "text_path": "c.txt"},
-    ]) + "\n")
-    rc, env = _envelope(["--manifest", str(man), "--min-ngram", "8", "--json"])
-    assert rc == 0
-    by_id = {row["id"]: row for row in env["results"]["per_document"]}
-    assert by_id["a"]["originality"] == pytest.approx(1.0)
-    assert env["results"]["assumptions"]["dropped_self"] >= 1
-
-
-def test_fully_reconstructible_corpus_zero_novelty(tmp_path):
-    # Previously used three EXACT copies of _DOC; with content self-exclusion an exact copy of a doc
-    # is dropped when scoring that doc (a doc no longer reconstructs itself from its own copy), so the
-    # exact-copy corpus now scores 1.0 (correct). Mirror originality_audit's superset fix: doc 'a' is
-    # the base; 'b' and 'c' are SUPERSETS of 'a' (a's content + a distinct tail each) — distinct
-    # content (not self-excluded) that fully covers 'a'. So 'a' is fully reconstructible from b/c ->
-    # originality 0.0 (the "reconstructible -> zero novelty" numeric pin, without an exact self-copy).
-    d = _corpus(tmp_path, [
-        ("a", _DOC),
-        ("b", _DOC + " plus a distinct closing tail unique to b alone here"),
-        ("c", _DOC + " followed by another separate tail unique to c entirely"),
-    ])
+def test_identical_corpus_zero_novelty(tmp_path):
+    d = _corpus(tmp_path, [("a", _DOC), ("b", _DOC), ("c", _DOC)])
     _, env = _envelope(["--corpus-dir", str(d), "--min-ngram", "8", "--json"])
     r = env["results"]
-    by_id = {row["id"]: row for row in r["per_document"]}
-    # 'a' is fully covered by its supersets -> zero novelty (reconstructible from the corpus).
-    assert by_id["a.txt"]["originality"] == pytest.approx(0.0)
-    assert r["novelty_distribution"]["min"] == pytest.approx(0.0)
-    # at least one ordered pair reconstructs the other above the share threshold (a covered by b/c).
+    assert all(row["originality"] == pytest.approx(0.0) for row in r["per_document"])
+    assert r["novelty_distribution"]["median"] == pytest.approx(0.0)
+    assert r["mutual_reconstructibility"]["fraction"] == pytest.approx(1.0)
+
+
+def test_identical_distinct_path_files_are_the_redundancy_signal(tmp_path):
+    """Lock the diversity-audit semantics against the reverted round-1 content-fingerprint over-fix.
+
+    N identical-text files at DISTINCT paths are NOT the same logical document — content equality
+    between separate corpus entries is precisely the set-level redundancy this surface reports. A
+    content-based self-exclusion (Codex round-2 P1) would erase every identical peer, reporting
+    originality 1.0 for all three with zero mutual pairs — a maximally duplicated corpus made to look
+    maximally novel. Self-exclusion is index/path-only: identical-but-distinct-path docs each fully
+    reconstruct the others.
+
+    Expect for three identical files at distinct paths: ZERO novelty for every doc, full
+    reconstructibility (mutual fraction 1.0 with NONZERO mutual pairs), and NO peer dropped as a
+    self-duplicate (each is a real, distinct reference)."""
+    d = _corpus(tmp_path, [("a", _DOC), ("b", _DOC), ("c", _DOC)])
+    _, env = _envelope(["--corpus-dir", str(d), "--min-ngram", "8", "--json"])
+    r = env["results"]
+    # every doc is fully reconstructible from its identical peers -> zero novelty across the board.
+    assert all(row["originality"] == pytest.approx(0.0) for row in r["per_document"])
+    assert r["novelty_distribution"]["max"] == pytest.approx(0.0)
+    # full reconstructibility AND nonzero mutual pairs (the over-fix collapsed both to 0).
+    assert r["mutual_reconstructibility"]["fraction"] == pytest.approx(1.0)
     assert r["mutual_reconstructibility"]["count"] >= 1
+    # identical distinct-path peers are NOT self-excluded: nothing is dropped as a self-duplicate.
+    assert r["assumptions"]["dropped_self"] == 0
 
 
 def test_disjoint_corpus_full_novelty(tmp_path):
@@ -282,14 +237,7 @@ def test_disjoint_corpus_full_novelty(tmp_path):
 
 
 def test_mixed_corpus_spread(tmp_path):
-    # 'b' is a SUPERSET of 'a' (a's content + a distinct tail) so 'a' is fully reconstructible from b
-    # (originality 0.0) WITHOUT 'b' being an exact self-copy of 'a' (which would now be self-excluded);
-    # 'c' is disjoint (originality 1.0). The descriptive object is a spread, not a single number.
-    d = _corpus(tmp_path, [
-        ("a", _DOC),
-        ("b", _DOC + " plus a distinct closing tail unique to b alone here"),
-        ("c", _DISJOINT),
-    ])
+    d = _corpus(tmp_path, [("a", _DOC), ("b", _DOC), ("c", _DISJOINT)])
     _, env = _envelope(["--corpus-dir", str(d), "--min-ngram", "8", "--json"])
     dist = env["results"]["novelty_distribution"]
     assert dist["min"] < dist["max"]  # the descriptive object: a spread, not a single number
@@ -298,14 +246,8 @@ def test_mixed_corpus_spread(tmp_path):
 # --- glass-box --------------------------------------------------------------
 
 def test_top_source_is_longest_span_source(tmp_path):
-    # 'b' is a SUPERSET of 'a' (a's content + a distinct tail): 'a' is reconstructible from b without
-    # b being an exact self-copy (which content self-exclusion would now drop). top_source names the
-    # longest-span source (b), not None.
-    d = _corpus(tmp_path, [
-        ("a", _DOC),
-        ("b", _DOC + " plus a distinct closing tail unique to b alone here"),
-        ("c", _DISJOINT),
-    ])
+    # a is reconstructible from b (identical); top_source names the longest-span source (b), not None.
+    d = _corpus(tmp_path, [("a", _DOC), ("b", _DOC), ("c", _DISJOINT)])
     _, env = _envelope(["--corpus-dir", str(d), "--min-ngram", "8", "--json"])
     by_id = {row["id"]: row for row in env["results"]["per_document"]}
     assert by_id["a.txt"]["top_source"] == "b.txt"
