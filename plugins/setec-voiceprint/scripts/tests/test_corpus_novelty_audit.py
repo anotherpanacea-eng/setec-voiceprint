@@ -197,6 +197,32 @@ def test_identical_corpus_zero_novelty(tmp_path):
     assert r["mutual_reconstructibility"]["fraction"] == pytest.approx(1.0)
 
 
+def test_identical_distinct_path_files_are_the_redundancy_signal(tmp_path):
+    """Lock the diversity-audit semantics against the reverted round-1 content-fingerprint over-fix.
+
+    N identical-text files at DISTINCT paths are NOT the same logical document — content equality
+    between separate corpus entries is precisely the set-level redundancy this surface reports. A
+    content-based self-exclusion (Codex round-2 P1) would erase every identical peer, reporting
+    originality 1.0 for all three with zero mutual pairs — a maximally duplicated corpus made to look
+    maximally novel. Self-exclusion is index/path-only: identical-but-distinct-path docs each fully
+    reconstruct the others.
+
+    Expect for three identical files at distinct paths: ZERO novelty for every doc, full
+    reconstructibility (mutual fraction 1.0 with NONZERO mutual pairs), and NO peer dropped as a
+    self-duplicate (each is a real, distinct reference)."""
+    d = _corpus(tmp_path, [("a", _DOC), ("b", _DOC), ("c", _DOC)])
+    _, env = _envelope(["--corpus-dir", str(d), "--min-ngram", "8", "--json"])
+    r = env["results"]
+    # every doc is fully reconstructible from its identical peers -> zero novelty across the board.
+    assert all(row["originality"] == pytest.approx(0.0) for row in r["per_document"])
+    assert r["novelty_distribution"]["max"] == pytest.approx(0.0)
+    # full reconstructibility AND nonzero mutual pairs (the over-fix collapsed both to 0).
+    assert r["mutual_reconstructibility"]["fraction"] == pytest.approx(1.0)
+    assert r["mutual_reconstructibility"]["count"] >= 1
+    # identical distinct-path peers are NOT self-excluded: nothing is dropped as a self-duplicate.
+    assert r["assumptions"]["dropped_self"] == 0
+
+
 def test_disjoint_corpus_full_novelty(tmp_path):
     d = _corpus(tmp_path, [
         ("a", "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda mu nu xi"),
