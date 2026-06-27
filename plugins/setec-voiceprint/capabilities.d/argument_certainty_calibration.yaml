@@ -1,0 +1,85 @@
+entries:
+- id: argument_certainty_calibration
+  script_path: plugins/setec-voiceprint/scripts/argument_certainty_calibration.py
+  surface: argument_calibration
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: argument-calibration
+  purpose: 'Per-claim argument certainty calibration (overclaim profile): for ONE
+    argument-shaped document, profile — per load-bearing claim — whether the claim''s
+    EXPRESSED certainty (hedged ↔ assertive) matches the EVIDENTIAL support it
+    actually carries, flagging overclaim (asserted hard / thin support) and underclaim
+    (tentative / strong support). The per-claim certainty×support→alignment table IS
+    the read — NEVER a single "overconfidence score", NEVER a verdict that the author
+    is arrogant / sloppy / dishonest. Claim extraction + per-claim support are one NEW
+    extract_claims LLM-judge pass (argument_judge labels PARAGRAPHS, not claims);
+    expressed certainty is the DETERMINISTIC frozen-lexicon substrate (HEDGE_VOCAB /
+    BOOSTER_VOCAB, multi-word or word-boundary-guarded, no bare "may") computed over
+    each claim''s quote. The legitimate-strong-claim filter ships ONLY the two
+    EVIDENCE-GATED defenses (defended_stipulated: a str.find-validated stipulation
+    marker in the claim; defended_elsewhere: a REAL in-document supporting locus
+    validated text[start:end]==quote — a fabricated cross-ref is a build error); the
+    judgmental defenses (defended_analytic / defended_common_ground) are M2-only and
+    never fire in M1. The no-verdict firewall is MECHANICAL (a CERTAINTY-SCOPED rename
+    of within_doc_segmentation''s assert_no_authorship: FORBIDDEN_RESULT_KEYS +
+    FORBIDDEN_SUBSTRINGS + a recursive assert_no_verdict guard → policy_refused).
+    The PER-CLAIM complement to stance_modality_audit''s DOCUMENT-LEVEL hedge/booster
+    distribution. M1 = mock-deterministic (CI-safe); M2 = anthropic (lazy/fail-loud).
+    Ships heuristic — directional, no numeric anchor. Single-document scope.
+
+    '
+  use_when:
+  - You have ONE argument-shaped document (op-ed / brief / testimony / academic
+    argument, >= ~50 words) and want a per-claim read of where expressed certainty
+    outruns (overclaim) or undersells (underclaim) the evidence the claim carries
+  - You want a claim-LOCALIZED certainty↔support mismatch that a document-level
+    hedge/booster distribution (stance_modality_audit) cannot produce
+  - You want the legitimate-strong-claim defenses shown explicitly (a stipulated or
+    elsewhere-supported strong claim is marked defended_*, not flagged as overclaim)
+  do_not_use_when:
+  - You want a verdict that the author is overconfident / arrogant / a Dunning-Kruger
+    case / dishonest / sloppy, or that the argument is unsound — the surface refuses
+    all of these (high certainty is NOT arrogance, low certainty is NOT weakness);
+    there is no overconfidence or calibration score
+  - You want a DOCUMENT-LEVEL stance/modality distribution (how much the prose hedges
+    overall) — that is stance_modality_audit's job; this surface is per-claim
+  - You want to know whether a claim is TRUE — this measures certainty↔support
+    alignment, not truth, and never supplies evidence or rewrites the claim
+  - You don't have an LLM judge or a pre-computed claim manifest
+  inputs:
+    target: a positional path or --target (single file; required)
+    judge: --judge mock (M1, deterministic CI) | manifest | anthropic (M2,
+      lazy/fail-loud) with --judge-model / --judge-manifest
+    support_loci: --support-loci (optional JSON sidecar of candidate
+      defended_elsewhere supporting loci keyed by topic_ref; validated against the
+      document — a fabricated locus is a build error)
+    knobs: --length-floor-words (default 50)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: api_llm
+    cost_note: 'M1 (--judge mock) is pure-stdlib, deterministic, CI-runnable (no API,
+      no models): the certainty lexicon and the legitimate-strong-claim filter are
+      mechanical Python; only claim extraction + support are judged, and the mock
+      judge is marker-driven. M2 (--judge anthropic, $0.01–0.10 per doc) is the real
+      extraction lens (lazy SDK import, fail-loud).'
+    length_floor_words: 50
+  dependencies:
+    python: []
+    python_optional: []
+    sdks_optional:
+    - anthropic
+    - openai
+    - google-genai
+  examples:
+  - description: Single-doc M1 calibration with the deterministic mock judge
+    cmd: python3 plugins/setec-voiceprint/scripts/argument_certainty_calibration.py
+      essay.txt --judge mock --json
+  - description: M2 spot-check with a real API judge
+    cmd: python3 plugins/setec-voiceprint/scripts/argument_certainty_calibration.py
+      essay.txt --judge anthropic --judge-model claude-sonnet-4-6
+  references:
+  - specs/argument-certainty-calibration.md

@@ -1,0 +1,1 @@
+per-claim argument certainty calibration (overclaim profile): for ONE document, whether each load-bearing claim's expressed certainty matches its evidential support, flagging overclaim (assertive/thin) and underclaim (tentative/strong), descriptively; never a verdict that the author is overconfident/arrogant/dishonest, never a calibration or overconfidence score
