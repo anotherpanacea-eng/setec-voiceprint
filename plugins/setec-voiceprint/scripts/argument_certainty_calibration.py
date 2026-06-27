@@ -161,7 +161,7 @@ def assert_no_verdict(results: Any, _key: str = "") -> None:  # noqa: C901
 # with \b word boundaries, case-insensitively, over the claim's quote span only.
 HEDGE_VOCAB: frozenset[str] = frozenset({
     "may suggest", "might", "could", "perhaps", "arguably", "seems to",
-    "seems", "appears to", "appears", "suggests", "in some cases",
+    "it seems", "appears to", "it appears", "suggests", "in some cases",
     "to some extent", "somewhat", "possibly", "presumably", "plausibly",
     "it is possible", "tends to", "on the whole", "more or less",
     "i suspect", "i think", "we think", "probably", "likely",
@@ -311,6 +311,11 @@ def apply_legitimate_strong_claim_filter(
 
     The rationale of a fired defense is ALWAYS non-empty (so the schema's
     filter-integrity check can never be hit by an under-justified defended row).
+
+    NOTE: this filter only ever returns the two evidence-gated defenses (or
+    ``none``). The judgmental ``defended_analytic`` / ``defended_common_ground``
+    are reserved for a future M2 lens and are emitted by NO path today; the
+    schema enumerates them but the M1 surface never produces them.
     """
     fired, evidence = _detect_stipulation(quote)
     if fired:
@@ -517,7 +522,10 @@ def compose_results(
                 "is the real extraction lens. The certainty lexicon is explicit-marker based: "
                 "idiomatic / ironic / contextual certainty is not caught. A bare assertion is read as "
                 "assertive by convention — a genre that asserts flatly by norm (analytic / definitional "
-                "claims) is the M2-only defended_analytic case, not an M1 verdict"
+                "claims) is the M2-only defended_analytic case, not an M1 verdict. A defended_elsewhere "
+                "locus is validated for IN-DOCUMENT EXISTENCE + topic_ref match (text[start:end]==quote), "
+                "NOT topical RELEVANCE: a real but topically-unrelated locus filed under the claim's "
+                "topic_ref will defend it — relevance is the judge's / operator's responsibility"
             ),
             "posture": "descriptive / no-verdict / anti-Goodhart",
         },
