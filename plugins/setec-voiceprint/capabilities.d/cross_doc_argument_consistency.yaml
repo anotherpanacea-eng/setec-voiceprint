@@ -1,0 +1,70 @@
+entries:
+- id: cross_doc_argument_consistency
+  script_path: plugins/setec-voiceprint/scripts/cross_doc_argument_consistency.py
+  surface: argument_consistency
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: argument-consistency
+  purpose: 'Cross-document argument-consistency map: given an author''s corpus of argument-shaped
+    pieces (a FOCAL document vs the rest of a supplied pool), produces a DESCRIPTIVE map of where the
+    corpus''s load-bearing commitments are in tension across documents — a claim asserted in A that a
+    claim in B undercuts, a scope condition honored in A but dropped in B, a value premise that flips.
+    The tensions ARE the read — NEVER a single "consistency score", NEVER a verdict about the author.
+    The argument-CONTENT sibling of cross_doc_novelty_profile (the stylometric sibling); the
+    nonfiction-argument analogue of Series Continuity / world-bible self-consistency. The no-verdict
+    firewall is MECHANICAL, not rhetorical: a FORBIDDEN_RESULT_KEYS frozenset (hypocrisy / dishonest /
+    bad_faith / contradicts_self / who_is_right / author_verdict / winning_document / consistency_score
+    / author_score) + a FORBIDDEN_SUBSTRINGS tuple + a recursive assert_no_verdict() guard (raises
+    ConsistencyVerdictError) called immediately before build_output, routing to available:false /
+    policy_refused. The legitimate-variation FILTER is a required mechanical stage: every surface
+    tension is run through five defenses in a fixed precedence (retraction -> time -> scope -> audience
+    -> genre); the first defense whose REQUIRED textual evidence is present fires -> defended_<that>;
+    none -> genuine. Defended tensions APPEAR in the ledger marked defended_*. Filter-integrity is
+    mechanical: a defended_* tension with an empty rationale is a BUILD ERROR. Commitment extraction is
+    a NEW argument_judge-style LLM-judge pass over free text (extract_commitments), NOT argument_spine
+    parsing. M1 = mock-deterministic judge (CI-safe); M2 = anthropic (lazy-import / fail-loud). Ships
+    calibration_status: heuristic — directional, NO numeric anchor (no measured discrimination).
+
+    '
+  use_when:
+  - You have an author's corpus of two or more argument-shaped documents (op-eds, policy briefs,
+    essays, testimony, white papers) and want a descriptive map of where their load-bearing
+    commitments are in tension across documents, with verbatim loci and a named class of resolution
+  - You want defended variations (a position that evolved over time, narrowed in scope, was
+    calibrated to a different audience or register, or was explicitly retracted) shown AS defended,
+    not hidden and not scored as inconsistency
+  - You need a CI-runnable M1 read with a mock-deterministic judge (no API dependency); the M2
+    anthropic judge is the real extraction lens
+  do_not_use_when:
+  - You want a verdict on the author — a finding of hypocrisy, dishonesty, bad faith, or
+    self-contradiction; the surface refuses this by construction (the no-verdict firewall raises)
+  - You want a single "consistency score", an author score, or a "winning document" selection — there
+    is no top-level score and the surface picks no winner
+  - You want adjudication of which document is correct, or a rewrite of the arguments — the surface
+    names classes of resolution only, it does not adjudicate or rewrite
+  - You have a single document (this is a CROSS-document surface; use within_doc_segmentation for a
+    single text), or the documents are below the length floor (default 50 words each)
+  inputs:
+    focal: a --focal path (the document compared against the rest of the pool; required)
+    pool: a --reference-manifest (JSONL; id + text|text_path) OR a --reference-dir of texts (.txt/.md,
+      recursive)
+    knobs: --judge mock (M1, deterministic CI) | manifest | anthropic/openai/gemini (M2, fail-loud),
+      --judge-model (for an API judge), --judge-manifest, --max-docs (default 5), --length-floor-words
+      (default 50)
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - stdout JSON envelope (default), --json, or --out PATH
+  compute:
+    tier: core
+    cost_note: 'M1 mock-deterministic judge is pure-stdlib (marker-driven extraction + deterministic
+      relation + a mechanical keyword-evidence legitimate-variation filter); no models, no API. The M2
+      anthropic/openai/gemini judge is a lazy-import / fail-loud seam (one API call per document).'
+    length_floor_words: 50
+    max_docs: 5
+  dependencies:
+    python: []
+    python_optional: []
+  references:
+  - specs/cross-doc-argument-consistency.md

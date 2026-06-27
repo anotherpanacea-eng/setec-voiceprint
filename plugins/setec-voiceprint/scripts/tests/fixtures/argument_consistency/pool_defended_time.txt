@@ -1,0 +1,7 @@
+Reconsidering the Carbon Tax, 2014
+
+This older piece took the opposite line on carbon pricing, and I want to be candid that my view has since moved. The reasoning below reflects what I believed at the time, before the modeling work of the late 2010s.
+
+[[topic=t_carbon_tax type=claim stance=against]] A carbon tax is the wrong instrument for emissions, because in 2014 the available models showed that a flat per-ton price would fall hardest on rural households who had no substitute for fuel, and at the time no rebate design had been shown to repair that.
+
+I now know that the rebate-and-dividend designs developed since then dissolve most of the regressivity objection. Subsequent evidence, which I could not have had earlier, is what changed my mind.
