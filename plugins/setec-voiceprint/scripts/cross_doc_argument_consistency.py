@@ -176,13 +176,13 @@ _TIME_MARKERS = (
 )
 _TIME_DATE_RE = re.compile(r"\b(?:in|by|since|after|before)\s+\d{4}\b|\b(?:19|20)\d{2}\b")
 _SCOPE_MARKERS = (
-    "in the case of", "specifically", "except when", "limited to", "only when",
+    "in the case of", "except when", "limited to", "only when",
     "for x", "narrowly", "in the narrow", "with respect to", "confined to",
-    "applies only", "restricted to", "in the domain of", "scope",
+    "applies only", "restricted to", "in the domain of",
 )
 _AUDIENCE_MARKERS = (
     "for specialists", "to the general reader", "as i told", "for a lay",
-    "for experts", "for the committee", "addressing", "to this audience",
+    "for experts", "for the committee", "to this audience",
     "for policymakers", "speaking to", "for the public",
 )
 _GENRE_MARKERS = (
