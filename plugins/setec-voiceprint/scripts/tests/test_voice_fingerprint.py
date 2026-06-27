@@ -415,3 +415,86 @@ def test_capabilities_entry_present():
         "capabilities drift: "
         + str([f"{v.kind}:{v.where}" for v in report.violations])
     )
+
+
+# --------------- 9. Behavioral: real cached LUAR (CPU) ----------
+#
+# Everything above runs against the deterministic stub. This one test
+# exercises the REAL encoder seam end-to-end on the actual cached LUAR
+# weights, CPU-only — the spec's "Behavioral (CPU, real cached LUAR)"
+# leg. It is skipif-gated on transformers + torch (and silently skips
+# if the weights aren't cached / can't load), so CI without the model
+# tier stays green. It pointedly does NOT use the autouse stub: it
+# bypasses the monkeypatched `vf._load_encoder` by calling the genuine
+# loader captured at module import (``_REAL_LOAD_ENCODER``).
+
+
+def _transformers_available() -> bool:
+    import importlib.util
+
+    return (
+        importlib.util.find_spec("transformers") is not None
+        and importlib.util.find_spec("torch") is not None
+    )
+
+
+@pytest.mark.skipif(
+    not _transformers_available(),
+    reason="transformers/torch not installed; real-LUAR behavioral test skipped",
+)
+def test_real_luar_single_mode_cpu(tmp_path: Path):
+    """Embed a couple of short passages with the REAL cached LUAR
+    encoder on CPU and assert the envelope shape + a sane cosine
+    distribution. No verdict key is introduced; the distribution is
+    descriptive only.
+
+    Two near-identical paragraphs should land at a high (~1.0) cosine
+    under LUAR's manifold; the assertion is loose (>= 0.5) so it tests
+    'a sane, real, in-range similarity' rather than re-deriving an
+    exact model output (which would be a brittle, model-version-bound
+    golden the no-verdict posture has no use for).
+    """
+    # Use the genuine loader, not the autouse stub. CPU-only per the
+    # box's GPU-safety posture; LUAR is small and CPU-feasible.
+    try:
+        encoder = _REAL_LOAD_ENCODER("luar", device="cpu")
+    except Exception as exc:  # noqa: BLE001 - weights absent / load failure
+        pytest.skip(f"real LUAR weights unavailable/failed to load: {exc}")
+
+    # Two stylistically-identical paragraphs → high internal consistency.
+    body = (
+        "The quiet street held its breath as the evening settled in, "
+        "and the lamps came on one by one along the narrow row of houses. "
+        "Nothing moved but the slow drift of a single late commuter."
+    )
+    target = f"{body}\n\n{body}"
+    target_path = _write(tmp_path, "target.txt", target)
+
+    envelope = vf.assemble_output(
+        target_path=target_path,
+        target_text=target,
+        mode="single",
+        model="luar",
+        window_strategy="paragraph",
+        window_size=400,
+        encoder=encoder,
+    )
+
+    # Envelope shape (same contract the stubbed tests assert).
+    assert envelope["task_surface"] == "authorship_embedding"
+    assert envelope["available"] is True
+    assert envelope["results"]["model_id"] == "rrivera1849/LUAR-MUD"
+    dist = envelope["results"]["cosine_distribution"]
+    for key in ("mean", "sd", "min", "p10", "p50", "p90"):
+        assert key in dist
+
+    # Sane distance: a real cosine is in [-1, 1], and two identical
+    # paragraphs are similar (loose floor — a behavioral sanity check,
+    # not a model-version golden).
+    assert -1.0 <= dist["mean"] <= 1.0
+    assert dist["mean"] >= 0.5
+
+    # No-verdict posture: the descriptive distribution carries no
+    # is_ai / verdict / same_author selection key.
+    forbidden = {"is_ai", "is_human", "verdict", "label", "same_author"}
+    assert forbidden.isdisjoint(envelope["results"].keys())
