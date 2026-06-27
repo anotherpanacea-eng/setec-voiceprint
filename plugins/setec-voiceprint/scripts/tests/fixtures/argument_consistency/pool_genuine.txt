@@ -1,0 +1,7 @@
+Against the Subsidy Habit
+
+This essay makes the unfashionable case that the state should stop underwriting transit fares. The argument runs against the grain of my earlier enthusiasms, and I make it without apology or qualification.
+
+[[topic=t_transit_subsidy type=claim stance=against]] Public transit must not be subsidized by the state, because a permanent subsidy detaches the service from any discipline of demand and converts a public good into a standing claim on the treasury that no later legislature can dislodge.
+
+There is no hedge here and no narrowing of terms. I mean the claim flatly, for every transit system, at every fare level, as a general principle of fiscal design.
