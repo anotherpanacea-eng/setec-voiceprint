@@ -296,6 +296,8 @@ def apply_legitimate_strong_claim_filter(
     quote: str,
     support_loci_by_topic: dict[str, list[dict[str, Any]]],
     topic_ref: str,
+    claim_start: int,
+    claim_end: int,
 ) -> tuple[str, str]:
     """Run the two evidence-gated M1 defenses over an OVERCLAIM in fixed order;
     return ``(defense, rationale)``.
@@ -327,15 +329,20 @@ def apply_legitimate_strong_claim_filter(
     candidates = support_loci_by_topic.get(topic_ref, [])
     for locus in candidates:
         # Validate EVERY candidate against the document — a fabricated locus is a
-        # build error, never silently skipped.
-        validated_quote = _validate_support_locus(text, locus)
-        # "elsewhere" = the supporting locus is not the claim's own span.
-        if validated_quote.strip() != quote.strip():
+        # build error, never silently skipped (raises CalibrationLocusError).
+        _validate_support_locus(text, locus)
+        # "elsewhere" = the supporting locus's SPAN is DISJOINT from the claim's own
+        # span (NOT merely different text). An overlapping or self locus is the claim's
+        # own words and cannot defend an overclaim against itself. Half-open spans
+        # [a,b) and [c,d) are disjoint iff b <= c or d <= a.
+        locus_start, locus_end = int(locus["start_char"]), int(locus["end_char"])
+        if locus_end <= claim_start or claim_end <= locus_start:
             return "defended_elsewhere", (
                 f"a real in-document supporting locus for this claim's topic was found at "
-                f"chars [{locus['start_char']}:{locus['end_char']}] and validated "
-                f"(text[start:end]==quote); classified defended_elsewhere because the "
-                f"support is present in the document under a different locus"
+                f"chars [{locus_start}:{locus_end}], DISJOINT from the claim's own span "
+                f"[{claim_start}:{claim_end}], and validated (text[start:end]==quote); "
+                f"classified defended_elsewhere because the support is present under a "
+                f"separate, non-overlapping locus"
             )
     return "none", ""
 
@@ -384,7 +391,8 @@ def build_claim_rows(
         rationale = ""
         if alignment == "overclaim":
             defense, rationale = apply_legitimate_strong_claim_filter(
-                text, c.quote, support_loci_by_topic, c.topic_ref
+                text, c.quote, support_loci_by_topic, c.topic_ref,
+                c.start_char, c.end_char,
             )
             if is_defended(defense):
                 # A defended overclaim is re-labeled: it is no longer reported as

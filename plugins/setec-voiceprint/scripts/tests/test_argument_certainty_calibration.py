@@ -293,6 +293,25 @@ def test_defended_elsewhere_fabricated_locus_is_build_error(tmp_path):
                              length_floor_words=10)
 
 
+def test_defended_elsewhere_overlapping_locus_does_not_defend(tmp_path):
+    # A support locus whose SPAN OVERLAPS the claim's own span is the claim's own
+    # words — it cannot defend the overclaim against itself. defended_elsewhere is a
+    # DISJOINT-span check, not a text-inequality (the Codex-flagged firewall gap):
+    # this locus validates cleanly (text[start:end]==quote) but must NOT fire a defense.
+    doc, text, _loci = _overclaim_doc_with_support(tmp_path)
+    self_sub = "Zoning reform"  # a substring of the claim itself (first occurrence)
+    s = text.index(self_sub)
+    overlapping = {"start_char": s, "end_char": s + len(self_sub), "quote": self_sub}
+    sidecar = tmp_path / "support_loci_self.json"
+    sidecar.write_text(
+        json.dumps({"support_loci": {"t_x": [overlapping]}}), encoding="utf-8"
+    )
+    env = _run_mock(doc, support_loci_path=str(sidecar))
+    row = next(r for r in env["results"]["claims"] if r["topic_ref"] == "t_x")
+    assert row["defense"] == "none"
+    assert row["alignment"] == "overclaim"
+
+
 def test_validate_support_locus_directly():
     text = "alpha beta gamma delta"
     good = {"start_char": 6, "end_char": 10, "quote": "beta"}
