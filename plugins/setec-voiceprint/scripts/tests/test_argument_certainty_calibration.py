@@ -250,9 +250,12 @@ def _overclaim_doc_with_support(tmp_path) -> tuple[Path, str, dict]:
     supporting paragraph elsewhere whose exact offsets we compute from the text.
     Returns (path, text, {valid_locus, fabricated_locus})."""
     support_sentence = "Three randomized trials in the appendix each found a measurable drop in rents."
+    # The support appears in its OWN paragraph BEFORE the claim, so the claim's
+    # (greedy, to-end-of-text) mock span is genuinely DISJOINT from the supporting
+    # locus — defended_elsewhere is a disjoint-span check, not a text inequality.
     text = (
-        "[[claim support=none topic=t_x]] Zoning reform clearly works, without question.\n\n"
-        + support_sentence + "\n"
+        support_sentence + "\n\n"
+        + "[[claim support=none topic=t_x]] Zoning reform clearly works, without question.\n"
     )
     doc = tmp_path / "elsewhere.txt"
     doc.write_text(text, encoding="utf-8")
