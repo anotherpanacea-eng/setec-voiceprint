@@ -1,0 +1,9 @@
+[[claim support=none topic=t_min_wage]] The minimum wage clearly destroys every entry-level job, without question.
+
+[[claim support=substantiated topic=t_housing]] It seems possible that zoning reform might lower rents, and the three city studies cited above each found a measurable drop.
+
+[[claim support=substantiated topic=t_transit]] Congestion pricing reduces traffic, as the London and Stockholm data in the appendix demonstrate.
+
+[[claim support=none topic=t_premise]] For the sake of argument, assume the discount rate is fixed at three percent throughout.
+
+[[claim support=none topic=t_carbon]] A carbon tax obviously works, always, and every economist agrees.
