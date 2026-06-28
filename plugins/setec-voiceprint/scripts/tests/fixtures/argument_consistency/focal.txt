@@ -1,0 +1,9 @@
+On Public Subsidies and Civic Trust
+
+I have argued for years that public transit deserves sustained subsidy, and I hold to that position here. The core of the case is simple.
+
+[[topic=t_transit_subsidy type=claim stance=for]] Public transit must be subsidized by the state because mobility is a precondition of equal civic participation, and a market-priced system prices out exactly the citizens whose participation we most need to protect.
+
+[[topic=t_carbon_tax type=claim stance=for]] A carbon tax is the right instrument for emissions: it is transparent, it is hard to game, and it puts the price signal where the externality actually is.
+
+These two commitments together form the spine of the fiscal argument I want to defend across my work.
