@@ -39,7 +39,7 @@
     "expert_affidavit"
   ],
   "script_path": "plugins/setec-voiceprint/scripts/argmove_profile.py",
-  "status": "todo",
+  "status": "empirically_oriented",
   "surface": "assertoric",
   "use_when": [
     "building an argument-register population baseline (the profiles the acquisition-tier registers feed)",

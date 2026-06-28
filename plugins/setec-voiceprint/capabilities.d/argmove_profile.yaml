@@ -2,7 +2,7 @@ entries:
 - id: argmove_profile
   script_path: plugins/setec-voiceprint/scripts/argmove_profile.py
   surface: assertoric
-  status: todo
+  status: empirically_oriented
   handoff: none
   consumers: []
   family: argument-moves
