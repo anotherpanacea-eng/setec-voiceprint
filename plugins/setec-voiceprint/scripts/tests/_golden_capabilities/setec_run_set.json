@@ -56,6 +56,7 @@
   ],
   "references": [
     "plugins/setec-voiceprint/references/metric-targeted-restoration.md",
-    "plugins/setec-voiceprint/references/setec-normalized-entrypoint-spec.md"
+    "plugins/setec-voiceprint/references/setec-normalized-entrypoint-spec.md",
+    "plugins/setec-voiceprint/references/decision-loop-runner-spec.md"
   ]
 }

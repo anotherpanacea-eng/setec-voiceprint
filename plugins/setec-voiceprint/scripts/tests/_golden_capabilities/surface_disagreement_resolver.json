@@ -51,7 +51,8 @@
   ],
   "references": [
     "plugins/setec-voiceprint/references/metric-targeted-restoration.md",
-    "plugins/setec-voiceprint/references/signals-glossary.md"
+    "plugins/setec-voiceprint/references/signals-glossary.md",
+    "plugins/setec-voiceprint/references/decision-loop-runner-spec.md"
   ],
   "_seeded_at": "2026-05-28"
 }

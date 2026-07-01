@@ -5,7 +5,7 @@
 > feeds them to the existing `surface_disagreement_resolver`, and emits disagreement
 > patterns + a mechanical next-action block. **No composite score. No verdict. Ever.**
 
-**Status:** spec — decision-complete; spec-review pass 1 folded 2026-07-01 (verdict: BUILD-READY-WITH-FIXES, 0 P1). **Estimate:** 2–3 build sessions, one PR.
+**Status:** **Built** (`scripts/setec_run_set.py` + fragment completion + skill wiring, this PR; spec-review pass 1 folded 2026-07-01 verdict BUILD-READY-WITH-FIXES 0 P1; Opus build-review READY-TO-PR, 0 P1/P2, spec-reference P3 folded). **Estimate:** 2–3 build sessions, one PR.
 **Owner of the decision:** craft.
 **Provenance:** Fable pick #2; territory the Opus 4.8 audit did not enter (APODICTIC-only read).
 **Repo:** `~/Documents/Code-Mac/setec-voiceprint`. All paths below are repo-relative; all `file:line` cites verified against `main` @ `8e85dac` (2026-07-01).
