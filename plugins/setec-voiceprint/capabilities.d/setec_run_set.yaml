@@ -1,0 +1,73 @@
+entries:
+- id: setec_run_set
+  script_path: plugins/setec-voiceprint/scripts/setec_run_set.py
+  surface: validation
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: cross-surface-interpretation
+  purpose: 'Multi-surface run-set runner (the decision loop): executes a named preset
+    of surfaces over ONE target (smoothing_core / full_picture), collects their
+    schema-1.0 envelopes into a checkpointed run folder, feeds them — unwrapped to
+    raw results — to surface_disagreement_resolver, and emits the disagreement
+    patterns plus a mechanical next-action block (commands, not judgments). Member
+    envelopes pass through unreduced; partial member failure is normal (R3 member
+    records; --resume). NO composite score, NO verdict, ever — enforced at emit
+    time by a runtime banned-key walk + numeric-leaf no-reduction guard over every
+    runner-authored subtree. Operator-side sibling of setec_run.py, deliberately
+    NOT a consumer surface (no json_delivery, no min_setec_version).
+
+    '
+  use_when:
+  - You would otherwise hand-chain 3+ audit scripts over one draft and carry the
+    JSONs between them by hand
+  - You want the full-picture readings table, the matched disagreement interpretations,
+    and the exact follow-up commands from one invocation
+  - You want per-member checkpointing (envelopes/<id>.json) with --resume so a crashed
+    or interrupted session loses at most one member's work
+  do_not_use_when:
+  - You want a composite score or an AI/human verdict (the runner refuses by construction,
+    at runtime)
+  - You need a single surface's output for a downstream consumer (use `setec run
+    <surface> --json` — the pinned consumer contract; this runner is not a consumer
+    surface)
+  - You want general_imposters / idiolect_detector EXECUTED (they are attach-only;
+    produce their envelopes separately and pass --attach <id>=<path>)
+  inputs:
+    target: 'prose/markdown draft file via --target; optional --baseline-dir projected
+      into every member that accepts it (voice_distance is skipped with a bad_input
+      record without it); repeatable --attach <surface_id>=<path> joins pre-computed
+      envelopes or legacy raw reports verbatim; --ai-status passes through to the
+      resolver claim license'
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - run folder (run_meta.json, envelopes/<surface_id>.json, report.json, report.md)
+    - stdout rendered markdown (default) or --json combined envelope with tool
+      setec_run_set
+  compute:
+    tier: core
+    cost_note: 'orchestration only; member cost = sum of members (spaCy-tier for
+      the default presets)'
+    length_floor_words: null
+  registers:
+  - literary_fiction
+  - blog_essay
+  - academic_philosophy
+  - long_form_journalism
+  - all_fiction
+  - all_nonfiction
+  - policy_memo
+  dependencies:
+    python: []
+  examples:
+  - description: Full-picture run over a draft with a register-matched baseline and
+      a pre-computed General Imposters envelope
+    cmd: python3 plugins/setec-voiceprint/scripts/setec_run_set.py --set full_picture
+      --target draft.md --baseline-dir baselines/blog-essay/ --attach general_imposters=out/gi.json
+  - description: Core smoothing set, JSON envelope to stdout
+    cmd: python3 plugins/setec-voiceprint/scripts/setec_run_set.py --set smoothing_core
+      --target draft.md --json
+  references:
+  - plugins/setec-voiceprint/references/metric-targeted-restoration.md
+  - plugins/setec-voiceprint/references/setec-normalized-entrypoint-spec.md

@@ -2,29 +2,65 @@ entries:
 - id: surface_disagreement_resolver
   script_path: plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
   surface: validation
-  status: todo
+  status: heuristic
   handoff: none
   consumers: []
-  family: TODO
-  purpose: cross-surface interpretation meta-layer.
+  family: cross-surface-interpretation
+  purpose: 'Cross-surface interpretation meta-layer: reads any subset of audit JSONs
+    (smoothing variance, voice distance, General Imposters, idiolect preservation,
+    AIC pattern density, paragraph macro-rhythm, discourse scaffolding, agency/abstraction)
+    and surfaces interpretable DISAGREEMENT patterns — e.g. high smoothing + low voice
+    drift = edited authorial voice; low smoothing + high voice drift = register shift /
+    impostor / collaboration. Returns the differential, never a verdict: multiple
+    interpretations are typically jointly compatible and the framework declines to
+    pick one (the meta-version of the confounder audit''s stance). The pattern catalog
+    is heuristic and curated, not labeled-corpus-validated.
+
+    '
   use_when:
-  - TODO
+  - You have two or more audit JSONs over the same target and want the cross-surface
+    read done mechanically instead of by eye
+  - Surfaces appear to disagree (e.g. heavy smoothing but the voiceprint is intact)
+    and you want the catalog of compatible interpretations with supporting signals
+  - You want the differential diagnosis of cause (edit, register shift, imitation,
+    template shift) surfaced, not adjudicated
   do_not_use_when:
-  - TODO
+  - You want a verdict on which interpretation is correct (the resolver refuses to
+    rank jointly-compatible readings)
+  - You have only one audit JSON (readings degrade to unknown; patterns that depend
+    on a missing surface won't fire)
+  - You want calibrated probabilities (the pattern catalog is heuristic and curated,
+    not labeled-corpus-validated)
   inputs:
-    target: TODO
+    target: 'pre-computed audit JSONs via --variance-json / --voice-distance-json /
+      --gi-json / --paragraph-json / --discourse-json / --agency-json / --aic-json /
+      --idiolect-json (any subset; degrades gracefully), plus --target-text (required
+      alongside --idiolect-json for preservation-list survival) and --ai-status
+      (B.3 state-routed claim-license caveats)'
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - stdout markdown report (default), --json envelope, or --out PATH
   compute:
     tier: core
-    cost_note: TODO
+    cost_note: stdlib; reads pre-computed audit JSONs only
     length_floor_words: null
   registers:
-  - TODO
+  - literary_fiction
+  - blog_essay
+  - academic_philosophy
+  - long_form_journalism
+  - all_fiction
+  - all_nonfiction
+  - policy_memo
   dependencies:
     python: []
-  examples: []
-  references: []
+  examples:
+  - description: Cross-surface read of a variance audit + voice-distance audit over
+      the same draft
+    cmd: python3 plugins/setec-voiceprint/scripts/surface_disagreement_resolver.py
+      --variance-json variance.json --voice-distance-json voice.json --json
+  references:
+  - plugins/setec-voiceprint/references/metric-targeted-restoration.md
+  - plugins/setec-voiceprint/references/signals-glossary.md
   _seeded_at: '2026-05-28'
