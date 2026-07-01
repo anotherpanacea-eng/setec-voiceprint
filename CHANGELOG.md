@@ -7,6 +7,137 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.119.0] - 2026-06-30
+
+### Added
+
+- **Argument certainty calibration (`argument_certainty_calibration`)** — a new
+  `argument_calibration` surface that profiles, for ONE argument-shaped document and
+  **per load-bearing claim**, whether the claim's expressed **certainty** (hedged ↔
+  assertive) matches the evidential **support** it actually carries — flagging
+  **overclaim** (asserted hard / thin support) and **underclaim** (tentative / strong
+  support). The per-claim `certainty × support → alignment` table IS the read — **no
+  top-level overconfidence score, no calibration score, no verdict that the author is
+  arrogant / sloppy / dishonest.** The PER-CLAIM complement to `stance_modality_audit`'s
+  DOCUMENT-LEVEL hedge/booster distribution (a claim-localized mismatch the
+  document-level distribution cannot produce). Spec: `specs/argument-certainty-calibration.md`.
+  - **Claim extraction + per-claim support are one NEW `extract_claims` LLM-judge pass**
+    (`argument_certainty_judge`) over free text — `argument_judge` labels PARAGRAPHS
+    `{role, mode}` and does NOT extract claims, so this is a new seam. Each claim carries a
+    verbatim locus (validated `text[start:end] == quote` at the surface — a fabricated
+    claim span is dropped) and a judge-derived `support ∈ {none, gestured, substantiated}`.
+  - **Expressed certainty is the DETERMINISTIC M1 substrate:** frozen `HEDGE_VOCAB` /
+    `BOOSTER_VOCAB` frozensets (multi-word or word-boundary-guarded — **no bare `"may"`**),
+    computed over each claim's quote → `{tentative, measured, assertive}` (booster+hedge →
+    `measured`; bare assertion → `assertive`). The M1 lexicon is **authoritative** for
+    certainty; an M2 judge refinement never silently overrides it.
+  - **The legitimate-strong-claim filter ships ONLY the two EVIDENCE-GATED defenses**
+    (firewall-critical): `defended_stipulated` (an explicit stipulation marker — `assume` /
+    `grant` / `for the sake of argument` / `take as given` — in the claim's quote,
+    `str.find`-validated) then `defended_elsewhere` (a REAL in-document supporting locus for
+    the claim, validated `text[start:end] == quote`). **A fabricated cross-reference FAILS
+    validation → build error** (`CalibrationLocusError`), closing the firewall hole. The
+    judgmental defenses (`defended_analytic` / `defended_common_ground`) are **M2-only** and
+    NEVER fire in M1 (the schema rejects an M2-only defense on an M1 envelope).
+  - **The no-verdict firewall is MECHANICAL, not rhetorical** — a CERTAINTY-SCOPED rename of
+    `within_doc_segmentation`'s `assert_no_authorship` (it does NOT reuse the authorship
+    keys/substrings): a `FORBIDDEN_RESULT_KEYS` frozenset (`overconfident` / `arrogant` /
+    `dunning_kruger` / `dishonest` / `sloppy` / `unsound` / `overconfidence_score` /
+    `calibration_score` / `author_verdict`) + a `FORBIDDEN_SUBSTRINGS` tuple + a recursive
+    `assert_no_verdict()` guard (raises `CalibrationVerdictError`) called immediately before
+    `build_output`, routing to `available:false` / `policy_refused`. **Filter-integrity is
+    mechanical:** an `overclaim` (or any `defended_*`) row with an empty `rationale` is a
+    BUILD ERROR (the Python output schema's `validate_claim_row` raises), never a silent
+    finding.
+  - **M1 = mock-deterministic judge** (CI-safe, marker-driven claim extraction; the certainty
+    lexicon and the legitimate-strong-claim filter are mechanical Python — no API, no models);
+    **M2 = anthropic** (lazy-import / fail-loud). Ships `calibration_status: heuristic` —
+    directional, **no numeric anchor**. Single-document scope (no `--reference` / `--compare`
+    cross-doc seam).
+
+- **Cross-document argument consistency (`cross_doc_argument_consistency`)** — a new
+  `argument_consistency` surface that maps where an author's argument corpus has its
+  **load-bearing commitments in tension across documents**, descriptively. Given a FOCAL
+  document vs the rest of a supplied pool, it extracts each document's typed commitments
+  (claim / warrant / scope_condition / value_premise / empirical_premise) via a NEW
+  `argument_judge`-style LLM-judge pass over free text (`extract_commitments` — **not**
+  `argument_spine` parsing), aligns them cross-document by a judge-assigned `topic_ref`,
+  classifies each aligned pair's relation (`consistent` / `tension` / `direct_conflict` /
+  `incomparable`), and emits a descriptive tension ledger with verbatim loci, a
+  legitimate-variation verdict, a descriptive severity ordinal, and a firewall-safe class
+  of resolution. The tensions ARE the read — **no top-level consistency score, no author
+  score, no "winning document."** The argument-CONTENT sibling of `cross_doc_novelty_profile`
+  (the stylometric sibling); the nonfiction-argument analogue of Series Continuity /
+  world-bible self-consistency.
+  - **The no-verdict firewall is MECHANICAL, not rhetorical** (a clone of
+    `within_doc_segmentation`'s `assert_no_authorship`): a `FORBIDDEN_RESULT_KEYS` frozenset
+    (`hypocrisy` / `dishonest` / `bad_faith` / `contradicts_self` / `who_is_right` /
+    `author_verdict` / `winning_document` / `consistency_score` / `author_score` …) + a
+    `FORBIDDEN_SUBSTRINGS` tuple + a recursive `assert_no_verdict()` guard (raises
+    `ConsistencyVerdictError`) called immediately before `build_output`, routing to
+    `available:false` / `policy_refused`. The guard also whitelist-enforces the `severity`
+    ordinal and rejects any non-tension `relation` reaching the ledger.
+  - **The legitimate-variation filter is a required mechanical stage:** every surface
+    tension runs through five defenses in a fixed precedence — `retraction → time → scope →
+    audience → genre` — and the first defense whose REQUIRED textual evidence is present in
+    the aligned loci fires (`defended_<that>`); none firing → `genuine`. Defended tensions
+    APPEAR in the ledger marked `defended_*`, with the defense named (showing them is more
+    honest than hiding them). **Filter-integrity is mechanical:** a `defended_*` (or
+    `genuine`) row with an empty `rationale` is a BUILD ERROR (the Python output schema's
+    `validate_results` raises), never a silent finding.
+  - **M1 = mock-deterministic judge** (CI-safe, marker-driven extraction + a deterministic
+    relation rule + the keyword-evidence variation filter — no API, no models);
+    **M2 = anthropic** (lazy-import / fail-loud). Ships `calibration_status: heuristic` —
+    directional, **no numeric anchor** (no measured discrimination). Spec:
+    `specs/cross-doc-argument-consistency.md`.
+
+- **Host-delegated judge backend (`agent_host`)** — `argument_judge` / `narrative_judge`
+  (and `voice_verifier` via the shared path) can delegate LLM judging to the **host agent
+  runtime** (Claude Code / Codex / Gemini Antigravity) through a registered transport
+  (MCP `sampling` / a subagent), instead of an API call. The judge tier now runs
+  **key-free** for development, validation, and interactive use; the API key is demoted to
+  a production-unattended dependency. Opt-in (`--judge agent_host`, defaulting
+  `model="host-resolved"` — no `--judge-model` required); the default backend is unchanged.
+  Delegation is **descriptive, no-verdict** (refusals threaded unchanged) and records
+  provenance — `judge_identity.host` + `comparison_set.judge_host` — so a consumer can
+  assert the judge model ≠ its generator model (the anti-Goodhart selection/validation
+  firewall, named here and enforced at the consumer's drift gate). When the host **names
+  the concrete model** it used — via a structured transport response
+  (`{text|content|judgment, model, revision}`) or `SETEC_HOST_MODEL` /
+  `SETEC_HOST_MODEL_REVISION` — that concrete id is recorded as `judge_identity.model`
+  (overriding the `host-resolved` placeholder), so the load-bearing judge≠generator
+  firewall has a real model to compare. The placeholder remains only when nobody names a
+  model — and `judge_backends.assert_judge_generator_disjoint()` then **fails closed**:
+  a non-concrete identity (the placeholder) is refused on a disjointness-required
+  (holdout/selection) path rather than silently treated as disjoint, a **missing /
+  blank / non-concrete generator identity** is refused symmetrically (disjointness is
+  unprovable without the other identity — a `None` generator no longer slips any judge
+  through), and a concrete judge model equal to the generator is refused as
+  self-grading. Spec
+  [35-host-delegated-judge](../../specs/35-host-delegated-judge.md). Motivated by the M2
+  finding that a host subagent judges authorship at 0.90 (vs a local 3B's 0.50 and the
+  LUAR embedding's 0.85).
+
+### Changed
+
+- **`variance_audit` promoted for `setec-voicewright` consumption** — the smoothing-diagnosis surface
+  (MTLD / MATTR / burstiness / sentence-length spread; the cross-document-comparable
+  `compression.compression_fraction` verdict) now lists `setec-voicewright` in its `consumers`, so the
+  normalized-dispatcher contract (`setec run variance_audit --json`) projects it for that consumer. This
+  lets setec-voicewright's comparative bake-off scorecard populate its previously-deferred `smoothing`
+  axis from this surface instead of rendering it `unavailable`. **No schema, script, or output change** —
+  only the consumer registration; the surface's pinned `schema_version: 1.0` envelope is unchanged.
+
+### Fixed
+
+- **`argmove_profile` no longer hidden** — its `capabilities.d` fragment carried `status: todo`
+  (which excludes an entry from the default capability listing) despite the shipped
+  `argmove_profile.py` self-declaring `calibration_status: empirically_oriented`. Promoted the
+  fragment + its golden to `empirically_oriented` to match the script, so the surface now appears
+  in the default listing. (Audited the full `status: todo` set while here: the remaining 54 are
+  correct — 48 are intentionally-hidden unfilled metadata stubs, and the acquisition utilities are
+  deliberately hidden, not recommendable detection surfaces.)
+
 ## [1.118.0] - 2026-06-23
 
 ### Added
