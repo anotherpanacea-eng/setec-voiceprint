@@ -118,6 +118,32 @@ the bash tool directly — but flag the choice ("I'll run it; in
 the future this is the kind of thing the user runs themselves so
 they can see the diagnostic output").
 
+**When two or more audits are recommended for one target**, present
+the multi-surface run-set runner as the default "full picture"
+option instead of a hand-chained pipeline (same posture: this skill
+recommends, the user runs):
+
+```bash
+python3 plugins/setec-voiceprint/scripts/setec_run_set.py \
+    --set full_picture --target draft.md \
+    [--baseline-dir baselines/<register>/] \
+    [--attach general_imposters=out/gi.json] \
+    [--attach idiolect_detector=out/idiolect.json]
+```
+
+Two presets exist: `smoothing_core` (the five target-only core-tier
+audits) and `full_picture` (adds `voice_distance`, which runs only
+with `--baseline-dir`, plus `general_imposters` and
+`idiolect_detector`, which are **attach-only** — they need comparator
+corpora the runner has no args for, so the user produces their
+envelopes separately and joins them via `--attach <id>=<path>`).
+The runner feeds the collected envelopes to
+`surface_disagreement_resolver` and emits disagreement patterns plus
+mechanical next-action commands — no composite score, no verdict.
+Note: the runner's own `--situation` output is informational only —
+this skill's recommendation remains authoritative when the two
+differ.
+
 ## Common situations + canonical routes
 
 These are baked into `capabilities.py`'s `CURATED_ROUTES`; this
@@ -138,6 +164,15 @@ without always shelling out.
     baseline), `idiolect_detector` (preservation list), optionally
     `mimicry_cosplay_audit` if you suspect the LLM cloned the
     writer's surface.
+
+  * **"Run the full picture over this draft" / any situation where
+    ≥ 2 of the above audits apply to one target** → the
+    `setec_run_set` runner (`--set smoothing_core` or
+    `--set full_picture`) instead of hand-chaining scripts: it
+    collects the member envelopes, runs the
+    `surface_disagreement_resolver` cross-surface read, and emits
+    the next-action commands. `general_imposters` /
+    `idiolect_detector` join via `--attach` (see Step 5).
 
   * **"What's safe to ask an LLM editor to change?"** →
     `restoration_packet` (turns diagnostic JSON into bounded

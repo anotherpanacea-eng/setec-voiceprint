@@ -46,6 +46,14 @@ python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt
 # JSON output for downstream piping
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt --json
 
+# Cross-surface read as the follow-up to a single variance audit: the
+# full_picture run-set collects variance + paragraph + AIC + discourse +
+# agency (+ voice_distance when --baseline-dir is given; general_imposters /
+# idiolect_detector join via --attach) and feeds them to the
+# surface_disagreement_resolver
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/setec_run_set.py" --set full_picture \
+    --target path/to/draft.txt --baseline-dir path/to/baseline/
+
 # Compare against a personal baseline (z-scores)
 python3 "${CLAUDE_PLUGIN_ROOT}/scripts/variance_audit.py" path/to/draft.txt --baseline-dir path/to/baseline/
 
@@ -89,5 +97,7 @@ The scripts degrade gracefully when Tier 2 (spaCy) or Tier 3 (sentence-transform
 ## Interpreting the output
 
 Every script's JSON output and markdown header carry `task_surface: smoothing_diagnosis` so downstream consumers route correctly. The variance audit reports an aggregate band classification plus the eleven per-signal evidence items. Reference math lives at `${CLAUDE_PLUGIN_ROOT}/references/distributional-diagnostics.md`. Length floors, calibration warnings, and the writer-specific calibration note are documented there.
+
+A `setec_run_set.py` run additionally emits the surface-disagreement report: the per-surface readings table plus every disagreement pattern compatible with them. Multiple matches are expected; the framework refuses to rank them — read the matched interpretations as a differential, and use the mechanical `next_action` block for the exact follow-up commands.
 
 When a baseline is supplied, prefer `--bootstrap` over the default z-score path at small target N (under 1,000 words) or small baseline file counts (under 10 files): the empirical length-matched percentile with a BCa CI is more reliable than a z-score against full-file baseline aggregates.
