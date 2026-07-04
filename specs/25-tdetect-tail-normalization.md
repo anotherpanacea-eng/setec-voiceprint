@@ -94,7 +94,9 @@ nothing is added to `comparison_set` etc. in the gaussian path).
   `gen_calibration_readiness` refresh. (No glossary edit — there is no `fast_detect`/curvature entry in
   `signals-glossary.md` to annotate.) Run drift / docs-freshness / `pytest test_capabilities_dropin`
   before push.
-- **Dependencies:** `scipy` (already a SETEC dep) for `stats.t.sf`.
+- **Dependencies:** **none new** for the shipped M1 path — `curvature_t` is a stdlib `math` rescale of
+  `curvature_score` (`d / sqrt((ν/(ν−2))·V)`). (The removed `p_value_t` would have needed
+  `scipy.stats.t.sf`; it is **not** emitted, so this surface adds no scipy dependency.)
 
 ## Test contract (names + invariants)
 
