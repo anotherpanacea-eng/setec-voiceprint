@@ -438,20 +438,25 @@ def audit(
         # fail loud, never be silently treated as gaussian.
         raise ValueError(
             f"unknown tail {tail!r} (choices: gaussian, student-t)")
-    if tail == "student-t" and stats["curvature_score"] is not None:
+    if tail == "student-t":
         nu = t_df
         if nu <= 2:
-            # Direct-caller guard: nu/(nu-2) is undefined (nu==2) or negative (nu<2). The CLI
-            # validates this earlier and exits 2; this protects programmatic callers of audit().
+            # [25a] Direct-caller guard HOISTED above the curvature_score check: student-t mode
+            # with nu<=2 is invalid whether or not the variance is degenerate (nu/(nu-2) is
+            # undefined at nu==2, negative at nu<2). The CLI validates this earlier and exits 2;
+            # this protects programmatic callers of audit() on EVERY student-t input.
             raise ValueError(
                 f"t_df must be > 2 for --tail student-t (got {nu}); the Student-t variance "
                 f"scale nu/(nu-2) is undefined at nu<=2."
             )
-        d = stats["actual_log_prob_sum_nats"] - stats["reference_mean_sum_nats"]
-        v = stats["reference_variance_sum_nats2"]
+        # [25b] Emit the mode marker even when the variance is degenerate, so a consumer can see
+        # student-t normalization was requested (the caveat then fires on tail, not curvature_t).
         out["tail"] = "student-t"
         out["t_df"] = nu
-        out["curvature_t"] = d / math.sqrt((nu / (nu - 2)) * v)   # 𝒟ₜ — the T-Detect score
+        if stats["curvature_score"] is not None:
+            d = stats["actual_log_prob_sum_nats"] - stats["reference_mean_sum_nats"]
+            v = stats["reference_variance_sum_nats2"]
+            out["curvature_t"] = d / math.sqrt((nu / (nu - 2)) * v)   # 𝒟ₜ — the T-Detect score
     return out
 
 
@@ -466,9 +471,10 @@ def compose_envelope(
 ) -> dict[str, Any]:
     caveats = list(results.get("caveats", []))
 
-    # T-Detect: name curvature_t in the refusal block ONLY when it is emitted (student-t mode),
-    # so the gaussian-mode claim license is unchanged.
-    if "curvature_t" in results:
+    # T-Detect: name the refusal block whenever student-t mode ran (incl. a degenerate-variance
+    # run where curvature_t is absent), so the caveat is present exactly when the mode marker is —
+    # while the gaussian-mode claim license stays byte-identical (no "tail" key -> no caveat).
+    if results.get("tail") == "student-t":
         does_not_license_text = f"{does_not_license_text} {STUDENT_T_CAVEAT}"
 
     license_block = ClaimLicense(

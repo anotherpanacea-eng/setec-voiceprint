@@ -161,11 +161,21 @@ def _resolve_host_judge(judge_error: type[Exception]) -> "HostJudge":
         import json as _json
         import subprocess
 
+        # Bound the host command so a hung operator process can't hang the judge
+        # forever. shell=True is kept intentionally — `cmd` is trusted operator
+        # config; only the request (untrusted data) crosses via stdin.
+        _timeout = float(os.environ.get("SETEC_HOST_JUDGE_TIMEOUT", "120"))
+
         def _cmd_transport(request: dict) -> str:
-            proc = subprocess.run(
-                cmd, shell=True, input=_json.dumps(request),
-                capture_output=True, text=True,
-            )
+            try:
+                proc = subprocess.run(
+                    cmd, shell=True, input=_json.dumps(request),
+                    capture_output=True, text=True, timeout=_timeout,
+                )
+            except subprocess.TimeoutExpired as exc:
+                raise judge_error(
+                    f"SETEC_HOST_JUDGE_CMD timed out after {_timeout}s"
+                ) from exc
             if proc.returncode != 0:
                 raise judge_error(
                     f"SETEC_HOST_JUDGE_CMD failed (exit {proc.returncode}): "

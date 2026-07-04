@@ -105,6 +105,37 @@ def test_audit_direct_caller_t_df_le_2_raises():
             fd.audit("x", score_fn=_stub(-1.5), tail="student-t", t_df=nu)
 
 
+def _degenerate_stub(actual_lp, n=60):
+    # every position's sampled distribution is a point mass -> zero reference variance ->
+    # curvature_score is None (the degenerate-variance path).
+    return lambda model, text, *, n_samples, seed: [(actual_lp, [-2.0, -2.0, -2.0])
+                                                    for _ in range(n)]
+
+
+def test_student_t_degenerate_variance_emits_mode_marker_without_score():
+    # [25b]: student-t mode ran but the reference variance is degenerate. The MODE MARKER
+    # (tail/t_df) is emitted so a consumer sees student-t normalization was requested, while
+    # curvature_t is correctly ABSENT (undefined without a variance). Previously the whole
+    # block was gated on curvature_score, so a degenerate run emitted NO tail marker at all.
+    t = fd.audit("x", score_fn=_degenerate_stub(-1.5), tail="student-t", t_df=5)
+    assert t["curvature_score"] is None
+    assert t["tail"] == "student-t"
+    assert t["t_df"] == 5
+    assert "curvature_t" not in t
+    # And the STUDENT_T caveat is present whenever student-t mode ran (keyed on the marker now).
+    env = fd.compose_envelope(target_path=None, target_words=10, results=t)
+    assert fd.STUDENT_T_CAVEAT in env["claim_license"]["does_not_license"]
+
+
+def test_student_t_df_le_2_raises_even_on_degenerate_variance():
+    # [25a]: the nu<=2 guard is HOISTED above the curvature_score check, so student-t with
+    # t_df<=2 fails loud even when the variance is degenerate (curvature_score is None). Before
+    # the hoist the guard was skipped on degenerate input and the invalid nu passed silently.
+    for nu in (2, 1, 0, -1):
+        with pytest.raises(ValueError, match="t_df must be > 2"):
+            fd.audit("x", score_fn=_degenerate_stub(-1.5), tail="student-t", t_df=nu)
+
+
 def test_audit_unknown_tail_raises():
     # P2 (#228): a direct caller passing an unknown tail must fail loud, NOT be silently treated
     # as gaussian (the CLI restricts tail via choices=; audit() backstops programmatic callers).
