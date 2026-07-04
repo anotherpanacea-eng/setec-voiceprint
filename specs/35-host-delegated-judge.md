@@ -5,7 +5,9 @@
 > development, validation, and interactive use, with the API key demoted to a
 > production-unattended dependency.
 
-- **Status:** Draft
+- **Status:** Shipped (M1) — `agent_host` provider + `argument_judge`/`narrative_judge` wired
+  (M1 merged); the argquality/fallacy/warrant follow-on is in **PR #293**. M2 real host
+  transports remain gated/local.
 - **Tier:** near-term (M1 provider seam + stub = stdlib, CI-runnable); research-grade (M2 real host transports, gated)
 - **GPU required:** no
 - **Upstream / prior art:** MCP **sampling** (`sampling/createMessage` — the standardized
