@@ -63,6 +63,25 @@ def test_ties_do_not_violate_fpr_bound():
     assert r2["empirical_reference_fpr_at_threshold"] <= 0.5 + 1e-12, r2
 
 
+def test_small_n_reason_distinct_from_tied_reason():
+    # Codex #28 P3: the `threshold is None` branch ALSO fires when scores are fully DISTINCT and
+    # floor(fpr_bound*n) == 0 (n too small for q) — nothing to do with ties. The reason must name
+    # the small-n cause, not mislead with "too many tied scores".
+    r = cg.threshold_at_fpr_bound(
+        [1.0, 2.0, 3.0, 4.0, 5.0], fpr_bound=0.1, direction="higher_is_nonconforming")
+    assert r["available"] is False
+    assert "threshold" not in r
+    assert "n too small" in r["reason"]
+    assert "ceil(1/fpr_bound)" in r["reason"]
+    assert "tied" not in r["reason"]           # NOT the tied-scores message
+    # A genuinely over-tied case still gets the tied-scores message (unchanged).
+    r2 = cg.threshold_at_fpr_bound(
+        [0.0] * 10, fpr_bound=0.1, direction="higher_is_nonconforming")
+    assert r2["available"] is False
+    assert "tied" in r2["reason"]
+    assert "n too small" not in r2["reason"]
+
+
 def test_threshold_monotonic_in_bound():
     """A larger fpr_bound never raises the threshold (so never lowers TPR)."""
     thresholds = [

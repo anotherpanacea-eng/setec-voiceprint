@@ -686,6 +686,31 @@ def test_build_proxy_cli_round_trips(tmp_path):
     assert len(ladders[0]["rungs"]) == 4
 
 
+# ---------- #16 _score_text parity: reused, not reimplemented -------------
+
+
+def test_score_text_parity_with_pan_replay():
+    """paraphrase_ladder._score_text is spec'd as 'reused, not reimplemented'
+    from pan_replay._score_text, but the two are separate function bodies with
+    nothing pinning them equal (review nit, spec 16). Run BOTH on a shared
+    fixture and assert byte-identical output so a silent drift of one trips here.
+
+    Both call the SAME audit_text(..., do_tier4=False) + classify_compression, so
+    the equality holds regardless of whether the optional parser tier is present:
+    if a tier degrades, it degrades identically on both sides. Guard structurally
+    and skip cleanly only if scoring cannot run at all in this env."""
+    try:
+        a = pl._score_text(_TEXT)
+        b = pan_replay._score_text(_TEXT)
+    except Exception as exc:  # pragma: no cover - env without the scoring stack
+        if pytest is not None:
+            pytest.skip(f"_score_text not runnable in this env: {exc}")
+        return
+    # Structural parity first (both wrap {audit, compression}), then full equality.
+    assert set(a) == set(b) == {"audit", "compression"}
+    assert a == b, "paraphrase_ladder._score_text drifted from pan_replay._score_text"
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")

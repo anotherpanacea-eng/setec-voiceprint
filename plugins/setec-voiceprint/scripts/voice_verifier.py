@@ -748,10 +748,12 @@ def _build_parser() -> argparse.ArgumentParser:
              "AV pair. Authorship verification is pairwise — both are required.",
     )
     parser.add_argument(
-        "--judge", choices=("manifest", "mock", "anthropic", "openai", "gemini"),
+        "--judge", choices=("manifest", "mock", "anthropic", "openai", "gemini", "agent_host"),
         default="manifest",
         help="Verifier backend. mock/manifest are stdlib (M1); the API kinds "
-             "read the prose (M2, require an SDK + credentials).",
+             "read the prose (M2, require an SDK + credentials); agent_host "
+             "delegates to the host runtime's model (key-free, spec 35). The "
+             "resolved host is recorded in judge_identity.",
     )
     parser.add_argument(
         "--manifest", type=Path, default=None,

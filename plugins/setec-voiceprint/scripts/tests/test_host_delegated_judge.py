@@ -24,6 +24,19 @@ import argument_judge as aj  # type: ignore
 import judge_backends  # type: ignore
 import narrative_judge as nj  # type: ignore
 
+# This module must be importable by name so a SETEC_HOST_JUDGE='module:function'
+# entrypoint can resolve a helper defined here (mirrors how a host registers one).
+_TESTS_DIR = Path(__file__).resolve().parent
+if str(_TESTS_DIR) not in sys.path:
+    sys.path.insert(0, str(_TESTS_DIR))
+_THIS_MODULE = Path(__file__).stem  # "test_host_delegated_judge"
+
+
+def canned_host_judgment(request: dict) -> str:
+    """Module-level entrypoint helper resolvable via SETEC_HOST_JUDGE. Returns a
+    schema-valid judgment JSON regardless of the request (the M1 stub contract)."""
+    return json.dumps({"label": "resolved-via-entrypoint"})
+
 
 @contextlib.contextmanager
 def host_transport(fn):
@@ -257,6 +270,92 @@ def test_missing_generator_fails_disjointness_closed():
         judge_backends.assert_judge_generator_disjoint(concrete_judge, "claude-opus-4-8")
         == "gpt-5.4"
     )
+
+
+# --- RESOLVED transport: the two real resolution paths, not just the override --------
+#     (round-round #35: prior tests only exercised the unresolved branch + the in-process
+#      override; these pin the SETEC_HOST_JUDGE entrypoint and SETEC_HOST_JUDGE_CMD subprocess
+#      transports actually resolving and round-tripping a judgment, plus the new timeout wrap.)
+
+
+def _clear_host_env():
+    """Snapshot + clear the host-resolution env so a test controls the path.
+    Returns the saved mapping for restore in teardown (mirrors host_transport)."""
+    return {
+        k: os.environ.pop(k, None)
+        for k in ("SETEC_HOST_JUDGE", "SETEC_HOST_JUDGE_CMD", "SETEC_HOST_JUDGE_TIMEOUT")
+    }
+
+
+def _restore_host_env(prev_override, saved):
+    judge_backends._HOST_JUDGE_OVERRIDE = prev_override
+    for k, v in saved.items():
+        if v is not None:
+            os.environ[k] = v
+        else:
+            os.environ.pop(k, None)
+
+
+# 11. entrypoint transport: SETEC_HOST_JUDGE='module:function' resolves to a real helper,
+#     and a judgment round-trips through it (no override, no key).
+def test_entrypoint_transport_resolves_and_round_trips():
+    prev = judge_backends._HOST_JUDGE_OVERRIDE
+    saved = _clear_host_env()
+    judge_backends._HOST_JUDGE_OVERRIDE = None
+    os.environ["SETEC_HOST_JUDGE"] = f"{_THIS_MODULE}:canned_host_judgment"
+    try:
+        transport = judge_backends._resolve_host_judge(nj.JudgeError)
+        assert json.loads(transport({}))["label"] == "resolved-via-entrypoint"
+        judge = _make("agent_host", None, build_result=lambda payload, raw, identity, ji: payload)
+        assert judge("x") == {"label": "resolved-via-entrypoint"}
+    finally:
+        _restore_host_env(prev, saved)
+
+
+# 12. subprocess transport: SETEC_HOST_JUDGE_CMD (a real stdlib command) resolves and round-trips.
+def test_subprocess_transport_resolves_and_round_trips():
+    prev = judge_backends._HOST_JUDGE_OVERRIDE
+    saved = _clear_host_env()
+    judge_backends._HOST_JUDGE_OVERRIDE = None
+    os.environ["SETEC_HOST_JUDGE_CMD"] = (
+        sys.executable
+        + " -c 'import sys, json; sys.stdin.read(); "
+        + "print(json.dumps({\"label\": \"resolved-via-cmd\"}))'"
+    )
+    try:
+        transport = judge_backends._resolve_host_judge(nj.JudgeError)
+        assert json.loads(transport({"content": "x"}))["label"] == "resolved-via-cmd"
+        judge = _make("agent_host", None, build_result=lambda payload, raw, identity, ji: payload)
+        assert judge("x") == {"label": "resolved-via-cmd"}
+    finally:
+        _restore_host_env(prev, saved)
+
+
+# 13. subprocess timeout: a hung host command surfaces as a JudgeError (family error),
+#     never a bare subprocess.TimeoutExpired traceback (spec 35 [35a]).
+def test_subprocess_transport_timeout_surfaces_as_judge_error():
+    import subprocess
+
+    prev = judge_backends._HOST_JUDGE_OVERRIDE
+    saved = _clear_host_env()
+    judge_backends._HOST_JUDGE_OVERRIDE = None
+    os.environ["SETEC_HOST_JUDGE_CMD"] = f"{sys.executable} -c 'pass'"
+    real_run = subprocess.run
+
+    def _raise_timeout(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="stub-host-cmd", timeout=kwargs.get("timeout"))
+
+    subprocess.run = _raise_timeout
+    try:
+        transport = judge_backends._resolve_host_judge(nj.JudgeError)
+        try:
+            transport({"content": "x"})
+            raise AssertionError("expected JudgeError when the host command times out")
+        except nj.JudgeError as exc:
+            assert "timed out" in str(exc)
+    finally:
+        subprocess.run = real_run
+        _restore_host_env(prev, saved)
 
 
 if __name__ == "__main__":

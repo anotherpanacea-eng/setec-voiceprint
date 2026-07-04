@@ -188,17 +188,28 @@ def threshold_at_fpr_bound(
         higher = sorted({c for c in cal_nc if c > threshold})
         threshold = next((h for h in higher if _flagged_at(h) <= max_flagged), None)
     if threshold is None:
-        # No FINITE threshold keeps the empirical FPR <= q without flagging the whole reference set:
-        # the calibration is degenerate (e.g. every score tied), so the only way to honor the bound is
-        # to flag nothing — a vacuous gate. Abstain with a reason rather than emit a non-JSON `inf`
-        # threshold (Codex P1). Supply calibration with variation to get a usable bound.
-        return {
-            "available": False,
-            "reason": (
+        # No FINITE threshold keeps the empirical FPR <= q without flagging the whole reference set.
+        # TWO distinct causes land here, and the reason must not conflate them (Codex #28 P3):
+        #   (a) max_flagged == 0 — floor(q*n)==0, so n is simply too small for this q: NO non-empty
+        #       flag set can satisfy the bound, even with perfectly distinct scores. Not a ties issue.
+        #   (b) otherwise — the tail is over-tied: raising the threshold can only flag the whole tied
+        #       block, so the only bound-honoring threshold flags nothing (a vacuous gate).
+        # Either way we abstain with a reason rather than emit a non-JSON `inf` threshold (Codex P1).
+        if max_flagged == 0:
+            reason = (
+                "calibration n too small to bound FPR <= fpr_bound: "
+                "floor(fpr_bound * n_calibration) = 0, so no non-empty flag set can satisfy the "
+                "bound; need n_calibration >= ceil(1/fpr_bound)."
+            )
+        else:
+            reason = (
                 "degenerate calibration: too many tied scores to place a finite threshold that bounds "
                 "the reference FPR <= fpr_bound without flagging the whole reference set. Supply "
                 "calibration scores with variation."
-            ),
+            )
+        return {
+            "available": False,
+            "reason": reason,
             "mode": "fpr_bound",
             "fpr_bound": fpr_bound,
             "direction": direction,

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import re
 import subprocess
 import sys
@@ -379,6 +380,51 @@ def test_mock_band_must_be_valid():
 def test_api_kind_requires_model():
     with pytest.raises(vv.VerifierError):
         vv.build_verifier("anthropic", model=None)
+
+
+# ---- spec 35: agent_host CLI half-wiring closed + host surfaced in envelope ----
+def test_agent_host_in_cli_choices():
+    """build_verifier already accepts agent_host; the --judge choices must too
+    (the review nit was that the choice tuple omitted it, so the CLI could never
+    reach the accepted path)."""
+    parser = vv._build_parser()
+    judge_action = next(a for a in parser._actions if a.dest == "judge")
+    assert "agent_host" in judge_action.choices
+
+
+def test_agent_host_run_surfaces_host_in_envelope():
+    """An agent_host run via the stub-transport seam (judge_backends._HOST_JUDGE_OVERRIDE,
+    the same seam the host-delegated-judge tests use) surfaces the resolved host + delegation
+    in the emitted envelope's judge_identity — no API key, no live host."""
+    jb = vv.judge_backends
+    prev = jb._HOST_JUDGE_OVERRIDE
+    saved = {
+        k: os.environ.pop(k, None)
+        for k in ("SETEC_HOST_JUDGE", "SETEC_HOST_JUDGE_CMD", "SETEC_HOST")
+    }
+    jb._HOST_JUDGE_OVERRIDE = lambda req: json.dumps({
+        "band": "leans_consistent",
+        "feature_judgements": {},
+        "rationale": "stub host judgment",
+    })
+    try:
+        backend = vv.build_verifier("agent_host")
+        result = backend("the query text", "the reference text")
+        env = vv.compose_envelope(
+            result=result, query_path=None, query_words=3,
+            reference_path=None, warnings=[],
+        )
+        ident = env["results"]["judge_identity"]
+        assert ident["kind"] == "agent_host"
+        assert ident["delegated"] is True
+        assert "host" in ident            # the resolved host is recorded for provenance
+    finally:
+        jb._HOST_JUDGE_OVERRIDE = prev
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
+            else:
+                os.environ.pop(k, None)
 
 
 # ---- Acceptance 6: pairwise input is required ----------------------------
