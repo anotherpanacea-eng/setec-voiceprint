@@ -178,3 +178,68 @@ def test_invalid_utf8_target_is_bad_input(tmp_path):
     rc = warrant_probe.main([str(target), "--judge", "mock", "--out", str(out)])
     env = json.loads(out.read_text(encoding="utf-8"))
     assert env["available"] is False and "bad_input" in json.dumps(env)
+
+
+# ----------------- agent_host host-delegated judge (spec 35 follow-on) ----------
+import contextlib  # noqa: E402
+import os  # noqa: E402
+
+
+@contextlib.contextmanager
+def _host_transport(fn):
+    """Inject a STUB host transport (no live host, no key) — the spec-35 seam."""
+    jb = warrant_judge.judge_backends
+    prev = jb._HOST_JUDGE_OVERRIDE
+    saved = {k: os.environ.pop(k, None) for k in ("SETEC_HOST_JUDGE", "SETEC_HOST_JUDGE_CMD")}
+    jb._HOST_JUDGE_OVERRIDE = fn
+    try:
+        yield
+    finally:
+        jb._HOST_JUDGE_OVERRIDE = prev
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
+
+
+def test_agent_host_build_judge_resolves_without_model():
+    assert "agent_host" in warrant_judge.judge_backends.PROVIDERS
+    with _host_transport(lambda req: json.dumps({"claims": []})):
+        j = warrant_judge.build_judge("agent_host", model=None)
+        assert callable(j)
+        res = j(SAMPLE.split("\n\n"))
+    ident = res.judge_identity
+    assert ident["kind"] == "agent_host"
+    assert ident["model"] == "host-resolved"
+    assert ident["host"] == "agent_host" and ident["delegated"] is True
+    with pytest.raises(warrant_judge.JudgeError):
+        warrant_judge.build_judge("anthropic", model=None)  # gate unchanged
+
+
+def test_agent_host_in_audit_choices_default_unchanged():
+    parser = warrant_probe.build_arg_parser()
+    judge_action = next(a for a in parser._actions if "--judge" in a.option_strings)
+    assert "agent_host" in judge_action.choices
+    assert judge_action.required is True and judge_action.default is None
+
+
+def test_agent_host_end_to_end_via_stub(tmp_path):
+    with _host_transport(lambda req: json.dumps({"claims": []})):
+        rc, env = _run(tmp_path, SAMPLE, "--judge", "agent_host")
+    assert rc == 0 and env["available"] is True
+    r = _results(env)
+    assert r["judge"]["judge_identity"]["kind"] == "agent_host"
+    assert r["calibration_status"] == "uncalibrated"
+    cl = env["claim_license"]
+    caveat = [c for c in cl["additional_caveats"]
+              if "`agent_host`" in c and "HOST runtime" in c]
+    assert caveat, "expected the agent_host caveat"
+    assert "NON-DETERMINISTIC" in caveat[0]
+    assert "specs/35-host-delegated-judge.md" in caveat[0]
+    assert cl["comparison_set"]["judge_host"] == "agent_host"
+
+
+def test_mock_run_has_no_agent_host_caveat_and_null_host(tmp_path):
+    _, env = _run(tmp_path)  # default mock
+    cl = env["claim_license"]
+    assert not [c for c in cl["additional_caveats"] if "HOST runtime" in c]
+    assert cl["comparison_set"].get("judge_host") is None

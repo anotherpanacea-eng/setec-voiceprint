@@ -471,3 +471,76 @@ def test_surface_registered_in_claim_license_labels():
 def test_surface_in_valid_task_surfaces():
     import output_schema  # type: ignore
     assert "argquality_dimension_profile" in output_schema.VALID_TASK_SURFACES
+
+
+# ============ #10 — agent_host host-delegated judge (spec 35 follow-on) =========
+import contextlib  # noqa: E402
+import os  # noqa: E402
+
+
+@contextlib.contextmanager
+def _host_transport(fn):
+    """Inject a STUB host transport (no live host, no key) — the spec-35 seam,
+    mirroring tests/test_host_delegated_judge.py."""
+    jb = argquality_judge.judge_backends
+    prev = jb._HOST_JUDGE_OVERRIDE
+    saved = {k: os.environ.pop(k, None) for k in ("SETEC_HOST_JUDGE", "SETEC_HOST_JUDGE_CMD")}
+    jb._HOST_JUDGE_OVERRIDE = fn
+    try:
+        yield
+    finally:
+        jb._HOST_JUDGE_OVERRIDE = prev
+        for k, v in saved.items():
+            if v is not None:
+                os.environ[k] = v
+
+
+def test_agent_host_build_judge_resolves_without_model():
+    """spec 35: build_judge('agent_host') resolves via judge_backends.PROVIDERS
+    (NOT 'unknown judge kind') and needs NO --judge-model — it defaults to
+    'host-resolved'; a non-host API kind still requires a model."""
+    assert "agent_host" in argquality_judge.judge_backends.PROVIDERS
+    with _host_transport(lambda req: json.dumps({"dimensions": {}})):
+        j = argquality_judge.build_judge("agent_host", model=None)
+        assert callable(j)
+        res = j(SAMPLE.split("\n\n"))
+    ident = res.judge_identity
+    assert ident["kind"] == "agent_host"
+    assert ident["model"] == "host-resolved"
+    assert ident["host"] == "agent_host" and ident["delegated"] is True
+    with pytest.raises(argquality_judge.JudgeError):
+        argquality_judge.build_judge("anthropic", model=None)  # gate unchanged
+
+
+def test_agent_host_in_audit_choices_default_unchanged():
+    parser = aqp.build_arg_parser()
+    judge_action = next(a for a in parser._actions if "--judge" in a.option_strings)
+    assert "agent_host" in judge_action.choices
+    # opt-in firewall: --judge stays REQUIRED with no silent default
+    assert judge_action.required is True
+    assert judge_action.default is None
+
+
+def test_agent_host_end_to_end_via_stub(tmp_path):
+    """End-to-end through the audit CLI with a STUB transport: schema-valid,
+    available, carries the agent_host caveat + the judge_host firewall hook."""
+    with _host_transport(lambda req: json.dumps({"dimensions": {}})):
+        rc, env = _run(tmp_path, SAMPLE, "--judge", "agent_host")
+    assert rc == 0 and env["available"] is True
+    r = _results(env)
+    assert r["judge"]["judge_identity"]["kind"] == "agent_host"
+    assert r["calibration_status"] == "uncalibrated"  # no-verdict posture unchanged
+    cl = env["claim_license"]
+    caveat = [c for c in cl["additional_caveats"]
+              if "`agent_host`" in c and "HOST runtime" in c]
+    assert caveat, "expected the agent_host caveat"
+    assert "NON-DETERMINISTIC" in caveat[0]
+    assert "specs/35-host-delegated-judge.md" in caveat[0]
+    assert cl["comparison_set"]["judge_host"] == "agent_host"
+
+
+def test_mock_run_has_no_agent_host_caveat_and_null_host(tmp_path):
+    _, env = _run(tmp_path)  # default mock
+    cl = env["claim_license"]
+    assert not [c for c in cl["additional_caveats"] if "HOST runtime" in c]
+    assert cl["comparison_set"].get("judge_host") is None

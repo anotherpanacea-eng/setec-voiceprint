@@ -300,14 +300,22 @@ def build_judge(
     temperature: float = 0.0,
     max_tokens: int = 4096,
 ) -> JudgeBackend:
+    """Construct a judge backend by kind: ``manifest`` (needs manifest_path),
+    ``mock`` (deterministic), ``anthropic``/``openai``/``gemini`` (lazy SDK
+    import + credentials in env; need ``model``), or ``agent_host`` (spec 35 —
+    the judgment is delegated to the host runtime's model, key-free, and needs
+    no ``--judge-model``; it defaults to ``host-resolved``)."""
     if kind == "manifest":
         if manifest_path is None:
             raise JudgeError("manifest judge requires manifest_path")
         return _manifest_judge(Path(manifest_path))
     if kind == "mock":
         return _mock_judge()
-    if kind in ("anthropic", "openai", "gemini"):
-        if not model:
+    if kind in judge_backends.PROVIDERS:
+        if kind == "agent_host":
+            # The host runtime resolves the model; no --judge-model required.
+            model = model or "host-resolved"
+        elif not model:
             raise JudgeError(f"{kind} judge requires --judge-model")
         return judge_backends.make_api_judge(
             kind,

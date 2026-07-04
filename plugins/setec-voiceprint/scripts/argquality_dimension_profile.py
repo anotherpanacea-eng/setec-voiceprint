@@ -34,7 +34,7 @@ is M2 (model-gated, never GPU-gated).
 CLI
 ---
     python3 plugins/setec-voiceprint/scripts/argquality_dimension_profile.py TARGET \\
-        --judge {mock,manifest,anthropic,openai,gemini} \\
+        --judge {mock,manifest,anthropic,openai,gemini,agent_host} \\
         [--judge-manifest PATH] [--judge-model NAME] \\
         [--expect-fingerprint SHA256] [--json] [--out PATH]
 """
@@ -192,6 +192,17 @@ def compose_envelope(
             "Judge backend is `manifest` — the bands are only as good as "
             "whatever produced the manifest, which this surface cannot verify."
         )
+    elif judge_kind == "agent_host":
+        caveats.append(
+            "Judge backend is `agent_host` — the dimension bands were produced by "
+            "the HOST runtime's model (see judge.judge_identity.host), not a pinned "
+            "API model@revision. The judgment is NON-DETERMINISTIC and "
+            "host-version-fluid. The identity is recorded as "
+            "agent_host:<host>:<model> so a consumer can assert it is disjoint from "
+            "any generator it validates (the consumer's drift gate must enforce "
+            "judge model != generator model on holdout/selection surfaces; see "
+            "specs/35-host-delegated-judge.md)."
+        )
     caveats.append(
         "Bands are DESCRIPTIVE distributional placements for human review, not a "
         "verdict. Ships `uncalibrated`: no aggregate 'argument quality' score, "
@@ -216,6 +227,9 @@ def compose_envelope(
             "judge_model": (
                 results["judge"]["judge_identity"].get("model") or "(unspecified)"
             ),
+            # host runtime id for agent_host (the firewall hook: lets a consumer assert
+            # judge model != generator model); null for non-delegated backends.
+            "judge_host": results["judge"]["judge_identity"].get("host"),
             "prompt_fingerprint_sha256": results["prompt_fingerprint_sha256"],
         },
         length_range_words=(MIN_WORDS, 8000),
@@ -308,7 +322,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("target", type=Path, help="UTF-8 prose file to profile")
     p.add_argument("--judge", required=True,
-                   choices=["mock", "manifest", "anthropic", "openai", "gemini"],
+                   choices=["mock", "manifest", "anthropic", "openai", "gemini", "agent_host"],
                    help="judge backend (REQUIRED — no default). `mock` is a deterministic TEST "
                         "stub that FABRICATES bands; choose it only for tests/CI, never for a "
                         "real profile. Real profiles use a manifest or an API judge.")
