@@ -62,8 +62,10 @@ AI-Generated Text Be Reliably Detected?"** ([arXiv:2303.11156](https://arxiv.org
 already cites in `references/distributional-diagnostics.md` (the heavy-paraphrase 0.5-AUROC
 ceiling).
 
-- **Status:** M1 (model-free RAID-taxonomy transforms + recursive-paraphrase *scaffolding*)
-  is stdlib/CI; the DIPPER-grade neural paraphraser is the M2 GPU seam.
+- **Status:** Shipped (M1) — merged via **PR #240** (RAID obfuscation transforms in
+  `adversarial_fixtures.py` + `paraphrase_ladder` single-text decay harness). The model-free
+  RAID-taxonomy transforms + recursive-paraphrase *scaffolding* are stdlib/CI; the full
+  RAID-corpus × DIPPER benchmark (M2, DIPPER-grade neural paraphraser) remains local/model-gated.
 
 ## Goal
 

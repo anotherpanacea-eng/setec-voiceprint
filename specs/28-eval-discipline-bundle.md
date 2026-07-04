@@ -29,8 +29,9 @@ fleet "cite arXiv in PR + changelog" rule):
   result that grounds the "don't over-claim separability" guardrail
   ([arXiv:2303.11156](https://arxiv.org/abs/2303.11156)).
 
-- **Status:** Draft for review (reworked after self-adversarial pass — see
-  "Review-driven changes" at the end).
+- **Status:** Shipped (M1) — all five items merged via **PR #242** (topic-leakage split,
+  conformal FPR bound, Simpson inversion check, Short-PHD, over-claim posture doc+test).
+  Reworked after self-adversarial pass — see "Review-driven changes" at the end.
 
 ## Goal
 

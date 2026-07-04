@@ -4,12 +4,15 @@
 > standardizes the Fast-DetectGPT curvature against a heavy-tailed t-distribution instead of a
 > Gaussian, hardening the discrimination signal against adversarial / paraphrased text.
 
-- **Status:** Ready — adversarially reviewed 2026-06-19 (verdict NEEDS-REWORK → reworked). Fixes: real
+- **Status:** Shipped — adversarially reviewed 2026-06-19 (verdict NEEDS-REWORK → reworked). Fixes: real
   key names (`curvature_score`, `actual/reference_*_sum_nats`; identity now holds against the code);
   **design leads with `p_value_t`** (curvature_t is a constant rescale, discrimination-inert — the
   t-null comparison is the whole value); the heavier-tails invariant pinned to an exact numeric pair;
   the `p_value_t` "NOT P(AI)" caveat + test; byte-identity default-preserving test; golden = modified
-  entry (count stays 90), no glossary entry exists to edit. M1 cleared to build.
+  entry (count stays 90), no glossary entry exists to edit. Shipped via **PR #228**
+  (`fast_detect_curvature.py --tail student-t` mode); during that review the `p_value_t` survival
+  value was removed as statistically unsupported, so the T-Detect score `curvature_t` ships as the
+  deliverable — superseding the "p_value_t is the deliverable" language recorded above.
 - **Tier:** near-term (an additive, **default-preserving** flag on a shipped surface; the new math is
   pure stdlib/scipy over the backend's existing output — no change to sampling)
 - **GPU required:** no (the t-normalization runs over the backend's `d(x)` / `V(x)`; same torch-gated

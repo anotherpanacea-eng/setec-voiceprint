@@ -64,9 +64,10 @@ fleet "cite arXiv in PR + changelog" rule):
   (per-linguistic-feature sub-judgements) with a consistency check between the
   rationale and the conclusion.
 
-- **Status:** Draft for review (NEW surface; targets the LONG-LIST `voice_verifier
-  (advisory)` row that all three roots map to, and the SHORT-LIST "LLM-as-verifier
-  → descriptive/advisory, never a label" posture caution).
+- **Status:** Shipped (M1) — `voice_verifier.py` surface merged (released in v1.118.0);
+  mock/manifest M1 core, the real `api_llm` path is M2/gated. NEW surface; targets the
+  LONG-LIST `voice_verifier (advisory)` row that all three roots map to, and the SHORT-LIST
+  "LLM-as-verifier → descriptive/advisory, never a label" posture caution.
 
 ## Goal
 

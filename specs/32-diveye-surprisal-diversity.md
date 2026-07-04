@@ -5,9 +5,10 @@
 > entropy / ACF-of-acceleration) over a per-token surprisal series, fused with
 > the five already-shipped surprisal moments into a 9-signal DivEye vector.
 
-- **Status:** In build (`feat/detect-diveye`) — **M1 only** (model-free signal
+- **Status:** Shipped (M1) — merged via **PR #258** (`diveye_signals.py`; model-free signal
   aggregation + CI tests). M2 (the registered `diveye_audit.py` discrimination
-  surface + XGBoost calibration) is experiment-gated and NOT in this build.
+  surface + XGBoost calibration) is experiment-gated and NOT in this build; the M2
+  real-surprisal path remains local/gated.
 - **Tier:** near-term (M1, stdlib, CPU); research-grade (M2, gated).
 - **GPU required:** no (M1 runs over injected/already-computed surprisal series;
   the real surprisal forward pass is the M2 seam).
