@@ -40,6 +40,7 @@ entries:
     - anthropic
     - openai
     - gemini
+    - agent_host
   - flag: --judge-manifest
     type: path
     required: false
@@ -60,7 +61,9 @@ entries:
   compute:
     tier: api_llm
     cost_note: $0.01–0.10 per doc via Anthropic / OpenAI / Gemini (one labeling call);
-      free with --judge manifest or --judge mock (a deterministic test stub)
+      free with --judge manifest or --judge mock (a deterministic test stub); key-free
+      with --judge agent_host (delegates to the host runtime's model — Claude Code /
+      Codex / Gemini Antigravity; see spec 35)
     length_floor_words: 120
   registers:
   - op-ed

@@ -432,17 +432,22 @@ def build_judge(
 ) -> JudgeBackend:
     """Construct a judge backend by kind. THIS function owns the mock/manifest
     dispatch (spec-30 P3): ``manifest`` → own ``_manifest_judge``; ``mock`` →
-    own ``_mock_judge``; only the three API kinds (``anthropic`` / ``openai`` /
-    ``gemini``) delegate to ``judge_backends.make_api_judge``. ``mock`` /
-    ``manifest`` never route into ``make_api_judge``."""
+    own ``_mock_judge``; the API/host kinds (``anthropic`` / ``openai`` /
+    ``gemini`` / ``agent_host``) delegate to ``judge_backends.make_api_judge``.
+    ``agent_host`` (spec 35) delegates the judgment to the host runtime's model,
+    key-free, and needs no ``--judge-model`` (it defaults to ``host-resolved``).
+    ``mock`` / ``manifest`` never route into ``make_api_judge``."""
     if kind == "manifest":
         if manifest_path is None:
             raise JudgeError("manifest judge requires manifest_path")
         return _manifest_judge(Path(manifest_path))
     if kind == "mock":
         return _mock_judge(mock_bands)
-    if kind in ("anthropic", "openai", "gemini"):
-        if not model:
+    if kind in judge_backends.PROVIDERS:
+        if kind == "agent_host":
+            # The host runtime resolves the model; no --judge-model required.
+            model = model or "host-resolved"
+        elif not model:
             raise JudgeError(f"{kind} judge requires --judge-model")
         return judge_backends.make_api_judge(
             kind,
