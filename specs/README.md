@@ -64,20 +64,26 @@ cut recommended) · 30 gaqcorpus-argquality (`argquality_dimension_profile`) · 
 (`distinct_diversity_audit`) · 33 paraphrase-robustness (`paraphrase_robustness`) ·
 34 model-family-attribution (`model_family_attribution`).
 
-**Open** (feature branch, unbuilt) — cloud verdict per the tier boundary above:
+**Also shipped** (verified on `main` 2026-07-02 — these were *wrongly* listed as open in an
+earlier draft of this note; their feature branches were deleted on merge, and stale **local**
+branch copies fooled a branch-existence check — use `gh pr` / merged-artifact-on-`main`, never
+local branches, as the open-signal):
+- 16 raid-dipper-robustness — RAID transforms + `paraphrase_ladder` (PR #240)
+- 25 tdetect-tail-normalization — T-Detect normalization on `fast_detect_curvature` (PR #228). **Note:** review deliberately **removed `p_value_t`** as statistically unsupported.
+- 28 eval-discipline-bundle — all 5 sub-items (PR #242)
+- 28 styledistance-encoder-upgrade — encoder seam behind `voice_fingerprint` / `crosslingual_voice_distance` (`test_styledistance_encoder_upgrade.py`); the real encoder is the optional local tier
+- 31 llm-verifier-authorship — `voice_verifier` surface (`0f00399`)
+- 32 diveye-surprisal-diversity — `diveye_signals.py` (PR #258)
+- 35 host-delegated-judge — `agent_host` provider, `argument_judge` / `narrative_judge` wired (`da47454`)
 
-| Spec | Branch | Cloud verdict |
+**Genuinely open:**
+
+| Item | State | Cloud verdict |
 |---|---|---|
-| 16 raid-dipper-robustness | `feat/raid-dipper-robustness` | ⚠️ M1 cloud (stdlib obfuscation replay); RAID corpus + DIPPER model leg → local |
-| 25 tdetect-tail-normalization | `spec/25-tdetect-tail-normalization` | ✅ M1 cloud (stdlib/scipy over the backend's existing output) |
-| 28 eval-discipline-bundle | `feat/eval-discipline-bundle` | ✅ cloud (pure stdlib harness math) |
-| 28 styledistance-encoder-upgrade | `feat/styledistance-encoder-upgrade` | ❌ local (swaps in a trained embedding encoder) |
-| 31 llm-verifier-authorship | `feat/llm-verifier-authorship` | ⚠️ M1 mock cloud / real tier `api_llm` |
-| 32 diveye-surprisal-diversity | `feat/detect-diveye` | ✅ M1 cloud (stdlib over injected surprisal series); M2 → local |
-| 35 host-delegated-judge | *(M1 in-flight)* | ✅ M1 cloud (judge-provider seam + stub); real transports runtime-side |
-
-Also open from the 00–21 range: **16 explain-mode** (✅ cloud, stdlib; no branch) and
-**21 attribution-refusal-lab** (✅ M1 cloud, Tier 2, but build-gated on the strong-foil decision).
+| 16 explain-mode | unbuilt, no branch | ✅ cloud (stdlib) |
+| 21 attribution-refusal-lab | build-gated on the strong-foil decision | ✅ M1 cloud (Tier 2), gated |
+| **Spec 25 `p_value_t`** *(open thread)* | reworked spec still names `p_value_t` the deliverable; PR #228 review **removed** it as an unsupported transform | maintainer call — re-adding reverses a settled review decision |
+| **Spec 35 follow-on** *(open thread)* | (a) roll `agent_host` into the 3 tuple-gated judges (argquality / fallacy / warrant); (b) CLI gap — `voice_verifier.py:751` `--judge` choices omit `agent_host` though `build_judge` (`:606`) accepts it | ✅ cloud, mechanical |
 
 ## Lifecycle of a spec
 
