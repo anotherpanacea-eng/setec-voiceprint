@@ -74,7 +74,7 @@ local branches, as the open-signal):
 - 28 styledistance-encoder-upgrade — encoder seam behind `voice_fingerprint` / `crosslingual_voice_distance` (`test_styledistance_encoder_upgrade.py`); the real encoder is the optional local tier
 - 31 llm-verifier-authorship — `voice_verifier` surface (`0f00399`)
 - 32 diveye-surprisal-diversity — `diveye_signals.py` (PR #258)
-- 35 host-delegated-judge — `agent_host` provider, `argument_judge` / `narrative_judge` wired (`da47454`)
+- 35 host-delegated-judge — `agent_host` provider, `argument_judge` / `narrative_judge` wired (`da47454`); follow-on rolled `agent_host` into `argquality` / `fallacy` / `warrant` + closed the `voice_verifier.py` `--judge` CLI gap (PR #293, #295)
 
 **Genuinely open:**
 
@@ -82,8 +82,7 @@ local branches, as the open-signal):
 |---|---|---|
 | 16 explain-mode | unbuilt, no branch | ✅ cloud (stdlib) |
 | 21 attribution-refusal-lab | build-gated on the strong-foil decision | ✅ M1 cloud (Tier 2), gated |
-| **Spec 25 `p_value_t`** *(open thread)* | reworked spec still names `p_value_t` the deliverable; PR #228 review **removed** it as an unsupported transform | maintainer call — re-adding reverses a settled review decision |
-| **Spec 35 follow-on** *(open thread)* | (a) roll `agent_host` into the 3 tuple-gated judges (argquality / fallacy / warrant); (b) CLI gap — `voice_verifier.py:751` `--judge` choices omit `agent_host` though `build_judge` (`:606`) accepts it | ✅ cloud, mechanical |
+| **Spec 25 tail coordinate** *(open thread)* | spec reconciled to the shipped `curvature_t` (PR #294); `p_value_t` removed as unsupported — **do not re-add**. Still open: `curvature_t` is a constant rescale of `curvature_score` (discrimination-inert), so whether to expose T-Detect's tail comparison as a renamed non-probability heuristic coordinate | maintainer design call |
 
 ## Lifecycle of a spec
 
