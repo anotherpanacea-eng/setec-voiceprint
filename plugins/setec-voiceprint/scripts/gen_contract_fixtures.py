@@ -847,6 +847,50 @@ def _build_argument_decision_audit() -> dict[str, Any]:
     )
 
 
+def _build_position_pair_register() -> dict[str, Any]:
+    import position_pair_register as m  # type: ignore
+    import position_pair_register_judge as ppj  # type: ignore
+
+    # The position-pair surface pairs passages that address the SAME question via
+    # its judge, applies the F4 Q-gate (refuse + disclose) and the F2 caps, then
+    # composes the 1.0 envelope through the SAME compose_envelope() the CLI calls
+    # (which runs the F3 runtime banned-key gate before returning). Drive the
+    # surface's OWN deterministic mock judge over a marker-annotated fixture text
+    # (marker format `[[pair=<id> side=<a|b> q=<question ending with ?>]]`, q= LAST
+    # so it swallows the rest of the marker body) so the observed pairs, refusal /
+    # cap disclosures, and claim license are the REAL ones the script emits. Two
+    # clean same-question pairs, no refusals, no caps — the canonical happy path.
+    # Volatile fields (run_timestamp_utc, prompt_fingerprint_sha256) are
+    # sentinelized by normalize() so the golden is byte-stable across releases.
+    text = (
+        "[[pair=p1 side=a q=What is the author's position on carbon pricing?]] "
+        "A well-designed carbon price is the most efficient lever available to a "
+        "modern state. "
+        "[[pair=p1 side=b q=What is the author's position on carbon pricing?]] "
+        "Pricing carbon directly is the single most effective policy a government "
+        "can adopt. "
+        "[[pair=p2 side=a q=How should new transit capacity be funded?]] "
+        "Dedicated fuel levies should underwrite the bulk of new transit capacity. "
+        "[[pair=p2 side=b q=How should new transit capacity be funded?]] "
+        "General revenue, not user fees, ought to carry the cost of expanding "
+        "transit."
+    )
+    judge_result = ppj.build_judge("mock")(text)
+    results, warnings = m.build_results(
+        judge_result,
+        text_len=len(text),
+        cap_per_question=m.DEFAULT_CAP_PER_QUESTION,
+        cap_per_work=m.DEFAULT_CAP_PER_WORK,
+        prompt_fingerprint=ppj.fingerprint_prompt(),
+    )
+    return m.compose_envelope(
+        target_path=Path("<fixture>"),
+        target_words=len(m.word_tokens(text)),
+        results=results,
+        warnings=warnings or None,
+    )
+
+
 #: surface id -> raw-envelope builder. The id matches the
 #: ``capabilities.d/<id>.yaml`` fragment stem and the golden filename stem.
 SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
@@ -864,6 +908,7 @@ SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "general_imposters": _build_general_imposters,
     "binoculars_audit": _build_binoculars_audit,
     "argument_decision_audit": _build_argument_decision_audit,
+    "position_pair_register": _build_position_pair_register,
 }
 
 

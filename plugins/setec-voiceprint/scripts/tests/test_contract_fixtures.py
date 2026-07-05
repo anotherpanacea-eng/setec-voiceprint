@@ -4,7 +4,7 @@
 Pins (spec §6):
 
   * The generator's ``--check`` passes on the committed tree.
-  * Every one of the nine goldens is a valid ``schema_version: 1.0``
+  * Every one of the goldens is a valid ``schema_version: 1.0``
     envelope with the 12 required top-level keys and the correct
     ``task_surface`` (= the surface fragment's ``surface`` field).
   * ``fake_setec.py <surface>`` emits parseable JSON byte-identical to the
@@ -53,6 +53,7 @@ EXPECTED_TASK_SURFACE = {
     "general_imposters": "voice_coherence",
     "binoculars_audit": "binoculars_discrimination",
     "argument_decision_audit": "argument_decision_audit",
+    "position_pair_register": "position_pair_register",
 }
 
 REQUIRED_TOP_LEVEL_KEYS = frozenset({
@@ -64,14 +65,14 @@ REQUIRED_TOP_LEVEL_KEYS = frozenset({
 ALL_SURFACES = sorted(EXPECTED_TASK_SURFACE)
 
 
-def test_generator_knows_the_nine_surfaces():
+def test_generator_knows_every_surface():
     assert gen.surfaces() == ALL_SURFACES
 
 
 def test_fixtures_dir_holds_only_known_goldens():
     """Privacy defense-in-depth: the .gitignore negation re-includes every
     ``*.json`` under contract_fixtures/, escaping the ``*_voice_profile.json``
-    privacy ratchet. Assert the directory contains ONLY the nine known,
+    privacy ratchet. Assert the directory contains ONLY the known,
     sentinelized goldens, so a stray real voice-clone artifact dropped here
     can never be committed past the ratchet."""
     present = sorted(p.stem for p in FIXTURES_DIR.glob("*.json"))
