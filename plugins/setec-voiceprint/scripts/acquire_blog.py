@@ -399,12 +399,24 @@ def extract_post_body(
     when the feed didn't provide one (rare but happens for direct
     sitemap fetches that bypass the feed).
     """
+    # Primary: trafilatura main-content extraction (boilerplate/nav/comment
+    # stripping via readability heuristics). Fail-soft — a miss or an absent
+    # trafilatura install returns nothing here and we fall through to the
+    # per-selector BeautifulSoup loop below, which preserves the historical
+    # behavior exactly. The content_selector + strip_selectors are still
+    # passed so the fallback inside extract_main_content stays site-aware.
+    text, title = ac.extract_main_content(
+        html,
+        content_selector=content_selector,
+        strip_selectors=DEFAULT_STRIP_SELECTORS,
+    )
+    if text and len(text) > 200:
+        return text, title
+
     selectors = []
     if content_selector:
         selectors.append(content_selector)
     selectors.extend(DEFAULT_CONTENT_SELECTORS)
-    text = ""
-    title = None
     for sel in selectors:
         text, title_candidate = ac.html_to_text(
             html,
