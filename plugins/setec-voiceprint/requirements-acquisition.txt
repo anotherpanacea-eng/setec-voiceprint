@@ -59,6 +59,14 @@ python-dateutil>=2.8
 # robust enough for text extraction on academic papers.
 pypdf>=4.0
 
+# MinHash-LSH near-duplicate dedup (MIT) for the staged acquisition
+# manifest (`scripts/near_dup_dedup.py`). Removes near-identical reposts /
+# reprints / cross-source pulls that the exact SHA-256 dedup can't see,
+# before the final JSONL manifest is committed. OPTIONAL within this tier:
+# the dedup pass is opt-in and lazy-imports datasketch, so base imports
+# stay clean and ordinary acquisition runs without it. Pulls numpy/scipy.
+datasketch>=1.6
+
 # Optional: Wayback Machine access for shut-down blogs (Slate Star
 # Codex archive, defunct Substacks). The `wayback` package wraps the
 # CDX API. Acquisition scripts handle ImportError gracefully — if you

@@ -274,6 +274,19 @@ ACQUISITION_PYTHON_DEPS = [
             "pdf_inventory.py / pdf_extract.py."
         ),
     ),
+    PythonDep(
+        name="datasketch",
+        import_name="datasketch",
+        pip_name="datasketch",
+        summary=(
+            "MinHash-LSH near-duplicate dedup for the staged acquisition "
+            "manifest (near_dup_dedup.py) — removes near-identical reposts / "
+            "reprints the exact SHA-256 guard misses. Optional within this "
+            "tier: the pass is opt-in and lazy-imports datasketch, so "
+            "acquisition still runs without it. Pulls numpy/scipy."
+        ),
+        optional_in_tier=True,
+    ),
 ]
 
 # Tier 2 optional: OCR layer for image-only PDFs.
