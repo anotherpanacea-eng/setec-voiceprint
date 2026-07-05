@@ -54,8 +54,11 @@ DECISION 2 — **the paper's DIRECTIONAL compression edit-distance, NOT symmetri
 NCD.** The metric is::
 
     C(s)              = len(raw-LZMA2(s))                 # compressed size in bytes
-    distance_raw      = C(reference + target) - C(reference)
+    distance_raw      = max(0, C(reference + target) - C(reference))
     distance_normalized = distance_raw / C(target)        # 0.0 if C(target)==0
+    # (the max(0,·) clamp: the combined-stream parse can compress the reference
+    #  prefix marginally smaller than alone — a small negative artifact, clamped
+    #  and disclosed via ``clamped_negative_artifact``; Codex P2, PR #298)
 
 ``distance_raw`` is the **incremental** compressed cost of appending the edited
 text to the original: the informational content of ``target`` that the original
@@ -192,12 +195,22 @@ def compression_edit_distance(reference: str, target: str) -> dict[str, Any]:
     c_target = compressed_size(tgt_bytes)
     c_both = compressed_size(ref_bytes + tgt_bytes)
 
-    distance_raw = c_both - c_reference
+    # Non-negativity clamp (Codex P2, PR #298): the incremental cost is NOT
+    # guaranteed >= 0 — LZMA's optimal parse for the combined stream can make the
+    # reference prefix compress a byte or two SMALLER than alone (observed:
+    # C(ref)=45, C(ref+tgt)=44 on a 10-word/1-word pair). A negative value is an
+    # encoder-parse artifact, not "negative edit effort", and would violate the
+    # documented [0, inf) contract — clamp to 0 and DISCLOSE via
+    # ``clamped_negative_artifact`` (the identity-floor's sibling honesty note).
+    raw = c_both - c_reference
+    clamped = raw < 0
+    distance_raw = max(0, raw)
     distance_normalized = (distance_raw / c_target) if c_target else 0.0
 
     return {
         "distance_raw": float(distance_raw),
         "distance_normalized": float(distance_normalized),
+        "clamped_negative_artifact": clamped,
         "reference_bytes": len(ref_bytes),
         "target_bytes": len(tgt_bytes),
         "metric": METRIC_NAME,
@@ -257,6 +270,12 @@ def audit_compression_edit_distance(reference: str, target: str) -> dict[str, An
             "measures edit EFFORT pre->post (reference->target), matching the "
             "paper's edit-time semantics; NOT symmetric NCD (a clustering distance)"
         ),
+        "non_negativity_clamp": (
+            "distance_raw is clamped at 0: LZMA's combined-stream parse can make "
+            "the reference prefix compress marginally smaller than alone, yielding "
+            "a small negative artifact (never negative edit effort); a clamped "
+            "value is disclosed via clamped_negative_artifact=true"
+        ),
         "identity_floor": (
             "an identical target still costs a few bits to signal the long "
             "back-reference, so distance_raw for reference==target is a small "
@@ -279,7 +298,7 @@ DEFAULT_LICENSES = (
     "the informational edit-distance between the two supplied texts as a "
     "directional LZ-compression edit-distance (arXiv:2412.17321, stdlib raw "
     "LZMA2, 64 MiB dictionary). It "
-    "reports distance_raw = C(reference + target) - C(reference) (the incremental "
+    "reports distance_raw = max(0, C(reference + target) - C(reference)) (the incremental "
     "compressed bits to encode the edited target GIVEN the original) and "
     "distance_normalized = distance_raw / C(target), plus the two input byte "
     "lengths and the compressed sizes they derive from. A small distance means the "

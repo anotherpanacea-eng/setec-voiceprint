@@ -218,6 +218,24 @@ def test_identical_pair_is_near_zero():
     assert r["distance_raw"] < minimal
 
 
+def test_negative_incremental_cost_is_clamped_and_disclosed():
+    """Codex P2 (PR #298): LZMA's combined-stream parse can compress the reference
+    prefix marginally SMALLER than alone, yielding a negative incremental cost
+    (observed C(ref)=45, C(ref+tgt)=44 on this exact pair). A negative value is an
+    encoder artifact, not negative edit effort — it must be clamped to 0 and
+    disclosed, never emitted (the pre-fix envelope reported distance_raw: -1.0
+    with available: true, contradicting the [0, inf) contract)."""
+    r = c.compression_edit_distance(
+        "mu iota xi xi lambda nu theta theta iota eta", "xi")
+    assert r["distance_raw"] == 0.0
+    assert r["distance_normalized"] == 0.0
+    assert r["clamped_negative_artifact"] is True
+    # a normal pair does not clamp and says so
+    g = c.compression_edit_distance(REF, TGT_MINIMAL)
+    assert g["clamped_negative_artifact"] is False
+    assert g["distance_raw"] > 0.0
+
+
 def test_long_reference_exceeds_deflate_window():
     """THE review P1 pinned (Fable, 2026-07-05): a verbatim excerpt of a
     manuscript-scale reference must score as a NEAR-COPY. Under the first build's
