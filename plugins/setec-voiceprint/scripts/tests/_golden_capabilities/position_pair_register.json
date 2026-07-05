@@ -4,7 +4,11 @@
   "surface": "position_pair_register",
   "status": "literature_anchored",
   "handoff": "experimental",
-  "consumers": [],
+  "consumers": [
+    "apodictic"
+  ],
+  "min_setec_version": "1.121.0",
+  "json_delivery": "stdout",
   "family": "argument-consistency",
   "purpose": "Register of passage PAIRS in one long nonfiction argument-shaped work that address the SAME question Q (LLM-judge), each pair carrying a neutral interrogative Q and both passages' verbatim loci (doc, start_char, end_char, quote), emitted in DOCUMENT ORDER. It asserts NO relation between the paired passages \u2014 not agreement, not conflict, not contradiction, not tension, not which passage is right. The model only points at two passages that share a question; the HUMAN reads both and owns 100% of the conflict call. This is the deliberate NON-step across the content-verdict wall (the task is split so the model cannot assert opposition). Two mechanical, posture-critical gates carry the firewall: the F4 Q-string gate (a surfaced question must be interrogative in FORM and free of relation vocabulary \u2014 a case-folded substring scan \u2014 else the pair is REFUSED, counted, and disclosed; the form check is SYNTAX-ONLY and gives zero protection against loaded/presuppositional questions, so the human terminus is the guarantee) and the F3 runtime banned-key walk (RAISES on any relation key anywhere in the envelope, or any generic verdict key inside results.pairs, before the envelope is returned). Pair caps (default 12/question, 60/work, operator-tunable) are a DISCLOSURE: over-cap survivors are the first by document order and dropped loci are logged \u2014 never a tension/confidence ranking. Uncalibrated; no run-to-run determinism guarantee for live backends (mock/manifest are deterministic by construction). Register scope v1: nonfiction-argument only (declared in the claim surface, not gated). Anchors: ContraDoc (arXiv:2311.09182) contradiction-type taxonomy; BeliefShift (arXiv:2603.23848) position-drift framing.\n",
   "use_when": [
@@ -17,9 +21,71 @@
     "You are working on fiction or a narrator/character's beliefs (v1 is nonfiction-argument register only; a fiction arc can license a stated change, making false positives severe)",
     "You need an exhaustive contradiction sweep or a clean bill of health (absence of a pair is NOT evidence of consistency)"
   ],
-  "inputs": {
-    "target": "nonfiction argument-shaped prose text file (UTF-8)"
-  },
+  "inputs": [
+    {
+      "flag": "target",
+      "type": "path",
+      "required": true
+    },
+    {
+      "flag": "--judge",
+      "type": "enum",
+      "required": false,
+      "values": [
+        "manifest",
+        "mock",
+        "anthropic",
+        "openai",
+        "gemini",
+        "agent_host"
+      ]
+    },
+    {
+      "flag": "--judge-manifest",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--judge-model",
+      "type": "string",
+      "required": false
+    },
+    {
+      "flag": "--judge-temperature",
+      "type": "float",
+      "required": false
+    },
+    {
+      "flag": "--judge-max-tokens",
+      "type": "int",
+      "required": false
+    },
+    {
+      "flag": "--cap-per-question",
+      "type": "int",
+      "required": false
+    },
+    {
+      "flag": "--cap-per-work",
+      "type": "int",
+      "required": false
+    },
+    {
+      "flag": "--out",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--out-md",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--json",
+      "type": "bool",
+      "required": false
+    }
+  ],
   "outputs": {
     "schema_version": "1.0",
     "artifacts": [

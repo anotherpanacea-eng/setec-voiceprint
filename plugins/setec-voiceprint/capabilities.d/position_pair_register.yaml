@@ -4,7 +4,10 @@ entries:
   surface: position_pair_register
   status: literature_anchored
   handoff: experimental
-  consumers: []
+  consumers:
+  - apodictic
+  min_setec_version: "1.121.0"
+  json_delivery: stdout
   family: argument-consistency
   purpose: 'Register of passage PAIRS in one long nonfiction argument-shaped work that
     address the SAME question Q (LLM-judge), each pair carrying a neutral interrogative
@@ -44,7 +47,46 @@ entries:
   - You need an exhaustive contradiction sweep or a clean bill of health (absence of a
     pair is NOT evidence of consistency)
   inputs:
-    target: nonfiction argument-shaped prose text file (UTF-8)
+  - flag: target
+    type: path
+    required: true
+  - flag: --judge
+    type: enum
+    required: false
+    values:
+    - manifest
+    - mock
+    - anthropic
+    - openai
+    - gemini
+    - agent_host
+  - flag: --judge-manifest
+    type: path
+    required: false
+  - flag: --judge-model
+    type: string
+    required: false
+  - flag: --judge-temperature
+    type: float
+    required: false
+  - flag: --judge-max-tokens
+    type: int
+    required: false
+  - flag: --cap-per-question
+    type: int
+    required: false
+  - flag: --cap-per-work
+    type: int
+    required: false
+  - flag: --out
+    type: path
+    required: false
+  - flag: --out-md
+    type: path
+    required: false
+  - flag: --json
+    type: bool
+    required: false
   outputs:
     schema_version: '1.0'
     artifacts:
