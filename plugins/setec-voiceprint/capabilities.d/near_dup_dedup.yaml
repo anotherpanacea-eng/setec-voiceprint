@@ -1,0 +1,49 @@
+entries:
+- id: near_dup_dedup
+  script_path: plugins/setec-voiceprint/scripts/near_dup_dedup.py
+  surface: voice_coherence_acquisition
+  status: stable
+  handoff: none
+  consumers: []
+  family: acquisition
+  purpose: >-
+    MinHash-LSH cross-source near-duplicate dedup for a staged acquisition
+    manifest — drops near-identical reposts/reprints the exact-hash guard misses,
+    before the final JSONL manifest is committed.
+  use_when:
+  - You have a staged impostor-corpus manifest and want to remove near-duplicate
+    documents (syndicated reposts, lightly edited reprints, the same essay pulled
+    from two sources) that the exact SHA-256 dedup does not catch.
+  - You are merging acquisition output from multiple sources / directories and
+    need cross-source dedup before the pool feeds voice-distance / General-Imposters
+    baselines.
+  do_not_use_when:
+  - You only need exact-duplicate removal — acquisition_core.content_hash_already_present
+    already handles that inline during acquisition.
+  - datasketch is not installed and you cannot add the optional acquisition dep
+    (the pass raises a clear RuntimeError naming requirements-acquisition.txt).
+  inputs:
+    target: A JSONL acquisition manifest (inline `text` or a resolvable
+      `text_path`/`path` per row).
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - A deduplicated JSONL manifest (dropped rows removed, all others preserved
+      in order).
+    - A DedupResult report (kept/dropped ids + near-duplicate clusters +
+      threshold provenance), on stdout with --json.
+  compute:
+    tier: acquisition
+    cost_note: >-
+      MinHash-LSH is near-linear in the corpus size; datasketch pulls numpy/scipy.
+      Optional within the acquisition tier — lazy-imported, so base import stays clean.
+    length_floor_words: null
+  registers:
+  - impostor_corpus
+  dependencies:
+    python:
+    - datasketch
+  examples:
+  - 'python3 scripts/near_dup_dedup.py draft_manifest.jsonl --dry-run --json'
+  - 'python3 scripts/near_dup_dedup.py draft_manifest.jsonl --out deduped.jsonl --threshold 0.85'
+  references: []

@@ -40,6 +40,15 @@ feedparser>=6.0
 beautifulsoup4>=4.12
 lxml>=4.9
 
+# Primary main-content extractor (Apache-2.0). trafilatura's model-free
+# readability heuristics strip boilerplate/nav/comments and isolate the
+# article body, replacing per-site `content_selector` / `strip_selectors`
+# tuning for the common case (`acquisition_core.extract_main_content`).
+# OPTIONAL within this tier: extraction fail-softs to the BeautifulSoup
+# path (`html_to_text`) when trafilatura is absent or returns nothing, so
+# acquisition still runs without it — it is an upgrade, not a hard dep.
+trafilatura>=1.8
+
 # Date parsing across feed and HTML formats. RSS / Atom feeds emit
 # RFC822 dates; magazine archives emit a mix of ISO and human-readable
 # dates. python-dateutil normalizes all of those to `datetime.date`.
@@ -49,6 +58,14 @@ python-dateutil>=2.8
 # corpus spec). Lighter than `pdfminer.six` for the inventory pass and
 # robust enough for text extraction on academic papers.
 pypdf>=4.0
+
+# MinHash-LSH near-duplicate dedup (MIT) for the staged acquisition
+# manifest (`scripts/near_dup_dedup.py`). Removes near-identical reposts /
+# reprints / cross-source pulls that the exact SHA-256 dedup can't see,
+# before the final JSONL manifest is committed. OPTIONAL within this tier:
+# the dedup pass is opt-in and lazy-imports datasketch, so base imports
+# stay clean and ordinary acquisition runs without it. Pulls numpy/scipy.
+datasketch>=1.6
 
 # Optional: Wayback Machine access for shut-down blogs (Slate Star
 # Codex archive, defunct Substacks). The `wayback` package wraps the

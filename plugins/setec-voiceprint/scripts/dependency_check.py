@@ -252,6 +252,20 @@ ACQUISITION_PYTHON_DEPS = [
         summary="Date parsing across feed and HTML formats.",
     ),
     PythonDep(
+        name="trafilatura",
+        import_name="trafilatura",
+        pip_name="trafilatura",
+        summary=(
+            "Primary main-content HTML extractor "
+            "(acquisition_core.extract_main_content): readability "
+            "heuristics strip boilerplate/nav/comments, replacing per-site "
+            "selector tuning. Optional within this tier — extraction "
+            "fail-softs to the BeautifulSoup path (html_to_text) when "
+            "absent, so acquisition still runs without it."
+        ),
+        optional_in_tier=True,
+    ),
+    PythonDep(
         name="pypdf",
         import_name="pypdf",
         pip_name="pypdf",
@@ -259,6 +273,19 @@ ACQUISITION_PYTHON_DEPS = [
             "PDF inventory and text-layer extraction for "
             "pdf_inventory.py / pdf_extract.py."
         ),
+    ),
+    PythonDep(
+        name="datasketch",
+        import_name="datasketch",
+        pip_name="datasketch",
+        summary=(
+            "MinHash-LSH near-duplicate dedup for the staged acquisition "
+            "manifest (near_dup_dedup.py) — removes near-identical reposts / "
+            "reprints the exact SHA-256 guard misses. Optional within this "
+            "tier: the pass is opt-in and lazy-imports datasketch, so "
+            "acquisition still runs without it. Pulls numpy/scipy."
+        ),
+        optional_in_tier=True,
     ),
 ]
 

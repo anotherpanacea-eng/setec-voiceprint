@@ -971,6 +971,153 @@ def html_to_text(
     return text.strip(), title
 
 
+def _prestrip_html(html: str, strip_selectors: Iterable[str]) -> str:
+    """Drop caller-named noise subtrees from ``html`` before extraction.
+
+    trafilatura's readability heuristics are strong on generic boilerplate
+    (nav / footer / global chrome) but can miss *site-specific* apparatus a
+    maintainer has already pinned in ``strip_selectors`` — e.g. a Substack
+    ``.comments`` / ``.subscription-widget`` block that sits inside the main
+    ``<article>`` and reads as body text. Pre-stripping those exact subtrees
+    hands trafilatura an already-de-chromed document, so the primary path
+    keeps the site-specific cleanliness the selector-based fallback had.
+
+    Best-effort: if bs4 is unavailable or parsing fails, return ``html``
+    unchanged (trafilatura still runs on the raw document).
+    """
+    if not strip_selectors:
+        return html
+    try:
+        from bs4 import BeautifulSoup  # type: ignore
+    except Exception:
+        return html
+    try:
+        try:
+            soup = BeautifulSoup(html, "lxml")
+        except Exception:
+            soup = BeautifulSoup(html, "html.parser")
+        for sel in strip_selectors:
+            for tag in soup.select(sel):
+                tag.decompose()
+        return str(soup)
+    except Exception:
+        return html
+
+
+def _trafilatura_extract(
+    html: str,
+    *,
+    favor_recall: bool = True,
+    strip_selectors: Iterable[str] = (),
+) -> tuple[str, str | None] | None:
+    """Extract main-content text + title with trafilatura, or ``None``.
+
+    Returns ``(text, title)`` when trafilatura is installed AND returns a
+    non-empty main-content body; returns ``None`` in every other case
+    (trafilatura absent, extraction found nothing, or it raised). The
+    ``None`` sentinel is what tells :func:`extract_main_content` to fall
+    back to the BeautifulSoup path — trafilatura is an *upgrade*, never a
+    hard dependency, so a miss must degrade silently rather than raise.
+
+    trafilatura's model-free readability heuristics (boilerplate removal,
+    comment/nav/footer stripping, main-article detection) replace the
+    hand-maintained ``strip_selectors`` + ``content_selector`` guesswork
+    for the common case; any ``strip_selectors`` the caller does pass are
+    pre-stripped (:func:`_prestrip_html`) so site-specific apparatus inside
+    the main article is dropped before trafilatura sees it.
+
+    Imported lazily so base ``import acquisition_core`` stays pure — no
+    acquisition run that doesn't extract HTML pays the import cost, and
+    the module imports cleanly with trafilatura absent.
+    """
+    try:
+        import trafilatura  # type: ignore
+        from trafilatura.metadata import extract_metadata  # type: ignore
+    except Exception:
+        return None
+    prepared = _prestrip_html(html, strip_selectors)
+    try:
+        text = trafilatura.extract(
+            prepared,
+            favor_recall=favor_recall,
+            include_comments=False,
+            include_tables=False,
+            no_fallback=False,
+            output_format="txt",
+        )
+    except Exception:
+        return None
+    if not text or not text.strip():
+        return None
+    title: str | None = None
+    try:
+        meta = extract_metadata(html)
+        if meta is not None and getattr(meta, "title", None):
+            title = str(meta.title).strip() or None
+    except Exception:
+        title = None
+    # Normalize whitespace to match the html_to_text contract (collapse
+    # intra-line runs, cap blank-line runs at one) so downstream
+    # preprocessing + hashing see the same shape from either path.
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n[ \t]+", "\n", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip(), title
+
+
+def extract_main_content(
+    html: str,
+    *,
+    content_selector: str | None = None,
+    strip_selectors: Iterable[str] = (),
+    prefer_trafilatura: bool = True,
+) -> tuple[str, str | None]:
+    """Primary HTML→text extraction: trafilatura first, BeautifulSoup fallback.
+
+    Returns ``(text, title)`` — the same contract as :func:`html_to_text`,
+    so acquisition scripts can call this in place of ``html_to_text``
+    without changing how they consume the result.
+
+    Path:
+      1. **trafilatura** (when installed and ``prefer_trafilatura``): its
+         readability heuristics strip boilerplate/nav/comments and isolate
+         the main article body. This is the "single biggest acquisition
+         upgrade" — it replaces per-site ``content_selector`` /
+         ``strip_selectors`` tuning for the common case.
+      2. **BeautifulSoup fallback** (:func:`html_to_text`): used when
+         trafilatura is absent, is disabled, or returns nothing. The
+         caller's ``content_selector`` + ``strip_selectors`` still drive
+         this path, so site-specific extraction is never lost.
+
+    Fail-soft is the whole point: a trafilatura miss (empty body on an
+    unusual page, or the package simply not installed) transparently
+    degrades to the existing extractor rather than dropping the piece.
+    """
+    if prefer_trafilatura:
+        primary = _trafilatura_extract(html, strip_selectors=strip_selectors)
+        if primary is not None:
+            text, title = primary
+            if text:
+                # If trafilatura found no title, let the BeautifulSoup
+                # <title> sniff fill it (cheap, and some feeds rely on it).
+                if title is None:
+                    try:
+                        _, bs_title = html_to_text(
+                            html,
+                            content_selector=content_selector,
+                            strip_selectors=strip_selectors,
+                        )
+                        title = bs_title
+                    except Exception:
+                        title = None
+                return text, title
+    return html_to_text(
+        html,
+        content_selector=content_selector,
+        strip_selectors=strip_selectors,
+    )
+
+
 def html_text_is_clean(text: str) -> bool:
     """Sanity check: the cleaned text must not still contain raw HTML.
 
