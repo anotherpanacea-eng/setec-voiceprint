@@ -1,0 +1,58 @@
+{
+  "id": "compression_edit_distance_audit",
+  "script_path": "plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py",
+  "surface": "compression_edit_distance",
+  "status": "literature_anchored",
+  "handoff": "experimental",
+  "consumers": [],
+  "family": "edit_magnitude",
+  "purpose": "Paired-input mechanical edit-magnitude (stdlib, model-free): the directional LZ77/DEFLATE compression edit-distance between a pre-edit reference and a post-edit target (Compression-Based Edit Distance, arXiv:2412.17321, reimplemented on stdlib zlib — not vendored). Given BOTH texts, distance_raw = C(reference + target) - C(reference) is the incremental compressed cost of encoding the edited target GIVEN the original (C(s) = len(raw-DEFLATE(s)) at level=9, wbits=-15 — deterministic, header/timestamp-free); distance_normalized = distance_raw / C(target) expresses it as a fraction of the target's standalone compressed size, comparable across text lengths. A small distance means the target is largely a near-copy of the reference (little editing); a large distance means they share little (heavy editing / unrelated content). This is the MECHANICAL, PAIRED-input case (the operator has both texts, so no model is needed) — distinct from spec 13's single-input, model-based edit_magnitude (a RoBERTa regressor over ONE text). The directional form matches the paper's edit-EFFORT semantics (pre->post), NOT symmetric NCD. Descriptive only: emits the raw + normalized distance and the input byte / compressed sizes. There is NO is_ai / is_human / label / verdict / decision / percent_ai key; the claim-license refuses any absolute % AI-edited, any dosage claim, any provenance/authorship inference, per-sentence localization, and cross-corpus generalization, and licenses only the informational edit-distance between the two supplied texts. Paired-input is LOAD-BEARING: with no --reference the metric is meaningless, so the CLI FAILS LOUD (nonzero exit, message before any JSON) rather than degrade to a single-document mode. Uncalibrated: no shipped model/calibration, so no corpus_provenance (consistent with spec 13); the paper's edit-time correlation is [UNVERIFIED on SETEC's corpus] — a literature anchor, not a SETEC-measured result.\n",
+  "use_when": [
+    "You have BOTH the pre-edit draft and the post-edit version and want to measure how much editing separates them (a mechanical, glass-box, model-free measurement)",
+    "You want a deterministic paired pre/post edit-magnitude signal without a model or a calibration corpus",
+    "You're comparing a draft to its AI-smoothed rewrite, or an author-original to an LLM-smoothed pair, or a revision diff"
+  ],
+  "do_not_use_when": [
+    "You have only ONE text and want to know if it is AI-edited (that is the single-input, model-based edit_magnitude surface, spec 13 — this surface refuses and fails loud without a --reference)",
+    "You want an absolute '% AI-edited', a dosage claim, or an authorship / provenance verdict (this surface ships uncalibrated and refuses all three)",
+    "You need per-sentence localization of the edits (the distance is a whole-text scalar)",
+    "You need a value that generalizes across corpora (a distance from one pre/post pair licenses no cross-corpus claim)"
+  ],
+  "inputs": {
+    "target": "post-edit prose text file (UTF-8)",
+    "reference": "pre-edit prose text file (UTF-8), required"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "stdout markdown report (default), --json envelope, or --out PATH"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "stdlib only (zlib DEFLATE compression at level=9, wbits=-15; linear in input size; no model, no GPU, no corpus). Deterministic across platforms (raw DEFLATE carries no header/timestamp/OS byte).",
+    "length_floor_words": 50
+  },
+  "registers": [
+    "blog_essay",
+    "testimony_policy",
+    "literary_fiction"
+  ],
+  "dependencies": {
+    "python": []
+  },
+  "examples": [
+    {
+      "description": "Compression edit-distance between a pre-edit draft and its post-edit version (JSON envelope)",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py post_edit.md --reference pre_edit.md --json"
+    },
+    {
+      "description": "Same, written to a file as a markdown report",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/compression_edit_distance_audit.py post_edit.md --reference pre_edit.md --out report.md"
+    }
+  ],
+  "references": [
+    "Assessing Human Editing Effort on LLM-Generated Texts via Compression-Based Edit Distance (Devatine & Abraham), arXiv:2412.17321 (2024; code + data CC-BY-4.0 at github.com/NDV-tiime/CompressionDistance, reimplemented not vendored; the edit-time correlation is [UNVERIFIED on SETEC's corpus]): https://arxiv.org/abs/2412.17321",
+    "specs/13-editlens-edit-magnitude.md"
+  ]
+}
