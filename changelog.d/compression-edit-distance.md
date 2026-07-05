@@ -4,10 +4,13 @@
 (new `compression_edit_distance` surface, stdlib, `literature_anchored`).** Given
 BOTH a pre-edit draft (`--reference`) and the post-edit version (`TARGET`), the
 `compression_edit_distance_audit` capability measures the informational
-edit-distance between them via LZ77/DEFLATE compression: `distance_raw =
+edit-distance between them via LZ-family (raw LZMA2) compression: `distance_raw =
 C(reference + target) - C(reference)` is the incremental compressed cost of
-encoding the edited text GIVEN the original (`C(s) = len(raw-DEFLATE(s))` at
-`level=9`, `wbits=-15` — deterministic, header/timestamp-free, stdlib `zlib`), and
+encoding the edited text GIVEN the original (`C(s) = len(raw-LZMA2(s))` at
+preset `9|EXTREME`, `FORMAT_RAW` — deterministic for the pinned filter chain,
+container/header-free, stdlib `lzma`; the 64 MiB dictionary spans whole
+manuscripts — raw DEFLATE's 32 KiB window was rejected on review because beyond
+it a verbatim excerpt of a manuscript-scale reference scored as a heavy edit), and
 `distance_normalized = distance_raw / C(target)` expresses it as a fraction of the
 target's standalone compressed size. A small distance means the target is largely a
 near-copy of the reference (little editing); a large distance means they share

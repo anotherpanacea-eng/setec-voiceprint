@@ -2,7 +2,7 @@
 """Tests for compression_edit_distance_audit.py — the compression_edit_distance
 surface (paired-input mechanical edit-magnitude, literature_anchored, stdlib).
 
-Every test is model-free and deterministic (stdlib zlib only). The two locked
+Every test is model-free and deterministic (stdlib lzma only). The two locked
 golden pairs (a minimal-edit high-similarity pair + a major-edit low-similarity
 pair) carry hand-checked raw + normalized values to fixed precision.
 """
@@ -14,7 +14,7 @@ import json
 import math
 import subprocess
 import sys
-import zlib
+import lzma
 from pathlib import Path
 
 import pytest
@@ -60,19 +60,19 @@ TGT_MAJOR = (
 )
 
 # Hand-checked locked values (fixed precision).
-GOLDEN_MINIMAL_RAW = 12.0
-GOLDEN_MINIMAL_NORM = 0.090226  # round(0.09022556390977443, 6)
-GOLDEN_MAJOR_RAW = 109.0
-GOLDEN_MAJOR_NORM = 0.801471  # round(0.8014705882352942, 6)
+GOLDEN_MINIMAL_RAW = 10.0
+GOLDEN_MINIMAL_NORM = 0.063694  # round(0.06369426751592357, 6)
+GOLDEN_MAJOR_RAW = 132.0
+GOLDEN_MAJOR_NORM = 0.790419  # round(0.7904191616766467, 6)
 
 
 def _independent_ced(ref: str, tgt: str):
     """A second, independent implementation of the pinned directional formula (raw
-    DEFLATE, level=9, wbits=-15) so the regression checks the METHOD against a
-    from-scratch computation, not just the module against itself."""
+    LZMA2, preset 9 | EXTREME, FORMAT_RAW) so the regression checks the METHOD
+    against a from-scratch computation, not just the module against itself."""
     def C(s: bytes) -> int:
-        co = zlib.compressobj(level=9, wbits=-15)
-        return len(co.compress(s) + co.flush())
+        filters = [{"id": lzma.FILTER_LZMA2, "preset": 9 | lzma.PRESET_EXTREME}]
+        return len(lzma.compress(s, format=lzma.FORMAT_RAW, filters=filters))
     rb, tb = ref.encode("utf-8"), tgt.encode("utf-8")
     raw = C(rb + tb) - C(rb)
     norm = raw / C(tb) if C(tb) else 0.0
@@ -148,12 +148,15 @@ def test_deterministic():
 
 
 def test_compressed_size_is_header_free_and_deterministic():
-    """C(s) uses raw DEFLATE (wbits=-15): no gzip/zlib header, no timestamp, no OS
-    byte — so the count is a pure function of the input, stable across runs."""
+    """C(s) uses raw LZMA2 (FORMAT_RAW): no xz container, no header, no checksum —
+    so the count is a pure function of the input, stable across runs."""
     data = (REF * 3).encode("utf-8")
     assert c.compressed_size(data) == c.compressed_size(data)
-    # A raw-deflate stream has no 2-byte zlib header (0x78 …) or gzip magic (0x1f
-    # 0x8b) prepended; we only assert the size is a small positive int here.
+    # A FORMAT_RAW stream carries no xz magic (\xfd7zXZ\x00) or .lzma header —
+    # verify against the container format directly.
+    raw = lzma.compress(data, format=lzma.FORMAT_RAW, filters=c.LZMA_FILTERS)
+    assert not raw.startswith(b"\xfd7zXZ\x00")
+    assert len(raw) == c.compressed_size(data)
     assert isinstance(c.compressed_size(data), int)
     assert c.compressed_size(data) > 0
 
@@ -194,8 +197,8 @@ def test_metric_is_directional_not_ncd():
     symmetric NCD. On an asymmetric pair the directional value must differ from the
     NCD value, so a silent switch to NCD is caught."""
     def C(s):
-        co = zlib.compressobj(level=9, wbits=-15)
-        return len(co.compress(s.encode()) + co.flush())
+        filters = [{"id": lzma.FILTER_LZMA2, "preset": 9 | lzma.PRESET_EXTREME}]
+        return len(lzma.compress(s.encode(), format=lzma.FORMAT_RAW, filters=filters))
     directional = c.compression_edit_distance(REF, TGT_MAJOR)["distance_raw"]
     c_ref, c_tgt, c_both = C(REF), C(TGT_MAJOR), C(REF + TGT_MAJOR)
     ncd = (c_both - min(c_ref, c_tgt)) / max(c_ref, c_tgt)
@@ -213,6 +216,43 @@ def test_identical_pair_is_near_zero():
     # Far smaller than any real edit (the minimal-edit pair).
     minimal = c.compression_edit_distance(REF, TGT_MINIMAL)["distance_raw"]
     assert r["distance_raw"] < minimal
+
+
+def test_long_reference_exceeds_deflate_window():
+    """THE review P1 pinned (Fable, 2026-07-05): a verbatim excerpt of a
+    manuscript-scale reference must score as a NEAR-COPY. Under the first build's
+    raw DEFLATE (32 KiB window) this exact pair scored distance_normalized ≈ 0.90
+    ("heavy edit") because back-references could not reach the excerpt's origin;
+    under raw LZMA2 (64 MiB dictionary) it scores ≈ 0.01. Deterministic corpus
+    (seeded), ~120 KB reference, verbatim first ~12 KB as the target."""
+    import random
+    rng = random.Random(42)
+    vocab = [f"w{n}" for n in range(4000)]
+    reference = " ".join(rng.choice(vocab) for _ in range(20000))  # ~120 KB
+    target = reference[:12000]                                     # verbatim excerpt
+    r = c.compression_edit_distance(reference, target)
+    assert r["distance_normalized"] < 0.1, (
+        "a verbatim excerpt of a long reference must read as a near-copy — a large "
+        "value here means the compressor's window cannot span the reference "
+        "(the DEFLATE 32 KiB failure mode)"
+    )
+
+
+def test_other_argparse_errors_do_not_claim_missing_reference(tmp_path, capsys):
+    """The pinned NO_REFERENCE_MESSAGE fires ONLY when --reference is genuinely
+    absent. A different argparse failure (missing TARGET with --reference present)
+    must NOT print it — that would misdiagnose the operator's actual mistake."""
+    ref = tmp_path / "r.txt"
+    ref.write_text(REF, encoding="utf-8")
+    with pytest.raises(SystemExit) as ei:
+        c.main(["--reference", str(ref)])   # TARGET missing; --reference present
+    assert ei.value.code != 0
+    err = capsys.readouterr().err
+    assert c.NO_REFERENCE_MESSAGE not in err
+    # the --reference=VALUE spelling is also recognized as "present"
+    with pytest.raises(SystemExit):
+        c.main([f"--reference={ref}"])
+    assert c.NO_REFERENCE_MESSAGE not in capsys.readouterr().err
 
 
 # ----------------------------------------------------------------------
@@ -238,7 +278,7 @@ def test_envelope_shape():
     ]:
         assert key in r, f"missing results.{key}"
         assert isinstance(r[key], typ), f"results.{key} is {type(r[key])}, expected {typ}"
-    assert r["metric"] == "lz77_compression_edit_distance"
+    assert r["metric"] == "lzma_compression_edit_distance"
     # calibration_status: literature_anchored is carried on the claim-license refs /
     # comparison mode (no corpus_provenance shipped).
     assert env["claim_license"]["comparison_set"]["mode"] == "paired_pre_post_uncalibrated"

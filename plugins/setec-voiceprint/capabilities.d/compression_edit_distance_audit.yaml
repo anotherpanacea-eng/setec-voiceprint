@@ -7,12 +7,13 @@ entries:
   consumers: []
   family: edit_magnitude
   purpose: 'Paired-input mechanical edit-magnitude (stdlib, model-free): the directional
-    LZ77/DEFLATE compression edit-distance between a pre-edit reference and a post-edit
+    LZ-compression edit-distance (raw LZMA2) between a pre-edit reference and a post-edit
     target (Compression-Based Edit Distance, arXiv:2412.17321, reimplemented on stdlib
-    zlib — not vendored). Given BOTH texts, distance_raw = C(reference + target) -
+    lzma — not vendored). Given BOTH texts, distance_raw = C(reference + target) -
     C(reference) is the incremental compressed cost of encoding the edited target GIVEN
-    the original (C(s) = len(raw-DEFLATE(s)) at level=9, wbits=-15 — deterministic,
-    header/timestamp-free); distance_normalized = distance_raw / C(target) expresses it
+    the original (C(s) = len(raw-LZMA2(s)) at preset 9|EXTREME, FORMAT_RAW — deterministic
+    for the pinned filter chain, container/header-free; the 64 MiB dictionary spans a
+    whole manuscript — DEFLATE''s 32 KiB window was rejected on review); distance_normalized = distance_raw / C(target) expresses it
     as a fraction of the target''s standalone compressed size, comparable across text
     lengths. A small distance means the target is largely a near-copy of the reference
     (little editing); a large distance means they share little (heavy editing / unrelated
@@ -57,9 +58,10 @@ entries:
     - stdout markdown report (default), --json envelope, or --out PATH
   compute:
     tier: core
-    cost_note: stdlib only (zlib DEFLATE compression at level=9, wbits=-15; linear in
-      input size; no model, no GPU, no corpus). Deterministic across platforms (raw
-      DEFLATE carries no header/timestamp/OS byte).
+    cost_note: stdlib only (raw LZMA2 at preset 9|EXTREME; near-linear in input size;
+      no model, no GPU, no corpus). Deterministic for the pinned filter chain
+      (FORMAT_RAW carries no container/header/checksum); the 64 MiB dictionary spans
+      whole manuscripts (DEFLATE''s 32 KiB window was rejected on review).
     length_floor_words: 50
   registers:
   - blog_essay

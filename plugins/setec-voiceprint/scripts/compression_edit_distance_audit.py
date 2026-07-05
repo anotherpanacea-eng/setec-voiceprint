@@ -4,7 +4,7 @@
 
 A **fully mechanical, deterministic, paired-input** edit-magnitude metric. Given
 BOTH a pre-edit draft (``--reference``) and the post-edit version (``TARGET``), it
-measures the **informational edit-distance** between them via LZ77/DEFLATE
+measures the **informational edit-distance** between them via LZ-family (LZMA2)
 compression: how many additional compressed bits it costs to encode the edited
 text GIVEN the original. It answers *"how much editing separates these two texts?"*
 — NOT "is this text AI-edited?" (that is the single-input, model-based
@@ -32,22 +32,28 @@ its own enum string, labels entry, and ``id: compression_edit_distance_audit``.
 
 METHOD (pinned — the one build-time decision, resolved here)
 ============================================================
-DECISION 1 — **stdlib ``zlib`` (DEFLATE = LZ77 + Huffman), NOT a bespoke
-pure-Python LZ77 factorization.** DEFLATE's core is exactly the LZ77 back-reference
-factorization the paper's method rests on; ``zlib`` gives it deterministically at
-C speed with zero new dependencies. A hand-rolled LZ77 would reproduce the same
-copy/literal factorization more slowly and with more surface area for bugs, for no
-semantic gain. The compressor is pinned to ``level=9`` (maximal back-reference
-search → the tightest, most stable factorization) and **raw DEFLATE**
-(``wbits=-15``) so the stream carries **no gzip/zlib header, no timestamp, no OS
-byte** — those non-content bytes are exactly what would make ``C(s)`` non-
-deterministic across platforms/runs. With them gone the byte count is a pure
-function of the input.
+DECISION 1 — **stdlib ``lzma`` (raw LZMA2, an LZ77-family factorization), NOT
+``zlib``/DEFLATE and NOT a bespoke pure-Python LZ77.** The first build used raw
+DEFLATE (``wbits=-15``) — **rejected on review for its 32 KiB sliding window**:
+back-references cannot reach further than 32,768 bytes, so for manuscript-scale
+inputs (the fleet's primary case — a draft chapter routinely exceeds 32 KiB) the
+target text cannot "see" most of the reference and the metric silently inverts
+(measured: a verbatim 12 KB excerpt of a 120 KB reference scored
+``distance_normalized ≈ 0.90`` — "heavy edit" — under DEFLATE, vs ``≈ 0.01``
+under LZMA). The paper's own implementation searches the full prefix, so a
+windowed compressor is a *method deviation*, not an optimization. LZMA2 at
+``preset 9 | PRESET_EXTREME`` carries a **64 MiB dictionary** — effectively
+unbounded for any manuscript — while remaining stdlib, deterministic for the
+pinned filter chain, and an LZ match-factorization (the same family the paper's
+method rests on). **Raw format** (``FORMAT_RAW``) so the stream carries **no xz
+container, no header, no checksum** — the byte count is a pure function of the
+input. (Guarded by ``test_long_reference_exceeds_deflate_window`` — the pair that
+DEFLATE fails.)
 
 DECISION 2 — **the paper's DIRECTIONAL compression edit-distance, NOT symmetric
 NCD.** The metric is::
 
-    C(s)              = len(raw-DEFLATE(s))                # compressed size in bytes
+    C(s)              = len(raw-LZMA2(s))                 # compressed size in bytes
     distance_raw      = C(reference + target) - C(reference)
     distance_normalized = distance_raw / C(target)        # 0.0 if C(target)==0
 
@@ -96,8 +102,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import lzma
 import sys
-import zlib
 from pathlib import Path
 from typing import Any
 
@@ -120,7 +126,7 @@ TASK_SURFACE = "compression_edit_distance"
 TOOL_NAME = "compression_edit_distance_audit"
 SCRIPT_VERSION = "1.0"
 
-METRIC_NAME = "lz77_compression_edit_distance"
+METRIC_NAME = "lzma_compression_edit_distance"
 NORMALIZATION_NAME = "directional_over_target_compressed_size"
 
 # The exact message the CLI prints (before any JSON) when --reference is absent.
@@ -131,7 +137,7 @@ NO_REFERENCE_MESSAGE = (
 )
 
 # Word floor below which the compressed byte counts are noisy at a small
-# denominator (a handful of words compress to near the DEFLATE minimum, so small
+# denominator (a handful of words compress to near the compressor's minimum, so small
 # integer differences dominate). The surface WARNS rather than refuses — the value
 # is still reported, never over-claimed. (Mirrors the gecscore length-floor
 # posture; not a calibration threshold.)
@@ -139,25 +145,34 @@ LENGTH_FLOOR_WORDS = 50
 
 
 # ----------------------------------------------------------------------
-# Compression / distance math (stdlib zlib, deterministic).
+# Compression / distance math (stdlib lzma, deterministic).
 # ----------------------------------------------------------------------
 
 
-def compressed_size(data: bytes) -> int:
-    """``C(s)`` — the DEFLATE (LZ77 + Huffman) compressed size of ``data`` in bytes.
+# The pinned LZMA2 filter chain: preset 9 | EXTREME carries a 64 MiB dictionary,
+# so back-references span the WHOLE reference for any manuscript-scale input
+# (DEFLATE's 32 KiB window was the first build's silent failure mode — see
+# DECISION 1). FORMAT_RAW = no container/header/checksum bytes.
+LZMA_FILTERS = [{"id": lzma.FILTER_LZMA2, "preset": 9 | lzma.PRESET_EXTREME}]
 
-    Pinned to ``level=9`` (maximal LZ77 back-reference search) and **raw DEFLATE**
-    (``wbits=-15`` — no gzip/zlib header, no timestamp, no OS byte), so the count is
-    a pure, cross-platform-deterministic function of the input bytes. This is the
-    LZ77 factorization the paper's compression edit-distance rests on."""
-    compressor = zlib.compressobj(level=9, wbits=-15)
-    return len(compressor.compress(data) + compressor.flush())
+
+def compressed_size(data: bytes) -> int:
+    """``C(s)`` — the raw-LZMA2 compressed size of ``data`` in bytes.
+
+    Pinned to the module-level ``LZMA_FILTERS`` chain (LZMA2, preset 9 | EXTREME →
+    64 MiB dictionary, full-reference back-reference reach) and **raw format**
+    (``FORMAT_RAW`` — no xz container, no header, no checksum), so the count is a
+    pure, deterministic function of the input bytes for the pinned chain. LZMA2's
+    match-finder is an LZ77-family factorization — the same family the paper's
+    compression edit-distance rests on, with the full-prefix reach the paper's own
+    implementation has."""
+    return len(lzma.compress(data, format=lzma.FORMAT_RAW, filters=LZMA_FILTERS))
 
 
 def compression_edit_distance(reference: str, target: str) -> dict[str, Any]:
     """The paper's DIRECTIONAL LZ77 compression edit-distance between a pre-edit
     ``reference`` and a post-edit ``target`` (arXiv:2412.17321), reimplemented on
-    stdlib ``zlib``.
+    stdlib ``lzma`` (raw LZMA2, 64 MiB dictionary — full-reference reach).
 
     Returns a dict with:
 
@@ -221,12 +236,18 @@ def audit_compression_edit_distance(reference: str, target: str) -> dict[str, An
     results = compression_edit_distance(reference, target)
     results["assumptions"] = {
         "method": (
-            "directional LZ77/DEFLATE compression edit-distance "
-            "(arXiv:2412.17321, reimplemented on stdlib zlib): "
+            "directional LZ-compression edit-distance "
+            "(arXiv:2412.17321, reimplemented on stdlib lzma): "
             "distance_raw = C(reference + target) - C(reference), the incremental "
             "compressed cost of the edited text GIVEN the original; "
-            "C(s) = len(raw-DEFLATE(s)) at level=9, wbits=-15 (deterministic, "
-            "header/timestamp-free)"
+            "C(s) = len(raw-LZMA2(s)) at preset 9|EXTREME, FORMAT_RAW "
+            "(deterministic for the pinned filter chain, container/header-free)"
+        ),
+        "window": (
+            "the LZMA2 dictionary at preset 9 is 64 MiB, so back-references span "
+            "the whole reference for any manuscript-scale input (DEFLATE's 32 KiB "
+            "window was rejected: beyond it a verbatim excerpt scores as a heavy "
+            "edit)"
         ),
         "normalization": (
             "distance_raw / C(target) — the incremental cost as a fraction of the "
@@ -256,7 +277,8 @@ def audit_compression_edit_distance(reference: str, target: str) -> dict[str, An
 
 DEFAULT_LICENSES = (
     "the informational edit-distance between the two supplied texts as a "
-    "directional LZ77/DEFLATE compression edit-distance (arXiv:2412.17321). It "
+    "directional LZ-compression edit-distance (arXiv:2412.17321, stdlib raw "
+    "LZMA2, 64 MiB dictionary). It "
     "reports distance_raw = C(reference + target) - C(reference) (the incremental "
     "compressed bits to encode the edited target GIVEN the original) and "
     "distance_normalized = distance_raw / C(target), plus the two input byte "
@@ -376,7 +398,7 @@ def render_markdown(envelope: dict[str, Any]) -> str:
         f"**reference_bytes:** {results.get('reference_bytes')}  "
         f"**target_bytes:** {results.get('target_bytes')}",
         "",
-        "_Directional LZ77/DEFLATE compression edit-distance "
+        "_Directional LZ-compression (raw LZMA2) edit-distance "
         "(arXiv:2412.17321): the incremental compressed cost of the edited text "
         "GIVEN the original. A MEASUREMENT of how much editing separates the two "
         "supplied texts — NOT a '% AI-edited', NOT a verdict. Uncalibrated "
@@ -433,10 +455,17 @@ def main(argv: list[str] | None = None) -> int:
         args = parser.parse_args(argv)
     except SystemExit as exc:
         # argparse already printed its own usage/error to stderr and is exiting
-        # nonzero. When the failure is specifically the missing required
+        # nonzero. When the failure is SPECIFICALLY the missing required
         # --reference, print the pinned paired-input message too (before any JSON
         # could be emitted), so the fail-loud contract is explicit and greppable.
-        if exc.code != 0:
+        # Gate on --reference's actual absence: a different argparse error (a
+        # missing TARGET, an unknown flag) must NOT claim --reference was missing.
+        supplied = list(argv) if argv is not None else sys.argv[1:]
+        if exc.code != 0 and not any(
+            a == "--reference" or a == "--pre"
+            or a.startswith("--reference=") or a.startswith("--pre=")
+            for a in supplied
+        ):
             sys.stderr.write(NO_REFERENCE_MESSAGE + "\n")
         raise
 
