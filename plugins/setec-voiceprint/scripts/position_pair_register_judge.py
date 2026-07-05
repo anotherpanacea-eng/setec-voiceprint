@@ -23,6 +23,13 @@ locus shape (start_char/end_char/quote) mirrors ``_LOCUS_REQUIRED``
 (``cross_doc_consistency_schema.py:149``); ``doc`` is attached by the surface (this
 is a single-work surface — one document — so the judge does not carry it).
 
+Every locus is VERBATIM-BOUND at validation: ``validate_pairs`` checks each side's
+quote against the document text (``text[start:end] == quote``), re-tightening the
+span to the quote's real offsets when they disagree and DROPPING the whole pair when
+the quote appears nowhere in the document (a fabricated quote never reaches the
+human as evidence). Matching is exact — no fuzzy/normalized folding (that tolerance
+is the consumer's gate, not the producer's).
+
 Backends mirror the sibling: ``manifest`` (pre-computed pairs) / ``mock``
 (deterministic, CI-safe) / ``anthropic``/``openai``/``gemini``/``agent_host`` (lazy
 SDK import via ``judge_backends``). **M1 = mock/manifest (deterministic, CI-safe);
@@ -172,16 +179,27 @@ def render_prompt() -> str:
 # ----------------- validation -------------------------------------
 
 def validate_pairs(
-    payload: dict[str, Any], *, text_len: int
+    payload: dict[str, Any], *, text: str
 ) -> tuple[list[PositionPair], list[str]]:
-    """Return ``(pairs, warnings)`` from a judge payload. A pair with a missing
-    question, a missing/blank quote, or an out-of-range span is DROPPED with a
-    warning — never silently coerced (mirrors
+    """Return ``(pairs, warnings)`` from a judge payload, validated against the
+    document ``text`` itself. A pair with a missing question, a missing/blank
+    quote, an out-of-range span, or a quote that is NOT VERBATIM text of the
+    document is DROPPED with a warning — never silently coerced (mirrors
     ``cross_doc_consistency_judge.validate_commitments``' skip-and-warn
-    discipline). The Q-VOCABULARY / interrogative-form gate is NOT here — that is
-    the surface's F4 posture gate (``position_pair_register.py``), which also
-    counts refusals as a disclosure. This validator only enforces the structural
-    contract (well-formed loci, present question)."""
+    discipline).
+
+    Verbatim binding (the posture core — this surface points at *evidence*): after
+    the bounds check, each side's ``quote`` must equal ``text[start:end]``. When it
+    does not, the span is RE-TIGHTENED to the quote's real offsets in the document
+    (an exact search); a quote that appears NOWHERE in the document is a fabrication
+    and its whole pair is dropped, so an invented quote never reaches the human as
+    "verbatim evidence". Matching is EXACT (no fuzzy/normalized folding — that
+    punctuation tolerance is the consumer's F1 gate, not the producer's).
+
+    The Q-VOCABULARY / interrogative-form gate is NOT here — that is the surface's
+    F4 posture gate (``position_pair_register.py``), which also counts refusals as a
+    disclosure. This validator only enforces the structural + verbatim contract
+    (well-formed loci, present question, quotes that are real document text)."""
     warnings: list[str] = []
     raw = payload.get("pairs")
     out: list[PositionPair] = []
@@ -198,7 +216,7 @@ def validate_pairs(
         if not isinstance(question, str) or not question.strip():
             warnings.append(f"pair {pos} missing question; dropped")
             continue
-        sides = _validate_sides(entry, pos, text_len, warnings)
+        sides = _validate_sides(entry, pos, text, warnings)
         if sides is None:
             continue
         (a_start, a_end, a_quote), (b_start, b_end, b_quote) = sides
@@ -210,12 +228,46 @@ def validate_pairs(
     return out, warnings
 
 
+def _verbatim_locus(
+    text: str, start: int, end: int, quote: str
+) -> tuple[int, int, str] | None:
+    """Return the verbatim ``(start, end, quote)`` for a side, or ``None`` if the
+    quote is not real document text (a fabrication → drop).
+
+    Cases:
+      (a) ``text[start:end] == quote`` → accept the span/quote as-is.
+      (b) else RE-TIGHTEN: find the exact ``quote`` in the document, preferring the
+          occurrence at or after ``max(0, start)`` (nearest the claimed span,
+          disambiguating duplicate quotes toward where the judge pointed), else the
+          first occurrence anywhere. If found, correct the offsets to the real ones.
+      (c) whitespace tolerance: if the raw quote is not found, retry with
+          ``quote.strip()`` (a judge may trim leading/trailing whitespace relative
+          to the span); on a hit, emit the stripped quote at its real offsets.
+      (d) not found in any form → ``None`` (drop).
+    """
+    if text[start:end] == quote:
+        return start, end, quote
+    for candidate in (quote, quote.strip()):
+        if not candidate:
+            continue
+        # Prefer the occurrence at/after the claimed start (nearest where the judge
+        # pointed); fall back to a global search from the document start.
+        idx = text.find(candidate, max(0, start))
+        if idx == -1:
+            idx = text.find(candidate)
+        if idx != -1:
+            return idx, idx + len(candidate), candidate
+    return None
+
+
 def _validate_sides(
-    entry: dict[str, Any], pos: int, text_len: int, warnings: list[str]
+    entry: dict[str, Any], pos: int, text: str, warnings: list[str]
 ) -> tuple[tuple[int, int, str], tuple[int, int, str]] | None:
-    """Validate both sides (``a``/``b``) of a candidate pair. Returns
-    ``((a_start,a_end,a_quote),(b_start,b_end,b_quote))`` or ``None`` (dropped,
-    with a warning appended)."""
+    """Validate both sides (``a``/``b``) of a candidate pair against ``text``.
+    Returns ``((a_start,a_end,a_quote),(b_start,b_end,b_quote))`` — with any
+    non-verbatim span re-tightened to the quote's real offsets — or ``None``
+    (dropped, with a warning appended)."""
+    text_len = len(text)
     parsed: list[tuple[int, int, str]] = []
     for side in ("a", "b"):
         span = entry.get(side)
@@ -238,7 +290,15 @@ def _validate_sides(
         if not isinstance(quote, str) or not quote.strip():
             warnings.append(f"pair {pos} side {side!r} missing quote; dropped")
             return None
-        parsed.append((start, end, quote))
+        verbatim = _verbatim_locus(text, start, end, quote)
+        if verbatim is None:
+            warnings.append(
+                f"pair {pos} side {side!r} quote is not verbatim text of the "
+                f"document; dropped — a fabricated quote never reaches the human "
+                f"as evidence"
+            )
+            return None
+        parsed.append(verbatim)
     return parsed[0], parsed[1]
 
 
@@ -351,7 +411,7 @@ def _manifest_judge(manifest_path: Path) -> JudgeBackend:
     ji = ji if isinstance(ji, dict) else {}
 
     def _run(text: str) -> JudgeResult:
-        pairs, warns = validate_pairs(data, text_len=len(text))
+        pairs, warns = validate_pairs(data, text=text)
         return JudgeResult(
             pairs=pairs,
             judge_identity={
@@ -424,7 +484,7 @@ def _make_api_judge(
     def _run(text: str) -> JudgeResult:
         result = api(text)
         payload = _extract_json(result.raw_response or "{}")
-        pairs, warns = validate_pairs(payload, text_len=len(text))
+        pairs, warns = validate_pairs(payload, text=text)
         return JudgeResult(
             pairs=pairs,
             judge_identity=result.judge_identity,

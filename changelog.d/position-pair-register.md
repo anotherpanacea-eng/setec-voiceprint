@@ -28,6 +28,14 @@ Two mechanical, posture-critical gates carry the firewall:
   `test_envelope_carries_no_verdict_keys_recursive`) **raises** on any relation key
   anywhere in the envelope, or any generic verdict key inside `results.pairs`.
 
+Every surfaced locus is **verbatim-bound at validation**: each side's quote is
+verified exactly against the document (`text[start:end] == quote`). A quote whose
+offsets are wrong is **re-tightened** to the quote's real location; a quote that
+appears **nowhere** in the document is a fabrication and its whole pair is
+**dropped** with a warning — so an invented quote never reaches the human as
+"verbatim evidence". Matching is exact (no punctuation folding — that tolerance is
+the consumer's gate).
+
 Pair caps (default 12/question, 60/work, operator-tunable) are a **disclosure**:
 over-cap survivors are the first by document order and the dropped loci are logged
 (`pairs_dropped_cap_loci`) — never a tension/confidence ranking. Backends: `mock` /

@@ -311,9 +311,64 @@ def test_manifest_out_of_range_span_is_dropped():
             }
         ]
     }
-    pairs, warns = j.validate_pairs(payload, text_len=len(text))
+    pairs, warns = j.validate_pairs(payload, text=text)
     assert pairs == []
     assert any("out of range" in w for w in warns)
+
+
+def test_manifest_in_range_fabricated_quote_is_dropped():
+    """THE Codex P1 repro: a pair whose span is IN RANGE but whose quote is text
+    the judge INVENTED (present nowhere in the document) is dropped — a fabricated
+    quote must never reach the human as 'verbatim evidence'."""
+    text = "A short document with some words in it for the span check."
+    payload = {
+        "pairs": [
+            {
+                "question": "What is the point?",
+                # Side a is honest (verbatim).
+                "a": {"start_char": 0, "end_char": 5, "quote": "A sho"},
+                # Side b: span in range, but the quote is fabricated — nowhere in text.
+                "b": {"start_char": 6, "end_char": 20,
+                      "quote": "wholly invented sentence"},
+            }
+        ]
+    }
+    pairs, warns = j.validate_pairs(payload, text=text)
+    assert pairs == []
+    assert any(
+        ("verbatim" in w and "fabricated" in w) for w in warns
+    ), warns
+
+
+def test_manifest_wrong_offsets_are_retightened():
+    """A pair with a CORRECT quote but WRONG offsets (off by a few chars) is KEPT,
+    with its span RE-TIGHTENED so text[start:end] == quote — the quote is real
+    document text, just mis-located; we correct the pointer rather than drop it."""
+    text = "A short document with some words in it for the span check."
+    a_quote = "A short"
+    b_quote = "some words"
+    a_true = text.index(a_quote)
+    b_true = text.index(b_quote)
+    payload = {
+        "pairs": [
+            {
+                "question": "What is the point?",
+                # Offsets deliberately off by a few chars; quotes are verbatim.
+                "a": {"start_char": a_true + 2, "end_char": a_true + 2 + len(a_quote),
+                      "quote": a_quote},
+                "b": {"start_char": b_true - 1, "end_char": b_true - 1 + len(b_quote),
+                      "quote": b_quote},
+            }
+        ]
+    }
+    pairs, warns = j.validate_pairs(payload, text=text)
+    assert len(pairs) == 1
+    p = pairs[0]
+    # Re-tightened: the emitted offsets now index the verbatim quote.
+    assert text[p.a_start_char:p.a_end_char] == p.a_quote == a_quote
+    assert p.a_start_char == a_true
+    assert text[p.b_start_char:p.b_end_char] == p.b_quote == b_quote
+    assert p.b_start_char == b_true
 
 
 # ----------------------------------------------------------------------
