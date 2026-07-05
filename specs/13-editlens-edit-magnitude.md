@@ -27,6 +27,15 @@ target (BERTScore-family) computed between original/edited text pairs from a
 **non-NC** paired corpus the operator supplies. Output: a continuous magnitude score
 + a calibrated band *for that corpus only*.
 
+> **Proxy-target candidate (2026-07-05, Fable verdict).** The shipped
+> `compression_edit_distance` surface (PR #298; directional raw-LZMA2 compression
+> edit-distance, [arXiv:2412.17321](https://arxiv.org/abs/2412.17321)) is a candidate
+> **replacement** for the BERTScore-family similarity proxy as the regression target:
+> it is license-clean, deterministic, and model-free at data-generation time, and it
+> measures edit **magnitude** (what the regressor wants) rather than semantic quality.
+> Decision deferred to this spec's build (still corpus/GPU-gated); noted here so the
+> target choice is revisited before the fine-tune corpus is generated.
+
 ## Contract
 
 - **task_surface:** new `edit_magnitude` (discrimination family; add to enum + labels). Uncalibrated by default.

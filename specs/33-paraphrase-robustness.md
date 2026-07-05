@@ -22,6 +22,13 @@
   watermark detectors. **The M2 DIPPER run is GPU-only and out of scope for this M1 PR.**
 - Chakraborty et al., arXiv:2304.04736 "On the Possibilities..." — multi-sample possibility result.
   `[VERIFIED, arXiv-only]`
+- Khan & Andrews, arXiv:2606.14060 "Non-Parametric Machine Text Detection via Multi-View Gaussian
+  Processes" — external validation of the **multi-axis** posture: an adversary must simultaneously
+  defeat multiple independent axes of detection, substantially raising the cost of evasion (which is
+  exactly why this harness reports a per-(detector × rung) table rather than any single collapsed
+  number). **Scope caveat:** the paper's GP-fusion METHOD is OUT of posture — it fuses views into
+  one decision, which this family forbids (no fused verdict); the citation covers the evasion-cost
+  framing only, never a fused score. `[LEAD, arXiv-only]`
 - Peng/Hans et al., arXiv:2401.12070 "Binoculars" — the DOSSIER cites a "~36.1% **accuracy** drop
   under **synonym substitution** on RAID" (a word-level lexical attack, NOT a DIPPER-class neural
   paraphrase). **[REVIEW-1 folded: M0.1 narrowed — the figure is accuracy, the attack is
