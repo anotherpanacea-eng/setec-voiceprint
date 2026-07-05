@@ -236,10 +236,13 @@ def _verbatim_locus(
 
     Cases:
       (a) ``text[start:end] == quote`` → accept the span/quote as-is.
-      (b) else RE-TIGHTEN: find the exact ``quote`` in the document, preferring the
-          occurrence at or after ``max(0, start)`` (nearest the claimed span,
-          disambiguating duplicate quotes toward where the judge pointed), else the
-          first occurrence anywhere. If found, correct the offsets to the real ones.
+      (b) else RE-TIGHTEN: find every exact occurrence of ``quote`` in the document
+          and bind to the one NEAREST the claimed start (ties break earlier).
+          Nearest — not "at or after" — because an intended occurrence that
+          OVERLAPS the claimed span but begins a few chars before it must win over
+          a later duplicate (Codex round-2 P2: an at-or-after search skipped the
+          overlapping intended occurrence and bound to the next duplicate,
+          collapsing both sides of a pair onto the same passage).
       (c) whitespace tolerance: if the raw quote is not found, retry with
           ``quote.strip()`` (a judge may trim leading/trailing whitespace relative
           to the span); on a hit, emit the stripped quote at its real offsets.
@@ -250,14 +253,29 @@ def _verbatim_locus(
     for candidate in (quote, quote.strip()):
         if not candidate:
             continue
-        # Prefer the occurrence at/after the claimed start (nearest where the judge
-        # pointed); fall back to a global search from the document start.
-        idx = text.find(candidate, max(0, start))
-        if idx == -1:
-            idx = text.find(candidate)
+        idx = _find_nearest(text, candidate, start)
         if idx != -1:
             return idx, idx + len(candidate), candidate
     return None
+
+
+def _find_nearest(text: str, candidate: str, start: int) -> int:
+    """Index of the exact occurrence of ``candidate`` whose start is nearest the
+    claimed ``start`` (ties break toward the earlier occurrence), or ``-1`` if the
+    candidate appears nowhere. Occurrences ascend, so once we are past ``start``
+    and the distance stops shrinking we can stop scanning. Quotes are
+    passage-length (duplicates rare), so the scan is cheap in practice."""
+    best = -1
+    best_dist = -1
+    idx = text.find(candidate)
+    while idx != -1:
+        dist = abs(idx - start)
+        if best == -1 or dist < best_dist:
+            best, best_dist = idx, dist
+        elif idx > start:
+            break  # ascending past the claimed start: distance only grows from here
+        idx = text.find(candidate, idx + 1)
+    return best
 
 
 def _validate_sides(
@@ -299,6 +317,16 @@ def _validate_sides(
             )
             return None
         parsed.append(verbatim)
+    # Degenerate-pair guard: if both sides resolved to the SAME span (a duplicate
+    # quote collapsing onto one passage, whether judge-emitted or re-tightened), the
+    # pair asserts nothing — two loci are the whole point. Drop, never emit.
+    if parsed[0][:2] == parsed[1][:2]:
+        warnings.append(
+            f"pair {pos} sides 'a' and 'b' resolved to the same passage "
+            f"(span {parsed[0][0]}-{parsed[0][1]}); dropped — a pair must point "
+            f"at two distinct passages"
+        )
+        return None
     return parsed[0], parsed[1]
 
 

@@ -34,7 +34,10 @@ offsets are wrong is **re-tightened** to the quote's real location; a quote that
 appears **nowhere** in the document is a fabrication and its whole pair is
 **dropped** with a warning — so an invented quote never reaches the human as
 "verbatim evidence". Matching is exact (no punctuation folding — that tolerance is
-the consumer's gate).
+the consumer's gate). Duplicate quotes bind to the occurrence **nearest the claimed
+span** (an occurrence overlapping the claimed start wins over a later duplicate),
+and a pair whose two sides resolve to the **same passage** is dropped — a pair must
+point at two distinct passages.
 
 Pair caps (default 12/question, 60/work, operator-tunable) are a **disclosure**:
 over-cap survivors are the first by document order and the dropped loci are logged

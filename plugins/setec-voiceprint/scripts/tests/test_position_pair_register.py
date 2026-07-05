@@ -371,6 +371,62 @@ def test_manifest_wrong_offsets_are_retightened():
     assert p.b_start_char == b_true
 
 
+def test_retighten_binds_overlapping_occurrence_not_later_duplicate():
+    """THE Codex round-2 P2 repro: the quote appears TWICE; the claimed start falls
+    a few chars INSIDE the intended (earlier) occurrence. An at-or-after search
+    skips the overlapping intended occurrence and binds to the later duplicate —
+    nearest-occurrence binding must snap BACK to the overlapping one."""
+    dup = "the levy funds the transition entirely."
+    text = (
+        "Opening remarks. First claim: " + dup +
+        " Later, restated verbatim for emphasis: " + dup + " Closing."
+    )
+    first = text.index(dup)
+    second = text.index(dup, first + 1)
+    assert first < second
+    payload = {
+        "pairs": [
+            {
+                "question": "How should the transition be funded?",
+                # Claimed start is 3 chars INSIDE the first occurrence (overlap,
+                # begins before the claimed start) — must bind to `first`, not `second`.
+                "a": {"start_char": first + 3, "end_char": first + 3 + len(dup),
+                      "quote": dup},
+                "b": {"start_char": 0, "end_char": len("Opening remarks."),
+                      "quote": "Opening remarks."},
+            }
+        ]
+    }
+    pairs, warns = j.validate_pairs(payload, text=text)
+    assert len(pairs) == 1
+    assert pairs[0].a_start_char == first, (pairs[0].a_start_char, first, second)
+    assert text[pairs[0].a_start_char:pairs[0].a_end_char] == dup
+
+
+def test_pair_collapsing_onto_same_passage_is_dropped():
+    """The degenerate-pair guard: if both sides resolve to the SAME span (duplicate
+    quotes collapsing onto one passage), the pair asserts nothing and is dropped —
+    a pair must point at two distinct passages."""
+    text = "Alpha statement here. Filler between the two. Omega statement ends."
+    q = "Alpha statement here."
+    true_at = text.index(q)
+    payload = {
+        "pairs": [
+            {
+                "question": "What is stated?",
+                # Both sides carry the same quote with slightly-off offsets — both
+                # re-tighten to the identical span.
+                "a": {"start_char": true_at, "end_char": true_at + len(q), "quote": q},
+                "b": {"start_char": true_at + 2, "end_char": true_at + 2 + len(q),
+                      "quote": q},
+            }
+        ]
+    }
+    pairs, warns = j.validate_pairs(payload, text=text)
+    assert pairs == []
+    assert any("same passage" in w for w in warns), warns
+
+
 # ----------------------------------------------------------------------
 # CLI happy path + error envelopes.
 # ----------------------------------------------------------------------
