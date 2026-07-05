@@ -7,6 +7,189 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.121.0] - 2026-07-05
+
+### Added
+
+**trafilatura primary HTML extraction + MinHash-LSH near-duplicate dedup for the
+acquisition tier.** Two acquisition upgrades, each an *optional* dep with graceful
+degradation so base imports stay pure.
+
+- **trafilatura (Apache-2.0) as the primary main-content extractor.**
+  `acquisition_core.extract_main_content(html, content_selector, strip_selectors,
+  prefer_trafilatura=True)` returns `(text, title)` — the same contract as the
+  existing `html_to_text` — but tries trafilatura's model-free readability
+  heuristics first (boilerplate / nav / comment stripping, main-article
+  detection), falling back to the BeautifulSoup path when trafilatura is absent,
+  disabled, or returns nothing. Caller-provided `strip_selectors` are pre-stripped
+  before trafilatura runs, so site-specific apparatus inside the main article is
+  dropped and the primary path keeps the selector-path cleanliness.
+  `acquire_blog.extract_post_body` now routes through it. trafilatura is
+  lazy-imported and registered OPTIONAL within the acquisition tier
+  (`requirements-acquisition.txt`, `dependency_check.py`).
+
+- **`near_dup_dedup` — MinHash-LSH cross-source near-duplicate dedup (id:
+  `near_dup_dedup`).** A new, opt-in acquisition capability (datasketch, MIT) that
+  runs across a staged JSONL manifest *before* it is committed and drops
+  near-identical reposts / reprints / cross-source pulls the exact SHA-256 guard
+  (`content_hash_already_present`) cannot see. Documents are word-shingled, hashed
+  into MinHash signatures, LSH-bucketed for a Jaccard threshold, candidate pairs
+  confirmed by estimated Jaccard, unioned into clusters, and one deterministic
+  representative kept per cluster (longest text, then lowest id). Exposed as
+  `near_dup_dedup.dedup_records` / `dedup_manifest` and a `near_dup_dedup.py` CLI.
+  datasketch (and its numpy/scipy transitive deps) is lazy-imported — base
+  `import near_dup_dedup` stays clean; the pass raises a clear RuntimeError naming
+  `requirements-acquisition.txt` when the dep is absent.
+
+**`agent_host` host-delegated judge rolled into the three tuple-gated judge
+families (spec 35 follow-on).** The mechanical follow-on the spec named: after
+M1 wired `agent_host` into `argument_judge` / `narrative_judge`, this widens the
+last three hardcoded `("anthropic","openai","gemini")` provider gates —
+`argquality_judge` / `fallacy_judge` / `warrant_judge` — to read
+`judge_backends.PROVIDERS`, and threads `agent_host` through their audit CLIs
+`argquality_dimension_profile`, `fallacy_scan`, and `warrant_probe`. Per family:
+the `build_judge` gate widened + an `agent_host` no-model branch (defaults
+`model="host-resolved"`, so `--judge-model` is not required); `agent_host` added
+to each audit's `--judge` argparse `choices` (default/required unchanged, so it
+stays opt-in); a new `compose_envelope` claim-license caveat naming the
+host-runtime model, its NON-DETERMINISTIC / host-version-fluid nature, and the
+`agent_host:<host>:<model>` identity a consumer drift gate reads to assert judge
+model != generator model; and a `judge_host` field on `comparison_set` (the
+firewall hook). The judge delegates to the host runtime's model (MCP sampling /
+subagent), key-free, records provenance, and adds a caveat without removing any
+no-verdict refusal. See specs/35-host-delegated-judge.md.
+
+**AITDNA external-validation benchmark harness (`aitdna_benchmark.py` +
+`aitdna_to_manifest.py` + `fetch_aitdna.py`).** A held-out
+external-validation eval harness — a sibling of `pan_voight_kampff_benchmark.py`
+— that scores voiceprint's **existing** detectors against **AITDNA**
+(*'Your AI Text is not Mine': Redefining and Evaluating AI-generated Text
+Detection under Realistic Assumptions*; Dycke, Sakharova, Daheim, Gurevych —
+**arXiv:2606.04906**; HF `datasets/UKPLab/AITDNA`, **CC-BY-SA-4.0**), a public
+benchmark of realistic human-AI **co-written** text (the case generic
+document-level detectors handle worst). Like the PAN harness this is NOT a new
+detection surface, ships NO `capabilities.d/` entry / `_golden_capabilities/`
+fragment / `claim_license_surfaces/` file, and **writes only a report** —
+external validation, never a tuning/calibration/selection target.
+
+The adapter computes the per-notion GOLD label from AITDNA's own genesis
+annotations (per-token `User`/`Bot` provenance) under **declared, fixed,
+never-swept** constants (document-level τ=0.5; co-written = ≥1 human AND ≥1 AI
+token; membership n=4-gram / p=5th-percentile) — labels flow one way. The
+report carries the honest-gap `notion_coverage` block (per notion:
+addressed / partial / not_applicable — no fabricated per-notion F1 on the
+boundary/sentence/intent/content notions voiceprint never claimed), a
+first-class **co-written-human FPR** cell (the AITDNA-foregrounded hard case),
+the fixed `reference_provenance` block (AITDNA's own published human-only
+subset, pre-specified so it can't be retro-tuned), and an `anti_goodhart`
+block. M1 wires three CPU-clean detectors — `membership_novelty`
+(originality_audit DJ-Search coverage vs the human-only reference, the
+membership-based notion), `binoculars_audit`, and `length_ratio_standin`; the
+model-tier discrimination surfaces and the `voice_verifier` authorship-ID
+surface are a named out-of-M1 seam. Guarded by `test_notion_parameters_fixed`
+(peer of PAN's `test_no_aggregate_score`). Ships a synthetic fixture (M1); the
+real-dataset run over the fetched AITDNA release is M2/deferred.
+
+**`compression_edit_distance_audit.py` — paired-input mechanical edit-magnitude
+(new `compression_edit_distance` surface, stdlib, `literature_anchored`).** Given
+BOTH a pre-edit draft (`--reference`) and the post-edit version (`TARGET`), the
+`compression_edit_distance_audit` capability measures the informational
+edit-distance between them via LZ-family (raw LZMA2) compression: `distance_raw =
+max(0, C(reference + target) - C(reference))` (clamped: a marginal negative
+value is an encoder-parse artifact, disclosed via `clamped_negative_artifact`) is the incremental compressed cost of
+encoding the edited text GIVEN the original (`C(s) = len(raw-LZMA2(s))` at
+preset `9|EXTREME`, `FORMAT_RAW` — deterministic for the pinned filter chain,
+container/header-free, stdlib `lzma`; the 64 MiB dictionary spans whole
+manuscripts — raw DEFLATE's 32 KiB window was rejected on review because beyond
+it a verbatim excerpt of a manuscript-scale reference scored as a heavy edit), and
+`distance_normalized = distance_raw / C(target)` expresses it as a fraction of the
+target's standalone compressed size. A small distance means the target is largely a
+near-copy of the reference (little editing); a large distance means they share
+little (heavy editing / unrelated content). Reimplements the method of
+*Assessing Human Editing Effort on LLM-Generated Texts via Compression-Based Edit
+Distance* (Devatine & Abraham, **arXiv:2412.17321**; code + data CC-BY-4.0 at
+github.com/NDV-tiime/CompressionDistance — reimplemented, not vendored); the
+paper's edit-time correlation is **[UNVERIFIED on SETEC's corpus]**.
+
+This is the **mechanical, PAIRED-input** case (the operator has both texts, so no
+model is needed) — distinct from spec 13's single-input, model-based
+`edit_magnitude` (a RoBERTa regressor over ONE text). The directional form matches
+the paper's edit-EFFORT semantics (pre→post), NOT symmetric NCD. Descriptive only:
+the `ClaimLicense` refuses any absolute `% AI-edited`, any dosage claim, any
+provenance/authorship inference, per-sentence localization, and cross-corpus
+generalization, licensing only "the informational edit-distance between the two
+supplied texts" (no `is_ai` / `label` / `verdict` / `percent_ai` key). Paired-input
+is **load-bearing**: with no `--reference` the CLI **fails loud** (nonzero exit,
+`error: --reference is required (paired-input only; …)` before any JSON) rather than
+degrade to a single-document mode. Uncalibrated (`literature_anchored`, no shipped
+model/calibration → no `corpus_provenance`, consistent with spec 13). Ships two
+hand-checked golden pairs (a minimal-edit high-similarity pair; a major-edit
+low-similarity pair) with fixed-precision raw + normalized values.
+
+**`position_pair_register.py` — same-question passage-pair register (new
+`position_pair_register` surface, LLM-judge, `experimental`, uncalibrated).** Given
+ONE long nonfiction argument-shaped work and a judge backend, the
+`position_pair_register` capability surfaces passage **pairs that address the same
+question Q** — each pair carrying a neutral interrogative `Q` and both passages'
+verbatim loci (`{doc, start_char, end_char, quote}`), emitted in **document order**.
+
+**It asserts NO relation between the paired passages** — not agreement, not
+conflict, not contradiction, not tension, not which passage is right. The model only
+points at two passages that share a question; the **human reads both and owns 100%
+of the conflict call.** This is the fleet's deliberate NON-step across the
+content-verdict wall: the task is split so the model *cannot* assert opposition.
+
+Two mechanical, posture-critical gates carry the firewall:
+
+- **The F4 Q-string gate.** A surfaced `question` must be interrogative in **form**
+  (ends with `?`, opens with an interrogative/auxiliary token) AND free of relation
+  vocabulary (a case-folded substring scan against a frozen banned set). A Q that
+  fails either check has its pair **REFUSED** — dropped, warned, and counted in a
+  disclosure (`pairs_refused_q_gate`). The form check is **syntax-only** and gives
+  zero protection against loaded/presuppositional questions (the human terminus is
+  the guarantee); the substring scan conservatively over-refuses some legitimate
+  topics ("counterargument", "incompatibilist", "conflict of interest") by design.
+- **The F3 runtime banned-key walk.** Before the envelope is returned, a recursive
+  key walk (walk shape from PR #298's
+  `test_envelope_carries_no_verdict_keys_recursive`) **raises** on any relation key
+  anywhere in the envelope, or any generic verdict key inside `results.pairs`.
+
+Every surfaced locus is **verbatim-bound at validation**: each side's quote is
+verified exactly against the document (`text[start:end] == quote`). A quote whose
+offsets are wrong is **re-tightened** to the quote's real location; a quote that
+appears **nowhere** in the document is a fabrication and its whole pair is
+**dropped** with a warning — so an invented quote never reaches the human as
+"verbatim evidence". Matching is exact (no punctuation folding — that tolerance is
+the consumer's gate). Duplicate quotes bind to the occurrence **nearest the claimed
+span** (an occurrence overlapping the claimed start wins over a later duplicate),
+and a pair whose two sides resolve to the **same passage** is dropped — a pair must
+point at two distinct passages.
+
+Pair caps (default 12/question, 60/work, operator-tunable) are a **disclosure**:
+over-cap survivors are the first by document order and the dropped loci are logged
+(`pairs_dropped_cap_loci`) — never a tension/confidence ranking. Backends: `mock` /
+`manifest` (deterministic, CI-safe) and `anthropic`/`openai`/`gemini`/`agent_host`
+(live). Uncalibrated: no run-to-run determinism guarantee for live backends. The
+`ClaimLicense` refuses (a) any claim the passages ARE in conflict, (b) which passage
+is right, (c) exhaustiveness (absence of a pair is not consistency), and (d) fiction
+/ narrator application (v1 register scope: nonfiction-argument only). Anchors:
+*ContraDoc* (**arXiv:2311.09182**, contradiction-type taxonomy) and *BeliefShift*
+(**arXiv:2603.23848**, position-drift framing).
+
+### Fixed
+
+**P3/LOW review follow-ups across specs 16 / 25 / 28 / 35 (PATCH; behavior-conservative except the two documented `fast_detect_curvature` items).**
+
+- **`judge_backends` host-delegated judge (spec 35).** The `SETEC_HOST_JUDGE_CMD` subprocess transport now runs under a timeout (`SETEC_HOST_JUDGE_TIMEOUT`, default 120s); a hung operator command surfaces as a clean judge-family error instead of hanging the judge forever. `shell=True` is retained intentionally (the command is trusted operator config; only the request crosses via stdin). Added resolved-transport tests (entrypoint `module:function`, subprocess command, and the timeout wrap) alongside the existing unresolved/override coverage.
+
+- **`voice_verifier` (spec 35).** Closed the CLI half-wiring: `--judge` now offers `agent_host` (the `build_verifier` factory already accepted it), so the key-free host-delegated backend is reachable from the command line. The resolved host is already recorded in `judge_identity` (`host` + `delegated`); `voice_verifier` has no judge-kind-keyed caveat block, so only the choice was added. Test asserts `agent_host` is in the choices and that a stubbed `agent_host` run surfaces `host` in the envelope.
+
+- **`fast_detect_curvature` (spec 25, T-Detect).** Hoisted the Student-t `t_df <= 2` guard above the degenerate-variance check so an invalid `nu` is rejected on every `--tail student-t` input (previously skipped when the reference variance was degenerate), and now emit the `tail`/`t_df` mode marker even on a degenerate-variance run (with `curvature_t` correctly absent), keying the T-Detect caveat on `tail == "student-t"` rather than on `curvature_t`. The Gaussian/default path is byte-identical (no `tail`/`t_df`/`curvature_t` keys, no caveat).
+
+- **`conformal_gate` (spec 28).** Disambiguated the `threshold is None` abstain reason: when scores are fully distinct but `floor(fpr_bound * n) == 0` the message now names the small-calibration cause (`need n_calibration >= ceil(1/fpr_bound)`) instead of the misleading "too many tied scores"; the genuinely-tied case keeps its original message. `available: False` and all other keys are unchanged.
+
+- **`paraphrase_ladder` (spec 16).** Added a parity test pinning `paraphrase_ladder._score_text` byte-equal to `pan_replay._score_text` on a shared fixture (the spec says "reused, not reimplemented" but nothing enforced it); no code change, so no behavior risk.
+
 ## [1.120.0] - 2026-07-02
 
 ### Added
