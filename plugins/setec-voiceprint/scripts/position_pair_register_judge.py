@@ -30,10 +30,11 @@ M2 = live providers (pass-through via ``judge_backends``, untested beyond
 registration).**
 
 The mock judge is the deterministic CI contract: it extracts pairs from lightweight
-in-text markers the fixtures carry::
+in-text markers the fixtures carry (``q=`` must be the LAST key — it swallows the
+remainder of the marker body, so the question may contain spaces and a ``?``)::
 
-    [[q=How does X work? pair=p1 side=a]] <the passage text.>
-    [[q=How does X work? pair=p1 side=b]] <the other passage text.>
+    [[pair=p1 side=a q=How does X work?]] <the passage text.>
+    [[pair=p1 side=b q=How does X work?]] <the other passage text.>
 
 Two markers sharing a ``pair`` id (one ``side=a``, one ``side=b``) form one emitted
 pair, labeled with their shared ``q``. The quote/span are the marked passage. This
@@ -245,7 +246,7 @@ def _validate_sides(
 # The mock judge extracts pairs from lightweight in-text markers the fixtures
 # carry, so CI exercises the real machinery deterministically. A marker annotates
 # ONE passage:
-#   [[q=How does X work? pair=p1 side=a]] <the passage text.>
+#   [[pair=p1 side=a q=How does X work?]] <the passage text.>
 # Two markers sharing a `pair` id (one side=a, one side=b) form one pair, labeled
 # with their shared `q`. The quote/span are the marked passage (text after the
 # marker up to the next marker or end). This is a CI scaffold; a live judge reads

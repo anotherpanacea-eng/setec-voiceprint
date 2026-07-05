@@ -365,7 +365,12 @@ DEFAULT_DOES_NOT_LICENSE = (
     "presuppositional question (e.g. 'Why does the author abandon X in Ch 9?' "
     "passes both gates) — the human terminus, not the form gate, is the guarantee. "
     "There is no stance / relation / tension / conflict / agreement / polarity / "
-    "verdict / label / score key anywhere in the envelope."
+    "verdict / label / score key anywhere in the envelope. "
+    "Refusal disclosures (results.pairs_refused_q_gate_reasons) echo the REJECTED "
+    "question verbatim in the JSON envelope so the gate is auditable; a rejected "
+    "question may itself be framed as a relation — that echo is a record of what "
+    "was refused, NOT an assertion by this surface, and it is omitted from the "
+    "markdown report."
 )
 
 
