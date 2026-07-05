@@ -47,6 +47,16 @@ Inputs (any subset; resolver degrades gracefully):
   --aic-json               AIC pattern audit (future)
   --idiolect-json + --target-text  idiolect preservation list +
                                     target for survival rate
+
+References:
+  Khan & Andrews, arXiv:2606.14060 "Non-Parametric Machine Text
+  Detection via Multi-View Gaussian Processes" — external validation
+  of the multi-axis / evasion-cost argument for reading across
+  surfaces: an adversary must simultaneously defeat multiple
+  independent axes of detection, which is why the cross-surface read
+  is more evasion-robust than any single surface. (Their GP-fusion
+  method fuses views into one decision; this resolver deliberately
+  does not — it surfaces the differential and declines to pick.)
 """
 
 from __future__ import annotations
