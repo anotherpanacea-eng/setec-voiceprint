@@ -394,6 +394,21 @@ def test_no_fitter_import_in_harness_modules():
             assert f"from {sym}" not in src, f"{mod.name} imports {sym}"
 
 
+def test_license_accept_set_admits_only_cc_by_sa():
+    # Codex P2 (#296): the fetch gate's accept-set must admit ONLY the CC-BY-SA family.
+    # The whole harness (gate error, NOTICE, provenance sidecar, report) asserts
+    # CC-BY-SA-4.0, so an unrelated license (creativeml-openrail was a spurious leftover)
+    # must NOT pass, else the fetch would proceed on a dataset it can't lawfully treat as SA.
+    import fetch_aitdna
+    accepts = lambda s: any(p in s for p in fetch_aitdna.EXPECTED_LICENSE_PATTERNS)
+    assert accepts("cc-by-sa-4.0")
+    assert accepts("cc-by-sa-3.0")             # same share-alike family
+    assert not accepts("creativeml-openrail")  # the removed leftover — an unrelated license
+    assert not accepts("mit")
+    assert not accepts("apache-2.0")
+    assert not accepts("cc-by-4.0")            # plain CC-BY (not share-alike) is a mismatch
+
+
 def test_labels_flow_one_way_report_is_terminal(tmp_path):
     manifest, reference = _build_manifest(tmp_path)
     report = _run(manifest, reference, "membership_novelty", _binoculars_kwargs={})

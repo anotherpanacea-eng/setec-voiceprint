@@ -54,9 +54,11 @@ TARGET_DIR = PRIVATE_DIR / "aitdna"
 HF_REPO_ID = "UKPLab/AITDNA"
 # AITDNA's HF dataset card declares CC-BY-SA-4.0 (verified on the Hub
 # 2026-07-05). Share-alike; a fetch-only report-only harness re-publishes
-# no text so SA is not triggered. Accept the CC-BY-SA family string.
+# no text so SA is not triggered. Accept ONLY the CC-BY-SA family — the rest
+# of this harness (gate error, NOTICE, provenance, report) all assert
+# CC-BY-SA-4.0, so an unrelated license (e.g. creativeml-openrail) must NOT pass.
 EXPECTED_LICENSE_PATTERNS = (
-    "cc-by-sa-4.0", "cc-by-sa", "creativeml-openrail",
+    "cc-by-sa-4.0", "cc-by-sa",
 )
 
 # The AITDNA notion configs (one per detection notion). token/membership
