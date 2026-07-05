@@ -1,0 +1,1 @@
+passage pairs in a long nonfiction work that address the same question Q, emitted relation-free with verbatim loci and in document order — NOT a conflict/contradiction claim, NOT which passage is right, NOT exhaustive (absence of a pair is not consistency), NOT for fiction; the human reads both passages and owns the entire conflict call
