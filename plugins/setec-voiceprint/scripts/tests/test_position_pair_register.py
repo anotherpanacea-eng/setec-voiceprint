@@ -520,7 +520,12 @@ def test_capability_entry_and_golden_present():
     )
     assert entry is not None, "position_pair_register missing from capabilities.d"
     assert entry["surface"] == "position_pair_register"
-    assert entry["consumers"] == []
+    # Adopted as an apodictic consumer surface (stance PR 2 ripple): the R1
+    # normalized-entrypoint bundle is now present so the surface can be vendored
+    # under a pinned tag + drift gate.
+    assert entry["consumers"] == ["apodictic"]
+    assert entry["min_setec_version"] == "1.121.0"
+    assert entry["json_delivery"] == "stdout"
     assert entry["family"] == "argument-consistency"
     assert entry["compute"]["tier"] == "api_llm"
     assert entry["dependencies"]["python"] == []

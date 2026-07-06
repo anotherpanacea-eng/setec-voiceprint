@@ -50,7 +50,8 @@ REQUIRED_TOP_LEVEL_KEYS = frozenset({
 
 # The consumer surfaces that carry json_delivery (the nine R1 promoted for
 # apodictic + the four promoted for setec-voicewright in 1.115.0 + the ArgScope
-# argument_decision_audit surface + the voice_verifier LLM-as-verifier surface),
+# argument_decision_audit surface + the voice_verifier LLM-as-verifier surface +
+# the position_pair_register stance-consistency surface adopted for apodictic),
 # with their expected script module basename and delivery mode.
 EXPECTED_SURFACES = {
     "variance_audit": ("variance_audit.py", "stdout"),
@@ -68,6 +69,7 @@ EXPECTED_SURFACES = {
     "general_imposters": ("general_imposters.py", "file"),
     "argument_decision_audit": ("argument_decision_audit.py", "stdout"),
     "voice_verifier": ("voice_verifier.py", "stdout"),
+    "position_pair_register": ("position_pair_register.py", "stdout"),
 }
 
 

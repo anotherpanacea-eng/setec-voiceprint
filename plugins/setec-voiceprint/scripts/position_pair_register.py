@@ -426,9 +426,9 @@ def _claim_license(results: dict[str, Any]) -> ClaimLicense:
             "Language Models (Li, Raheja & Kumar), arXiv:2311.09182 — the "
             "contradiction-type taxonomy informs what 'same question' pairing must "
             "catch; https://arxiv.org/abs/2311.09182",
-            "BeliefShift (opinion-drift / belief-consistency benchmark), "
-            "arXiv:2603.23848 — the position-drift framing; "
-            "https://arxiv.org/abs/2603.23848 (sweep-sourced id, Mar 2026).",
+            "BeliefShift: Benchmarking Temporal Belief Consistency and Opinion Drift "
+            "in LLM Agents (Myakala, Agrawal & Manche), arXiv:2603.23848 — the "
+            "position-drift framing; https://arxiv.org/abs/2603.23848",
         ],
     )
 
