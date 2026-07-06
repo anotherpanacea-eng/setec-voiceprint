@@ -7,6 +7,22 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.122.0] - 2026-07-06
+
+### Changed
+
+**`position_pair_register` — adopted as a downstream consumer surface.** Marked the
+`position_pair_register` capability as consumed by **apodictic**: the
+`capabilities.d/position_pair_register.yaml` fragment now carries
+`consumers: [apodictic]`, the R1 normalized-entrypoint bundle
+(`min_setec_version: "1.121.0"` — the first release tag carrying the surface —
+plus `json_delivery: stdout` and a structured `inputs` list), and a committed R5
+contract-fixture golden (`references/contract_fixtures/position_pair_register.json`,
+a real mock-judge envelope through the surface's own `compose_envelope`). No
+behavior change to the surface itself. Anchors unchanged: ContraDoc
+(arXiv:2311.09182) contradiction-type taxonomy; BeliefShift (arXiv:2603.23848)
+position-drift framing.
+
 ## [1.121.0] - 2026-07-05
 
 ### Added
