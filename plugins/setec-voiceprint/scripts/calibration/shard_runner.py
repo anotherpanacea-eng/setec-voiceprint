@@ -1341,6 +1341,7 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
     contributing: list[str] = []
     missing_done_shards: list[tuple[str, Path]] = []
     tampered_done_shards: list[tuple[str, str, str]] = []
+    unverified_done_shards: list[tuple[str, Path]] = []
     # Streaming mode: collect cache paths (already-verified) without
     # materializing records into memory. The surface's aggregator
     # opens them one at a time. Required for RAID-scale runs where
@@ -1376,15 +1377,24 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
         # one that creates the survey JSON consumers act on. It
         # must not depend on a separate manual `verify` step to
         # avoid producing a survey from tampered or stale caches.
-        # If recorded_sha is missing (older state files), skip the
-        # check rather than fail; the missing-cache check above
-        # already catches the most common integrity failure.
+        # A done shard with no recorded SHA-256 cannot be integrity-
+        # checked, so it must not silently contribute to the survey.
+        # `cmd_verify` already treats a missing/empty cache_sha256 as a
+        # hard failure (its `actual != rec_sha` compare never matches
+        # None/""). `aggregate` — the artifact-producing command that
+        # "must not depend on a separate manual verify step" — has to
+        # match, or a hand-edited state.json with `cache_sha256: ""`
+        # pointing at a substituted cache would be accepted with zero
+        # verification. Fail closed (regenerate via `work`, or pass
+        # --allow-partial to skip the unverifiable shard).
         recorded_sha = sh.get("cache_sha256", "")
-        if recorded_sha:
-            actual_sha = sha256_file(cp)
-            if actual_sha != recorded_sha:
-                tampered_done_shards.append((sid, recorded_sha, actual_sha))
-                continue
+        if not recorded_sha:
+            unverified_done_shards.append((sid, cp))
+            continue
+        actual_sha = sha256_file(cp)
+        if actual_sha != recorded_sha:
+            tampered_done_shards.append((sid, recorded_sha, actual_sha))
+            continue
         if streaming:
             # Defer the actual records read to the surface's
             # streaming pre-extraction. We still need to peek the
@@ -1416,7 +1426,9 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
                 meta_list.append(cache["meta"])
         contributing.append(sid)
     integrity_failures = (
-        len(missing_done_shards) + len(tampered_done_shards)
+        len(missing_done_shards)
+        + len(tampered_done_shards)
+        + len(unverified_done_shards)
     )
     if integrity_failures and not args.allow_partial:
         sys.stderr.write(
@@ -1434,6 +1446,16 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
                     f"    shard {sid}: recorded {recorded[:16]}..., "
                     f"actual {actual[:16]}...\n"
                 )
+        if unverified_done_shards:
+            sys.stderr.write(
+                "\n  Missing/empty cache_sha256 (unverifiable done "
+                "shards):\n"
+            )
+            for sid, cp in unverified_done_shards:
+                sys.stderr.write(
+                    f"    shard {sid}: no recorded SHA-256 to verify "
+                    f"{cp} against\n"
+                )
         sys.stderr.write(
             "\nPass --allow-partial to aggregate the surviving shards "
             "anyway, or rerun `shard_runner work` to regenerate the "
@@ -1442,12 +1464,13 @@ def cmd_aggregate(args: argparse.Namespace) -> int:
             "claims cannot be verified.\n"
         )
         return 2
-    if missing_done_shards or tampered_done_shards:
+    if missing_done_shards or tampered_done_shards or unverified_done_shards:
         sys.stderr.write(
             f"  (continuing with --allow-partial: "
-            f"{len(missing_done_shards)} missing-cache shard(s) and "
-            f"{len(tampered_done_shards)} tampered-cache shard(s) "
-            f"skipped)\n"
+            f"{len(missing_done_shards)} missing-cache shard(s), "
+            f"{len(tampered_done_shards)} tampered-cache shard(s), and "
+            f"{len(unverified_done_shards)} unverifiable "
+            f"(missing cache_sha256) shard(s) skipped)\n"
         )
     if streaming:
         sys.stderr.write(

@@ -640,6 +640,65 @@ def test_aggregate_allow_partial_processes_done_shards_only(
     assert payload["n_shards_contributed"] == 1
 
 
+def test_aggregate_refuses_when_done_shard_has_no_recorded_sha(
+    sharded_run, tmp_path: Path, capsys: pytest.CaptureFixture,
+):
+    """Integrity regression (2026-07-09): `aggregate` must fail closed
+    when a done shard's `cache_sha256` is missing/empty, matching
+    `cmd_verify`.
+
+    The old `if recorded_sha:` guard skipped the SHA-256 recompute
+    entirely for a done shard with no recorded hash — so a hand-edited
+    state.json with `cache_sha256: ""` pointing at a substituted cache
+    was accepted with zero verification, while `cmd_verify` treats the
+    same missing field as a hard mismatch. `aggregate` is the artifact-
+    producing command and must not depend on a separate manual verify
+    step, so it has to reject the unverifiable shard too.
+    """
+    base = sharded_run["base"]
+    run_id = sharded_run["run_id"]
+    # Complete all shards normally (state.json records a sha per shard).
+    sr.main(["--base-dir", str(base), "work", "--run-id", run_id])
+    # Blank out one done shard's recorded sha AND substitute its cache
+    # bytes — the empty-cache_sha256-with-substituted-cache scenario.
+    sp = sr.state_path(base, run_id)
+    state = ss.read_state(sp)
+    state["shards"]["001"]["cache_sha256"] = ""
+    ss.write_state(sp, state)
+    cp = sr.shard_cache_path(base, run_id, "001")
+    cache = json.loads(cp.read_text())
+    cache["records"].append({"injected": True, "label": "pre_ai_human"})
+    cp.write_text(json.dumps(cache))
+    # Without --allow-partial: must refuse (fail closed).
+    rc = sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id,
+        "--out", str(tmp_path / "agg-unverified.json"),
+        "--no-derive",
+    ])
+    assert rc == 2
+    err = capsys.readouterr().err
+    assert "integrity failures" in err
+    assert "cache_sha256" in err
+    # With --allow-partial: skip the unverifiable shard and aggregate
+    # the rest; the substituted records never reach the survey.
+    rc = sr.main([
+        "--base-dir", str(base), "aggregate",
+        "--run-id", run_id,
+        "--out", str(tmp_path / "agg-unverified-partial.json"),
+        "--allow-partial",
+        "--no-derive",
+    ])
+    assert rc == 0
+    payload = json.loads(
+        (tmp_path / "agg-unverified-partial.json").read_text(),
+    )
+    # Two surviving shards (000 + 002); shard 001 was unverifiable and
+    # skipped. The injected record never reaches the aggregate.
+    assert payload["n_shards_contributed"] == 2
+    assert "001" not in payload["contributing_shards"]
+
+
 # --------------- verify --------------------------------------
 
 

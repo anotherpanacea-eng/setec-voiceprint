@@ -89,3 +89,63 @@ def test_no_collision_keeps_base_stem(tmp_path):
     p = _piece("z " * 200)
     t, _ = ac.write_piece(p, output_dir=tmp_path, scraper_version="t")
     assert t.stem == p.filename_stem()  # unchanged when there is no clash
+
+
+def test_content_hash_dedup_recomputes_from_current_bytes(tmp_path):
+    """Integrity regression: the dedup gate must re-hash the paired
+    .txt's *actual* current bytes, not trust the sidecar's recorded
+    ``content_hash``.
+
+    Editing a .txt in place (without touching its .meta.json) leaves a
+    stale recorded hash that nothing re-verifies. Re-running
+    acquisition on the *original* source recomputes hash(original)=H1,
+    which still matches the stale recorded H1 — so a recorded-hash-
+    trusting gate would drop the original as "already present" even
+    though the corpus no longer holds those bytes. Recompute-not-trust
+    catches it.
+    """
+    original = "the original body text " * 50
+    piece = _piece(original)
+    txt_path, meta_path = ac.write_piece(
+        piece, output_dir=tmp_path, scraper_version="t",
+    )
+    h1 = piece.content_hash
+    # Legitimate case: unchanged bytes → correctly "already present".
+    assert ac.content_hash_already_present(h1, tmp_path) == meta_path
+    # Edit the .txt in place; leave the .meta.json (and its recorded
+    # content_hash) untouched — the stale-sidecar failure mode.
+    txt_path.write_text(
+        "tampered replacement body " * 50, encoding="utf-8",
+    )
+    # Re-acquiring the ORIGINAL source recomputes H1. The corpus no
+    # longer holds H1's bytes, so the gate must NOT drop it as present.
+    assert ac.content_hash_already_present(h1, tmp_path) is None
+
+
+def test_content_hash_dedup_still_matches_unchanged_bytes(tmp_path):
+    """Happy path preserved: a piece whose paired .txt is on disk and
+    unmodified is still correctly reported as already present (the
+    recompute equals the recorded hash equals the incoming hash)."""
+    piece = _piece("stable corpus body " * 40)
+    _, meta_path = ac.write_piece(
+        piece, output_dir=tmp_path, scraper_version="t",
+    )
+    assert (
+        ac.content_hash_already_present(piece.content_hash, tmp_path)
+        == meta_path
+    )
+
+
+def test_content_hash_dedup_missing_txt_is_not_a_duplicate(tmp_path):
+    """If the paired .txt is gone (only the sidecar remains), the
+    recorded content is not actually on disk — fail open (re-acquire)
+    rather than silently drop the incoming piece as a duplicate."""
+    piece = _piece("body that will lose its txt " * 30)
+    txt_path, _ = ac.write_piece(
+        piece, output_dir=tmp_path, scraper_version="t",
+    )
+    txt_path.unlink()
+    assert (
+        ac.content_hash_already_present(piece.content_hash, tmp_path)
+        is None
+    )

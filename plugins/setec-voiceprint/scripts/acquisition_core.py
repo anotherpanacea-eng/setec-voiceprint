@@ -780,9 +780,20 @@ def write_piece(
 def content_hash_already_present(
     content_hash: str, output_dir: Path,
 ) -> Path | None:
-    """Scan ``output_dir`` for an existing ``.meta.json`` with a
-    matching ``content_hash``. Returns the matching meta path, or
-    ``None`` if not found.
+    """Scan ``output_dir`` for an existing ``.meta.json`` whose paired
+    ``.txt`` *currently* hashes to ``content_hash``. Returns the
+    matching meta path, or ``None`` if not found.
+
+    The sidecar's recorded ``content_hash`` is a hint, not proof:
+    nothing re-verifies it against the paired ``.txt`` after
+    acquisition (``manifest_validator`` checks that the field is
+    *present*, never that its *value* still matches the bytes on disk).
+    So a ``.txt`` edited in place — without touching its
+    ``.meta.json`` — leaves a stale recorded hash. Trusting it would
+    let this dedup gate drop a genuinely-new piece as "already present"
+    even though the corpus no longer holds those bytes. Guard against
+    that by recomputing the hash from the paired ``.txt``'s current
+    bytes before honoring a match (recompute, don't trust).
 
     v1 dedupes within the target output directory only. Manifest-wide
     dedupe is a follow-up — for now, two impostor pools targeting the
@@ -795,8 +806,28 @@ def content_hash_already_present(
             data = json.loads(meta_file.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
-        if data.get("content_hash") == content_hash:
+        if data.get("content_hash") != content_hash:
+            continue
+        # The recorded hash matches the incoming piece — but re-derive
+        # it from the paired .txt's actual current bytes before
+        # treating this as a duplicate.
+        txt_file = meta_file.parent / (
+            meta_file.name[: -len(".meta.json")] + ".txt"
+        )
+        try:
+            actual_hash = compute_content_hash(
+                txt_file.read_text(encoding="utf-8")
+            )
+        except OSError:
+            # Paired .txt missing/unreadable: the recorded content is
+            # not actually on disk. Fail open (let the caller
+            # re-acquire) rather than silently drop the incoming piece.
+            continue
+        if actual_hash == content_hash:
             return meta_file
+        # Stale/edited sidecar: the .txt's real bytes no longer hash to
+        # the recorded value, so this on-disk doc does NOT hold the
+        # incoming content. Not a duplicate — keep scanning.
     return None
 
 
