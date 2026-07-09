@@ -16,8 +16,14 @@ tokenization (fail-closed: over-collapsing can only drop a copy, never re-admit 
 only ever DROPS):
 
 - `voice_distance` (`voice_coherence`) — the manifest-level target filter gained a content guard;
-  fingerprint over `stylometry_core.word_tokens` (the tokenizer the load-bearing function-word family
-  reads).
+  fingerprint over the WHOLE `strip_non_prose`-cleaned text (the single string every scored family
+  reads before its own normalization), computed with the same strip options the comparison uses.
+  Unlike the token-only siblings, this surface also runs the punctuation- / case-sensitive char-n-gram,
+  POS, and dependency families, so a `word_tokens` fingerprint would fold punctuation/case and
+  over-exclude a baseline the matcher treats as distinct (changing the baseline rather than only
+  self-excluding the target). The cleaned-text equivalence class is a strict subset of every family's,
+  so it drops only genuine copies — including a copy wrapped in stripped front matter — and keeps
+  punctuation-distinct baselines (PR #307 review).
 - `phraseological_signature_audit` / `function_word_grammar_audit` — fingerprint over each surface's
   own lowercased word tokenizer (`_tokenize` / `_tokens_lower`), the exact stream its n-gram / frame /
   function-word features are built from.

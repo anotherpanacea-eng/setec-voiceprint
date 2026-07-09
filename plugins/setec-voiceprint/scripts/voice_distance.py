@@ -134,26 +134,24 @@ def _function_word_vector(text: str) -> dict[str, float]:
     return function_word_features(word_tokens(text))
 
 
-# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
-_FP_SEP = "\x1f"
-
-
-def _content_fingerprint(text: str) -> str:
-    """sha256 of the ``stylometry_core.word_tokens`` stream — the tokenizer the load-bearing
-    function-word family reads (``function_word_features(word_tokens(text))``), which is the only
-    feature family the Burrows-Delta / bootstrap machinery computes independent of SpaCy. Two texts
-    with the same ``word_tokens`` stream yield the same function-word vector, so a manifest entry
-    carrying a copy of the target — even at a DIFFERENT path than ``--target`` (the path guard misses
-    a copy under another filename) — would pool the target's own vector into its own baseline centroid
-    and collapse the cosine min / Delta toward 0 (a false "on-voice" result). The content fingerprint
-    self-excludes it alongside the path guard.
+def _content_fingerprint(cleaned_text: str) -> str:
+    """sha256 of the WHOLE ``strip_non_prose``-cleaned text — the single string every scored
+    feature family reads before its own normalization (``compare_to_baseline`` strips each file
+    with these same options, then the function-word / char-n-gram / POS / dependency families
+    extract from the result). A manifest entry carrying a copy of the target — even at a DIFFERENT
+    path than ``--target`` (the path guard misses a copy under another filename) — would pool the
+    target's own vector into its own baseline centroid and collapse the cosine min / Delta toward 0
+    (a false "on-voice" result). The content fingerprint self-excludes it alongside the path guard.
 
     Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
-    #278 / rank_turbulence_audit #280). Fail-CLOSED: ``word_tokens`` folds case/punctuation/whitespace
-    relative to raw text, so the fingerprint's equivalence class is a SUPERSET of the char-n-gram /
-    POS families' — a match can only DROP a copy, never re-admit one; a genuinely different baseline
-    entry has a different token stream and is KEPT."""
-    return hashlib.sha256(_FP_SEP.join(word_tokens(text)).encode("utf-8")).hexdigest()
+    #278 / rank_turbulence_audit #280). The equivalence class is the cleaned string itself, so it is a
+    strict SUBSET of every family's class: identical cleaned text ⇒ every family scores it identically
+    (safe to DROP), and any punctuation-, case-, or whitespace-distinct baseline the char-n-gram / POS /
+    dependency families would treat as distinct has a different cleaned string and is KEPT. Callers must
+    pass the ``strip_non_prose`` output computed with the same strip options the comparison uses, so the
+    guard never drops a baseline the matcher considers distinct (an earlier ``word_tokens``-stream
+    fingerprint folded punctuation/case and over-excluded such baselines — PR #307)."""
+    return hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
 
 
 def _baseline_mean_function_word_vector(
@@ -743,7 +741,20 @@ def main() -> int:
     # so we also drop any entry whose content fingerprint matches the target
     # (path OR content -> exclude; a content match only DROPS, fail-closed).
     target_text = read_text(target_path)
-    target_fingerprint = _content_fingerprint(target_text)
+
+    def _cleaned(text: str) -> str:
+        # Same corpus-hygiene stripping compare_to_baseline applies to every
+        # file before feature extraction, so the fingerprint's equivalence
+        # class matches what the matcher actually scores (front-matter/footer
+        # artifacts that get stripped do not keep a real duplicate in-pool).
+        cleaned, _ = strip_non_prose(
+            text, args.strip_rules,
+            allow_non_prose=args.allow_non_prose,
+            strip_aggressive=args.strip_aggressive,
+        )
+        return cleaned
+
+    target_fingerprint = _content_fingerprint(_cleaned(target_text))
     try:
         target_resolved = target_path.resolve()
     except OSError:
@@ -760,7 +771,7 @@ def main() -> int:
         if not path_match:
             try:
                 content_match = (
-                    _content_fingerprint(read_text(Path(entry["path"])))
+                    _content_fingerprint(_cleaned(read_text(Path(entry["path"]))))
                     == target_fingerprint
                 )
             except (OSError, KeyError):
