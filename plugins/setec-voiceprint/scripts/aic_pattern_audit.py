@@ -66,6 +66,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -511,30 +512,62 @@ def all_patterns(text: str, sentences: list[str]) -> dict[str, PatternResult]:
 
 # ---------- baseline aggregation ----------
 
-def list_baseline_paths(baseline_dir: str | Path) -> list[Path]:
+# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
+_FP_SEP = "\x1f"
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the lowercased ``\\w+`` word-token stream — the self-exclusion equivalence class.
+
+    AIC density is ``hits / words`` where the word denominator is ``re.findall(r"\\b\\w+\\b", ...)``
+    and the pattern frames match case-insensitively, so two texts with the SAME lowercased word-token
+    stream produce the SAME AIC output — a copy of the target dropped into ``--baseline-dir`` (even a
+    case-, punctuation-, or whitespace-only variant) is AIC-equivalent to the target and must be
+    self-excluded, or it pools the target's own pattern hits into the target's own baseline density.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: originality_audit #278 /
+    rank_turbulence_audit #280): the fingerprint over-collapses relative to the frame matcher
+    (punctuation/case-insensitive), which is fail-CLOSED — it can only drop a copy, never re-admit
+    one. A genuinely different baseline doc has a different token stream and is KEPT."""
+    return hashlib.sha256(_FP_SEP.join(re.findall(r"\w+", text.lower())).encode("utf-8")).hexdigest()
+
+
+def list_baseline_paths(
+    baseline_dir: str | Path,
+    *,
+    target_resolved: Path | None = None,
+) -> list[Path]:
     base = Path(baseline_dir)
     paths = sorted(base.glob("*.txt")) + sorted(base.glob("*.md"))
     return [
         p for p in paths
         if not p.name.lower().startswith("readme")
         and not p.name.startswith(".")
+        # PATH self-exclusion: never pool the target's OWN file when it physically sits in the
+        # baseline dir (mirrors the content guard in baseline_density; path OR content -> exclude).
+        and not (target_resolved is not None and p.resolve() == target_resolved)
     ]
 
 
 def baseline_density(
     baseline_paths: list[Path],
     pattern_keys: list[str],
-) -> tuple[dict[str, float], int, list[Path], list[Path]]:
+    *,
+    target_fingerprint: str | None = None,
+) -> tuple[dict[str, float], int, list[Path], list[Path], list[Path]]:
     """Aggregate per-pattern density (per 1000 words) across baseline files.
 
-    Returns ``(density_per_1k, total_words, loaded, skipped)``. Density is
-    computed as ``total_hits / total_words * 1000``, pooled across all
-    baseline files.
+    Returns ``(density_per_1k, total_words, loaded, skipped, self_excluded)``. Density is
+    computed as ``total_hits / total_words * 1000``, pooled across all baseline files. A file whose
+    content fingerprint equals ``target_fingerprint`` is a copy of the target and is dropped into
+    ``self_excluded`` (never pooled) — otherwise the target's own AIC hits inflate its own baseline
+    and understate its excess over baseline.
     """
     total_words = 0
     total_hits: dict[str, int] = {k: 0 for k in pattern_keys}
     loaded: list[Path] = []
     skipped: list[Path] = []
+    self_excluded: list[Path] = []
     for p in baseline_paths:
         try:
             text = p.read_text(encoding="utf-8", errors="replace")
@@ -543,6 +576,11 @@ def baseline_density(
             continue
         if not text.strip():
             skipped.append(p)
+            continue
+        # CONTENT self-exclusion: a baseline file that IS a copy of the target (any case/punctuation/
+        # whitespace variant) must not pool its AIC hits into the target's baseline (fail-closed).
+        if target_fingerprint is not None and _content_fingerprint(text) == target_fingerprint:
+            self_excluded.append(p)
             continue
         sents = split_sentences(text)
         words = len(re.findall(r"\b\w+\b", text))
@@ -555,9 +593,9 @@ def baseline_density(
         total_words += words
         loaded.append(p)
     if total_words == 0:
-        return {k: 0.0 for k in pattern_keys}, 0, loaded, skipped
+        return {k: 0.0 for k in pattern_keys}, 0, loaded, skipped, self_excluded
     density = {k: total_hits[k] / total_words * 1000 for k in pattern_keys}
-    return density, total_words, loaded, skipped
+    return density, total_words, loaded, skipped, self_excluded
 
 
 # ---------- rendering ----------
@@ -810,7 +848,7 @@ def render_json(
 
 # ---------- main ----------
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Layer B/C named-pattern density audit (correctio, manifesto cadence, etc.)."
     )
@@ -842,16 +880,23 @@ def main() -> int:
     )
     parser.add_argument("--json", action="store_true", help="Output JSON.")
     parser.add_argument("--out", help="Write output to file instead of stdout.")
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
 
     target_path = Path(args.target)
     if not target_path.exists():
         print(f"Target file not found: {target_path}", file=sys.stderr)
         return 1
     text = target_path.read_text(encoding="utf-8", errors="replace")
+    # Fail-closed: a missing/blank target refuses BEFORE any comparison — never certify a density
+    # against a baseline the target cannot be distinguished from.
     if not text.strip():
         print(f"Target file empty: {target_path}", file=sys.stderr)
         return 1
+    # Self-exclusion fingerprint over the RAW target text (before blockquote stripping) — a copy of
+    # the target FILE in the baseline dir is the raw file, so raw-vs-raw catches it; baseline_density
+    # fingerprints each baseline file's raw content the same way.
+    target_fingerprint = _content_fingerprint(text)
+    target_resolved = target_path.resolve()
     if not args.keep_quotes:
         # Strip markdown blockquote lines (start with '>') to keep quoted
         # passages from inflating the writer's own pattern density.
@@ -870,13 +915,24 @@ def main() -> int:
     baseline_skipped: list[Path] = []
     baseline_words = 0
     if args.baseline_dir:
-        baseline_paths = list_baseline_paths(args.baseline_dir)
+        baseline_paths = list_baseline_paths(args.baseline_dir, target_resolved=target_resolved)
         if not baseline_paths:
             print(f"No .txt or .md files in {args.baseline_dir}", file=sys.stderr)
             return 1
-        baseline_density_per_1k, baseline_words, baseline_loaded, baseline_skipped = baseline_density(
+        (baseline_density_per_1k, baseline_words, baseline_loaded,
+         baseline_skipped, baseline_self_excluded) = baseline_density(
             baseline_paths, list(target_results.keys()),
+            target_fingerprint=target_fingerprint,
         )
+        if baseline_self_excluded:
+            print(
+                "Warning: self-exclusion dropped baseline file(s) that are the target or a "
+                "content-duplicate of it: "
+                + ", ".join(p.name for p in baseline_self_excluded)
+                + ". They are absent from the baseline density (a copy of the target would "
+                "pool its own pattern hits into the target's baseline).",
+                file=sys.stderr,
+            )
         if baseline_skipped:
             print(
                 "Warning: could not read baseline files: "

@@ -25,6 +25,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -64,6 +65,24 @@ def _normalize(text: str) -> str:
 def char_ngram_counts(text: str, n: int) -> Counter:
     norm = _normalize(text)
     return Counter(norm[i:i + n] for i in range(len(norm) - n + 1)) if len(norm) >= n else Counter()
+
+
+# ---- content fingerprint (self-exclusion for a copy of the target in the baseline) ----------
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the text under the SAME normalization the char-n-gram matcher applies
+    (``_normalize``: NFC + whitespace-collapse + strip; punctuation and case PRESERVED). Two texts
+    equal under ``_normalize`` produce identical char n-grams — they are indistinguishable to this
+    surface's distance — so a baseline file carrying a copy of the target is self-excluded alongside
+    the path guard (a target dropped into ``--baseline-dir`` at a different name would otherwise pool
+    its own char-n-gram profile into its own baseline centroid, collapsing `delta`/cosine toward 0).
+
+    Matcher-aligned by design (sibling of the Codex self-exclusion sweep: cross_doc_novelty_profile
+    #274 / originality_audit #278 / rank_turbulence_audit #280): the fingerprint's equivalence class
+    is EXACTLY the char-n-gram matcher's (``_normalize``), so a punctuation- or case-variant of the
+    target — which this punctuation-/case-SENSITIVE surface scores as a genuinely different profile —
+    is correctly KEPT, while a byte- or whitespace-identical copy is dropped (fail-closed)."""
+    return hashlib.sha256(_normalize(text).encode("utf-8")).hexdigest()
 
 
 def _rel_freq(counts: Counter, keys: list[str]) -> dict[str, float]:
@@ -171,7 +190,19 @@ def compute_distance(target_text: str, baseline_texts: list[str], *,
     }
 
 
-def _load_baseline(baseline_dir: str) -> tuple[list[str], list[Path], int]:
+def _load_baseline(
+    baseline_dir: str,
+    *,
+    target_resolved: Path | None = None,
+    target_fingerprint: str | None = None,
+) -> tuple[list[str], list[Path], int, int]:
+    """Load the baseline corpus, self-excluding any copy of the target.
+
+    A baseline file is dropped when its resolved path equals ``target_resolved`` (path guard — the
+    target physically sits in ``--baseline-dir``) OR its content fingerprint equals
+    ``target_fingerprint`` (content guard — a copy of the target under a different name). Path OR
+    content -> exclude; a content match only DROPS, never re-admits (fail-closed). Returns
+    ``(texts, loaded, words, self_excluded)``."""
     files = sorted(
         p for p in Path(baseline_dir).expanduser().glob("**/*")
         if p.suffix.lower() in {".txt", ".md"} and p.is_file()
@@ -179,15 +210,23 @@ def _load_baseline(baseline_dir: str) -> tuple[list[str], list[Path], int]:
     texts: list[str] = []
     loaded: list[Path] = []
     words = 0
+    self_excluded = 0
     for f in files:
         t = f.read_text(encoding="utf-8", errors="ignore")
         n = count_words(t)
         if n == 0:  # skip empty / whitespace-only / non-word files
             continue
+        path_match = target_resolved is not None and f.resolve() == target_resolved
+        content_match = (
+            target_fingerprint is not None and _content_fingerprint(t) == target_fingerprint
+        )
+        if path_match or content_match:
+            self_excluded += 1
+            continue
         texts.append(t)
         loaded.append(f)
         words += n
-    return texts, loaded, words
+    return texts, loaded, words, self_excluded
 
 
 def _claim_license(lang: str) -> ClaimLicense:
@@ -412,13 +451,27 @@ def main(argv: list[str] | None = None) -> int:
 
     target_text = target_path.read_text(encoding="utf-8", errors="ignore")
     word_count = count_words(target_text)
-    baseline_texts, loaded, baseline_words = _load_baseline(args.baseline_dir)
+    # Fail-closed: a missing/blank comparison target must REFUSE before comparing, never certify a
+    # distance against a corpus it cannot be distinguished from. An empty/whitespace target has
+    # word_count 0 < LENGTH_FLOOR_WORDS and routes to available=False below.
+    # Self-exclusion: drop any baseline file that IS the target (same path) or CARRIES a copy of it
+    # (same content fingerprint) so the target never pools into its own baseline centroid.
+    baseline_texts, loaded, baseline_words, self_excluded = _load_baseline(
+        args.baseline_dir,
+        target_resolved=target_path.resolve(),
+        target_fingerprint=_content_fingerprint(target_text),
+    )
 
     warnings: list[str] = []
     if word_count < LENGTH_FLOOR_WORDS:
         warnings.append(
             f"Target is {word_count} words; below the {LENGTH_FLOOR_WORDS}-word "
             "floor for a meaningful distance."
+        )
+    if self_excluded:
+        warnings.append(
+            f"self-exclusion: dropped {self_excluded} baseline file(s) that are the target or a "
+            "content-duplicate of it (a copy in the baseline would deflate the distance toward 0)."
         )
     if not baseline_texts:
         warnings.append(
@@ -453,6 +506,7 @@ def main(argv: list[str] | None = None) -> int:
         payload = build_payload(
             results, target_path=target_path, word_count=word_count,
             available=True, lang=args.lang, baseline=baseline_meta,
+            warnings=warnings or None,
         )
 
     text_out = (json.dumps(payload, indent=2, default=str)
