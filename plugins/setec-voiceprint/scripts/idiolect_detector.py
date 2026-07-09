@@ -13,6 +13,7 @@ detection or authorship certification.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import sys
@@ -90,6 +91,85 @@ def fmt(value: Any, digits: int = 3) -> str:
 
 def surface_word_tokens(text: str) -> list[str]:
     return WORD_RE.findall(text)
+
+
+# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
+_FP_SEP = "\x1f"
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the ``word_tokens`` stream (lowercased ``[A-Za-z']+``) — the keyness matcher's OWN
+    equivalence class. Keyness counts ``word_tokens`` n-grams (target vs reference), so two docs with
+    the same ``word_tokens`` stream contribute identically; a reference entry carrying a copy of a
+    target doc (even a case/punctuation variant) is keyness-equivalent to it and must be dropped from
+    the reference, or the target's own idiolectic words appear in the reference and deflate keyness.
+
+    ``build_corpus`` runs ``strip_non_prose`` BEFORE ``word_tokens``, so this fingerprint must be
+    computed on the same cleaned text the matcher actually scores — callers pass the
+    ``strip_non_prose`` output (see ``exclude_target_from_reference``). Fingerprinting raw text would
+    miss a reference copy that differs only in stripped material (YAML front matter, code fences,
+    footers) yet scores identically after preprocessing.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: originality_audit #278 /
+    rank_turbulence_audit #280). Fail-CLOSED: the token stream over-collapses relative to raw text
+    (case/punctuation folded), so a match only DROPS a reference entry, never re-admits one; a
+    genuinely different reference doc has a different token stream and is KEPT."""
+    return hashlib.sha256(_FP_SEP.join(word_tokens(text)).encode("utf-8")).hexdigest()
+
+
+def _resolved_path_key(path: str | None) -> str | None:
+    """Best-effort filesystem identity for the path guard. Real files resolve to an absolute path;
+    non-filesystem ids (e.g. ``nltk.corpus.brown``) can't collide with a target file path, so a
+    resolve failure just yields ``None`` (content guard still applies)."""
+    if not path:
+        return None
+    try:
+        return str(Path(path).expanduser().resolve())
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
+def exclude_target_from_reference(
+    target_entries: list[TextEntry],
+    reference_entries: list[TextEntry],
+    *,
+    allow_non_prose: bool = False,
+    strip_rules: str | None = None,
+    strip_aggressive: bool = False,
+) -> tuple[list[TextEntry], list[TextEntry]]:
+    """Drop any reference entry that IS a target doc — by resolved PATH or content FINGERPRINT.
+
+    Returns ``(kept_reference, dropped_reference)``. ``load_target_entries`` and
+    ``load_reference_entries`` draw from INDEPENDENT sources with no cross-check, so a target doc that
+    also sits in the reference pool (same path, a content-duplicate at another path, or an inline
+    manifest row) contaminates the reference and deflates the target-vs-reference keyness. Path OR
+    content -> exclude; a content match only DROPS, never re-admits (fail-closed).
+
+    The content fingerprint is computed on the ``strip_non_prose``-cleaned text using the SAME strip
+    options ``build_corpus`` scores with, so a reference copy that differs from a target only in
+    stripped material (front matter, code fences, footers) is still recognized as a duplicate and
+    dropped — the guard's equivalence class matches the keyness matcher's scoring input."""
+    def _clean(text: str) -> str:
+        cleaned, _ = strip_non_prose(
+            text, strip_rules,
+            allow_non_prose=allow_non_prose,
+            strip_aggressive=strip_aggressive,
+        )
+        return cleaned
+
+    target_fps = {_content_fingerprint(_clean(e.text)) for e in target_entries}
+    target_paths = {k for k in (_resolved_path_key(e.path) for e in target_entries) if k is not None}
+    kept: list[TextEntry] = []
+    dropped: list[TextEntry] = []
+    for entry in reference_entries:
+        path_key = _resolved_path_key(entry.path)
+        path_match = path_key is not None and path_key in target_paths
+        content_match = _content_fingerprint(_clean(entry.text)) in target_fps
+        if path_match or content_match:
+            dropped.append(entry)
+        else:
+            kept.append(entry)
+    return kept, dropped
 
 
 def ngrams(tokens: list[str], n: int) -> Iterable[tuple[str, ...]]:
@@ -717,6 +797,16 @@ def run_idiolect_detector(
     strip_rules: str | None = None,
     strip_aggressive: bool = False,
 ) -> dict[str, Any]:
+    # Self-exclusion: drop any reference entry that IS a target doc (same path or content
+    # fingerprint) BEFORE scoring, so the target's own idiolect can't leak into its reference and
+    # deflate keyness. If this empties the reference, build_corpus below raises CorpusLoadError
+    # (fail-closed — never certify an idiolect against an empty/target-contaminated reference).
+    reference_entries, dropped_reference = exclude_target_from_reference(
+        target_entries, reference_entries,
+        allow_non_prose=allow_non_prose,
+        strip_rules=strip_rules,
+        strip_aggressive=strip_aggressive,
+    )
     target = build_corpus(
         "target",
         target_entries,
@@ -756,6 +846,14 @@ def run_idiolect_detector(
     return {
         "task_surface": TASK_SURFACE,
         "privacy": PRIVACY_WARNING,
+        "self_exclusion": {
+            "n_reference_dropped": len(dropped_reference),
+            "dropped_ids": [e.id for e in dropped_reference],
+            "rationale": (
+                "reference entries that are a target doc (same path or content fingerprint) are "
+                "dropped before keyness so the target's own idiolect cannot leak into its reference"
+            ),
+        },
         "target_summary": corpus_summary(target),
         "reference_summary": corpus_summary(reference),
         "method": {

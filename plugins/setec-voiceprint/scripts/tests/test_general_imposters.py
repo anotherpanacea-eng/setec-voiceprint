@@ -673,6 +673,43 @@ class TestTargetSelfEntry:
         result = gi._exclude_target_path([entry], target_file)
         assert len(result) == 1
 
+    def test_content_duplicate_at_other_path_dropped(self, tmp_path):
+        """A COPY of the target under a DIFFERENT filename evades the path guard; the content guard
+        (opt-in via target_text) drops it, so the target cannot win against its own copy among the
+        impostors (which would bias the proportion toward 1.0)."""
+        target_file = tmp_path / "alice_draft.txt"
+        target_text = "The moral weather shifted and the quiet calculus began again in earnest."
+        target_file.write_text(target_text, encoding="utf-8")
+        dup = gi.CorpusEntry(
+            id="dup", text=target_text,  # same content, DIFFERENT path
+            persona="alice", register="blog_essay", author="A",
+            corpus_role="identity_baseline", impostor_for=[], word_count=100,
+            resolved_path=(tmp_path / "copy_elsewhere.txt").resolve(),
+        )
+        distinct = gi.CorpusEntry(
+            id="distinct", text="An entirely different passage with its own cadence and concerns.",
+            persona="bob", register="blog_essay", author="B",
+            corpus_role="impostor", impostor_for=["alice"], word_count=100,
+            resolved_path=(tmp_path / "distinct.txt").resolve(),
+        )
+        result = gi._exclude_target_path([dup, distinct], target_file, target_text=target_text)
+        ids = {e.id for e in result}
+        assert "dup" not in ids          # content-duplicate dropped
+        assert "distinct" in ids         # genuinely different pool doc kept
+
+    def test_content_guard_is_opt_in(self, tmp_path):
+        """Without target_text the guard stays path-only (backward compatible)."""
+        target_file = tmp_path / "t.txt"
+        target_file.write_text("same body of text here", encoding="utf-8")
+        dup = gi.CorpusEntry(
+            id="dup", text="same body of text here",
+            persona="a", register="blog_essay", author="A",
+            corpus_role="identity_baseline", impostor_for=[], word_count=10,
+            resolved_path=(tmp_path / "other.txt").resolve(),
+        )
+        # no target_text -> content match NOT applied -> duplicate survives (path differs)
+        assert len(gi._exclude_target_path([dup], target_file)) == 1
+
     def test_load_manifest_populates_resolved_path(self, tmp_path):
         text_path = tmp_path / "essay.txt"
         text_path.write_text("body of the essay" * 20, encoding="utf-8")

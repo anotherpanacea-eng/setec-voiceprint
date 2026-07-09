@@ -73,6 +73,7 @@ from __future__ import annotations
 
 import argparse
 import datetime as _dt
+import hashlib
 import json
 import math
 import random
@@ -205,42 +206,49 @@ def _load_manifest(path: Path) -> list[CorpusEntry]:
 
 def _exclude_target_path(
     entries: list[CorpusEntry], target_path: Path,
+    *, target_text: str | None = None,
 ) -> list[CorpusEntry]:
-    """Drop manifest entries whose resolved path is the same file as
-    ``--target``. The target text is supplied separately to the
-    harness; if the same file is also in the candidate or impostor
-    pool, the GI proportion self-normalizes (the target gets to
-    "win" against itself, biasing the proportion toward 1.0).
+    """Drop manifest entries that ARE ``--target`` — by resolved PATH, and (when ``target_text`` is
+    supplied) by content FINGERPRINT. The target text is supplied separately to the harness; if the
+    same document is also in the candidate or impostor pool, the GI proportion self-normalizes (the
+    target gets to "win" against itself, biasing the proportion toward 1.0 — a false
+    authorship-consistent verdict).
 
-    Resolution is by ``Path.resolve()`` so symlinks and ``./`` /
-    ``../`` paths collapse to the same canonical form. Entries
-    without a ``resolved_path`` (e.g., constructed in-memory by a
-    caller that bypasses ``_load_manifest``) pass through
-    unchanged.
-    """
+    Path resolution is by ``Path.resolve()`` so symlinks and ``./`` / ``../`` collapse to the same
+    canonical form. The path guard alone misses a CONTENT-DUPLICATE of the target sitting at a
+    DIFFERENT path (``_load_manifest`` only admits file-backed rows, so there is no path-less inline
+    vector — but a copy under another filename still evades the path check). Passing ``target_text``
+    adds the content guard: an entry whose ``_content_fingerprint`` equals the target's is dropped
+    even at a different path (sibling of the Codex self-exclusion sweep). Path OR content -> exclude;
+    a content match only DROPS, never re-admits (fail-closed). When ``target_text`` is None the guard
+    is path-only (backward compatible)."""
     try:
         target_resolved = target_path.resolve()
     except OSError:
+        target_resolved = None
+    target_fp = _content_fingerprint(target_text) if target_text is not None else None
+    if target_resolved is None and target_fp is None:
         return entries
     out: list[CorpusEntry] = []
     dropped: list[str] = []
     for e in entries:
-        if e.resolved_path is None:
-            out.append(e)
+        path_match = False
+        if target_resolved is not None and e.resolved_path is not None:
+            try:
+                path_match = e.resolved_path.resolve() == target_resolved
+            except OSError:
+                path_match = False
+        content_match = target_fp is not None and _content_fingerprint(e.text) == target_fp
+        if path_match or content_match:
+            dropped.append(e.id)
             continue
-        try:
-            if e.resolved_path.resolve() == target_resolved:
-                dropped.append(e.id)
-                continue
-        except OSError:
-            pass
         out.append(e)
     if dropped:
         sys.stderr.write(
             "  excluding "
             f"{len(dropped)} manifest entr"
             f"{'ies' if len(dropped) != 1 else 'y'} "
-            f"whose path matches --target: {', '.join(dropped)}\n"
+            f"that are --target (path or content match): {', '.join(dropped)}\n"
         )
     return out
 
@@ -262,6 +270,24 @@ def _tokens(text: str) -> list[str]:
     if _TOKEN_RE is None:
         _TOKEN_RE = re.compile(r"\w+", re.UNICODE)
     return [t.lower() for t in _TOKEN_RE.findall(text)]
+
+
+# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
+_FP_SEP = "\x1f"
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the GI feature tokenizer's OWN stream (``_tokens``: lowercased ``\\w+``). The GI
+    feature vocab and per-doc rel-freq vectors are built from ``_tokens``, so two texts with the same
+    token stream yield the same feature vectors — a copy of the target in the candidate/impostor pool
+    (at a DIFFERENT path than ``--target``, so the path guard misses it) lets the target "win"
+    against itself and biases the proportion toward 1.0 (a false authorship-consistent verdict). The
+    content fingerprint self-excludes it alongside the path check.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep): the fingerprint uses GI's exact
+    token equivalence class, so a case/punctuation/whitespace variant of the target is dropped
+    (fail-closed) and a genuinely different pool doc is kept."""
+    return hashlib.sha256(_FP_SEP.join(_tokens(text)).encode("utf-8")).hexdigest()
 
 
 def _feature_vocab(
@@ -880,7 +906,10 @@ def run(args: argparse.Namespace) -> int:
     target_id = args.target_id or target_path.stem
 
     entries = _load_manifest(manifest_path)
-    entries = _exclude_target_path(entries, target_path)
+    # Self-exclusion by path AND content: a copy of the target in the candidate/impostor pool (even
+    # under a different filename) would let the target win against itself and bias the proportion
+    # toward 1.0. Passing target_text enables the content-fingerprint guard alongside the path guard.
+    entries = _exclude_target_path(entries, target_path, target_text=target_text)
     register = args.register or _infer_candidate_register(
         entries, args.candidate_persona,
     )

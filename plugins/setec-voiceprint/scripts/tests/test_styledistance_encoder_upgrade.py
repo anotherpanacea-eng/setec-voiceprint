@@ -431,8 +431,11 @@ def test_crosslingual_default_envelope_unchanged(tmp_path: Path):
     bdir = tmp_path / "b"
     bdir.mkdir()
     text = ("the quick brown fox jumps over the lazy dog " * 60)
+    # Baseline distinct from the target: a target that is its own baseline is (correctly)
+    # self-excluded by the content guard, emptying the baseline -> available=False.
+    baseline_text = ("a lazy dog sleeps while the clever cat naps by warm glass " * 60)
     for i in range(3):
-        (bdir / f"f{i}.txt").write_text(text, encoding="utf-8")
+        (bdir / f"f{i}.txt").write_text(baseline_text, encoding="utf-8")
     target = _write(tmp_path, "t.txt", text)
     out = tmp_path / "o.json"
     rc = cvd.main([str(target), "--baseline-dir", str(bdir), "--lang", "en",
@@ -474,7 +477,9 @@ def test_crosslingual_encoder_block_beside_delta(tmp_path: Path, stub_cvd_encode
     """--encoder muar adds an encoder_block (encoder_id + cosine
     distribution) BESIDE the parser-free delta (not replacing it)."""
     text = "\n\n".join(_multi_para_text(n_paras=6) for _ in range(2))
-    bdir = _cvd_baseline(tmp_path, text)
+    # Baseline distinct from the target (see self-exclusion note in the default-envelope test).
+    baseline_text = text.replace("word", "alt").replace("Paragraph", "Section")
+    bdir = _cvd_baseline(tmp_path, baseline_text)
     target = _write(tmp_path, "t.txt", text)
     out = tmp_path / "o.json"
     rc = cvd.main([str(target), "--baseline-dir", str(bdir), "--lang", "en",
@@ -546,7 +551,9 @@ def test_crosslingual_encoder_block_keeps_cross_language_refusal(
     refuses cross-language comparison and the --lang tag is provenance —
     multilingual is a capability, not a license."""
     text = "\n\n".join(_multi_para_text(n_paras=6) for _ in range(2))
-    bdir = _cvd_baseline(tmp_path, text)
+    # Baseline distinct from the target (see self-exclusion note in the default-envelope test).
+    baseline_text = text.replace("word", "alt").replace("Paragraph", "Section")
+    bdir = _cvd_baseline(tmp_path, baseline_text)
     target = _write(tmp_path, "t.txt", text)
     out = tmp_path / "o.json"
     cvd.main([str(target), "--baseline-dir", str(bdir), "--lang", "en",

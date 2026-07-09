@@ -19,6 +19,9 @@ from output_schema import VALID_TASK_SURFACES  # type: ignore  # noqa: E402
 A_TEXT = ("the quick brown fox jumps over the lazy dog " * 60)   # ~540 words
 B_TEXT = ("zyzzyx vrooom qwxk blipp gronk skronk " * 100)        # ~600 words
 ES_TEXT = ("el rápido zorro café salta sobre el perro perezoso " * 60)
+# A DISTINCT same-language baseline: the target must not be its own baseline, or the self-exclusion
+# guard (correctly) drops every copy and the run refuses. Real baselines are the writer's OTHER work.
+ES_BASELINE_TEXT = ("una gata dormía junto a la ventana mientras caía la lluvia afuera " * 60)
 
 
 def _baseline(tmp_path, name, text, copies=3):
@@ -35,7 +38,7 @@ def test_task_surface_is_voice_coherence():
 
 
 def test_envelope_shape_validates(tmp_path):
-    bdir = _baseline(tmp_path, "b", A_TEXT)
+    bdir = _baseline(tmp_path, "b", B_TEXT)   # baseline distinct from the target (see ES_BASELINE_TEXT note)
     target = tmp_path / "t.txt"
     target.write_text(A_TEXT, encoding="utf-8")
     out = tmp_path / "o.json"
@@ -73,7 +76,7 @@ def test_non_ascii_text():
 
 
 def test_lang_recorded(tmp_path):
-    bdir = _baseline(tmp_path, "b", ES_TEXT)
+    bdir = _baseline(tmp_path, "b", ES_BASELINE_TEXT)   # distinct same-language baseline
     target = tmp_path / "t.txt"
     target.write_text(ES_TEXT, encoding="utf-8")
     out = tmp_path / "o.json"
@@ -128,8 +131,8 @@ def test_load_baseline_skips_empty(tmp_path):
     bdir.mkdir()
     (bdir / "good.txt").write_text(A_TEXT, encoding="utf-8")
     (bdir / "blank.txt").write_text("   \n", encoding="utf-8")
-    texts, loaded, words = cvd._load_baseline(str(bdir))
-    assert len(texts) == 1 and words > 0
+    texts, loaded, words, self_excluded = cvd._load_baseline(str(bdir))
+    assert len(texts) == 1 and words > 0 and self_excluded == 0
 
 
 def test_deterministic():
