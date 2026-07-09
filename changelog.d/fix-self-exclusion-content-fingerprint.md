@@ -14,8 +14,11 @@ tokenization (fail-closed: over-collapsing can only drop a copy, never re-admit 
 awareness (were previously unguarded); fingerprint over the lowercased `\w+` word stream.
 `crosslingual_voice_distance` (`voice_coherence`) — `_load_baseline` gained a target guard; fingerprint
 over `_normalize` (the char-n-gram matcher's equivalence). `idiolect_detector` (`voice_coherence`) —
-target/reference cross-check added before keyness; fingerprint over the `word_tokens` stream; empties
-fail-closed. `general_imposters` — `_exclude_target_path` gained an opt-in content guard (its
+target/reference cross-check added before keyness; fingerprint over the `word_tokens` stream of the
+`strip_non_prose`-cleaned text, computed with the same strip options `build_corpus` scores with, so a
+reference copy differing from the target only in stripped material (YAML front matter, code fences,
+footers) is recognized as a duplicate and dropped rather than kept while the matcher scores it
+identically (PR #306 review); empties fail-closed. `general_imposters` — `_exclude_target_path` gained an opt-in content guard (its
 docstring already noted a target copy biases the proportion toward 1.0); fingerprint over its `_tokens`
 stream. `corpus_novelty_audit` was assessed and deliberately LEFT UNCHANGED: it is a set-level
 diversity audit where identical-but-distinct documents are the redundancy signal (content-dedup there

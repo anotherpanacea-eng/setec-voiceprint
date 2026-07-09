@@ -12,6 +12,11 @@ resolved path equals a target entry's (path guard) OR its content fingerprint eq
 ``[A-Za-z']+``) n-grams, so the fingerprint is sha256 over that token stream — a case/punctuation
 variant of a target doc is keyness-equivalent and is self-excluded (fail-closed); a genuinely
 different reference doc is kept.
+
+The fingerprint is computed on the ``strip_non_prose``-cleaned text (the same preprocessing
+``build_corpus`` scores with), so a reference copy that differs from the target only in stripped
+material (YAML front matter, code fences, footers) is still recognized as a duplicate and dropped
+(PR #306) — fingerprinting the raw text would have kept it while the matcher scored it identically.
 """
 
 import sys
@@ -62,6 +67,34 @@ def test_case_variant_of_target_dropped():
     result = run_idiolect_detector(_target(), reference, n_values=(1, 2))
     assert result["self_exclusion"]["n_reference_dropped"] == 1
     assert "ref_leak" not in {f["id"] for f in result["reference_summary"]["files"]}
+
+
+def test_front_matter_copy_of_target_dropped():
+    # PR #306: a reference copy of the target wrapped in YAML front matter. The raw token streams
+    # differ (front-matter words), but build_corpus strips the front matter before word_tokens, so
+    # the scored inputs are identical -> the guard (now computed on the cleaned text) must drop it.
+    fm_copy = "---\ntitle: Not the target\nauthor: Someone Else\ntags: [a, b]\n---\n" + TARGET_TEXT
+    reference = [
+        TextEntry(id="ref_ok", path="/corpus/ref/ok.txt", text=OTHER_REF),
+        TextEntry(id="ref_leak", path="/corpus/ref/leak.txt", text=fm_copy),
+    ]
+    result = run_idiolect_detector(_target(), reference, n_values=(1, 2))
+    assert result["self_exclusion"]["n_reference_dropped"] == 1
+    assert "ref_leak" not in {f["id"] for f in result["reference_summary"]["files"]}
+
+
+def test_front_matter_over_distinct_body_not_over_excluded():
+    # A reference doc that also carries front matter but a genuinely DIFFERENT body must survive:
+    # stripping front matter does not collapse distinct prose into the target.
+    fm_other = "---\ntitle: Something else\n---\n" + OTHER_REF
+    reference = [
+        TextEntry(id="ref_a", path="/corpus/ref/a.txt", text=fm_other),
+        TextEntry(id="ref_b", path="/corpus/ref/b.txt",
+                  text="A separate essay with its own diction and its own recurring turns of phrase."),
+    ]
+    result = run_idiolect_detector(_target(), reference, n_values=(1, 2))
+    assert result["self_exclusion"]["n_reference_dropped"] == 0
+    assert result["reference_summary"]["n_files"] == 2
 
 
 def test_reference_at_same_path_dropped():

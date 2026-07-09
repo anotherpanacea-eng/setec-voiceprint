@@ -104,6 +104,12 @@ def _content_fingerprint(text: str) -> str:
     target doc (even a case/punctuation variant) is keyness-equivalent to it and must be dropped from
     the reference, or the target's own idiolectic words appear in the reference and deflate keyness.
 
+    ``build_corpus`` runs ``strip_non_prose`` BEFORE ``word_tokens``, so this fingerprint must be
+    computed on the same cleaned text the matcher actually scores — callers pass the
+    ``strip_non_prose`` output (see ``exclude_target_from_reference``). Fingerprinting raw text would
+    miss a reference copy that differs only in stripped material (YAML front matter, code fences,
+    footers) yet scores identically after preprocessing.
+
     Matcher-aligned (sibling of the Codex self-exclusion sweep: originality_audit #278 /
     rank_turbulence_audit #280). Fail-CLOSED: the token stream over-collapses relative to raw text
     (case/punctuation folded), so a match only DROPS a reference entry, never re-admits one; a
@@ -126,6 +132,10 @@ def _resolved_path_key(path: str | None) -> str | None:
 def exclude_target_from_reference(
     target_entries: list[TextEntry],
     reference_entries: list[TextEntry],
+    *,
+    allow_non_prose: bool = False,
+    strip_rules: str | None = None,
+    strip_aggressive: bool = False,
 ) -> tuple[list[TextEntry], list[TextEntry]]:
     """Drop any reference entry that IS a target doc — by resolved PATH or content FINGERPRINT.
 
@@ -133,15 +143,28 @@ def exclude_target_from_reference(
     ``load_reference_entries`` draw from INDEPENDENT sources with no cross-check, so a target doc that
     also sits in the reference pool (same path, a content-duplicate at another path, or an inline
     manifest row) contaminates the reference and deflates the target-vs-reference keyness. Path OR
-    content -> exclude; a content match only DROPS, never re-admits (fail-closed)."""
-    target_fps = {_content_fingerprint(e.text) for e in target_entries}
+    content -> exclude; a content match only DROPS, never re-admits (fail-closed).
+
+    The content fingerprint is computed on the ``strip_non_prose``-cleaned text using the SAME strip
+    options ``build_corpus`` scores with, so a reference copy that differs from a target only in
+    stripped material (front matter, code fences, footers) is still recognized as a duplicate and
+    dropped — the guard's equivalence class matches the keyness matcher's scoring input."""
+    def _clean(text: str) -> str:
+        cleaned, _ = strip_non_prose(
+            text, strip_rules,
+            allow_non_prose=allow_non_prose,
+            strip_aggressive=strip_aggressive,
+        )
+        return cleaned
+
+    target_fps = {_content_fingerprint(_clean(e.text)) for e in target_entries}
     target_paths = {k for k in (_resolved_path_key(e.path) for e in target_entries) if k is not None}
     kept: list[TextEntry] = []
     dropped: list[TextEntry] = []
     for entry in reference_entries:
         path_key = _resolved_path_key(entry.path)
         path_match = path_key is not None and path_key in target_paths
-        content_match = _content_fingerprint(entry.text) in target_fps
+        content_match = _content_fingerprint(_clean(entry.text)) in target_fps
         if path_match or content_match:
             dropped.append(entry)
         else:
@@ -779,7 +802,10 @@ def run_idiolect_detector(
     # deflate keyness. If this empties the reference, build_corpus below raises CorpusLoadError
     # (fail-closed — never certify an idiolect against an empty/target-contaminated reference).
     reference_entries, dropped_reference = exclude_target_from_reference(
-        target_entries, reference_entries
+        target_entries, reference_entries,
+        allow_non_prose=allow_non_prose,
+        strip_rules=strip_rules,
+        strip_aggressive=strip_aggressive,
     )
     target = build_corpus(
         "target",
