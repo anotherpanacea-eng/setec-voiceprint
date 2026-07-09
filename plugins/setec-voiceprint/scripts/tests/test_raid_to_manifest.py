@@ -1158,6 +1158,55 @@ class TestJunctionResolveFix:
         assert rc == 0
 
 
+class TestRowIdCollisionBoundary:
+    """Documents a KNOWN, deliberately-unfixed ambiguity in `_row_id`,
+    with the reachability verdict from the 2026-07-09 integrity sweep.
+
+    `_row_id` joins the source-file stem and the raw row id with a bare
+    ``_``, and ``_`` is legal in BOTH operands. So in the abstract the
+    join is ambiguous: ``("train.csv", "extra_1")`` and
+    ``("train_extra.csv", "1")`` both collapse to
+    ``raid_train_extra_1``; the second row is then silently swallowed
+    by the resume dedup (``row_id in seen_ids``).
+
+    Verdict — NOT reachable with canonical RAID inputs, left unfixed on
+    purpose:
+      * RAID's ``id`` is a UUID (hex + hyphens, never ``_``), and
+      * RAID's on-disk files are hyphen-sharded
+        (``train-00000-of-00030.parquet``, adversarial
+        ``train_paraphrase-00000-of-...``), so no stem is a clean
+        ``<other-stem>_<uuid-prefix>`` extension of another at an
+        underscore boundary.
+    A separator swap (e.g. ``\\x1f``) is contraindicated: the id is
+    used as a *filename* by ``_bucketed_text_path``
+    (``f"{row_id}.txt"``), where control-character separators are
+    unsafe, and no printable separator is guaranteed absent from an
+    arbitrary raw id. Changing the join would also churn every id +
+    spilled filename and break resume against existing manifests. If
+    RAID ever ships non-UUID ids or underscore-prefix-colliding
+    filenames, revisit with an injective, filename-safe encoding.
+    """
+
+    def test_bare_underscore_join_is_ambiguous_by_contract(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        a = rt._row_id("train.csv", "extra_1")
+        b = rt._row_id("train_extra.csv", "1")
+        # The documented (non-canonical) collision pair.
+        assert a == b == "raid_train_extra_1"
+
+    def test_canonical_raid_shaped_inputs_do_not_collide(self):
+        _install_mock_pyarrow({})
+        rt = _import_raid_to_manifest()
+        # UUID ids + hyphen-sharded stems (the real RAID layout) stay
+        # unique across the base and adversarial splits.
+        uid = "0007a9f0-6f2e-4c9f-9a1b-2c3d4e5f6a7b"
+        base = rt._row_id("train-00000-of-00030.parquet", uid)
+        adv = rt._row_id("train_paraphrase-00000-of-00030.parquet", uid)
+        assert base != adv
+        assert base == f"raid_train-00000-of-00030_{uid}"
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
