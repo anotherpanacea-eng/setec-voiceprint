@@ -51,10 +51,12 @@ task_surface: productive_roughness (voice-coherence family).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
 import sys
+import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -131,6 +133,26 @@ _DASH_ASIDE_RE = re.compile(r"[—–]\s.+?\s[—–]")
 
 def count_words(text: str) -> int:
     return len(_WORD_RE.findall(text))
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the NFC-normalized WHOLE text. Unlike the token-stream siblings in the self-exclusion
+    sweep, this surface's six rates are per-SENTENCE (fragment, sentence-initial CC, contraction,
+    adjacent-repetition, interjection aside, very-short) and depend on sentence segmentation + spaCy
+    parsing + punctuation — no single word-token stream carries them, and sentence splitting is
+    whitespace/punctuation-SENSITIVE, so collapsing whitespace would misrepresent the matcher. The
+    fingerprint hashes the text verbatim (NFC only), so a baseline file carrying a copy of the target
+    — even at a DIFFERENT path than ``--target`` (which the path guard misses) — is dropped before its
+    roughness rates pool into the baseline mean/SD and deflate the z-scores toward a false
+    "in-distribution" result.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
+    #278 / rank_turbulence_audit #280). Fail-CLOSED against the stated threat (a copy of the target
+    FILE at another path): a byte-/NFC-identical copy is dropped, and any text the surface would
+    segment or score differently is KEPT."""
+    return hashlib.sha256(
+        unicodedata.normalize("NFC", text).encode("utf-8")
+    ).hexdigest()
 
 
 # ---------- sentence splitting ----------
@@ -326,10 +348,14 @@ def aggregate_baseline(
     baseline_dir: Path,
     *,
     target_path: Path | None = None,
+    target_fingerprint: str | None = None,
 ) -> BaselineStats:
     """Walk the baseline directory, extract per-document rates, and compute the
     per-feature mean/sd ACROSS documents. The audited target is filtered out if
-    it lives under the baseline directory (self-overlap guard)."""
+    it lives under the baseline directory (path guard) OR if a baseline file is a
+    content-duplicate of it at a different path (content guard — the path guard
+    misses a copy under another filename). Path OR content -> exclude; a content
+    match only DROPS, never re-admits (fail-closed)."""
     if not baseline_dir.exists():
         raise FileNotFoundError(
             f"Baseline directory not found: {baseline_dir}"
@@ -361,6 +387,19 @@ def aggregate_baseline(
             skipped.append(path)
             continue
         if not text.strip():
+            skipped.append(path)
+            continue
+        if (
+            target_fingerprint is not None
+            and _content_fingerprint(text) == target_fingerprint
+        ):
+            # A copy of the target at a different path: its roughness rates ARE the target's, so
+            # pooling it into the baseline would pull the mean/SD toward the target and deflate the
+            # z-scores. Skip before the (expensive) spaCy parse in extract_features.
+            sys.stderr.write(
+                f"  excluding {path.name} from productive-roughness "
+                "baseline (content-duplicate of the target)\n"
+            )
             skipped.append(path)
             continue
         feats = extract_features(text)
@@ -638,7 +677,11 @@ def main(argv: list[str] | None = None) -> int:
 
     baseline_dir = Path(args.baseline_dir).expanduser()
     try:
-        baseline = aggregate_baseline(baseline_dir, target_path=target_path)
+        baseline = aggregate_baseline(
+            baseline_dir,
+            target_path=target_path,
+            target_fingerprint=_content_fingerprint(text),
+        )
     except (FileNotFoundError, NotADirectoryError) as exc:
         payload = build_payload(
             target_path=target_path,

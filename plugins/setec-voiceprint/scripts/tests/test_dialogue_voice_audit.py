@@ -58,6 +58,32 @@ def _long_text() -> str:
     return (_DIALOGUE_BLOCK + filler * 40) * 4
 
 
+# A DISTINCT long baseline text (different speakers + lines), so it is a genuine baseline document
+# rather than a content-duplicate of `_long_text()`. Needed since the content-fingerprint
+# self-exclusion guard correctly drops a baseline file whose dialogue turns match the target's.
+_OTHER_DIALOGUE_BLOCK = '''
+"We should set out before the tide turns," Captain Rourke said.
+"The men aren't ready, sir," Bell answered.
+"Then make them ready," Rourke said.
+"Aye, I'll see to it," said Bell.
+"And check the forward hold again," Rourke added.
+"It was checked at dawn, sir," Bell noted.
+"Check it twice," Rourke insisted.
+"As you wish, Captain," Bell muttered.
+"We cannot lose another cargo to the damp," said Rourke.
+"Understood, sir," Bell replied.
+'''
+
+
+def _other_long_text() -> str:
+    """A distinct baseline above the 2000-word floor (different dialogue than the target)."""
+    filler = (
+        "Out on the water the light was hard and flat and the ropes "
+        "creaked against the cleats as the swell moved beneath them. "
+    )
+    return (_OTHER_DIALOGUE_BLOCK + filler * 40) * 4
+
+
 def _spacy_available() -> bool:
     return dva.HAS_SPACY
 
@@ -302,7 +328,9 @@ def test_baseline_dir(tmp_path) -> None:
     target.write_text(_long_text(), encoding="utf-8")
     base = tmp_path / "baseline"
     base.mkdir()
-    (base / "chapter1.md").write_text(_long_text(), encoding="utf-8")
+    # A DISTINCT baseline document (not a content-duplicate of the target): the content-fingerprint
+    # self-exclusion guard would otherwise drop a chapter1 that carries the target's own dialogue.
+    (base / "chapter1.md").write_text(_other_long_text(), encoding="utf-8")
     envelope = dva.run_audit(
         target_path=target,
         text=_long_text(),

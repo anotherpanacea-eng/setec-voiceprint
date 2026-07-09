@@ -10,6 +10,7 @@ This is a voice-coherence tool, not an AI-provenance detector.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -131,6 +132,26 @@ def _function_word_vector(text: str) -> dict[str, float]:
     full ``compare_to_baseline`` cost per window.
     """
     return function_word_features(word_tokens(text))
+
+
+def _content_fingerprint(cleaned_text: str) -> str:
+    """sha256 of the WHOLE ``strip_non_prose``-cleaned text — the single string every scored
+    feature family reads before its own normalization (``compare_to_baseline`` strips each file
+    with these same options, then the function-word / char-n-gram / POS / dependency families
+    extract from the result). A manifest entry carrying a copy of the target — even at a DIFFERENT
+    path than ``--target`` (the path guard misses a copy under another filename) — would pool the
+    target's own vector into its own baseline centroid and collapse the cosine min / Delta toward 0
+    (a false "on-voice" result). The content fingerprint self-excludes it alongside the path guard.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
+    #278 / rank_turbulence_audit #280). The equivalence class is the cleaned string itself, so it is a
+    strict SUBSET of every family's class: identical cleaned text ⇒ every family scores it identically
+    (safe to DROP), and any punctuation-, case-, or whitespace-distinct baseline the char-n-gram / POS /
+    dependency families would treat as distinct has a different cleaned string and is KEPT. Callers must
+    pass the ``strip_non_prose`` output computed with the same strip options the comparison uses, so the
+    guard never drops a baseline the matcher considers distinct (an earlier ``word_tokens``-stream
+    fingerprint folded punctuation/case and over-excluded such baselines — PR #307)."""
+    return hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
 
 
 def _baseline_mean_function_word_vector(
@@ -716,6 +737,24 @@ def main() -> int:
     # baseline filter (most often when --baseline-dir contains the target).
     # Including the target self-normalizes the draft being measured: cosine
     # min collapses to 0.0 and z-scores shrink toward the per-feature mean.
+    # A copy of the target under a DIFFERENT filename evades the path check,
+    # so we also drop any entry whose content fingerprint matches the target
+    # (path OR content -> exclude; a content match only DROPS, fail-closed).
+    target_text = read_text(target_path)
+
+    def _cleaned(text: str) -> str:
+        # Same corpus-hygiene stripping compare_to_baseline applies to every
+        # file before feature extraction, so the fingerprint's equivalence
+        # class matches what the matcher actually scores (front-matter/footer
+        # artifacts that get stripped do not keep a real duplicate in-pool).
+        cleaned, _ = strip_non_prose(
+            text, args.strip_rules,
+            allow_non_prose=args.allow_non_prose,
+            strip_aggressive=args.strip_aggressive,
+        )
+        return cleaned
+
+    target_fingerprint = _content_fingerprint(_cleaned(target_text))
     try:
         target_resolved = target_path.resolve()
     except OSError:
@@ -727,13 +766,24 @@ def main() -> int:
             entry_resolved = Path(entry["path"]).resolve()
         except OSError:
             entry_resolved = Path(entry["path"])
-        if entry_resolved == target_resolved:
+        path_match = entry_resolved == target_resolved
+        content_match = False
+        if not path_match:
+            try:
+                content_match = (
+                    _content_fingerprint(_cleaned(read_text(Path(entry["path"]))))
+                    == target_fingerprint
+                )
+            except (OSError, KeyError):
+                content_match = False
+        if path_match or content_match:
             dropped.append(entry["id"])
             continue
         filtered.append(entry)
     if dropped:
         print(
-            f"Dropped target file from baseline: {', '.join(dropped)}.",
+            "Dropped target file (or a content-duplicate of it) from "
+            f"baseline: {', '.join(dropped)}.",
             file=sys.stderr,
         )
     baseline_entries = filtered
@@ -771,7 +821,7 @@ def main() -> int:
     else:
         _biber_tagger = None
 
-    target_text = read_text(target_path)
+    # target_text was read above for the self-exclusion fingerprint; reuse it.
     result = compare_to_baseline(
         target_text,
         baseline_entries,
