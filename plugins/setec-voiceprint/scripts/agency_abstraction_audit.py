@@ -42,6 +42,7 @@ prerequisite for the confounder audit's first useful version.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
@@ -168,6 +169,31 @@ _ACTION_VERB = re.compile(
 
 def _word_count(text: str) -> int:
     return len(_WORD_RE.findall(text))
+
+
+# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
+_FP_SEP = "\x1f"
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the CASE-PRESERVED ``_WORD_RE`` (``\\b\\w+\\b``) word stream — the surface's own word
+    tokenizer, verbatim. Case is PRESERVED (unlike the sibling stance/discourse surfaces) because
+    ``_PROPER_NOUN_RE`` (``[A-Z][a-z]{2,}…``) is a case-SENSITIVE primary signal: a re-cased copy of
+    the target scores a very different proper-noun / agency rate and is genuinely a different document
+    to this surface, so it must NOT be over-excluded. The compared features (proper-noun, passive,
+    nominalization, light-verb rates) are per-1000-word rates over this stream, so a baseline file
+    carrying a copy of the target — even at a DIFFERENT path than ``--target`` (which the path guard
+    misses) — would pull the baseline mean/SD toward the target's own vector and deflate the z-scores
+    toward a false "in-distribution" result. The content fingerprint self-excludes it alongside the
+    path guard.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
+    #278 / rank_turbulence_audit #280). Fail-CLOSED: the fingerprint mirrors ``_WORD_RE`` exactly
+    (case included), so a byte/whitespace copy of the target is dropped while any text the surface
+    would tokenize differently — including a re-cased one — is KEPT."""
+    return hashlib.sha256(
+        _FP_SEP.join(_WORD_RE.findall(text)).encode("utf-8")
+    ).hexdigest()
 
 
 def _per_thousand(count: int, n_words: int) -> float:
@@ -303,6 +329,7 @@ def audit_baseline_agency(
     strip_aggressive: bool = False,
     strip_masking: str | Iterable[str] | None = None,
     target_path: Path | None = None,
+    target_fingerprint: str | None = None,
     include_filenames: bool = False,
 ) -> dict[str, Any]:
     """1.34.2 hardening: same conventions as paragraph_audit /
@@ -347,6 +374,17 @@ def audit_baseline_agency(
                 "name": p.name if include_filenames else f"file_{len(skipped_files):03d}",
                 "reason": f"unreadable: {exc}",
             })
+            continue
+        if (
+            target_fingerprint is not None
+            and _content_fingerprint(raw) == target_fingerprint
+        ):
+            # A copy of the target at a different path: its agency profile IS the target's, so pooling
+            # it into the baseline would pull the mean/SD toward the target and deflate the z-scores.
+            sys.stderr.write(
+                f"  excluding {p.name} from agency baseline "
+                "(content-duplicate of the target)\n"
+            )
             continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
@@ -675,6 +713,7 @@ def main(argv: list[str] | None = None) -> int:
                 strip_aggressive=args.strip_aggressive,
                 strip_masking=args.strip_masking,
                 target_path=target_path,
+                target_fingerprint=_content_fingerprint(raw),
                 include_filenames=args.include_baseline_filenames,
             )
         except FileNotFoundError as exc:

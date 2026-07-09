@@ -60,11 +60,13 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
 import statistics
 import sys
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -115,6 +117,25 @@ def split_sentences(paragraph: str) -> list[str]:
 
 def word_count(text: str) -> int:
     return len(_WORD_RE.findall(text))
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the NFC-normalized WHOLE text. Unlike the token-stream siblings in the self-exclusion
+    sweep, this surface's signal is paragraph + sentence STRUCTURE over the raw text (paragraph-length
+    distribution, opening/closing typology, blank-line segmentation) — no word-token stream carries
+    it, and paragraph segmentation is whitespace/newline-SENSITIVE, so collapsing whitespace would
+    misrepresent the matcher. The fingerprint hashes the text verbatim (NFC only), so a baseline file
+    carrying a copy of the target — even at a DIFFERENT path than ``--target`` (which the path guard
+    misses) — is dropped before its structure pools into the baseline mean/SD and deflates the
+    z-scores toward a false "in-distribution" result.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
+    #278 / rank_turbulence_audit #280). Fail-CLOSED against the stated threat (a copy of the target
+    FILE at another path): a byte-/NFC-identical copy is dropped, and any text the surface would
+    paragraph-segment or score differently (different newlines, wording, or wrapping) is KEPT."""
+    return hashlib.sha256(
+        unicodedata.normalize("NFC", text).encode("utf-8")
+    ).hexdigest()
 
 
 # --- Opening / closing typology --------------------------------
@@ -447,6 +468,7 @@ def audit_baseline_paragraphs(
     strip_aggressive: bool = False,
     strip_masking: str | Iterable[str] | None = None,
     target_path: Path | None = None,
+    target_fingerprint: str | None = None,
     include_filenames: bool = False,
 ) -> dict[str, Any]:
     """Run the paragraph audit across every text file in
@@ -524,6 +546,18 @@ def audit_baseline_paragraphs(
                 "name": p.name if include_filenames else f"file_{len(skipped_files):03d}",
                 "reason": f"unreadable: {exc}",
             })
+            continue
+        if (
+            target_fingerprint is not None
+            and _content_fingerprint(raw) == target_fingerprint
+        ):
+            # A copy of the target at a different path: its paragraph structure IS the target's, so
+            # pooling it into the baseline would pull the mean/SD toward the target and deflate the
+            # z-scores.
+            sys.stderr.write(
+                f"  excluding {p.name} from paragraph baseline "
+                "(content-duplicate of the target)\n"
+            )
             continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
@@ -977,6 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
                 strip_aggressive=args.strip_aggressive,
                 strip_masking=args.strip_masking,
                 target_path=target_path,
+                target_fingerprint=_content_fingerprint(raw),
                 include_filenames=args.include_baseline_filenames,
             )
         except FileNotFoundError as exc:

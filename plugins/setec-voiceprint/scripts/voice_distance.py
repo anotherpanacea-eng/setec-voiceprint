@@ -10,6 +10,7 @@ This is a voice-coherence tool, not an AI-provenance detector.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -131,6 +132,28 @@ def _function_word_vector(text: str) -> dict[str, float]:
     full ``compare_to_baseline`` cost per window.
     """
     return function_word_features(word_tokens(text))
+
+
+# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
+_FP_SEP = "\x1f"
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the ``stylometry_core.word_tokens`` stream — the tokenizer the load-bearing
+    function-word family reads (``function_word_features(word_tokens(text))``), which is the only
+    feature family the Burrows-Delta / bootstrap machinery computes independent of SpaCy. Two texts
+    with the same ``word_tokens`` stream yield the same function-word vector, so a manifest entry
+    carrying a copy of the target — even at a DIFFERENT path than ``--target`` (the path guard misses
+    a copy under another filename) — would pool the target's own vector into its own baseline centroid
+    and collapse the cosine min / Delta toward 0 (a false "on-voice" result). The content fingerprint
+    self-excludes it alongside the path guard.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
+    #278 / rank_turbulence_audit #280). Fail-CLOSED: ``word_tokens`` folds case/punctuation/whitespace
+    relative to raw text, so the fingerprint's equivalence class is a SUPERSET of the char-n-gram /
+    POS families' — a match can only DROP a copy, never re-admit one; a genuinely different baseline
+    entry has a different token stream and is KEPT."""
+    return hashlib.sha256(_FP_SEP.join(word_tokens(text)).encode("utf-8")).hexdigest()
 
 
 def _baseline_mean_function_word_vector(
@@ -716,6 +739,11 @@ def main() -> int:
     # baseline filter (most often when --baseline-dir contains the target).
     # Including the target self-normalizes the draft being measured: cosine
     # min collapses to 0.0 and z-scores shrink toward the per-feature mean.
+    # A copy of the target under a DIFFERENT filename evades the path check,
+    # so we also drop any entry whose content fingerprint matches the target
+    # (path OR content -> exclude; a content match only DROPS, fail-closed).
+    target_text = read_text(target_path)
+    target_fingerprint = _content_fingerprint(target_text)
     try:
         target_resolved = target_path.resolve()
     except OSError:
@@ -727,13 +755,24 @@ def main() -> int:
             entry_resolved = Path(entry["path"]).resolve()
         except OSError:
             entry_resolved = Path(entry["path"])
-        if entry_resolved == target_resolved:
+        path_match = entry_resolved == target_resolved
+        content_match = False
+        if not path_match:
+            try:
+                content_match = (
+                    _content_fingerprint(read_text(Path(entry["path"])))
+                    == target_fingerprint
+                )
+            except (OSError, KeyError):
+                content_match = False
+        if path_match or content_match:
             dropped.append(entry["id"])
             continue
         filtered.append(entry)
     if dropped:
         print(
-            f"Dropped target file from baseline: {', '.join(dropped)}.",
+            "Dropped target file (or a content-duplicate of it) from "
+            f"baseline: {', '.join(dropped)}.",
             file=sys.stderr,
         )
     baseline_entries = filtered
@@ -771,7 +810,7 @@ def main() -> int:
     else:
         _biber_tagger = None
 
-    target_text = read_text(target_path)
+    # target_text was read above for the self-exclusion fingerprint; reuse it.
     result = compare_to_baseline(
         target_text,
         baseline_entries,

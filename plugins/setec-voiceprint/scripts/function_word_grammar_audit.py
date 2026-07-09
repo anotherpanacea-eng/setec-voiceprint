@@ -45,6 +45,7 @@ Hardened baseline ingestion (1.34.x conventions).
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -105,6 +106,28 @@ _SENTENCE_TERMINATORS = re.compile(r"(?<=[.!?])\s+(?=[A-Z\"“(])")
 
 def _tokens_lower(text: str) -> list[str]:
     return [w.lower() for w in _WORD_RE.findall(text)]
+
+
+# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
+_FP_SEP = "\x1f"
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the ``_tokens_lower`` stream (lowercased ``\\b\\w+\\b``) — the exact tokenization
+    every compared feature here is built from (function-word ratio, function-bigram / preposition /
+    subordinator entropy, auxiliary chains, pronoun transitions all read ``_tokens_lower``). Two texts
+    with the same ``_tokens_lower`` stream produce identical function-word features, so a baseline
+    file carrying a copy of the target — even at a DIFFERENT path than ``--target``, which the path
+    guard misses — would pull the baseline mean/SD toward the target's own vector and deflate the
+    z-scores toward a false "in-distribution" result. The content fingerprint self-excludes it
+    alongside the path guard.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
+    #278 / rank_turbulence_audit #280). Fail-CLOSED: the token stream folds case and drops
+    punctuation/whitespace, so the fingerprint's equivalence class is a SUPERSET of the feature
+    matcher's — a match can only DROP a copy, never re-admit one; a genuinely different baseline doc
+    has a different token stream and is KEPT."""
+    return hashlib.sha256(_FP_SEP.join(_tokens_lower(text)).encode("utf-8")).hexdigest()
 
 
 # Sentence / paragraph boundaries that BREAK a function-word run. `_tokens_lower` discards
@@ -381,6 +404,7 @@ def audit_baseline_function_grammar(
     strip_aggressive: bool = False,
     strip_masking: str | Iterable[str] | None = None,
     target_path: Path | None = None,
+    target_fingerprint: str | None = None,
     include_filenames: bool = False,
 ) -> dict[str, Any]:
     base = Path(baseline_dir)
@@ -427,6 +451,18 @@ def audit_baseline_function_grammar(
                 "name": p.name if include_filenames else f"file_{len(skipped_files):03d}",
                 "reason": f"unreadable: {exc}",
             })
+            continue
+        if (
+            target_fingerprint is not None
+            and _content_fingerprint(raw) == target_fingerprint
+        ):
+            # A copy of the target at a different path: its function-word vector IS the target's, so
+            # pooling it into the baseline would pull the mean/SD toward the target and deflate the
+            # z-scores toward a false "in-distribution" result.
+            sys.stderr.write(
+                f"  excluding {p.name} from function-word grammar "
+                "baseline (content-duplicate of the target)\n"
+            )
             continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
@@ -797,6 +833,7 @@ def main(argv: list[str] | None = None) -> int:
                 strip_aggressive=args.strip_aggressive,
                 strip_masking=args.strip_masking,
                 target_path=target_path,
+                target_fingerprint=_content_fingerprint(raw),
                 include_filenames=args.include_baseline_filenames,
             )
         except FileNotFoundError as exc:

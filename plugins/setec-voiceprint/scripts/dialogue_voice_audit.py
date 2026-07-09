@@ -50,6 +50,7 @@ evidence.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import math
 import re
@@ -286,6 +287,44 @@ class CharacterProfile:
 
 def _count_words(s: str) -> int:
     return len(_WORD_RE.findall(s))
+
+
+# ASCII unit / record separators: bound the serialized turn stream so distinct field/turn boundaries
+# stay unambiguous.
+_FP_FIELD_SEP = "\x1f"
+_FP_TURN_SEP = "\x1e"
+
+
+def _fingerprint_turns(turns: list[DialogueTurn]) -> str | None:
+    """sha256 of the extracted DIALOGUE-TURN sequence — the exact matcher input for this surface.
+    Every character profile is built from ``extract_dialogue`` turns (speaker attribution + quoted
+    text drive turn length, contraction, vocative, interruption, and lexical features), and NARRATION
+    is ignored, so the matcher-aligned unit is the turn list, NOT the whole file. Two texts that
+    extract to the same ``(speaker, tag_verb, attributed, text)`` turn sequence produce identical
+    per-character profiles — a baseline file carrying a copy of the target's dialogue (even under a
+    DIFFERENT filename the path guard misses, and even wrapped in different narration) would pool the
+    target's own profiles into the baseline and collapse the divergence matrix toward a false
+    "characters converge" result. The content fingerprint self-excludes it alongside the path guard.
+
+    Returns ``None`` when the text has NO dialogue turns: a no-dialogue target has no profile to
+    self-pool, and an all-empty fingerprint must NOT match every narration-only baseline file (that
+    would mass-exclude). ``None`` disables the content guard for that call (fail-closed: the guard only
+    ever DROPS a genuine dialogue duplicate, never over-excludes). Matcher-aligned sibling of the
+    Codex self-exclusion sweep (idiolect_detector / originality_audit #278 / rank_turbulence_audit
+    #280)."""
+    if not turns:
+        return None
+    payload = _FP_TURN_SEP.join(
+        _FP_FIELD_SEP.join((t.speaker, t.tag_verb or "", str(t.attributed), t.text))
+        for t in turns
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _content_fingerprint(text: str) -> str | None:
+    """Convenience wrapper: fingerprint the dialogue turns ``extract_dialogue`` mines from ``text``.
+    See ``_fingerprint_turns`` for the matcher-alignment / fail-closed rationale."""
+    return _fingerprint_turns(extract_dialogue(text))
 
 
 def _has_vocative(turn_text: str) -> bool:
@@ -534,13 +573,20 @@ def converged_pairs(
 
 
 def aggregate_baseline(
-    baseline_dir: Path, *, min_turns: int, target_path: Path | None,
+    baseline_dir: Path,
+    *,
+    min_turns: int,
+    target_path: Path | None,
+    target_fingerprint: str | None = None,
 ) -> tuple[dict[str, CharacterProfile], int, list[Path], list[Path]]:
     """Walk a baseline directory and build per-character dialogue
     profiles over the union of its files. Returns ``(profiles,
     total_words, loaded, skipped)``. Self-overlap guard drops the
-    target file if it lives under the baseline dir (same convention as
-    construction_signature_audit)."""
+    target if it lives under the baseline dir (path guard) OR if a
+    baseline file's dialogue turns are a content-duplicate of the
+    target's (content guard — the path guard misses a copy under a
+    different filename). Path OR content -> exclude; a content match
+    only DROPS, never re-admits (fail-closed)."""
     if not baseline_dir.exists():
         raise FileNotFoundError(
             f"Baseline directory not found: {baseline_dir}"
@@ -572,9 +618,23 @@ def aggregate_baseline(
         if not text.strip():
             skipped.append(path)
             continue
+        turns = extract_dialogue(text)
+        if (
+            target_fingerprint is not None
+            and _fingerprint_turns(turns) == target_fingerprint
+        ):
+            # A copy of the target's dialogue at a different path: its per-character profiles ARE the
+            # target's, so pooling it into the baseline would collapse the divergence matrix toward a
+            # false "characters converge" result.
+            sys.stderr.write(
+                f"  excluding {path.name} from dialogue baseline "
+                "(content-duplicate of the target)\n"
+            )
+            skipped.append(path)
+            continue
         loaded.append(path)
         total_words += _count_words(text)
-        all_turns.extend(extract_dialogue(text))
+        all_turns.extend(turns)
 
     profiles, _unattr, _dropped = build_profiles(
         all_turns, min_turns=min_turns,
@@ -766,8 +826,12 @@ def run_audit(
     baseline_meta: dict[str, Any] | None = None
     warnings: list[str] = []
     if baseline_dir is not None:
+        # Self-exclusion by path AND content: `turns` above is the target's own dialogue, so a
+        # baseline file whose turns fingerprint identically is a copy of the target (even under a
+        # different filename) and must be dropped before it pools into the baseline profiles.
         baseline_profiles, b_words, b_loaded, b_skipped = aggregate_baseline(
             baseline_dir, min_turns=min_turns, target_path=target_path,
+            target_fingerprint=_fingerprint_turns(turns),
         )
         baseline_meta = build_baseline_metadata(
             n_files=len(b_loaded),

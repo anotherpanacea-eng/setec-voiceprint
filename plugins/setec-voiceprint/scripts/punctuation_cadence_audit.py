@@ -46,9 +46,11 @@ baseline overlap, anonymizes filenames in JSON output by default.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
+import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -116,6 +118,29 @@ _PUNCT_RUN = re.compile(
 
 def _word_count(text: str) -> int:
     return len(_WORD_RE.findall(text))
+
+
+def _content_fingerprint(text: str) -> str:
+    """sha256 of the NFC-normalized WHOLE text. Unlike the token-stream siblings in the self-exclusion
+    sweep, this surface's signal IS the punctuation over the raw character sequence (per-mark
+    densities, interruption grammar, sentence-final distribution, punctuation bigrams) — there is no
+    word-token stream that carries it, and the interruption regexes are whitespace-SENSITIVE (their
+    length bounds count spaces), so collapsing whitespace would MISREPRESENT the matcher. The
+    fingerprint therefore hashes the text verbatim (NFC only, to fold Unicode composition), so a
+    baseline file carrying a copy of the target — even at a DIFFERENT path than ``--target`` (which
+    the path guard misses) — is dropped before its cadence pools into the baseline mean/SD and
+    deflates the z-scores toward a false "in-distribution" result.
+
+    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
+    #278 / rank_turbulence_audit #280). Fail-CLOSED against the stated threat (a copy of the target
+    FILE at another path): a byte-/NFC-identical copy is dropped, and any text the surface would score
+    even slightly differently (different whitespace, punctuation, or wording) is KEPT. The surface's
+    internal mark folding (e.g. ``--`` ≡ ``—``) is not reproduced here, so a mark-SUBSTITUTED copy is
+    treated as a distinct document — acceptable for this lower-severity content-duplicate-file
+    variant."""
+    return hashlib.sha256(
+        unicodedata.normalize("NFC", text).encode("utf-8")
+    ).hexdigest()
 
 
 def _per_thousand(count: int, n_words: int) -> float:
@@ -300,6 +325,7 @@ def audit_baseline_punctuation(
     strip_aggressive: bool = False,
     strip_masking: str | Iterable[str] | None = None,
     target_path: Path | None = None,
+    target_fingerprint: str | None = None,
     include_filenames: bool = False,
 ) -> dict[str, Any]:
     """Hardened baseline ingestion (1.34.1 conventions): validate
@@ -346,6 +372,17 @@ def audit_baseline_punctuation(
                 "name": p.name if include_filenames else f"file_{len(skipped_files):03d}",
                 "reason": f"unreadable: {exc}",
             })
+            continue
+        if (
+            target_fingerprint is not None
+            and _content_fingerprint(raw) == target_fingerprint
+        ):
+            # A copy of the target at a different path: its cadence IS the target's, so pooling it
+            # into the baseline would pull the mean/SD toward the target and deflate the z-scores.
+            sys.stderr.write(
+                f"  excluding {p.name} from punctuation baseline "
+                "(content-duplicate of the target)\n"
+            )
             continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
@@ -779,6 +816,7 @@ def main(argv: list[str] | None = None) -> int:
                 strip_aggressive=args.strip_aggressive,
                 strip_masking=args.strip_masking,
                 target_path=target_path,
+                target_fingerprint=_content_fingerprint(raw),
                 include_filenames=args.include_baseline_filenames,
             )
         except FileNotFoundError as exc:

@@ -314,6 +314,14 @@ def audit_proximity(target_text: str, centroid_texts: list[tuple[str, str]],
             f"centroid has no text with >= {LENGTH_FLOOR_WORDS} words (the stylometric stability "
             "floor); supply longer centroid material")
     n_dropped_short = n_centroid_in - len(centroid)
+    # No target self-exclusion here (deliberate — sibling of the content-fingerprint self-exclusion
+    # sweep that hardened the comparative surfaces). The centroid is OPERATOR-DECLARED reference
+    # material, not an incidentally-scoped baseline: if the operator supplies the target (or a copy of
+    # it) as a centroid member, that is their explicit declaration, and silently dropping it would
+    # change the reference they asked to measure against. This surface also ships NO verdict and NO
+    # band (descriptive cosine only; thresholds are operator-side), so there is no automated pass to
+    # deflate the way a self-pooled baseline deflates a distance/z-score elsewhere. Self-exclusion
+    # would be a semantic mismatch, not a fix.
     vocab = build_vocabulary([target_text] + centroid)
     if not vocab["coords"]:
         raise ValueError("no stylometric features (no word tokens / n-grams)")
