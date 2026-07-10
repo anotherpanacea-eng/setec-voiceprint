@@ -4,7 +4,8 @@
 #   pip install -r requirements-acquisition.txt
 #
 # These are required by `scripts/acquire_blog.py`,
-# `scripts/acquire_blogger_takeout.py`, `scripts/acquire_magazine.py`,
+# `scripts/acquire_blogger_takeout.py`,
+# `scripts/acquire_gmail_sent.py`, `scripts/acquire_magazine.py`,
 # `scripts/pdf_inventory.py`, and `scripts/pdf_extract.py` only.
 # Ordinary SETEC variance audits, voice distance, validation harness,
 # and stylometry oracle runs do NOT need them. The core requirements

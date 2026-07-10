@@ -1,0 +1,221 @@
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: Lunch plans, Alice?
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+PLAIN.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: ok
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+BELOWMIN.
+hi
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: bob@example.com
+Subject: Re: proposal
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+In-Reply-To: <abc@x>
+
+PLAINREPLY.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+On Sun, Jun 14, 2020 at 3:00 PM Bob <bob@example.com> wrote:
+> QUOTED_CORRESPONDENT_TEXT_SHOULD_NEVER_APPEAR
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: bob@example.com
+Subject: Re: html proposal
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/html; charset=utf-8
+References: <def@x>
+
+<div>a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose HTMLREPLY marker</div><div class="gmail_quote"><div class="gmail_attr">On Sun, Jun 14, 2020, Jonathan Alexander Smith-Whitmore &lt;jonathan.smith.whitmore@longdomain.example.com&gt; wrote:</div><blockquote class="gmail_quote">QUOTED_CORRESPONDENT_TEXT_SHOULD_NEVER_APPEAR</blockquote></div>
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: bob@example.com
+Subject: Re: wrapped
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+In-Reply-To: <w@x>
+
+WRAPPED.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+On Sun, Jun 14, 2020 at 3:00 PM Jonathan Alexander Smith-Whitmore <jonathan.smith.whitmore@longdomain.example.com>
+wrote:
+> QUOTED_CORRESPONDENT_TEXT_SHOULD_NEVER_APPEAR
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: With signature
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+SIGNED.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+-- 
+Best regards, Me | Sent from my Gmail on this device signature block
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: Fwd: something
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+---------- Forwarded message ---------
+From: x
+
+FORWARDED_THIRD_PARTY_BODY_SHOULD_NEVER_APPEAR
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: Fwd: with comment
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+FWDCOMMENT.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose see below.
+
+---------- Forwarded message ---------
+From: x
+
+FORWARDED_THIRD_PARTY_BODY_SHOULD_NEVER_APPEAR
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: bob@example.com
+Subject: Re: weird
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+In-Reply-To: <weird@x>
+
+UNRESOLVED.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+someone somewhere wrote:
+QUOTED_CORRESPONDENT_TEXT_SHOULD_NEVER_APPEAR
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: bob@example.com
+Subject: Re: clean
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+In-Reply-To: <clean@x>
+
+CLEANREPLY.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From stranger@elsewhere.com Mon Jun 15 12:00:00 2020
+From: stranger@elsewhere.com
+To: me@example.com
+Subject: Not from me
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+NOTOWN.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: Echoed
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Important
+Content-Type: text/plain; charset=utf-8
+
+NOTSENT.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: To be sent later
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: To be Sent
+Content-Type: text/plain; charset=utf-8
+
+SUBSTRLABEL.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: Out of office
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+Auto-Submitted: auto-replied
+
+AUTOREPLIED.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: Old one
+Date: Tue, 15 Jan 2013 12:00:00 -0500
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+OLD2013.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Cc: bob@example.com, carol@example.com
+Subject: Group note
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+MULTICC.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Subject: No labels header
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+Content-Type: text/plain; charset=utf-8
+
+NOLABELS.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
+
+From me@example.com Mon Jun 15 12:00:00 2020
+From: me@example.com
+To: alice@example.com
+Date: Mon, 15 Jun 2020 12:00:00 -0400
+X-Gmail-Labels: Sent
+Content-Type: text/plain; charset=utf-8
+
+NOSUBJECT.
+a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
