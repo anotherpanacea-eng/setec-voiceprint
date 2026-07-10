@@ -618,6 +618,29 @@ def validate_entry(
             "entries.",
         ))
 
+    # Ratchet 6: pre_ai_human claim on post-AI-widespread material →
+    # warn, for ANY corpus_role. A pre_ai_human ai_status on an entry
+    # dated post-2024 is exactly as suspect for an identity_baseline
+    # entry (a writer's own corpus, the ground-truth anchor) as for an
+    # impostor one — the module docstring's warning that a mistakenly
+    # pre_ai_human-tagged AI-assisted entry can teach the baseline that
+    # AI-smoothed text is the writer's unassisted voice applies
+    # regardless of role. Ratchet 4 above covers only impostor entries
+    # and carries no ai_status term; this is a separate, additive check,
+    # NOT a modification of Ratchet 4 — the two compose (an impostor +
+    # pre_ai_human + post_ai_widespread entry trips both).
+    # Per internal/2026-07-09-manifest-validator-ai-status-era-ratchet-spec.md.
+    if ai_status == "pre_ai_human" and era == "post_ai_widespread":
+        issues.append(Issue(
+            "warning", lineno, entry_id, "ai_status",
+            "Entry has ai_status='pre_ai_human' with era="
+            "'post_ai_widespread'. A pre-AI-human claim on post-2024 "
+            "material is unverifiable and, if wrong, teaches the "
+            "ground-truth baseline that AI-assisted prose is the "
+            "writer's own unassisted voice. Re-check the ai_status, or "
+            "the date this entry derives its era from.",
+        ))
+
     return issues
 
 
