@@ -188,13 +188,8 @@ def extract_body(msg: Message) -> str:
     plain: Optional[str] = None
     plain_flowed = False
     html: Optional[str] = None
-    for part in msg.walk():
+    for part in _iter_body_parts(msg):
         ctype = part.get_content_type()
-        if part.get_content_maintype() == "multipart":
-            continue
-        disp = (part.get("Content-Disposition") or "").lower()
-        if "attachment" in disp:
-            continue
         if ctype == "text/plain" and plain is None:
             plain = _decode_part(part)
             plain_flowed = (part.get_param("format") or "").lower() == "flowed"
@@ -206,6 +201,26 @@ def extract_body(msg: Message) -> str:
         text, _ = ac.html_to_text(html, strip_selectors=_HTML_STRIP_SELECTORS)
         return text
     return ""
+
+
+def _iter_body_parts(part: Message):
+    """Yield inline body leaves without descending into attachments.
+
+    ``Message.walk()`` traverses the children of an attached
+    ``message/rfc822`` part, where their leaf text often has no attachment
+    disposition of its own. Prune attachment containers before recursion so
+    third-party attached messages can never become the sender's baseline.
+    """
+    disposition = (part.get("Content-Disposition") or "").lower()
+    if "attachment" in disposition or part.get_content_type() == "message/rfc822":
+        return
+    if part.is_multipart():
+        payload = part.get_payload()
+        if isinstance(payload, list):
+            for child in payload:
+                yield from _iter_body_parts(child)
+        return
+    yield part
 
 
 # --------------- quote / signature / forward trimming -------------
@@ -330,13 +345,30 @@ class RecipientMap:
 
     def __init__(self, path: Path, name_map: Optional[dict[str, str]] = None):
         self.path = path
-        self.name_map = name_map or {}
+        self.name_map = _validate_name_map(name_map or {})
         self._map: dict[str, str] = {}
         if path.exists():
             try:
-                self._map = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
-                self._map = {}
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                raise ValueError(f"could not read recipient map: {exc}") from exc
+            if not isinstance(loaded, dict) or not all(
+                isinstance(address, str)
+                and isinstance(label, str)
+                and re.fullmatch(r"recipient_[0-9]+", label)
+                for address, label in loaded.items()
+            ):
+                raise ValueError(
+                    "recipient map must map address strings to recipient_NN labels"
+                )
+            normalized = {
+                address.strip().lower(): label for address, label in loaded.items()
+            }
+            if len(normalized) != len(loaded):
+                raise ValueError("recipient map contains duplicate normalized addresses")
+            if len(set(normalized.values())) != len(normalized):
+                raise ValueError("recipient map reuses a recipient_NN label")
+            self._map = normalized
         used = {
             int(v.split("_")[-1]) for v in self._map.values()
             if v.startswith("recipient_") and v.split("_")[-1].isdigit()
@@ -363,6 +395,33 @@ class RecipientMap:
             json.dumps(self._map, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+
+
+def _validate_name_map(raw: object) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise ValueError("--name-map must contain a JSON object")
+    normalized_addresses = {
+        address.strip().lower()
+        for address in raw
+        if isinstance(address, str) and address.strip()
+    }
+    clean: dict[str, str] = {}
+    for address, label in raw.items():
+        if not isinstance(address, str) or not isinstance(label, str):
+            raise ValueError("--name-map keys and values must be strings")
+        normalized_address = address.strip().lower()
+        normalized_label = label.strip()
+        if not normalized_address or not normalized_label:
+            raise ValueError("--name-map keys and values must be non-empty")
+        if "\n" in normalized_label or "\r" in normalized_label:
+            raise ValueError("--name-map labels must be single-line")
+        folded_label = normalized_label.casefold()
+        if _ADDR_TOKEN.search(normalized_label) or any(
+            address.casefold() in folded_label for address in normalized_addresses
+        ):
+            raise ValueError("a --name-map label contains a raw recipient address")
+        clean[normalized_address] = normalized_label
+    return clean
 
 
 def _addresses(msg: Message, header: str) -> list[str]:
@@ -475,6 +534,7 @@ class Options:
     output_dir: Path
     manifest_path: Path
     max_items: int
+    allow_empty: bool
     dry_run: bool
     live_smoke_confirmed: bool
 
@@ -599,6 +659,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--own-signature-lines", default=None)
     p.add_argument("--consent-status", default="author_consent")
     p.add_argument("--max-items", type=int, default=10**9)
+    ac.add_allow_empty_arg(p)
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--live-smoke-confirmed", action="store_true")
     p.add_argument("--emit-manifest", default=None)
@@ -650,6 +711,7 @@ def parse_options(args: argparse.Namespace) -> Options:
         output_dir=output_dir,
         manifest_path=manifest_path,
         max_items=args.max_items,
+        allow_empty=bool(args.allow_empty),
         dry_run=args.dry_run,
         live_smoke_confirmed=args.live_smoke_confirmed,
     )
@@ -799,16 +861,22 @@ def run(args: argparse.Namespace) -> int:
         )
         enforce_live_smoke_gate(opts, windowed=windowed)
 
-    name_map = None
-    if opts.name_map_path and opts.name_map_path.exists():
-        name_map = json.loads(opts.name_map_path.read_text(encoding="utf-8"))
-    recipients = RecipientMap(opts.recipient_map_path, name_map=name_map)
+    try:
+        name_map = None
+        if opts.name_map_path and opts.name_map_path.exists():
+            name_map = json.loads(opts.name_map_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError) as exc:
+        sys.stderr.write(f"{TOOL_NAME}: invalid --name-map: {exc}\n")
+        return 2
+    try:
+        recipients = RecipientMap(opts.recipient_map_path, name_map=name_map)
+    except ValueError as exc:
+        sys.stderr.write(f"{TOOL_NAME}: invalid recipient map: {exc}\n")
+        return 2
 
     summary = Summary()
     box = mailbox.mbox(str(opts.mbox_path))
     own_matches_total = 0
-    if not opts.dry_run:
-        opts.output_dir.mkdir(parents=True, exist_ok=True)
     for msg in box:
         if summary.acquired >= opts.max_items:
             break
@@ -824,24 +892,41 @@ def run(args: argparse.Namespace) -> int:
             continue
         emit_piece(piece, opts, summary)
 
-    # Empty-corpus / locale guard.
-    if summary.acquired == 0 and own_matches_total >= 10:
-        sys.stderr.write(
-            f"WARNING: {own_matches_total} messages matched --own-address but "
-            "0 passed the Sent-label filter. Your Gmail 'Sent' label may be "
-            "localized; pass --sent-label-token with the actual token.\n")
+    dedupe_only = summary.acquired == 0 and summary.skipped_duplicate > 0
+    empty_is_error = (
+        summary.acquired == 0
+        and not dedupe_only
+        and not opts.allow_empty
+    )
+    if empty_is_error:
+        if (
+            own_matches_total >= 10
+            and summary.skipped_not_sent == own_matches_total
+        ):
+            sys.stderr.write(
+                f"ERROR: {own_matches_total} messages matched --own-address but "
+                "0 passed the Sent-label filter. Your Gmail 'Sent' label may be "
+                "localized; pass --sent-label-token with the actual token.\n"
+            )
+        else:
+            sys.stderr.write(
+                "ERROR: no messages were acquired. Check --own-address, the date "
+                "window, Sent-label token, and word floor.\n"
+            )
 
-    if not opts.dry_run:
+    if not opts.dry_run and not empty_is_error:
         recipients.save()
         (opts.output_dir / "README.md").write_text(README_TEXT, encoding="utf-8")
-        if opts.live_smoke_confirmed and windowed:
+        # The receipt attests that the operator reviewed real acquired output.
+        # An explicit --allow-empty run may succeed, but cannot mint that proof.
+        if opts.live_smoke_confirmed and windowed and summary.acquired > 0:
             write_live_smoke_receipt(opts, window=f"{opts.since}..{opts.until}")
 
     sys.stderr.write("\n" + summary.render(
         manifest_path=opts.manifest_path,
         recipient_map_path=opts.recipient_map_path,
     ))
-    return 0
+    return 1 if empty_is_error else 0
 
 
 def main(argv: list[str] | None = None) -> int:

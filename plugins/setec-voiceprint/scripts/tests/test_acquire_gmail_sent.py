@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+from email.message import EmailMessage
 from pathlib import Path
 
 import pytest
@@ -77,6 +78,20 @@ def test_html_sibling_gmail_attr_stripped(tmp_path, mbox):
     assert bf.QUOTE_SENTINEL not in txt
 
 
+def test_attached_message_rfc822_body_is_not_acquired():
+    outer = EmailMessage()
+    outer.set_content("My short covering note stays in the acquired body.")
+    attached = EmailMessage()
+    attached["From"] = "third-party@example.invalid"
+    attached["To"] = bf.OWN
+    attached.set_content("THIRD_PARTY_ATTACHED_PROSE_MUST_NOT_APPEAR")
+    outer.add_attachment(attached)
+
+    body = G.extract_body(outer)
+    assert "covering note" in body
+    assert "THIRD_PARTY_ATTACHED_PROSE_MUST_NOT_APPEAR" not in body
+
+
 def test_wrapped_attribution_addr_absent(tmp_path, mbox):
     out = _out(tmp_path)
     assert _run(mbox, out) == 0
@@ -94,6 +109,29 @@ def test_metadata_privacy_no_raw_recipient_addr(tmp_path, mbox):
         assert addr not in meta, f"raw recipient {addr} leaked to metadata"
     # notes use redacted recipient_NN labels.
     assert any("recipient_" in (e.get("notes") or "") for e in _entries(out))
+
+
+def test_name_map_rejects_address_valued_alias(tmp_path, mbox, capsys):
+    out = _out(tmp_path)
+    name_map = tmp_path / "name-map.json"
+    name_map.write_text(json.dumps({bf.R_ALICE: bf.R_ALICE}))
+
+    assert _run(mbox, out, ["--name-map", str(name_map)]) == 2
+    assert "contains a raw recipient address" in capsys.readouterr().err
+    assert not out.exists()
+
+
+def test_recipient_map_rejects_noncanonical_private_labels(tmp_path, mbox, capsys):
+    out = _out(tmp_path)
+    out.mkdir(parents=True)
+    (out / "recipient_map.json").write_text(
+        json.dumps({bf.R_ALICE: bf.R_ALICE})
+    )
+
+    assert _run(mbox, out) == 2
+    assert "invalid recipient map" in capsys.readouterr().err
+    assert not list(out.glob("*.txt"))
+    assert not (out / "draft_manifest.jsonl").exists()
 
 
 def test_conjunctive_sent_label_filter(tmp_path, mbox):
@@ -216,6 +254,73 @@ def test_live_smoke_confirmed_requires_tty(tmp_path, mbox):
         "--since", "2000-01-01", "--live-smoke-confirmed",
     ])
     assert rc == 2
+
+
+def test_localized_sent_label_zero_output_fails_closed(tmp_path, mbox, capsys):
+    out = _out(tmp_path)
+
+    assert _run(
+        mbox, out, ["--sent-label-token", "DefinitelyNotTheSentLabel"]
+    ) == 1
+    stderr = capsys.readouterr().err
+    assert "matched --own-address" in stderr
+    assert "may be localized" in stderr
+    assert not out.exists()
+
+
+def test_empty_date_window_uses_general_zero_output_error(tmp_path, mbox, capsys):
+    out = _out(tmp_path)
+    rc = G.main(
+        [
+            "--mbox-path", str(mbox),
+            "--own-address", bf.OWN,
+            "--output-dir", str(out),
+            "--min-words-per-piece", "5",
+            "--since", "2099-01-01",
+            "--until", "2099-12-31",
+        ]
+    )
+
+    assert rc == 1
+    stderr = capsys.readouterr().err
+    assert "no messages were acquired" in stderr
+    assert "may be localized" not in stderr
+
+
+def test_allow_empty_is_explicit_success(tmp_path, mbox):
+    out = _out(tmp_path)
+    assert _run(
+        mbox,
+        out,
+        ["--sent-label-token", "DefinitelyNotTheSentLabel", "--allow-empty"],
+    ) == 0
+
+
+def test_allow_empty_cannot_mint_live_smoke_receipt(
+    tmp_path, mbox, monkeypatch
+):
+    out = _out(tmp_path)
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+
+    assert _run(
+        mbox,
+        out,
+        [
+            "--sent-label-token", "DefinitelyNotTheSentLabel",
+            "--allow-empty",
+            "--live-smoke-confirmed",
+        ],
+    ) == 0
+    assert not (out / G.RECEIPT_NAME).exists()
+
+
+def test_dedupe_only_rerun_is_success_without_manifest_growth(tmp_path, mbox):
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    before = (out / "draft_manifest.jsonl").read_text()
+
+    assert _run(mbox, out) == 0
+    assert (out / "draft_manifest.jsonl").read_text() == before
 
 
 if __name__ == "__main__":
