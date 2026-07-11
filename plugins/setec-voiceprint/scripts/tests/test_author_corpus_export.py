@@ -38,6 +38,7 @@ def _source(root: Path, kind: str, text: str, *, ai_status: str = "pre_ai_human"
         meta.update({
             "author_corpus_thread_locator": "sha256:" + "3" * 64,
             "author_corpus_entry_locator": "sha256:" + "4" * 64,
+            "author_corpus_order_timestamp": "2017-01-02T12:00:00+00:00",
         })
     text_path.with_suffix(".meta.json").write_text(
         json.dumps(meta), encoding="utf-8",
@@ -54,6 +55,70 @@ def _source(root: Path, kind: str, text: str, *, ai_status: str = "pre_ai_human"
     manifest = src / "draft_manifest.jsonl"
     manifest.write_text(json.dumps(entry) + "\n", encoding="utf-8")
     return manifest
+
+
+def _document_source(root: Path, *, count: int = 3):
+    src = root / "document_local"
+    src.mkdir(parents=True, exist_ok=True)
+    group_locator = "sha256:" + "a" * 64
+    manifest_rows = []
+    map_rows = []
+    for index in range(count):
+        text = f"Chapter {index + 1}.\n\nThis is a natural multi-paragraph author unit.\n"
+        path = src / f"chapter-{index + 1:03d}.txt"
+        path.write_text(text, encoding="utf-8")
+        source_id = f"legacy-chapter-{index + 1:03d}"
+        manifest_rows.append({
+            "id": source_id,
+            "path": path.name,
+            "author": "private-author-alias",
+            "persona": "private-project-label",
+            "register": "literary_horror",
+            "date_written": "2019-01-01",
+            "ai_status": "pre_ai_human",
+            "content_hash": E._sha(text.encode("utf-8")),
+            "corpus_role": "identity_baseline",
+            "use": ["voice_profile"],
+            "split": "baseline",
+            "source": f"D:\\private\\novel.docx#ch{index + 1:02d}",
+        })
+        map_rows.append({
+            "schema": "setec-author-document-map/1",
+            "source_id": source_id,
+            "private_document_locator": group_locator,
+            "private_entry_locator": "sha256:" + f"{index + 1:064x}",
+            "unit_kind": "chapter",
+            "unit_index": index,
+            "unit_count": count,
+        })
+    manifest = src / "draft_manifest.jsonl"
+    manifest.write_text(
+        "".join(json.dumps(row) + "\n" for row in manifest_rows),
+        encoding="utf-8",
+    )
+    document_map = src / "document_map.jsonl"
+    document_map.write_text(
+        "".join(json.dumps(row) + "\n" for row in reversed(map_rows)),
+        encoding="utf-8",
+    )
+    map_hash = E._document_map_hash(sorted(map_rows, key=lambda row: row["source_id"]))
+    attestation = src / "document_attestation.json"
+    attestation.write_text(json.dumps({
+        "schema": "setec-author-document-attestation/1",
+        "source_manifest_sha256": E._sha(manifest.read_bytes()),
+        "document_map_hash": map_hash,
+        "persona": "joshua",
+        "authorized_by": "joshua",
+        "basis": "self",
+        "attested_at": "2026-07-11T00:00:00+00:00",
+        "legacy_persona_aliases": ["private-project-label"],
+        "author_identities": ["private-author-alias"],
+        "corpus_role": "identity_baseline",
+        "use": ["voice_profile"],
+        "consent_status": "author_consent",
+        "allowed_ai_status": ["pre_ai_human"],
+    }), encoding="utf-8")
+    return manifest, document_map, attestation
 
 
 @pytest.fixture
@@ -97,7 +162,8 @@ def test_frozen_crypto_preimages_and_hash_vectors():
         "register": "email.personal", "role": "author",
         "text_path": f"texts/{content_hash[7:9]}/{content_hash[9:11]}/{content_hash[7:]}.txt",
         "source_entry_fingerprint": entry, "source_group": group,
-        "conversation_id": None, "date": "2017-01-02",
+        "conversation_id": None, "unit_kind": "email", "unit_index": 0,
+        "unit_count": 1, "date": "2017-01-02",
         "corpus_role": "identity_baseline", "use": ["voice_profile"],
         "consent_status": "author_consent", "ai_status": "pre_ai_human",
         "source_kind": "gmail_sent", "content_sha256": content_hash,
@@ -113,7 +179,9 @@ def test_frozen_crypto_preimages_and_hash_vectors():
     receipt = {
         "schema": E.RECEIPT_SCHEMA, "surface": E.TOOL_NAME,
         "surface_version": E.SURFACE_VERSION, "producer_revision": "0" * 40,
-        "source_snapshot_sha256": snapshot, "hmac_key_id": E._sha(E.DOMAIN_KEY_ID + key),
+        "source_snapshot_sha256": snapshot, "document_map_hash": None,
+        "document_attestation_hash": None,
+        "hmac_key_id": E._sha(E.DOMAIN_KEY_ID + key),
         "register_map": {"gmail_sent:personal": "email.personal"},
         "allowed_ai_status": ["pre_ai_human"],
         "entries": [{"source_entry_fingerprint": entry, "source_group": group,
@@ -127,7 +195,9 @@ def test_frozen_crypto_preimages_and_hash_vectors():
     }
     config_hash = E._digest(E.DOMAIN_CONFIG, {
         "producer_revision": receipt["producer_revision"],
-        "source_snapshot_sha256": snapshot, "hmac_key_id": receipt["hmac_key_id"],
+        "source_snapshot_sha256": snapshot, "document_map_hash": None,
+        "document_attestation_hash": None,
+        "hmac_key_id": receipt["hmac_key_id"],
         "register_map": receipt["register_map"],
         "allowed_ai_status": receipt["allowed_ai_status"], "persona": "joshua",
     })
@@ -136,11 +206,11 @@ def test_frozen_crypto_preimages_and_hash_vectors():
     assert entry == "src:hmac-sha256:7a5bea655cf090e739da86996be4f626dca8a12bab308044651764c532a07f81"
     assert content_hash == "sha256:1ce843ec991710b45d95e8a9869e3eff33043f872d74661ba5b52b99dacc0c3d"
     assert normalized_hash == "sha256:84b301e724478c998289edd154a620657ae807c178a4360bd4d0dfb9670d9d59"
-    assert record["id"] == "sha256:077048a7f4988c175f4202894da845acc9050cf9d41f06630ddefa7d931fa092"
+    assert record["id"] == "sha256:2c36a69563460ee5ed16c146bbb86ae5d4594af9a094b0b3865f33a350982a9a"
     assert snapshot == "sha256:1bf1694953fc09554b0cc8e49830cb440f7e3f91212070739f8d6a85f9544f4e"
-    assert receipt["package_hash"] == "sha256:312fafeb364e5bee6451369515a459a2dd6989ccbd20122abead00c9e8666d41"
-    assert E._verify_package([record], {content_hash: raw}, receipt) == "sha256:9ac14b80d29d610f38458e327a59a75b314d9c9f78469db5d5d5e799892dddae"
-    assert config_hash == "sha256:14bbbc67497e6cf9d8c37da126c3316e0e73162d2346dd5dafc5972ea6225c75"
+    assert receipt["package_hash"] == "sha256:c4507f5df11fc09bd122dba81dc5d060e46db222c23cc8ed78340096b36a3efc"
+    assert E._verify_package([record], {content_hash: raw}, receipt) == "sha256:2331cdc509eee545ea12d64fb5ff7949a05b89b4fcdc8e71e474eb0660a8e864"
+    assert config_hash == "sha256:c0fff375ff5176d355b3af122a5a70433f1191d55f44a1283c5154ec28a89768"
 
 
 def test_canonical_order_and_unicode_control_guards():
@@ -167,10 +237,142 @@ def test_builds_distinct_registers_and_closed_receipt(private_root: Path):
     assert type(evidence) is E._BuildEvidence
     assert set(receipt) == {
         "schema", "surface", "surface_version", "producer_revision",
-        "source_snapshot_sha256", "hmac_key_id", "register_map",
+        "source_snapshot_sha256", "document_map_hash", "document_attestation_hash",
+        "hmac_key_id", "register_map",
         "allowed_ai_status", "entries", "record_ids", "package_hash",
         "counts", "record_atomic_degraded",
     }
+
+
+def test_document_local_normalizes_legacy_identity_and_order(private_root: Path):
+    manifest, document_map, attestation = _document_source(private_root)
+    records, texts, receipt, _, _ = E.build_export(
+        sources={"document_local": manifest},
+        register_map={"document_local:literary_horror": "fiction.literary"},
+        allowed_ai_status=["pre_ai_human"],
+        persona="joshua",
+        hmac_key=b"d" * 32,
+        document_map_path=document_map,
+        document_attestation_path=attestation,
+    )
+    assert len(records) == 3 and len(texts) == 3
+    ordered = sorted(records, key=lambda row: row["unit_index"])
+    assert [row["unit_index"] for row in ordered] == [0, 1, 2]
+    assert {row["unit_count"] for row in records} == {3}
+    assert {row["unit_kind"] for row in records} == {"chapter"}
+    assert len({row["source_group"] for row in records}) == 1
+    assert receipt["document_map_hash"] == E._load_document_map(document_map)[1]
+    assert E.SHA_RE.fullmatch(receipt["document_attestation_hash"])
+    assert receipt["record_atomic_degraded"] is False
+    public_metadata = json.dumps({"records": records, "receipt": receipt})
+    assert "D:\\private" not in public_metadata
+    assert "private-project-label" not in public_metadata
+    E._verify_package(records, texts, receipt, hmac_key=b"d" * 32)
+
+
+def test_document_local_rejects_identity_and_use_conflicts(private_root: Path):
+    manifest, document_map, attestation = _document_source(private_root)
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    rows[0]["corpus_role"] = "impostor"
+    manifest.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    data = json.loads(attestation.read_text())
+    data["source_manifest_sha256"] = E._sha(manifest.read_bytes())
+    attestation.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="identity baseline"):
+        E.build_export(
+            sources={"document_local": manifest},
+            register_map={"document_local:literary_horror": "fiction.literary"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua",
+            hmac_key=b"d" * 32, document_map_path=document_map,
+            document_attestation_path=attestation,
+        )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("persona", "unmapped-persona", "attested alias"),
+        ("author", "unmapped-author", "attested identity"),
+        ("use", ["test_set"], "voice_profile"),
+        ("consent_status", "fair_use_research", "consent conflicts"),
+        ("impostor_for", "joshua", "impostor marker"),
+        ("split", "test", "approved baseline"),
+        ("split", "benchmark", "approved baseline"),
+    ],
+)
+def test_document_local_rejects_explicit_legacy_override(
+    private_root: Path, field, value, message,
+):
+    manifest, document_map, attestation = _document_source(private_root)
+    rows = [json.loads(line) for line in manifest.read_text().splitlines()]
+    rows[0][field] = value
+    manifest.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    data = json.loads(attestation.read_text())
+    data["source_manifest_sha256"] = E._sha(manifest.read_bytes())
+    attestation.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match=message):
+        E.build_export(
+            sources={"document_local": manifest},
+            register_map={"document_local:literary_horror": "fiction.literary"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua",
+            hmac_key=b"d" * 32, document_map_path=document_map,
+            document_attestation_path=attestation,
+        )
+
+
+def test_document_map_rejects_duplicate_positions(private_root: Path):
+    _, document_map, _ = _document_source(private_root)
+    rows = [json.loads(line) for line in document_map.read_text().splitlines()]
+    rows[0]["unit_index"] = rows[1]["unit_index"]
+    document_map.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    with pytest.raises(ValueError, match="unique and contiguous"):
+        E._load_document_map(document_map)
+
+
+def test_document_smoke_is_whole_group_and_byte_bounded(private_root: Path):
+    manifest, document_map, attestation = _document_source(private_root, count=21)
+    kwargs = {
+        "sources": {"document_local": manifest},
+        "register_map": {"document_local:literary_horror": "fiction.literary"},
+        "allowed_ai_status": ["pre_ai_human"],
+        "persona": "joshua",
+        "hmac_key": b"d" * 32,
+        "document_map_path": document_map,
+        "document_attestation_path": attestation,
+    }
+    with pytest.raises(ValueError, match="complete representative groups"):
+        E.build_export(**kwargs, max_records=20, max_text_bytes=1_000_000)
+    records, _, _, _, _ = E.build_export(
+        **kwargs, max_records=21, max_text_bytes=1_000_000,
+    )
+    assert len(records) == 21
+    with pytest.raises(ValueError, match="max_text_bytes"):
+        E.build_export(**kwargs, max_records=21, max_text_bytes=20)
+
+
+def test_document_cli_dry_run_delivers_no_prose_receipt(private_root: Path):
+    manifest, document_map, attestation = _document_source(private_root)
+    key = private_root / "author-corpus.key"
+    key.write_bytes(b"d" * 32)
+    key.chmod(0o600)
+    args = E.build_arg_parser().parse_args([
+        "--source-manifest", f"document_local={manifest}",
+        "--register-map", "document_local:literary_horror=fiction.literary",
+        "--allowed-ai-status", "pre_ai_human",
+        "--persona", "joshua",
+        "--document-map", str(document_map),
+        "--document-attestation", str(attestation),
+        "--hmac-key", str(key),
+        "--output-dir", str(private_root / "document-dry-run"),
+        "--dry-run", "--json",
+    ])
+    envelope = E.run(args)
+    receipt = envelope["results"]["producer_receipt"]
+    assert receipt["counts"]["by_source_kind"] == {"document_local": 3}
+    assert E.SHA_RE.fullmatch(receipt["document_map_hash"])
+    rendered = json.dumps(envelope)
+    assert "D:\\private" not in rendered
+    assert "Chapter 1" not in rendered
 
 
 def test_hmac_key_and_group_change_identities(private_root: Path):
@@ -184,6 +386,71 @@ def test_hmac_key_and_group_change_identities(private_root: Path):
 def test_missing_gmail_thread_or_entry_forces_degraded(private_root: Path):
     _, _, receipt, _, _ = _build(private_root, gmail_stable=False)
     assert receipt["record_atomic_degraded"] is True
+
+
+def test_gmail_units_sort_by_timestamp_then_entry(private_root: Path):
+    manifest = _source(private_root, "gmail_sent", "Later email body with enough words.")
+    first = json.loads(manifest.read_text())
+    first_meta_path = manifest.parent / "piece.meta.json"
+    first_meta = json.loads(first_meta_path.read_text())
+    first_meta["author_corpus_order_timestamp"] = "2017-01-02T12:00:00+00:00"
+    first_meta_path.write_text(json.dumps(first_meta))
+
+    earlier_text = "Earlier email body with enough different words."
+    earlier_path = manifest.parent / "earlier.txt"
+    earlier_path.write_text(earlier_text)
+    earlier = dict(first)
+    earlier.update({
+        "id": "gmail_sent-2", "path": earlier_path.name,
+        "content_hash": E._sha(earlier_text.encode()),
+    })
+    earlier_path.with_suffix(".meta.json").write_text(json.dumps({
+        "content_hash": earlier["content_hash"],
+        "author_corpus_thread_locator": first_meta["author_corpus_thread_locator"],
+        "author_corpus_entry_locator": "sha256:" + "5" * 64,
+        "author_corpus_order_timestamp": "2017-01-02T11:00:00+00:00",
+    }))
+    manifest.write_text(json.dumps(first) + "\n" + json.dumps(earlier) + "\n")
+
+    records, _, receipt, _, _ = E.build_export(
+        sources={"gmail_sent": manifest},
+        register_map={"gmail_sent:personal": "email.personal"},
+        allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+    )
+    assert receipt["record_atomic_degraded"] is False
+    assert len({row["source_group"] for row in records}) == 1
+    by_index = {row["unit_index"]: row for row in records}
+    assert by_index[0]["content_sha256"] == earlier["content_hash"]
+    assert by_index[1]["content_sha256"] == first["content_hash"]
+    assert {row["unit_count"] for row in records} == {2}
+
+
+def test_gmail_duplicate_private_entry_locator_refuses(private_root: Path):
+    manifest = _source(private_root, "gmail_sent", "First distinct email body words.")
+    first = json.loads(manifest.read_text())
+    first_meta = json.loads((manifest.parent / "piece.meta.json").read_text())
+    second_text = "Second distinct email body words with different content."
+    second_path = manifest.parent / "second.txt"
+    second_path.write_text(second_text)
+    second = dict(first)
+    second.update({
+        "id": "gmail_sent-2", "path": second_path.name,
+        "content_hash": E._sha(second_text.encode()),
+    })
+    second_path.with_suffix(".meta.json").write_text(json.dumps({
+        "content_hash": second["content_hash"],
+        "author_corpus_thread_locator": first_meta["author_corpus_thread_locator"],
+        "author_corpus_entry_locator": first_meta["author_corpus_entry_locator"],
+        "author_corpus_order_timestamp": "2017-01-02T13:00:00+00:00",
+    }))
+    manifest.write_text(json.dumps(first) + "\n" + json.dumps(second) + "\n")
+    with pytest.raises(ValueError, match="repeats a private entry locator"):
+        E.build_export(
+            sources={"gmail_sent": manifest},
+            register_map={"gmail_sent:personal": "email.personal"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua",
+            hmac_key=b"k" * 32,
+        )
 
 
 def test_legacy_imessage_contact_label_group_is_degraded(private_root: Path):
@@ -379,7 +646,8 @@ def test_bounded_smoke_then_distinct_full_export_succeeds(
     monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
     smoke_args = E.build_arg_parser().parse_args(common + [
         "--output-dir", str(private_root / "bounded-smoke"),
-        "--max-records", "2", "--live-smoke-confirmed",
+        "--max-records", "2", "--max-text-bytes", "1000000",
+        "--live-smoke-confirmed",
     ])
     smoke = E.run(smoke_args)
     assert smoke["results"]["producer_receipt"]["counts"]["records"] == 2
@@ -394,7 +662,7 @@ def test_bounded_smoke_then_distinct_full_export_succeeds(
 def test_bounded_smoke_requires_every_source_register_pair(private_root: Path):
     im = _source(private_root, "imessage_sent", "Enough text words for pair coverage.")
     gm = _source(private_root, "gmail_sent", "Enough email words for pair coverage.")
-    with pytest.raises(ValueError, match="source-kind/register pair"):
+    with pytest.raises(ValueError, match="complete representative groups"):
         E.build_export(
             sources={"imessage_sent": im, "gmail_sent": gm},
             register_map={

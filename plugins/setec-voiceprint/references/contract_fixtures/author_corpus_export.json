@@ -43,6 +43,8 @@
         },
         "records": 1
       },
+      "document_attestation_hash": null,
+      "document_map_hash": null,
       "entries": [
         {
           "record_id": "sha256:0000000000000000000000000000000000000000000000000000000000000000",

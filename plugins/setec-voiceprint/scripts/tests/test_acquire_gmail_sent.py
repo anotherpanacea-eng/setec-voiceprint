@@ -250,6 +250,56 @@ def test_private_thread_and_entry_locators_are_structural_and_nonreversible():
     assert G.private_message_locators(no_ids) == (None, None)
 
 
+def test_global_thread_roots_join_irt_only_reply_chain():
+    inbound = G.email.message_from_string(
+        "Message-ID: <root@example.invalid>\n\nroot"
+    )
+    first = G.email.message_from_string(
+        "Message-ID: <first@example.invalid>\n"
+        "In-Reply-To: <root@example.invalid>\n\nfirst"
+    )
+    second = G.email.message_from_string(
+        "Message-ID: <second@example.invalid>\n"
+        "In-Reply-To: <first@example.invalid>\n\nsecond"
+    )
+    roots = G.build_thread_roots([inbound, first, second])
+    first_thread, _ = G.private_message_locators(first, roots)
+    second_thread, _ = G.private_message_locators(second, roots)
+    assert first_thread is not None and first_thread == second_thread
+    # Without the global graph an IRT-only row degrades instead of guessing.
+    assert G.private_message_locators(first)[0] is None
+
+
+def test_global_thread_roots_handle_deep_newest_first_chain_iteratively():
+    messages = []
+    for index in range(1_100):
+        parent = f"<message-{index - 1}@example.invalid>" if index else None
+        headers = f"Message-ID: <message-{index}@example.invalid>\n"
+        if parent:
+            headers += f"In-Reply-To: {parent}\n"
+        messages.append(G.email.message_from_string(headers + "\nbody"))
+    roots = G.build_thread_roots(reversed(messages))
+    expected = "<message-0@example.invalid>"
+    assert roots["<message-1099@example.invalid>"] == expected
+
+
+def test_private_sidecars_bind_canonical_order_timestamp(tmp_path, mbox):
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    sidecars = [json.loads(path.read_text()) for path in out.glob("*.meta.json")]
+    assert sidecars
+    assert all("author_corpus_order_timestamp" in row for row in sidecars)
+    for row in sidecars:
+        timestamp = row["author_corpus_order_timestamp"]
+        assert timestamp is None or timestamp.endswith("+00:00")
+
+
+def test_nonempty_malformed_date_refuses():
+    msg = G.email.message_from_string("Date: definitely-not-a-date\n\nbody")
+    with pytest.raises(ValueError, match="Date header"):
+        G._message_datetime(msg)
+
+
 def test_unwindowed_full_export_refuses_without_receipt(tmp_path, mbox):
     out = _out(tmp_path)
     with pytest.raises(SystemExit):

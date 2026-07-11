@@ -904,6 +904,8 @@ def _build_author_corpus_export() -> dict[str, Any]:
         "surface_version": m.SURFACE_VERSION,
         "producer_revision": "0" * 40,
         "source_snapshot_sha256": sha,
+        "document_map_hash": None,
+        "document_attestation_hash": None,
         "hmac_key_id": sha,
         "register_map": {"gmail_sent:personal": "email.personal"},
         "allowed_ai_status": ["pre_ai_human"],

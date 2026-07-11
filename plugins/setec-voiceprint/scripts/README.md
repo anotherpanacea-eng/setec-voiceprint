@@ -1152,8 +1152,9 @@ installation do NOT need this layer.
 
 ### Private multi-register author-corpus export
 
-`author_corpus_export.py` is the normalized, sent-only bridge from the private
-`acquire_imessage_sent.py` / `acquire_gmail_sent.py` outputs to voicewright's
+`author_corpus_export.py` is the normalized bridge from private
+`acquire_imessage_sent.py` / `acquire_gmail_sent.py` outputs and explicitly
+attested local author-document manifests to voicewright's
 `voicewright-author-corpus/1` package. It requires source-kind-qualified register
 maps, for example `imessage_sent:personal=text.personal` and
 `gmail_sent:personal=email.personal`, plus an owner-only HMAC key and a destination
@@ -1161,11 +1162,21 @@ under `ai-prose-baselines-private/`. The SETEC JSON envelope contains only
 `results.producer_receipt`; prose, paths, raw contacts, message ids, and HMAC
 preimages remain local.
 
-A bounded (`--max-records` <= 20), interactive `--live-smoke-confirmed` run must
-land first, with at least one record from every configured source-kind/register
-pair. Inspect that bounded package locally. The matching full export must use a
+The `document_local` route additionally requires `--document-map` and
+`--document-attestation`. The private map binds every supplied manifest row to a
+stable document/entry locator and natural unit kind/index/count. The hash-bound
+self-attestation may normalize missing legacy consent/persona fields or an explicit
+private project alias; it cannot override an impostor role, excluded/test use,
+unmapped author/persona identity, disallowed AI status, or content mismatch. Raw
+legacy document titles, URLs, and source paths never enter the package or receipt.
+
+A bounded (`--max-records` <= 512 and `--max-text-bytes` <= 67,108,864), interactive
+`--live-smoke-confirmed` run must land first. It selects the smallest complete
+source group for every configured source-kind/register pair and never truncates a
+document/thread to meet a cap. Inspect that bounded package locally. The matching full export must use a
 different sibling destination; it revalidates a 24-hour receipt bound to the
-producer revision, source snapshot, key id, register map, AI-status allowlist,
+producer revision, source snapshot, document-map/attestation hashes, key id,
+register map, AI-status allowlist,
 bounded package hash, and bounded receipt hash. Gmail
 outputs acquired before private thread locators existed are stamped
 `record_atomic_degraded=true`; consumers must keep those packages train-only and

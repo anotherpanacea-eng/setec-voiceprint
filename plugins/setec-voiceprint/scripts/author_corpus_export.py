@@ -50,6 +50,7 @@ PRIVATE_LOCATOR_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 SOURCE_VALUES = {
     "imessage_sent": "imessage_local",
     "gmail_sent": "gmail_takeout_local",
+    "document_local": None,
 }
 ALLOWED_AI_STATUS = {
     "pre_ai_human", "ai_generated", "ai_generated_from_outline",
@@ -62,6 +63,21 @@ SOURCE_MANIFEST_KEYS = {
     "privacy", "content_hash", "source", "corpus_role", "notes", "era",
     "consent_status", "acquired_via",
 }
+DOCUMENT_MANIFEST_KEYS = SOURCE_MANIFEST_KEYS | {
+    "editing_status", "genre", "project_area", "impostor_for",
+    "register_match", "topic_match",
+}
+DOCUMENT_MAP_KEYS = {
+    "schema", "source_id", "private_document_locator",
+    "private_entry_locator", "unit_kind", "unit_index", "unit_count",
+}
+DOCUMENT_ATTESTATION_KEYS = {
+    "schema", "source_manifest_sha256", "document_map_hash", "persona",
+    "authorized_by", "basis", "attested_at", "legacy_persona_aliases",
+    "author_identities", "corpus_role", "use", "consent_status",
+    "allowed_ai_status",
+}
+UNIT_KINDS = {"message_batch", "turn", "email", "essay", "section", "chapter", "document"}
 BIDI_CONTROLS = {
     chr(cp) for cp in (
         0x061C, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
@@ -77,20 +93,25 @@ DOMAIN_PACKAGE = b"setec-author-corpus-package-v1\n"
 DOMAIN_RECEIPT = b"setec-author-corpus-export-receipt-v1\n"
 DOMAIN_SNAPSHOT = b"setec-author-corpus-source-snapshot-v1\n"
 DOMAIN_CONFIG = b"setec-author-corpus-export-smoke-config-v1\n"
+DOMAIN_DOCUMENT_MAP = b"setec-author-document-map-v1\n"
+DOMAIN_DOCUMENT_ATTESTATION = b"setec-author-document-attestation-v1\n"
 
 SMOKE_RECEIPT = ".author_corpus_export_live_smoke.json"
-MAX_SMOKE_RECORDS = 20
+MAX_SMOKE_RECORDS = 512
+MAX_SMOKE_TEXT_BYTES = 67_108_864
 SMOKE_MAX_AGE = dt.timedelta(hours=24)
 
 RECORD_KEYS = {
     "schema", "id", "persona", "register", "role", "text_path",
     "source_entry_fingerprint", "source_group", "conversation_id", "date",
+    "unit_kind", "unit_index", "unit_count",
     "corpus_role", "use", "consent_status", "ai_status", "source_kind",
     "content_sha256", "normalized_text_sha256",
 }
 RECEIPT_KEYS = {
     "schema", "surface", "surface_version", "producer_revision",
-    "source_snapshot_sha256", "hmac_key_id", "register_map",
+    "source_snapshot_sha256", "document_map_hash", "document_attestation_hash",
+    "hmac_key_id", "register_map",
     "allowed_ai_status", "entries", "record_ids", "package_hash", "counts",
     "record_atomic_degraded",
 }
@@ -317,6 +338,8 @@ def _validate_source_entry(entry: dict[str, Any], *, kind: str, persona: str) ->
         raise ValueError("source entry is not an identity-baseline voice profile")
     if entry["consent_status"] != "author_consent":
         raise ValueError("source entry lacks author_consent")
+    if kind == "document_local":
+        raise ValueError("document_local requires the attested document route")
     if entry["source"] != SOURCE_VALUES[kind]:
         raise ValueError("source entry kind does not match its declared source manifest")
     if not SHA_RE.fullmatch(entry["content_hash"]):
@@ -325,24 +348,212 @@ def _validate_source_entry(entry: dict[str, Any], *, kind: str, persona: str) ->
         raise ValueError("source era is not recognized")
 
 
-def _source_locators(kind: str, entry: dict[str, Any], meta: dict[str, Any]) -> tuple[str, str, bool]:
+def _require_sorted_strings(value: Any, label: str, *, nonempty: bool) -> list[str]:
+    if type(value) is not list or any(type(item) is not str for item in value):
+        raise ValueError(f"{label} must be a string array")
+    for item in value:
+        _require_string(label, item)
+    if value != sorted(set(value)) or (nonempty and not value):
+        raise ValueError(f"{label} must be sorted and unique")
+    return value
+
+
+def _canonical_utc_timestamp(value: Any) -> str:
+    value = _require_string("attested_at", value)
+    try:
+        parsed = dt.datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("attested_at must be a canonical UTC timestamp") from exc
+    if (
+        parsed.tzinfo != dt.timezone.utc
+        or value != parsed.isoformat(timespec="seconds")
+    ):
+        raise ValueError("attested_at must be a canonical UTC timestamp")
+    return value
+
+
+def _document_map_hash(rows: list[dict[str, Any]]) -> str:
+    return _digest(DOMAIN_DOCUMENT_MAP, {
+        "schema": "setec-author-document-map-hash/1",
+        "rows": rows,
+    })
+
+
+def _load_document_map(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
+    _check_private([path])
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("document map must be a regular private file")
+    rows: list[dict[str, Any]] = []
+    for lineno, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        if not raw.strip():
+            continue
+        row = _load_json_object(raw, f"document map line {lineno}")
+        if set(row) != DOCUMENT_MAP_KEYS or row.get("schema") != "setec-author-document-map/1":
+            raise ValueError("document map row does not match the closed schema")
+        _require_string("document map source_id", row["source_id"])
+        for name in ("private_document_locator", "private_entry_locator"):
+            if type(row[name]) is not str or not PRIVATE_LOCATOR_RE.fullmatch(row[name]):
+                raise ValueError("document map locator is malformed")
+        if row["unit_kind"] not in UNIT_KINDS - {"message_batch", "turn", "email"}:
+            raise ValueError("document map unit_kind is invalid")
+        if type(row["unit_index"]) is not int or row["unit_index"] < 0:
+            raise ValueError("document map unit_index must be a nonnegative exact integer")
+        if type(row["unit_count"]) is not int or row["unit_count"] <= 0:
+            raise ValueError("document map unit_count must be a positive exact integer")
+        if row["unit_index"] >= row["unit_count"]:
+            raise ValueError("document map unit_index must be below unit_count")
+        rows.append(row)
+    rows.sort(key=lambda row: row["source_id"])
+    if not rows or len({row["source_id"] for row in rows}) != len(rows):
+        raise ValueError("document map source ids must be nonempty and unique")
+    if len({row["private_entry_locator"] for row in rows}) != len(rows):
+        raise ValueError("document map entry locators must be unique")
+    by_group: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        by_group.setdefault(row["private_document_locator"], []).append(row)
+    for group in by_group.values():
+        counts = {row["unit_count"] for row in group}
+        indices = {row["unit_index"] for row in group}
+        if len(counts) != 1 or len(group) != next(iter(counts)):
+            raise ValueError("document map group count is inconsistent")
+        if indices != set(range(len(group))):
+            raise ValueError("document map group indices must be unique and contiguous")
+    return {row["source_id"]: row for row in rows}, _document_map_hash(rows)
+
+
+def _load_document_attestation(
+    path: Path, *, manifest_hash: str, map_hash: str, persona: str,
+) -> tuple[dict[str, Any], str]:
+    _check_private([path])
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("document attestation must be a regular private file")
+    data = _load_json_object(
+        path.read_text(encoding="utf-8"), "document attestation",
+    )
+    if set(data) != DOCUMENT_ATTESTATION_KEYS:
+        raise ValueError("document attestation does not match the closed schema")
+    if data["schema"] != "setec-author-document-attestation/1":
+        raise ValueError("document attestation schema is invalid")
+    if data["source_manifest_sha256"] != manifest_hash or data["document_map_hash"] != map_hash:
+        raise ValueError("document attestation binding is invalid")
+    if data["persona"] != persona:
+        raise ValueError("document attestation persona does not match")
+    for name in ("persona", "authorized_by", "basis"):
+        _require_string(name, data[name])
+    _canonical_utc_timestamp(data["attested_at"])
+    _require_sorted_strings(data["legacy_persona_aliases"], "legacy persona aliases", nonempty=False)
+    _require_sorted_strings(data["author_identities"], "author identities", nonempty=False)
+    statuses = _require_sorted_strings(
+        data["allowed_ai_status"], "document allowed AI statuses", nonempty=True,
+    )
+    if any(status not in ALLOWED_AI_STATUS for status in statuses):
+        raise ValueError("document attestation contains an unknown AI status")
+    if (
+        data["corpus_role"] != "identity_baseline"
+        or data["use"] != ["voice_profile"]
+        or data["consent_status"] != "author_consent"
+    ):
+        raise ValueError("document attestation authorization fields are invalid")
+    return data, _digest(DOMAIN_DOCUMENT_ATTESTATION, data)
+
+
+def _derived_era(date_value: Any) -> str:
+    if date_value is None:
+        return "undated"
+    date_value = _require_string("date_written", date_value)
+    try:
+        parsed = dt.date.fromisoformat(date_value)
+    except ValueError as exc:
+        raise ValueError("date_written must be YYYY-MM-DD when present") from exc
+    if parsed < dt.date(2022, 11, 1):
+        return "pre_chatgpt"
+    if parsed < dt.date(2024, 7, 1):
+        return "pre_ai_widespread"
+    return "post_ai_widespread"
+
+
+def _validate_document_entry(
+    entry: dict[str, Any], *, persona: str, attestation: dict[str, Any],
+) -> str:
+    if set(entry) - DOCUMENT_MANIFEST_KEYS:
+        raise ValueError("document manifest contains unknown keys")
+    required = {"id", "path", "register", "ai_status", "content_hash"}
+    if not required <= set(entry):
+        raise ValueError("document manifest is missing required keys")
+    for name in required:
+        _require_string(name, entry[name])
+    if not SHA_RE.fullmatch(entry["content_hash"]):
+        raise ValueError("document content_hash is malformed")
+    if entry["ai_status"] not in attestation["allowed_ai_status"]:
+        raise ValueError("document AI status is outside its attestation")
+    if "persona" in entry and entry["persona"] is not None:
+        _require_string("persona", entry["persona"])
+        if entry["persona"] != persona and entry["persona"] not in attestation["legacy_persona_aliases"]:
+            raise ValueError("document manifest persona is not an attested alias")
+    if "author" in entry and entry["author"] is not None:
+        _require_string("author", entry["author"])
+        if entry["author"] not in attestation["author_identities"]:
+            raise ValueError("document manifest author is not an attested identity")
+    if entry.get("corpus_role", "identity_baseline") != "identity_baseline":
+        raise ValueError("document manifest is not an identity baseline")
+    if entry.get("impostor_for") not in (None, ""):
+        raise ValueError("document manifest carries an explicit impostor marker")
+    if "register_match" in entry or "topic_match" in entry:
+        raise ValueError("document manifest carries impostor-comparison metadata")
+    if "split" in entry:
+        split = _require_string("document split", entry["split"]).casefold()
+        if split != "baseline":
+            raise ValueError("document manifest split is not the approved baseline value")
+    if entry.get("use", ["voice_profile"]) != ["voice_profile"]:
+        raise ValueError("document manifest use is not voice_profile")
+    if entry.get("consent_status", "author_consent") != "author_consent":
+        raise ValueError("document manifest consent conflicts with attestation")
+    derived_era = _derived_era(entry.get("date_written"))
+    if entry.get("era", derived_era) != derived_era:
+        raise ValueError("document manifest era conflicts with date_written")
+    return derived_era
+
+
+def _gmail_order_timestamp(meta: dict[str, Any]) -> tuple[str | None, bool]:
+    if "author_corpus_order_timestamp" not in meta:
+        return None, True
+    value = meta["author_corpus_order_timestamp"]
+    if value is None:
+        return None, False
+    value = _require_string("private Gmail order timestamp", value)
+    try:
+        parsed = dt.datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("private Gmail order timestamp is malformed") from exc
+    if parsed.tzinfo != dt.timezone.utc or value != parsed.isoformat(timespec="seconds"):
+        raise ValueError("private Gmail order timestamp is not canonical UTC")
+    return value, False
+
+
+def _source_locators(
+    kind: str, entry: dict[str, Any], meta: dict[str, Any],
+) -> tuple[str, str, bool, str | None]:
     if kind == "imessage_sent":
         group = meta.get("author_corpus_group_locator")
         item = meta.get("author_corpus_entry_locator")
+        order_timestamp = None
+        order_degraded = False
     else:
         group = meta.get("author_corpus_thread_locator")
         item = meta.get("author_corpus_entry_locator")
+        order_timestamp, order_degraded = _gmail_order_timestamp(meta)
     degraded = not (
         isinstance(group, str) and PRIVATE_LOCATOR_RE.fullmatch(group)
         and isinstance(item, str) and PRIVATE_LOCATOR_RE.fullmatch(item)
-    )
+    ) or order_degraded
     if degraded:
         fallback = _digest(
             b"setec-author-corpus-record-atomic-fallback-v1\n",
             {"source_kind": kind, "source_id": entry["id"], "content_hash": entry["content_hash"]},
         )
         group = item = fallback
-    return group, item, degraded
+        order_timestamp = None
+    return group, item, degraded, order_timestamp
 
 
 def _record_id(record: dict[str, Any]) -> str:
@@ -369,6 +580,8 @@ def _config_hash(receipt: dict[str, Any], persona: str) -> str:
     return _digest(DOMAIN_CONFIG, {
         "producer_revision": receipt["producer_revision"],
         "source_snapshot_sha256": receipt["source_snapshot_sha256"],
+        "document_map_hash": receipt["document_map_hash"],
+        "document_attestation_hash": receipt["document_attestation_hash"],
         "hmac_key_id": receipt["hmac_key_id"],
         "register_map": receipt["register_map"],
         "allowed_ai_status": receipt["allowed_ai_status"],
@@ -379,7 +592,10 @@ def _config_hash(receipt: dict[str, Any], persona: str) -> str:
 def build_export(
     *, sources: dict[str, Path], register_map: dict[str, str],
     allowed_ai_status: list[str], persona: str, hmac_key: bytes,
+    document_map_path: Path | None = None,
+    document_attestation_path: Path | None = None,
     max_records: int | None = None,
+    max_text_bytes: int | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, bytes], dict[str, Any], str, _BuildEvidence]:
     """Validate private manifests and return records/text/receipt/config hash."""
     persona = _require_string("persona", persona)
@@ -409,10 +625,41 @@ def build_export(
         raise ValueError("unknown allowed AI status")
     if type(hmac_key) is not bytes or len(hmac_key) < 32:
         raise ValueError("HMAC key must contain at least 32 bytes")
+    has_documents = "document_local" in sources
+    if has_documents != (
+        isinstance(document_map_path, Path)
+        and isinstance(document_attestation_path, Path)
+    ):
+        raise ValueError(
+            "document_local requires exactly one private map and attestation"
+        )
+    document_map: dict[str, dict[str, Any]] = {}
+    document_attestation: dict[str, Any] | None = None
+    document_map_hash: str | None = None
+    document_attestation_hash: str | None = None
+    document_seen_ids: set[str] = set()
+    document_seen_statuses: set[str] = set()
+    if has_documents:
+        document_manifest = sources["document_local"]
+        _check_private([document_manifest])
+        if document_manifest.is_symlink() or not document_manifest.is_file():
+            raise ValueError("document manifest must be a regular private file")
+        manifest_hash = _sha(document_manifest.read_bytes())
+        document_map, document_map_hash = _load_document_map(document_map_path)
+        document_attestation, document_attestation_hash = _load_document_attestation(
+            document_attestation_path,
+            manifest_hash=manifest_hash,
+            map_hash=document_map_hash,
+            persona=persona,
+        )
+        if not set(document_attestation["allowed_ai_status"]) <= set(allowed_ai_status):
+            raise ValueError("document AI statuses are outside exporter policy")
     key_id = _sha(DOMAIN_KEY_ID + hmac_key)
     source_rows: list[dict[str, Any]] = []
-    built: list[tuple[dict[str, Any], bytes, str]] = []
-    degraded_any = False
+    seen_private_entries: set[tuple[str, str]] = set()
+    built: list[
+        tuple[dict[str, Any], bytes, str, tuple[bool, str, str] | None, bool]
+    ] = []
 
     for kind, manifest in sorted(sources.items()):
         if manifest.name in {"contact_map.json", "recipient_map.json"}:
@@ -426,7 +673,20 @@ def build_export(
             if not raw.strip():
                 continue
             entry = _load_json_object(raw, f"source manifest line {lineno}")
-            _validate_source_entry(entry, kind=kind, persona=persona)
+            document_row: dict[str, Any] | None = None
+            if kind == "document_local":
+                assert document_attestation is not None
+                era = _validate_document_entry(
+                    entry, persona=persona, attestation=document_attestation,
+                )
+                document_row = document_map.get(entry["id"])
+                if document_row is None or entry["id"] in document_seen_ids:
+                    raise ValueError("document manifest/map bijection is invalid")
+                document_seen_ids.add(entry["id"])
+                document_seen_statuses.add(entry["ai_status"])
+            else:
+                _validate_source_entry(entry, kind=kind, persona=persona)
+                era = entry["era"]
             if entry["ai_status"] not in allowed_ai_status:
                 raise ValueError("source AI status was not explicitly allowed")
             map_key = f"{kind}:{entry['register']}"
@@ -439,9 +699,28 @@ def build_export(
             if exact_hash != entry["content_hash"] or not SHA_RE.fullmatch(exact_hash):
                 raise ValueError("source content hash mismatch")
             normalized_hash = _sha(_normalize_text(text).encode("utf-8"))
-            meta = _read_meta(text_path)
-            private_group, private_entry, degraded = _source_locators(kind, entry, meta)
-            degraded_any |= degraded
+            if kind == "document_local":
+                assert document_row is not None
+                private_group = document_row["private_document_locator"]
+                private_entry = document_row["private_entry_locator"]
+                degraded = False
+                order_timestamp = None
+                unit_kind = document_row["unit_kind"]
+                unit_index = document_row["unit_index"]
+                unit_count = document_row["unit_count"]
+            else:
+                meta = _read_meta(text_path)
+                private_group, private_entry, degraded, order_timestamp = _source_locators(
+                    kind, entry, meta,
+                )
+                if kind == "imessage_sent":
+                    unit_kind, unit_index, unit_count = "message_batch", 0, 1
+                else:
+                    unit_kind, unit_index, unit_count = "email", -1, 0
+            private_entry_key = (kind, private_entry)
+            if private_entry_key in seen_private_entries:
+                raise ValueError("source manifest repeats a private entry locator")
+            seen_private_entries.add(private_entry_key)
             source_fp = _hmac(hmac_key, DOMAIN_ENTRY, {
                 "source_kind": kind,
                 "private_entry_locator": private_entry,
@@ -462,6 +741,9 @@ def build_export(
                 "source_entry_fingerprint": source_fp,
                 "source_group": source_group,
                 "conversation_id": None,
+                "unit_kind": unit_kind,
+                "unit_index": unit_index,
+                "unit_count": unit_count,
                 "date": entry.get("date_written"),
                 "corpus_role": "identity_baseline",
                 "use": ["voice_profile"],
@@ -476,58 +758,120 @@ def build_export(
                     dt.date.fromisoformat(record["date"])
                 except (TypeError, ValueError) as exc:
                     raise ValueError("date_written must be YYYY-MM-DD when present") from exc
-            record["id"] = _record_id(record)
             source_rows.append({
                 "source_kind": kind, "source_manifest_sha256": manifest_hash,
                 "source_id": entry["id"], "content_sha256": exact_hash,
                 "private_group_locator": private_group,
                 "private_entry_locator": private_entry,
             })
-            built.append((record, text_bytes, entry["era"]))
+            order_key = None
+            if kind == "gmail_sent" and not degraded:
+                order_key = (
+                    order_timestamp is None,
+                    order_timestamp or "",
+                    private_entry,
+                )
+            built.append((record, text_bytes, era, order_key, degraded))
 
-    built.sort(key=lambda item: item[0]["id"])
     if not built:
         raise ValueError("source manifests produced zero author records")
+    if has_documents:
+        assert document_attestation is not None
+        if document_seen_ids != set(document_map):
+            raise ValueError("document manifest/map bijection is invalid")
+        if sorted(document_seen_statuses) != document_attestation["allowed_ai_status"]:
+            raise ValueError("document attestation AI statuses do not match its rows")
+
+    gmail_groups: dict[
+        str,
+        list[tuple[dict[str, Any], bytes, str, tuple[bool, str, str] | None, bool]],
+    ] = {}
+    for item in built:
+        if item[0]["source_kind"] == "gmail_sent":
+            gmail_groups.setdefault(item[0]["source_group"], []).append(item)
+    for group in gmail_groups.values():
+        if any(item[4] for item in group):
+            if len(group) != 1:
+                raise ValueError("degraded Gmail fallback must be record-atomic")
+            group[0][0]["unit_index"] = 0
+            group[0][0]["unit_count"] = 1
+            continue
+        ordered = sorted(
+            group,
+            key=lambda item: item[3] or (True, "", ""),
+        )
+        for index, item in enumerate(ordered):
+            item[0]["unit_index"] = index
+            item[0]["unit_count"] = len(ordered)
+
+    for record, _, _, _, _ in built:
+        record["id"] = _record_id(record)
+    built.sort(key=lambda item: item[0]["id"])
+
     if max_records is not None:
         if type(max_records) is not int or not 1 <= max_records <= MAX_SMOKE_RECORDS:
             raise ValueError(f"max_records must be an exact int in [1, {MAX_SMOKE_RECORDS}]")
-        representative: list[tuple[dict[str, Any], bytes, str]] = []
-        represented: set[tuple[str, str]] = set()
+        if max_text_bytes is None:
+            max_text_bytes = MAX_SMOKE_TEXT_BYTES
+        if (
+            type(max_text_bytes) is not int
+            or not 1 <= max_text_bytes <= MAX_SMOKE_TEXT_BYTES
+        ):
+            raise ValueError(
+                f"max_text_bytes must be an exact int in [1, {MAX_SMOKE_TEXT_BYTES}]"
+            )
+        groups: dict[
+            str,
+            list[tuple[dict[str, Any], bytes, str, tuple[bool, str, str] | None, bool]],
+        ] = {}
         for item in built:
-            key = (item[0]["source_kind"], item[0]["register"])
-            if key not in represented:
-                represented.add(key)
-                representative.append(item)
+            groups.setdefault(item[0]["source_group"], []).append(item)
+        by_pair: dict[tuple[str, str], list[tuple[int, int, str]]] = {}
+        for source_group, items in groups.items():
+            pairs = {(item[0]["source_kind"], item[0]["register"]) for item in items}
+            if len(pairs) != 1:
+                raise ValueError("source group spans multiple source/register identities")
+            pair = next(iter(pairs))
+            by_pair.setdefault(pair, []).append(
+                (len(items), sum(len(item[1]) for item in items), source_group)
+            )
+        selected_groups = {
+            min(candidates)[2] for candidates in by_pair.values()
+        }
+        representative = [
+            item for item in built if item[0]["source_group"] in selected_groups
+        ]
         if len(representative) > max_records:
             raise ValueError(
-                "max_records is too small to cover every source-kind/register pair"
+                "max_records is too small for the complete representative groups"
             )
-        chosen_ids = {item[0]["id"] for item in representative}
-        for item in built:
-            if len(representative) >= max_records:
-                break
-            if item[0]["id"] not in chosen_ids:
-                representative.append(item)
-                chosen_ids.add(item[0]["id"])
+        if sum(len(item[1]) for item in representative) > max_text_bytes:
+            raise ValueError(
+                "max_text_bytes is too small for the complete representative groups"
+            )
         built = sorted(representative, key=lambda item: item[0]["id"])
+    elif max_text_bytes is not None:
+        raise ValueError("max_text_bytes is valid only with max_records")
     records = [item[0] for item in built]
     if len({r["id"] for r in records}) != len(records):
         raise ValueError("duplicate normalized record id")
     if len({r["source_entry_fingerprint"] for r in records}) != len(records):
         raise ValueError("duplicate source-entry fingerprint")
-    texts = {r["content_sha256"]: text_bytes for r, text_bytes, _ in built}
+    texts = {r["content_sha256"]: text_bytes for r, text_bytes, _, _, _ in built}
 
     package_hash = _package_hash(records)
     by_register = Counter(r["register"] for r in records)
     by_ai = Counter(r["ai_status"] for r in records)
     by_kind = Counter(r["source_kind"] for r in records)
-    by_era = Counter(era for _, _, era in built)
+    by_era = Counter(era for _, _, era, _, _ in built)
     receipt = {
         "schema": RECEIPT_SCHEMA,
         "surface": TOOL_NAME,
         "surface_version": SURFACE_VERSION,
         "producer_revision": _producer_revision(),
         "source_snapshot_sha256": _source_snapshot_hash(source_rows),
+        "document_map_hash": document_map_hash,
+        "document_attestation_hash": document_attestation_hash,
         "hmac_key_id": key_id,
         "register_map": dict(sorted(register_map.items())),
         "allowed_ai_status": list(allowed_ai_status),
@@ -545,7 +889,7 @@ def build_export(
             "by_source_kind": dict(sorted(by_kind.items())),
             "by_era": dict(sorted(by_era.items())),
         },
-        "record_atomic_degraded": degraded_any,
+        "record_atomic_degraded": any(item[4] for item in built),
     }
     # Compute in tests/loaders to pin the entire receipt, even though the hash is
     # intentionally not embedded in its own preimage.
@@ -605,6 +949,14 @@ def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
         canonical_register(record["register"])
         if record["conversation_id"] is not None:
             raise ValueError("R1a conversation_id must be null")
+        if record["unit_kind"] not in UNIT_KINDS:
+            raise ValueError("record unit_kind is invalid")
+        if type(record["unit_index"]) is not int or record["unit_index"] < 0:
+            raise ValueError("record unit_index must be a nonnegative exact integer")
+        if type(record["unit_count"]) is not int or record["unit_count"] <= 0:
+            raise ValueError("record unit_count must be a positive exact integer")
+        if record["unit_index"] >= record["unit_count"]:
+            raise ValueError("record unit_index must be below unit_count")
         if record["date"] is not None:
             _require_string("record date", record["date"])
             try:
@@ -652,6 +1004,23 @@ def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
     if set(texts) != expected_text_keys:
         raise ValueError("text object contains missing or unreferenced content")
 
+    by_group: dict[str, list[dict[str, Any]]] = {}
+    for record in records:
+        by_group.setdefault(record["source_group"], []).append(record)
+    for group in by_group.values():
+        identities = {
+            (
+                record["persona"], record["source_kind"], record["register"],
+                record["conversation_id"], record["unit_count"],
+            )
+            for record in group
+        }
+        if len(identities) != 1:
+            raise ValueError("source group identity is inconsistent")
+        count = group[0]["unit_count"]
+        if len(group) != count or {row["unit_index"] for row in group} != set(range(count)):
+            raise ValueError("source group unit order is incomplete or ambiguous")
+
     if type(receipt) is not dict or set(receipt) != RECEIPT_KEYS:
         raise ValueError("producer receipt does not match the closed schema")
     if receipt["schema"] != RECEIPT_SCHEMA or receipt["surface"] != TOOL_NAME:
@@ -665,6 +1034,14 @@ def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
     for name in ("source_snapshot_sha256", "hmac_key_id", "package_hash"):
         if type(receipt[name]) is not str or not SHA_RE.fullmatch(receipt[name]):
             raise ValueError(f"receipt {name} is malformed")
+    has_documents = any(record["source_kind"] == "document_local" for record in records)
+    for name in ("document_map_hash", "document_attestation_hash"):
+        value = receipt[name]
+        if has_documents:
+            if type(value) is not str or not SHA_RE.fullmatch(value):
+                raise ValueError(f"receipt {name} is malformed")
+        elif value is not None:
+            raise ValueError(f"receipt {name} must be null without documents")
     if type(receipt["register_map"]) is not dict or not receipt["register_map"]:
         raise ValueError("receipt register_map must be a non-empty object")
     for key, value in receipt["register_map"].items():
@@ -948,9 +1325,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p.add_argument("--register-map", action="append", default=[], metavar="KIND:LEGACY=CANONICAL")
     p.add_argument("--allowed-ai-status", action="append", default=[])
     p.add_argument("--persona", required=True)
+    p.add_argument("--document-map", type=Path)
+    p.add_argument("--document-attestation", type=Path)
     p.add_argument("--hmac-key", required=True, type=Path)
     p.add_argument("--output-dir", required=True, type=Path)
     p.add_argument("--max-records", type=int)
+    p.add_argument("--max-text-bytes", type=int)
     p.add_argument("--live-smoke-confirmed", action="store_true")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--json", action="store_true")
@@ -959,6 +1339,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     _check_private([args.output_dir])
+    if (args.max_records is None) != (args.max_text_bytes is None):
+        raise ValueError(
+            "bounded smoke requires both --max-records and --max-text-bytes"
+        )
     sources = parse_sources(args.source_manifest)
     register_map = parse_register_map(args.register_map)
     allowed = sorted(set(args.allowed_ai_status))
@@ -967,7 +1351,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     key = _read_key(args.hmac_key.expanduser())
     records, texts, receipt, config_hash, evidence = build_export(
         sources=sources, register_map=register_map, allowed_ai_status=allowed,
-        persona=args.persona, hmac_key=key, max_records=args.max_records,
+        persona=args.persona, hmac_key=key,
+        document_map_path=args.document_map,
+        document_attestation_path=args.document_attestation,
+        max_records=args.max_records,
+        max_text_bytes=args.max_text_bytes,
     )
     warnings: list[str] = []
     if receipt["record_atomic_degraded"]:

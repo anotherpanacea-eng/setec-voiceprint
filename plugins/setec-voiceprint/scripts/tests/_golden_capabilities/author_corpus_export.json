@@ -10,9 +10,10 @@
   "min_setec_version": "1.123.0",
   "json_delivery": "stdout",
   "family": "corpus-acquisition",
-  "purpose": "Export authorized sent-only Messages and Gmail acquisition products into a private, closed, multi-register author-corpus package. Emits only a standard SETEC envelope containing a hash-bound no-prose producer receipt; raw prose and identifiers remain local.",
+  "purpose": "Export authorized Messages, Gmail, and attested local-document products into a private, closed, ordered multi-register author-corpus package. Emits only a standard SETEC envelope containing a hash-bound no-prose producer receipt; raw prose and identifiers remain local.",
   "use_when": [
     "You have private acquire_imessage_sent/acquire_gmail_sent identity-baseline outputs",
+    "You have a private legacy author-document manifest plus reviewed map and self-attestation",
     "You need explicit text.personal/email.* register identities and stable HMAC groups",
     "You have completed the bounded live-smoke gate before a full export"
   ],
@@ -52,6 +53,16 @@
       "required": true
     },
     {
+      "flag": "--document-map",
+      "type": "path",
+      "required": false
+    },
+    {
+      "flag": "--document-attestation",
+      "type": "path",
+      "required": false
+    },
+    {
       "flag": "--hmac-key",
       "type": "path",
       "required": true
@@ -63,6 +74,11 @@
     },
     {
       "flag": "--max-records",
+      "type": "int",
+      "required": false
+    },
+    {
+      "flag": "--max-text-bytes",
       "type": "int",
       "required": false
     },
@@ -97,7 +113,9 @@
   "registers": [
     "text.personal",
     "email.personal",
-    "email.professional"
+    "email.professional",
+    "blog.essay",
+    "fiction.literary"
   ],
   "dependencies": {
     "python": []
