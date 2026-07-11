@@ -119,25 +119,21 @@ def _tokenize(text: str) -> list[str]:
     return [m.group(0).lower() for m in _WORD_RE.finditer(text)]
 
 
-# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
-_FP_SEP = "\x1f"
-
-
 def _content_fingerprint(text: str) -> str:
-    """sha256 of the ``_tokenize`` stream (lowercased ``[A-Za-z][A-Za-z'’-]*``) — the exact
-    tokenization this surface's n-gram / frame mining consumes (lexical bundles, slot frames, idioms,
-    hapax survival, and stance frames are all built over ``_tokenize`` n-grams). Two texts with the
-    same ``_tokenize`` stream produce identical frames, so a baseline file carrying a copy of the
-    target — even at a DIFFERENT path than ``--target``, which the path guard misses — would pool the
-    target's own frames into the baseline and inflate every reuse/survival rate toward a false
-    "on-frame" result. The content fingerprint self-excludes it alongside the path guard.
+    """sha256 of the WHOLE text as passed to ``audit_phraseology`` — the exact scored input (this
+    surface does NOT run ``strip_non_prose``; ``_walk_baseline`` hands the raw file text straight to the
+    audit). A baseline file carrying a copy of the target — even at a DIFFERENT path than ``--target``,
+    which the path guard misses — has the same text and is dropped before it pools the target's own
+    frames into the baseline and inflates every reuse/survival rate.
 
-    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
-    #278 / rank_turbulence_audit #280). Fail-CLOSED: the token stream folds case and drops
-    punctuation/whitespace relative to raw text, so the fingerprint's equivalence class is a SUPERSET
-    of the frame matcher's — a match can only DROP a copy, never re-admit one; a genuinely different
-    baseline doc has a different token stream and is KEPT."""
-    return hashlib.sha256(_FP_SEP.join(_tokenize(text)).encode("utf-8")).hexdigest()
+    Whole-text, NOT the ``_tokenize`` stream (PR #307 Codex review of the sibling ``voice_distance``
+    fix): the slot-frame and stance-frame matchers are punctuation-/case-SENSITIVE (e.g. the frame
+    templates carry literal ``,``/``;`` and a capitalized ``What``), so a token-stream fingerprint that
+    folds case and drops punctuation would OVER-EXCLUDE a baseline that differs from the target only in
+    those — silently *changing the reference corpus*, not merely self-excluding the target. Hashing the
+    whole text makes the fingerprint's equivalence class the string itself: it drops only an exact copy
+    and KEEPS any baseline the audit would score differently."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _strip_blockquotes(text: str) -> str:

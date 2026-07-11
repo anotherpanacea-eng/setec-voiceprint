@@ -66,7 +66,6 @@ import math
 import re
 import statistics
 import sys
-import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable, Sequence
@@ -119,23 +118,25 @@ def word_count(text: str) -> int:
     return len(_WORD_RE.findall(text))
 
 
-def _content_fingerprint(text: str) -> str:
-    """sha256 of the NFC-normalized WHOLE text. Unlike the token-stream siblings in the self-exclusion
-    sweep, this surface's signal is paragraph + sentence STRUCTURE over the raw text (paragraph-length
-    distribution, opening/closing typology, blank-line segmentation) — no word-token stream carries
-    it, and paragraph segmentation is whitespace/newline-SENSITIVE, so collapsing whitespace would
-    misrepresent the matcher. The fingerprint hashes the text verbatim (NFC only), so a baseline file
-    carrying a copy of the target — even at a DIFFERENT path than ``--target`` (which the path guard
-    misses) — is dropped before its structure pools into the baseline mean/SD and deflates the
-    z-scores toward a false "in-distribution" result.
+def _content_fingerprint(cleaned_text: str) -> str:
+    """sha256 of the WHOLE ``strip_non_prose``-cleaned text — the exact string ``audit_paragraphs(cleaned)``
+    reads before it does its own paragraph/sentence segmentation. Callers pass the ``strip_non_prose``
+    output computed with the same strip options the baseline loader uses, so a baseline file carrying a
+    copy of the target — even at a DIFFERENT path than ``--target`` (the path guard misses a copy under
+    another filename), and even one wrapped in front matter the preprocessing strips — has the same
+    cleaned scoring input and is dropped before its structure pools into the baseline mean/SD and
+    deflates the z-scores toward a false "in-distribution" result.
 
-    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
-    #278 / rank_turbulence_audit #280). Fail-CLOSED against the stated threat (a copy of the target
-    FILE at another path): a byte-/NFC-identical copy is dropped, and any text the surface would
-    paragraph-segment or score differently (different newlines, wording, or wrapping) is KEPT."""
-    return hashlib.sha256(
-        unicodedata.normalize("NFC", text).encode("utf-8")
-    ).hexdigest()
+    This surface's signal is paragraph + sentence STRUCTURE (paragraph-length distribution,
+    opening/closing typology, blank-line segmentation) — there is no word-token stream to hash, so there
+    is no token-stream over-exclusion bug to avoid; the whole cleaned text IS the scored input. Aligning
+    to that cleaned input (rather than the RAW text, and dropping the prior NFC normalization) matches
+    the PR #307 Codex review of the sibling ``voice_distance`` fix: the fingerprint's equivalence class
+    is the cleaned string itself, so it drops only an exact cleaned-text copy (catching a
+    front-matter-wrapped copy) while KEEPING any text the audit would paragraph-segment or score
+    differently (different newlines, wording, wrapping, or a Unicode-composition variant NFC would
+    over-collapse)."""
+    return hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
 
 
 # --- Opening / closing typology --------------------------------
@@ -547,24 +548,25 @@ def audit_baseline_paragraphs(
                 "reason": f"unreadable: {exc}",
             })
             continue
-        if (
-            target_fingerprint is not None
-            and _content_fingerprint(raw) == target_fingerprint
-        ):
-            # A copy of the target at a different path: its paragraph structure IS the target's, so
-            # pooling it into the baseline would pull the mean/SD toward the target and deflate the
-            # z-scores.
-            sys.stderr.write(
-                f"  excluding {p.name} from paragraph baseline "
-                "(content-duplicate of the target)\n"
-            )
-            continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
             allow_non_prose=allow_non_prose,
             strip_aggressive=strip_aggressive,
             strip_masking=strip_masking,
         )
+        if (
+            target_fingerprint is not None
+            and _content_fingerprint(cleaned) == target_fingerprint
+        ):
+            # A copy of the target at a different path: its cleaned scoring input (paragraph structure)
+            # IS the target's, so pooling it into the baseline would pull the mean/SD toward the target
+            # and deflate the z-scores. Compared on the CLEANED text so a copy wrapped in stripped front
+            # matter is still caught.
+            sys.stderr.write(
+                f"  excluding {p.name} from paragraph baseline "
+                "(content-duplicate of the target)\n"
+            )
+            continue
         a = audit_paragraphs(cleaned)
         if not a.get("available"):
             skipped_files.append({
@@ -1011,7 +1013,7 @@ def main(argv: list[str] | None = None) -> int:
                 strip_aggressive=args.strip_aggressive,
                 strip_masking=args.strip_masking,
                 target_path=target_path,
-                target_fingerprint=_content_fingerprint(raw),
+                target_fingerprint=_content_fingerprint(cleaned),
                 include_filenames=args.include_baseline_filenames,
             )
         except FileNotFoundError as exc:

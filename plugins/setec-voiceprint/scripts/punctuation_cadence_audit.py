@@ -50,7 +50,6 @@ import hashlib
 import json
 import re
 import sys
-import unicodedata
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -120,27 +119,25 @@ def _word_count(text: str) -> int:
     return len(_WORD_RE.findall(text))
 
 
-def _content_fingerprint(text: str) -> str:
-    """sha256 of the NFC-normalized WHOLE text. Unlike the token-stream siblings in the self-exclusion
-    sweep, this surface's signal IS the punctuation over the raw character sequence (per-mark
-    densities, interruption grammar, sentence-final distribution, punctuation bigrams) — there is no
-    word-token stream that carries it, and the interruption regexes are whitespace-SENSITIVE (their
-    length bounds count spaces), so collapsing whitespace would MISREPRESENT the matcher. The
-    fingerprint therefore hashes the text verbatim (NFC only, to fold Unicode composition), so a
-    baseline file carrying a copy of the target — even at a DIFFERENT path than ``--target`` (which
-    the path guard misses) — is dropped before its cadence pools into the baseline mean/SD and
+def _content_fingerprint(cleaned_text: str) -> str:
+    """sha256 of the WHOLE ``strip_non_prose``-cleaned text — the exact string
+    ``audit_punctuation_cadence(cleaned)`` reads. Callers pass the ``strip_non_prose`` output computed
+    with the SAME strip options the baseline loader uses, so a baseline file carrying a copy of the
+    target — even at a DIFFERENT path than ``--target`` (which the path guard misses under another
+    filename), and even one wrapped in front matter the preprocessing strips away — has the same
+    cleaned scoring input and is dropped before its cadence pools into the baseline mean/SD and
     deflates the z-scores toward a false "in-distribution" result.
 
-    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
-    #278 / rank_turbulence_audit #280). Fail-CLOSED against the stated threat (a copy of the target
-    FILE at another path): a byte-/NFC-identical copy is dropped, and any text the surface would score
-    even slightly differently (different whitespace, punctuation, or wording) is KEPT. The surface's
-    internal mark folding (e.g. ``--`` ≡ ``—``) is not reproduced here, so a mark-SUBSTITUTED copy is
-    treated as a distinct document — acceptable for this lower-severity content-duplicate-file
-    variant."""
-    return hashlib.sha256(
-        unicodedata.normalize("NFC", text).encode("utf-8")
-    ).hexdigest()
+    Unlike the token-stream siblings in the self-exclusion sweep, this surface's signal IS the
+    punctuation over the character sequence (per-mark densities, interruption grammar, sentence-final
+    distribution, punctuation bigrams) — there is no word-token stream that carries it, so there is
+    nothing to hash but the text itself. Hashing the cleaned string directly (no NFC normalization,
+    which could over-collapse a Unicode-composition variant the audit treats as distinct) aligns this
+    fingerprint to the cleaned scoring input, like ``voice_distance`` (PR #307 Codex review). Its
+    equivalence class is the cleaned string itself: it drops only an exact cleaned-text copy (and so
+    catches a front-matter-wrapped copy) while KEEPING any text the audit would score differently
+    (different whitespace, punctuation, or wording)."""
+    return hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
 
 
 def _per_thousand(count: int, n_words: int) -> float:
@@ -373,23 +370,26 @@ def audit_baseline_punctuation(
                 "reason": f"unreadable: {exc}",
             })
             continue
-        if (
-            target_fingerprint is not None
-            and _content_fingerprint(raw) == target_fingerprint
-        ):
-            # A copy of the target at a different path: its cadence IS the target's, so pooling it
-            # into the baseline would pull the mean/SD toward the target and deflate the z-scores.
-            sys.stderr.write(
-                f"  excluding {p.name} from punctuation baseline "
-                "(content-duplicate of the target)\n"
-            )
-            continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
             allow_non_prose=allow_non_prose,
             strip_aggressive=strip_aggressive,
             strip_masking=strip_masking,
         )
+        if (
+            target_fingerprint is not None
+            and _content_fingerprint(cleaned) == target_fingerprint
+        ):
+            # A copy of the target at a different path: its cleaned scoring input IS the target's, so
+            # pooling it into the baseline would pull the mean/SD toward the target and deflate the
+            # z-scores. Compared on the CLEANED text so a copy wrapped in stripped front matter is
+            # still caught (and a merely punctuation-/case-distinct baseline, which the audit scores
+            # differently, is NOT over-excluded).
+            sys.stderr.write(
+                f"  excluding {p.name} from punctuation baseline "
+                "(content-duplicate of the target)\n"
+            )
+            continue
         a = audit_punctuation_cadence(cleaned)
         if not a.get("available"):
             skipped_files.append({
@@ -816,7 +816,7 @@ def main(argv: list[str] | None = None) -> int:
                 strip_aggressive=args.strip_aggressive,
                 strip_masking=args.strip_masking,
                 target_path=target_path,
-                target_fingerprint=_content_fingerprint(raw),
+                target_fingerprint=_content_fingerprint(cleaned),
                 include_filenames=args.include_baseline_filenames,
             )
         except FileNotFoundError as exc:

@@ -56,7 +56,6 @@ import json
 import math
 import re
 import sys
-import unicodedata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -136,23 +135,20 @@ def count_words(text: str) -> int:
 
 
 def _content_fingerprint(text: str) -> str:
-    """sha256 of the NFC-normalized WHOLE text. Unlike the token-stream siblings in the self-exclusion
-    sweep, this surface's six rates are per-SENTENCE (fragment, sentence-initial CC, contraction,
-    adjacent-repetition, interjection aside, very-short) and depend on sentence segmentation + spaCy
-    parsing + punctuation — no single word-token stream carries them, and sentence splitting is
-    whitespace/punctuation-SENSITIVE, so collapsing whitespace would misrepresent the matcher. The
-    fingerprint hashes the text verbatim (NFC only), so a baseline file carrying a copy of the target
-    — even at a DIFFERENT path than ``--target`` (which the path guard misses) — is dropped before its
-    roughness rates pool into the baseline mean/SD and deflate the z-scores toward a false
-    "in-distribution" result.
+    """sha256 of the WHOLE text as passed to ``extract_features`` — the exact scored input (this
+    surface does NOT run ``strip_non_prose``; ``aggregate_baseline`` hands the raw file text straight to
+    the audit). The six rates are per-SENTENCE (fragment, sentence-initial CC, contraction,
+    adjacent-repetition, interjection aside, very-short) and depend on sentence segmentation + spaCy +
+    punctuation, so there is no word-token stream to hash — hashing the whole text is the right
+    granularity: a baseline file carrying a copy of the target (even at a DIFFERENT path than
+    ``--target``, which the path guard misses) has the same text and is dropped before its roughness
+    rates pool into the baseline mean/SD and deflate the z-scores.
 
-    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
-    #278 / rank_turbulence_audit #280). Fail-CLOSED against the stated threat (a copy of the target
-    FILE at another path): a byte-/NFC-identical copy is dropped, and any text the surface would
-    segment or score differently is KEPT."""
-    return hashlib.sha256(
-        unicodedata.normalize("NFC", text).encode("utf-8")
-    ).hexdigest()
+    Whole text verbatim, NOT an NFC-folded form (PR #307 Codex review of the sibling ``voice_distance``
+    fix): the fingerprint's equivalence class is the string itself, so it drops only an exact copy and
+    KEEPS any text the audit would segment or score differently — NFC could over-collapse a
+    Unicode-composition variant the sentence/word tokenizers treat as distinct."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 # ---------- sentence splitting ----------
