@@ -66,6 +66,8 @@ _FORWARD_MARKERS = (
 _SIG_DELIM = "-- "
 _HTML_STRIP_SELECTORS = ("div.gmail_quote", ".gmail_attr", "blockquote")
 _ADDR_TOKEN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+_MESSAGE_ID = re.compile(r"<[^<>\s]+>")
+_PRIVATE_LOCATOR_DOMAIN = b"setec-gmail-private-locator-v1\x00"
 
 
 # --------------- date + era ---------------------------------------
@@ -117,6 +119,33 @@ def _decode_header(value: str | None) -> str:
         else:
             out.append(text)
     return "".join(out)
+
+
+def _header_message_ids(value: str | None) -> list[str]:
+    """Structurally parse RFC-style message-id tokens without storing them."""
+    return _MESSAGE_ID.findall(value or "")
+
+
+def _private_locator(kind: str, raw: str) -> str:
+    payload = kind.encode("ascii") + b"\x00" + raw.encode("utf-8")
+    return "sha256:" + hashlib.sha256(_PRIVATE_LOCATOR_DOMAIN + payload).hexdigest()
+
+
+def private_message_locators(msg: Message) -> tuple[str | None, str | None]:
+    """Return non-reversible (thread, entry) preimages for R1a export.
+
+    A thread roots at the first References id, then In-Reply-To, then its own
+    Message-ID for a newly composed thread.  The entry locator always needs the
+    message's own Message-ID.  Missing structure is explicit: the later exporter
+    marks that record atomic/degraded instead of inventing a thread.
+    """
+    references = _header_message_ids(msg.get("References"))
+    parents = _header_message_ids(msg.get("In-Reply-To"))
+    own = _header_message_ids(msg.get("Message-ID"))
+    root = (references or parents or own)
+    thread = _private_locator("thread", root[0]) if root else None
+    entry = _private_locator("entry", own[0]) if own else None
+    return thread, entry
 
 
 # --------------- selection ----------------------------------------
@@ -720,6 +749,13 @@ def parse_options(args: argparse.Namespace) -> Options:
 # --------------- per-message processing ---------------------------
 
 
+@dataclass(frozen=True)
+class PreparedMessage:
+    piece: ac.AcquiredPiece
+    private_thread_locator: str | None
+    private_entry_locator: str | None
+
+
 def process_message(
     msg: Message, opts: Options, recipients: RecipientMap, summary: Summary,
 ):
@@ -806,16 +842,30 @@ def process_message(
         era=_era_from_date(date),
         notes=notes,
     )
-    return piece
+    thread_locator, entry_locator = private_message_locators(msg)
+    return PreparedMessage(piece, thread_locator, entry_locator)
 
 
-def emit_piece(piece, opts: Options, summary: Summary) -> None:
+def _augment_private_meta(meta_path: Path, prepared: PreparedMessage) -> None:
+    data = json.loads(meta_path.read_text(encoding="utf-8"))
+    if prepared.private_thread_locator is not None:
+        data["author_corpus_thread_locator"] = prepared.private_thread_locator
+    if prepared.private_entry_locator is not None:
+        data["author_corpus_entry_locator"] = prepared.private_entry_locator
+    meta_path.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+
+
+def emit_piece(prepared: PreparedMessage, opts: Options, summary: Summary) -> None:
+    piece = prepared.piece
     if ac.content_hash_already_present(piece.content_hash, opts.output_dir):
         summary.skipped_duplicate += 1
         return
-    text_path, _ = ac.write_piece(
+    text_path, meta_path = ac.write_piece(
         piece, output_dir=opts.output_dir, scraper_version=SCRAPER_VERSION,
     )
+    _augment_private_meta(meta_path, prepared)
     ai_status = _ai_status_from_date(piece.date_written)
     entry = ac.compose_manifest_entry(
         piece,
@@ -882,15 +932,15 @@ def run(args: argparse.Namespace) -> int:
             break
         if _own_address_match(msg, opts.own_address):
             own_matches_total += 1
-        piece = process_message(msg, opts, recipients, summary)
-        if piece is None:
+        prepared = process_message(msg, opts, recipients, summary)
+        if prepared is None:
             continue
         if opts.dry_run:
             summary.acquired += 1
             if summary.acquired <= 5:
-                sys.stderr.write(f"  would write: {piece.title!r}\n")
+                sys.stderr.write(f"  would write: {prepared.piece.title!r}\n")
             continue
-        emit_piece(piece, opts, summary)
+        emit_piece(prepared, opts, summary)
 
     dedupe_only = summary.acquired == 0 and summary.skipped_duplicate > 0
     empty_is_error = (

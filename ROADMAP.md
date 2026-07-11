@@ -79,6 +79,13 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
 
 ## Status reconciliation (2026-06-13)
 
+- **Multi-register author-corpus producer (R1a, reviewed build in progress).**
+  `author_corpus_export` packages the user's own sent Messages/Gmail identity
+  baselines behind explicit `text.*` / `email.*` registers, HMAC-pseudonymous
+  stable groups, a standard no-prose normalized-entrypoint receipt, and an enforced
+  degraded/train-only posture when historical source output lacks thread identity.
+  Tracked in #311; the pinned voicewright consumer/split planner is the separate R1b.
+
 Supplements the 2026-06-06 pass below for the **1.110 → 1.116** window. At the time of this pass the plugin was at **1.116.0** (the 2026-06-17 section above carries it to 1.117.0; the 2026-06-06 section below still says 1.109.x). Where this conflicts with the older reconciliation or the inline markers, this is authoritative.
 
 ### Shipped since 2026-06-06

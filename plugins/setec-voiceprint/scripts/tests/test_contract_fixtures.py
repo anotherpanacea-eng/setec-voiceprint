@@ -39,6 +39,7 @@ import gen_contract_fixtures as gen  # type: ignore  # noqa: E402
 # The surface -> task_surface mapping the goldens must reflect (the
 # fragment `surface` value each script declares as TASK_SURFACE).
 EXPECTED_TASK_SURFACE = {
+    "author_corpus_export": "voice_coherence_acquisition",
     "variance_audit": "smoothing_diagnosis",
     "manuscript_audit": "smoothing_diagnosis",
     "repetition_audit": "smoothing_diagnosis",
@@ -67,6 +68,13 @@ ALL_SURFACES = sorted(EXPECTED_TASK_SURFACE)
 
 def test_generator_knows_every_surface():
     assert gen.surfaces() == ALL_SURFACES
+
+
+def test_author_corpus_fixture_preserves_null_target_path():
+    envelope = json.loads(
+        (FIXTURES_DIR / "author_corpus_export.json").read_text(encoding="utf-8")
+    )
+    assert envelope["target"]["path"] is None
 
 
 def test_fixtures_dir_holds_only_known_goldens():
@@ -106,7 +114,10 @@ def test_every_golden_is_a_valid_envelope(surface):
     assert env["claim_license_rendered"]
     # Volatile fields are normalized.
     assert env["version"] == gen.VERSION_SENTINEL
-    assert env["target"]["path"] == gen.PATH_SENTINEL
+    if surface == "author_corpus_export":
+        assert env["target"]["path"] is None
+    else:
+        assert env["target"]["path"] == gen.PATH_SENTINEL
 
 
 def test_normalization_sentinels_applied_for_narrative():

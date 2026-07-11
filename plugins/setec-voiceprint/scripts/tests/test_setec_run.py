@@ -54,6 +54,7 @@ REQUIRED_TOP_LEVEL_KEYS = frozenset({
 # the position_pair_register stance-consistency surface adopted for apodictic),
 # with their expected script module basename and delivery mode.
 EXPECTED_SURFACES = {
+    "author_corpus_export": ("author_corpus_export.py", "stdout"),
     "variance_audit": ("variance_audit.py", "stdout"),
     "voice_distance": ("voice_distance.py", "stdout"),
     "idiolect_detector": ("idiolect_detector.py", "stdout"),

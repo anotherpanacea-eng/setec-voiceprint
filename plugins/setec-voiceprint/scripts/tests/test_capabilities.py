@@ -170,6 +170,7 @@ def test_filter_by_consumer_setec_voicewright():
     out = cap.filter_entries(m["entries"], consumer="setec-voicewright")
     ids = {e["id"] for e in out}
     expected = {
+        "author_corpus_export",
         "voice_fingerprint", "voice_distance", "idiolect_detector",
         "mimicry_cosplay_audit", "general_imposters", "binoculars_audit",
         "narrative_decision_audit", "variance_audit",

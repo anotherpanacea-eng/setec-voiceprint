@@ -1150,6 +1150,33 @@ This pulls `requests`, `feedparser`, `beautifulsoup4`, `lxml`, `python-dateutil`
 and `pypdf`. Ordinary diagnostics, validation, voice distance, and plugin
 installation do NOT need this layer.
 
+### Private multi-register author-corpus export
+
+`author_corpus_export.py` is the normalized, sent-only bridge from the private
+`acquire_imessage_sent.py` / `acquire_gmail_sent.py` outputs to voicewright's
+`voicewright-author-corpus/1` package. It requires source-kind-qualified register
+maps, for example `imessage_sent:personal=text.personal` and
+`gmail_sent:personal=email.personal`, plus an owner-only HMAC key and a destination
+under `ai-prose-baselines-private/`. The SETEC JSON envelope contains only
+`results.producer_receipt`; prose, paths, raw contacts, message ids, and HMAC
+preimages remain local.
+
+A bounded (`--max-records` <= 20), interactive `--live-smoke-confirmed` run must
+land first, with at least one record from every configured source-kind/register
+pair. Inspect that bounded package locally. The matching full export must use a
+different sibling destination; it revalidates a 24-hour receipt bound to the
+producer revision, source snapshot, key id, register map, AI-status allowlist,
+bounded package hash, and bounded receipt hash. Gmail
+outputs acquired before private thread locators existed are stamped
+`record_atomic_degraded=true`; consumers must keep those packages train-only and
+non-comparative or reacquire them from the authorized Takeout source.
+
+Create the HMAC key under the private root with an owner-only umask, for example
+`umask 077 && openssl rand -out ai-prose-baselines-private/author-corpus.key 32`.
+Use separate names such as `bounded-smoke/` and `full-package/` beneath the same
+private parent; the smoke receipt is kept in that parent and never emitted in the
+normalized JSON envelope.
+
 ### Manual live-smoke
 
 CI tests run against fixture HTTP responses (`scripts/test_data/acquisition_blog_fixture/`)

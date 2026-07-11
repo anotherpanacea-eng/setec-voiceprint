@@ -237,6 +237,19 @@ def test_weak_signal_not_triggered_by_prose(tmp_path):
     assert not G._has_weak_quote_signal("as I wrote: the deadline is Friday")
 
 
+def test_private_thread_and_entry_locators_are_structural_and_nonreversible():
+    msg = G.email.message_from_string(
+        "Message-ID: <mine@example.com>\n"
+        "References: <root@example.com> <parent@example.com>\n\nbody"
+    )
+    thread, entry = G.private_message_locators(msg)
+    assert thread and entry and thread.startswith("sha256:") and entry.startswith("sha256:")
+    assert thread != entry
+    assert "root@example.com" not in thread and "mine@example.com" not in entry
+    no_ids = G.email.message_from_string("Subject: no ids\n\nbody")
+    assert G.private_message_locators(no_ids) == (None, None)
+
+
 def test_unwindowed_full_export_refuses_without_receipt(tmp_path, mbox):
     out = _out(tmp_path)
     with pytest.raises(SystemExit):

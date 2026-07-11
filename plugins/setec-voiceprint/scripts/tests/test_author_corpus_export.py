@@ -1,0 +1,595 @@
+from __future__ import annotations
+
+import copy
+import dataclasses
+import datetime as dt
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+
+import pytest
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+import author_corpus_export as E  # type: ignore
+import setec_run  # type: ignore
+
+
+def _source(root: Path, kind: str, text: str, *, ai_status: str = "pre_ai_human",
+            stable: bool = True) -> Path:
+    source_value = E.SOURCE_VALUES[kind]
+    legacy = "personal"
+    src = root / kind
+    src.mkdir(parents=True, exist_ok=True)
+    text_path = src / "piece.txt"
+    text_path.write_text(text, encoding="utf-8")
+    content_hash = E._sha(text.encode("utf-8"))
+    meta = {"content_hash": content_hash}
+    if stable and kind == "imessage_sent":
+        meta.update({
+            "author_corpus_group_locator": "sha256:" + "1" * 64,
+            "author_corpus_entry_locator": "sha256:" + "2" * 64,
+        })
+    elif stable:
+        meta.update({
+            "author_corpus_thread_locator": "sha256:" + "3" * 64,
+            "author_corpus_entry_locator": "sha256:" + "4" * 64,
+        })
+    text_path.with_suffix(".meta.json").write_text(
+        json.dumps(meta), encoding="utf-8",
+    )
+    entry = {
+        "id": f"{kind}-1", "path": "piece.txt", "author": "Joshua",
+        "persona": "joshua", "register": legacy, "date_written": "2017-01-02",
+        "ai_status": ai_status, "language_status": "native", "word_count": 8,
+        "use": ["voice_profile"], "split": "baseline", "privacy": "private",
+        "content_hash": content_hash, "source": source_value,
+        "corpus_role": "identity_baseline", "era": "pre_chatgpt",
+        "consent_status": "author_consent", "acquired_via": f"acquire_{kind}_1",
+    }
+    manifest = src / "draft_manifest.jsonl"
+    manifest.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    return manifest
+
+
+@pytest.fixture
+def private_root(tmp_path: Path) -> Path:
+    root = tmp_path / "ai-prose-baselines-private"
+    root.mkdir(mode=0o700)
+    return root
+
+
+def _build(private_root: Path, *, gmail_stable: bool = True, key: bytes = b"k" * 32):
+    im = _source(private_root, "imessage_sent", "Text message words in my own compact rhythm.")
+    gm = _source(
+        private_root, "gmail_sent",
+        "Email message words in a somewhat more deliberate professional rhythm.",
+        stable=gmail_stable,
+    )
+    return E.build_export(
+        sources={"imessage_sent": im, "gmail_sent": gm},
+        register_map={
+            "gmail_sent:personal": "email.personal",
+            "imessage_sent:personal": "text.personal",
+        },
+        allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=key,
+    )
+
+
+def test_frozen_crypto_preimages_and_hash_vectors():
+    key = bytes(range(32))
+    raw = "Café\r\nline\n".encode("utf-8")
+    content_hash = E._sha(raw)
+    normalized_hash = E._sha(E._normalize_text(raw.decode("utf-8")).encode("utf-8"))
+    group = E._hmac(key, E.DOMAIN_GROUP, {
+        "source_kind": "gmail_sent", "private_group_locator": "sha256:" + "1" * 64,
+    }, "grp:hmac-sha256:")
+    entry = E._hmac(key, E.DOMAIN_ENTRY, {
+        "source_kind": "gmail_sent", "private_entry_locator": "sha256:" + "2" * 64,
+        "content_sha256": content_hash,
+    }, "src:hmac-sha256:")
+    record = {
+        "schema": E.RECORD_SCHEMA, "id": "", "persona": "joshua",
+        "register": "email.personal", "role": "author",
+        "text_path": f"texts/{content_hash[7:9]}/{content_hash[9:11]}/{content_hash[7:]}.txt",
+        "source_entry_fingerprint": entry, "source_group": group,
+        "conversation_id": None, "date": "2017-01-02",
+        "corpus_role": "identity_baseline", "use": ["voice_profile"],
+        "consent_status": "author_consent", "ai_status": "pre_ai_human",
+        "source_kind": "gmail_sent", "content_sha256": content_hash,
+        "normalized_text_sha256": normalized_hash,
+    }
+    record["id"] = E._record_id(record)
+    snapshot = E._source_snapshot_hash([{
+        "source_kind": "gmail_sent", "source_manifest_sha256": "sha256:" + "3" * 64,
+        "source_id": "gmail-1", "content_sha256": content_hash,
+        "private_group_locator": "sha256:" + "1" * 64,
+        "private_entry_locator": "sha256:" + "2" * 64,
+    }])
+    receipt = {
+        "schema": E.RECEIPT_SCHEMA, "surface": E.TOOL_NAME,
+        "surface_version": E.SURFACE_VERSION, "producer_revision": "0" * 40,
+        "source_snapshot_sha256": snapshot, "hmac_key_id": E._sha(E.DOMAIN_KEY_ID + key),
+        "register_map": {"gmail_sent:personal": "email.personal"},
+        "allowed_ai_status": ["pre_ai_human"],
+        "entries": [{"source_entry_fingerprint": entry, "source_group": group,
+                     "record_id": record["id"]}],
+        "record_ids": [record["id"]], "package_hash": E._package_hash([record]),
+        "counts": {"records": 1, "by_register": {"email.personal": 1},
+                   "by_ai_status": {"pre_ai_human": 1},
+                   "by_source_kind": {"gmail_sent": 1},
+                   "by_era": {"pre_chatgpt": 1}},
+        "record_atomic_degraded": False,
+    }
+    config_hash = E._digest(E.DOMAIN_CONFIG, {
+        "producer_revision": receipt["producer_revision"],
+        "source_snapshot_sha256": snapshot, "hmac_key_id": receipt["hmac_key_id"],
+        "register_map": receipt["register_map"],
+        "allowed_ai_status": receipt["allowed_ai_status"], "persona": "joshua",
+    })
+    assert receipt["hmac_key_id"] == "sha256:2a0ec87d15516b1aa6e3e3c85f6b2612ac2704b2994d0d2756fae0ab5cb2d0df"
+    assert group == "grp:hmac-sha256:a054e85bd96acb55ff84d51cccfe23023545cee16ccf7e8437000ed7c39f62a1"
+    assert entry == "src:hmac-sha256:7a5bea655cf090e739da86996be4f626dca8a12bab308044651764c532a07f81"
+    assert content_hash == "sha256:1ce843ec991710b45d95e8a9869e3eff33043f872d74661ba5b52b99dacc0c3d"
+    assert normalized_hash == "sha256:84b301e724478c998289edd154a620657ae807c178a4360bd4d0dfb9670d9d59"
+    assert record["id"] == "sha256:077048a7f4988c175f4202894da845acc9050cf9d41f06630ddefa7d931fa092"
+    assert snapshot == "sha256:1bf1694953fc09554b0cc8e49830cb440f7e3f91212070739f8d6a85f9544f4e"
+    assert receipt["package_hash"] == "sha256:312fafeb364e5bee6451369515a459a2dd6989ccbd20122abead00c9e8666d41"
+    assert E._verify_package([record], {content_hash: raw}, receipt) == "sha256:9ac14b80d29d610f38458e327a59a75b314d9c9f78469db5d5d5e799892dddae"
+    assert config_hash == "sha256:14bbbc67497e6cf9d8c37da126c3316e0e73162d2346dd5dafc5972ea6225c75"
+
+
+def test_canonical_order_and_unicode_control_guards():
+    assert E._digest(E.DOMAIN_CONFIG, {"b": 2, "a": 1}) == E._digest(
+        E.DOMAIN_CONFIG, {"a": 1, "b": 2},
+    )
+    with pytest.raises(ValueError, match="NFC"):
+        E._require_string("persona", "Cafe\u0301")
+    with pytest.raises(ValueError, match="control"):
+        E._require_string("persona", "safe\u202Eunsafe")
+
+
+def test_builds_distinct_registers_and_closed_receipt(private_root: Path):
+    records, texts, receipt, config_hash, evidence = _build(private_root)
+    assert {r["register"] for r in records} == {"text.personal", "email.personal"}
+    assert not receipt["record_atomic_degraded"]
+    assert receipt["counts"]["records"] == 2
+    assert sorted(e["record_id"] for e in receipt["entries"]) == receipt["record_ids"]
+    assert all(e["source_entry_fingerprint"].startswith("src:hmac-sha256:")
+               for e in receipt["entries"])
+    assert all(e["source_group"].startswith("grp:hmac-sha256:")
+               for e in receipt["entries"])
+    assert len(texts) == 2 and E.SHA_RE.fullmatch(config_hash)
+    assert type(evidence) is E._BuildEvidence
+    assert set(receipt) == {
+        "schema", "surface", "surface_version", "producer_revision",
+        "source_snapshot_sha256", "hmac_key_id", "register_map",
+        "allowed_ai_status", "entries", "record_ids", "package_hash",
+        "counts", "record_atomic_degraded",
+    }
+
+
+def test_hmac_key_and_group_change_identities(private_root: Path):
+    records1, _, receipt1, _, _ = _build(private_root, key=b"a" * 32)
+    records2, _, receipt2, _, _ = _build(private_root, key=b"b" * 32)
+    assert receipt1["hmac_key_id"] != receipt2["hmac_key_id"]
+    assert records1[0]["source_group"] != records2[0]["source_group"]
+    assert records1[0]["id"] != records2[0]["id"]
+
+
+def test_missing_gmail_thread_or_entry_forces_degraded(private_root: Path):
+    _, _, receipt, _, _ = _build(private_root, gmail_stable=False)
+    assert receipt["record_atomic_degraded"] is True
+
+
+def test_legacy_imessage_contact_label_group_is_degraded(private_root: Path):
+    manifest = _source(
+        private_root, "imessage_sent", "Enough words for legacy Messages output.",
+        stable=False,
+    )
+    meta = manifest.parent / "piece.meta.json"
+    data = json.loads(meta.read_text(encoding="utf-8"))
+    data["conversation_day_key"] = "contact_01|2020-01-01"
+    meta.write_text(json.dumps(data), encoding="utf-8")
+    _, _, receipt, _, _ = E.build_export(
+        sources={"imessage_sent": manifest},
+        register_map={"imessage_sent:personal": "text.personal"},
+        allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+    )
+    assert receipt["record_atomic_degraded"] is True
+
+
+def test_disallowed_ai_status_and_missing_map_refuse(private_root: Path):
+    manifest = _source(private_root, "gmail_sent", "Enough words for this email fixture.",
+                       ai_status="unknown")
+    with pytest.raises(ValueError, match="not explicitly allowed"):
+        E.build_export(
+            sources={"gmail_sent": manifest},
+            register_map={"gmail_sent:personal": "email.personal"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+        )
+    with pytest.raises(ValueError, match="register_map"):
+        E.build_export(
+            sources={"gmail_sent": manifest}, register_map={},
+            allowed_ai_status=["unknown"], persona="joshua", hmac_key=b"k" * 32,
+        )
+
+
+def test_publish_is_atomic_private_and_rejects_overwrite(private_root: Path):
+    records, texts, receipt, config_hash, evidence = _build(private_root)
+    out = private_root / "package"
+    E.publish_package(
+        out, records, texts, receipt, hmac_key=b"k" * 32, evidence=evidence,
+    )
+    assert (out / "records.jsonl").is_file()
+    assert stat.S_IMODE((out / "records.jsonl").stat().st_mode) == 0o600
+    assert stat.S_IMODE((out / "texts").stat().st_mode) == 0o700
+    with pytest.raises(ValueError, match="already exists"):
+        E.publish_package(
+            out, records, texts, receipt, hmac_key=b"k" * 32, evidence=evidence,
+        )
+    assert not list(private_root.glob(".package.staging-*"))
+
+
+@pytest.mark.parametrize("mutation", [
+    "package_hash", "record_id", "source_group", "entry_mapping",
+    "content_bytes", "record_count", "register_count", "era_distribution",
+    "degraded_status",
+])
+def test_publish_reverifies_every_package_binding(private_root: Path, mutation: str):
+    records, texts, receipt, config_hash, evidence = _build(private_root)
+    records = copy.deepcopy(records)
+    texts = dict(texts)
+    receipt = copy.deepcopy(receipt)
+    if mutation == "package_hash":
+        receipt["package_hash"] = "sha256:" + "0" * 64
+    elif mutation == "record_id":
+        records[0]["id"] = "sha256:" + "0" * 64
+    elif mutation == "source_group":
+        records[0]["source_group"] = "grp:hmac-sha256:" + "0" * 64
+    elif mutation == "entry_mapping":
+        receipt["entries"][0]["record_id"] = "sha256:" + "0" * 64
+    elif mutation == "content_bytes":
+        texts[records[0]["content_sha256"]] += b"tampered"
+    elif mutation == "record_count":
+        receipt["counts"]["records"] += 1
+    elif mutation == "register_count":
+        key = next(iter(receipt["counts"]["by_register"]))
+        receipt["counts"]["by_register"][key] += 1
+    elif mutation == "era_distribution":
+        receipt["counts"]["by_era"] = {"pre_ai_widespread": len(records)}
+    elif mutation == "degraded_status":
+        receipt["record_atomic_degraded"] = not receipt["record_atomic_degraded"]
+    out = private_root / f"tampered-{mutation}"
+    with pytest.raises(ValueError):
+        E.publish_package(
+            out, records, texts, receipt, hmac_key=b"k" * 32, evidence=evidence,
+        )
+    assert not out.exists()
+
+
+def test_degraded_posture_cannot_be_suppressed_with_a_recomputed_public_digest(
+    private_root: Path,
+):
+    manifest = _source(
+        private_root, "imessage_sent", "Enough words for degraded evidence.",
+        stable=False,
+    )
+    records, texts, receipt, _, evidence = E.build_export(
+        sources={"imessage_sent": manifest},
+        register_map={"imessage_sent:personal": "text.personal"},
+        allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+    )
+    assert receipt["record_atomic_degraded"] is True
+    receipt["record_atomic_degraded"] = False
+    recomputed_hash = E._digest(E.DOMAIN_RECEIPT, receipt)
+    assert E.SHA_RE.fullmatch(recomputed_hash)
+    with pytest.raises(TypeError):
+        dataclasses.replace(
+            evidence, record_atomic_degraded=False, receipt_hash=recomputed_hash,
+        )
+    with pytest.raises(ValueError, match="degraded posture"):
+        E.publish_package(
+            private_root / "forged-degraded", records, texts, receipt,
+            hmac_key=b"k" * 32, evidence=evidence,
+        )
+    with pytest.raises(ValueError, match="immutable evidence"):
+        E.publish_package(
+            private_root / "forged-evidence", records, texts, receipt,
+            hmac_key=b"k" * 32, evidence=E._BuildEvidence(),
+        )
+
+
+def test_source_symlink_and_contact_map_refuse(private_root: Path):
+    manifest = _source(private_root, "gmail_sent", "Enough words for source path safety.")
+    real = manifest.parent / "piece.txt"
+    real.rename(manifest.parent / "real.txt")
+    os.symlink("real.txt", real)
+    with pytest.raises(ValueError, match="symlink"):
+        E.build_export(
+            sources={"gmail_sent": manifest},
+            register_map={"gmail_sent:personal": "email.personal"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+        )
+    with pytest.raises(ValueError, match="contact/recipient"):
+        E.build_export(
+            sources={"gmail_sent": private_root / "contact_map.json"},
+            register_map={"gmail_sent:personal": "email.personal"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+        )
+
+
+def test_json_dry_run_uses_standard_no_path_envelope(private_root: Path, capsys):
+    manifest = _source(private_root, "gmail_sent", "Enough words for envelope fixture.")
+    key = private_root / "key.bin"
+    key.write_bytes(b"z" * 32)
+    key.chmod(0o600)
+    out = private_root / "package"
+    rc = E.main([
+        "--source-manifest", f"gmail_sent={manifest}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(out), "--dry-run", "--json",
+    ])
+    assert rc == 0 and not out.exists()
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["schema_version"] == "1.0"
+    assert envelope["task_surface"] == "voice_coherence_acquisition"
+    assert envelope["target"] == {"path": None, "words": 0}
+    assert set(envelope["results"]) == {"producer_receipt"}
+    blob = json.dumps(envelope)
+    assert str(private_root) not in blob
+
+
+def test_full_write_requires_matching_smoke(private_root: Path):
+    manifest = _source(private_root, "gmail_sent", "Enough words for smoke fixture.")
+    key = private_root / "key.bin"
+    key.write_bytes(b"z" * 32)
+    key.chmod(0o600)
+    args = E.build_arg_parser().parse_args([
+        "--source-manifest", f"gmail_sent={manifest}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(private_root / "full"),
+    ])
+    with pytest.raises(PermissionError, match="prior bounded live-smoke"):
+        E.run(args)
+
+
+def test_bounded_smoke_then_distinct_full_export_succeeds(
+    private_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    im = _source(private_root, "imessage_sent", "Enough text message words for smoke.")
+    gm = _source(private_root, "gmail_sent", "Enough email words for smoke coverage.")
+    key = private_root / "key.bin"
+    key.write_bytes(b"z" * 32)
+    key.chmod(0o600)
+    common = [
+        "--source-manifest", f"imessage_sent={im}",
+        "--source-manifest", f"gmail_sent={gm}",
+        "--register-map", "imessage_sent:personal=text.personal",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key),
+    ]
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    smoke_args = E.build_arg_parser().parse_args(common + [
+        "--output-dir", str(private_root / "bounded-smoke"),
+        "--max-records", "2", "--live-smoke-confirmed",
+    ])
+    smoke = E.run(smoke_args)
+    assert smoke["results"]["producer_receipt"]["counts"]["records"] == 2
+    full_args = E.build_arg_parser().parse_args(common + [
+        "--output-dir", str(private_root / "full-package"),
+    ])
+    full = E.run(full_args)
+    assert full["results"]["producer_receipt"]["counts"]["records"] == 2
+    assert (private_root / "full-package" / "producer_receipt.json").is_file()
+
+
+def test_bounded_smoke_requires_every_source_register_pair(private_root: Path):
+    im = _source(private_root, "imessage_sent", "Enough text words for pair coverage.")
+    gm = _source(private_root, "gmail_sent", "Enough email words for pair coverage.")
+    with pytest.raises(ValueError, match="source-kind/register pair"):
+        E.build_export(
+            sources={"imessage_sent": im, "gmail_sent": gm},
+            register_map={
+                "imessage_sent:personal": "text.personal",
+                "gmail_sent:personal": "email.personal",
+            },
+            allowed_ai_status=["pre_ai_human"], persona="joshua",
+            hmac_key=b"k" * 32, max_records=1,
+        )
+
+
+def test_smoke_receipt_rejects_malformed_stale_and_same_destination(private_root: Path):
+    records, texts, receipt, config_hash, evidence = _build(private_root)
+    smoke = private_root / "bounded"
+    E.publish_package(
+        smoke, records, texts, receipt, hmac_key=b"k" * 32, evidence=evidence,
+    )
+    E._write_smoke_receipt(smoke, config_hash, receipt, records)
+    with pytest.raises(PermissionError, match="distinct destination"):
+        E._require_smoke_receipt(smoke, config_hash, receipt, records, b"k" * 32)
+    path = E._smoke_path(smoke)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["confirmed_at"] = (
+        dt.datetime.now(dt.timezone.utc) - E.SMOKE_MAX_AGE - dt.timedelta(seconds=1)
+    ).isoformat(timespec="seconds")
+    path.write_text(json.dumps(data), encoding="utf-8")
+    with pytest.raises(PermissionError, match="stale"):
+        E._require_smoke_receipt(
+            private_root / "full", config_hash, receipt, records, b"k" * 32,
+        )
+    path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError, match="JSON object"):
+        E._require_smoke_receipt(
+            private_root / "full", config_hash, receipt, records, b"k" * 32,
+        )
+
+
+def test_smoke_receipt_revalidates_the_bounded_artifact(private_root: Path):
+    records, texts, receipt, config_hash, evidence = _build(private_root)
+    smoke = private_root / "bounded"
+    E.publish_package(
+        smoke, records, texts, receipt, hmac_key=b"k" * 32, evidence=evidence,
+    )
+    E._write_smoke_receipt(smoke, config_hash, receipt, records)
+    text_path = smoke / records[0]["text_path"]
+    text_path.write_bytes(text_path.read_bytes() + b"tampered")
+    with pytest.raises(ValueError, match="exact text bytes"):
+        E._require_smoke_receipt(
+            private_root / "full", config_hash, receipt, records, b"k" * 32,
+        )
+
+
+def test_malformed_smoke_uses_standard_unavailable_envelope(private_root: Path, capsys):
+    records, texts, receipt, config_hash, evidence = _build(private_root)
+    smoke = private_root / "bounded"
+    E.publish_package(
+        smoke, records, texts, receipt, hmac_key=b"k" * 32, evidence=evidence,
+    )
+    E._write_smoke_receipt(smoke, config_hash, receipt, records)
+    E._smoke_path(smoke).write_text("[]", encoding="utf-8")
+    key = private_root / "key.bin"
+    key.write_bytes(b"k" * 32)
+    key.chmod(0o600)
+    rc = E.main([
+        "--source-manifest", f"imessage_sent={private_root / 'imessage_sent' / 'draft_manifest.jsonl'}",
+        "--source-manifest", f"gmail_sent={private_root / 'gmail_sent' / 'draft_manifest.jsonl'}",
+        "--register-map", "imessage_sent:personal=text.personal",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(private_root / "full"), "--json",
+    ])
+    captured = capsys.readouterr()
+    assert rc == 0 and str(private_root) not in captured.out + captured.err
+    envelope = json.loads(captured.out)
+    assert envelope["available"] is False and envelope["reason_category"] == "bad_input"
+
+
+def test_json_refusal_does_not_disclose_private_paths(private_root: Path, capsys):
+    key = private_root / "key.bin"
+    key.write_bytes(b"z" * 32)
+    key.chmod(0o600)
+    missing = private_root / "secret-persona" / "missing-manifest.jsonl"
+    rc = E.main([
+        "--source-manifest", f"gmail_sent={missing}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(private_root / "package"),
+        "--dry-run", "--json",
+    ])
+    captured = capsys.readouterr()
+    assert rc == 0 and "secret-persona" not in captured.err
+    assert str(private_root) not in captured.err
+    assert "secret-persona" not in captured.out and str(private_root) not in captured.out
+    envelope = json.loads(captured.out)
+    assert envelope["available"] is False and envelope["reason_category"] == "bad_input"
+
+
+def test_dry_run_validates_destination_privacy(private_root: Path, tmp_path: Path):
+    manifest = _source(private_root, "gmail_sent", "Enough words for dry-run privacy.")
+    key = private_root / "key.bin"
+    key.write_bytes(b"z" * 32)
+    key.chmod(0o600)
+    args = E.build_arg_parser().parse_args([
+        "--source-manifest", f"gmail_sent={manifest}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(tmp_path / "public-package"),
+        "--dry-run", "--json",
+    ])
+    with pytest.raises(PermissionError, match="private-path policy"):
+        E.run(args)
+
+
+def test_non_json_errors_never_disclose_exception_paths(
+    private_root: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+):
+    secret = private_root / "private-destination"
+
+    def fail(_args):
+        raise OSError(f"could not create {secret}")
+
+    monkeypatch.setattr(E, "run", fail)
+    rc = E.main([
+        "--source-manifest", "gmail_sent=unused",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", "unused", "--output-dir", str(secret),
+    ])
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert str(secret) not in captured.err
+    assert captured.err == "author_corpus_export: private input or policy validation failed\n"
+
+
+@pytest.mark.parametrize("hostile", [[], {}, True, None])
+def test_hostile_manifest_field_types_refuse_cleanly(private_root: Path, hostile):
+    manifest = _source(private_root, "gmail_sent", "Enough words for hostile JSON.")
+    entry = json.loads(manifest.read_text(encoding="utf-8"))
+    entry["era"] = hostile
+    manifest.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        E.build_export(
+            sources={"gmail_sent": manifest},
+            register_map={"gmail_sent:personal": "email.personal"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+        )
+
+
+def test_duplicate_json_keys_refuse_in_manifest_and_sidecar(private_root: Path):
+    manifest = _source(private_root, "gmail_sent", "Enough words for duplicate keys.")
+    original = manifest.read_text(encoding="utf-8").strip()
+    manifest.write_text(original[:-1] + ',"era":"pre_chatgpt"}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="duplicate JSON key"):
+        E.build_export(
+            sources={"gmail_sent": manifest},
+            register_map={"gmail_sent:personal": "email.personal"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+        )
+
+
+def test_dispatcher_policy_refusal_projects_no_private_path(tmp_path: Path, capsys):
+    public = tmp_path / "public-input"
+    manifest = _source(public, "gmail_sent", "Enough words for privacy refusal.")
+    key = tmp_path / "key.bin"
+    key.write_bytes(b"q" * 32)
+    key.chmod(0o600)
+    rc = setec_run.dispatch("author_corpus_export", [
+        "--source-manifest", f"gmail_sent={manifest}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(public / "package"),
+        "--dry-run",
+    ], observed_version="1.123.0")
+    captured = capsys.readouterr()
+    assert rc == setec_run.EXIT_CONTRACT
+    assert str(tmp_path) not in captured.out and str(tmp_path) not in captured.err
+    envelope = json.loads(captured.out)
+    assert envelope["available"] is False
+    assert envelope["reason_category"] == "policy_refused"
+
+
+def test_normalized_dispatcher_delivers_receipt_in_results(private_root: Path, capsys):
+    manifest = _source(private_root, "imessage_sent", "Enough words for dispatcher fixture.")
+    key = private_root / "key.bin"
+    key.write_bytes(b"q" * 32)
+    key.chmod(0o600)
+    rc = setec_run.dispatch("author_corpus_export", [
+        "--source-manifest", f"imessage_sent={manifest}",
+        "--register-map", "imessage_sent:personal=text.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(private_root / "dispatch"),
+        "--dry-run",
+    ], observed_version="1.123.0")
+    assert rc == 0
+    envelope = json.loads(capsys.readouterr().out)
+    assert envelope["tool"] == "author_corpus_export"
+    assert set(envelope["results"]) == {"producer_receipt"}
+    assert envelope["target"]["path"] is None
