@@ -1,0 +1,39 @@
+{
+  "id": "acquire_imessage_sent",
+  "script_path": "plugins/setec-voiceprint/scripts/acquire_imessage_sent.py",
+  "surface": "voice_coherence_acquisition",
+  "status": "todo",
+  "handoff": "none",
+  "consumers": [],
+  "family": "TODO",
+  "purpose": "ingest the user's own sent iMessage/SMS prose (chat.db, is_from_me=1) as an identity-baseline corpus, one entry per conversation-day bundle.",
+  "use_when": [
+    "TODO"
+  ],
+  "do_not_use_when": [
+    "TODO"
+  ],
+  "inputs": {
+    "target": "TODO"
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "TODO"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "TODO",
+    "length_floor_words": null
+  },
+  "registers": [
+    "TODO"
+  ],
+  "dependencies": {
+    "python": []
+  },
+  "examples": [],
+  "references": [],
+  "_seeded_at": "2026-07-10"
+}
