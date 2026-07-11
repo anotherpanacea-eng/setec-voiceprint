@@ -254,21 +254,6 @@ def _read_epub_info(path: Path) -> _EpubInfo:
         )
 
 
-def _era_from_date(date: _dt.date | None) -> str:
-    """Map a publication date to the manifest ``era`` enum.
-
-    pre_chatgpt (< Nov 2022) / pre_ai_widespread (Nov 2022 .. mid-2024) /
-    post_ai_widespread (>= mid-2024) / undated.
-    """
-    if date is None:
-        return "undated"
-    if date < _dt.date(2022, 11, 1):
-        return "pre_chatgpt"
-    if date < _dt.date(2024, 7, 1):
-        return "pre_ai_widespread"
-    return "post_ai_widespread"
-
-
 def _language_ok(language: str, accepted: list[str]) -> bool:
     if not accepted:
         return True
@@ -320,7 +305,7 @@ def discover_items(
             continue
 
         persona = options.persona or ac.author_to_persona_slug(info.author)
-        era = options.era or _era_from_date(info.date)
+        era = options.era or ac.era_from_date(info.date)
         common = {
             "epub_path": str(epub),
             "persona": persona,

@@ -231,15 +231,6 @@ def test_normalize_author_multi_author_takes_first():
     assert ep._normalize_author("Jane Doe & John Roe") == "Jane Doe"
 
 
-def test_era_from_date_boundaries():
-    assert ep._era_from_date(dt.date(2015, 6, 1)) == "pre_chatgpt"
-    assert ep._era_from_date(dt.date(2022, 10, 31)) == "pre_chatgpt"
-    assert ep._era_from_date(dt.date(2023, 1, 1)) == "pre_ai_widespread"
-    assert ep._era_from_date(dt.date(2024, 6, 30)) == "pre_ai_widespread"
-    assert ep._era_from_date(dt.date(2024, 7, 1)) == "post_ai_widespread"
-    assert ep._era_from_date(None) == "undated"
-
-
 def test_parse_epub_date_tolerant():
     assert ep._parse_epub_date("2015-06-01 23:00:00+00:00") == dt.date(2015, 6, 1)
     assert ep._parse_epub_date("2019") == dt.date(2019, 1, 1)

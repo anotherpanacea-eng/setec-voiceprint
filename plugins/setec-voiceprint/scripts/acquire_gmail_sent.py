@@ -71,18 +71,6 @@ _ADDR_TOKEN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 # --------------- date + era ---------------------------------------
 
 
-def _era_from_date(date: _dt.date | None) -> str:
-    """Local copy of acquire_epub.py's era boundaries. Promotion to a
-    shared acquisition_core helper is a named follow-up, not this PR."""
-    if date is None:
-        return "undated"
-    if date < _dt.date(2022, 11, 1):
-        return "pre_chatgpt"
-    if date < _dt.date(2024, 7, 1):
-        return "pre_ai_widespread"
-    return "post_ai_widespread"
-
-
 def _ai_status_from_date(date: _dt.date | None) -> str:
     """pre_ai_human only before Smart Compose's launch; unknown otherwise
     (Smart Compose/Smart Reply involvement is unverifiable from the mbox).
@@ -339,64 +327,6 @@ def trim_body(
 # --------------- recipient redaction ------------------------------
 
 
-class RecipientMap:
-    """Persisted, stable ``address -> recipient_NN`` map (raw addresses
-    live only in this file, kept under a private root)."""
-
-    def __init__(self, path: Path, name_map: Optional[dict[str, str]] = None):
-        self.path = path
-        self.name_map = _validate_name_map(name_map or {})
-        self._map: dict[str, str] = {}
-        if path.exists():
-            try:
-                loaded = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise ValueError(f"could not read recipient map: {exc}") from exc
-            if not isinstance(loaded, dict) or not all(
-                isinstance(address, str)
-                and isinstance(label, str)
-                and re.fullmatch(r"recipient_[0-9]+", label)
-                for address, label in loaded.items()
-            ):
-                raise ValueError(
-                    "recipient map must map address strings to recipient_NN labels"
-                )
-            normalized = {
-                address.strip().lower(): label for address, label in loaded.items()
-            }
-            if len(normalized) != len(loaded):
-                raise ValueError("recipient map contains duplicate normalized addresses")
-            if len(set(normalized.values())) != len(normalized):
-                raise ValueError("recipient map reuses a recipient_NN label")
-            self._map = normalized
-        used = {
-            int(v.split("_")[-1]) for v in self._map.values()
-            if v.startswith("recipient_") and v.split("_")[-1].isdigit()
-        }
-        self._next = (max(used) + 1) if used else 1
-
-    def _stable(self, address: str) -> str:
-        address = address.lower()
-        if address not in self._map:
-            self._map[address] = f"recipient_{self._next:02d}"
-            self._next += 1
-        return self._map[address]
-
-    def display(self, address: str) -> str:
-        """Display label: the user-curated name-map label if present,
-        else the stable recipient_NN. Internal keying always uses the
-        stable id (via _stable)."""
-        self._stable(address)  # ensure numbered
-        return self.name_map.get(address.lower(), self._map[address.lower()])
-
-    def save(self) -> None:
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(
-            json.dumps(self._map, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-
-
 def _validate_name_map(raw: object) -> dict[str, str]:
     if not isinstance(raw, dict):
         raise ValueError("--name-map must contain a JSON object")
@@ -432,7 +362,7 @@ def _addresses(msg: Message, header: str) -> list[str]:
     return out
 
 
-def build_notes(msg: Message, recipients: RecipientMap, *,
+def build_notes(msg: Message, recipients: ac.StableRedactionMap, *,
                 forwarded_with_comment: bool) -> str:
     to = _addresses(msg, "To")
     cc = _addresses(msg, "Cc")
@@ -721,7 +651,10 @@ def parse_options(args: argparse.Namespace) -> Options:
 
 
 def process_message(
-    msg: Message, opts: Options, recipients: RecipientMap, summary: Summary,
+    msg: Message,
+    opts: Options,
+    recipients: ac.StableRedactionMap,
+    summary: Summary,
 ):
     """Return an AcquiredPiece or None, updating summary counters."""
     if not _own_address_match(msg, opts.own_address):
@@ -803,7 +736,7 @@ def process_message(
         preprocessing_meta=meta,
         acquired_via=f"{TOOL_NAME}_{_dt.date.today().isoformat()}",
         consent_status="author_consent",
-        era=_era_from_date(date),
+        era=ac.era_from_date(date),
         notes=notes,
     )
     return piece
@@ -869,7 +802,14 @@ def run(args: argparse.Namespace) -> int:
         sys.stderr.write(f"{TOOL_NAME}: invalid --name-map: {exc}\n")
         return 2
     try:
-        recipients = RecipientMap(opts.recipient_map_path, name_map=name_map)
+        recipients = ac.StableRedactionMap(
+            opts.recipient_map_path,
+            label_prefix="recipient",
+            normalize_key=lambda address: address.strip().lower(),
+            display_names=_validate_name_map(name_map or {}),
+            reuse_gaps=False,
+            map_name="recipient map",
+        )
     except ValueError as exc:
         sys.stderr.write(f"{TOOL_NAME}: invalid recipient map: {exc}\n")
         return 2

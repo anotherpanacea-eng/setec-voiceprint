@@ -5,6 +5,7 @@ so these run in core CI where bs4/requests are absent)."""
 from __future__ import annotations
 
 import datetime as dt
+import json
 import sys
 from pathlib import Path
 
@@ -15,6 +16,73 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import acquisition_core as ac  # type: ignore  # noqa: E402
+
+
+def test_era_from_date_boundaries():
+    assert ac.era_from_date(dt.date(2015, 6, 1)) == "pre_chatgpt"
+    assert ac.era_from_date(dt.date(2022, 10, 31)) == "pre_chatgpt"
+    assert ac.era_from_date(dt.date(2023, 1, 1)) == "pre_ai_widespread"
+    assert ac.era_from_date(dt.date(2024, 6, 30)) == "pre_ai_widespread"
+    assert ac.era_from_date(dt.date(2024, 7, 1)) == "post_ai_widespread"
+    assert ac.era_from_date(None) == "undated"
+
+
+def test_stable_redaction_map_reuses_lowest_gap_and_persists(tmp_path):
+    path = tmp_path / "contact_map.json"
+    path.write_text(
+        json.dumps({"raw-a": "contact_03", "old": "contact_01"}),
+        encoding="utf-8",
+    )
+    mapping = ac.StableRedactionMap(path, label_prefix="contact")
+    mapping.ensure_all(["raw-z", "raw-b"])
+    assert mapping.stable_id("raw-a") == "contact_03"
+    assert mapping.stable_id("raw-b") == "contact_02"
+    assert mapping.stable_id("raw-z") == "contact_04"
+    mapping.save()
+    reloaded = ac.StableRedactionMap(path, label_prefix="contact")
+    assert reloaded.stable_id("raw-b") == "contact_02"
+    assert json.loads(path.read_text(encoding="utf-8"))["raw-z"] == "contact_04"
+
+
+def test_stable_redaction_map_normalizes_and_preserves_high_water(tmp_path):
+    path = tmp_path / "recipient_map.json"
+    path.write_text(
+        json.dumps({"Alice@Example.test": "recipient_03"}),
+        encoding="utf-8",
+    )
+    mapping = ac.StableRedactionMap(
+        path,
+        label_prefix="recipient",
+        normalize_key=lambda value: value.strip().lower(),
+        display_names={"alice@example.test": "trusted_alias"},
+        reuse_gaps=False,
+    )
+    assert mapping.display("ALICE@EXAMPLE.TEST") == "trusted_alias"
+    assert mapping.stable_id("bob@example.test") == "recipient_04"
+    mapping.save()
+    assert json.loads(path.read_text(encoding="utf-8")) == {
+        "alice@example.test": "recipient_03",
+        "bob@example.test": "recipient_04",
+    }
+
+
+def test_stable_redaction_map_rejects_duplicate_normalized_keys(tmp_path):
+    path = tmp_path / "recipient_map.json"
+    path.write_text(
+        json.dumps(
+            {
+                "Alice@Example.test": "recipient_01",
+                "alice@example.test": "recipient_02",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="duplicate normalized keys"):
+        ac.StableRedactionMap(
+            path,
+            label_prefix="recipient",
+            normalize_key=lambda value: value.strip().lower(),
+        )
 
 
 def _piece(text: str, title: str = "A Long Shared Book Title",
