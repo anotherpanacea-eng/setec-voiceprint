@@ -103,14 +103,14 @@ def _message_datetime(msg: Message) -> _dt.datetime | None:
         parsed = email.utils.parsedate_to_datetime(raw)
     except (TypeError, ValueError) as exc:
         raise ValueError("non-empty Date header is malformed") from exc
-    if parsed is None or parsed.tzinfo is None or parsed.utcoffset() is None:
-        raise ValueError("non-empty Date header lacks a canonical timezone")
+    if parsed is None:
+        raise ValueError("non-empty Date header is malformed")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        # A timezone-naive Date cannot be canonicalized to UTC. Treat it as
+        # undated (order-degraded) rather than aborting the whole run, matching
+        # the missing-Date path; genuinely malformed headers still refuse above.
+        return None
     return parsed
-
-
-def _message_date(msg: Message) -> _dt.date | None:
-    parsed = _message_datetime(msg)
-    return parsed.date() if parsed is not None else None
 
 
 def _message_order_timestamp(parsed: _dt.datetime | None) -> str | None:

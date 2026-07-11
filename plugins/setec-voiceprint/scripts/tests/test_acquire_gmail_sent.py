@@ -300,6 +300,14 @@ def test_nonempty_malformed_date_refuses():
         G._message_datetime(msg)
 
 
+def test_timezone_naive_date_degrades_to_undated():
+    # A parseable but timezone-naive Date can't be canonicalized to UTC, so it
+    # degrades to undated (like a missing Date) instead of aborting the run.
+    msg = G.email.message_from_string("Date: Mon, 1 Jan 2024 10:00:00\n\nbody")
+    assert G._message_datetime(msg) is None
+    assert G._message_order_timestamp(G._message_datetime(msg)) is None
+
+
 def test_unwindowed_full_export_refuses_without_receipt(tmp_path, mbox):
     out = _out(tmp_path)
     with pytest.raises(SystemExit):
