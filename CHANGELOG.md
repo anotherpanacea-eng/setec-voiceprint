@@ -7,6 +7,228 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.123.0] - 2026-07-11
+
+### Added
+
+**`acquire_gmail_sent.py` — acquire the user's own sent Gmail prose (Google Takeout mbox) as an identity-baseline corpus.**
+
+- Reads a Takeout `.mbox` export (not the live Gmail API — no OAuth surface),
+  keeps only messages the user actually sent (`From` matches `--own-address`
+  **and** `X-Gmail-Labels` carries the `--sent-label-token`, default `Sent`, as
+  an exact comma-split token), and emits one `corpus_role: identity_baseline` /
+  `use: ["voice_profile"]` / `register: personal` / `consent_status:
+  author_consent` document per email — a keyboard-composed counterpart to the
+  sent-iMessage register.
+- **Fail-closed content handling.** Quote/signature/forward trimming runs in two
+  phases (forward-marker first, then wrap-aware attribution / `>`-block; then an
+  always-run signature trim); HTML replies strip Gmail's `gmail_quote`/
+  `gmail_attr`/`blockquote` containers *before* flattening, with a residual-
+  attribution backstop that drops a row fail-closed if an `On … wrote:` line
+  survives; a confirmed reply whose boundary can't be located is dropped
+  ("quote-boundary unresolved"), while a genuinely clean reply is kept.
+- **Mechanical privacy.** Recipient addresses are redacted behind stable
+  `recipient_NN` labels (raw addresses only in a `check_output_privacy`-gated
+  `recipient_map.json`, no `--allow-public-output`); a full-export write is
+  gated behind a TTY-only `--live-smoke-confirmed` receipt bound to the mbox
+  hash **and** the filter/redaction parameters.
+- **Honest provenance.** `ai_status` is `pre_ai_human` only before Gmail Smart
+  Compose's 2018-05-01 launch, else `unknown` (unverifiable from the mbox),
+  passed as an explicit `compose_manifest_entry` kwarg with
+  `use: ["voice_profile"]`. The README discloses that reading this corpus via
+  `voice_profile.py` needs **both** `--use voice_profile` **and**
+  `--ai-status unknown` (each defaults otherwise and filters the corpus out).
+- Charset/RFC-2047 header decoding, `format=flowed` unwrap preserving the
+  signature delimiter, auto-responder exclusion (`Auto-Submitted` != `no`,
+  `Precedence: bulk/list`), and an empty-corpus WARNING if the Sent-label token
+  looks locale-mismatched. Depends only on stdlib + the existing
+  `requirements-acquisition.txt` (`beautifulsoup4` via `html_to_text`).
+- Parseable timezone-naive Date headers degrade explicitly to undated rather
+  than aborting acquisition or inventing a timezone; unparseable non-empty Date
+  headers still refuse.
+- Fixture-backed tests under `tests/test_acquire_gmail_sent.py` with a synthetic
+  Takeout `.mbox`. Per `internal/2026-07-10-acquire-gmail-sent-spec.md`.
+
+**`acquire_imessage_sent.py` — acquire the user's own sent iMessage/SMS prose as an identity-baseline corpus.**
+
+- Reads `~/Library/Messages/chat.db` read-only (`is_from_me = 1` only), bundles
+  the user's outgoing messages into per-(recipient, calendar-day) documents, and
+  emits `corpus_role: identity_baseline` / `use: ["voice_profile"]` /
+  `register: personal` / `consent_status: author_consent` manifest entries — a
+  new short-form, keyboard-and-mobile-composed register the framework didn't
+  previously cover.
+- **Privacy is mechanical, not rhetorical.** Recipient identities are redacted
+  behind stable `contact_NN` labels (raw handles live only in a sibling
+  `contact_map.json` gated by `check_output_privacy`, with no
+  `--allow-public-output` escape hatch); tapbacks (`associated_message_type`),
+  group-action rows (`item_type`), and attachment-only rows are excluded at read
+  time; received messages never enter the query (`is_from_me = 1`); and a
+  full-history write is gated behind a TTY-only `--live-smoke-confirmed`
+  attestation bound to a hash of the database.
+- **v1 handles `attributedBody` by best-effort byte-scan + fail-closed drop**:
+  any reply row whose body came only from `attributedBody` is dropped rather
+  than risk emitting an un-trimmed quote (a structural parser is a future
+  increment). `ai_status` is derived from the message date (`pre_ai_human`
+  before 2024-07-01, else `unknown` — Apple Intelligence era), never hardcoded,
+  and passed as an explicit `compose_manifest_entry` kwarg alongside
+  `use: ["voice_profile"]` so neither picks up the impostor-pool defaults.
+- Per-row Cocoa-epoch seconds-vs-nanoseconds detection; runtime schema
+  pre-flight (fixed-set columns hard-fail, absent reply-linking column degrades
+  to fail-closed drop); grown-day supersede keyed on the redacted label + date.
+- Stdlib only (`sqlite3`); no new dependency. Fixture-backed tests under
+  `tests/test_acquire_imessage_sent.py` with a synthetic `chat.db`.
+- Per `internal/2026-07-09-acquire-imessage-sent-spec.md`.
+
+- Add the normalized `author_corpus_export` surface for private, explicit-register
+  Messages/Gmail and attested local-document identity baselines, with stable HMAC
+  grouping, natural ordered units, complete-group smoke selection, closed no-prose
+  receipts, degraded train-only posture, and atomic owner-only packages.
+
+**`manifest_validator.py` — Ratchet 6: warn on `ai_status: pre_ai_human` with `era: post_ai_widespread`, for any `corpus_role`.**
+
+- A `pre_ai_human` claim on post-2024 material is unverifiable and, if wrong,
+  teaches the framework's ground-truth human baseline that AI-assisted prose is
+  a writer's own unassisted voice — the exact failure the validator's module
+  docstring already warns about. The existing Ratchet 4 covers only
+  `corpus_role: impostor` and carries no `ai_status` term, leaving
+  `identity_baseline` entries (a writer's own corpus, the ground-truth anchor)
+  entirely unguarded against this mismatch.
+- Ratchet 6 is a **new, additive** check — Ratchet 4 is untouched. The two
+  compose: an `impostor` + `pre_ai_human` + `post_ai_widespread` entry now trips
+  both. `warning` severity, consistent with Ratchet 4.
+- **Warning surface, intentional and disclosed:** `acquire_manuscript.py`'s
+  `--ai-status` defaults to `pre_ai_human`, but its `--era` defaults to `undated`;
+  it does not derive era from `date_written`. Manuscript entries therefore newly
+  warn only when the operator explicitly supplies `--era post_ai_widespread` (or
+  an existing manifest entry already carries that era). This is a warning, not a
+  validation failure — nothing breaks mechanically.
+- Per `internal/2026-07-09-manifest-validator-ai-status-era-ratchet-spec.md`.
+  Five fixtures in `tests/test_ratchet6_ai_status_era.py` cover: Ratchet 6 firing
+  on `identity_baseline`; a correctly-tagged `ai_status: unknown` post-AI entry
+  validating clean; Ratchet 4 still firing unchanged (no regression); the
+  manuscript-default surface; and the impostor co-fire case proving the two
+  ratchets compose rather than one masking the other.
+
+### Fixed
+
+**`fallacy_scan.py` / `warrant_probe.py` — drift gate no longer compares the
+prompt fingerprint to itself.** With `--judge manifest`, both surfaces computed
+`current_fp = fingerprint_prompt()` from the *live* module and checked
+`--expect-fingerprint` against that (a current-vs-current comparison), so a
+manifest whose flags/coverage were produced under a stale prompt always passed
+the gate and the envelope falsely reported the *current* fingerprint as the
+band's provenance. The gate now resolves the *effective* fingerprint — the
+manifest's own recorded `prompt_fingerprint_sha256` for a manifest judge,
+`current_fp` for an API/mock judge — verifies `--expect-fingerprint` against it,
+and reports it in the envelope. A manifest that declares no fingerprint is no
+longer rebound to the current code's hash (reports `null`) and cannot satisfy an
+`--expect-fingerprint` (fail-closed → abstain). `fallacy_judge._manifest_judge`
+and `warrant_judge._manifest_judge` now carry the manifest's recorded
+`prompt_fingerprint_sha256` into `judge_identity`, mirroring the already-correct
+`argquality_judge`. Regression guards added
+(`test_stale_manifest_fingerprint_caught_by_drift_gate`,
+`test_manifest_without_fingerprint_is_not_rebound`).
+
+**Integrity: recorded-hash-without-verifier gates now recompute instead of trusting a stored field.**
+
+- **`acquisition_core.content_hash_already_present` — recompute the paired `.txt`'s
+  hash before honoring a dedup match.** The gate used by all 13 `acquire_*.py`
+  scripts trusted the sidecar's recorded `content_hash` and never re-hashed the
+  paired `.txt`'s current bytes (`manifest_validator` checks the field's presence,
+  never its value). A `.txt` edited in place without touching its `.meta.json` left
+  a stale recorded hash, so re-running acquisition on the original source matched
+  the stale hash and silently dropped the doc as "already present" even though the
+  corpus no longer held those bytes. The gate now re-derives the hash from the
+  paired `.txt`'s actual bytes and only dedupes on a real match; a missing paired
+  `.txt` fails open (re-acquire) rather than dropping the piece.
+- **`calibration/shard_runner.py cmd_aggregate` — fail closed on a missing/empty
+  `cache_sha256` for a done shard.** The old `if recorded_sha:` guard skipped the
+  SHA-256 recompute entirely when a done shard's recorded hash was empty/absent, so
+  a hand-edited `state.json` with `cache_sha256: ""` pointing at a substituted cache
+  was accepted with zero verification — while `cmd_verify` treats the same missing
+  field as a hard mismatch. `aggregate` (which "must not depend on a separate manual
+  verify step") now rejects the unverifiable shard as an integrity failure, matching
+  `cmd_verify`; `--allow-partial` skips it like a tampered/missing cache.
+**Content-fingerprint self-exclusion for comparative baselines — completes the Codex self-exclusion
+sweep (`aic_pattern_audit`, `crosslingual_voice_distance`, `idiolect_detector`, `general_imposters`).**
+A comparative audit that self-excludes the target from its own baseline/reference pool by PATH only
+(or not at all) lets a content-duplicate of the target at a different path — or an inline-`text`
+manifest row with no path — pool the target into its own comparison, deflating the measured
+distance/pattern toward a false "on-voice / not-distinctive" result. The 2026-06-23 sweep
+(`cross_doc_novelty_profile`, `originality_audit`, `rank_turbulence_audit`, `model_family_attribution`)
+fixed the path-collision variant; these four siblings were still open. Each now drops a pool entry on
+PATH match OR content-fingerprint match, where the fingerprint hashes the surface's OWN matcher
+tokenization (fail-closed: over-collapsing can only drop a copy, never re-admit one):
+`aic_pattern_audit` (`craft_restoration`) — `list_baseline_paths`/`baseline_density` gained target
+awareness (were previously unguarded); fingerprint over the lowercased `\w+` word stream.
+`crosslingual_voice_distance` (`voice_coherence`) — `_load_baseline` gained a target guard; fingerprint
+over `_normalize` (the char-n-gram matcher's equivalence). `idiolect_detector` (`voice_coherence`) —
+target/reference cross-check added before keyness; fingerprint over the `word_tokens` stream of the
+`strip_non_prose`-cleaned text, computed with the same strip options `build_corpus` scores with, so a
+reference copy differing from the target only in stripped material (YAML front matter, code fences,
+footers) is recognized as a duplicate and dropped rather than kept while the matcher scores it
+identically (PR #306 review); empties fail-closed. `general_imposters` — `_exclude_target_path` gained an opt-in content guard (its
+docstring already noted a target copy biases the proportion toward 1.0); fingerprint over its `_tokens`
+stream. `corpus_novelty_audit` was assessed and deliberately LEFT UNCHANGED: it is a set-level
+diversity audit where identical-but-distinct documents are the redundancy signal (content-dedup there
+inverts the metric), a call locked by `test_identical_distinct_path_files_are_the_redundancy_signal`
+and pinned by the reverted PR #279.
+
+**Content-fingerprint self-exclusion for the remaining comparative baselines — closes the residual
+bucket of the Codex self-exclusion sweep (`voice_distance`, `dialogue_voice_audit`,
+`phraseological_signature_audit`, `discourse_move_signature`, `function_word_grammar_audit`,
+`stance_modality_audit`, `productive_roughness_audit`, `punctuation_cadence_audit`, `paragraph_audit`,
+`agency_abstraction_audit`).** These surfaces already self-excluded the target from their baseline by
+PATH only (`path.resolve() == target`), so a content-duplicate of the target at a DIFFERENT path in a
+directory baseline still pooled the target's own profile into its own comparison — pulling the
+baseline mean/SD (or centroid) toward the target and deflating the measured distance / z-scores toward
+a false "on-voice / in-distribution" result. (Their loaders are file-glob or path-required manifests
+with no null-path inline-text vector, so the primary inline vector was already closed; this is the
+lower-severity content-duplicate-FILE-at-another-path variant.) Each loader now drops a baseline entry
+on PATH match OR content-fingerprint match, where the fingerprint hashes that surface's OWN matcher
+tokenization (fail-closed: over-collapsing can only drop a copy, never re-admit one; a content match
+only ever DROPS):
+
+- `voice_distance` (`voice_coherence`) — the manifest-level target filter gained a content guard;
+  fingerprint over the WHOLE `strip_non_prose`-cleaned text (the single string every scored family
+  reads before its own normalization), computed with the same strip options the comparison uses.
+  Unlike the token-only siblings, this surface also runs the punctuation- / case-sensitive char-n-gram,
+  POS, and dependency families, so a `word_tokens` fingerprint would fold punctuation/case and
+  over-exclude a baseline the matcher treats as distinct (changing the baseline rather than only
+  self-excluding the target). The cleaned-text equivalence class is a strict subset of every family's,
+  so it drops only genuine copies — including a copy wrapped in stripped front matter — and keeps
+  punctuation-distinct baselines (PR #307 review).
+- `phraseological_signature_audit` / `function_word_grammar_audit` — fingerprint over each surface's
+  own lowercased word tokenizer (`_tokenize` / `_tokens_lower`), the exact stream its n-gram / frame /
+  function-word features are built from.
+- `discourse_move_signature` / `stance_modality_audit` — fingerprint over the LOWERCASED `_WORD_RE`
+  word stream, lowercased because every move / stance / modality marker is matched case-insensitively
+  (`re.I` / `re.IGNORECASE`), so a re-cased copy is marker-equivalent and is dropped.
+- `agency_abstraction_audit` — fingerprint over the CASE-PRESERVED `_WORD_RE` word stream: unlike the
+  case-insensitive siblings, `_PROPER_NOUN_RE` is a case-SENSITIVE primary signal, so a re-cased
+  document scores a genuinely different profile and must NOT be over-excluded.
+- `punctuation_cadence_audit` / `paragraph_audit` / `productive_roughness_audit` — fingerprint over the
+  NFC-normalized WHOLE text: these surfaces' signals are punctuation / paragraph-and-sentence structure
+  / per-sentence roughness over the raw character sequence, so no word-token stream carries them and
+  collapsing whitespace would misrepresent the (whitespace-sensitive) matcher.
+- `dialogue_voice_audit` — fingerprint over the extracted DIALOGUE-TURN sequence
+  (`(speaker, tag_verb, attributed, text)`), the actual matcher input: per-character profiles are built
+  from `extract_dialogue` turns and narration is ignored, so a copy of the target's dialogue (even
+  re-wrapped in different narration) is turn-equivalent and dropped; a no-dialogue target fingerprints
+  to `None` and disables the guard (no mass-exclusion of narration-only baseline files).
+
+`homogeneity_audit`'s single-doc **proximity** mode (`audit_proximity`, target-vs-`--centroid`) was
+assessed and deliberately LEFT UNCHANGED (WONTFIX): its centroid is OPERATOR-DECLARED reference
+material — a deliberately supplied set, not an incidentally-scoped baseline — and the surface ships no
+verdict and no band (descriptive-only), so there is no automated pass to deflate; silently dropping an
+operator-supplied centroid member on a content match would violate the operator's explicit
+declaration. Its pool mode, along with `corpus_novelty_audit` and `distinct_diversity_audit`, is a
+set-level diversity audit where identical-but-distinct documents are the redundancy SIGNAL
+(content-dedup there inverts the metric) and is likewise untouched.
+
+Regression tests (fail-before-fix: plant a content-duplicate at a different path → assert exclusion,
+plus a distinct-doc-still-included test) added per surface.
+
 ## [1.122.0] - 2026-07-06
 
 ### Changed
