@@ -5,35 +5,40 @@
   "status": "todo",
   "handoff": "none",
   "consumers": [],
-  "family": "TODO",
-  "purpose": "ingest the user's own sent iMessage/SMS prose (chat.db, is_from_me=1) as an identity-baseline corpus, one entry per conversation-day bundle.",
+  "family": "acquisition",
+  "purpose": "ingest the user's own sent iMessage/SMS prose (chat.db, is_from_me=1) as an identity-baseline corpus, one entry per redacted-contact/local-day bundle, for the personal voice_profile baseline (not the impostor pool).",
   "use_when": [
-    "TODO"
+    "building the personal identity baseline from the user's own outgoing iMessage/SMS prose, a short-form mobile-composed register"
   ],
   "do_not_use_when": [
-    "TODO"
+    "a keyboard-composed email register is wanted instead (use acquire_gmail_sent)",
+    "received or third-party messages would be included (this reads is_from_me=1 only, by design)"
   ],
   "inputs": {
-    "target": "TODO"
+    "target": "local macOS Messages SQLite database (~/Library/Messages/chat.db), read-only; requires Full Disk Access for the invoking process"
   },
   "outputs": {
     "schema_version": "1.0",
     "artifacts": [
-      "TODO"
+      "identity-baseline .txt + .meta.json under ai-prose-baselines-private/identity/personal/<persona>/",
+      "draft_manifest.jsonl (corpus_role identity_baseline, use [voice_profile])",
+      "contact_map.json (redacted contact_NN -> raw handle; KEEP PRIVATE)"
     ]
   },
   "compute": {
-    "tier": "core",
-    "cost_note": "TODO",
-    "length_floor_words": null
+    "tier": "acquisition",
+    "cost_note": "local SQLite scan of outgoing rows inside the date window; no network; best-effort attributedBody byte-scan with fail-closed reply drop",
+    "length_floor_words": 150
   },
   "registers": [
-    "TODO"
+    "personal"
   ],
   "dependencies": {
     "python": []
   },
   "examples": [],
-  "references": [],
+  "references": [
+    "plugins/setec-voiceprint/references/acquire-corpus-pattern.md"
+  ],
   "_seeded_at": "2026-07-10"
 }
