@@ -545,6 +545,7 @@ class ItemMeta:
     title: str
     date: _dt.date
     stable_contact_id: str
+    author_corpus_chat_locator: str
     notes: str
     lines: list[str] = field(default_factory=list)
 
@@ -569,6 +570,9 @@ def discover_items(
                 title=f"{display_label} — {message.date.isoformat()}",
                 date=message.date,
                 stable_contact_id=stable_id,
+                author_corpus_chat_locator=_author_corpus_chat_locator(
+                    message.chat_identifier
+                ),
                 notes="group_chat" if message.is_group else "direct",
             )
             groups[key] = item
@@ -584,6 +588,24 @@ def extract_one(item: ItemMeta) -> tuple[str, str, _dt.date]:
 
 def conversation_day_key(stable_contact_id: str, date: _dt.date) -> str:
     return f"{stable_contact_id}|{date.isoformat()}"
+
+
+def _author_corpus_chat_locator(chat_identifier: str) -> str:
+    """Return a private stable chat identity independent of contact_NN labels."""
+    domain = b"setec-imessage-private-chat-v1\x00"
+    return "sha256:" + hashlib.sha256(
+        domain + chat_identifier.encode("utf-8")
+    ).hexdigest()
+
+
+def _author_corpus_day_locator(chat_locator: str, date: _dt.date) -> str:
+    if not re.fullmatch(r"sha256:[0-9a-f]{64}", chat_locator):
+        raise AcquisitionError("private author-corpus chat locator is malformed")
+    day_key = f"{chat_locator}|{date.isoformat()}"
+    domain = b"setec-imessage-private-locator-v1\x00"
+    return "sha256:" + hashlib.sha256(
+        domain + day_key.encode("utf-8")
+    ).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -853,6 +875,15 @@ def _compose_and_write(
 
         metadata = json.loads(meta_path.read_text(encoding="utf-8"))
         metadata["conversation_day_key"] = sidecar_key
+        author_corpus_locator = _author_corpus_day_locator(
+            prepared.item.author_corpus_chat_locator,
+            prepared.item.date,
+        )
+        metadata["author_corpus_group_locator"] = author_corpus_locator
+        metadata["author_corpus_entry_locator"] = author_corpus_locator
+        metadata["author_corpus_unit_kind"] = "message_batch"
+        metadata["author_corpus_unit_index"] = 0
+        metadata["author_corpus_unit_count"] = 1
         metadata["draft_manifest_path"] = str(options.manifest_path.resolve())
         _atomic_write_text(
             meta_path, json.dumps(metadata, indent=2, sort_keys=True) + "\n"

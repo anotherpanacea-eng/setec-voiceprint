@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import re
 import shutil
 import sqlite3
 import sys
@@ -164,6 +165,16 @@ def test_bundles_same_chat_per_local_day_without_cross_day_merge(tmp_path):
         "2020-06-16",
     }
     day_one = next(meta for meta in matching if meta["date_written"] == "2020-06-15")
+    assert re.fullmatch(
+        r"sha256:[0-9a-f]{64}", day_one["author_corpus_group_locator"]
+    )
+    assert (
+        day_one["author_corpus_entry_locator"]
+        == day_one["author_corpus_group_locator"]
+    )
+    assert day_one["author_corpus_unit_kind"] == "message_batch"
+    assert day_one["author_corpus_unit_index"] == 0
+    assert day_one["author_corpus_unit_count"] == 1
     sidecar_path = next(
         path for path in output.glob("*.meta.json")
         if json.loads(path.read_text())["content_hash"] == day_one["content_hash"]
@@ -294,6 +305,26 @@ def test_contact_map_is_stable_and_uses_next_unused_number(tmp_path):
     assert second == first
     assert len(entries(output)) == manifest_count
     assert mv.validate_manifest(output / "draft_manifest.jsonl")["issues"] == []
+
+
+def test_author_corpus_locator_is_independent_of_contact_label_order():
+    first = A.ac.StableRedactionMap(
+        Path("unused-first.json"), label_prefix="contact"
+    )
+    second = A.ac.StableRedactionMap(
+        Path("unused-second.json"), label_prefix="contact"
+    )
+    first.ensure_all(["raw-chat-a", "raw-chat-b"])
+    second.ensure_all(["raw-chat-b"])
+    second.ensure_all(["raw-chat-a"])
+    assert first.stable_id("raw-chat-a") != second.stable_id("raw-chat-a")
+
+    locator = A._author_corpus_chat_locator("raw-chat-a")
+    assert locator == A._author_corpus_chat_locator("raw-chat-a")
+    assert "raw-chat-a" not in locator and "contact_" not in locator
+    assert A._author_corpus_day_locator(locator, dt.date(2020, 6, 15)).startswith(
+        "sha256:"
+    )
 
 
 def test_contact_map_rejects_duplicate_stable_labels(tmp_path, capsys):

@@ -81,7 +81,7 @@ TIMESTAMP_SENTINEL = "<fixture-timestamp>"
 NORMALIZATION_DOC = """\
 Normalized (volatile) fields, replaced with sentinels before write/compare:
   * version                              -> "<fixture>"   (SCRIPT_VERSION; bumps per release)
-  * target.path                          -> "<fixture>"   (absolute input path)
+  * target.path (when non-null)          -> "<fixture>"   (absolute input path)
   * baseline.path                        -> "<fixture>"   (idiolect reference path)
   * baseline.files[].path                -> "<fixture>"   (per-file absolute paths)
   * results.*.files[].path               -> "<fixture>"   (corpus_summary file paths)
@@ -106,7 +106,7 @@ def normalize(envelope: dict[str, Any]) -> dict[str, Any]:
 
     # target.path — absolute input path.
     target = env.get("target")
-    if isinstance(target, dict) and "path" in target:
+    if isinstance(target, dict) and target.get("path") is not None:
         target["path"] = PATH_SENTINEL
 
     # baseline.path + baseline.files[].path (idiolect/voice surfaces).
@@ -891,9 +891,52 @@ def _build_position_pair_register() -> dict[str, Any]:
     )
 
 
+def _build_author_corpus_export() -> dict[str, Any]:
+    import author_corpus_export as m  # type: ignore
+    from output_schema import build_output  # type: ignore
+
+    sha = "sha256:" + "0" * 64
+    source_fp = "src:hmac-sha256:" + "1" * 64
+    group = "grp:hmac-sha256:" + "2" * 64
+    receipt = {
+        "schema": m.RECEIPT_SCHEMA,
+        "surface": m.TOOL_NAME,
+        "surface_version": m.SURFACE_VERSION,
+        "producer_revision": "0" * 40,
+        "source_snapshot_sha256": sha,
+        "document_map_hash": None,
+        "document_attestation_hash": None,
+        "hmac_key_id": sha,
+        "register_map": {"gmail_sent:personal": "email.personal"},
+        "allowed_ai_status": ["pre_ai_human"],
+        "entries": [{
+            "source_entry_fingerprint": source_fp,
+            "source_group": group,
+            "record_id": sha,
+        }],
+        "record_ids": [sha],
+        "package_hash": sha,
+        "counts": {
+            "records": 1,
+            "by_register": {"email.personal": 1},
+            "by_ai_status": {"pre_ai_human": 1},
+            "by_source_kind": {"gmail_sent": 1},
+            "by_era": {"pre_chatgpt": 1},
+        },
+        "record_atomic_degraded": False,
+    }
+    return build_output(
+        task_surface=m.TASK_SURFACE, tool=m.TOOL_NAME, version=m.SCRIPT_VERSION,
+        target_path=None, target_words=0, baseline=None,
+        results={"producer_receipt": receipt}, claim_license=m._claim_license(receipt),
+        warnings=[], ai_status=None,
+    )
+
+
 #: surface id -> raw-envelope builder. The id matches the
 #: ``capabilities.d/<id>.yaml`` fragment stem and the golden filename stem.
 SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
+    "author_corpus_export": _build_author_corpus_export,
     "variance_audit": _build_variance_audit,
     "manuscript_audit": _build_manuscript_audit,
     "repetition_audit": _build_repetition_audit,
