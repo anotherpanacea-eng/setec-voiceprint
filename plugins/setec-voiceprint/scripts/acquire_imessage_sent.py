@@ -86,17 +86,6 @@ class PossiblyMergedDayError(AcquisitionError):
 # Dates and attributedBody byte scanning
 
 
-def _era_from_date(date: _dt.date | None) -> str:
-    """Boundary dates copied verbatim from ``acquire_epub.py``."""
-    if date is None:
-        return "undated"
-    if date < _dt.date(2022, 11, 1):
-        return "pre_chatgpt"
-    if date < _dt.date(2024, 7, 1):
-        return "pre_ai_widespread"
-    return "post_ai_widespread"
-
-
 def _ai_status_from_era(era: str) -> str:
     if era in {"pre_chatgpt", "pre_ai_widespread"}:
         return "pre_ai_human"
@@ -501,59 +490,6 @@ def _atomic_write_text(path: Path, text: str) -> None:
     tmp.replace(path)
 
 
-class ContactMap:
-    """Persisted raw chat identifier -> stable sequential contact id."""
-
-    def __init__(self, path: Path) -> None:
-        self.path = path
-        self._map: dict[str, str] = {}
-        if path.exists():
-            try:
-                loaded = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError) as exc:
-                raise AcquisitionError(f"could not read contact map {path}: {exc}") from exc
-            if not isinstance(loaded, dict) or not all(
-                isinstance(k, str)
-                and isinstance(v, str)
-                and re.fullmatch(r"contact_[0-9]+", v)
-                for k, v in loaded.items()
-            ):
-                raise AcquisitionError(
-                    f"contact map {path} must be a JSON object mapping strings "
-                    "to contact_NN labels."
-                )
-            if len(set(loaded.values())) != len(loaded):
-                raise AcquisitionError(f"contact map {path} reuses a contact_NN label.")
-            self._map = dict(loaded)
-
-    def _next_unused(self) -> str:
-        used = {
-            int(value.removeprefix("contact_")) for value in self._map.values()
-        }
-        number = 1
-        while number in used:
-            number += 1
-        return f"contact_{number:02d}"
-
-    def ensure_all(self, identifiers: Iterable[str]) -> None:
-        # Sorting makes a fresh first-run mapping deterministic; persistence
-        # then guarantees labels never change on later runs.
-        for identifier in sorted(set(identifiers)):
-            if identifier not in self._map:
-                self._map[identifier] = self._next_unused()
-
-    def stable_id(self, identifier: str) -> str:
-        if identifier not in self._map:
-            self.ensure_all([identifier])
-        return self._map[identifier]
-
-    def save(self) -> None:
-        _atomic_write_text(
-            self.path,
-            json.dumps(self._map, indent=2, sort_keys=True) + "\n",
-        )
-
-
 def _load_name_map(path: Path | None, known_handles: set[str]) -> dict[str, str]:
     if path is None:
         return {}
@@ -616,7 +552,7 @@ class ItemMeta:
 
 def discover_items(
     messages: Iterable[OutgoingMessage],
-    contacts: ContactMap,
+    contacts: ac.StableRedactionMap,
     name_map: dict[str, str],
 ) -> list[ItemMeta]:
     """Return one synthetic item per stable-contact/local-date group."""
@@ -702,7 +638,7 @@ def process_item(
             detail=f"{word_count} < {options.min_words}",
         )
         return None
-    era = _era_from_date(date)
+    era = ac.era_from_date(date)
     piece = ac.AcquiredPiece(
         title=title,
         author=options.author,
@@ -1437,7 +1373,12 @@ def run(args: argparse.Namespace) -> int:
                     retained.append(message)
             messages = retained
 
-        contacts = ContactMap(options.contact_map_path)
+        contacts = ac.StableRedactionMap(
+            options.contact_map_path,
+            label_prefix="contact",
+            map_name="contact map",
+            error_factory=AcquisitionError,
+        )
         known_handles = {message.chat_identifier for message in messages}
         name_map = _load_name_map(options.name_map_path, known_handles)
         items = discover_items(messages, contacts, name_map)

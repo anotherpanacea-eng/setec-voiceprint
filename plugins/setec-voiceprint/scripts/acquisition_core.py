@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""acquisition_core.py — shared helpers for impostor-corpus acquisition.
+"""acquisition_core.py — shared helpers for corpus acquisition.
 
 The acquisition scripts (`acquire_blog.py`, future `acquire_magazine.py`,
 and `pdf_extract.py`) share a common pipeline:
@@ -8,12 +8,12 @@ and `pdf_extract.py`) share a common pipeline:
     deduplicate → write `.txt` + `.meta.json` → emit draft manifest entry.
 
 This module factors out the parts that don't vary by source: slug rules,
-content hashing, the output-path convention, the fetcher protocol that
-tests can substitute, the per-file write, the manifest entry composer,
-and the run-summary aggregator. Acquisition scripts import these
-helpers instead of reimplementing them, keeping per-script code focused
-on source-specific extraction (Substack selectors vs. WordPress
-selectors vs. PDF text-layer extraction).
+content hashing, date-to-era mapping, stable private identifier redaction,
+the output-path convention, the fetcher protocol that tests can substitute,
+the per-file write, the manifest entry composer, and the run-summary
+aggregator. Acquisition scripts import these helpers instead of reimplementing
+them, keeping per-script code focused on source-specific extraction (Substack
+selectors vs. WordPress selectors vs. PDF text-layer extraction).
 
 Privacy: all output paths are checked against the marker-based
 `ai-prose-baselines-private` rule that voice-profile tools already use
@@ -181,6 +181,129 @@ def parse_iso_date(text: str | None) -> _dt.date | None:
         return _dt.date(year, month, day)
     except ValueError:
         return None
+
+
+def era_from_date(date: _dt.date | None) -> str:
+    """Map an acquisition date onto the manifest's coarse AI-era bands."""
+    if date is None:
+        return "undated"
+    if date < _dt.date(2022, 11, 1):
+        return "pre_chatgpt"
+    if date < _dt.date(2024, 7, 1):
+        return "pre_ai_widespread"
+    return "post_ai_widespread"
+
+
+# --------------- Stable private-identity redaction ----------------
+
+
+class StableRedactionMap:
+    """Persist raw identifiers behind stable sequential private labels.
+
+    The persisted JSON map is the only place raw recipient/contact identifiers
+    live.  Callers select the public label prefix and key normalization rule;
+    ``reuse_gaps`` preserves source-specific numbering contracts.
+    """
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        label_prefix: str,
+        normalize_key: Callable[[str], str] | None = None,
+        display_names: dict[str, str] | None = None,
+        reuse_gaps: bool = True,
+        map_name: str | None = None,
+        error_factory: Callable[[str], Exception] = ValueError,
+    ) -> None:
+        if not re.fullmatch(r"[a-z][a-z0-9_]*", label_prefix):
+            raise ValueError("label_prefix must be a lowercase identifier")
+        self.path = path
+        self.label_prefix = label_prefix
+        self._normalize_key = normalize_key or (lambda value: value)
+        self._reuse_gaps = reuse_gaps
+        self._map_name = map_name or f"{label_prefix} map"
+        self._error_factory = error_factory
+        self._map: dict[str, str] = {}
+        self._display_names = {
+            self._normalize_key(key): value
+            for key, value in (display_names or {}).items()
+        }
+
+        if path.exists():
+            try:
+                loaded = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError) as exc:
+                self._fail(f"could not read {self._map_name} {path}: {exc}")
+            label_re = re.compile(rf"{re.escape(label_prefix)}_[0-9]+")
+            if not isinstance(loaded, dict) or not all(
+                isinstance(key, str)
+                and isinstance(label, str)
+                and label_re.fullmatch(label)
+                for key, label in loaded.items()
+            ):
+                self._fail(
+                    f"{self._map_name} {path} must be a JSON object mapping "
+                    f"strings to {label_prefix}_NN labels."
+                )
+            normalized = {
+                self._normalize_key(key): label for key, label in loaded.items()
+            }
+            if len(normalized) != len(loaded):
+                self._fail(
+                    f"{self._map_name} {path} contains duplicate normalized keys."
+                )
+            if len(set(normalized.values())) != len(normalized):
+                self._fail(
+                    f"{self._map_name} {path} reuses a {label_prefix}_NN label."
+                )
+            self._map = normalized
+
+    def _fail(self, message: str) -> None:
+        raise self._error_factory(message)
+
+    def _used_numbers(self) -> set[int]:
+        prefix = f"{self.label_prefix}_"
+        return {
+            int(label.removeprefix(prefix)) for label in self._map.values()
+        }
+
+    def _next_unused(self) -> str:
+        used = self._used_numbers()
+        if self._reuse_gaps:
+            number = 1
+            while number in used:
+                number += 1
+        else:
+            number = max(used, default=0) + 1
+        return f"{self.label_prefix}_{number:02d}"
+
+    def ensure_all(self, identifiers: Iterable[str]) -> None:
+        """Assign missing identifiers deterministically in normalized order."""
+        normalized = {self._normalize_key(value) for value in identifiers}
+        for identifier in sorted(normalized):
+            if identifier not in self._map:
+                self._map[identifier] = self._next_unused()
+
+    def stable_id(self, identifier: str) -> str:
+        normalized = self._normalize_key(identifier)
+        if normalized not in self._map:
+            self.ensure_all([normalized])
+        return self._map[normalized]
+
+    def display(self, identifier: str) -> str:
+        normalized = self._normalize_key(identifier)
+        stable = self.stable_id(normalized)
+        return self._display_names.get(normalized, stable)
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.path.with_name(self.path.name + ".tmp")
+        tmp.write_text(
+            json.dumps(self._map, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        tmp.replace(self.path)
 
 
 # --------------- Privacy guard ------------------------------------

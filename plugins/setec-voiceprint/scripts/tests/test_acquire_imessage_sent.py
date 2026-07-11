@@ -308,8 +308,12 @@ def test_contact_map_is_stable_and_uses_next_unused_number(tmp_path):
 
 
 def test_author_corpus_locator_is_independent_of_contact_label_order():
-    first = A.ContactMap(Path("unused-first.json"))
-    second = A.ContactMap(Path("unused-second.json"))
+    first = A.ac.StableRedactionMap(
+        Path("unused-first.json"), label_prefix="contact"
+    )
+    second = A.ac.StableRedactionMap(
+        Path("unused-second.json"), label_prefix="contact"
+    )
     first.ensure_all(["raw-chat-a", "raw-chat-b"])
     second.ensure_all(["raw-chat-b"])
     second.ensure_all(["raw-chat-a"])
