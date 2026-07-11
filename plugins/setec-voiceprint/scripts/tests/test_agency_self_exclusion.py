@@ -5,11 +5,12 @@ pulls its own agency/abstraction profile into its own baseline, deflating every 
 "in-distribution" result. The path-only guard misses a copy at a different path; the
 content-fingerprint guard closes it.
 
-Sibling of the Codex self-exclusion sweep (idiolect_detector / originality_audit #278 /
-rank_turbulence_audit #280). Unlike the case-insensitive stance/discourse siblings, agency's
-``_PROPER_NOUN_RE`` is a case-SENSITIVE primary signal, so the fingerprint hashes the CASE-PRESERVED
-``_WORD_RE`` word stream verbatim: a byte/whitespace copy is dropped, but a re-cased document — which
-scores a genuinely different proper-noun rate here — is KEPT (no over-exclusion).
+PR #307 Codex review (whole-cleaned-text, NOT the token stream): the fingerprint is sha256 over the
+WHOLE ``strip_non_prose``-cleaned text. An earlier case-preserved-``_WORD_RE`` fingerprint dropped
+punctuation and would OVER-EXCLUDE a baseline differing only in punctuation — which the ``\\s+``-joined
+passive/light-verb regexes score differently — silently changing the reference corpus. The cleaned-text
+hash drops only an EXACT cleaned-text copy (incl. one wrapped in stripped front matter) and KEEPS any
+baseline the audit scores differently, including a re-cased one (proper-noun rate is case-sensitive).
 """
 
 from __future__ import annotations
@@ -22,67 +23,84 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import agency_abstraction_audit as aaa  # type: ignore
+from preprocessing import strip_non_prose  # type: ignore
 
 
 TARGET = (
-    "Katherine Powell approved the transfer. The Committee accepted her "
-    "recommendation. Denver and Boston reported the resolution of the dispute. "
-    "The organization completed its evaluation of the proposal in March."
+    "The transfer was approved by the board and the plan was completed on time. "
+    "Katherine Powell reviewed it. The Committee accepted the resolution in March "
+    "and the report was filed before the deadline had passed."
 ) * 5
 OTHER = (
     "Something was decided somewhere by someone, and the matter was closed. "
     "A wall was painted. A field was mown. The results were tabulated quietly "
     "and the whole business was forgotten before the week was out."
 ) * 5
+# Same words, a comma inserted after each "was" ("was approved" -> "was, approved"): the old
+# case-preserved token-stream fingerprint dropped the comma and collapsed it into the target; the
+# passive regex (`was\s+approved`) no longer matches, so it is a distinct baseline that must be KEPT.
+PUNCT_VARIANT = TARGET.replace("was ", "was, ")
+# A re-cased copy: proper-noun rate is case-sensitive, so it scores differently and must be KEPT.
+RECASED = TARGET.lower()
+FRONT_MATTER_COPY = f"---\ntitle: Not The Target\nauthor: Someone Else\n---\n{TARGET}"
+
+
+def _cleaned(text: str) -> str:
+    c, _ = strip_non_prose(text, None)
+    return c
+
+
+def _fp() -> str:
+    return aaa._content_fingerprint(_cleaned(TARGET))
 
 
 def _names(block):
     return {row["file"] for row in block["per_file_summaries"]}
 
 
+def _run(bdir):
+    return aaa.audit_baseline_agency(
+        str(bdir), target_fingerprint=_fp(), include_filenames=True,
+    )
+
+
 def test_content_duplicate_at_other_path_is_excluded(tmp_path):
     bdir = tmp_path / "b"
     bdir.mkdir()
     (bdir / "genuine.txt").write_text(OTHER, encoding="utf-8")
-    (bdir / "sneaky_copy.txt").write_text(TARGET, encoding="utf-8")  # a copy of the target
-    fp = aaa._content_fingerprint(TARGET)
-    block = aaa.audit_baseline_agency(
-        str(bdir), target_fingerprint=fp, include_filenames=True,
-    )
-    names = _names(block)
-    assert "sneaky_copy.txt" not in names   # the target's own copy is dropped
-    assert "genuine.txt" in names           # the genuinely-different doc is kept
-    assert block["n_files"] == 1
+    (bdir / "sneaky_copy.txt").write_text(TARGET, encoding="utf-8")
+    names = _names(_run(bdir))
+    assert "sneaky_copy.txt" not in names
+    assert "genuine.txt" in names
 
 
-def test_whitespace_reformatted_copy_excluded(tmp_path):
-    # _WORD_RE tokenization folds whitespace/punctuation outside word tokens, so a re-wrapped copy
-    # (same words, same case) is tokenization-equivalent and must be self-excluded (fail-closed).
-    variant = TARGET.replace(" ", "\n  ").replace(".", ".\n\n")
+def test_front_matter_wrapped_copy_is_excluded(tmp_path):
     bdir = tmp_path / "b"
     bdir.mkdir()
-    (bdir / "variant.txt").write_text(variant, encoding="utf-8")
     (bdir / "genuine.txt").write_text(OTHER, encoding="utf-8")
-    fp = aaa._content_fingerprint(TARGET)
-    block = aaa.audit_baseline_agency(
-        str(bdir), target_fingerprint=fp, include_filenames=True,
-    )
-    names = _names(block)
-    assert "variant.txt" not in names
+    (bdir / "disguised.txt").write_text(FRONT_MATTER_COPY, encoding="utf-8")
+    names = _names(_run(bdir))
+    assert "disguised.txt" not in names
+    assert "genuine.txt" in names
+
+
+def test_punctuation_variant_not_over_excluded(tmp_path):
+    bdir = tmp_path / "b"
+    bdir.mkdir()
+    (bdir / "variant.txt").write_text(PUNCT_VARIANT, encoding="utf-8")
+    (bdir / "genuine.txt").write_text(OTHER, encoding="utf-8")
+    names = _names(_run(bdir))
+    assert "variant.txt" in names
     assert "genuine.txt" in names
 
 
 def test_recased_document_is_kept_case_is_a_signal(tmp_path):
-    # Agency's proper-noun rate is case-SENSITIVE: an all-lowercase version of the target scores a
-    # very different profile and is a genuinely different document, so it must NOT be over-excluded.
+    # Agency's proper-noun rate is case-SENSITIVE: an all-lowercase copy scores a different profile
+    # and is a genuinely different document, so it must NOT be over-excluded.
     bdir = tmp_path / "b"
     bdir.mkdir()
-    (bdir / "lowercased.txt").write_text(TARGET.lower(), encoding="utf-8")
-    fp = aaa._content_fingerprint(TARGET)
-    block = aaa.audit_baseline_agency(
-        str(bdir), target_fingerprint=fp, include_filenames=True,
-    )
-    assert "lowercased.txt" in _names(block)
+    (bdir / "lowercased.txt").write_text(RECASED, encoding="utf-8")
+    assert "lowercased.txt" in _names(_run(bdir))
 
 
 def test_distinct_docs_not_over_excluded(tmp_path):
@@ -94,9 +112,4 @@ def test_distinct_docs_not_over_excluded(tmp_path):
         "The Bureau documented the transaction and archived the correspondence." * 5,
         encoding="utf-8",
     )
-    fp = aaa._content_fingerprint(TARGET)
-    block = aaa.audit_baseline_agency(
-        str(bdir), target_fingerprint=fp, include_filenames=True,
-    )
-    assert _names(block) == {"a.txt", "b.txt"}
-    assert block["n_files"] == 2
+    assert _names(_run(bdir)) == {"a.txt", "b.txt"}

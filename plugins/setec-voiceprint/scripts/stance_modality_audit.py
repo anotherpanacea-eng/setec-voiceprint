@@ -155,28 +155,25 @@ def _word_count(text: str) -> int:
     return len(_WORD_RE.findall(text))
 
 
-# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
-_FP_SEP = "\x1f"
+def _content_fingerprint(cleaned_text: str) -> str:
+    """sha256 of the WHOLE ``strip_non_prose``-cleaned text — the single string the audit reads before
+    its own matching (``audit_stance_modality(cleaned)``). Callers pass the ``strip_non_prose`` output
+    computed with the same strip options the baseline loader uses, so a baseline file carrying a copy of
+    the target — even at a DIFFERENT path than ``--target`` (the path guard misses a copy under another
+    filename), and even one wrapped in front matter the preprocessing strips — has the same cleaned
+    scoring input and is dropped before it pulls the baseline mean/SD toward the target and deflates the
+    z-scores.
 
-
-def _content_fingerprint(text: str) -> str:
-    """sha256 of the lowercased ``_WORD_RE`` (``\\b\\w+\\b``) word stream — the surface's own word
-    tokenizer, lowercased because every stance / modality marker in ``_PATTERNS`` is matched
-    case-INSENSITIVELY (``re.IGNORECASE``). Category densities, the hedge/booster ratio, and the
-    marker entropy are all per-1000-word rates over this stream, so a baseline file carrying a copy of
-    the target — even a re-cased copy, and even at a DIFFERENT path than ``--target`` (which the path
-    guard misses) — is marker-equivalent to it and would pull the baseline mean/SD toward the target's
-    own stance profile, deflating the z-scores toward a false "in-distribution" result. The content
-    fingerprint self-excludes it alongside the path guard.
-
-    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
-    #278 / rank_turbulence_audit #280). Fail-CLOSED: lowercasing + dropping punctuation/whitespace
-    makes the fingerprint's equivalence class a SUPERSET of the case-insensitive marker matcher's — a
-    match can only DROP a copy, never re-admit one; a genuinely different baseline doc has a different
-    token stream and is KEPT."""
-    return hashlib.sha256(
-        _FP_SEP.join(t.lower() for t in _WORD_RE.findall(text)).encode("utf-8")
-    ).hexdigest()
+    Whole-cleaned-text, NOT the ``_WORD_RE`` token stream (PR #307 Codex review of the sibling
+    ``voice_distance`` fix): several features here are punctuation-SENSITIVE — the category densities,
+    the hedge/booster ratio, and the marker entropy all count MULTI-WORD stance / modality markers
+    (``_PATTERNS``, matched with ``\\s+`` — e.g. ``ought\\s+to``, ``need\\s+to``, ``more\\s+or\\s+less``),
+    so a comma inserted mid-marker changes the count. A token-stream fingerprint folds punctuation/case
+    and would OVER-EXCLUDE a baseline that differs from the target only in those — silently *changing
+    the reference corpus*, not merely self-excluding the target. Hashing the cleaned string makes the
+    fingerprint's equivalence class the string itself: it drops only an exact cleaned-text copy (and
+    catches a front-matter-wrapped copy) while KEEPING any baseline the audit scores differently."""
+    return hashlib.sha256(cleaned_text.encode("utf-8")).hexdigest()
 
 
 def _per_thousand(count: int, n_words: int) -> float:
@@ -408,23 +405,26 @@ def audit_baseline_stance(
                 "reason": f"unreadable: {exc}",
             })
             continue
-        if (
-            target_fingerprint is not None
-            and _content_fingerprint(raw) == target_fingerprint
-        ):
-            # A copy of the target at a different path: its stance profile IS the target's, so pooling
-            # it into the baseline would pull the mean/SD toward the target and deflate the z-scores.
-            sys.stderr.write(
-                f"  excluding {p.name} from stance baseline "
-                "(content-duplicate of the target)\n"
-            )
-            continue
         cleaned, _ = strip_non_prose(
             raw, strip_rules,
             allow_non_prose=allow_non_prose,
             strip_aggressive=strip_aggressive,
             strip_masking=strip_masking,
         )
+        if (
+            target_fingerprint is not None
+            and _content_fingerprint(cleaned) == target_fingerprint
+        ):
+            # A copy of the target at a different path: its cleaned scoring input IS the target's, so
+            # pooling it into the baseline would pull the mean/SD toward the target and deflate the
+            # z-scores. Compared on the CLEANED text so a copy wrapped in stripped front matter is still
+            # caught, and a merely punctuation-/case-distinct baseline (which the audit scores
+            # differently) is NOT over-excluded.
+            sys.stderr.write(
+                f"  excluding {p.name} from stance baseline "
+                "(content-duplicate of the target)\n"
+            )
+            continue
         a = audit_stance_modality(cleaned)
         if not a.get("available"):
             skipped_files.append({
@@ -788,7 +788,7 @@ def main(argv: list[str] | None = None) -> int:
                 strip_aggressive=args.strip_aggressive,
                 strip_masking=args.strip_masking,
                 target_path=target_path,
-                target_fingerprint=_content_fingerprint(raw),
+                target_fingerprint=_content_fingerprint(cleaned),
                 include_filenames=args.include_baseline_filenames,
             )
         except FileNotFoundError as exc:

@@ -119,32 +119,33 @@ def _tokenize(text: str) -> list[str]:
     return [m.group(0).lower() for m in _WORD_RE.finditer(text)]
 
 
-# ASCII unit separator: bounds the serialized token stream so ["ab"] and ["a","b"] stay distinct.
-_FP_SEP = "\x1f"
-
-
-def _content_fingerprint(text: str) -> str:
-    """sha256 of the ``_tokenize`` stream (lowercased ``[A-Za-z][A-Za-z'’-]*``) — the exact
-    tokenization this surface's n-gram / frame mining consumes (lexical bundles, slot frames, idioms,
-    hapax survival, and stance frames are all built over ``_tokenize`` n-grams). Two texts with the
-    same ``_tokenize`` stream produce identical frames, so a baseline file carrying a copy of the
-    target — even at a DIFFERENT path than ``--target``, which the path guard misses — would pool the
-    target's own frames into the baseline and inflate every reuse/survival rate toward a false
-    "on-frame" result. The content fingerprint self-excludes it alongside the path guard.
-
-    Matcher-aligned (sibling of the Codex self-exclusion sweep: idiolect_detector / originality_audit
-    #278 / rank_turbulence_audit #280). Fail-CLOSED: the token stream folds case and drops
-    punctuation/whitespace relative to raw text, so the fingerprint's equivalence class is a SUPERSET
-    of the frame matcher's — a match can only DROP a copy, never re-admit one; a genuinely different
-    baseline doc has a different token stream and is KEPT."""
-    return hashlib.sha256(_FP_SEP.join(_tokenize(text)).encode("utf-8")).hexdigest()
-
-
 def _strip_blockquotes(text: str) -> str:
     return "\n".join(
         line for line in text.splitlines()
         if not line.lstrip().startswith(">")
     )
+
+
+def _content_fingerprint(text: str, *, keep_quotes: bool = False) -> str:
+    """sha256 of the exact string ``audit_phraseology`` scores — which depends on ``keep_quotes``.
+    This surface does NOT run ``strip_non_prose``, but under the default ``keep_quotes=False`` the audit
+    strips blockquote lines from both target and baselines before tokenizing, so the scored input is
+    ``_strip_blockquotes(text)`` (raw text only when ``--keep-quotes`` is set). The fingerprint mirrors
+    that exactly, so a baseline file carrying a copy of the target — even at a DIFFERENT path than
+    ``--target`` (which the path guard misses), and even one that differs only in stripped blockquote
+    lines (which the audit scores identically) — is dropped before it pools the target's own frames into
+    the baseline and inflates every reuse/survival rate.
+
+    Whole-text (post-blockquote-strip), NOT the ``_tokenize`` stream (PR #307 Codex review of the
+    sibling ``voice_distance`` fix): the slot-frame and stance-frame matchers are punctuation-/
+    case-SENSITIVE (e.g. the frame templates carry literal ``,``/``;`` and a capitalized ``What``), so a
+    token-stream fingerprint that folds case and drops punctuation would OVER-EXCLUDE a baseline that
+    differs from the target only in those — silently *changing the reference corpus*, not merely
+    self-excluding the target. Hashing the scored string makes the fingerprint's equivalence class that
+    string itself: it drops only an exact scored-input copy and KEEPS any baseline the audit would
+    score differently."""
+    scored = text if keep_quotes else _strip_blockquotes(text)
+    return hashlib.sha256(scored.encode("utf-8")).hexdigest()
 
 
 # ---------- Lexical bundles ----------
@@ -1085,6 +1086,7 @@ def _walk_baseline(
     target_path: Path | None,
     *,
     target_fingerprint: str | None = None,
+    keep_quotes: bool = False,
 ) -> tuple[list[str], list[Path], list[Path]]:
     """Walk the baseline directory, self-excluding any copy of the target.
 
@@ -1132,7 +1134,7 @@ def _walk_baseline(
             continue
         if (
             target_fingerprint is not None
-            and _content_fingerprint(text) == target_fingerprint
+            and _content_fingerprint(text, keep_quotes=keep_quotes) == target_fingerprint
         ):
             # A copy of the target at a different path: its frames are the target's own, so pooling
             # it into the baseline would inflate every reuse/survival rate toward a false "on-frame".
@@ -1213,7 +1215,10 @@ def main(argv: list[str] | None = None) -> int:
             baseline_texts, loaded, _skipped = _walk_baseline(
                 Path(args.baseline_dir).expanduser(),
                 target_path,
-                target_fingerprint=_content_fingerprint(target_text),
+                target_fingerprint=_content_fingerprint(
+                    target_text, keep_quotes=args.keep_quotes,
+                ),
+                keep_quotes=args.keep_quotes,
             )
         except (FileNotFoundError, NotADirectoryError) as exc:
             sys.stderr.write(f"--baseline-dir: {exc}\n")
