@@ -5,26 +5,40 @@ entries:
   status: todo
   handoff: none
   consumers: []
-  family: TODO
-  purpose: ingest the user's own sent Gmail prose (Google Takeout mbox, sent only) as an identity-baseline corpus, one entry per email.
+  family: acquisition
+  purpose: ingest the user's own sent Gmail prose (Google Takeout mbox, sent
+    only) as an identity-baseline corpus, one entry per email, for the personal
+    voice_profile baseline (not the impostor pool); the keyboard-composed
+    counterpart to acquire_imessage_sent.
   use_when:
-  - TODO
+  - building the personal identity baseline from the user's own sent email, a
+    keyboard-composed register, out of an offline Google Takeout export
   do_not_use_when:
-  - TODO
+  - the live Gmail API is the only source (this deliberately avoids an OAuth
+    surface and reads a local Takeout .mbox instead)
+  - a short-form mobile-composed register is wanted instead (use
+    acquire_imessage_sent)
   inputs:
-    target: TODO
+    target: local Google Takeout mail export (.mbox); selection is From ==
+      --own-address AND X-Gmail-Labels carries the --sent-label-token
   outputs:
     schema_version: '1.0'
     artifacts:
-    - TODO
+    - identity-baseline .txt + .meta.json under
+      ai-prose-baselines-private/identity/personal_email/<persona>/
+    - draft_manifest.jsonl (corpus_role identity_baseline, use [voice_profile])
+    - recipient_map.json (redacted recipient_NN -> raw address; KEEP PRIVATE)
   compute:
-    tier: core
-    cost_note: TODO
-    length_floor_words: null
+    tier: acquisition
+    cost_note: local mbox scan; no network; per-message quote/signature/forward
+      trimming with a fail-closed residual-attribution backstop
+    length_floor_words: 40
   registers:
-  - TODO
+  - personal
   dependencies:
-    python: []
+    python:
+    - bs4
   examples: []
-  references: []
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
   _seeded_at: '2026-07-10'
