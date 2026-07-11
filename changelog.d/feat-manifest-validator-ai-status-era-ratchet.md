@@ -12,12 +12,12 @@
 - Ratchet 6 is a **new, additive** check — Ratchet 4 is untouched. The two
   compose: an `impostor` + `pre_ai_human` + `post_ai_widespread` entry now trips
   both. `warning` severity, consistent with Ratchet 4.
-- **Blast radius, intentional and disclosed:** `acquire_manuscript.py`'s
-  `--ai-status` defaults to `pre_ai_human`, so a hand-fed manuscript entry with a
-  post-2024 `date_written` and no explicit override now newly warns. This is a
-  warning, not a validation failure — nothing breaks mechanically — but existing
-  manuscript-sourced `identity_baseline` entries dated post-2024 will start
-  surfacing it.
+- **Warning surface, intentional and disclosed:** `acquire_manuscript.py`'s
+  `--ai-status` defaults to `pre_ai_human`, but its `--era` defaults to `undated`;
+  it does not derive era from `date_written`. Manuscript entries therefore newly
+  warn only when the operator explicitly supplies `--era post_ai_widespread` (or
+  an existing manifest entry already carries that era). This is a warning, not a
+  validation failure — nothing breaks mechanically.
 - Per `internal/2026-07-09-manifest-validator-ai-status-era-ratchet-spec.md`.
   Five fixtures in `tests/test_ratchet6_ai_status_era.py` cover: Ratchet 6 firing
   on `identity_baseline`; a correctly-tagged `ai_status: unknown` post-AI entry

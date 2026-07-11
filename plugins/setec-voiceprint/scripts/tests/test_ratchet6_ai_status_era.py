@@ -18,10 +18,10 @@ Five fixtures, one per spec-required case:
          (ai_status != pre_ai_human) -> proves no regression to R4.
          (ai_assisted, not `mixed`: `mixed` carries its own separate
          ai_status consistency warning that would muddy the signal.)
-  (d) identity_baseline + pre_ai_human + post_ai_widespread, standing in
-      for an acquire_manuscript.py-shaped entry whose --ai-status flag
-      defaults to pre_ai_human -> Ratchet 6 fires (the intended, newly
-      warned surface for existing manuscript-sourced entries).
+  (d) identity_baseline + pre_ai_human + explicitly supplied
+      post_ai_widespread era, matching acquire_manuscript.py when an
+      operator combines its default --ai-status with
+      --era post_ai_widespread -> Ratchet 6 fires.
   (e) impostor + pre_ai_human + post_ai_widespread
       -> BOTH Ratchet 4 (era) and Ratchet 6 (ai_status) fire -> proves
          the two compose rather than one masking the other.
@@ -72,7 +72,7 @@ def _entries() -> list[dict]:
             **_impostor_block(),
         },
         {  # (d)
-            "id": "d_manuscript_default", "path": "d.txt",
+            "id": "d_manuscript_explicit_post_ai_era", "path": "d.txt",
             "use": ["voice_profile"], "corpus_role": "identity_baseline",
             "ai_status": "pre_ai_human", "era": "post_ai_widespread",
         },
@@ -131,11 +131,13 @@ def test_c_impostor_ai_assisted_fires_ratchet4_only() -> None:
     )
 
 
-def test_d_manuscript_default_fires_ratchet6() -> None:
-    fields = _warn_fields(_validate().get("d_manuscript_default", []))
+def test_d_manuscript_explicit_post_ai_era_fires_ratchet6() -> None:
+    fields = _warn_fields(
+        _validate().get("d_manuscript_explicit_post_ai_era", [])
+    )
     assert "ai_status" in fields, (
-        "An acquire_manuscript.py-default-shaped entry (identity_baseline "
-        "+ pre_ai_human + post_ai_widespread) should newly warn under "
+        "An acquire_manuscript.py-shaped entry with an explicitly supplied "
+        "post_ai_widespread era should warn under "
         f"Ratchet 6; got warning fields {fields}."
     )
 
@@ -152,6 +154,6 @@ if __name__ == "__main__":
     test_a_baseline_pre_ai_fires_ratchet6()
     test_b_baseline_unknown_is_clean()
     test_c_impostor_ai_assisted_fires_ratchet4_only()
-    test_d_manuscript_default_fires_ratchet6()
+    test_d_manuscript_explicit_post_ai_era_fires_ratchet6()
     test_e_impostor_cofire_trips_both()
     print("ratchet 6: all 5 fixtures pass")
