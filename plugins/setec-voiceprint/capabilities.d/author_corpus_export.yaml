@@ -1,0 +1,103 @@
+entries:
+- id: author_corpus_export
+  script_path: plugins/setec-voiceprint/scripts/author_corpus_export.py
+  surface: voice_coherence_acquisition
+  status: experimental
+  handoff: experimental
+  consumers:
+  - setec-voicewright
+  min_setec_version: "1.123.0"
+  json_delivery: stdout
+  family: corpus-acquisition
+  purpose: >-
+    Export authorized Messages, Gmail, and attested local-document products into a
+    private, closed, ordered multi-register author-corpus package. Emits only a standard
+    SETEC envelope containing a hash-bound no-prose producer receipt; raw prose and
+    identifiers remain local.
+  use_when:
+  - You have private acquire_imessage_sent/acquire_gmail_sent identity-baseline outputs
+  - You have a private legacy author-document manifest plus reviewed map and self-attestation
+  - You need explicit text.personal/email.* register identities and stable HMAC groups
+  - You have completed the bounded live-smoke gate before a full export
+  do_not_use_when:
+  - You want incoming/third-party conversation context (sent-only R1a does not export it)
+  - You cannot supply an owner-only HMAC key and private destination
+  - You need an authorship, consent, provenance, quality, or AI/human verdict
+  inputs:
+  - flag: --source-manifest
+    type: string
+    required: true
+  - flag: --register-map
+    type: string
+    required: true
+  - flag: --allowed-ai-status
+    type: enum
+    required: true
+    values:
+    - pre_ai_human
+    - ai_generated
+    - ai_generated_from_outline
+    - ai_assisted
+    - ai_edited
+    - mixed
+    - unknown
+  - flag: --persona
+    type: string
+    required: true
+  - flag: --document-map
+    type: path
+    required: false
+  - flag: --document-attestation
+    type: path
+    required: false
+  - flag: --hmac-key
+    type: path
+    required: true
+  - flag: --output-dir
+    type: path
+    required: true
+  - flag: --max-records
+    type: int
+    required: false
+  - flag: --max-text-bytes
+    type: int
+    required: false
+  - flag: --live-smoke-confirmed
+    type: bool
+    required: false
+  - flag: --dry-run
+    type: bool
+    required: false
+  - flag: --json
+    type: bool
+    required: false
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - private voicewright-author-corpus/1 package
+    - no-prose setec-author-corpus-export/1 receipt in results.producer_receipt
+  compute:
+    tier: core
+    cost_note: stdlib-only local hashing/copy; no models, API, or network
+    length_floor_words: null
+  registers:
+  - text.personal
+  - email.personal
+  - email.professional
+  - blog.essay
+  - fiction.literary
+  dependencies:
+    python: []
+  examples:
+  - description: Create an owner-only key and validate an email export without writing it
+    cmd: >-
+      umask 077 && mkdir -p ai-prose-baselines-private &&
+      openssl rand -out ai-prose-baselines-private/author-corpus.key 32 &&
+      python3 plugins/setec-voiceprint/scripts/author_corpus_export.py
+      --source-manifest gmail_sent=ai-prose-baselines-private/gmail/draft_manifest.jsonl
+      --register-map gmail_sent:personal=email.personal
+      --allowed-ai-status pre_ai_human --persona me
+      --hmac-key ai-prose-baselines-private/author-corpus.key
+      --output-dir ai-prose-baselines-private/package --dry-run --json
+  references:
+  - https://github.com/anotherpanacea-eng/setec-voiceprint/issues/311

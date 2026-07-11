@@ -66,6 +66,8 @@ _FORWARD_MARKERS = (
 _SIG_DELIM = "-- "
 _HTML_STRIP_SELECTORS = ("div.gmail_quote", ".gmail_attr", "blockquote")
 _ADDR_TOKEN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
+_MESSAGE_ID = re.compile(r"<[^<>\s]+>")
+_PRIVATE_LOCATOR_DOMAIN = b"setec-gmail-private-locator-v1\x00"
 
 
 # --------------- date + era ---------------------------------------
@@ -93,17 +95,28 @@ def _ai_status_from_date(date: _dt.date | None) -> str:
     return "unknown"
 
 
-def _message_date(msg: Message) -> _dt.date | None:
+def _message_datetime(msg: Message) -> _dt.datetime | None:
     raw = msg.get("Date")
     if not raw:
         return None
     try:
-        dt = email.utils.parsedate_to_datetime(raw)
-    except (TypeError, ValueError):
+        parsed = email.utils.parsedate_to_datetime(raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("non-empty Date header is malformed") from exc
+    if parsed is None:
+        raise ValueError("non-empty Date header is malformed")
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        # A timezone-naive Date cannot be canonicalized to UTC. Treat it as
+        # undated (order-degraded) rather than aborting the whole run, matching
+        # the missing-Date path; genuinely malformed headers still refuse above.
         return None
-    if dt is None:
+    return parsed
+
+
+def _message_order_timestamp(parsed: _dt.datetime | None) -> str | None:
+    if parsed is None:
         return None
-    return dt.date()
+    return parsed.astimezone(_dt.timezone.utc).isoformat(timespec="seconds")
 
 
 def _decode_header(value: str | None) -> str:
@@ -117,6 +130,105 @@ def _decode_header(value: str | None) -> str:
         else:
             out.append(text)
     return "".join(out)
+
+
+def _header_message_ids(value: str | None) -> list[str]:
+    """Structurally parse RFC-style message-id tokens without storing them."""
+    return _MESSAGE_ID.findall(value or "")
+
+
+def _private_locator(kind: str, raw: str) -> str:
+    payload = kind.encode("ascii") + b"\x00" + raw.encode("utf-8")
+    return "sha256:" + hashlib.sha256(_PRIVATE_LOCATOR_DOMAIN + payload).hexdigest()
+
+
+def build_thread_roots(messages) -> dict[str, str | None]:
+    """Resolve Message-ID parent chains globally without exporting raw ids."""
+    parents: dict[str, str | None] = {}
+    ambiguous: set[str] = set()
+    for msg in messages:
+        own = _header_message_ids(msg.get("Message-ID"))
+        if len(own) != 1:
+            continue
+        own_id = own[0]
+        references = _header_message_ids(msg.get("References"))
+        in_reply_to = _header_message_ids(msg.get("In-Reply-To"))
+        parent: str | None
+        if references:
+            parent = references[0]
+        elif len(in_reply_to) == 1:
+            parent = in_reply_to[0]
+        elif in_reply_to:
+            parent = None
+            ambiguous.add(own_id)
+        else:
+            parent = None
+        if own_id in parents:
+            ambiguous.add(own_id)
+        else:
+            parents[own_id] = parent
+
+    resolved: dict[str, str | None] = {}
+    for start in parents:
+        if start in resolved:
+            continue
+        path: list[str] = []
+        positions: dict[str, int] = {}
+        current = start
+        while True:
+            if current in resolved:
+                root = resolved[current]
+                break
+            if current in ambiguous:
+                root = None
+                break
+            if current in positions:
+                # A directed parent cycle invalidates the cycle and every row
+                # whose only route reaches it.
+                root = None
+                break
+            if current not in parents or parents[current] is None:
+                root = current
+                if current in parents:
+                    resolved[current] = root
+                break
+            positions[current] = len(path)
+            path.append(current)
+            current = parents[current]
+        for message_id in reversed(path):
+            resolved[message_id] = root
+    return resolved
+
+
+def private_message_locators(
+    msg: Message, thread_roots: dict[str, str | None] | None = None,
+) -> tuple[str | None, str | None]:
+    """Return non-reversible (thread, entry) preimages for R1a export.
+
+    A thread roots at the first References id, then In-Reply-To, then its own
+    Message-ID for a newly composed thread.  The entry locator always needs the
+    message's own Message-ID.  Missing structure is explicit: the later exporter
+    marks that record atomic/degraded instead of inventing a thread.
+    """
+    references = _header_message_ids(msg.get("References"))
+    parents = _header_message_ids(msg.get("In-Reply-To"))
+    own = _header_message_ids(msg.get("Message-ID"))
+    entry_id = own[0] if len(own) == 1 else None
+    if entry_id is None:
+        root_id = None
+    elif thread_roots is not None:
+        root_id = thread_roots.get(entry_id)
+    elif references:
+        root_id = references[0]
+    elif parents:
+        # An IRT-only chain needs the global graph; never guess that the immediate
+        # parent is the stable root when no graph was supplied.
+        root_id = None
+    else:
+        root_id = entry_id
+    thread = _private_locator("thread", root_id) if root_id else None
+    entry = _private_locator("entry", entry_id) if entry_id else None
+    return thread, entry
 
 
 # --------------- selection ----------------------------------------
@@ -720,8 +832,17 @@ def parse_options(args: argparse.Namespace) -> Options:
 # --------------- per-message processing ---------------------------
 
 
+@dataclass(frozen=True)
+class PreparedMessage:
+    piece: ac.AcquiredPiece
+    private_thread_locator: str | None
+    private_entry_locator: str | None
+    private_order_timestamp: str | None
+
+
 def process_message(
     msg: Message, opts: Options, recipients: RecipientMap, summary: Summary,
+    thread_roots: dict[str, str | None] | None = None,
 ):
     """Return an AcquiredPiece or None, updating summary counters."""
     if not _own_address_match(msg, opts.own_address):
@@ -734,7 +855,8 @@ def process_message(
         summary.skipped_auto_generated += 1
         return None
 
-    date = _message_date(msg)
+    message_datetime = _message_datetime(msg)
+    date = message_datetime.date() if message_datetime is not None else None
     # Undated messages are included in every run (windowed or not) so a
     # windowed live-smoke review actually sees them before a full write.
     if date is not None:
@@ -806,16 +928,36 @@ def process_message(
         era=_era_from_date(date),
         notes=notes,
     )
-    return piece
+    thread_locator, entry_locator = private_message_locators(msg, thread_roots)
+    return PreparedMessage(
+        piece,
+        thread_locator,
+        entry_locator,
+        _message_order_timestamp(message_datetime),
+    )
 
 
-def emit_piece(piece, opts: Options, summary: Summary) -> None:
+def _augment_private_meta(meta_path: Path, prepared: PreparedMessage) -> None:
+    data = json.loads(meta_path.read_text(encoding="utf-8"))
+    if prepared.private_thread_locator is not None:
+        data["author_corpus_thread_locator"] = prepared.private_thread_locator
+    if prepared.private_entry_locator is not None:
+        data["author_corpus_entry_locator"] = prepared.private_entry_locator
+    data["author_corpus_order_timestamp"] = prepared.private_order_timestamp
+    meta_path.write_text(
+        json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+
+
+def emit_piece(prepared: PreparedMessage, opts: Options, summary: Summary) -> None:
+    piece = prepared.piece
     if ac.content_hash_already_present(piece.content_hash, opts.output_dir):
         summary.skipped_duplicate += 1
         return
-    text_path, _ = ac.write_piece(
+    text_path, meta_path = ac.write_piece(
         piece, output_dir=opts.output_dir, scraper_version=SCRAPER_VERSION,
     )
+    _augment_private_meta(meta_path, prepared)
     ai_status = _ai_status_from_date(piece.date_written)
     entry = ac.compose_manifest_entry(
         piece,
@@ -876,21 +1018,30 @@ def run(args: argparse.Namespace) -> int:
 
     summary = Summary()
     box = mailbox.mbox(str(opts.mbox_path))
+    thread_roots = build_thread_roots(box)
     own_matches_total = 0
     for msg in box:
         if summary.acquired >= opts.max_items:
             break
         if _own_address_match(msg, opts.own_address):
             own_matches_total += 1
-        piece = process_message(msg, opts, recipients, summary)
-        if piece is None:
+        try:
+            prepared = process_message(
+                msg, opts, recipients, summary, thread_roots=thread_roots,
+            )
+        except ValueError:
+            sys.stderr.write(
+                f"{TOOL_NAME}: malformed private message metadata; refusing.\n"
+            )
+            return 2
+        if prepared is None:
             continue
         if opts.dry_run:
             summary.acquired += 1
             if summary.acquired <= 5:
-                sys.stderr.write(f"  would write: {piece.title!r}\n")
+                sys.stderr.write(f"  would write: {prepared.piece.title!r}\n")
             continue
-        emit_piece(piece, opts, summary)
+        emit_piece(prepared, opts, summary)
 
     dedupe_only = summary.acquired == 0 and summary.skipped_duplicate > 0
     empty_is_error = (
