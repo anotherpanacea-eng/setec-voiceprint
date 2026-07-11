@@ -80,16 +80,18 @@ def test_distinct_docs_not_over_excluded(tmp_path):
 
 def test_unicode_composition_variant_not_over_excluded(tmp_path):
     # A baseline file that is the target's text in a DIFFERENT Unicode composition
-    # (NFD vs NFC) is a distinct scored string: this surface's word tokenizer splits
-    # the accented words differently, so the audit genuinely scores it differently.
-    # The prior NFC-folded fingerprint collapsed the two and OVER-EXCLUDED the
-    # variant; the exact-string (verbatim) fingerprint keeps it.
+    # (NFD vs NFC) is a distinct byte string that this surface's word tokenizer
+    # splits differently (word counts diverge). The exact-string policy makes the
+    # fingerprint's equivalence class the string itself, so the variant is KEPT;
+    # the prior NFC-folded fingerprint collapsed the two and could OVER-EXCLUDE it.
+    # (Whether the six per-sentence rates then differ is not asserted — the point
+    # is that the guard no longer presumes NFC-equivalence and drop it.)
     import unicodedata
 
     nfc = unicodedata.normalize("NFC", ACCENTED)
     nfd = unicodedata.normalize("NFD", nfc)
     assert nfc.encode("utf-8") != nfd.encode("utf-8")
-    assert pra.count_words(nfc) != pra.count_words(nfd)  # genuinely scored differently
+    assert pra.count_words(nfc) != pra.count_words(nfd)  # tokenized differently
     assert pra._content_fingerprint(nfc) != pra._content_fingerprint(nfd)  # no NFC fold
 
     bdir = tmp_path / "b"

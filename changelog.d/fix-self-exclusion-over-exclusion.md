@@ -31,7 +31,10 @@ string itself: a guard drops only an EXACT copy and KEEPS any baseline the audit
 
 Grouped by preprocessing: the six `strip_non_prose` surfaces (`function_word_grammar`, `discourse`,
 `stance`, `agency`, `punctuation_cadence`, `paragraph`) hash the **cleaned** text; the two that do not
-strip (`phraseological`, `productive_roughness`) hash the whole **raw** scored input.
+run `strip_non_prose` (`phraseological`, `productive_roughness`) hash their audit's scored input —
+`productive_roughness` the raw text, and `phraseological` the text after its own `keep_quotes` handling
+(blockquote lines stripped under the default, kept with `--keep-quotes`) so a quote-wrapped copy the
+audit scores identically is still self-excluded on both sides.
 
 `dialogue_voice_audit` is deliberately unchanged: its matcher is narration-agnostic, so its
 extracted-turn-sequence fingerprint already is its exact scored input, and a whole-text hash would
