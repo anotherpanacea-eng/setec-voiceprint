@@ -935,6 +935,57 @@ def _build_author_corpus_export() -> dict[str, Any]:
 
 #: surface id -> raw-envelope builder. The id matches the
 #: ``capabilities.d/<id>.yaml`` fragment stem and the golden filename stem.
+def _build_agd_move_scan() -> dict[str, Any]:
+    import agd_move_scan as m  # type: ignore
+    from agd_move_scan_judge import _mock_judge  # type: ignore
+
+    # Drive the surface through its OWN deterministic mock judge (no LLM, no
+    # API) so the observation shape, register-warning channel, drop-warning
+    # channel, and claim_license refusals are the REAL ones the script emits.
+    # Two canonical paragraphs: one cued GUARDING, one cue-free DISCOUNTING
+    # (the R3B seam's decisive case). The text sits above MIN_WORDS and carries
+    # inferential connectives so the REAL register_warnings() path (called
+    # below, never hard-coded) yields the same empty list the CLI would.
+    # compose_envelope() assembles the schema 1.0 envelope exactly as the CLI
+    # does. NOTE: the mock's GUARDING span is paragraph 0's first 8 words, so
+    # its cue "may" must appear there (cues are span-anchored).
+    text = (
+        "The council may want to reconsider the crossing-guard budget before "
+        "the vote, because the current allocation was set before the district "
+        "added two elementary schools. Some parents report feeling safer near "
+        "the new crossings, and studies of comparable districts suggest that "
+        "guarded intersections reduce injuries. Therefore the budget line "
+        "deserves a second reading, although the fiscal calendar leaves "
+        "little room for amendments this quarter.\n\n"
+        "Residents near the depot, several of whom asked about noise at the "
+        "last meeting, mostly discussed parking instead. The planning office, "
+        "however, has treated the two issues as one docket item, and the "
+        "resulting schedule assumes that neither generates further comment. "
+        "Because the depot review closes next month, the council should hear "
+        "the crossing-guard question first and hold the parking discussion "
+        "for the fall session."
+    )
+    paragraphs = m.split_paragraphs(text)
+    judge = _mock_judge()
+    judge_result = judge(paragraphs)
+    results = m.build_results(
+        observations=judge_result.values["observations"],
+        judge_dict=judge_result.to_dict(),
+        n_paragraphs=len(paragraphs),
+        n_words=m.count_words(text),
+        reg_warnings=m.register_warnings(text, m.count_words(text)),
+        prompt_fp="(fixture fingerprint)",
+    )
+    return m.compose_envelope(
+        target_path=Path("<fixture>"),
+        target_words=m.count_words(text),
+        results=results,
+        drop_warnings=judge_result.drop_warnings,
+        licenses_text=m.DEFAULT_LICENSES,
+        does_not_license_text=m.DEFAULT_DOES_NOT_LICENSE,
+    )
+
+
 SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "author_corpus_export": _build_author_corpus_export,
     "variance_audit": _build_variance_audit,
@@ -952,6 +1003,7 @@ SURFACE_BUILDERS: dict[str, Callable[[], dict[str, Any]]] = {
     "binoculars_audit": _build_binoculars_audit,
     "argument_decision_audit": _build_argument_decision_audit,
     "position_pair_register": _build_position_pair_register,
+    "agd_move_scan": _build_agd_move_scan,
 }
 
 

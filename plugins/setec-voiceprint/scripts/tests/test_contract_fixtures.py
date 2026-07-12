@@ -55,6 +55,7 @@ EXPECTED_TASK_SURFACE = {
     "binoculars_audit": "binoculars_discrimination",
     "argument_decision_audit": "argument_decision_audit",
     "position_pair_register": "position_pair_register",
+    "agd_move_scan": "agd_move_scan",
 }
 
 REQUIRED_TOP_LEVEL_KEYS = frozenset({
