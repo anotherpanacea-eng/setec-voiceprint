@@ -7,6 +7,64 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.124.0] - 2026-07-12
+
+### Added
+
+**`agd_move_scan` — located AGD move observations (R3B producer seam; consumer = apodictic's AGD Move Audit).** A new consumer surface (`setec run agd_move_scan … --json`; `json_delivery: stdout`, `consumers: [apodictic]`, `handoff: experimental`) that inventories an argument-shaped passage's performative moves — **ASSURING** (authority/certainty in place of support), **GUARDING** (a claim weakened to shrink its commitment), **DISCOUNTING** (an objection anticipated and set aside, including cue-free structural dismissal) — as **located observations**: family + verbatim span + 0-based paragraph index + surface cue (`null` = cue-free, first-class). Identification is **functional** (at transitions; cues are evidence, never criteria), verbatim-aligned with the consumer audit's Layer-1 discipline (apodictic `craft/argument-agd-audit.md`; the judge prompt carries a cross-repo drift note — re-sync + `PROMPT_VERSION` bump if those definitions change). **Observations only, per the fleet ownership rule (R4A ADR D5: the producer observes; the consumer alone assigns codes):** the `claim_license` refuses any apodictic diagnostic code, any smuggling/soundness adjudication, any aggregate, and reading observation *count* as a quality signal — all three families are legitimate moves, and an observation is a location, never a finding. Pluggable judge (`agd_move_scan_judge.py`: `manifest` offline with fingerprint propagation + drift gate, `mock` test stub, `anthropic`/`openai`/`gemini`/`agent_host` via `judge_backends`; its own manifest schema keys on `values.observations` and reads provenance top-level first — the R3B Phase-1 run-manifest shape — with a nested `judge_identity` fallback; a malformed `observations` collection fails closed as `bad_input`, never a false empty inventory). **Span integrity follows the per-paragraph discipline** (`warrant_judge.normalize_claims` — range-checked `paragraph_index` + whitespace-normalized containment in THAT exact paragraph; NOT the document-wide span check): a wrong-locus, out-of-range, hallucinated, or malformed observation is **dropped with a per-drop warning** on the envelope (never relocated or coerced), and a non-null `cue` must itself anchor in the span (fragment-wise, in cue order, each fragment consuming its span occurrence — for discontinuous cues like `of course … yet`). Results carry `method_version: agd_move_scan_v1`, `calibration_status: heuristic`, judge provenance, and the effective prompt fingerprint — and **no aggregate of the inventory** (no counts or tallies; a consumer derives any tally from the observations list). Focused tests: 14 (posture incl. no-aggregate keys, span-integrity + cue-anchoring drop matrix, benchmark run-manifest provenance, fail-closed collection floors, manifest fingerprint propagation + drift abstain, own-fingerprint distinctness, bad-input floors). Sources: Sinnott-Armstrong & Fogelin, *Understanding Arguments* 9e, ch. 3.
+
+### Changed
+
+- **`acquisition_core`** now owns the shared acquisition-date era mapping and
+  stable private recipient/contact redaction map. The EPUB, sent-iMessage, and
+  sent-Gmail acquirers use the shared helpers while preserving their existing
+  era boundaries, identifier normalization, and numbering behavior.
+
+### Fixed
+
+**Self-exclusion content fingerprints no longer OVER-EXCLUDE baselines the audit scores differently —
+generalizes the PR #307 Codex fix from `voice_distance` to its comparison-against-baseline siblings
+(`function_word_grammar_audit`, `discourse_move_signature`, `stance_modality_audit`,
+`agency_abstraction_audit`, `phraseological_signature_audit`, `punctuation_cadence_audit`,
+`paragraph_audit`, `productive_roughness_audit`).** Each surface's content-duplicate guard now
+fingerprints the **whole scored text** the way `voice_distance` does — `sha256` of the exact string the
+per-file audit reads, verbatim on both sides — so the fingerprint's equivalence class is the scored
+string itself: a guard drops only an EXACT copy and KEEPS any baseline the audit would score differently
+(no over-exclusion). The eight guards were not all broken the same way:
+
+- **Five had a genuine over-exclusion bug** (`function_word_grammar`, `discourse`, `stance`, `agency`,
+  `phraseological`): they hashed the surface's own **token stream** (a lowercased / case-preserved word
+  regex). Codex flagged on `voice_distance` that a token-stream fingerprint folds punctuation/case, so
+  it drops a baseline that differs from the target *only* in punctuation/case — yet that baseline is a
+  distinct document to the surface's punctuation-/case-SENSITIVE features (sentence-run segmentation,
+  per-sentence move classification, `\s+`-joined multi-word markers, case-sensitive proper-noun /
+  slot-frame templates). Over-excluding it silently CHANGES the baseline reference corpus rather than
+  merely self-excluding the target. Confirmed empirically for each: a punctuation/case variant the
+  audit scores differently was being dropped.
+- **Three were already whole-text `sha256` over the NFC-normalized text** — NOT token streams
+  (`punctuation_cadence`, `paragraph`, `productive_roughness`). They change for two narrower reasons:
+  - *Preprocessing alignment* (`punctuation_cadence`, `paragraph`, which run `strip_non_prose`): the
+    guard now hashes the **cleaned** text — the actual scored input — instead of the raw text, so the
+    fingerprint matches what the audit reads and a copy wrapped in stripped front matter is now caught
+    (a raw-text hash missed it).
+  - *Dropping an overly broad NFC fold* (all three): NFC normalization could over-collapse a
+    Unicode-composition variant that the word tokenizers split differently (so the audit scores it
+    differently). Hashing the scored string verbatim keeps such a variant instead of over-excluding it.
+
+Grouped by preprocessing: the six `strip_non_prose` surfaces (`function_word_grammar`, `discourse`,
+`stance`, `agency`, `punctuation_cadence`, `paragraph`) hash the **cleaned** text; the two that do not
+run `strip_non_prose` (`phraseological`, `productive_roughness`) hash their audit's scored input —
+`productive_roughness` the raw text, and `phraseological` the text after its own `keep_quotes` handling
+(blockquote lines stripped under the default, kept with `--keep-quotes`) so a quote-wrapped copy the
+audit scores identically is still self-excluded on both sides.
+
+`dialogue_voice_audit` is deliberately unchanged: its matcher is narration-agnostic, so its
+extracted-turn-sequence fingerprint already is its exact scored input, and a whole-text hash would
+*leak* a narration variant into the baseline. Per-surface regression tests updated: the five
+token-stream surfaces now assert a punctuation/case variant is KEPT (was asserted excluded); the strip
+surfaces assert a front-matter-wrapped copy is excluded; and `punctuation_cadence`, `paragraph`, and
+`productive_roughness` assert a Unicode-composition (NFD) variant the audit scores differently is KEPT.
+
 ## [1.123.0] - 2026-07-11
 
 ### Added
