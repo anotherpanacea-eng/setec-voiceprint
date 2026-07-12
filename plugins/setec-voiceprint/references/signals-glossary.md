@@ -1,6 +1,6 @@
 # SETEC Voiceprint: Stylometric Signals Glossary
 
-Terse reference for every analytical measurement SETEC computes on prose. 104 signals across 23 families.
+Terse reference for every analytical measurement SETEC computes on prose. 105 signals across 24 families.
 
 This document is the framework's authoritative index of names, signal paths, polarity, and calibration status. Long-form pedagogy — worked before/after examples, interpretive guidance, register-specific case studies, the rhetorical-bankruptcy framing for the AIC family — lives in the framework's external primer (in development; see the Glass-Box Stylometry Sequence for the maintained track). Operators wanting more than the metadata block should consult that.
 
@@ -44,6 +44,7 @@ Each entry block carries the signal's metadata on a single line:
 - [Repetition signals (2)](#repetition-signals)
 - [Narrative-decision signals (33)](#narrative-decision-signals)
 - [Argument-decision signals (6)](#argument-decision-signals)
+- [AGD move-scan observations (1)](#agd-move-scan-observations)
 - [Totals](#totals)
 
 ---
@@ -686,6 +687,14 @@ Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `
 
 ---
 
+## AGD move-scan observations
+
+### Located AGD move observations (`agd_move_scan`)
+
+- **What it reports:** each performative argument move a pluggable LLM judge identifies — ASSURING / GUARDING / DISCOUNTING (S&F 9e ch. 3) — as a LOCATED observation: family + verbatim span + 0-based paragraph index + surface cue (`null` = cue-free). Identification is functional (at transitions; cues are evidence, never criteria), aligned with the consumer audit's Layer-1 discipline (apodictic AGD Move Audit).
+- **What it does NOT report:** any adjudication. All three families are legitimate moves; an observation is a location for the consumer audit (which challenges each move and alone assigns codes — R4A ADR D5), never a finding, code, score, or aggregate; observation count is location data, not quality.
+- **Calibration:** `heuristic` — no anchor, no threshold, no operating point. Span integrity is mechanical (per-paragraph verbatim containment; wrong-locus/hallucinated observations dropped with envelope warnings).
+
 ## Totals
 
 | Family | Count |
@@ -712,8 +721,9 @@ Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `
 | repetition | 2 |
 | narrative-decision | 33 (+1 aggregate) |
 | argument-decision | 6 (+1 aggregate) |
+| agd-move-scan | 1 |
 | document-segmentation | 1 |
-| **TOTAL** | **104** |
+| **TOTAL** | **105** |
 
 ## Calibration-status distribution (v1.66.0 + ND v0.1.0 + AD v0.1.0 + DS v1.0)
 
@@ -724,7 +734,7 @@ Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `
 | empirically_oriented | 8 | The six 2026-05-10 EditLens-measured variance signals + pos_bigram_entropy + Burrows Delta + per_feature_cosine |
 | heuristic | 50 | Everything else; the long tail of AIC + phraseology + punctuation + stance + diagnostic checkpoints + the 2 argument-decision B5 collapse-dynamics arc flags (disappearing-guard, discounting-straw-men) + the 2 lambdag_audit grammar-LR signals (lambda_g, lambda_g_per_token) + the 4 function_word_adjacency_audit band signals (low_global_transition_entropy, high_pagerank_concentration, low_per_node_entropy_mean, low_graph_density) + the 1 document-segmentation boundary band (boundaries[*].band) |
 | structural_only | 1 | function_word_ratio |
-| **TOTAL** | **104** |
+| **TOTAL** | **105** |
 
 ## Related references
 
