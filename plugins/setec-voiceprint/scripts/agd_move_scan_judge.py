@@ -33,9 +33,13 @@ Result schema (``JudgeResult.values``)
 
 Span integrity (the ``warrant_judge.normalize_claims`` discipline — per-paragraph,
 NOT argquality's document-wide ``_normalize_spans``): an observation is DROPPED
-unless its ``paragraph_index`` is in range and its whitespace-normalized span is
-contained in THAT exact paragraph. Each drop is reported so the surface can
-append it to the envelope's warnings.
+unless its ``paragraph_index`` is in range, its whitespace-normalized span is
+contained in THAT exact paragraph, and any non-null ``cue`` anchors in the span
+(every ellipsis-separated fragment — canonical discounting cues are
+discontinuous). Each drop is reported so the surface can append it to the
+envelope's warnings. The ``observations`` collection itself must be a list at
+the manifest/API boundary — a malformed collection is a ``JudgeError`` (fail
+closed), never a successful empty inventory.
 
 Fingerprint: ``fingerprint_prompt()`` hashes THIS module's own preamble + prompt.
 """
@@ -45,6 +49,7 @@ from __future__ import annotations
 import datetime as _dt
 import hashlib
 import json
+import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -165,6 +170,19 @@ def _normws(s: str) -> str:
     return " ".join(s.split())
 
 
+_CUE_GAP_RE = re.compile(r"\.\.\.|…")
+
+
+def _cue_in_span(cue: str, span: str) -> bool:
+    """A non-null cue must be a SURFACE feature of the located move: every
+    ellipsis-separated fragment of the cue (canonical discounting cues are
+    discontinuous — 'admittedly … but', 'of course … yet') must appear,
+    whitespace-normalized and casefolded, in the observation's span."""
+    hay = _normws(span).casefold()
+    frags = [f for f in (_normws(p).casefold() for p in _CUE_GAP_RE.split(cue)) if f]
+    return bool(frags) and all(f in hay for f in frags)
+
+
 def normalize_observations(
     raw: Any, paragraphs: list[str]
 ) -> tuple[list[dict[str, Any]], list[str]]:
@@ -177,14 +195,19 @@ def normalize_observations(
     three, its ``paragraph_index`` is out of range, its ``span`` is empty or not
     a verbatim (whitespace-normalized) substring of THAT exact paragraph (a span
     that appears only in a different paragraph is a wrong-locus attach and is
-    dropped, not relocated), or its ``cue`` is neither a non-empty string nor
-    null. Nothing is ever coerced or relocated — a dropped observation is judge
-    output the surface cannot vouch for."""
+    dropped, not relocated), its ``cue`` is neither a non-empty string nor
+    null, or its non-null cue does not anchor in the span (``_cue_in_span`` —
+    an invented cue is a location-integrity failure like a hallucinated span).
+    Nothing is ever coerced or relocated — a dropped observation is judge
+    output the surface cannot vouch for.
+
+    A non-list ``raw`` (including ``None``) warns and drops everything — a
+    defensive backstop only: the manifest/API boundaries fail closed with
+    ``JudgeError`` before this runs."""
     out: list[dict[str, Any]] = []
     drops: list[str] = []
     if not isinstance(raw, list):
-        return out, (["judge output: 'observations' was not a list — all dropped"]
-                     if raw is not None else [])
+        return out, ["judge output: 'observations' was not a list — all dropped"]
     n = len(paragraphs)
     norm_paras = [_normws(p) for p in paragraphs]
     for i, entry in enumerate(raw):
@@ -214,6 +237,12 @@ def normalize_observations(
         if cue is not None and (not isinstance(cue, str) or not cue.strip()):
             drops.append(f"{where}: cue must be a non-empty string or null — dropped")
             continue
+        if cue is not None and not _cue_in_span(cue, span):
+            drops.append(
+                f"{where}: cue {cue!r} not found in the observation's span "
+                f"(unanchored — invented or mislocated) — dropped"
+            )
+            continue
         out.append(
             {"family": fam, "span": span, "paragraph_index": idx,
              "cue": cue if cue is None else cue.strip()}
@@ -222,11 +251,22 @@ def normalize_observations(
     return out, drops
 
 
+def _first_str(*vals: Any) -> str | None:
+    for v in vals:
+        if isinstance(v, str) and v:
+            return v
+    return None
+
+
 def _manifest_judge(manifest_path: Path) -> JudgeBackend:
-    """Offline judge from a stored manifest:
-    ``{"values": {"observations": [...]}, "judge_identity": {...}}`` — this
-    surface's OWN manifest schema (keyed on ``values.observations``; NOT the
-    sibling judges' ``values.paragraphs`` / ``values.claims``)."""
+    """Offline judge from a stored manifest. Keyed on ``values.observations``
+    (NOT the sibling judges' ``values.paragraphs`` / ``values.claims``), which
+    must be a LIST — a malformed collection is a ``JudgeError`` (fail closed),
+    never a successful empty inventory. Provenance is read TOP-LEVEL first —
+    the R3B run-manifest schema the committed Phase-1 benchmark artifacts use,
+    ``{fixture_id, vendor, model_id, prompt_fingerprint_sha256, rep,
+    acquired_at, values}`` — with a nested ``judge_identity`` accepted as the
+    fallback shape."""
     try:
         data = json.loads(Path(manifest_path).read_text(encoding="utf-8"))
     except OSError as exc:
@@ -236,9 +276,10 @@ def _manifest_judge(manifest_path: Path) -> JudgeBackend:
     if not isinstance(data, dict):
         raise JudgeError(f"manifest {manifest_path}: top level must be a JSON object")
     values = data.get("values")
-    if not isinstance(values, dict) or "observations" not in values:
+    if not isinstance(values, dict) or not isinstance(values.get("observations"), list):
         raise JudgeError(
-            f"manifest {manifest_path}: missing 'values.observations' list")
+            f"manifest {manifest_path}: 'values.observations' must be a list "
+            f"(a malformed collection is not an empty inventory)")
     ji = data.get("judge_identity")
     ji = ji if isinstance(ji, dict) else {}
 
@@ -248,11 +289,15 @@ def _manifest_judge(manifest_path: Path) -> JudgeBackend:
             values={"observations": obs},
             judge_identity={
                 "kind": "manifest", "manifest_path": str(manifest_path),
-                "model": ji.get("model"), "model_revision": ji.get("model_revision"),
+                "model": _first_str(data.get("model_id"), ji.get("model")),
+                "vendor": _first_str(data.get("vendor"), ji.get("vendor")),
+                "model_revision": ji.get("model_revision"),
                 "prompt_version": ji.get("prompt_version"),
                 # Propagate the manifest's OWN prompt fingerprint (the observations were
                 # produced under THAT prompt); None when the manifest declared none.
-                "prompt_fingerprint_sha256": ji.get("prompt_fingerprint_sha256"),
+                "prompt_fingerprint_sha256": _first_str(
+                    data.get("prompt_fingerprint_sha256"),
+                    ji.get("prompt_fingerprint_sha256")),
             },
             drop_warnings=drops,
             raw_response=None,
@@ -314,8 +359,10 @@ def _build_user_content(user_prompt: str, paragraphs: list[str]) -> str:
 # make_api_judge invokes this as build_result(payload, raw_text, identity, judge_input).
 def _build_api_result(parsed: Any, raw: str, identity: dict[str, Any],
                       paragraphs: list[str]) -> JudgeResult:
-    if not isinstance(parsed, dict) or "observations" not in parsed:
-        raise JudgeError("judge JSON missing 'observations' list")
+    if not isinstance(parsed, dict) or not isinstance(parsed.get("observations"), list):
+        raise JudgeError(
+            "judge JSON: 'observations' missing or not a list (fail closed — "
+            "a malformed collection is not an empty inventory)")
     ident = dict(identity)
     ident.setdefault("prompt_version", PROMPT_VERSION)
     ident["prompt_fingerprint_sha256"] = fingerprint_prompt()

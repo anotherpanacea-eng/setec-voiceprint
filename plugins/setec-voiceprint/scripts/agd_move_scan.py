@@ -12,8 +12,9 @@ POSTURE — load-bearing, non-negotiable
 --------------------------------------
 OBSERVATIONS ONLY. All three families are LEGITIMATE moves; an observation is
 never a finding, flaw, code, or score. This surface NEVER adjudicates whether a
-move smuggles, never assigns any apodictic diagnostic code, never aggregates, and
-treats observation count as location data, not quality. The consumer audit
+move smuggles, never assigns any apodictic diagnostic code, and never aggregates
+— the results carry NO counts or tallies (a consumer derives any tally from the
+observations list itself; §1a's refusal is mechanical). The consumer audit
 (apodictic, R4A ADR D5: the producer observes; the consumer alone assigns codes)
 challenges each move and owns every diagnosis. Ships ``heuristic``.
 
@@ -70,9 +71,9 @@ DEFAULT_LICENSES = (
 DEFAULT_DOES_NOT_LICENSE = (
     "Does NOT license assigning any apodictic diagnostic code (WR/DI/OB/FM-A or "
     "any other), adjudicating whether a move smuggles or is load-bearing, or any "
-    "soundness / quality label, score, or QUALITY aggregate — and emits none "
-    "(the per-family family_counts and n_observations are descriptive LOCATION "
-    "tallies, never a quality signal). ALL THREE "
+    "soundness / quality label, score, or aggregate — and emits NO aggregate: "
+    "no counts, no tallies, no rollups (a consumer derives any tally it needs "
+    "from the observations list itself). ALL THREE "
     "move families are LEGITIMATE and ubiquitous: an observation is a LOCATION, "
     "not a finding; observation COUNT is not a quality signal and must never be "
     "read as one. The consumer audit alone challenges moves and assigns codes "
@@ -117,17 +118,6 @@ def register_warnings(text: str, n_words: int) -> list[str]:
     return out
 
 
-def family_counts(observations: list[dict[str, Any]]) -> dict[str, int]:
-    """A descriptive per-family tally of the inventory. LOCATION data — never a
-    quality signal, never an aggregate (each count is an independent tally)."""
-    counts = {fam: 0 for fam in FAMILIES}
-    for o in observations:
-        fam = o.get("family")
-        if fam in counts:
-            counts[fam] += 1
-    return counts
-
-
 def build_results(
     *,
     observations: list[dict[str, Any]],
@@ -139,9 +129,10 @@ def build_results(
 ) -> dict[str, Any]:
     return {
         "method_version": METHOD_VERSION,
-        "observations": observations,          # the deliverable: located moves
-        "family_counts": family_counts(observations),
-        "n_observations": len(observations),
+        # The deliverable: located moves. Deliberately NO tally alongside it
+        # (no family counts, no observation count) — the §1a refusal of
+        # aggregates is mechanical; a consumer derives len(observations).
+        "observations": observations,
         "n_paragraphs": n_paragraphs,
         "n_words": n_words,
         "register_warnings": reg_warnings,
@@ -240,7 +231,7 @@ def render_markdown(envelope: dict[str, Any]) -> str:
         "",
         f"- **Judge:** `{r['judge']['judge_identity'].get('kind')}` "
         f"({r['judge']['judge_identity'].get('model') or '—'})",
-        f"- **Observations:** {r['n_observations']} · **Paragraphs:** "
+        f"- **Observations:** {len(observations)} · **Paragraphs:** "
         f"{r['n_paragraphs']} · **Calibration:** `{r['calibration_status']}`",
         "",
         "## Inventory",
@@ -311,14 +302,21 @@ def _error_envelope(reason: str, category: str, target: Path | None,
 def _effective_judge_fingerprint(args: argparse.Namespace, current_fp: str) -> str | None:
     """The prompt fingerprint that PRODUCED the inventory (the warrant_probe
     convention): the manifest's own for a manifest judge — None when it declared
-    none (treated as drift by an --expect-fingerprint gate) — current_fp otherwise."""
+    none (treated as drift by an --expect-fingerprint gate) — current_fp otherwise.
+    Read TOP-LEVEL first (the R3B run-manifest schema the committed Phase-1
+    benchmark artifacts use), then the nested ``judge_identity`` fallback shape —
+    the same precedence as the manifest judge's provenance."""
     if args.judge == "manifest" and args.judge_manifest is not None:
         try:
             data = json.loads(Path(args.judge_manifest).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             return None
-        ji = data.get("judge_identity") if isinstance(data, dict) else None
-        fp = (ji or {}).get("prompt_fingerprint_sha256") if isinstance(ji, dict) else None
+        if not isinstance(data, dict):
+            return None
+        fp = data.get("prompt_fingerprint_sha256")
+        if not (isinstance(fp, str) and fp):
+            ji = data.get("judge_identity")
+            fp = ji.get("prompt_fingerprint_sha256") if isinstance(ji, dict) else None
         return fp if isinstance(fp, str) and fp else None
     return current_fp
 

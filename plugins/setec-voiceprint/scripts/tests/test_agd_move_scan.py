@@ -31,9 +31,12 @@ SAMPLE = (
     "drafted, although the fleet schedule is tight."
 )
 
-# The scan must never emit adjudication vocabulary as data keys.
+# The scan must never emit adjudication vocabulary as data keys — nor any
+# aggregate of the judge inventory (§1a refuses aggregates mechanically;
+# family_counts / n_observations were removed on review and must not return).
 _FORBIDDEN_KEYS = {"code", "codes", "candidates", "verdict", "score", "quality",
-                   "smuggling", "soundness", "severity", "diagnosis"}
+                   "smuggling", "soundness", "severity", "diagnosis",
+                   "family_counts", "n_observations"}
 
 
 def _run(tmp_path, text=SAMPLE, *args):
@@ -52,14 +55,13 @@ def test_mock_inventory_shape(tmp_path):
     r = env["results"]
     assert r["method_version"] == "agd_move_scan_v1"
     assert r["calibration_status"] == "heuristic"
-    assert r["n_observations"] == len(r["observations"]) == 2
+    assert len(r["observations"]) == 2
     for o in r["observations"]:
         assert set(o) == {"family", "span", "paragraph_index", "cue"}
         assert o["family"] in agd_move_scan_judge.FAMILIES
         assert isinstance(o["paragraph_index"], int)
     # the mock's second observation is the cue-free case — cue null is first-class
     assert r["observations"][1]["cue"] is None
-    assert set(r["family_counts"]) == set(agd_move_scan_judge.FAMILIES)
 
 
 def test_no_adjudication_data_shape(tmp_path):
@@ -166,3 +168,97 @@ def test_observations_only_posture_in_caveats(tmp_path):
     rc, env = _run(tmp_path, SAMPLE, "--judge", "mock")
     assert any("OBSERVATIONS ONLY" in w for w in env["warnings"])
     assert any("R4A ADR D5" in w for w in env["warnings"])
+
+
+def test_benchmark_run_manifest_provenance(tmp_path):
+    """The committed Phase-1 benchmark artifacts carry provenance at the TOP
+    level — the R3B run-manifest schema `{fixture_id, vendor, model_id,
+    prompt_fingerprint_sha256, rep, acquired_at, values}`. The manifest judge
+    must read it (not just a nested judge_identity) and --expect-fingerprint
+    must be able to validate those exact artifacts."""
+    manifest = {
+        "fixture_id": "cue-free-structural-discounting",
+        "vendor": "anthropic",
+        "model_id": "claude-fable-5",
+        "prompt_fingerprint_sha256": "phase1-fp-abc",
+        "rep": 1,
+        "acquired_at": "2026-07-12T00:00:00+00:00",
+        "values": {"observations": [
+            {"family": "GUARDING", "span": "The council may want",
+             "paragraph_index": 0, "cue": "may"},
+        ]},
+    }
+    mpath = tmp_path / "fixture--anthropic--rep1.json"
+    mpath.write_text(json.dumps(manifest), encoding="utf-8")
+    rc, env = _run(tmp_path, SAMPLE, "--judge", "manifest",
+                   "--judge-manifest", str(mpath),
+                   "--expect-fingerprint", "phase1-fp-abc")
+    assert rc == 0 and env["available"] is True
+    r = env["results"]
+    assert r["prompt_fingerprint_sha256"] == "phase1-fp-abc"
+    ji = r["judge"]["judge_identity"]
+    assert ji["model"] == "claude-fable-5"
+    assert ji["vendor"] == "anthropic"
+    assert len(r["observations"]) == 1
+
+
+@pytest.mark.parametrize("bad", [None, {}, "not-a-list", 7])
+def test_malformed_observations_collection_fails_closed(tmp_path, bad):
+    """`observations: null` (or any non-list collection) is a MALFORMED
+    manifest, not an empty inventory — the run must abstain (available: false,
+    bad_input), never return a false successful zero-move result."""
+    manifest = {"values": {"observations": bad},
+                "judge_identity": {"prompt_fingerprint_sha256": "fp"}}
+    mpath = tmp_path / "bad.json"
+    mpath.write_text(json.dumps(manifest), encoding="utf-8")
+    rc, env = _run(tmp_path, SAMPLE, "--judge", "manifest",
+                   "--judge-manifest", str(mpath))
+    assert env["available"] is False
+    assert "bad_input" in json.dumps(env)
+
+
+def test_api_result_requires_observations_list():
+    """The API boundary fails closed too: a parsed response whose
+    `observations` is missing or not a list is a JudgeError."""
+    for parsed in ({"observations": None}, {}, {"observations": "x"}):
+        with pytest.raises(agd_move_scan_judge.JudgeError):
+            agd_move_scan_judge._build_api_result(
+                parsed, "raw", {"kind": "test"}, ["one paragraph"])
+
+
+def test_cue_must_anchor_in_span(tmp_path):
+    """A non-null cue is accepted only if it anchors in the observation's span
+    (casefolded): an invented cue is a location-integrity failure — dropped
+    with a warning, never kept or nulled."""
+    manifest = {"values": {"observations": [
+        # invented cue: nowhere in the span
+        {"family": "GUARDING", "span": "The council may want",
+         "paragraph_index": 0, "cue": "arguably"},
+        # anchored, case-variant cue — kept verbatim
+        {"family": "DISCOUNTING", "span": "although the fleet schedule is tight",
+         "paragraph_index": 1, "cue": "Although"},
+    ]}}
+    mpath = tmp_path / "cues.json"
+    mpath.write_text(json.dumps(manifest), encoding="utf-8")
+    rc, env = _run(tmp_path, SAMPLE, "--judge", "manifest",
+                   "--judge-manifest", str(mpath))
+    assert rc == 0
+    obs = env["results"]["observations"]
+    assert len(obs) == 1 and obs[0]["cue"] == "Although"
+    assert any("not found in the observation's span" in w
+               for w in env["warnings"])
+
+
+def test_discontinuous_cue_fragments_anchor():
+    """Canonical discounting cues are discontinuous ('of course … yet'): each
+    ellipsis-separated fragment must anchor in the span; an unanchored
+    fragment still drops the observation."""
+    para = ("Of course the fleet schedule is tight, yet the crossing-guard "
+            "budget deserves its own vote.")
+    obs = [{"family": "DISCOUNTING", "span": para, "paragraph_index": 0,
+            "cue": "of course … yet"}]
+    kept, drops = agd_move_scan_judge.normalize_observations(obs, [para])
+    assert len(kept) == 1 and not drops
+    obs[0]["cue"] = "of course … but"
+    kept, drops = agd_move_scan_judge.normalize_observations(obs, [para])
+    assert not kept and len(drops) == 1

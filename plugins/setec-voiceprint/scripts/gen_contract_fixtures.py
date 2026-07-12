@@ -940,16 +940,30 @@ def _build_agd_move_scan() -> dict[str, Any]:
     from agd_move_scan_judge import _mock_judge  # type: ignore
 
     # Drive the surface through its OWN deterministic mock judge (no LLM, no
-    # API) so the observation shape, family_counts, drop-warning channel, and
-    # claim_license refusals are the REAL ones the script emits. Two canonical
-    # paragraphs: one cued GUARDING, one cue-free DISCOUNTING (the R3B seam's
-    # decisive case). compose_envelope() assembles the schema 1.0 envelope
-    # exactly as the CLI does.
+    # API) so the observation shape, register-warning channel, drop-warning
+    # channel, and claim_license refusals are the REAL ones the script emits.
+    # Two canonical paragraphs: one cued GUARDING, one cue-free DISCOUNTING
+    # (the R3B seam's decisive case). The text sits above MIN_WORDS and carries
+    # inferential connectives so the REAL register_warnings() path (called
+    # below, never hard-coded) yields the same empty list the CLI would.
+    # compose_envelope() assembles the schema 1.0 envelope exactly as the CLI
+    # does. NOTE: the mock's GUARDING span is paragraph 0's first 8 words, so
+    # its cue "may" must appear there (cues are span-anchored).
     text = (
         "The council may want to reconsider the crossing-guard budget before "
-        "the vote.\n\n"
+        "the vote, because the current allocation was set before the district "
+        "added two elementary schools. Some parents report feeling safer near "
+        "the new crossings, and studies of comparable districts suggest that "
+        "guarded intersections reduce injuries. Therefore the budget line "
+        "deserves a second reading, although the fiscal calendar leaves "
+        "little room for amendments this quarter.\n\n"
         "Residents near the depot, several of whom asked about noise at the "
-        "last meeting, mostly discussed parking."
+        "last meeting, mostly discussed parking instead. The planning office, "
+        "however, has treated the two issues as one docket item, and the "
+        "resulting schedule assumes that neither generates further comment. "
+        "Because the depot review closes next month, the council should hear "
+        "the crossing-guard question first and hold the parking discussion "
+        "for the fall session."
     )
     paragraphs = m.split_paragraphs(text)
     judge = _mock_judge()
@@ -959,7 +973,7 @@ def _build_agd_move_scan() -> dict[str, Any]:
         judge_dict=judge_result.to_dict(),
         n_paragraphs=len(paragraphs),
         n_words=m.count_words(text),
-        reg_warnings=[],
+        reg_warnings=m.register_warnings(text, m.count_words(text)),
         prompt_fp="(fixture fingerprint)",
     )
     return m.compose_envelope(

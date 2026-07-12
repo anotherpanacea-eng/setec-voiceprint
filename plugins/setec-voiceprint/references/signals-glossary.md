@@ -692,8 +692,8 @@ Within-document register-discontinuity locator (`within_doc_segmentation`; NEW `
 ### Located AGD move observations (`agd_move_scan`)
 
 - **What it reports:** each performative argument move a pluggable LLM judge identifies — ASSURING / GUARDING / DISCOUNTING (S&F 9e ch. 3) — as a LOCATED observation: family + verbatim span + 0-based paragraph index + surface cue (`null` = cue-free). Identification is functional (at transitions; cues are evidence, never criteria), aligned with the consumer audit's Layer-1 discipline (apodictic AGD Move Audit).
-- **What it does NOT report:** any adjudication. All three families are legitimate moves; an observation is a location for the consumer audit (which challenges each move and alone assigns codes — R4A ADR D5), never a finding, code, score, or aggregate; observation count is location data, not quality.
-- **Calibration:** `heuristic` — no anchor, no threshold, no operating point. Span integrity is mechanical (per-paragraph verbatim containment; wrong-locus/hallucinated observations dropped with envelope warnings).
+- **What it does NOT report:** any adjudication — or any aggregate of the inventory: the results carry NO counts or tallies (a consumer derives any tally from the observations list itself). All three families are legitimate moves; an observation is a location for the consumer audit (which challenges each move and alone assigns codes — R4A ADR D5), never a finding, code, score, or count-as-quality signal.
+- **Calibration:** `heuristic` — no anchor, no threshold, no operating point. Span integrity is mechanical (per-paragraph verbatim containment + span-anchored cues; wrong-locus/hallucinated/unanchored observations dropped with envelope warnings).
 
 ## Totals
 
