@@ -251,14 +251,27 @@ def test_cue_must_anchor_in_span(tmp_path):
 
 def test_discontinuous_cue_fragments_anchor():
     """Canonical discounting cues are discontinuous ('of course … yet'): each
-    ellipsis-separated fragment must anchor in the span; an unanchored
-    fragment still drops the observation."""
+    ellipsis-separated fragment must anchor in the span IN THE CUE'S ORDER,
+    without reusing a span occurrence. An unanchored, reversed, or
+    over-multiplied cue drops the observation."""
     para = ("Of course the fleet schedule is tight, yet the crossing-guard "
             "budget deserves its own vote.")
     obs = [{"family": "DISCOUNTING", "span": para, "paragraph_index": 0,
             "cue": "of course … yet"}]
     kept, drops = agd_move_scan_judge.normalize_observations(obs, [para])
     assert len(kept) == 1 and not drops
-    obs[0]["cue"] = "of course … but"
-    kept, drops = agd_move_scan_judge.normalize_observations(obs, [para])
-    assert not kept and len(drops) == 1
+    for bad_cue in (
+        "of course … but",        # unanchored fragment
+        "yet … of course",        # reversed — not the surface cue the span reads
+        "of course … of course",  # multiplicity — one occurrence claimed twice
+    ):
+        obs[0]["cue"] = bad_cue
+        kept, drops = agd_move_scan_judge.normalize_observations(obs, [para])
+        assert not kept and len(drops) == 1, bad_cue
+    # a genuinely repeated span occurrence DOES anchor a repeated fragment
+    para2 = ("Of course the schedule is tight, and of course the budget "
+             "matters, yet the vote should proceed.")
+    obs2 = [{"family": "DISCOUNTING", "span": para2, "paragraph_index": 0,
+             "cue": "of course … of course … yet"}]
+    kept, drops = agd_move_scan_judge.normalize_observations(obs2, [para2])
+    assert len(kept) == 1 and not drops

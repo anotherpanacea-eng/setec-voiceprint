@@ -35,8 +35,8 @@ Span integrity (the ``warrant_judge.normalize_claims`` discipline — per-paragr
 NOT argquality's document-wide ``_normalize_spans``): an observation is DROPPED
 unless its ``paragraph_index`` is in range, its whitespace-normalized span is
 contained in THAT exact paragraph, and any non-null ``cue`` anchors in the span
-(every ellipsis-separated fragment — canonical discounting cues are
-discontinuous). Each drop is reported so the surface can append it to the
+(every ellipsis-separated fragment, in cue order, non-overlapping — canonical
+discounting cues are discontinuous). Each drop is reported so the surface can append it to the
 envelope's warnings. The ``observations`` collection itself must be a list at
 the manifest/API boundary — a malformed collection is a ``JudgeError`` (fail
 closed), never a successful empty inventory.
@@ -177,10 +177,24 @@ def _cue_in_span(cue: str, span: str) -> bool:
     """A non-null cue must be a SURFACE feature of the located move: every
     ellipsis-separated fragment of the cue (canonical discounting cues are
     discontinuous — 'admittedly … but', 'of course … yet') must appear,
-    whitespace-normalized and casefolded, in the observation's span."""
+    whitespace-normalized and casefolded, in the observation's span — IN THE
+    CUE'S ORDER, each fragment matching strictly after the previous fragment's
+    match. Order- and multiplicity-aware: 'yet … of course' does not anchor
+    against a span reading 'of course … yet', and a repeated fragment needs a
+    repeated occurrence (one span occurrence is never counted twice). Greedy
+    leftmost matching is complete here: taking the earliest match never
+    forecloses a later fragment's match."""
     hay = _normws(span).casefold()
     frags = [f for f in (_normws(p).casefold() for p in _CUE_GAP_RE.split(cue)) if f]
-    return bool(frags) and all(f in hay for f in frags)
+    if not frags:
+        return False
+    pos = 0
+    for frag in frags:
+        i = hay.find(frag, pos)
+        if i == -1:
+            return False
+        pos = i + len(frag)
+    return True
 
 
 def normalize_observations(
