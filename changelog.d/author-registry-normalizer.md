@@ -1,0 +1,1 @@
+- Add a private, no-prose author-registry normalizer that explicitly maps legacy source registers and personas to the multi-register author-modeling taxonomy while retaining source provenance and exact-byte deduplication.
