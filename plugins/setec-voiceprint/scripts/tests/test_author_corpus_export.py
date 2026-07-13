@@ -183,6 +183,7 @@ def test_frozen_crypto_preimages_and_hash_vectors():
         "document_attestation_hash": None,
         "hmac_key_id": E._sha(E.DOMAIN_KEY_ID + key),
         "register_map": {"gmail_sent:personal": "email.personal"},
+        "source_persona_aliases": {},
         "allowed_ai_status": ["pre_ai_human"],
         "entries": [{"source_entry_fingerprint": entry, "source_group": group,
                      "record_id": record["id"]}],
@@ -199,6 +200,7 @@ def test_frozen_crypto_preimages_and_hash_vectors():
         "document_attestation_hash": None,
         "hmac_key_id": receipt["hmac_key_id"],
         "register_map": receipt["register_map"],
+        "source_persona_aliases": receipt["source_persona_aliases"],
         "allowed_ai_status": receipt["allowed_ai_status"], "persona": "joshua",
     })
     assert receipt["hmac_key_id"] == "sha256:2a0ec87d15516b1aa6e3e3c85f6b2612ac2704b2994d0d2756fae0ab5cb2d0df"
@@ -209,8 +211,8 @@ def test_frozen_crypto_preimages_and_hash_vectors():
     assert record["id"] == "sha256:2c36a69563460ee5ed16c146bbb86ae5d4594af9a094b0b3865f33a350982a9a"
     assert snapshot == "sha256:1bf1694953fc09554b0cc8e49830cb440f7e3f91212070739f8d6a85f9544f4e"
     assert receipt["package_hash"] == "sha256:c4507f5df11fc09bd122dba81dc5d060e46db222c23cc8ed78340096b36a3efc"
-    assert E._verify_package([record], {content_hash: raw}, receipt) == "sha256:2331cdc509eee545ea12d64fb5ff7949a05b89b4fcdc8e71e474eb0660a8e864"
-    assert config_hash == "sha256:c0fff375ff5176d355b3af122a5a70433f1191d55f44a1283c5154ec28a89768"
+    assert E._verify_package([record], {content_hash: raw}, receipt) == "sha256:5170cd189a1b8cfd93c9fb93f08ee0cc2937cd78eb94a7f5996f40dd6f028149"
+    assert config_hash == "sha256:84dc0de56e0a1b15fb8ed4da8cde9833ea501a1c1031fc8e583610c4d98f35a8"
 
 
 def test_canonical_order_and_unicode_control_guards():
@@ -239,9 +241,31 @@ def test_builds_distinct_registers_and_closed_receipt(private_root: Path):
         "schema", "surface", "surface_version", "producer_revision",
         "source_snapshot_sha256", "document_map_hash", "document_attestation_hash",
         "hmac_key_id", "register_map",
+        "source_persona_aliases",
         "allowed_ai_status", "entries", "record_ids", "package_hash",
         "counts", "record_atomic_degraded",
     }
+
+
+def test_explicit_source_persona_alias_is_required_and_hash_bound(private_root: Path):
+    manifest = _source(private_root, "gmail_sent", "A deliberately personal email.")
+    entry = json.loads(manifest.read_text(encoding="utf-8"))
+    entry["persona"] = "anotherpanacea"
+    manifest.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="persona does not match"):
+        E.build_export(
+            sources={"gmail_sent": manifest},
+            register_map={"gmail_sent:personal": "email.personal"},
+            allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+        )
+    _, _, receipt, config_hash, _ = E.build_export(
+        sources={"gmail_sent": manifest},
+        register_map={"gmail_sent:personal": "email.personal"},
+        allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
+        source_persona_aliases={"gmail_sent:anotherpanacea": "joshua"},
+    )
+    assert receipt["source_persona_aliases"] == {"gmail_sent:anotherpanacea": "joshua"}
+    assert E.SHA_RE.fullmatch(config_hash)
 
 
 def test_document_local_normalizes_legacy_identity_and_order(private_root: Path):
