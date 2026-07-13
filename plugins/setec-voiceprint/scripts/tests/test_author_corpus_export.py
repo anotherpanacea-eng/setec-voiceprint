@@ -6,6 +6,7 @@ import datetime as dt
 import json
 import os
 import stat
+import subprocess
 import sys
 from pathlib import Path
 
@@ -145,6 +146,21 @@ def _build(private_root: Path, *, gmail_stable: bool = True, key: bytes = b"k" *
         },
         allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=key,
     )
+
+
+def _private_key(root: Path, name: str, data: bytes) -> Path:
+    """Create a key that exercises the real platform privacy guard."""
+    key = root / name
+    key.write_bytes(data)
+    if os.name == "nt":
+        user = subprocess.check_output(["whoami"], text=True).strip()
+        subprocess.run(
+            ["icacls", str(key), "/inheritance:r", "/grant:r", f"{user}:(F)"],
+            check=True, capture_output=True, text=True,
+        )
+    else:
+        key.chmod(0o600)
+    return key
 
 
 def test_frozen_crypto_preimages_and_hash_vectors():
@@ -394,9 +410,7 @@ def test_document_smoke_is_whole_group_and_byte_bounded(private_root: Path):
 
 def test_document_cli_dry_run_delivers_no_prose_receipt(private_root: Path):
     manifest, document_map, attestation = _document_source(private_root)
-    key = private_root / "author-corpus.key"
-    key.write_bytes(b"d" * 32)
-    key.chmod(0o600)
+    key = _private_key(private_root, "author-corpus.key", b"d" * 32)
     args = E.build_arg_parser().parse_args([
         "--source-manifest", f"document_local={manifest}",
         "--register-map", "document_local:literary_horror=fiction.literary",
@@ -535,8 +549,9 @@ def test_publish_is_atomic_private_and_rejects_overwrite(private_root: Path):
         out, records, texts, receipt, hmac_key=b"k" * 32, evidence=evidence,
     )
     assert (out / "records.jsonl").is_file()
-    assert stat.S_IMODE((out / "records.jsonl").stat().st_mode) == 0o600
-    assert stat.S_IMODE((out / "texts").stat().st_mode) == 0o700
+    if os.name != "nt":
+        assert stat.S_IMODE((out / "records.jsonl").stat().st_mode) == 0o600
+        assert stat.S_IMODE((out / "texts").stat().st_mode) == 0o700
     with pytest.raises(ValueError, match="already exists"):
         E.publish_package(
             out, records, texts, receipt, hmac_key=b"k" * 32, evidence=evidence,
@@ -634,9 +649,7 @@ def test_source_symlink_and_contact_map_refuse(private_root: Path):
 
 def test_json_dry_run_uses_standard_no_path_envelope(private_root: Path, capsys):
     manifest = _source(private_root, "gmail_sent", "Enough words for envelope fixture.")
-    key = private_root / "key.bin"
-    key.write_bytes(b"z" * 32)
-    key.chmod(0o600)
+    key = _private_key(private_root, "key.bin", b"z" * 32)
     out = private_root / "package"
     rc = E.main([
         "--source-manifest", f"gmail_sent={manifest}",
@@ -656,9 +669,7 @@ def test_json_dry_run_uses_standard_no_path_envelope(private_root: Path, capsys)
 
 def test_full_write_requires_matching_smoke(private_root: Path):
     manifest = _source(private_root, "gmail_sent", "Enough words for smoke fixture.")
-    key = private_root / "key.bin"
-    key.write_bytes(b"z" * 32)
-    key.chmod(0o600)
+    key = _private_key(private_root, "key.bin", b"z" * 32)
     args = E.build_arg_parser().parse_args([
         "--source-manifest", f"gmail_sent={manifest}",
         "--register-map", "gmail_sent:personal=email.personal",
@@ -674,9 +685,7 @@ def test_bounded_smoke_then_distinct_full_export_succeeds(
 ):
     im = _source(private_root, "imessage_sent", "Enough text message words for smoke.")
     gm = _source(private_root, "gmail_sent", "Enough email words for smoke coverage.")
-    key = private_root / "key.bin"
-    key.write_bytes(b"z" * 32)
-    key.chmod(0o600)
+    key = _private_key(private_root, "key.bin", b"z" * 32)
     common = [
         "--source-manifest", f"imessage_sent={im}",
         "--source-manifest", f"gmail_sent={gm}",
@@ -765,9 +774,7 @@ def test_malformed_smoke_uses_standard_unavailable_envelope(private_root: Path, 
     )
     E._write_smoke_receipt(smoke, config_hash, receipt, records)
     E._smoke_path(smoke).write_text("[]", encoding="utf-8")
-    key = private_root / "key.bin"
-    key.write_bytes(b"k" * 32)
-    key.chmod(0o600)
+    key = _private_key(private_root, "key.bin", b"k" * 32)
     rc = E.main([
         "--source-manifest", f"imessage_sent={private_root / 'imessage_sent' / 'draft_manifest.jsonl'}",
         "--source-manifest", f"gmail_sent={private_root / 'gmail_sent' / 'draft_manifest.jsonl'}",
@@ -783,9 +790,7 @@ def test_malformed_smoke_uses_standard_unavailable_envelope(private_root: Path, 
 
 
 def test_json_refusal_does_not_disclose_private_paths(private_root: Path, capsys):
-    key = private_root / "key.bin"
-    key.write_bytes(b"z" * 32)
-    key.chmod(0o600)
+    key = _private_key(private_root, "key.bin", b"z" * 32)
     missing = private_root / "secret-persona" / "missing-manifest.jsonl"
     rc = E.main([
         "--source-manifest", f"gmail_sent={missing}",
@@ -804,9 +809,7 @@ def test_json_refusal_does_not_disclose_private_paths(private_root: Path, capsys
 
 def test_dry_run_validates_destination_privacy(private_root: Path, tmp_path: Path):
     manifest = _source(private_root, "gmail_sent", "Enough words for dry-run privacy.")
-    key = private_root / "key.bin"
-    key.write_bytes(b"z" * 32)
-    key.chmod(0o600)
+    key = _private_key(private_root, "key.bin", b"z" * 32)
     args = E.build_arg_parser().parse_args([
         "--source-manifest", f"gmail_sent={manifest}",
         "--register-map", "gmail_sent:personal=email.personal",
@@ -868,9 +871,7 @@ def test_duplicate_json_keys_refuse_in_manifest_and_sidecar(private_root: Path):
 def test_dispatcher_policy_refusal_projects_no_private_path(tmp_path: Path, capsys):
     public = tmp_path / "public-input"
     manifest = _source(public, "gmail_sent", "Enough words for privacy refusal.")
-    key = tmp_path / "key.bin"
-    key.write_bytes(b"q" * 32)
-    key.chmod(0o600)
+    key = _private_key(tmp_path, "key.bin", b"q" * 32)
     rc = setec_run.dispatch("author_corpus_export", [
         "--source-manifest", f"gmail_sent={manifest}",
         "--register-map", "gmail_sent:personal=email.personal",
@@ -888,9 +889,7 @@ def test_dispatcher_policy_refusal_projects_no_private_path(tmp_path: Path, caps
 
 def test_normalized_dispatcher_delivers_receipt_in_results(private_root: Path, capsys):
     manifest = _source(private_root, "imessage_sent", "Enough words for dispatcher fixture.")
-    key = private_root / "key.bin"
-    key.write_bytes(b"q" * 32)
-    key.chmod(0o600)
+    key = _private_key(private_root, "key.bin", b"q" * 32)
     rc = setec_run.dispatch("author_corpus_export", [
         "--source-manifest", f"imessage_sent={manifest}",
         "--register-map", "imessage_sent:personal=text.personal",
