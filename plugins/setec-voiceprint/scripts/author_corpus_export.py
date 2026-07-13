@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import unicodedata
 import uuid
@@ -240,6 +241,18 @@ def _check_private(paths: Iterable[Path]) -> None:
 def _read_key(path: Path) -> bytes:
     if path.is_symlink() or not path.is_file():
         raise ValueError("HMAC key must be a regular non-symlink file")
+    if os.name == "nt":
+        # Windows exposes a synthetic, permissive POSIX mode for NTFS files.
+        # Inspect the actual DACL and reject the broad principals that would
+        # make an owner-only key effectively shared.
+        acl = subprocess.run(
+            ["icacls", str(path)], capture_output=True, text=True, check=False,
+        )
+        if acl.returncode or any(token in acl.stdout.casefold() for token in (
+            "everyone:", "authenticated users:", "builtin\\users:",
+        )):
+            raise PermissionError("HMAC key must have a private Windows ACL")
+        return path.read_bytes()
     mode = stat.S_IMODE(path.stat().st_mode)
     if mode & 0o077:
         raise PermissionError("HMAC key must be owner-only (0600 or stricter)")

@@ -66,7 +66,9 @@ def _document_source(root: Path, *, count: int = 3):
     for index in range(count):
         text = f"Chapter {index + 1}.\n\nThis is a natural multi-paragraph author unit.\n"
         path = src / f"chapter-{index + 1:03d}.txt"
-        path.write_text(text, encoding="utf-8")
+        # Keep the fixture hash tied to the exact on-disk bytes on Windows,
+        # where text-mode writes otherwise translate newlines.
+        path.write_bytes(text.encode("utf-8"))
         source_id = f"legacy-chapter-{index + 1:03d}"
         manifest_rows.append({
             "id": source_id,
@@ -223,6 +225,22 @@ def test_canonical_order_and_unicode_control_guards():
         E._require_string("persona", "Cafe\u0301")
     with pytest.raises(ValueError, match="control"):
         E._require_string("persona", "safe\u202Eunsafe")
+
+
+def test_windows_key_acl_requires_private_dacl(private_root: Path, monkeypatch):
+    key = private_root / "author-corpus.key"
+    key.write_bytes(b"k" * 32)
+    monkeypatch.setattr(E.os, "name", "nt")
+
+    class _Result:
+        returncode = 0
+        stdout = "key NT AUTHORITY\\SYSTEM:(F)\n"
+
+    monkeypatch.setattr(E.subprocess, "run", lambda *args, **kwargs: _Result())
+    assert E._read_key(key) == b"k" * 32
+    _Result.stdout = "key BUILTIN\\Users:(RX)\n"
+    with pytest.raises(PermissionError, match="private Windows ACL"):
+        E._read_key(key)
 
 
 def test_builds_distinct_registers_and_closed_receipt(private_root: Path):

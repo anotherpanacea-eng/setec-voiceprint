@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse, hashlib, json, os, shutil, tempfile
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Any
 import author_corpus_export as exporter
@@ -40,7 +40,13 @@ def sanitize(data: bytes) -> tuple[bytes, int]:
 def canonical_date(value: Any) -> str | None:
     if value is None: return None
     if isinstance(value, str) and len(value) == 4 and value.isdigit(): return value + "-01-01"
-    return value
+    try:
+        return date.fromisoformat(value).isoformat()
+    except (TypeError, ValueError):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).date().isoformat()
+        except (AttributeError, TypeError, ValueError):
+            return None
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser()
