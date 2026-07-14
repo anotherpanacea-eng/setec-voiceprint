@@ -2,7 +2,7 @@
 """Materialize exact-byte, attested private documents for author-corpus export."""
 from __future__ import annotations
 
-import argparse, hashlib, json, os, shutil, tempfile
+import argparse, hashlib, json, os, sys, tempfile
 from collections import Counter
 from datetime import datetime, timezone, date
 from pathlib import Path
@@ -22,6 +22,21 @@ def assignment(s: str, flag: str) -> tuple[str, str]:
     a, sep, b = s.partition("=")
     if not sep or not a or not b: raise ValueError(f"{flag} must be NAME=PATH")
     return a, b
+def source_persona_aliases(values: list[str]) -> dict[tuple[str, str], str]:
+    """Parse source-qualified legacy-persona authorization."""
+    result: dict[tuple[str, str], str] = {}
+    for raw in values:
+        key, canonical = assignment(raw, "--source-persona-alias")
+        source, sep, legacy = key.partition(":")
+        if not sep or not source or not legacy or not canonical:
+            raise ValueError(
+                "--source-persona-alias must be SOURCE:LEGACY=CANONICAL"
+            )
+        pair = (source, legacy)
+        if pair in result:
+            raise ValueError(f"duplicate source persona alias {key!r}")
+        result[pair] = canonical
+    return result
 def _within(child: Path, parent: Path) -> bool:
     try: child.relative_to(parent); return True
     except ValueError: return False
@@ -39,12 +54,62 @@ def resolve(manifest: Path, raw: str) -> Path:
         if "ai-prose-baselines-private" not in {x.casefold() for x in real.parts}: continue
         return p
     raise ValueError(f"missing source text: {raw}")
-def atomic(path: Path, data: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", encoding="utf-8", newline="\n", dir=path.parent, delete=False) as f:
-        f.write(data); temp = Path(f.name)
-    try: os.replace(temp, path)
+def secure_directory(path: Path) -> None:
+    """Create or harden a private output directory without umask dependence."""
+    if path.is_symlink():
+        raise ValueError("private output directories must not be symlinks")
+    if path.exists():
+        if not path.is_dir():
+            raise ValueError("private output directory path is not a directory")
+    else:
+        missing: list[Path] = []
+        current = path
+        while not current.exists():
+            if current.is_symlink():
+                raise ValueError("private output directories must not be symlinks")
+            missing.append(current)
+            current = current.parent
+        if current.is_symlink() or not current.is_dir():
+            raise ValueError("private output parent is not a regular directory")
+        for directory in reversed(missing):
+            os.mkdir(directory, 0o700)
+            os.chmod(directory, 0o700)
+    os.chmod(path, 0o700)
+
+
+def secure_directory_tree(root: Path, leaf: Path) -> None:
+    """Secure every output-tree directory from ``root`` through ``leaf``."""
+    try:
+        relative = leaf.relative_to(root)
+    except ValueError as exc:
+        raise ValueError("private output directory escapes its root") from exc
+    secure_directory(root)
+    current = root
+    for part in relative.parts:
+        current /= part
+        secure_directory(current)
+
+
+def atomic(path: Path, data: str | bytes) -> None:
+    """Atomically replace one private file with an explicit owner-only mode."""
+    secure_directory(path.parent)
+    payload = data.encode("utf-8") if isinstance(data, str) else data
+    descriptor, raw_temp = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
+    )
+    temp = Path(raw_temp)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp, path)
+        os.chmod(path, 0o600)
     finally:
+        if descriptor >= 0:
+            os.close(descriptor)
         if temp.exists(): temp.unlink()
 def sanitize(data: bytes) -> tuple[bytes, int]:
     text = data.decode("utf-8")
@@ -61,14 +126,21 @@ def canonical_date(value: Any) -> str | None:
         except (AttributeError, TypeError, ValueError):
             return None
 
-def main(argv: list[str] | None = None) -> int:
+def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser()
     p.add_argument("--source-manifest", action="append", default=[], metavar="NAME=PATH")
     p.add_argument("--register-map", action="append", default=[], metavar="NAME:LEGACY=CANONICAL")
     p.add_argument("--persona", required=True); p.add_argument("--author-identity", action="append", required=True)
-    p.add_argument("--legacy-persona-alias", action="append", default=[])
+    p.add_argument(
+        "--source-persona-alias", action="append", default=[],
+        metavar="SOURCE:LEGACY=CANONICAL",
+    )
     p.add_argument("--output-dir", required=True, type=Path); p.add_argument("--dry-run", action="store_true")
-    args = p.parse_args(argv); out = args.output_dir.expanduser(); private(out)
+    return p
+
+
+def run(args: argparse.Namespace) -> dict[str, Any]:
+    out = args.output_dir.expanduser().resolve(); private(out)
     if not args.source_manifest: raise ValueError("at least one source manifest is required")
     if not args.register_map: raise ValueError("at least one register map is required")
     sources: dict[str, Path] = {}
@@ -83,11 +155,23 @@ def main(argv: list[str] | None = None) -> int:
         maps[name,legacy] = value
     source_names, mapped_names = set(sources), {name for name, _legacy in maps}
     if mapped_names != source_names: raise ValueError("register maps must correspond exactly to source manifests")
+    aliases = source_persona_aliases(args.source_persona_alias)
+    if any(source not in sources for source, _legacy in aliases):
+        raise ValueError("source persona alias refers to an unknown source manifest")
+    if any(canonical != args.persona for canonical in aliases.values()):
+        raise ValueError("source persona aliases must target the canonical persona")
     rows: list[dict[str, Any]] = []; map_rows: list[dict[str, Any]] = []; copied: dict[str, bytes] = {}; skipped = Counter(); controls_removed = 0
     for name, manifest in sorted(sources.items()):
         for line, raw in enumerate(manifest.read_text(encoding="utf-8").splitlines(), 1):
             if not raw.strip(): continue
             entry = json.loads(raw)
+            if not isinstance(entry, dict):
+                raise ValueError(f"source entry is not an object in {name} line {line}")
+            for required in ("id", "path"):
+                if type(entry.get(required)) is not str or not entry[required]:
+                    raise ValueError(
+                        f"source entry {name} line {line} requires a non-empty string {required}"
+                    )
             if entry.get("ai_status") != "pre_ai_human": skipped[str(entry.get("ai_status","missing"))] += 1; continue
             # Do NOT relabel non-baseline material as identity_baseline just because it is
             # pre_ai_human: if the source row declares a corpus role / use / split / consent,
@@ -102,8 +186,8 @@ def main(argv: list[str] | None = None) -> int:
             if entry.get("impostor_for") not in (None, ""): raise ValueError(f"source entry {entry.get('id')} carries an explicit impostor marker; refusing to attest as author baseline")
             if "register_match" in entry or "topic_match" in entry: raise ValueError(f"source entry {entry.get('id')} carries impostor-comparison metadata; refusing to attest as author baseline")
             if entry.get("role") is not None and entry.get("role") != "author": raise ValueError(f"source entry {entry.get('id')} declares role={entry.get('role')!r}, not author")
-            authorized_personas = {args.persona, *args.legacy_persona_alias}
-            if entry.get("persona") is not None and entry.get("persona") not in authorized_personas: raise ValueError(f"source entry {entry.get('id')} declares persona={entry.get('persona')!r}, outside the authorized personas")
+            source_persona = entry.get("persona")
+            if source_persona is not None and source_persona != args.persona and aliases.get((name, source_persona)) != args.persona: raise ValueError(f"source entry {entry.get('id')} declares persona={source_persona!r}, outside the authorized personas for source {name!r}")
             for who in (entry.get("author"), entry.get("identity")):
                 if who is not None and who not in set(args.author_identity): raise ValueError(f"source entry {entry.get('id')} declares author {who!r} outside the authorized identities")
             key = name, entry.get("register")
@@ -123,11 +207,22 @@ def main(argv: list[str] | None = None) -> int:
     rows.sort(key=lambda x:x["id"]); map_rows.sort(key=lambda x:x["source_id"])
     manifest_text = "".join(json.dumps(x,sort_keys=True)+"\n" for x in rows); map_text = "".join(json.dumps(x,sort_keys=True)+"\n" for x in map_rows)
     manifest_hash, map_hash = sha(manifest_text.encode()), exporter._document_map_hash(map_rows)
-    attest = {"schema":SCHEMA_ATTEST,"source_manifest_sha256":manifest_hash,"document_map_hash":map_hash,"persona":args.persona,"authorized_by":args.persona,"basis":"self","attested_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat(),"legacy_persona_aliases":sorted(set(args.legacy_persona_alias)) ,"author_identities":sorted(set(args.author_identity)),"corpus_role":"identity_baseline","use":["voice_profile"],"consent_status":"author_consent","allowed_ai_status":["pre_ai_human"]}
+    attest = {"schema":SCHEMA_ATTEST,"source_manifest_sha256":manifest_hash,"document_map_hash":map_hash,"persona":args.persona,"authorized_by":args.persona,"basis":"self","attested_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat(),"legacy_persona_aliases":sorted({legacy for _source, legacy in aliases}) ,"author_identities":sorted(set(args.author_identity)),"corpus_role":"identity_baseline","use":["voice_profile"],"consent_status":"author_consent","allowed_ai_status":["pre_ai_human"]}
     summary={"records":len(rows),"unique_texts":len(copied),"controls_removed":controls_removed,"registers":dict(sorted(Counter(x["register"] for x in rows).items())),"skipped":dict(sorted(skipped.items())),"manifest_sha256":manifest_hash,"document_map_sha256":map_hash}
     if not args.dry_run:
+        secure_directory(out)
         for digest,data in copied.items():
-            dest=out / "texts" / digest[7:9] / digest[9:11] / f"{digest[7:]}.txt"; dest.parent.mkdir(parents=True,exist_ok=True); dest.write_bytes(data)
+            dest=out / "texts" / digest[7:9] / digest[9:11] / f"{digest[7:]}.txt"; secure_directory_tree(out, dest.parent); atomic(dest, data)
         atomic(out/"draft_manifest.jsonl",manifest_text); atomic(out/"document_map.jsonl",map_text); atomic(out/"document_attestation.json",json.dumps(attest,sort_keys=True,indent=2)+"\n"); atomic(out/"summary.json",json.dumps(summary,sort_keys=True,indent=2)+"\n")
+    return summary
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    try:
+        summary = run(args)
+    except (OSError, UnicodeError, ValueError, TypeError):
+        sys.stderr.write("prepare_author_document_adapter: private input or policy validation failed\n")
+        return 2
     print(json.dumps(summary,sort_keys=True)); return 0
 if __name__ == "__main__": raise SystemExit(main())

@@ -30,6 +30,9 @@ entries:
   - flag: --register-map
     type: string
     required: true
+  - flag: --source-persona-alias
+    type: string
+    required: false
   - flag: --allowed-ai-status
     type: enum
     required: true

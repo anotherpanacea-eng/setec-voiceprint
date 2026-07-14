@@ -1171,6 +1171,13 @@ under `ai-prose-baselines-private/`. The SETEC JSON envelope contains only
 `results.producer_receipt`; prose, paths, raw contacts, message ids, and HMAC
 preimages remain local.
 
+When a native source manifest retains a legacy persona label, authorize it only
+for that source with
+`--source-persona-alias SOURCE_KIND:LEGACY=CANONICAL`. The canonical value must
+equal `--persona`; an alias for one source kind never authorizes the same legacy
+label in another source manifest. The alias map is hash-bound into the receipt
+and bounded-smoke configuration.
+
 The `document_local` route additionally requires `--document-map` and
 `--document-attestation`. The private map binds every supplied manifest row to a
 stable document/entry locator and natural unit kind/index/count. The hash-bound
@@ -1178,6 +1185,10 @@ self-attestation may normalize missing legacy consent/persona fields or an expli
 private project alias; it cannot override an impostor role, excluded/test use,
 unmapped author/persona identity, disallowed AI status, or content mismatch. Raw
 legacy document titles, URLs, and source paths never enter the package or receipt.
+Build these adapter artifacts with `prepare_author_document_adapter.py`; its
+source persona exceptions use the same source-qualified
+`--source-persona-alias SOURCE:LEGACY=CANONICAL` form. Adapter output directories
+are forced to mode `0700` and every materialized prose or metadata file to `0600`.
 
 A bounded (`--max-records` <= 512 and `--max-text-bytes` <= 67,108,864), interactive
 `--live-smoke-confirmed` run must land first. It selects the smallest complete
