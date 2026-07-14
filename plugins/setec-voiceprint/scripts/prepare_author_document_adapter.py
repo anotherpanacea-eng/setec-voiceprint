@@ -95,8 +95,11 @@ def main(argv: list[str] | None = None) -> int:
             # author-baseline attestation: the row's own persona/author/role must match the
             # authorized identity, and any impostor marker refuses outright.
             if entry.get("impostor"): raise ValueError(f"source entry {entry.get('id')} is marked impostor; refusing to attest as author baseline")
+            if entry.get("impostor_for") not in (None, ""): raise ValueError(f"source entry {entry.get('id')} carries an explicit impostor marker; refusing to attest as author baseline")
+            if "register_match" in entry or "topic_match" in entry: raise ValueError(f"source entry {entry.get('id')} carries impostor-comparison metadata; refusing to attest as author baseline")
             if entry.get("role") is not None and entry.get("role") != "author": raise ValueError(f"source entry {entry.get('id')} declares role={entry.get('role')!r}, not author")
-            if entry.get("persona") is not None and entry.get("persona") != args.persona: raise ValueError(f"source entry {entry.get('id')} declares persona={entry.get('persona')!r}, not the authorized {args.persona!r}")
+            authorized_personas = {args.persona, *args.legacy_persona_alias}
+            if entry.get("persona") is not None and entry.get("persona") not in authorized_personas: raise ValueError(f"source entry {entry.get('id')} declares persona={entry.get('persona')!r}, outside the authorized personas")
             for who in (entry.get("author"), entry.get("identity")):
                 if who is not None and who not in set(args.author_identity): raise ValueError(f"source entry {entry.get('id')} declares author {who!r} outside the authorized identities")
             key = name, entry.get("register")

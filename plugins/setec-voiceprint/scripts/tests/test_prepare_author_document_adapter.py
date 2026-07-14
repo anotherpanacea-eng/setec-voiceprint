@@ -66,7 +66,9 @@ def test_canonical_date_rejects_invalid_values():
 import pytest  # noqa: E402
 
 
-def _adapter_run(tmp_path: Path, entry_extra: dict) -> None:
+def _adapter_run(
+    tmp_path: Path, entry_extra: dict, *, legacy_persona_aliases: tuple[str, ...] = (),
+) -> None:
     root = tmp_path / "ai-prose-baselines-private"
     source = root / "source"
     source.mkdir(parents=True)
@@ -74,11 +76,14 @@ def _adapter_run(tmp_path: Path, entry_extra: dict) -> None:
     entry = {"id": "p1", "path": "piece.txt", "register": "personal",
              "ai_status": "pre_ai_human", **entry_extra}
     (source / "draft_manifest.jsonl").write_text(json.dumps(entry) + "\n", encoding="utf-8")
-    adapter.main([
+    argv = [
         "--source-manifest", f"legacy={source / 'draft_manifest.jsonl'}",
         "--register-map", "legacy:personal=blog.essay",
         "--persona", "joshua", "--author-identity", "Joshua A. Miller",
-        "--output-dir", str(root / "adapter")])
+        "--output-dir", str(root / "adapter")]
+    for alias in legacy_persona_aliases:
+        argv.extend(("--legacy-persona-alias", alias))
+    adapter.main(argv)
 
 
 def test_adapter_refuses_declared_nonbaseline_material(tmp_path: Path):
@@ -107,11 +112,21 @@ def test_adapter_accepts_matching_declarations(tmp_path: Path):
 def test_adapter_refuses_conflicting_identity_and_impostor(tmp_path: Path):
     # P1: a row whose own persona/author/role conflicts, or that is impostor-marked, must
     # not be laundered into a clean author-baseline attestation.
-    for extra in ({"persona": "someone-else"}, {"author": "Not The Author"},
-                  {"identity": "Not The Author"}, {"role": "impostor"},
-                  {"impostor": True}):
+    for index, extra in enumerate((
+        {"persona": "someone-else"}, {"author": "Not The Author"},
+        {"identity": "Not The Author"}, {"role": "impostor"},
+        {"impostor": True}, {"impostor_for": "joshua"},
+        {"register_match": "exact"}, {"topic_match": False},
+    )):
         with pytest.raises(ValueError):
-            _adapter_run(tmp_path / json.dumps(extra, sort_keys=True)[:10], extra)
+            _adapter_run(tmp_path / str(index), extra)
+
+
+def test_adapter_accepts_explicit_legacy_persona_alias(tmp_path: Path):
+    _adapter_run(
+        tmp_path, {"persona": "legacy-joshua"},
+        legacy_persona_aliases=("legacy-joshua",),
+    )
 
 
 def test_adapter_refuses_intermediate_symlink_source(tmp_path: Path):
