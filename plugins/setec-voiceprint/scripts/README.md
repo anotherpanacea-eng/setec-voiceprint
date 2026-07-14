@@ -1189,6 +1189,9 @@ Build these adapter artifacts with `prepare_author_document_adapter.py`; its
 source persona exceptions use the same source-qualified
 `--source-persona-alias SOURCE:LEGACY=CANONICAL` form. Adapter output directories
 are forced to mode `0700` and every materialized prose or metadata file to `0600`.
+Valid UTF-8 prose is copied byte-for-byte (including tabs and CR/LF form); NUL,
+non-whitespace C0/C1 controls, bidi controls, invalid UTF-8, duplicate manifest
+keys, and symlinked output components refuse before any adapter artifact is written.
 
 A bounded (`--max-records` <= 512 and `--max-text-bytes` <= 67,108,864), interactive
 `--live-smoke-confirmed` run must land first. It selects the smallest complete

@@ -27,9 +27,8 @@ def test_adapter_builds_document_local_exact_byte_manifest(tmp_path: Path):
     root = tmp_path / "ai-prose-baselines-private"
     source = root / "source"
     source.mkdir(parents=True)
-    (source / "piece.txt").write_bytes(
-        b"A pre-AI document with\x00 a control and a bidi mark \xe2\x80\xae.\n"
-    )
+    exact_bytes = b"A pre-AI document with permitted\twhitespace.\r\n"
+    (source / "piece.txt").write_bytes(exact_bytes)
     (source / "draft_manifest.jsonl").write_text(json.dumps({
         "id": "legacy-piece", "path": "piece.txt", "register": "personal",
         "date_written": "2019", "ai_status": "pre_ai_human",
@@ -57,10 +56,10 @@ def test_adapter_builds_document_local_exact_byte_manifest(tmp_path: Path):
     assert rows[0]["register"] == "blog.essay"
     assert rows[0]["date_written"] == "2019-01-01"
     assert maps[0]["unit_kind"] == "document"
-    assert "\x00" not in (out / rows[0]["path"]).read_text(encoding="utf-8")
-    assert "\u202e" not in (out / rows[0]["path"]).read_text(encoding="utf-8")
+    assert (out / rows[0]["path"]).read_bytes() == exact_bytes
+    assert rows[0]["content_hash"] == adapter.sha(exact_bytes)
     summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
-    assert summary["controls_removed"] == 2
+    assert "controls_removed" not in summary
     assert summary["skipped"] == {"unknown": 1}
 
 
@@ -211,6 +210,106 @@ def test_adapter_persona_alias_is_scoped_to_one_source(tmp_path: Path):
             "--persona", "joshua", "--author-identity", "Joshua A. Miller",
             "--output-dir", str(root / "adapter"),
         ])
+
+
+@pytest.mark.parametrize("duplicate", ["id", "path", "persona", "role"])
+def test_adapter_rejects_duplicate_authorization_keys_without_cli_leak(
+        tmp_path: Path, capsys, duplicate: str):
+    root = tmp_path / "ai-prose-baselines-private"
+    source = root / "source"
+    source.mkdir(parents=True)
+    (source / "piece.txt").write_bytes(b"private prose\n")
+    duplicate_fields = {
+        "id": '"id":"p1","id":"shadow"',
+        "path": '"path":"piece.txt","path":"private/escape.txt"',
+        "persona": '"persona":"joshua","persona":"shadow"',
+        "role": '"role":"author","role":"impostor"',
+    }
+    defaults = {
+        "id": '"id":"p1"', "path": '"path":"piece.txt"',
+        "persona": '"persona":"joshua"', "role": '"role":"author"',
+    }
+    fields = [
+        duplicate_fields[duplicate] if key == duplicate else value
+        for key, value in defaults.items()
+    ]
+    raw = "{" + ",".join([
+        *fields, '"register":"personal"', '"ai_status":"pre_ai_human"',
+    ]) + "}\n"
+    manifest = source / "draft_manifest.jsonl"
+    manifest.write_text(raw, encoding="utf-8")
+    argv = [
+        "--source-manifest", f"legacy={manifest}",
+        "--register-map", "legacy:personal=blog.essay",
+        "--persona", "joshua", "--author-identity", "Joshua A. Miller",
+        "--output-dir", str(root / "adapter"),
+    ]
+    with pytest.raises(ValueError, match="duplicate JSON key"):
+        _run_adapter(argv)
+    assert adapter.main(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "prepare_author_document_adapter: private input or policy validation failed\n"
+    )
+    assert "private/escape.txt" not in captured.err
+
+
+@pytest.mark.parametrize(
+    "data",
+    [b"NUL\x00refuses", b"C0\x01refuses", b"C1\xc2\x85refuses",
+     "bidi\u202erefuses".encode("utf-8"), b"invalid-utf8-\xff"],
+)
+def test_adapter_refuses_invalid_utf8_and_forbidden_prose_controls(
+        tmp_path: Path, data: bytes):
+    root = tmp_path / "ai-prose-baselines-private"
+    source = root / "source"
+    source.mkdir(parents=True)
+    (source / "piece.txt").write_bytes(data)
+    manifest = source / "draft_manifest.jsonl"
+    manifest.write_text(json.dumps({
+        "id": "p1", "path": "piece.txt", "register": "personal",
+        "ai_status": "pre_ai_human",
+    }) + "\n", encoding="utf-8")
+    with pytest.raises((UnicodeError, ValueError)):
+        _run_adapter([
+            "--source-manifest", f"legacy={manifest}",
+            "--register-map", "legacy:personal=blog.essay",
+            "--persona", "joshua", "--author-identity", "Joshua A. Miller",
+            "--output-dir", str(root / "adapter"),
+        ])
+    assert not (root / "adapter").exists()
+
+
+@pytest.mark.parametrize("link_at_leaf", [False, True])
+def test_adapter_refuses_output_symlink_components_inside_private_tree(
+        tmp_path: Path, link_at_leaf: bool):
+    root = tmp_path / "ai-prose-baselines-private"
+    source = root / "source"
+    source.mkdir(parents=True)
+    (source / "piece.txt").write_bytes(b"private prose\n")
+    manifest = source / "draft_manifest.jsonl"
+    manifest.write_text(json.dumps({
+        "id": "p1", "path": "piece.txt", "register": "personal",
+        "ai_status": "pre_ai_human",
+    }) + "\n", encoding="utf-8")
+    real = root / "real"
+    real.mkdir()
+    if link_at_leaf:
+        output = root / "adapter"
+        output.symlink_to(real, target_is_directory=True)
+    else:
+        linked_parent = root / "linked-parent"
+        linked_parent.symlink_to(real, target_is_directory=True)
+        output = linked_parent / "adapter"
+    with pytest.raises(ValueError, match="symlink"):
+        _run_adapter([
+            "--source-manifest", f"legacy={manifest}",
+            "--register-map", "legacy:personal=blog.essay",
+            "--persona", "joshua", "--author-identity", "Joshua A. Miller",
+            "--output-dir", str(output),
+        ])
+    assert list(real.iterdir()) == []
 
 
 @pytest.mark.parametrize(

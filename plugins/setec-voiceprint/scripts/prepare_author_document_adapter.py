@@ -18,6 +18,16 @@ def private(p: Path) -> None:
     # symlink component or `..` escape place copied prose outside the protected directory.
     real = p.expanduser().resolve()
     if "ai-prose-baselines-private" not in {x.casefold() for x in real.parts}: raise ValueError("private path required")
+def reject_symlink_components(path: Path) -> None:
+    """Refuse every existing symlink in an output path, including the leaf."""
+    if ".." in path.parts:
+        raise ValueError("private output path must not contain parent traversal")
+    absolute = path if path.is_absolute() else Path.cwd() / path
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("private output path must not contain symlinks")
 def assignment(s: str, flag: str) -> tuple[str, str]:
     a, sep, b = s.partition("=")
     if not sep or not a or not b: raise ValueError(f"{flag} must be NAME=PATH")
@@ -111,10 +121,18 @@ def atomic(path: Path, data: str | bytes) -> None:
         if descriptor >= 0:
             os.close(descriptor)
         if temp.exists(): temp.unlink()
-def sanitize(data: bytes) -> tuple[bytes, int]:
+def validate_exact_text(data: bytes) -> bytes:
+    """Validate prose controls while preserving the exact UTF-8 bytes."""
     text = data.decode("utf-8")
-    cleaned = "".join(ch for ch in text if ch not in exporter.BIDI_CONTROLS and (ord(ch) >= 32 or ch in "\t\n\r") and not 0x7F <= ord(ch) <= 0x9F)
-    return cleaned.encode("utf-8"), len(text) - len(cleaned)
+    if "\x00" in text:
+        raise ValueError("source text contains NUL")
+    for ch in text:
+        code = ord(ch)
+        if ch in exporter.BIDI_CONTROLS:
+            raise ValueError("source text contains a forbidden bidi control")
+        if (code < 32 and ch not in "\t\n\r") or 0x7F <= code <= 0x9F:
+            raise ValueError("source text contains a forbidden non-whitespace control")
+    return data
 def canonical_date(value: Any) -> str | None:
     if value is None: return None
     if isinstance(value, str) and len(value) == 4 and value.isdigit(): return value + "-01-01"
@@ -140,7 +158,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
-    out = args.output_dir.expanduser().resolve(); private(out)
+    out = args.output_dir.expanduser()
+    if not out.is_absolute(): out = Path.cwd() / out
+    reject_symlink_components(out); private(out)
     if not args.source_manifest: raise ValueError("at least one source manifest is required")
     if not args.register_map: raise ValueError("at least one register map is required")
     sources: dict[str, Path] = {}
@@ -160,13 +180,11 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("source persona alias refers to an unknown source manifest")
     if any(canonical != args.persona for canonical in aliases.values()):
         raise ValueError("source persona aliases must target the canonical persona")
-    rows: list[dict[str, Any]] = []; map_rows: list[dict[str, Any]] = []; copied: dict[str, bytes] = {}; skipped = Counter(); controls_removed = 0
+    rows: list[dict[str, Any]] = []; map_rows: list[dict[str, Any]] = []; copied: dict[str, bytes] = {}; skipped = Counter()
     for name, manifest in sorted(sources.items()):
         for line, raw in enumerate(manifest.read_text(encoding="utf-8").splitlines(), 1):
             if not raw.strip(): continue
-            entry = json.loads(raw)
-            if not isinstance(entry, dict):
-                raise ValueError(f"source entry is not an object in {name} line {line}")
+            entry = exporter._load_json_object(raw, "source manifest entry")
             for required in ("id", "path"):
                 if type(entry.get(required)) is not str or not entry[required]:
                     raise ValueError(
@@ -195,7 +213,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             text_path = resolve(manifest, entry["path"]); raw = text_path.read_bytes()
             declared = entry.get("content_hash", entry.get("content_sha256"))
             if declared is not None and sha(raw) != declared: raise ValueError(f"source bytes for {entry.get('id')} drifted from the declared content hash")
-            data, removed = sanitize(raw); controls_removed += removed; digest = sha(data); ident = f"{name}:{entry['id']}:{line}:{digest[7:19]}"
+            data = validate_exact_text(raw); digest = sha(data); ident = f"{name}:{entry['id']}:{line}:{digest[7:19]}"
             if digest in copied: skipped["exact_duplicate"] += 1; continue
             copied[digest] = data; target = f"texts/{digest[7:9]}/{digest[9:11]}/{digest[7:]}.txt"
             rows.append({"id":ident,"path":target,"author":args.author_identity[0],"persona":args.persona,"register":maps[key],"date_written":canonical_date(entry.get("date_written")),"ai_status":"pre_ai_human","content_hash":digest,"corpus_role":"identity_baseline","use":["voice_profile"],"split":"baseline","source":f"private_registry:{name}"})
@@ -208,7 +226,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     manifest_text = "".join(json.dumps(x,sort_keys=True)+"\n" for x in rows); map_text = "".join(json.dumps(x,sort_keys=True)+"\n" for x in map_rows)
     manifest_hash, map_hash = sha(manifest_text.encode()), exporter._document_map_hash(map_rows)
     attest = {"schema":SCHEMA_ATTEST,"source_manifest_sha256":manifest_hash,"document_map_hash":map_hash,"persona":args.persona,"authorized_by":args.persona,"basis":"self","attested_at":datetime.now(timezone.utc).replace(microsecond=0).isoformat(),"legacy_persona_aliases":sorted({legacy for _source, legacy in aliases}) ,"author_identities":sorted(set(args.author_identity)),"corpus_role":"identity_baseline","use":["voice_profile"],"consent_status":"author_consent","allowed_ai_status":["pre_ai_human"]}
-    summary={"records":len(rows),"unique_texts":len(copied),"controls_removed":controls_removed,"registers":dict(sorted(Counter(x["register"] for x in rows).items())),"skipped":dict(sorted(skipped.items())),"manifest_sha256":manifest_hash,"document_map_sha256":map_hash}
+    summary={"records":len(rows),"unique_texts":len(copied),"registers":dict(sorted(Counter(x["register"] for x in rows).items())),"skipped":dict(sorted(skipped.items())),"manifest_sha256":manifest_hash,"document_map_sha256":map_hash}
     if not args.dry_run:
         secure_directory(out)
         for digest,data in copied.items():

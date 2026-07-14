@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
@@ -47,6 +48,17 @@ def _private_path(path: Path) -> None:
     real = path.expanduser().resolve()
     if "ai-prose-baselines-private" not in {part.casefold() for part in real.parts}:
         raise ValueError("registry paths must remain below ai-prose-baselines-private")
+
+
+def _reject_symlink_components(path: Path) -> None:
+    if ".." in path.parts:
+        raise ValueError("private output path must not contain parent traversal")
+    absolute = path if path.is_absolute() else Path.cwd() / path
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError("private output path must not contain symlinks")
 
 
 def _assignment(value: str, flag: str) -> tuple[str, str]:
@@ -105,19 +117,66 @@ def _persona_aliases(values: list[str]) -> dict[tuple[str, str], str]:
     return result
 
 
+def _secure_directory(path: Path) -> None:
+    if path.is_symlink():
+        raise ValueError("private output directories must not be symlinks")
+    if path.exists():
+        if not path.is_dir():
+            raise ValueError("private output directory path is not a directory")
+    else:
+        missing: list[Path] = []
+        current = path
+        while not current.exists():
+            if current.is_symlink():
+                raise ValueError("private output directories must not be symlinks")
+            missing.append(current)
+            current = current.parent
+        if current.is_symlink() or not current.is_dir():
+            raise ValueError("private output parent is not a regular directory")
+        for directory in reversed(missing):
+            os.mkdir(directory, 0o700)
+            os.chmod(directory, 0o700)
+    os.chmod(path, 0o700)
+
+
 def _write_atomic(path: Path, content: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", newline="\n", dir=path.parent,
-        prefix=f".{path.name}.", suffix=".tmp", delete=False,
-    ) as handle:
-        handle.write(content)
-        temporary = Path(handle.name)
+    _secure_directory(path.parent)
+    descriptor, raw_temporary = tempfile.mkstemp(
+        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
+    )
+    temporary = Path(raw_temporary)
     try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(content.encode("utf-8"))
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temporary, path)
+        os.chmod(path, 0o600)
     finally:
+        if descriptor >= 0:
+            os.close(descriptor)
         if temporary.exists():
             temporary.unlink()
+
+
+def _load_json_object(raw: str) -> dict[str, Any]:
+    def reject_duplicates(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("source manifest entry contains a duplicate JSON key")
+            result[key] = value
+        return result
+
+    try:
+        value = json.loads(raw, object_pairs_hook=reject_duplicates)
+    except json.JSONDecodeError as exc:
+        raise ValueError("source manifest entry is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise ValueError("source manifest entry must be a JSON object")
+    return value
 
 
 def _source_text_path(manifest: Path, raw_path: str) -> Path:
@@ -164,12 +223,7 @@ def build_registry(
         for line_number, raw in enumerate(manifest.read_text(encoding="utf-8").splitlines(), 1):
             if not raw.strip():
                 continue
-            try:
-                entry = json.loads(raw)
-            except json.JSONDecodeError as exc:
-                raise ValueError(f"invalid JSON in {source_name} line {line_number}") from exc
-            if not isinstance(entry, dict):
-                raise ValueError(f"source entry is not an object in {source_name} line {line_number}")
+            entry = _load_json_object(raw)
             required_strings = (
                 "id", "path", "persona", "register", "ai_status",
                 "corpus_role", "split", "consent_status",
@@ -290,6 +344,9 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     output_dir = args.output_dir.expanduser()
+    if not output_dir.is_absolute():
+        output_dir = Path.cwd() / output_dir
+    _reject_symlink_components(output_dir)
     _private_path(output_dir)
     records, summary = build_registry(
         sources=_sources(args.source_manifest), register_map=_register_map(args.register_map),
@@ -297,6 +354,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         source_persona_aliases=_persona_aliases(args.source_persona_alias),
     )
     if not args.dry_run:
+        _secure_directory(output_dir)
         rendered = "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)
         _write_atomic(output_dir / "author_registry.jsonl", rendered)
         _write_atomic(output_dir / "registry_summary.json", json.dumps(summary, indent=2, sort_keys=True) + "\n")
@@ -307,11 +365,10 @@ def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     try:
         summary = run(args)
-    except (OSError, UnicodeError, ValueError) as exc:
-        if args.json:
-            print(json.dumps({"status": "refused", "reason": str(exc)}, sort_keys=True))
-        else:
-            print(f"normalize_author_registry: {exc}")
+    except (OSError, UnicodeError, ValueError, TypeError):
+        sys.stderr.write(
+            "normalize_author_registry: private input or policy validation failed\n"
+        )
         return 2
     if args.json:
         print(json.dumps(summary, sort_keys=True))

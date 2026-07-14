@@ -1,5 +1,7 @@
 import importlib.util
 import json
+import os
+import stat
 from pathlib import Path
 
 import pytest
@@ -163,3 +165,108 @@ def test_registry_refuses_nonbaseline_and_impostor_posture(
 ):
     with pytest.raises(ValueError):
         _build_one(tmp_path, _identity_entry(**conflict))
+
+
+@pytest.mark.parametrize("duplicate", ["id", "path", "persona", "role"])
+@pytest.mark.parametrize("json_mode", [False, True])
+def test_registry_rejects_duplicate_keys_with_one_sanitized_cli_error(
+        tmp_path: Path, capsys, duplicate: str, json_mode: bool):
+    root = tmp_path / "ai-prose-baselines-private"
+    root.mkdir()
+    (root / "x.txt").write_text("message", encoding="utf-8")
+    duplicate_fields = {
+        "id": '"id":"entry-1","id":"shadow"',
+        "path": '"path":"x.txt","path":"private/source_relative_path"',
+        "persona": '"persona":"joshua","persona":"shadow"',
+        "role": '"role":"author","role":"impostor"',
+    }
+    defaults = {
+        "id": '"id":"entry-1"', "path": '"path":"x.txt"',
+        "persona": '"persona":"joshua"', "role": '"role":"author"',
+    }
+    fields = [
+        duplicate_fields[duplicate] if key == duplicate else value
+        for key, value in defaults.items()
+    ]
+    raw = "{" + ",".join([
+        *fields, '"register":"personal"', '"ai_status":"pre_ai_human"',
+        '"corpus_role":"identity_baseline"', '"use":["voice_profile"]',
+        '"split":"baseline"', '"consent_status":"author_consent"',
+    ]) + "}\n"
+    manifest = root / "source.jsonl"
+    manifest.write_text(raw, encoding="utf-8")
+    argv = [
+        "--source-manifest", f"legacy={manifest}",
+        "--register-map", "legacy:personal=text.personal",
+        "--persona", "joshua", "--output-dir", str(root / "registry"),
+    ]
+    if json_mode:
+        argv.append("--json")
+    with pytest.raises(ValueError, match="duplicate JSON key"):
+        registry.run(registry.build_arg_parser().parse_args(argv))
+    assert registry.main(argv) == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err == (
+        "normalize_author_registry: private input or policy validation failed\n"
+    )
+    assert "source_relative_path" not in captured.err
+    assert str(root) not in captured.err
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX mode bits")
+def test_registry_hardens_output_modes_under_permissive_umask(tmp_path: Path):
+    root = tmp_path / "ai-prose-baselines-private"
+    root.mkdir()
+    manifest = root / "source.jsonl"
+    (root / "x.txt").write_text("message", encoding="utf-8")
+    _manifest(manifest, [_identity_entry()])
+    output = root / "registry"
+    output.mkdir()
+    registry_path = output / "author_registry.jsonl"
+    summary_path = output / "registry_summary.json"
+    registry_path.write_text("old private path", encoding="utf-8")
+    summary_path.write_text("old summary", encoding="utf-8")
+    os.chmod(output, 0o777)
+    os.chmod(registry_path, 0o666)
+    os.chmod(summary_path, 0o666)
+    args = registry.build_arg_parser().parse_args([
+        "--source-manifest", f"legacy={manifest}",
+        "--register-map", "legacy:personal=text.personal",
+        "--persona", "joshua", "--output-dir", str(output),
+    ])
+    previous_umask = os.umask(0)
+    try:
+        registry.run(args)
+    finally:
+        os.umask(previous_umask)
+    assert stat.S_IMODE(output.stat().st_mode) == 0o700
+    assert stat.S_IMODE(registry_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(summary_path.stat().st_mode) == 0o600
+
+
+@pytest.mark.parametrize("link_at_leaf", [False, True])
+def test_registry_refuses_output_symlink_components(
+        tmp_path: Path, link_at_leaf: bool):
+    root = tmp_path / "ai-prose-baselines-private"
+    root.mkdir()
+    manifest = root / "source.jsonl"
+    (root / "x.txt").write_text("message", encoding="utf-8")
+    _manifest(manifest, [_identity_entry()])
+    real = root / "real"
+    real.mkdir()
+    if link_at_leaf:
+        output = root / "registry"
+        output.symlink_to(real, target_is_directory=True)
+    else:
+        linked_parent = root / "linked-parent"
+        linked_parent.symlink_to(real, target_is_directory=True)
+        output = linked_parent / "registry"
+    args = registry.build_arg_parser().parse_args([
+        "--source-manifest", f"legacy={manifest}",
+        "--register-map", "legacy:personal=text.personal",
+        "--persona", "joshua", "--output-dir", str(output),
+    ])
+    with pytest.raises(ValueError, match="symlink"):
+        registry.run(args)
+    assert list(real.iterdir()) == []
