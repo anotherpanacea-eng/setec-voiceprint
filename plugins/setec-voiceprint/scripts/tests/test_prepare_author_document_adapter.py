@@ -66,6 +66,40 @@ def test_canonical_date_rejects_invalid_values():
 import pytest  # noqa: E402
 
 
+def test_adapter_refuses_no_sources_before_dry_run_success(tmp_path: Path, capsys):
+    root = tmp_path / "ai-prose-baselines-private"
+    with pytest.raises(ValueError, match="source manifest"):
+        adapter.main([
+            "--persona", "joshua", "--author-identity", "Joshua A. Miller",
+            "--output-dir", str(root / "adapter"), "--dry-run"])
+    assert capsys.readouterr().out == ""
+    assert not (root / "adapter").exists()
+
+
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_adapter_refuses_when_all_source_rows_are_filtered(
+        tmp_path: Path, capsys, dry_run: bool):
+    root = tmp_path / "ai-prose-baselines-private"
+    source = root / "source"
+    source.mkdir(parents=True)
+    (source / "piece.txt").write_bytes(b"A post-boundary document.\n")
+    manifest = source / "draft_manifest.jsonl"
+    manifest.write_text(json.dumps({
+        "id": "later", "path": "piece.txt", "register": "personal",
+        "ai_status": "unknown"}) + "\n", encoding="utf-8")
+    argv = [
+        "--source-manifest", f"legacy={manifest}",
+        "--register-map", "legacy:personal=blog.essay",
+        "--persona", "joshua", "--author-identity", "Joshua A. Miller",
+        "--output-dir", str(root / "adapter")]
+    if dry_run:
+        argv.append("--dry-run")
+    with pytest.raises(ValueError, match="no pre_ai_human"):
+        adapter.main(argv)
+    assert capsys.readouterr().out == ""
+    assert not (root / "adapter").exists()
+
+
 def _adapter_run(
     tmp_path: Path, entry_extra: dict, *, legacy_persona_aliases: tuple[str, ...] = (),
 ) -> None:

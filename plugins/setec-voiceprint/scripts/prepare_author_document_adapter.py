@@ -69,6 +69,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--legacy-persona-alias", action="append", default=[])
     p.add_argument("--output-dir", required=True, type=Path); p.add_argument("--dry-run", action="store_true")
     args = p.parse_args(argv); out = args.output_dir.expanduser(); private(out)
+    if not args.source_manifest: raise ValueError("at least one source manifest is required")
+    if not args.register_map: raise ValueError("at least one register map is required")
     sources: dict[str, Path] = {}
     for raw in args.source_manifest:
         name, path = assignment(raw, "--source-manifest"); q = Path(path).expanduser(); private(q)
@@ -79,6 +81,8 @@ def main(argv: list[str] | None = None) -> int:
         k, value = assignment(raw, "--register-map"); name, sep, legacy = k.partition(":")
         if not sep or not name or not legacy or "." not in value or (name,legacy) in maps: raise ValueError("invalid register map")
         maps[name,legacy] = value
+    source_names, mapped_names = set(sources), {name for name, _legacy in maps}
+    if mapped_names != source_names: raise ValueError("register maps must correspond exactly to source manifests")
     rows: list[dict[str, Any]] = []; map_rows: list[dict[str, Any]] = []; copied: dict[str, bytes] = {}; skipped = Counter(); controls_removed = 0
     for name, manifest in sorted(sources.items()):
         for line, raw in enumerate(manifest.read_text(encoding="utf-8").splitlines(), 1):
@@ -115,6 +119,7 @@ def main(argv: list[str] | None = None) -> int:
             # a document; its closed map schema reserves email/message units for
             # the native acquisition routes.
             map_rows.append({"schema":SCHEMA_MAP,"source_id":ident,"private_document_locator":sha((name+":"+digest).encode()),"private_entry_locator":sha(ident.encode()),"unit_kind":"document","unit_index":0,"unit_count":1})
+    if not rows: raise ValueError("no pre_ai_human source rows were retained")
     rows.sort(key=lambda x:x["id"]); map_rows.sort(key=lambda x:x["source_id"])
     manifest_text = "".join(json.dumps(x,sort_keys=True)+"\n" for x in rows); map_text = "".join(json.dumps(x,sort_keys=True)+"\n" for x in map_rows)
     manifest_hash, map_hash = sha(manifest_text.encode()), exporter._document_map_hash(map_rows)
