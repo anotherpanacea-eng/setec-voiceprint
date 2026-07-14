@@ -33,8 +33,19 @@ def _sha256_bytes(value: bytes) -> str:
     return "sha256:" + hashlib.sha256(value).hexdigest()
 
 
+def _within(child: Path, parent: Path) -> bool:
+    try:
+        child.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
 def _private_path(path: Path) -> None:
-    if "ai-prose-baselines-private" not in {part.casefold() for part in path.parts}:
+    # Resolve symlinks and `..` first: a lexical parts check on the unresolved path lets a
+    # symlink component or parent-escape place registry output outside the protected tree.
+    real = path.expanduser().resolve()
+    if "ai-prose-baselines-private" not in {part.casefold() for part in real.parts}:
         raise ValueError("registry paths must remain below ai-prose-baselines-private")
 
 
@@ -99,8 +110,17 @@ def _source_text_path(manifest: Path, raw_path: str) -> Path:
         raise ValueError("source text paths must be relative and traversal-free")
     for root in (manifest.parent, manifest.parent.parent):
         path = root / candidate
-        if path.is_file() and not path.is_symlink():
-            return path
+        if not path.is_file() or path.is_symlink():
+            continue
+        # An intermediate-directory symlink can make `path` resolve outside the authorized
+        # root even when the final component is not a symlink; require the fully resolved
+        # real path to stay within the resolved root AND the private tree.
+        real = path.resolve()
+        if not _within(real, root.resolve()):
+            continue
+        if "ai-prose-baselines-private" not in {part.casefold() for part in real.parts}:
+            continue
+        return path
     raise ValueError(f"source text is missing for manifest path {raw_path!r}")
 
 

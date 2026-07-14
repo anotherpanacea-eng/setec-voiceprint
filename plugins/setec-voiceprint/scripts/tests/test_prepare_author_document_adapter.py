@@ -104,6 +104,35 @@ def test_adapter_accepts_matching_declarations(tmp_path: Path):
                             "content_hash": correct})
 
 
+def test_adapter_refuses_conflicting_identity_and_impostor(tmp_path: Path):
+    # P1: a row whose own persona/author/role conflicts, or that is impostor-marked, must
+    # not be laundered into a clean author-baseline attestation.
+    for extra in ({"persona": "someone-else"}, {"author": "Not The Author"},
+                  {"identity": "Not The Author"}, {"role": "impostor"},
+                  {"impostor": True}):
+        with pytest.raises(ValueError):
+            _adapter_run(tmp_path / json.dumps(extra, sort_keys=True)[:10], extra)
+
+
+def test_adapter_refuses_intermediate_symlink_source(tmp_path: Path):
+    # P1: an intermediate-directory symlink pointing outside the authorized root escapes
+    # even when the final text file is not itself a symlink.
+    root = tmp_path / "ai-prose-baselines-private"
+    (root / "source").mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "piece.txt").write_bytes(b"escaped bytes.\n")
+    (root / "source" / "linkdir").symlink_to(outside, target_is_directory=True)
+    (root / "source" / "draft_manifest.jsonl").write_text(json.dumps({
+        "id": "p1", "path": "linkdir/piece.txt", "register": "personal",
+        "ai_status": "pre_ai_human"}) + "\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        adapter.main([
+            "--source-manifest", f"legacy={root / 'source' / 'draft_manifest.jsonl'}",
+            "--register-map", "legacy:personal=blog.essay", "--persona", "joshua",
+            "--author-identity", "Joshua A. Miller", "--output-dir", str(root / "adapter")])
+
+
 def test_private_rejects_escaping_and_symlink_paths(tmp_path: Path):
     private_root = tmp_path / "ai-prose-baselines-private"
     (private_root / "sub").mkdir(parents=True)

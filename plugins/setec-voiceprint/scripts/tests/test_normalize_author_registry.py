@@ -55,3 +55,32 @@ def test_registry_requires_explicit_mapping(tmp_path: Path):
         assert "missing explicit mapping" in str(exc)
     else:
         raise AssertionError("expected explicit mapping refusal")
+
+
+def test_private_path_rejects_symlink_escape(tmp_path: Path):
+    import pytest
+    private_root = tmp_path / "ai-prose-baselines-private"
+    (private_root / "sub").mkdir(parents=True)
+    registry._private_path(private_root / "sub")  # genuine private path passes
+    with pytest.raises(ValueError):
+        registry._private_path(private_root / ".." / "outside")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    link = private_root / "link"
+    link.symlink_to(outside, target_is_directory=True)
+    with pytest.raises(ValueError):
+        registry._private_path(link)
+
+
+def test_source_text_rejects_intermediate_symlink(tmp_path: Path):
+    import pytest
+    root = tmp_path / "ai-prose-baselines-private"
+    root.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "x.txt").write_text("escaped", encoding="utf-8")
+    (root / "linkdir").symlink_to(outside, target_is_directory=True)
+    manifest = root / "m.jsonl"
+    manifest.write_text("{}\n", encoding="utf-8")
+    with pytest.raises(ValueError):
+        registry._source_text_path(manifest, "linkdir/x.txt")

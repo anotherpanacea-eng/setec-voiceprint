@@ -22,12 +22,22 @@ def assignment(s: str, flag: str) -> tuple[str, str]:
     a, sep, b = s.partition("=")
     if not sep or not a or not b: raise ValueError(f"{flag} must be NAME=PATH")
     return a, b
+def _within(child: Path, parent: Path) -> bool:
+    try: child.relative_to(parent); return True
+    except ValueError: return False
 def resolve(manifest: Path, raw: str) -> Path:
     q = Path(raw)
     if q.is_absolute() or ".." in q.parts: raise ValueError("unsafe source path")
     for root in (manifest.parent, manifest.parent.parent):
         p = root / q
-        if p.is_file() and not p.is_symlink(): return p
+        if not p.is_file() or p.is_symlink(): continue
+        # An intermediate-directory symlink can make `p` resolve outside the authorized
+        # root even when the final component is not itself a symlink; require the fully
+        # resolved real path to stay within the resolved root AND the private tree.
+        real, root_real = p.resolve(), root.resolve()
+        if not _within(real, root_real): continue
+        if "ai-prose-baselines-private" not in {x.casefold() for x in real.parts}: continue
+        return p
     raise ValueError(f"missing source text: {raw}")
 def atomic(path: Path, data: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -81,6 +91,14 @@ def main(argv: list[str] | None = None) -> int:
             # silently converting excluded/impostor/test material into training material.
             for field, expected in (("corpus_role", "identity_baseline"), ("split", "baseline"), ("consent_status", "author_consent"), ("use", ["voice_profile"])):
                 if entry.get(field) is not None and entry.get(field) != expected: raise ValueError(f"source entry {entry.get('id')} declares {field}={entry.get(field)!r}; refusing to relabel as identity_baseline")
+            # Never launder a conflicting identity or an impostor marker into a clean
+            # author-baseline attestation: the row's own persona/author/role must match the
+            # authorized identity, and any impostor marker refuses outright.
+            if entry.get("impostor"): raise ValueError(f"source entry {entry.get('id')} is marked impostor; refusing to attest as author baseline")
+            if entry.get("role") is not None and entry.get("role") != "author": raise ValueError(f"source entry {entry.get('id')} declares role={entry.get('role')!r}, not author")
+            if entry.get("persona") is not None and entry.get("persona") != args.persona: raise ValueError(f"source entry {entry.get('id')} declares persona={entry.get('persona')!r}, not the authorized {args.persona!r}")
+            for who in (entry.get("author"), entry.get("identity")):
+                if who is not None and who not in set(args.author_identity): raise ValueError(f"source entry {entry.get('id')} declares author {who!r} outside the authorized identities")
             key = name, entry.get("register")
             if key not in maps: raise ValueError(f"missing map for {name}:{entry.get('register')}")
             text_path = resolve(manifest, entry["path"]); raw = text_path.read_bytes()
