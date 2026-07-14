@@ -255,9 +255,11 @@ def _assert_private_windows_acl(path: Path) -> None:
         allowed.add(user.casefold())
         if domain:
             allowed.add(f"{domain}\\{user}".casefold())
+    parsed_aces = 0
     for line in acl.stdout.splitlines():
         if ":(" not in line:
             continue  # trailing "Successfully processed N files" and blank lines
+        parsed_aces += 1
         # icacls prints "<filename> PRINCIPAL:(perms)" on the first line and indented
         # "PRINCIPAL:(perms)" on the rest. The principal is the text before ":(", possibly
         # prefixed by the filename (line 1); accept it only if it IS, or ends at a word
@@ -266,6 +268,8 @@ def _assert_private_windows_acl(path: Path) -> None:
         if not any(before == a or before.endswith(" " + a) or before.endswith("\t" + a)
                    for a in allowed):
             raise PermissionError("HMAC key must have a private Windows ACL")
+    if parsed_aces == 0:
+        raise PermissionError("HMAC key must have a private Windows ACL")
 
 
 def _read_key(path: Path) -> bytes:

@@ -88,6 +88,23 @@ def _register_map(values: list[str]) -> dict[tuple[str, str], str]:
     return result
 
 
+def _persona_aliases(values: list[str]) -> dict[tuple[str, str], str]:
+    """Parse exporter-compatible SOURCE:LEGACY=CANONICAL persona aliases."""
+    result: dict[tuple[str, str], str] = {}
+    for value in values:
+        key, canonical = _assignment(value, "--source-persona-alias")
+        source, sep, legacy = key.partition(":")
+        if not sep or not source or not legacy or not canonical:
+            raise ValueError(
+                "source persona aliases must be SOURCE:LEGACY=CANONICAL"
+            )
+        pair = (source, legacy)
+        if pair in result:
+            raise ValueError(f"duplicate source persona alias {key!r}")
+        result[pair] = canonical
+    return result
+
+
 def _write_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(
@@ -127,7 +144,16 @@ def _source_text_path(manifest: Path, raw_path: str) -> Path:
 def build_registry(
     *, sources: dict[str, Path], register_map: dict[tuple[str, str], str],
     canonical_persona: str,
+    source_persona_aliases: dict[tuple[str, str], str] | None = None,
 ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    if not isinstance(canonical_persona, str) or not canonical_persona:
+        raise ValueError("canonical persona must be a non-empty string")
+    if source_persona_aliases is None:
+        source_persona_aliases = {}
+    if any(source not in sources for source, _legacy in source_persona_aliases):
+        raise ValueError("source persona alias refers to an unknown source manifest")
+    if any(canonical != canonical_persona for canonical in source_persona_aliases.values()):
+        raise ValueError("source persona aliases must target the canonical persona")
     records: list[dict[str, Any]] = []
     source_id_counts: Counter[tuple[str, str]] = Counter()
     seen_content: dict[str, str] = {}
@@ -144,11 +170,50 @@ def build_registry(
                 raise ValueError(f"invalid JSON in {source_name} line {line_number}") from exc
             if not isinstance(entry, dict):
                 raise ValueError(f"source entry is not an object in {source_name} line {line_number}")
-            required = ("id", "path", "register", "ai_status")
-            if any(not isinstance(entry.get(key), str) or not entry[key] for key in required):
+            required_strings = (
+                "id", "path", "persona", "register", "ai_status",
+                "corpus_role", "split", "consent_status",
+            )
+            if any(
+                not isinstance(entry.get(key), str) or not entry[key]
+                for key in required_strings
+            ) or not isinstance(entry.get("use"), list):
                 raise ValueError(f"missing required source fields in {source_name} line {line_number}")
             if entry["ai_status"] not in ALLOWED_AI_STATUS:
                 raise ValueError(f"unknown AI status in {source_name} line {line_number}")
+            if (
+                entry["persona"] != canonical_persona
+                and source_persona_aliases.get((source_name, entry["persona"]))
+                != canonical_persona
+            ):
+                raise ValueError(
+                    f"source persona is not authorized in {source_name} line {line_number}"
+                )
+            if (
+                entry["corpus_role"] != "identity_baseline"
+                or entry["use"] != ["voice_profile"]
+                or entry["split"] != "baseline"
+                or entry["consent_status"] != "author_consent"
+            ):
+                raise ValueError(
+                    f"source entry is not an authorized identity baseline in "
+                    f"{source_name} line {line_number}"
+                )
+            if entry.get("impostor_for") not in (None, ""):
+                raise ValueError(
+                    f"source entry carries an impostor marker in {source_name} "
+                    f"line {line_number}"
+                )
+            if "register_match" in entry or "topic_match" in entry:
+                raise ValueError(
+                    f"source entry carries impostor-comparison metadata in "
+                    f"{source_name} line {line_number}"
+                )
+            if entry.get("impostor") or entry.get("role") not in (None, "author"):
+                raise ValueError(
+                    f"source entry is not author material in {source_name} "
+                    f"line {line_number}"
+                )
             mapping = (source_name, entry["register"])
             if mapping not in register_map:
                 raise ValueError(f"missing explicit mapping for {source_name}:{entry['register']}")
@@ -212,6 +277,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="normalize_author_registry")
     parser.add_argument("--source-manifest", action="append", default=[], metavar="NAME=PATH")
     parser.add_argument("--register-map", action="append", default=[], metavar="NAME:LEGACY=CANONICAL")
+    parser.add_argument(
+        "--source-persona-alias", action="append", default=[],
+        metavar="SOURCE:LEGACY=CANONICAL",
+    )
     parser.add_argument("--persona", required=True)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--dry-run", action="store_true")
@@ -225,6 +294,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     records, summary = build_registry(
         sources=_sources(args.source_manifest), register_map=_register_map(args.register_map),
         canonical_persona=args.persona,
+        source_persona_aliases=_persona_aliases(args.source_persona_alias),
     )
     if not args.dry_run:
         rendered = "".join(json.dumps(record, sort_keys=True) + "\n" for record in records)

@@ -289,6 +289,28 @@ def test_windows_extra_principal_refused(private_root: Path, monkeypatch):
         E._read_key(key)
 
 
+@pytest.mark.parametrize("stdout", [
+    "",
+    "Successfully processed 1 files; Failed processing 0 files\n",
+    "1 Dateien erfolgreich verarbeitet; Fehler bei 0 Dateien\n",
+    "key VORDEFINIERT\\Administratoren:(F)\n",
+])
+def test_windows_acl_refuses_zero_unparseable_or_localized_aces(
+    private_root: Path, monkeypatch, stdout: str,
+):
+    key = private_root / "unparseable-acl.key"
+    key.write_bytes(b"k" * 32)
+    monkeypatch.setattr(E.os, "name", "nt")
+
+    class _Result:
+        returncode = 0
+
+    _Result.stdout = stdout
+    monkeypatch.setattr(E.subprocess, "run", lambda *a, **k: _Result())
+    with pytest.raises(PermissionError, match="private Windows ACL"):
+        E._read_key(key)
+
+
 def test_builds_distinct_registers_and_closed_receipt(private_root: Path):
     records, texts, receipt, config_hash, evidence = _build(private_root)
     assert {r["register"] for r in records} == {"text.personal", "email.personal"}

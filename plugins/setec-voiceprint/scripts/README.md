@@ -1152,6 +1152,15 @@ installation do NOT need this layer.
 
 ### Private multi-register author-corpus export
 
+`normalize_author_registry.py` inventories legacy private manifests without
+copying prose. It requires explicit `--register-map SOURCE:LEGACY=family.member`
+arguments and a canonical `--persona`. A source row whose persona differs from
+that canonical value requires an explicit source-qualified
+`--source-persona-alias SOURCE:LEGACY=CANONICAL`; aliases for another source or
+canonical persona refuse. Only rows that declare `corpus_role: identity_baseline`,
+`use: [voice_profile]`, `split: baseline`, and `consent_status: author_consent`
+are eligible, and explicit impostor/comparison markers always refuse.
+
 `author_corpus_export.py` is the normalized bridge from private
 `acquire_imessage_sent.py` / `acquire_gmail_sent.py` outputs and explicitly
 attested local author-document manifests to voicewright's
