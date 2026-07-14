@@ -14,7 +14,10 @@ SCHEMA_ATTEST = "setec-author-document-attestation/1"
 
 def sha(b: bytes) -> str: return "sha256:" + hashlib.sha256(b).hexdigest()
 def private(p: Path) -> None:
-    if "ai-prose-baselines-private" not in {x.casefold() for x in p.parts}: raise ValueError("private path required")
+    # Resolve symlinks and `..` first: a lexical parts check on the unresolved path lets a
+    # symlink component or `..` escape place copied prose outside the protected directory.
+    real = p.expanduser().resolve()
+    if "ai-prose-baselines-private" not in {x.casefold() for x in real.parts}: raise ValueError("private path required")
 def assignment(s: str, flag: str) -> tuple[str, str]:
     a, sep, b = s.partition("=")
     if not sep or not a or not b: raise ValueError(f"{flag} must be NAME=PATH")
@@ -72,9 +75,18 @@ def main(argv: list[str] | None = None) -> int:
             if not raw.strip(): continue
             entry = json.loads(raw)
             if entry.get("ai_status") != "pre_ai_human": skipped[str(entry.get("ai_status","missing"))] += 1; continue
+            # Do NOT relabel non-baseline material as identity_baseline just because it is
+            # pre_ai_human: if the source row declares a corpus role / use / split / consent,
+            # it must agree with the baseline stamping below, or we refuse rather than
+            # silently converting excluded/impostor/test material into training material.
+            for field, expected in (("corpus_role", "identity_baseline"), ("split", "baseline"), ("consent_status", "author_consent"), ("use", ["voice_profile"])):
+                if entry.get(field) is not None and entry.get(field) != expected: raise ValueError(f"source entry {entry.get('id')} declares {field}={entry.get(field)!r}; refusing to relabel as identity_baseline")
             key = name, entry.get("register")
             if key not in maps: raise ValueError(f"missing map for {name}:{entry.get('register')}")
-            text_path = resolve(manifest, entry["path"]); data, removed = sanitize(text_path.read_bytes()); controls_removed += removed; digest = sha(data); ident = f"{name}:{entry['id']}:{line}:{digest[7:19]}"
+            text_path = resolve(manifest, entry["path"]); raw = text_path.read_bytes()
+            declared = entry.get("content_hash", entry.get("content_sha256"))
+            if declared is not None and sha(raw) != declared: raise ValueError(f"source bytes for {entry.get('id')} drifted from the declared content hash")
+            data, removed = sanitize(raw); controls_removed += removed; digest = sha(data); ident = f"{name}:{entry['id']}:{line}:{digest[7:19]}"
             if digest in copied: skipped["exact_duplicate"] += 1; continue
             copied[digest] = data; target = f"texts/{digest[7:9]}/{digest[9:11]}/{digest[7:]}.txt"
             rows.append({"id":ident,"path":target,"author":args.author_identity[0],"persona":args.persona,"register":maps[key],"date_written":canonical_date(entry.get("date_written")),"ai_status":"pre_ai_human","content_hash":digest,"corpus_role":"identity_baseline","use":["voice_profile"],"split":"baseline","source":f"private_registry:{name}"})

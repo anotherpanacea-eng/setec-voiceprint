@@ -259,6 +259,36 @@ def test_windows_key_acl_requires_private_dacl(private_root: Path, monkeypatch):
         E._read_key(key)
 
 
+def test_windows_short_key_still_refused(private_root: Path, monkeypatch):
+    # The old Windows branch returned before the 32-byte minimum, so a short key passed.
+    key = private_root / "short.key"
+    key.write_bytes(b"k" * 16)
+    monkeypatch.setattr(E.os, "name", "nt")
+
+    class _Result:
+        returncode = 0
+        stdout = "key NT AUTHORITY\\SYSTEM:(F)\n"
+
+    monkeypatch.setattr(E.subprocess, "run", lambda *a, **k: _Result())
+    with pytest.raises(ValueError, match="at least 32 random bytes"):
+        E._read_key(key)
+
+
+def test_windows_extra_principal_refused(private_root: Path, monkeypatch):
+    # A second, unallowed grant beyond the three old denylist names must fail closed.
+    key = private_root / "acl.key"
+    key.write_bytes(b"k" * 32)
+    monkeypatch.setattr(E.os, "name", "nt")
+
+    class _Result:
+        returncode = 0
+        stdout = ("key NT AUTHORITY\\SYSTEM:(F)\n         CONTOSO\\alice:(RX)\n")
+
+    monkeypatch.setattr(E.subprocess, "run", lambda *a, **k: _Result())
+    with pytest.raises(PermissionError, match="private Windows ACL"):
+        E._read_key(key)
+
+
 def test_builds_distinct_registers_and_closed_receipt(private_root: Path):
     records, texts, receipt, config_hash, evidence = _build(private_root)
     assert {r["register"] for r in records} == {"text.personal", "email.personal"}

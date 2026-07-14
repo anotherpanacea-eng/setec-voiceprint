@@ -238,27 +238,51 @@ def _check_private(paths: Iterable[Path]) -> None:
         raise PermissionError("private-path policy refused the requested operation") from exc
 
 
+def _assert_private_windows_acl(path: Path) -> None:
+    """Allowlist the DACL: only the owner, SYSTEM, and Administrators may have access.
+
+    The previous denylist named just three broad principals, so any *other* readable
+    grant (a second user, a custom group, a raw SID, ``Interactive``, ...) slipped
+    through. Fail closed: every grant must resolve to an allowed principal.
+    """
+    acl = subprocess.run(
+        ["icacls", str(path)], capture_output=True, text=True, check=False)
+    if acl.returncode:
+        raise PermissionError("HMAC key must have a private Windows ACL")
+    allowed = {"nt authority\\system", "builtin\\administrators"}
+    user, domain = os.environ.get("USERNAME", ""), os.environ.get("USERDOMAIN", "")
+    if user:
+        allowed.add(user.casefold())
+        if domain:
+            allowed.add(f"{domain}\\{user}".casefold())
+    for line in acl.stdout.splitlines():
+        if ":(" not in line:
+            continue  # trailing "Successfully processed N files" and blank lines
+        # icacls prints "<filename> PRINCIPAL:(perms)" on the first line and indented
+        # "PRINCIPAL:(perms)" on the rest. The principal is the text before ":(", possibly
+        # prefixed by the filename (line 1); accept it only if it IS, or ends at a word
+        # boundary with, an allowed principal — every other grant fails closed.
+        before = line.split(":(", 1)[0].strip().casefold()
+        if not any(before == a or before.endswith(" " + a) or before.endswith("\t" + a)
+                   for a in allowed):
+            raise PermissionError("HMAC key must have a private Windows ACL")
+
+
 def _read_key(path: Path) -> bytes:
     if path.is_symlink() or not path.is_file():
         raise ValueError("HMAC key must be a regular non-symlink file")
-    if os.name == "nt":
-        # Windows exposes a synthetic, permissive POSIX mode for NTFS files.
-        # Inspect the actual DACL and reject the broad principals that would
-        # make an owner-only key effectively shared.
-        acl = subprocess.run(
-            ["icacls", str(path)], capture_output=True, text=True, check=False,
-        )
-        if acl.returncode or any(token in acl.stdout.casefold() for token in (
-            "everyone:", "authenticated users:", "builtin\\users:",
-        )):
-            raise PermissionError("HMAC key must have a private Windows ACL")
-        return path.read_bytes()
-    mode = stat.S_IMODE(path.stat().st_mode)
-    if mode & 0o077:
-        raise PermissionError("HMAC key must be owner-only (0600 or stricter)")
     key = path.read_bytes()
+    # Enforce the 32-byte minimum on EVERY platform: the old Windows branch returned
+    # before this check, so a short key passed there.
     if len(key) < 32:
         raise ValueError("HMAC key must contain at least 32 random bytes")
+    if os.name == "nt":
+        # Windows exposes a synthetic, permissive POSIX mode for NTFS files; inspect the
+        # actual DACL instead.
+        _assert_private_windows_acl(path)
+    else:
+        if stat.S_IMODE(path.stat().st_mode) & 0o077:
+            raise PermissionError("HMAC key must be owner-only (0600 or stricter)")
     return key
 
 
