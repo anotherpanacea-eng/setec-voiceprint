@@ -17,6 +17,7 @@ import os
 import re
 import shutil
 import stat
+import subprocess
 import sys
 import unicodedata
 import uuid
@@ -112,6 +113,7 @@ RECEIPT_KEYS = {
     "schema", "surface", "surface_version", "producer_revision",
     "source_snapshot_sha256", "document_map_hash", "document_attestation_hash",
     "hmac_key_id", "register_map",
+    "source_persona_aliases",
     "allowed_ai_status", "entries", "record_ids", "package_hash", "counts",
     "record_atomic_degraded",
 }
@@ -236,15 +238,55 @@ def _check_private(paths: Iterable[Path]) -> None:
         raise PermissionError("private-path policy refused the requested operation") from exc
 
 
+def _assert_private_windows_acl(path: Path) -> None:
+    """Allowlist the DACL: only the owner, SYSTEM, and Administrators may have access.
+
+    The previous denylist named just three broad principals, so any *other* readable
+    grant (a second user, a custom group, a raw SID, ``Interactive``, ...) slipped
+    through. Fail closed: every grant must resolve to an allowed principal.
+    """
+    acl = subprocess.run(
+        ["icacls", str(path)], capture_output=True, text=True, check=False)
+    if acl.returncode:
+        raise PermissionError("HMAC key must have a private Windows ACL")
+    allowed = {"nt authority\\system", "builtin\\administrators"}
+    user, domain = os.environ.get("USERNAME", ""), os.environ.get("USERDOMAIN", "")
+    if user:
+        allowed.add(user.casefold())
+        if domain:
+            allowed.add(f"{domain}\\{user}".casefold())
+    parsed_aces = 0
+    for line in acl.stdout.splitlines():
+        if ":(" not in line:
+            continue  # trailing "Successfully processed N files" and blank lines
+        parsed_aces += 1
+        # icacls prints "<filename> PRINCIPAL:(perms)" on the first line and indented
+        # "PRINCIPAL:(perms)" on the rest. The principal is the text before ":(", possibly
+        # prefixed by the filename (line 1); accept it only if it IS, or ends at a word
+        # boundary with, an allowed principal — every other grant fails closed.
+        before = line.split(":(", 1)[0].strip().casefold()
+        if not any(before == a or before.endswith(" " + a) or before.endswith("\t" + a)
+                   for a in allowed):
+            raise PermissionError("HMAC key must have a private Windows ACL")
+    if parsed_aces == 0:
+        raise PermissionError("HMAC key must have a private Windows ACL")
+
+
 def _read_key(path: Path) -> bytes:
     if path.is_symlink() or not path.is_file():
         raise ValueError("HMAC key must be a regular non-symlink file")
-    mode = stat.S_IMODE(path.stat().st_mode)
-    if mode & 0o077:
-        raise PermissionError("HMAC key must be owner-only (0600 or stricter)")
     key = path.read_bytes()
+    # Enforce the 32-byte minimum on EVERY platform: the old Windows branch returned
+    # before this check, so a short key passed there.
     if len(key) < 32:
         raise ValueError("HMAC key must contain at least 32 random bytes")
+    if os.name == "nt":
+        # Windows exposes a synthetic, permissive POSIX mode for NTFS files; inspect the
+        # actual DACL instead.
+        _assert_private_windows_acl(path)
+    else:
+        if stat.S_IMODE(path.stat().st_mode) & 0o077:
+            raise PermissionError("HMAC key must be owner-only (0600 or stricter)")
     return key
 
 
@@ -285,6 +327,22 @@ def parse_register_map(values: Iterable[str]) -> dict[str, str]:
     return dict(sorted(out.items()))
 
 
+def parse_source_persona_aliases(values: Iterable[str]) -> dict[str, str]:
+    """Parse explicit source-persona aliases into a hash-bound policy map."""
+    out: dict[str, str] = {}
+    for raw in values:
+        key, canonical = _parse_assignment(raw, "--source-persona-alias")
+        kind, sep, legacy = key.partition(":")
+        if not sep or kind not in SOURCE_VALUES or not legacy:
+            raise ValueError("source-persona-alias keys must be SOURCE_KIND:LEGACY")
+        _require_string("legacy persona", legacy)
+        _require_string("canonical persona", canonical)
+        if key in out:
+            raise ValueError(f"duplicate source persona alias {key!r}")
+        out[key] = canonical
+    return dict(sorted(out.items()))
+
+
 def _safe_source_file(manifest: Path, rel: Any) -> Path:
     rel = _require_string("manifest path", rel)
     candidate = Path(rel)
@@ -313,7 +371,10 @@ def _read_meta(text_path: Path) -> dict[str, Any]:
     )
 
 
-def _validate_source_entry(entry: dict[str, Any], *, kind: str, persona: str) -> None:
+def _validate_source_entry(
+    entry: dict[str, Any], *, kind: str, persona: str,
+    source_persona_aliases: dict[str, str],
+) -> None:
     unknown = set(entry) - SOURCE_MANIFEST_KEYS
     if unknown:
         raise ValueError("source manifest contains unknown keys")
@@ -332,7 +393,9 @@ def _validate_source_entry(entry: dict[str, Any], *, kind: str, persona: str) ->
         _require_string("date_written", entry["date_written"])
     if type(entry["use"]) is not list or any(type(v) is not str for v in entry["use"]):
         raise ValueError("use must be a JSON string array")
-    if entry["persona"] != persona:
+    if entry["persona"] != persona and source_persona_aliases.get(
+        f"{kind}:{entry['persona']}"
+    ) != persona:
         raise ValueError("source persona does not match requested persona")
     if entry["corpus_role"] != "identity_baseline" or entry["use"] != ["voice_profile"]:
         raise ValueError("source entry is not an identity-baseline voice profile")
@@ -584,6 +647,7 @@ def _config_hash(receipt: dict[str, Any], persona: str) -> str:
         "document_attestation_hash": receipt["document_attestation_hash"],
         "hmac_key_id": receipt["hmac_key_id"],
         "register_map": receipt["register_map"],
+        "source_persona_aliases": receipt["source_persona_aliases"],
         "allowed_ai_status": receipt["allowed_ai_status"],
         "persona": persona,
     })
@@ -592,6 +656,7 @@ def _config_hash(receipt: dict[str, Any], persona: str) -> str:
 def build_export(
     *, sources: dict[str, Path], register_map: dict[str, str],
     allowed_ai_status: list[str], persona: str, hmac_key: bytes,
+    source_persona_aliases: dict[str, str] | None = None,
     document_map_path: Path | None = None,
     document_attestation_path: Path | None = None,
     max_records: int | None = None,
@@ -615,6 +680,20 @@ def build_export(
             raise ValueError("register_map contains an invalid source key")
         _require_string("legacy register", legacy)
         canonical_register(canonical)
+    if source_persona_aliases is None:
+        source_persona_aliases = {}
+    if type(source_persona_aliases) is not dict or any(
+        type(key) is not str or type(value) is not str
+        for key, value in source_persona_aliases.items()
+    ):
+        raise ValueError("source_persona_aliases must be a string map")
+    for alias_key, canonical in source_persona_aliases.items():
+        source_kind, separator, legacy = alias_key.partition(":")
+        if not separator or source_kind not in SOURCE_VALUES or not legacy:
+            raise ValueError("source_persona_aliases contains an invalid source key")
+        _require_string("legacy persona", legacy)
+        if _require_string("canonical persona", canonical) != persona:
+            raise ValueError("source persona aliases must target the requested persona")
     if type(allowed_ai_status) is not list or any(
         type(value) is not str for value in allowed_ai_status
     ):
@@ -685,7 +764,10 @@ def build_export(
                 document_seen_ids.add(entry["id"])
                 document_seen_statuses.add(entry["ai_status"])
             else:
-                _validate_source_entry(entry, kind=kind, persona=persona)
+                _validate_source_entry(
+                    entry, kind=kind, persona=persona,
+                    source_persona_aliases=source_persona_aliases,
+                )
                 era = entry["era"]
             if entry["ai_status"] not in allowed_ai_status:
                 raise ValueError("source AI status was not explicitly allowed")
@@ -874,6 +956,7 @@ def build_export(
         "document_attestation_hash": document_attestation_hash,
         "hmac_key_id": key_id,
         "register_map": dict(sorted(register_map.items())),
+        "source_persona_aliases": dict(sorted(source_persona_aliases.items())),
         "allowed_ai_status": list(allowed_ai_status),
         "entries": [{
             "source_entry_fingerprint": r["source_entry_fingerprint"],
@@ -1323,6 +1406,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog=TOOL_NAME)
     p.add_argument("--source-manifest", action="append", default=[], metavar="KIND=PATH")
     p.add_argument("--register-map", action="append", default=[], metavar="KIND:LEGACY=CANONICAL")
+    p.add_argument("--source-persona-alias", action="append", default=[], metavar="KIND:LEGACY=CANONICAL")
     p.add_argument("--allowed-ai-status", action="append", default=[])
     p.add_argument("--persona", required=True)
     p.add_argument("--document-map", type=Path)
@@ -1345,6 +1429,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         )
     sources = parse_sources(args.source_manifest)
     register_map = parse_register_map(args.register_map)
+    source_persona_aliases = parse_source_persona_aliases(args.source_persona_alias)
     allowed = sorted(set(args.allowed_ai_status))
     if allowed != args.allowed_ai_status:
         raise ValueError("--allowed-ai-status values must already be sorted and unique")
@@ -1352,6 +1437,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     records, texts, receipt, config_hash, evidence = build_export(
         sources=sources, register_map=register_map, allowed_ai_status=allowed,
         persona=args.persona, hmac_key=key,
+        source_persona_aliases=source_persona_aliases,
         document_map_path=args.document_map,
         document_attestation_path=args.document_attestation,
         max_records=args.max_records,

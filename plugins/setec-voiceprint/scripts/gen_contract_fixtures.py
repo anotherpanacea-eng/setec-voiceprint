@@ -908,6 +908,7 @@ def _build_author_corpus_export() -> dict[str, Any]:
         "document_attestation_hash": None,
         "hmac_key_id": sha,
         "register_map": {"gmail_sent:personal": "email.personal"},
+        "source_persona_aliases": {},
         "allowed_ai_status": ["pre_ai_human"],
         "entries": [{
             "source_entry_fingerprint": source_fp,

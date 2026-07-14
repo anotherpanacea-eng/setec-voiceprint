@@ -117,6 +117,7 @@ def test_every_golden_is_a_valid_envelope(surface):
     assert env["version"] == gen.VERSION_SENTINEL
     if surface == "author_corpus_export":
         assert env["target"]["path"] is None
+        assert env["results"]["producer_receipt"]["source_persona_aliases"] == {}
     else:
         assert env["target"]["path"] == gen.PATH_SENTINEL
 
