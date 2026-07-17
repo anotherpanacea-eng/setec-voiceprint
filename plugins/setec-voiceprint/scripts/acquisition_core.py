@@ -879,7 +879,10 @@ def write_piece(
     stem = _unique_stem(piece, output_dir)
     text_path = output_dir / f"{stem}.txt"
     meta_path = output_dir / f"{stem}.meta.json"
-    text_path.write_text(piece.cleaned_text, encoding="utf-8")
+    # The content hash is over the UTF-8 bytes of ``cleaned_text``.  Write those
+    # exact bytes so Windows universal-newline translation cannot change LF to
+    # CRLF (or pre-existing CRLF to CR-CR-LF) after the hash was computed.
+    text_path.write_bytes(piece.cleaned_text.encode("utf-8"))
     meta = {
         "source_url": piece.source_url,
         "title": piece.title,
@@ -916,7 +919,9 @@ def content_hash_already_present(
     let this dedup gate drop a genuinely-new piece as "already present"
     even though the corpus no longer holds those bytes. Guard against
     that by recomputing the hash from the paired ``.txt``'s current
-    bytes before honoring a match (recompute, don't trust).
+    bytes before honoring a match (recompute, don't trust). The sole
+    compatibility exception is old Windows text-mode output whose exact
+    CRLF bytes normalize to the logical-LF hash recorded by its sidecar.
 
     v1 dedupes within the target output directory only. Manifest-wide
     dedupe is a follow-up — for now, two impostor pools targeting the
@@ -938,16 +943,34 @@ def content_hash_already_present(
             meta_file.name[: -len(".meta.json")] + ".txt"
         )
         try:
-            actual_hash = compute_content_hash(
-                txt_file.read_text(encoding="utf-8")
-            )
-        except OSError:
+            stored_bytes = txt_file.read_bytes()
+            stored_text = stored_bytes.decode("utf-8")
+            actual_hash = compute_content_hash(stored_text)
+        except (OSError, UnicodeDecodeError):
             # Paired .txt missing/unreadable: the recorded content is
             # not actually on disk. Fail open (let the caller
             # re-acquire) rather than silently drop the incoming piece.
             continue
         if actual_hash == content_hash:
             return meta_file
+        # Compatibility for artifacts written by the old Windows text-mode
+        # writer: metadata hashed the logical LF text, then ``write_text``
+        # translated LF to CRLF on disk.  The former ``read_text`` dedupe path
+        # reversed that translation through universal-newline handling.  Keep
+        # recognizing only that narrow legacy representation; new writes are
+        # still verified against their exact UTF-8 bytes above.  Lone CR is not
+        # a Windows newline translation and therefore fails open for reacquire.
+        newline_remainder = stored_bytes.replace(b"\r\n", b"")
+        if (
+            b"\r\n" in stored_bytes
+            and b"\r" not in newline_remainder
+            and b"\n" not in newline_remainder
+        ):
+            legacy_lf_text = stored_bytes.replace(b"\r\n", b"\n").decode(
+                "utf-8"
+            )
+            if compute_content_hash(legacy_lf_text) == content_hash:
+                return meta_file
         # Stale/edited sidecar: the .txt's real bytes no longer hash to
         # the recorded value, so this on-disk doc does NOT hold the
         # incoming content. Not a duplicate — keep scanning.

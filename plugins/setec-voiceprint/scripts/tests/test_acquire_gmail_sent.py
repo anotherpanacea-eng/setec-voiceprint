@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+from email import message_from_bytes
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -90,6 +91,82 @@ def test_attached_message_rfc822_body_is_not_acquired():
     body = G.extract_body(outer)
     assert "covering note" in body
     assert "THIRD_PARTY_ATTACHED_PROSE_MUST_NOT_APPEAR" not in body
+
+
+def test_crlf_is_canonicalized_before_format_flowed_unwrap():
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"\r\n"
+        b"A soft wrapped line \r\n"
+        b"continues here.\r\n"
+        b"\r\n"
+        b"A genuine paragraph remains.\r\n"
+    )
+    body = G.extract_body(message)
+    assert body == (
+        "A soft wrapped line continues here.\n\n"
+        "A genuine paragraph remains.\n"
+    )
+    assert "\r" not in body
+
+
+def test_format_flowed_delsp_yes_removes_soft_break_space():
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed; DelSp=yes\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"\r\n"
+        b"A compound soft- \r\n"
+        b"wrapped word.\r\n"
+    )
+    assert G.extract_body(message) == "A compound soft-wrapped word.\n"
+
+
+def test_format_flowed_removes_space_stuffing_and_joins_equal_quote_depth():
+    assert G._unwrap_flowed(" From sender\n  indented\n") == (
+        "From sender\n indented\n"
+    )
+    assert G._unwrap_flowed("> quoted soft \n> continuation\n") == (
+        ">quoted soft continuation\n"
+    )
+
+
+def test_format_flowed_never_joins_authored_text_to_quoted_reply():
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"In-Reply-To: <parent@example.test>\r\n"
+        b"\r\n"
+        b"My authored reply ends here \r\n"
+        b"> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR\r\n"
+    )
+    body = G.extract_body(message)
+    trimmed = G.trim_body(body, is_reply=True, own_sig_lines=None)
+    assert trimmed.kept == "My authored reply ends here"
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in trimmed.kept
+
+
+def test_format_flowed_never_joins_authored_text_to_reply_attribution():
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"In-Reply-To: <parent@example.test>\r\n"
+        b"\r\n"
+        b"My authored reply ends here \r\n"
+        b"On Tue, Example Sender wrote:\r\n"
+        b"> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR\r\n"
+    )
+    body = G.extract_body(message)
+    trimmed = G.trim_body(body, is_reply=True, own_sig_lines=None)
+    assert trimmed.kept == "My authored reply ends here"
+    assert "Example Sender" not in trimmed.kept
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in trimmed.kept
+
+
+def test_format_flowed_quoted_signature_separator_is_never_joined():
+    assert G._unwrap_flowed("> quoted flowed \n> -- \n> signature\n") == (
+        ">quoted flowed \n>-- \n>signature\n"
+    )
 
 
 def test_wrapped_attribution_addr_absent(tmp_path, mbox):

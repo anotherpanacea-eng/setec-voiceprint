@@ -255,28 +255,77 @@ def _decode_part(part: Message) -> str:
     if payload is None:
         return ""
     charset = part.get_content_charset() or "utf-8"
-    return payload.decode(charset, "replace")
+    decoded = payload.decode(charset, "replace")
+    # MIME payload bytes commonly retain CRLF even though the rest of the
+    # acquisition pipeline is line-oriented around LF.  Canonicalize here,
+    # before format=flowed unwrapping and preprocessing.  Otherwise CR remains
+    # attached to each logical line, defeating both ``line.endswith(" ")`` and
+    # LF-based whitespace rules.  It also prevents Windows text-mode writing
+    # from translating CRLF a second time into CR-CR-LF.
+    return decoded.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _unwrap_flowed(text: str) -> str:
-    """Minimal RFC 3676 format=flowed unwrap: a line ending in a space is
-    soft-wrapped and joined with the next, EXCEPT the exact `-- `
-    signature line, which is never joined across (so Phase 2's signature
-    detection still finds it)."""
+def _flowed_line_parts(line: str) -> tuple[int, str]:
+    """Return RFC 3676 quote depth and unstuffed line content.
+
+    Space-stuffing is applied after any quote marks on transmission.  Remove
+    that transport-only space before deciding whether the content is flowed.
+    Keeping quote depth separate is security-relevant: joining an authored
+    line to a quoted continuation would hide the continuation's leading ``>``
+    from the downstream third-party-quote trimmer.
+    """
+    depth = 0
+    while depth < len(line) and line[depth] == ">":
+        depth += 1
+    content = line[depth:]
+    if content.startswith(" "):
+        content = content[1:]
+    return depth, content
+
+
+def _render_flowed_line(depth: int, content: str) -> str:
+    """Render an unstuffed flowed line while retaining its quote boundary."""
+    return (">" * depth) + content
+
+
+def _unwrap_flowed(text: str, *, delsp: bool = False) -> str:
+    """Unwrap RFC 3676 ``format=flowed`` text.
+
+    A content line ending in a space is soft-wrapped and may join only to a
+    following line at the same quote depth.  The soft-break space is retained
+    unless the MIME part declares ``DelSp=yes``.  Space-stuffing is removed,
+    and the exact ``-- `` signature delimiter is never treated as flowed so
+    Phase 2's signature detection still finds it.
+    """
     lines = text.split("\n")
     out: list[str] = []
     i = 0
     while i < len(lines):
-        line = lines[i]
-        if line == _SIG_DELIM:
-            out.append(line)
+        depth, content = _flowed_line_parts(lines[i])
+        if content == _SIG_DELIM:
+            out.append(_render_flowed_line(depth, content))
             i += 1
             continue
-        while (line.endswith(" ") and line != _SIG_DELIM
-               and i + 1 < len(lines) and lines[i + 1] != _SIG_DELIM):
-            line = line[:-1] + lines[i + 1]
+        while (
+            content.endswith(" ")
+            and content != _SIG_DELIM
+            and i + 1 < len(lines)
+        ):
+            next_depth, next_content = _flowed_line_parts(lines[i + 1])
+            if next_depth != depth:
+                break
+            if next_content == _SIG_DELIM:
+                break
+            # A same-depth reply attribution is a semantic boundary, not a
+            # flowed continuation.  Joining it to authored text would hide
+            # its leading ``On `` from the downstream quote trimmer.
+            if _ATTR_LINE.match(next_content.strip()):
+                break
+            # RFC 3676 preserves the trailing soft-break space by default.
+            # Only ``DelSp=yes`` removes it before the physical lines join.
+            content = (content[:-1] if delsp else content) + next_content
             i += 1
-        out.append(line)
+        out.append(_render_flowed_line(depth, content))
         i += 1
     return "\n".join(out)
 
@@ -287,16 +336,18 @@ def extract_body(msg: Message) -> str:
     body part exists (attachment-only message)."""
     plain: Optional[str] = None
     plain_flowed = False
+    plain_delsp = False
     html: Optional[str] = None
     for part in _iter_body_parts(msg):
         ctype = part.get_content_type()
         if ctype == "text/plain" and plain is None:
             plain = _decode_part(part)
             plain_flowed = (part.get_param("format") or "").lower() == "flowed"
+            plain_delsp = (part.get_param("delsp") or "").lower() == "yes"
         elif ctype == "text/html" and html is None:
             html = _decode_part(part)
     if plain is not None and plain.strip():
-        return _unwrap_flowed(plain) if plain_flowed else plain
+        return _unwrap_flowed(plain, delsp=plain_delsp) if plain_flowed else plain
     if html is not None and html.strip():
         text, _ = ac.html_to_text(html, strip_selectors=_HTML_STRIP_SELECTORS)
         return text
