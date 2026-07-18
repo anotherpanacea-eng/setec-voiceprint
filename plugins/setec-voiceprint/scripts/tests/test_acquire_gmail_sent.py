@@ -12,7 +12,9 @@ fallback, the metadata-privacy grep, and the use/ai_status kwargs.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
+import re
 import sys
 import time
 from email import message_from_bytes
@@ -91,6 +93,7 @@ def _process_flowed_message(
     message = message_from_bytes(raw)
     out = _out(tmp_path)
     args = G.build_arg_parser().parse_args([
+        "acquire",
         "--mbox-path", str(tmp_path / "unused.mbox"),
         "--own-address", bf.OWN,
         "--output-dir", str(out),
@@ -593,6 +596,114 @@ def test_metadata_privacy_no_raw_recipient_addr(tmp_path, mbox):
     assert any("recipient_" in (e.get("notes") or "") for e in _entries(out))
 
 
+def test_subject_line_recipient_address_is_redacted_to_label(tmp_path):
+    recipients = G.ac.StableRedactionMap(
+        tmp_path / "recipient_map.json",
+        label_prefix="recipient",
+        normalize_key=lambda address: address.strip().lower(),
+        reuse_gaps=False,
+        map_name="recipient map",
+    )
+    raw = "Re: forward to Alice.Example@mail.invalid before Friday"
+    redacted = G._redact_addresses(raw, recipients)
+    assert "Alice.Example@mail.invalid" not in redacted
+    assert "@mail.invalid" not in redacted
+    assert "recipient_" in redacted
+    assert G._redact_addresses(raw, recipients) == redacted
+
+
+def test_process_message_redacts_address_in_subject(tmp_path):
+    message = message_from_bytes(
+        b"From: " + bf.OWN.encode() + b"\r\n"
+        b"To: visible-recipient@example.invalid\r\n"
+        b"X-Gmail-Labels: Sent\r\n"
+        b"Date: Fri, 17 Jul 2026 12:00:00 -0400\r\n"
+        b"Subject: notes for third.party@leak.invalid re the plan\r\n"
+        b"Message-ID: <subject-addr@example.invalid>\r\n"
+        b"\r\n"
+        b"This is my authored body with enough words to pass the floor easily.\r\n"
+    )
+    out = _out(tmp_path)
+    args = G.build_arg_parser().parse_args([
+        "acquire",
+        "--mbox-path", str(tmp_path / "unused.mbox"),
+        "--own-address", bf.OWN, "--output-dir", str(out),
+        "--min-words-per-piece", "1",
+    ])
+    opts = G.parse_options(args)
+    recipients = G.ac.StableRedactionMap(
+        opts.recipient_map_path, label_prefix="recipient",
+        normalize_key=lambda address: address.strip().lower(),
+        reuse_gaps=False, map_name="recipient map",
+    )
+    prepared = G.process_message(message, opts, recipients, G.Summary())
+    assert prepared is not None
+    assert "third.party@leak.invalid" not in prepared.piece.title
+    assert "recipient_" in prepared.piece.title
+
+
+def test_process_message_redacts_standalone_address_in_body(tmp_path):
+    raw_address = "standalone.body@leak.invalid"
+    message = message_from_bytes(
+        b"From: " + bf.OWN.encode() + b"\r\n"
+        b"To: visible-recipient@example.invalid\r\n"
+        b"X-Gmail-Labels: Sent\r\n"
+        b"Date: Fri, 17 Jul 2026 12:00:00 -0400\r\n"
+        b"Subject: Address privacy regression\r\n"
+        b"Message-ID: <body-addr@example.invalid>\r\n"
+        b"\r\n"
+        b"Please contact standalone.body@leak.invalid about our meeting tomorrow.\r\n"
+    )
+    out = _out(tmp_path)
+    args = G.build_arg_parser().parse_args([
+        "acquire",
+        "--mbox-path", str(tmp_path / "unused.mbox"),
+        "--own-address", bf.OWN,
+        "--output-dir", str(out),
+        "--min-words-per-piece", "1",
+    ])
+    opts = G.parse_options(args)
+    recipients = G.ac.StableRedactionMap(
+        opts.recipient_map_path,
+        label_prefix="recipient",
+        normalize_key=lambda address: address.strip().lower(),
+        reuse_gaps=False,
+        map_name="recipient map",
+    )
+
+    prepared = G.process_message(message, opts, recipients, G.Summary())
+
+    assert prepared is not None
+    assert raw_address not in prepared.piece.cleaned_text
+    assert "recipient_" in prepared.piece.cleaned_text
+
+def test_multiline_zillow_share_footer_is_stripped_with_provenance():
+    body = (
+        "Thought you might like this place, it is near the park.\n"
+        "\n"
+        "View this home on Zillow:\n"
+        "http://www.zillow.com/homedetails/2123354710_zpid\n"
+        "\n"
+        "Download the free Zillow iPhone app:\n"
+        "http://itunes.apple.com/us/app/id310738695?mt=8"
+    )
+    details = G._unwrap_flowed_details(body)
+    kept = G._trim_signature(
+        details.text, None, details.line_provenance,
+    )
+    assert "zillow.com" not in kept.lower()
+    assert "itunes.apple.com" not in kept
+    assert kept == "Thought you might like this place, it is near the park."
+
+
+def test_authored_service_citation_midbody_is_preserved():
+    body = (
+        "Start with Oxford's Peter Millican at iTunes U: "
+        "http://itunes.apple.com/x\n"
+        "and tell me what you think of the lectures."
+    )
+    assert G._trim_signature(body, None) == body
+
 def test_name_map_rejects_address_valued_alias(tmp_path, mbox, capsys):
     out = _out(tmp_path)
     name_map = tmp_path / "name-map.json"
@@ -799,14 +910,22 @@ def test_unwindowed_full_export_refuses_without_receipt(tmp_path, mbox):
         ])
 
 
-def test_live_smoke_confirmed_requires_tty(tmp_path, mbox):
+def test_inband_live_smoke_confirmed_is_hard_refused(
+    tmp_path, mbox, monkeypatch, capsys,
+):
+    # The acquisition-time in-band approval path is removed. --live-smoke-confirmed
+    # hard-refuses (rc 2) even from an interactive TTY, and mints no receipt —
+    # approval may only happen through the separated smoke/approve-smoke flow.
     out = _out(tmp_path)
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
     rc = G.main([
         "--mbox-path", str(mbox), "--own-address", bf.OWN,
         "--output-dir", str(out), "--min-words-per-piece", "5",
         "--since", "2000-01-01", "--live-smoke-confirmed",
     ])
     assert rc == 2
+    assert "has been removed" in capsys.readouterr().err
+    assert not (out / G.RECEIPT_NAME).exists()
 
 
 def test_localized_sent_label_zero_output_fails_closed(tmp_path, mbox, capsys):
@@ -849,21 +968,19 @@ def test_allow_empty_is_explicit_success(tmp_path, mbox):
     ) == 0
 
 
-def test_allow_empty_cannot_mint_live_smoke_receipt(
+def test_inband_live_smoke_confirmed_refused_even_with_allow_empty(
     tmp_path, mbox, monkeypatch
 ):
+    # Even combined with --allow-empty on a TTY, the removed in-band approval
+    # path refuses (rc 2) before acquiring anything and mints no receipt.
     out = _out(tmp_path)
     monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
 
     assert _run(
         mbox,
         out,
-        [
-            "--sent-label-token", "DefinitelyNotTheSentLabel",
-            "--allow-empty",
-            "--live-smoke-confirmed",
-        ],
-    ) == 0
+        ["--allow-empty", "--live-smoke-confirmed"],
+    ) == 2
     assert not (out / G.RECEIPT_NAME).exists()
 
 
@@ -875,6 +992,968 @@ def test_dedupe_only_rerun_is_success_without_manifest_growth(tmp_path, mbox):
     assert _run(mbox, out) == 0
     assert (out / "draft_manifest.jsonl").read_text() == before
 
+
+# =================================================================
+# Crash-safe resume: kill-point / reconciliation / single-invocation
+# =================================================================
+#
+# The advertised replay invariant is NOT full byte-identity. Two provenance
+# stamps are re-generated on every run: the manifest ``acquired_via`` (built from
+# date.today()) and the sidecar ``acquired_at`` (datetime.now()). Instead of
+# silently dropping them before comparing — which would HIDE a real difference
+# and let the test claim more than it proves — ``_capture`` ASSERTS each is
+# present and well-formed on every row/sidecar, then normalizes it to a fixed
+# placeholder that stays in the compared structure. The equality assertions
+# therefore prove exactly the true invariant: identical content (.txt bytes,
+# content hashes, recipient map) and identical manifest/sidecar rows EXCEPT for
+# those two named, verified-present, re-stamped provenance fields.
+
+_ACQUIRED_VIA_RE = re.compile(r"^acquire_gmail_sent_\d{4}-\d{2}-\d{2}$")
+_ACQUIRED_AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+
+
+def _capture(out: Path):
+    manifest = [
+        json.loads(l)
+        for l in (out / "draft_manifest.jsonl").read_text().splitlines()
+        if l.strip()
+    ]
+    for row in manifest:
+        via = row.get("acquired_via")
+        assert isinstance(via, str) and _ACQUIRED_VIA_RE.match(via), via
+        row["acquired_via"] = "<acquired_via>"  # verified present, then normalized
+    txts = {p.name: p.read_bytes() for p in sorted(out.glob("*.txt"))}
+    metas = {}
+    for p in sorted(out.glob("*.meta.json")):
+        data = json.loads(p.read_text())
+        at = data.get("acquired_at")
+        assert isinstance(at, str) and _ACQUIRED_AT_RE.match(at), at
+        data["acquired_at"] = "<acquired_at>"  # verified present, then normalized
+        metas[p.name] = data
+    rmap = b""
+    if (out / "recipient_map.json").exists():
+        rmap = (out / "recipient_map.json").read_bytes()
+    return manifest, txts, metas, rmap
+
+
+@pytest.fixture
+def golden(tmp_path_factory, mbox):
+    out = (tmp_path_factory.mktemp("golden")
+           / "ai-prose-baselines-private" / "identity" / "personal_email" / "joshua")
+    assert _run(mbox, out) == 0
+    cap = _capture(out)
+    assert cap[0], "golden produced no manifest rows"
+    return cap
+
+
+def _committed_count(out: Path) -> int:
+    mf = out / "draft_manifest.jsonl"
+    if not mf.exists():
+        return 0
+    return sum(1 for l in mf.read_text().splitlines() if l.strip())
+
+
+def test_single_full_invocation_matches_uninterrupted(tmp_path, mbox, golden):
+    # One invocation = index pass + one processing pass; output equals golden.
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    assert (out / G.THREAD_INDEX_NAME).exists()  # index persisted for resume
+    assert _capture(out) == golden
+
+
+def test_resume_reauthenticates_index_with_targeted_streaming_pass(
+    tmp_path, mbox, golden, monkeypatch,
+):
+    out = _out(tmp_path)
+    monkeypatch.setattr(G, "emit_piece", _raiser("kill before first emit"))
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    assert (out / G.THREAD_INDEX_NAME).exists()
+    monkeypatch.undo()
+
+    calls = {"roots_only": 0, "targeted": 0}
+    real_roots = G.build_thread_roots
+    real_targeted = G.build_thread_roots_and_target_keys
+    monkeypatch.setattr(
+        G, "build_thread_roots",
+        lambda box: (
+            calls.__setitem__("roots_only", calls["roots_only"] + 1),
+            real_roots(box),
+        )[1],
+    )
+    monkeypatch.setattr(
+        G, "build_thread_roots_and_target_keys",
+        lambda box, targets: (
+            calls.__setitem__("targeted", calls["targeted"] + 1),
+            real_targeted(box, targets),
+        )[1],
+    )
+    assert _run(mbox, out) == 0
+    assert calls == {"roots_only": 0, "targeted": 1}
+    assert _capture(out) == golden
+
+
+def _raiser(msg, fail_on=1):
+    state = {"n": 0}
+
+    def go(*a, **k):
+        state["n"] += 1
+        if state["n"] >= fail_on:
+            raise RuntimeError(msg)
+
+    return go
+
+
+def _counting_wrapper(orig, fail_on, side_effect=None):
+    state = {"n": 0}
+
+    def wrapper(*a, **k):
+        state["n"] += 1
+        if state["n"] == fail_on:
+            if side_effect is not None:
+                side_effect(*a, **k)
+            raise RuntimeError("kill-point")
+        return orig(*a, **k)
+
+    return wrapper
+
+
+def test_kill_after_txt_before_meta_replays_to_golden(tmp_path, mbox, golden, monkeypatch):
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+    # ac._write_text_atomic backs ONLY the sidecar write inside write_piece.
+    monkeypatch.setattr(
+        G.ac, "_write_text_atomic",
+        _counting_wrapper(G.ac._write_text_atomic, fail_on),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    # An orphan .txt (stem uncommitted) exists; no manifest row for it.
+    assert _committed_count(out) == fail_on - 1
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    assert _capture(out) == golden
+
+
+def test_kill_after_meta_before_manifest_replays_to_golden(tmp_path, mbox, golden, monkeypatch):
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, fail_on),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    assert _committed_count(out) == fail_on - 1
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    assert _capture(out) == golden
+
+
+def test_torn_manifest_tail_is_repaired_on_resume(tmp_path, mbox, golden, monkeypatch):
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+
+    def torn_write(manifest_path, entry, **kw):
+        with open(manifest_path, "a", encoding="utf-8") as f:
+            f.write('{"id": "torn-partial-line-no-newl')  # partial, unterminated
+
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, fail_on, side_effect=torn_write),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    raw = (out / "draft_manifest.jsonl").read_bytes()
+    assert not raw.endswith(b"\n"), "expected a torn (unterminated) tail line"
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    final = (out / "draft_manifest.jsonl").read_bytes()
+    assert final.endswith(b"\n")
+    for line in final.decode().splitlines():
+        json.loads(line)  # every line parses; torn line was dropped
+    assert _capture(out) == golden
+
+
+def test_mid_stream_resume_preserves_row_order_and_recipient_map(tmp_path, mbox, golden, monkeypatch):
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, fail_on),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    partial_rows = [json.loads(l) for l in
+                    (out / "draft_manifest.jsonl").read_text().splitlines() if l.strip()]
+    for row in partial_rows:
+        # Normalize the one re-stamped provenance field the same way _capture
+        # does (after asserting it is present), so the pre-crash rows compare
+        # against the resumed capture on their stable content only.
+        assert isinstance(row.get("acquired_via"), str)
+        row["acquired_via"] = "<acquired_via>"
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    manifest, _, _, rmap = _capture(out)
+    # Rows 1..N committed pre-crash keep their content and order across the resume.
+    assert manifest[: len(partial_rows)] == partial_rows
+    assert (manifest, rmap) == (golden[0], golden[3])
+
+
+def test_post_crash_rerun_is_idempotent(tmp_path, mbox, golden):
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    before = (out / "draft_manifest.jsonl").read_bytes()
+    assert _run(mbox, out) == 0  # dedupe-only rerun
+    assert (out / "draft_manifest.jsonl").read_bytes() == before
+    assert _capture(out) == golden
+
+
+def test_preexisting_orphan_is_reacquired_not_skipped(
+    tmp_path, mbox, golden, monkeypatch,
+):
+    # F2 regression: a .txt+.meta pair with a matching content_hash but NO
+    # manifest row must be reconciled (deleted + re-acquired), not
+    # dedupe-skipped forever. Constructed the only way it can legitimately
+    # arise - a kill between the sidecar write and its manifest append (here
+    # on the very FIRST piece, so ZERO rows are committed but the tree is
+    # still evidenced by the pass-1 thread-index checkpoint).
+    out = _out(tmp_path)
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, 1),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    assert _committed_count(out) == 0
+    orphans = sorted(out.glob("*.txt"))
+    assert orphans, "expected an orphan piece pair before the resume"
+    orphan_stem = orphans[0].stem
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    ids = {r["id"] for r in _entries(out)}
+    assert orphan_stem in ids, "orphan was skipped instead of re-acquired"
+    assert _capture(out) == golden
+
+
+def test_unevidenced_dir_with_foreign_pieces_refuses_and_preserves(
+    tmp_path, mbox, capsys,
+):
+    # Every corpus under ai-prose-baselines-private passes the privacy gate,
+    # so a mistyped --output-dir pointing at a FOREIGN corpus tree must not
+    # let reconciliation delete its .txt/.meta.json files. A directory with
+    # piece-shaped files but no committed rows and no valid resume checkpoint
+    # is unevidenced: refuse loudly, write nothing, echo no stems.
+    out = _out(tmp_path)
+    out.mkdir(parents=True)
+    foreign_txt = out / "unrelated-corpus-piece.txt"
+    foreign_meta = out / "unrelated-corpus-piece.meta.json"
+    foreign_body = "foreign corpus text that is not ours"
+    foreign_txt.write_text(foreign_body, encoding="utf-8")
+    foreign_meta.write_text("{}\n", encoding="utf-8")
+
+    assert _run(mbox, out) == 2
+    assert foreign_txt.read_text(encoding="utf-8") == foreign_body
+    assert foreign_meta.exists()
+    assert not (out / "draft_manifest.jsonl").exists()
+    assert not (out / G.THREAD_INDEX_NAME).exists()
+    err = capsys.readouterr().err
+    assert "refusing to write into" in err
+    assert "unrelated-corpus-piece" not in err  # no stem echo (privacy)
+
+
+def test_stray_tmp_files_are_swept(tmp_path, mbox, golden):
+    out = _out(tmp_path)
+    out.mkdir(parents=True)
+    (out / "leftover.txt.deadbeef.tmp").write_text("junk")
+    (out / "draft_manifest.jsonl.deadbeef.tmp").write_text("junk")
+    assert _run(mbox, out) == 0
+    assert not list(out.glob("*.tmp"))
+    assert _capture(out) == golden
+
+
+def _first_message_block(raw: bytes) -> tuple[int, int]:
+    start = raw.index(b"From ")
+    end = raw.index(b"\nFrom ", start) + 1
+    return start, end
+
+
+def test_byte_identical_duplicate_message_keeps_rerun_alive(tmp_path, mbox):
+    # A Takeout mbox can carry the same sent message twice (byte-identical,
+    # same Message-ID: a label-overlap / export-merge duplicate). Dedupe
+    # commits it once on run 1; the duplicate must NOT brick the idempotent
+    # rerun / resume path with a duplicate-locator refusal afterwards.
+    raw = mbox.read_bytes()
+    start, end = _first_message_block(raw)
+    mbox.write_bytes(raw + raw[start:end])
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    rows = _committed_count(out)
+    assert rows > 0
+    before = (out / "draft_manifest.jsonl").read_bytes()
+    assert _run(mbox, out) == 0, (
+        "byte-identical source duplicate must not refuse the rerun/resume"
+    )
+    assert (out / "draft_manifest.jsonl").read_bytes() == before
+    assert _committed_count(out) == rows
+
+
+def test_differing_content_under_one_message_id_still_refuses_rerun(
+    tmp_path, mbox, capsys,
+):
+    # Two DIFFERENT sent bodies under one Message-ID stay ambiguous: the
+    # committed row's source binding cannot be authenticated, so the rerun
+    # must refuse fail-closed, never guess which copy backs the row.
+    raw = mbox.read_bytes()
+    start, end = _first_message_block(raw)
+    mutated = raw[start:end].replace(
+        b"PLAIN.", b"MUTATED duplicate body under the same Message-ID.",
+    )
+    assert mutated != raw[start:end]
+    mbox.write_bytes(raw + mutated)
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    assert _run(mbox, out) == 2
+    err = capsys.readouterr().err
+    assert "repeats a committed stable entry locator" in err
+
+
+def test_mbox_identity_guard_fails_loud_on_changed_mbox(tmp_path, mbox):
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    assert _committed_count(out) > 0
+    # Mutate the source mbox → its sha no longer matches the checkpoint.
+    with open(mbox, "ab") as f:
+        f.write(b"\nFrom mutation@example.com Mon Jun 15 12:00:00 2020\n")
+    with pytest.raises(SystemExit):
+        _run(mbox, out)
+
+
+def test_max_items_counts_committed_rows_across_resume(tmp_path, mbox, monkeypatch):
+    # A crash after k commits, then an identical resume, must finish at exactly
+    # --max-items TOTAL rows (not k + max-items). The fixture has more acquirable
+    # pieces than `cap`, so the buggy k+cap total is distinguishable from cap.
+    out = _out(tmp_path)
+    cap = 6
+    # Run 1: crash on the 4th manifest append → exactly 3 committed rows.
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, 4),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out, ["--max-items", str(cap)])
+    assert _committed_count(out) == 3
+    monkeypatch.undo()
+
+    # Run 2 (identical resume): the 3 already-committed rows count toward the
+    # cap, so the run stops at exactly `cap` total, never 3 + cap.
+    assert _run(mbox, out, ["--max-items", str(cap)]) == 0
+    assert _committed_count(out) == cap
+
+
+def test_recipient_map_is_durable_before_each_commit(
+    tmp_path, mbox, golden, monkeypatch,
+):
+    # Every committed manifest row references recipient_NN labels whose raw->label
+    # mapping lives ONLY in recipient_map.json. That map must be on disk before a
+    # dependent row commits, so a mid-run crash never leaves a committed row whose
+    # label mapping was never persisted. (Pre-fix, the map was written only at a
+    # clean close, so a crash left committed rows with no recipient map at all.)
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, fail_on),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+
+    rmap_path = out / "recipient_map.json"
+    assert rmap_path.exists(), "recipient map was not persisted before commits"
+    persisted_labels = set(json.loads(rmap_path.read_text()).values())
+    committed = [
+        json.loads(l)
+        for l in (out / "draft_manifest.jsonl").read_text().splitlines()
+        if l.strip()
+    ]
+    assert committed, "expected committed rows before the crash"
+    for row in committed:
+        for label in re.findall(r"recipient_\d+", row.get("notes", "")):
+            assert label in persisted_labels, (
+                f"{label} referenced by a committed row but absent from the "
+                "durably persisted recipient map"
+            )
+    monkeypatch.undo()
+
+    # A clean resume still reproduces the golden recipient map byte-for-byte.
+    assert _run(mbox, out) == 0
+    assert _capture(out)[3] == golden[3]
+
+
+# =================================================================
+# Lane B: smoke approval separated from acquisition
+# =================================================================
+
+
+def _smoke(mbox, out, extra=None):
+    argv = [
+        "smoke", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--output-dir", str(out), "--min-words-per-piece", "5",
+        "--since", "2000-01-01", "--until", "2100-01-01",
+    ]
+    return G.main(argv + (extra or []))
+
+
+def test_smoke_writes_descriptor_and_mints_no_receipt(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    desc = json.loads((smoke_dir / G.SMOKE_DESCRIPTOR_NAME).read_text())
+    assert desc["schema"] == G.SMOKE_DESCRIPTOR_SCHEMA
+    assert desc["acquired"] > 0
+    assert desc["manifest_rows"] == desc["acquired"]
+    assert "behavior_fingerprint" in desc
+    assert not (smoke_dir / G.RECEIPT_NAME).exists()  # smoke never mints approval
+
+
+def test_smoke_requires_window(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    rc = G.main([
+        "smoke", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--output-dir", str(smoke_dir), "--min-words-per-piece", "5",
+    ])
+    assert rc == 2
+    assert not (smoke_dir / G.SMOKE_DESCRIPTOR_NAME).exists()
+
+
+def test_validate_smoke_clean_tree_exits_zero_and_writes_nothing(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    before = {p.name: p.read_bytes() for p in smoke_dir.iterdir() if p.is_file()}
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 0
+    after = {p.name: p.read_bytes() for p in smoke_dir.iterdir() if p.is_file()}
+    assert after == before  # read-only: nothing written or changed
+
+
+def test_validate_smoke_detects_orphan(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    # Drop one manifest row, leaving its .txt/.meta → orphan sidecar.
+    mf = smoke_dir / "draft_manifest.jsonl"
+    lines = [l for l in mf.read_text().splitlines() if l.strip()]
+    mf.write_text("\n".join(lines[:-1]) + "\n")
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 2
+
+
+def test_validate_smoke_detects_stale_mbox(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    with open(mbox, "ab") as f:
+        f.write(b"\n")  # mbox changed since smoke → stale
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 2
+
+
+def test_approve_smoke_requires_tty(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: False)
+    rc = G.main(["approve-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir), "--output-dir", str(full)])
+    assert rc == 2
+    assert not (full / G.RECEIPT_NAME).exists()
+
+
+def test_approve_smoke_mints_receipt_without_acquiring(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    rc = G.main(["approve-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir), "--output-dir", str(full)])
+    assert rc == 0
+    receipt = json.loads((full / G.RECEIPT_NAME).read_text())
+    assert receipt["schema"] == G.RECEIPT_SCHEMA
+    # approve acquires nothing: FULL holds ONLY the receipt.
+    assert not list(full.glob("*.txt"))
+    assert not (full / "draft_manifest.jsonl").exists()
+
+
+def test_full_run_accepts_receipt_from_separate_smoke_tree(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    assert G.main(["approve-smoke", "--mbox-path", str(mbox),
+                   "--smoke-dir", str(smoke_dir), "--output-dir", str(full)]) == 0
+    monkeypatch.undo()
+    # Unwindowed full run into the DIFFERENT tree is accepted by the gate.
+    rc = G.main([
+        "acquire", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--output-dir", str(full), "--min-words-per-piece", "5",
+    ])
+    assert rc == 0
+    assert list(full.glob("*.txt"))
+
+
+def test_gate_refuses_when_min_words_differs_from_smoke(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    assert G.main(["approve-smoke", "--mbox-path", str(mbox),
+                   "--smoke-dir", str(smoke_dir), "--output-dir", str(full)]) == 0
+    monkeypatch.undo()
+    # A looser word floor than the reviewed smoke must refuse at the gate.
+    with pytest.raises(SystemExit):
+        G.main([
+            "acquire", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+            "--output-dir", str(full), "--min-words-per-piece", "9",
+        ])
+
+
+def _tamper_descriptor(smoke_dir: Path, **changes) -> None:
+    path = smoke_dir / G.SMOKE_DESCRIPTOR_NAME
+    desc = json.loads(path.read_text())
+    desc.update(changes)
+    path.write_text(
+        json.dumps(desc, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("changes,reason", [
+    ({"manifest_rows": 999}, "descriptor_manifest_rows_mismatch"),
+    ({"acquired": 999}, "descriptor_acquired_mismatch"),
+    ({"behavior_fingerprint": "deadbeef" * 8}, "descriptor_fingerprint_mismatch"),
+])
+def test_validate_smoke_rejects_tampered_descriptor(
+    tmp_path, mbox, changes, reason, capsys,
+):
+    # A hand-edited descriptor whose recorded counts/fingerprint no longer match
+    # the actual tree (and the recorded params) is rejected — the values are
+    # recomputed and verified, not trusted.
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    _tamper_descriptor(smoke_dir, **changes)
+    capsys.readouterr()  # drain the smoke-run summary from stderr
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 2
+    assert json.loads(capsys.readouterr().err)["smoke_validate"] == reason
+
+
+def test_validate_smoke_rejects_tampered_behavior_params(tmp_path, mbox, capsys):
+    # Editing behavior_params alone breaks the fingerprint it must reproduce.
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    path = smoke_dir / G.SMOKE_DESCRIPTOR_NAME
+    desc = json.loads(path.read_text())
+    desc["behavior_params"]["min_words"] = desc["behavior_params"]["min_words"] + 100
+    path.write_text(
+        json.dumps(desc, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+    capsys.readouterr()  # drain the smoke-run summary from stderr
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 2
+    assert json.loads(capsys.readouterr().err)["smoke_validate"] == (
+        "descriptor_fingerprint_mismatch"
+    )
+
+
+def test_approve_smoke_refuses_tampered_descriptor_and_mints_nothing(
+    tmp_path, mbox, monkeypatch,
+):
+    # approve-smoke recomputes/verifies the descriptor BEFORE prompting or
+    # minting, so a tampered descriptor yields no receipt even from a TTY 'y'.
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    _tamper_descriptor(smoke_dir, acquired=999)
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    rc = G.main(["approve-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir), "--output-dir", str(full)])
+    assert rc == 2
+    assert not (full / G.RECEIPT_NAME).exists()
+    assert not list(full.glob("*.txt"))
+
+
+def test_legacy_flat_cli_still_routes_to_acquire(tmp_path, mbox):
+    # The subcommand refactor must not break the flat CLI (all prior callers).
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    assert list(out.glob("*.txt"))
+
+
+
+# =================================================================
+# Independent-review hostile regressions
+# =================================================================
+
+
+def _tree_bytes(out: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(out)): path.read_bytes()
+        for path in sorted(out.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _parsed_opts(mbox: Path, out: Path, extra=None) -> G.Options:
+    argv = [
+        "acquire", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--output-dir", str(out), "--min-words-per-piece", "5",
+        "--since", "2000-01-01", "--until", "2100-01-01",
+    ]
+    args = G.build_arg_parser().parse_args(argv + (extra or []))
+    return G.parse_options(args)
+
+
+def test_self_consistent_old_extraction_policy_smoke_cannot_mint_approval(
+    tmp_path, mbox,
+):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    descriptor_path = smoke_dir / G.SMOKE_DESCRIPTOR_NAME
+    descriptor = json.loads(descriptor_path.read_text())
+    params = descriptor["behavior_params"]
+    params["extraction_policy_version"] = "pre-footer-policy"
+    params["extraction_code_sha256"] = "0" * 64
+    descriptor["behavior_fingerprint"] = G._behavior_fingerprint_from_public(params)
+    descriptor_path.write_text(
+        json.dumps(descriptor, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    assert G.main([
+        "approve-smoke", "--mbox-path", str(mbox),
+        "--smoke-dir", str(smoke_dir), "--output-dir", str(full),
+    ]) == 2
+    assert not (full / G.RECEIPT_NAME).exists()
+
+
+@pytest.mark.parametrize("flag,value", [
+    ("--since", "2010-01-01"),
+    ("--until", "2025-01-01"),
+    ("--author", "different-author"),
+    ("--persona", "different-persona"),
+    ("--min-words-per-piece", "6"),
+])
+def test_resume_fingerprint_covers_selection_and_metadata_determinants(
+    tmp_path, mbox, flag, value,
+):
+    out = _out(tmp_path)
+    base = G._resume_fingerprint(_parsed_opts(mbox, out))
+    changed = G._resume_fingerprint(_parsed_opts(mbox, out, [flag, value]))
+    assert changed != base
+
+
+@pytest.mark.parametrize("damage", [
+    "missing", "malformed", "invalid_utf8", "changed",
+    "missing_roots_digest", "malformed_roots_digest", "changed_roots_digest",
+])
+def test_committed_rows_require_intact_source_bound_checkpoint_without_mutation(
+    tmp_path, mbox, damage,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    checkpoint = out / G.THREAD_INDEX_NAME
+    if damage == "missing":
+        checkpoint.unlink()
+    elif damage == "malformed":
+        checkpoint.write_text("{broken", encoding="utf-8")
+    elif damage == "invalid_utf8":
+        checkpoint.write_bytes(b"\xff\xfe\x80")
+    else:
+        data = json.loads(checkpoint.read_text())
+        if damage == "changed":
+            data["resume_fingerprint"] = "0" * 64
+        elif damage == "missing_roots_digest":
+            data.pop("thread_roots_sha256")
+        elif damage == "malformed_roots_digest":
+            data["thread_roots_sha256"] = 7
+        else:
+            data["thread_roots_sha256"] = "0" * 64
+        checkpoint.write_text(json.dumps(data) + "\n", encoding="utf-8")
+    before = _tree_bytes(out)
+
+    with pytest.raises(SystemExit):
+        _run(mbox, out, ["--max-items", "3"])
+    assert _tree_bytes(out) == before
+
+
+@pytest.mark.parametrize("flag,value", [
+    ("--since", "2010-01-01"),
+    ("--until", "2025-01-01"),
+    ("--author", "different-author"),
+    ("--persona", "different-persona"),
+])
+def test_changed_resume_parameters_refuse_before_mutation(
+    tmp_path, mbox, flag, value,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    before = _tree_bytes(out)
+    with pytest.raises(SystemExit):
+        _run(mbox, out, ["--max-items", "3", flag, value])
+    assert _tree_bytes(out) == before
+
+
+def test_newline_terminated_malformed_interior_row_refuses_zero_mutation(
+    tmp_path, mbox,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "4"]) == 0
+    manifest = out / "draft_manifest.jsonl"
+    lines = manifest.read_bytes().splitlines(keepends=True)
+    manifest.write_bytes(lines[0] + b"{malformed-interior}\n" + b"".join(lines[1:]))
+    (out / "crash-orphan.txt").write_text("must survive refusal", encoding="utf-8")
+    (out / "crash-orphan.meta.json").write_text("{}", encoding="utf-8")
+    (out / "stray.tmp").write_text("must survive refusal", encoding="utf-8")
+    before = _tree_bytes(out)
+
+    assert _run(mbox, out, ["--max-items", "4"]) == 2
+    assert _tree_bytes(out) == before
+
+
+@pytest.mark.parametrize("bad_final", [b"{invalid-final}\n", b"[]\n"])
+def test_newline_terminated_invalid_final_row_refuses_without_mutation(
+    tmp_path, mbox, bad_final,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    manifest = out / "draft_manifest.jsonl"
+    with manifest.open("ab") as fh:
+        fh.write(bad_final)
+    (out / "crash-orphan.txt").write_text("must survive refusal", encoding="utf-8")
+    before = _tree_bytes(out)
+
+    assert _run(mbox, out, ["--max-items", "3"]) == 2
+    assert _tree_bytes(out) == before
+
+
+@pytest.mark.parametrize("damage", [
+    "text", "sidecar_hash", "missing_locator", "forged_locator",
+    "manifest_hash", "manifest_acquired_via", "manifest_ai_status",
+    "manifest_privacy", "manifest_word_count", "sidecar_scraper",
+    "sidecar_version", "sidecar_thread", "sidecar_order", "sidecar_title",
+])
+def test_corrupt_committed_artifact_refuses_before_dedupe_or_cleanup(
+    tmp_path, mbox, damage,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    manifest = out / "draft_manifest.jsonl"
+    rows = _entries(out)
+    row = rows[0]
+    text_path = out / f"{row['id']}.txt"
+    meta_path = out / f"{row['id']}.meta.json"
+    if damage == "text":
+        text_path.write_bytes(text_path.read_bytes() + b" tampered")
+    elif damage == "sidecar_hash":
+        meta = json.loads(meta_path.read_text())
+        meta["content_hash"] = "sha256:" + "0" * 64
+        meta_path.write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    elif damage == "missing_locator":
+        meta = json.loads(meta_path.read_text())
+        meta.pop("author_corpus_entry_locator")
+        meta_path.write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    elif damage == "forged_locator":
+        meta = json.loads(meta_path.read_text())
+        meta["author_corpus_entry_locator"] = "sha256:" + "0" * 64
+        meta_path.write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    elif damage == "manifest_hash":
+        rows[0]["content_hash"] = "sha256:" + "0" * 64
+        manifest.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in rows),
+            encoding="utf-8",
+        )
+    elif damage == "manifest_acquired_via":
+        rows[0]["acquired_via"] = "acquire_gmail_sent_1999-01-01"
+        manifest.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in rows),
+            encoding="utf-8",
+        )
+    elif damage in {
+        "manifest_ai_status", "manifest_privacy", "manifest_word_count",
+    }:
+        key, value = {
+            "manifest_ai_status": ("ai_status", "human"),
+            "manifest_privacy": ("privacy", "public"),
+            "manifest_word_count": ("word_count", rows[0]["word_count"] + 1),
+        }[damage]
+        rows[0][key] = value
+        manifest.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in rows),
+            encoding="utf-8",
+        )
+    else:
+        meta = json.loads(meta_path.read_text())
+        key = {
+            "sidecar_scraper": "scraper",
+            "sidecar_version": "scraper_version",
+            "sidecar_thread": "author_corpus_thread_locator",
+            "sidecar_order": "author_corpus_order_timestamp",
+            "sidecar_title": "title",
+        }[damage]
+        meta[key] = "forged"
+        meta_path.write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    (out / "uncommitted.txt").write_text("must not be deleted", encoding="utf-8")
+    before = _tree_bytes(out)
+
+    assert _run(mbox, out, ["--max-items", "3"]) == 2
+    assert _tree_bytes(out) == before
+
+
+@pytest.mark.parametrize("body", [
+    (
+        "I am sending you the listing separately.\n"
+        "http://www.zillow.com/homedetails/2123354710_zpid"
+    ),
+    (
+        "The authored sentence contains a URL "
+        "http://www.zillow.com/homedetails/2123354710_zpid"
+    ),
+    (
+        "View this home on Zillow:\n"
+        "http://www.zillow.com/homedetails/2123354710_zpid"
+    ),
+])
+def test_incomplete_or_authored_zillow_urls_are_never_removed(body):
+    assert G._trim_signature(body, None) == body
+
+
+def test_resumed_smoke_descriptor_acquired_is_total_committed_rows(
+    tmp_path, mbox, monkeypatch,
+):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    monkeypatch.setattr(
+        G.ac,
+        "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, 3),
+    )
+    with pytest.raises(RuntimeError):
+        _smoke(mbox, smoke_dir, ["--max-items", "4"])
+    assert _committed_count(smoke_dir) == 2
+    monkeypatch.undo()
+
+    assert _smoke(mbox, smoke_dir, ["--max-items", "4"]) == 0
+    descriptor = json.loads(
+        (smoke_dir / G.SMOKE_DESCRIPTOR_NAME).read_text()
+    )
+    assert descriptor["acquired"] == 4
+    assert descriptor["manifest_rows"] == 4
+
+
+def test_already_at_max_items_rerun_succeeds_and_preserves_checkpoint(
+    tmp_path, mbox,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    checkpoint = out / G.THREAD_INDEX_NAME
+    manifest = out / "draft_manifest.jsonl"
+    checkpoint_before = checkpoint.read_bytes()
+    manifest_before = manifest.read_bytes()
+
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    assert checkpoint.read_bytes() == checkpoint_before
+    assert manifest.read_bytes() == manifest_before
+
+def test_staged_cap_increase_resumes_across_midnight_with_frozen_provenance(
+    tmp_path, mbox, monkeypatch,
+):
+    out = _out(tmp_path)
+    first_day = dt.date(2026, 7, 18)
+    second_day = dt.date(2026, 7, 19)
+    monkeypatch.setattr(G, "_acquisition_date_today", lambda: first_day)
+    first_opts = _parsed_opts(mbox, out, ["--max-items", "2"])
+    larger_opts = _parsed_opts(mbox, out, ["--max-items", "4"])
+    assert G._resume_fingerprint(first_opts) == G._resume_fingerprint(larger_opts)
+    assert _run(mbox, out, ["--max-items", "2"]) == 0
+    checkpoint = out / G.THREAD_INDEX_NAME
+    checkpoint_before = checkpoint.read_bytes()
+    checkpoint_data = json.loads(checkpoint_before)
+    assert checkpoint_data["acquired_via_date"] == first_day.isoformat()
+    assert "roots" not in checkpoint_data
+    assert "roots_sha256" not in checkpoint_data
+
+    monkeypatch.setattr(G, "_acquisition_date_today", lambda: second_day)
+    assert _run(mbox, out, ["--max-items", "4"]) == 0
+    assert _committed_count(out) == 4
+    assert checkpoint.read_bytes() == checkpoint_before
+    assert {
+        row["acquired_via"] for row in _entries(out)
+    } == {f"{G.TOOL_NAME}_{first_day.isoformat()}"}
+
+
+@pytest.mark.parametrize("body", [
+    (
+        "Authored lead-in.\nView this home on Zillow:\n"
+        "http://www.zillow.com/homedetails/2123354710_zpid\n"
+        "Download the free Zillow Android app:\n"
+        "https://itunes.apple.com/us/app/zillow/id310738695"
+    ),
+    (
+        "Authored lead-in.\nView this listing on Zillow:\n"
+        "https://www.zillow.com/homedetails/2123354710_zpid\n"
+        "Download the free Zillow iPhone app:\n"
+        "https://play.google.com/store/apps/details?id=com.zillow.android.zillowmap"
+    ),
+])
+def test_mismatched_zillow_platform_store_sequences_are_preserved(body):
+    assert G._trim_signature(body, None) == body
+
+def test_summary_stderr_never_echoes_private_trailing_prose(tmp_path, capsys):
+    sentinel = "PRIVATE_BODY_TAIL_SENTINEL_NEVER_PRINT"
+    summary = G.Summary()
+    summary.trailing_counter[sentinel] = 12
+    sys.stderr.write(summary.render(
+        manifest_path=tmp_path / "manifest.jsonl",
+        recipient_map_path=tmp_path / "recipients.json",
+    ))
+    stderr = capsys.readouterr().err
+    assert sentinel not in stderr
+    assert "Trailing-text repetition audit" in stderr
+    assert "maximum frequency 12" in stderr
+
+
+def test_dry_run_stderr_never_echoes_private_subject(
+    tmp_path, mbox, capsys,
+):
+    sentinel = b"PRIVATE_SUBJECT_SENTINEL_NEVER_PRINT"
+    private_mbox = tmp_path / "private-subject.mbox"
+    raw = mbox.read_bytes()
+    assert b"Subject: Lunch plans, Alice?" in raw
+    private_mbox.write_bytes(raw.replace(
+        b"Subject: Lunch plans, Alice?", b"Subject: " + sentinel, 1,
+    ))
+
+    assert _run(
+        private_mbox, _out(tmp_path), ["--dry-run", "--max-items", "1"],
+    ) == 0
+    stderr = capsys.readouterr().err
+    assert sentinel.decode() not in stderr
+    assert "dry-run eligible item 1" in stderr
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
