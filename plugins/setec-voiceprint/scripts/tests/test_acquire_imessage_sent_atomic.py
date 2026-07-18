@@ -4951,6 +4951,7 @@ def test_semantic_options_reject_ambiguous_bindings(kwargs: dict[str, object]) -
         {"max_retained": 0},
         {"allow_empty": 1},
         {"checkpoint_interval": 0},
+        {"checkpoint_interval": 2},
         {"checkpoint_schema": "bad\nvalue"},
     ],
 )
@@ -5034,12 +5035,24 @@ def test_parser_accepts_exactly_one_group_policy(
     assert args.timezone == "America/New_York"
     assert args.apple_date_unit == "nanoseconds"
     assert args.hmac_key == Path("private-hmac.key")
+    assert args.progress_interval == 100
+    assert not hasattr(args, "checkpoint_interval")
 
 
-def test_parser_rejects_missing_group_policy() -> None:
+def test_parser_rejects_removed_mutable_checkpoint_interval() -> None:
     with pytest.raises(SystemExit) as caught:
-        A.build_arg_parser().parse_args(_required_cli())
+        A.build_arg_parser().parse_args(
+            _required_cli("--exclude-group-chats")
+            + ["--checkpoint-interval", "2"]
+        )
     assert caught.value.code == 2
+
+
+def test_main_rejects_missing_acquisition_group_policy(capsys) -> None:
+    with pytest.raises(SystemExit) as caught:
+        A.main(_required_cli())
+    assert caught.value.code == 2
+    assert "--include-group-chats/--exclude-group-chats" in capsys.readouterr().err
 
 
 def test_parser_rejects_both_group_policies() -> None:
@@ -5059,14 +5072,15 @@ def test_parser_rejects_both_group_policies() -> None:
     ],
 )
 def test_parser_requires_timezone_date_unit_and_hmac_key(
-    missing_pair: tuple[str, str],
+    missing_pair: tuple[str, str], capsys,
 ) -> None:
     argv = _required_cli("--exclude-group-chats")
     index = argv.index(missing_pair[0])
     del argv[index : index + 2]
     with pytest.raises(SystemExit) as caught:
-        A.build_arg_parser().parse_args(argv)
+        A.main(argv)
     assert caught.value.code == 2
+    assert missing_pair[0] in capsys.readouterr().err
 
 
 def test_parser_rejects_invalid_timezone_and_auto_date_unit() -> None:
@@ -5094,6 +5108,64 @@ def test_main_requires_live_acquisition_arguments(capsys) -> None:
         A.main(_required_cli("--exclude-group-chats"))
     assert caught.value.code == 2
     assert "live acquisition requires" in capsys.readouterr().err
+
+
+def test_standalone_validate_mode_needs_no_acquisition_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys,
+) -> None:
+    run_dir = tmp_path / "completed-run"
+    observed: list[Path] = []
+    monkeypatch.setattr(
+        A,
+        "validate_atomic_run",
+        lambda path: observed.append(path) or {
+            "status": "closed",
+            "retained_rows": 1,
+        },
+    )
+    parsed = A.build_arg_parser().parse_args(["--validate-run", str(run_dir)])
+    assert parsed.validate_run == run_dir
+    assert parsed.include_group_chats is None
+    assert parsed.timezone is None
+    assert parsed.hmac_key is None
+    assert A.main(["--validate-run", str(run_dir)]) == 0
+    assert observed == [run_dir]
+    assert '"status": "closed"' in capsys.readouterr().out
+
+
+def test_standalone_mint_mode_needs_only_action_specific_flags(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = tmp_path / "acquisition-receipt.json"
+    destination = tmp_path / "imessage-atomic-live-smoke-receipt.json"
+    observed: list[tuple[Path, Path]] = []
+    monkeypatch.setattr(
+        A,
+        "mint_live_smoke_receipt",
+        lambda first, second: observed.append((first, second)) or {},
+    )
+    argv = [
+        "--mint-live-smoke-receipt",
+        "--smoke-run-receipt",
+        str(source),
+        "--receipt-out",
+        str(destination),
+    ]
+    parsed = A.build_arg_parser().parse_args(argv)
+    assert parsed.mint_live_smoke_receipt is True
+    assert parsed.timezone is None
+    assert A.main(argv) == 0
+    assert observed == [(source, destination)]
+
+
+def test_parser_rejects_multiple_standalone_actions(tmp_path: Path) -> None:
+    with pytest.raises(SystemExit) as caught:
+        A.build_arg_parser().parse_args([
+            "--validate-run",
+            str(tmp_path / "run"),
+            "--mint-live-smoke-receipt",
+        ])
+    assert caught.value.code == 2
 
 
 def test_main_refuses_live_acquisition_off_macos_before_source_read(
@@ -11287,28 +11359,41 @@ def test_row_plan_derives_exportable_atomic_artifacts_from_closed_bootstrap() ->
     assert "message-guid" not in A._canonical_json_bytes(row.sidecar).decode("utf-8")
 
 
-def test_durable_row_publication_resumes_and_validates(tmp_path: Path) -> None:
-    snapshot, schema, universe, _semantic, controls = _initialization_fixture()
-    semantic = A.semantic_options_payload(
-        since=None, until=None, include_group_chats=False,
-        apple_date_unit="nanoseconds", timezone_name="UTC",
-        preprocessing_version="legacy-preprocess/1",
-        preprocessing_rules_id="imessage-atomic-rules/1",
-        persona="joshua", author="Joshua Miller", register="personal",
+def test_progress_interval_is_nonsemantic_aggregate_only_and_sentinel_safe(
+    tmp_path: Path,
+) -> None:
+    sentinel = "HOSTILE-PROGRESS-PROSE-SENTINEL"
+    conn, schema = _candidate_fixture(tmp_path / "progress.db")
+    conn.execute("UPDATE message SET text = ? WHERE guid = 'message-guid-a'", (sentinel,))
+    conn.commit()
+    universe = A.discover_candidate_universe(
+        conn,
+        schema,
+        apple_date_unit="nanoseconds",
+        timezone_name="UTC",
+        max_messages=10,
     )
-    initialization = A.build_initialization_closure(
-        snapshot_metadata=snapshot, schema_info=schema, universe=universe,
-        key_bytes=KEY, semantic_options=semantic, run_controls=controls,
-    )
-    result = A.process_selected_candidates(
-        universe, schema, include_group_chats=False,
+    events: list[dict[str, int]] = []
+    A.process_selected_candidates(
+        universe,
+        schema,
+        include_group_chats=False,
         preprocessor=lambda text: (text, {"rules": []}),
+        progress=events.append,
+        progress_interval=1,
     )
-    planned = A.plan_row_artifacts(result, universe, initialization, semantic, KEY)
+    conn.close()
+
+    assert len(events) == 3
+    assert all(set(event) == {"considered", "retained", "excluded"} for event in events)
+    assert all(all(type(value) is int for value in event.values()) for event in events)
+    assert sentinel not in json.dumps(events, sort_keys=True)
+    assert "message-guid" not in json.dumps(events, sort_keys=True)
+
+
+def test_durable_row_publication_resumes_and_validates(tmp_path: Path) -> None:
     run_dir = tmp_path / "run"
-    run_dir.mkdir()
-    for artifact in initialization.artifacts:
-        (run_dir / artifact.filename).write_bytes(artifact.raw)
+    planned, result = _synthetic_row_publication_case(run_dir)
 
     first = A.publish_planned_rows(run_dir, planned, result)
     second = A.publish_planned_rows(run_dir, planned, result)
@@ -11319,7 +11404,7 @@ def test_durable_row_publication_resumes_and_validates(tmp_path: Path) -> None:
         "status": "closed",
         "retained_rows": 1,
         "considered_rows": 1,
-        "not_considered_after_bound": 0,
+        "not_considered_after_bound": 2,
     }
     row_dir = run_dir / "rows" / planned[0].row_stem
     text_path = row_dir / f"{planned[0].row_stem}.txt"
@@ -11331,14 +11416,437 @@ def test_durable_row_publication_resumes_and_validates(tmp_path: Path) -> None:
     assert A.validate_atomic_run(run_dir)["status"] == "closed"
 
 
+def _synthetic_row_publication_case(
+    run_dir: Path,
+) -> tuple[tuple[A.PlannedAtomicRow, ...], A.AtomicProcessingResult]:
+    run_dir.mkdir()
+    snapshot_path = run_dir / A.SNAPSHOT_FILENAME
+    conn, schema = _candidate_fixture(snapshot_path)
+    snapshot = A._snapshot_metadata(conn, snapshot_path)
+    universe = A.discover_candidate_universe(
+        conn,
+        schema,
+        apple_date_unit="nanoseconds",
+        timezone_name="UTC",
+        max_messages=10,
+    )
+    conn.close()
+    semantic = A.semantic_options_payload(
+        since=None, until=None, include_group_chats=False,
+        apple_date_unit="nanoseconds", timezone_name="UTC",
+        preprocessing_version="legacy-preprocess/1",
+        preprocessing_rules_id="imessage-atomic-rules/1",
+        persona="joshua", author="Joshua Miller", register="personal",
+    )
+    controls = A.run_controls_payload(
+        max_messages=10,
+        max_retained=1,
+        allow_empty=False,
+        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+    )
+    initialization = A.build_initialization_closure(
+        snapshot_metadata=snapshot, schema_info=schema, universe=universe,
+        key_bytes=KEY, semantic_options=semantic, run_controls=controls,
+    )
+    result = A.process_selected_candidates(
+        universe, schema, include_group_chats=False,
+        max_retained=1,
+        preprocessor=lambda text: (text, {"rules": []}),
+    )
+    planned = A.plan_row_artifacts(
+        result, universe, initialization, semantic, KEY
+    )
+    for artifact in initialization.artifacts:
+        (run_dir / artifact.filename).write_bytes(artifact.raw)
+    return planned, result
+
+
+def _tree_bytes(root: Path) -> dict[str, bytes]:
+    return {
+        path.relative_to(root).as_posix(): path.read_bytes()
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+@pytest.mark.parametrize(
+    "boundary",
+    [
+        "after_initial_ledger",
+        "after_initial_checkpoint",
+        "after_journal_prepared",
+        "after_text",
+        "after_sidecar",
+        "after_fragment",
+        "after_journal_staged",
+        "after_row_commit",
+        "after_journal_committed_unledgered",
+        "after_ledger",
+        "after_journal_ledger_closed",
+        "after_checkpoint",
+        "after_journal_checkpoint_closed",
+        "after_journal_removed",
+        "after_manifest",
+        "after_receipt",
+    ],
+)
+def test_row_kill_points_resume_byte_identically(
+    tmp_path: Path, boundary: str,
+) -> None:
+    interrupted = tmp_path / "interrupted"
+    baseline = tmp_path / "baseline"
+    planned, result = _synthetic_row_publication_case(interrupted)
+    baseline_planned, baseline_result = _synthetic_row_publication_case(baseline)
+
+    def kill(observed: str) -> None:
+        if observed == boundary:
+            raise RuntimeError("synthetic durable kill")
+
+    with pytest.raises(RuntimeError, match="durable kill"):
+        A.publish_planned_rows(interrupted, planned, result, fault=kill)
+    A.publish_planned_rows(interrupted, planned, result)
+    A.publish_planned_rows(baseline, baseline_planned, baseline_result)
+
+    assert _tree_bytes(interrupted) == _tree_bytes(baseline)
+    assert not (interrupted / A.ROW_JOURNAL_FILENAME).exists()
+    assert list((interrupted / A.ROW_STAGING_DIRNAME).iterdir()) == []
+    assert A.validate_atomic_run(interrupted)["retained_rows"] == 1
+
+
+def test_row_resume_repairs_missing_final_checkpoint_only_with_journal(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "checkpoint-repair"
+    planned, result = _synthetic_row_publication_case(run_dir)
+
+    with pytest.raises(RuntimeError, match="ledger kill"):
+        A.publish_planned_rows(
+            run_dir,
+            planned,
+            result,
+            fault=lambda boundary: (
+                (_ for _ in ()).throw(RuntimeError("ledger kill"))
+                if boundary == "after_ledger"
+                else None
+            ),
+        )
+    (run_dir / "checkpoint.json").unlink()
+    A.publish_planned_rows(run_dir, planned, result)
+    assert A.validate_atomic_run(run_dir)["status"] == "closed"
+
+
+def test_row_preflight_refuses_unevidenced_next_residue(tmp_path: Path) -> None:
+    run_dir = tmp_path / "unevidenced"
+    planned, result = _synthetic_row_publication_case(run_dir)
+    row = planned[0]
+    assert row.row_stem is not None
+    residue = run_dir / A.ROWS_DIRNAME / row.row_stem
+    residue.mkdir(parents=True)
+    for name, raw in A._expected_row_files(row).items():
+        (residue / name).write_bytes(raw)
+
+    with pytest.raises(A.AtomicAcquisitionError, match="unevidenced"):
+        A.publish_planned_rows(run_dir, planned, result)
+
+
+def _rewrite_canonical_json(path: Path, mutate) -> None:
+    payload = json.loads(path.read_bytes())
+    mutate(payload)
+    path.write_bytes(A._canonical_json_bytes(payload))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "snapshot",
+        "semantic-option",
+        "run-control",
+        "contact-map",
+        "source-map",
+        "owner-ai-boundary",
+        "ledger-equation",
+        "checkpoint",
+        "sidecar",
+        "fragment",
+        "manifest",
+        "receipt-tool",
+        "receipt-privacy",
+        "unexpected-inventory",
+    ],
+)
+def test_atomic_validator_mutation_matrix_refuses_every_authority_drift(
+    tmp_path: Path, mutation: str,
+) -> None:
+    run_dir = tmp_path / mutation
+    planned, result = _synthetic_row_publication_case(run_dir)
+    A.publish_planned_rows(run_dir, planned, result)
+    assert A.validate_atomic_run(run_dir)["status"] == "closed"
+    stem = planned[0].row_stem
+    assert stem is not None
+
+    if mutation == "snapshot":
+        with (run_dir / A.SNAPSHOT_FILENAME).open("ab") as handle:
+            handle.write(b"drift")
+    elif mutation == "semantic-option":
+        _rewrite_canonical_json(
+            run_dir / A.SEMANTIC_OPTIONS_FILENAME,
+            lambda payload: payload.__setitem__("author", "Mutated Author"),
+        )
+    elif mutation == "run-control":
+        _rewrite_canonical_json(
+            run_dir / A.RUN_CONTROLS_FILENAME,
+            lambda payload: payload.__setitem__("max_messages", 11),
+        )
+    elif mutation == "contact-map":
+        _rewrite_canonical_json(
+            run_dir / A.PRIVATE_CONTACT_MAP_FILENAME,
+            lambda payload: payload["contacts"][0].__setitem__(
+                "contact_alias", "contact-999999"
+            ),
+        )
+    elif mutation == "source-map":
+        _rewrite_canonical_json(
+            run_dir / A.PRIVATE_SOURCE_IDENTITY_MAP_FILENAME,
+            lambda payload: payload.__setitem__("selected_outgoing_rows", 0),
+        )
+    elif mutation == "owner-ai-boundary":
+        _rewrite_canonical_json(
+            run_dir / A.RUN_OWNER_FILENAME,
+            lambda payload: payload.__setitem__("ai_boundary_version", "forged"),
+        )
+    elif mutation == "ledger-equation":
+        _rewrite_canonical_json(
+            run_dir / "source-ledger.json",
+            lambda payload: payload.__setitem__("considered_rows", 2),
+        )
+    elif mutation == "checkpoint":
+        _rewrite_canonical_json(
+            run_dir / "checkpoint.json",
+            lambda payload: payload.__setitem__("retained_rows", 0),
+        )
+    elif mutation == "sidecar":
+        _rewrite_canonical_json(
+            run_dir / A.ROWS_DIRNAME / stem / f"{stem}.meta.json",
+            lambda payload: payload["tool"].__setitem__("version", "forged"),
+        )
+    elif mutation == "fragment":
+        _rewrite_canonical_json(
+            run_dir / A.ROWS_DIRNAME / stem / f"{stem}.fragment.json",
+            lambda payload: payload["entry"].__setitem__("privacy", "public"),
+        )
+    elif mutation == "manifest":
+        with (run_dir / "draft_manifest.jsonl").open("ab") as handle:
+            handle.write(b"\n")
+    elif mutation == "receipt-tool":
+        _rewrite_canonical_json(
+            run_dir / "acquisition-receipt.json",
+            lambda payload: payload["tool"].__setitem__("name", "forged"),
+        )
+    elif mutation == "receipt-privacy":
+        _rewrite_canonical_json(
+            run_dir / "acquisition-receipt.json",
+            lambda payload: payload["privacy"].__setitem__(
+                "contains_raw_identity", True
+            ),
+        )
+    else:
+        (run_dir / "alien-state.json").write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(A.AtomicAcquisitionError):
+        A.validate_atomic_run(run_dir)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS durable row I/O")
+def test_live_row_io_publishes_owner_only_descriptor_relative_tree(
+    tmp_path: Path,
+) -> None:
+    private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    output_root = private_root / "runs"
+    private_root.mkdir(mode=0o700)
+    output_root.mkdir(mode=0o700)
+    run_dir = output_root / "descriptor-row"
+    planned, result = _synthetic_row_publication_case(run_dir)
+    os.chmod(run_dir, 0o700)
+    for path in run_dir.iterdir():
+        os.chmod(path, 0o600)
+
+    final_name = run_dir.name
+    journal_name = A.bootstrap_journal_name(final_name)
+    parent_fd, _ = A._open_private_parent_dirfd(output_root / journal_name)
+    lock_fd, lock_name = A._acquire_bootstrap_lock_at(parent_fd, journal_name)
+    final_fd = os.open(
+        final_name,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        dir_fd=parent_fd,
+    )
+    try:
+        row_io = A.LiveDurableRowIo(
+            run_dir,
+            final_fd=final_fd,
+            parent_fd=parent_fd,
+            final_name=final_name,
+            journal_name=journal_name,
+            lock_fd=lock_fd,
+            lock_name=lock_name,
+        )
+        A.publish_planned_rows(run_dir, planned, result, io=row_io)
+        for directory in (
+            run_dir / A.ROWS_DIRNAME,
+            run_dir / A.ROW_STAGING_DIRNAME,
+            run_dir / A.ROWS_DIRNAME / planned[0].row_stem,
+        ):
+            assert stat.S_IMODE(directory.stat().st_mode) == 0o700
+        for path in run_dir.rglob("*"):
+            if path.is_file() and path.name not in {
+                A.SNAPSHOT_FILENAME,
+                *A.INITIALIZATION_ARTIFACT_FILENAMES,
+            }:
+                assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    finally:
+        os.close(final_fd)
+        A._release_bootstrap_lock_at(parent_fd, journal_name, lock_fd, lock_name)
+        os.close(lock_fd)
+        os.close(parent_fd)
+
+
+def _staged_live_row_case(
+    tmp_path: Path,
+) -> tuple[
+    A.LiveDurableRowIo,
+    A.PlannedAtomicRow,
+    dict[str, bytes],
+    Path,
+    Path,
+    tuple[int, str, int, str, int],
+]:
+    private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    output_root = private_root / "runs"
+    private_root.mkdir(mode=0o700)
+    output_root.mkdir(mode=0o700)
+    run_dir = output_root / "seal-row"
+    planned, _result = _synthetic_row_publication_case(run_dir)
+    row = planned[0]
+    assert row.row_stem is not None
+    os.chmod(run_dir, 0o700)
+    for path in run_dir.iterdir():
+        os.chmod(path, 0o600)
+    rows = run_dir / A.ROWS_DIRNAME
+    staging_root = run_dir / A.ROW_STAGING_DIRNAME
+    stage = staging_root / row.row_stem
+    rows.mkdir(mode=0o700)
+    staging_root.mkdir(mode=0o700)
+    stage.mkdir(mode=0o700)
+    expected = A._expected_row_files(row)
+    for name, raw in expected.items():
+        path = stage / name
+        path.write_bytes(raw)
+        os.chmod(path, 0o600)
+
+    final_name = run_dir.name
+    journal_name = A.bootstrap_journal_name(final_name)
+    parent_fd, _ = A._open_private_parent_dirfd(output_root / journal_name)
+    lock_fd, lock_name = A._acquire_bootstrap_lock_at(parent_fd, journal_name)
+    final_fd = os.open(
+        final_name,
+        os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW,
+        dir_fd=parent_fd,
+    )
+    row_io = A.LiveDurableRowIo(
+        run_dir,
+        final_fd=final_fd,
+        parent_fd=parent_fd,
+        final_name=final_name,
+        journal_name=journal_name,
+        lock_fd=lock_fd,
+        lock_name=lock_name,
+    )
+    return (
+        row_io,
+        row,
+        expected,
+        stage,
+        rows / row.row_stem,
+        (parent_fd, journal_name, lock_fd, lock_name, final_fd),
+    )
+
+
+def _close_staged_live_row_case(
+    row_io: A.LiveDurableRowIo,
+    cleanup: tuple[int, str, int, str, int],
+) -> None:
+    parent_fd, journal_name, lock_fd, lock_name, final_fd = cleanup
+    row_io.close()
+    os.close(final_fd)
+    A._release_bootstrap_lock_at(parent_fd, journal_name, lock_fd, lock_name)
+    os.close(lock_fd)
+    os.close(parent_fd)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS durable row I/O")
+def test_live_row_seal_refuses_group_readable_child(tmp_path: Path) -> None:
+    row_io, row, expected, stage, _destination, cleanup = (
+        _staged_live_row_case(tmp_path)
+    )
+    try:
+        target = stage / f"{row.row_stem}.txt"
+        os.chmod(target, 0o644)
+        with pytest.raises(A.AtomicAcquisitionError):
+            row_io.seal_directory(
+                f"{A.ROW_STAGING_DIRNAME}/{row.row_stem}", expected
+            )
+    finally:
+        _close_staged_live_row_case(row_io, cleanup)
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS durable row I/O")
+@pytest.mark.parametrize("mutation", ["mode", "hardlink", "symlink", "inode-swap"])
+def test_live_row_commit_refuses_child_substitution_after_seal(
+    tmp_path: Path, mutation: str,
+) -> None:
+    row_io, row, expected, stage, destination, cleanup = (
+        _staged_live_row_case(tmp_path)
+    )
+    source_relative = f"{A.ROW_STAGING_DIRNAME}/{row.row_stem}"
+    destination_relative = f"{A.ROWS_DIRNAME}/{row.row_stem}"
+    try:
+        row_io.seal_directory(source_relative, expected)
+        target = stage / f"{row.row_stem}.txt"
+        if mutation == "mode":
+            os.chmod(target, 0o644)
+        elif mutation == "hardlink":
+            os.link(target, stage.parent / "held-hardlink")
+        elif mutation == "symlink":
+            original = stage.parent / "held-original"
+            target.rename(original)
+            target.symlink_to(original)
+        else:
+            raw = target.read_bytes()
+            replacement = stage.parent / "replacement"
+            replacement.write_bytes(raw)
+            os.chmod(replacement, 0o600)
+            os.replace(replacement, target)
+        with pytest.raises(A.AtomicAcquisitionError):
+            row_io.commit_directory(
+                source_relative,
+                destination_relative,
+                expected_files=expected,
+            )
+        assert not destination.exists()
+        assert stage.exists()
+    finally:
+        _close_staged_live_row_case(row_io, cleanup)
+
+
 def test_synthetic_database_runs_through_actual_atomic_producer(tmp_path: Path) -> None:
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
-    private_root.mkdir()
+    private_root.mkdir(mode=0o700)
+    os.chmod(private_root, 0o700)
     source = private_root / "chat.db"
     conn, _schema = _candidate_fixture(source)
     conn.close()
     output_root = private_root / "runs"
-    output_root.mkdir()
+    output_root.mkdir(mode=0o700)
+    os.chmod(output_root, 0o700)
     config = A.AtomicRunConfig(
         source_db=source, output_root=output_root, run_id="synthetic-three",
         persona="joshua", author="Joshua Miller", register="personal",
@@ -11402,16 +11910,75 @@ def test_synthetic_database_runs_through_actual_atomic_producer(tmp_path: Path) 
     ) == receipt
 
 
-def test_live_smoke_receipt_requires_tty_and_one_row_run(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def _completed_private_smoke_run(tmp_path: Path) -> tuple[Path, Path, Path]:
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
-    private_root.mkdir()
+    private_root.mkdir(mode=0o700)
+    os.chmod(private_root, 0o700)
     source = private_root / "chat.db"
     conn, _schema = _candidate_fixture(source)
     conn.close()
     output_root = private_root / "runs"
-    output_root.mkdir()
+    output_root.mkdir(mode=0o700)
+    os.chmod(output_root, 0o700)
+    config = A.AtomicRunConfig(
+        source_db=source,
+        output_root=output_root,
+        run_id="smoke-one",
+        persona="joshua",
+        author="Joshua Miller",
+        register="personal",
+        since=None,
+        until=None,
+        include_group_chats=False,
+        apple_date_unit="nanoseconds",
+        timezone_name="UTC",
+        max_messages=10,
+        max_retained=1,
+        allow_empty=False,
+    )
+    A.run(
+        config,
+        key_bytes=KEY,
+        bootstrap=A._synthetic_fixture_bootstrap,
+        preprocessor=lambda text: (text, {"rules": []}),
+    )
+    run_dir = output_root / "smoke-one"
+    return private_root, run_dir, run_dir / "acquisition-receipt.json"
+
+
+@pytest.mark.parametrize("mutation", ["mode", "hard-link", "symlink"])
+def test_private_validator_refuses_mode_link_and_no_follow_mutations(
+    tmp_path: Path, mutation: str,
+) -> None:
+    private_root, run_dir, _receipt = _completed_private_smoke_run(tmp_path)
+    assert A.validate_atomic_run(run_dir)["status"] == "closed"
+    ledger = json.loads((run_dir / "source-ledger.json").read_bytes())
+    stem = next(row["row_stem"] for row in ledger["rows"] if row["row_stem"])
+    target = run_dir / A.ROWS_DIRNAME / stem / f"{stem}.meta.json"
+    if mutation == "mode":
+        os.chmod(target, 0o640)
+    elif mutation == "hard-link":
+        os.link(target, private_root / "hard-link-residue")
+    else:
+        original = private_root / "sidecar-original"
+        target.rename(original)
+        target.symlink_to(original)
+    with pytest.raises(A.AtomicAcquisitionError):
+        A.validate_atomic_run(run_dir)
+
+
+def test_live_smoke_receipt_requires_tty_and_one_row_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    private_root.mkdir(mode=0o700)
+    os.chmod(private_root, 0o700)
+    source = private_root / "chat.db"
+    conn, _schema = _candidate_fixture(source)
+    conn.close()
+    output_root = private_root / "runs"
+    output_root.mkdir(mode=0o700)
+    os.chmod(output_root, 0o700)
     config = A.AtomicRunConfig(
         source_db=source, output_root=output_root, run_id="smoke-one",
         persona="joshua", author="Joshua Miller", register="personal",
@@ -11443,6 +12010,143 @@ def test_live_smoke_receipt_requires_tty_and_one_row_run(
     assert approval.is_file()
     with pytest.raises(A.AtomicAcquisitionError, match="cannot publish"):
         A.mint_live_smoke_receipt(run_receipt, approval)
+
+
+class _TtyBuffer(io.StringIO):
+    def isatty(self) -> bool:
+        return True
+
+
+@pytest.mark.parametrize(
+    "typed",
+    [
+        " APPROVE IMESSAGE ATOMIC LIVE SMOKE\n",
+        "APPROVE IMESSAGE ATOMIC LIVE SMOKE \n",
+        "APPROVE IMESSAGE ATOMIC LIVE SMOKE\t\n",
+    ],
+)
+def test_live_smoke_confirmation_rejects_unstripped_whitespace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, typed: str,
+) -> None:
+    private_root, _run_dir, run_receipt = _completed_private_smoke_run(tmp_path)
+    approval = private_root / "imessage-atomic-live-smoke-receipt.json"
+    monkeypatch.setattr(A.sys, "stdin", _TtyBuffer(typed))
+    monkeypatch.setattr(A.sys, "stdout", _TtyBuffer())
+    with pytest.raises(A.AtomicAcquisitionError, match="phrase did not match"):
+        A.mint_live_smoke_receipt(run_receipt, approval)
+    assert not approval.exists()
+
+
+def test_live_smoke_mint_validates_before_prompt_and_requires_exact_receipt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_root, run_dir, run_receipt = _completed_private_smoke_run(tmp_path)
+    approval = private_root / "imessage-atomic-live-smoke-receipt.json"
+    alias = run_dir / "receipt-copy.json"
+    alias.write_bytes(run_receipt.read_bytes())
+    os.chmod(alias, 0o600)
+    monkeypatch.setattr(
+        A.sys, "stdin", _TtyBuffer("APPROVE IMESSAGE ATOMIC LIVE SMOKE\n")
+    )
+    monkeypatch.setattr(A.sys, "stdout", _TtyBuffer())
+    with pytest.raises(A.AtomicAcquisitionError, match="exact acquisition receipt"):
+        A.mint_live_smoke_receipt(alias, approval)
+    alias.unlink()
+
+    _rewrite_canonical_json(
+        run_receipt,
+        lambda payload: payload["privacy"].__setitem__("contains_source_prose", True),
+    )
+    with pytest.raises(A.AtomicAcquisitionError, match="acquisition receipt drifted"):
+        A.mint_live_smoke_receipt(run_receipt, approval)
+    assert not approval.exists()
+
+
+def test_live_smoke_mint_refuses_mutation_during_owner_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_root, run_dir, run_receipt = _completed_private_smoke_run(tmp_path)
+    approval = private_root / "imessage-atomic-live-smoke-receipt.json"
+    ledger = json.loads((run_dir / "source-ledger.json").read_bytes())
+    stem = next(row["row_stem"] for row in ledger["rows"] if row["row_stem"])
+    text_path = run_dir / A.ROWS_DIRNAME / stem / f"{stem}.txt"
+
+    class MutatingTty(_TtyBuffer):
+        def readline(self, *args, **kwargs):
+            text_path.write_bytes(b"mutated after initial validation")
+            os.chmod(text_path, 0o600)
+            return super().readline(*args, **kwargs)
+
+    monkeypatch.setattr(
+        A.sys,
+        "stdin",
+        MutatingTty("APPROVE IMESSAGE ATOMIC LIVE SMOKE\n"),
+    )
+    monkeypatch.setattr(A.sys, "stdout", _TtyBuffer())
+    with pytest.raises(A.AtomicAcquisitionError):
+        A.mint_live_smoke_receipt(run_receipt, approval)
+    assert not approval.exists()
+
+
+@pytest.mark.parametrize(
+    "topology",
+    ["inside-run", "other-root", "repository", "ancestor-repository"],
+)
+def test_live_smoke_mint_refuses_unsafe_destination_topology(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, topology: str,
+) -> None:
+    private_root, run_dir, run_receipt = _completed_private_smoke_run(tmp_path)
+    if topology == "inside-run":
+        approval = run_dir / "imessage-atomic-live-smoke-receipt.json"
+    elif topology == "other-root":
+        other_root = tmp_path / "other" / A.PRIVATE_ROOT_COMPONENT
+        other_root.mkdir(parents=True, mode=0o700)
+        os.chmod(other_root, 0o700)
+        approval = other_root / "imessage-atomic-live-smoke-receipt.json"
+    elif topology == "repository":
+        repository = private_root / "approval-repository"
+        repository.mkdir(mode=0o700)
+        os.chmod(repository, 0o700)
+        (repository / ".git").mkdir(mode=0o700)
+        approval = repository / "imessage-atomic-live-smoke-receipt.json"
+    else:
+        (tmp_path / ".git").mkdir(mode=0o700)
+        approval = private_root / "imessage-atomic-live-smoke-receipt.json"
+    monkeypatch.setattr(
+        A.sys, "stdin", _TtyBuffer("APPROVE IMESSAGE ATOMIC LIVE SMOKE\n")
+    )
+    monkeypatch.setattr(A.sys, "stdout", _TtyBuffer())
+    with pytest.raises(A.AtomicAcquisitionError):
+        A.mint_live_smoke_receipt(run_receipt, approval)
+    assert not approval.exists()
+
+
+def test_live_smoke_consumption_reuses_pinned_topology_and_digest_guards(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    private_root, run_dir, run_receipt = _completed_private_smoke_run(tmp_path)
+    approval = private_root / "imessage-atomic-live-smoke-receipt.json"
+    monkeypatch.setattr(
+        A.sys, "stdin", _TtyBuffer("APPROVE IMESSAGE ATOMIC LIVE SMOKE\n")
+    )
+    monkeypatch.setattr(A.sys, "stdout", _TtyBuffer())
+    minted = A.mint_live_smoke_receipt(run_receipt, approval)
+    assert stat.S_IMODE(approval.stat().st_mode) == 0o600
+    A._consume_live_smoke_receipt(
+        approval, minted["smoke_policy_digest"], run_dir=run_dir
+    )
+    with pytest.raises(A.AtomicAcquisitionError, match="does not authorize"):
+        A._consume_live_smoke_receipt(
+            approval, "sha256:" + "0" * 64, run_dir=run_dir
+        )
+
+    unsafe = run_dir / "imessage-atomic-live-smoke-receipt.json"
+    unsafe.write_bytes(approval.read_bytes())
+    os.chmod(unsafe, 0o600)
+    with pytest.raises(A.AtomicAcquisitionError, match="outside every run"):
+        A._consume_live_smoke_receipt(
+            unsafe, minted["smoke_policy_digest"], run_dir=run_dir
+        )
 
 
 def test_candidate_receipt_rejects_alien_or_mutated_selected_rows(

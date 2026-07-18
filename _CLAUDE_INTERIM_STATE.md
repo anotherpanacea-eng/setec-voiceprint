@@ -116,6 +116,7 @@ Spec authority: specs/imessage-atomic-message-acquisition.md (in this worktree, 
   checkpoint.json         # derived from closed ledger, rewritten per row
   draft_manifest.jsonl    # derived from sorted closed fragments (exporter input)
   acquisition-receipt.json  # final receipt (excluded from tree hash)
+  .row-transaction.json     # transient row journal; absent at completion
   .row-staging/<stem>/    # transient; absent at completion
 ```
 stem = f"{contact_alias}-{local_date.isoformat()}-{entry_locator_hex[:16]}"
@@ -148,15 +149,18 @@ run-controls.json + smoke-policy.json; EXCLUDES receipt, snapshot, both
 private maps, lock/journal/staging/logs.
 
 ### Row transaction (spec order, per retained row)
-stage under .row-staging/<stem>/ -> write text, sidecar, fragment (O_EXCL,
-fsync) -> read-back verify hashes/bijection -> exclusive-rename dir to
-rows/<stem> -> atomic ledger rewrite (row closed; read+compare previous bytes
-first = tamper CAS) -> atomic checkpoint rewrite. Excluded row: ledger+checkpoint
-only. Resume: ledger is row-journal authority; ledger rows must equal the
-deterministically recomputed planned prefix byte-for-byte; at most ONE
-committed-unledgered row allowed iff it byte-equals the next planned row (then
-close its ledger row); at most ONE staging dir, only for an unclosed stem ->
-delete + replay; anything else refuses. Plan rows up front via
+Publish a descriptor-relative `.row-transaction.json` before physical row
+mutation. Its CAS states are `prepared -> staged -> committed_unledgered ->
+ledger_closed -> checkpoint_closed`, with exact row index, identity, expected
+file hashes, and predecessor ledger/checkpoint digests. Stage under
+.row-staging/<stem>/ -> write text, sidecar, fragment (O_EXCL, fsync) ->
+read-back verify hashes/bijection -> exclusive-rename dir to rows/<stem> ->
+atomic ledger rewrite -> atomic checkpoint rewrite -> durable journal removal.
+Excluded rows use the same journal around ledger/checkpoint without staging.
+Resume preflights the entire rows/staging inventory before mutation and permits
+at most one journal-authorized exact next staging or committed-unledgered row;
+an immediate-predecessor or missing checkpoint is repaired. Anything else
+refuses. Plan rows up front via
 `plan_row_artifacts()` (pure, from universe + processing + closure + key) so
 interrupted/resumed/rebuilt runs are byte-identical.
 
@@ -187,11 +191,13 @@ interrupted/resumed/rebuilt runs are byte-identical.
   smoke_policy_digest equals THIS run's freshly computed smoke-policy digest
   (checked after bootstrap, before any row emission). Stale source db =>
   different snapshot => different smoke digest => refuse (stale-binding gate).
-- `mint_live_smoke_receipt(run_receipt_path, output_path)`: requires
+- `mint_live_smoke_receipt(run_receipt_path, output_path)`: first runs the
+  complete atomic-run validator, requires the exact named acquisition receipt,
   stdin+stdout isatty; loads the smoke run's acquisition receipt; requires
   max_retained==1, retained_rows==1, allow_empty==False; exact typed
-  confirmation phrase; writes O_EXCL to a path OUTSIDE any run dir (guard:
-  refuse if output parent contains run-owner.json); receipt = {schema,
+  confirmation phrase with no whitespace normalization; writes O_EXCL beneath
+  the same pinned private root but outside every run/repository subtree,
+  enforcing owner/mode/type/link/inode and parent-fsync rules; receipt = {schema,
   smoke_policy_digest, approved_run_receipt_sha256, retained_rows,
   approved_by:"owner-tty", confirmed_at}. Mint reads/writes nothing else
   (approval never acquires/activates/rewrites).
@@ -202,7 +208,7 @@ interrupted/resumed/rebuilt runs are byte-identical.
 Keep the 4 existing required options exactly. Add OPTIONAL: --source-db,
 --output-root, --run-id, --persona, --author, --register, --since, --until,
 --max-messages (default e.g. 250000), --max-retained, --allow-empty,
---checkpoint-interval (default 1), --live-smoke-receipt, and two exclusive
+--progress-interval (nonsemantic; aggregate-only), --live-smoke-receipt, and two exclusive
 action flags: --mint-live-smoke-receipt (with --smoke-run-receipt,
 --receipt-out) and --validate-run DIR. main() dispatches: validate (portable,
 read-only) / mint / acquire (requires the acquire args via parser.error;
@@ -265,11 +271,10 @@ manifest entries carry exporter-consistent era.
    E.build_export({"imessage_sent_atomic": <run>/draft_manifest.jsonl}, ...)
    -> E.publish_package -> voicewright.load_author_corpus_package(package,
    receipt, scope) succeeds; one record per retained GUID; duplicates distinct;
-   chat grouping preserved. Guard `pytest.importorskip("voicewright")` (module
-   resolves on this box from D:\Code-PC\setec-voicewright). Optional stretch:
-   assemble + plan_register_splits cross-chat normalized-duplicate component
-   fixture (spec sec Required downstream integration, acceptance 16 tail) - if
-   API cost is high, note as explicit residual instead.
+   chat grouping preserved. A supplementary producer-local
+   `pytest.importorskip("voicewright")` check is permitted, but a public
+   deterministic fixture plus a non-skipping paired `setec-voicewright`
+   `plan_register_splits` test is mandatory for acceptance 16.
 10. Hostile-sentinel sweep extension: raw GUID/handle sentinels from the
     fixture db appear NOWHERE in rows/ledger/checkpoint/manifest/receipt/
     smoke receipt/stdout/exceptions except the 3 named raw-ID stores

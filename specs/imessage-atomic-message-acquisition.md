@@ -35,10 +35,13 @@ duplicates create an additional split-lock edge but remain distinct events.
 ## Public/private boundary
 
 Implementation, tests, synthetic fixtures, capability metadata, and generic
-documentation are public. Raw or snapshotted `chat.db`, WAL contents, handles,
-GUIDs, prose, contact maps, identity keys, output text, private locators, state,
-and private receipts remain under a path containing the literal private-root
-component `ai-prose-baselines-private` and never enter git.
+documentation are public. The external OS-managed source `chat.db` and its
+WAL/SHM may remain at their normal macOS Messages path outside the private root;
+they are descriptor-pinned, opened read-only, and never copied except through
+the snapshot bootstrap below. Every materialized snapshot, handle, GUID, prose,
+contact map, identity key, output text, private locator, state artifact, and
+private receipt remains under a path containing the literal private-root
+component `ai-prose-baselines-private` and never enters git.
 
 No network access, AppleScript, live Messages API, or consent bypass is
 allowed. The capability reads only a SQLite-consistent private snapshot of a
@@ -729,12 +732,13 @@ Three canonical option payloads are distinct:
   and register;
 - `run_controls/1`: initialization-stable behavioral controls only:
   max-message ceiling, max-retained bound, allow-empty, checkpoint schema, and
-  checkpoint interval;
+  a frozen checkpoint interval of exactly one row;
 - `smoke_policy/1`: semantic payload plus snapshot/tool/schema/HMAC-key ID,
   excluding only the bounded max-retained value and other run controls.
 
 Destination/run ID, invocation-only resume action, smoke-receipt path, lock
-path, and progress/reporting controls are `operator_invocation_state/1`. They
+path, and aggregate-only progress/reporting interval are
+`operator_invocation_state/1`. They
 may be logged privately but are nonsemantic, are not embedded in owner marker,
 sidecars, ledger, checkpoint, manifest, or receipt, and are excluded from the
 semantic artifact tree. An initial invocation, a resume, and an independent
@@ -769,27 +773,49 @@ Optional operator timing belongs only in an unbound log block.
 
 ## Recoverable row transaction
 
-One selected row is the transaction unit. For a retained row:
+One selected row is the transaction unit. A transient canonical
+`.row-transaction.json` is the sole authority for physical state not yet
+closed by both ledger and checkpoint. It binds the row index, source ordinal,
+entry locator, disposition, nullable row stem, exact expected file
+size/digests, predecessor ledger/checkpoint digests, and one of the states
+`prepared`, `staged`, `committed_unledgered`, `ledger_closed`, or
+`checkpoint_closed`. It is descriptor-relative, owner-only, digest-CAS
+rewritten, excluded from the semantic tree, and durably deleted only after the
+checkpoint closes. For a retained row:
 
-1. write text, sidecar, and one-row manifest fragment into an owner-only
+1. publish the `prepared` row journal;
+2. write text, sidecar, and one-row manifest fragment into an owner-only
    row-specific staging directory;
-2. fsync, validate content/sidecar/fragment bijection, and record their hashes;
-3. atomically rename the staged row directory to its committed path;
-4. atomically rewrite the canonical retained/excluded source ledger with the
+3. fsync, validate content/sidecar/fragment bijection, seal the directory, and
+   advance the journal to `staged`;
+4. exclusively rename the staged row directory to its committed path, fsync
+   both parents, and advance the journal to `committed_unledgered`;
+5. atomically rewrite the canonical retained/excluded source ledger with the
    row closed;
-5. atomically rewrite the checkpoint from the closed ledger.
+6. advance the journal to `ledger_closed`, atomically rewrite the checkpoint
+   from the closed ledger, advance the journal to `checkpoint_closed`, then
+   durably delete the journal.
 
-For an excluded row, steps 1-3 are absent and the ledger closes the opaque
-source ordinal/key with exactly one exclusion reason. The aggregate
+For an excluded row, staging and rename are absent, but the same journal closes
+`prepared` through `ledger_closed` and `checkpoint_closed` around the
+ledger/checkpoint writes. The ledger closes the opaque source ordinal/key with
+exactly one exclusion reason. The aggregate
 `draft_manifest.jsonl` is always derived deterministically from sorted closed
 retained fragments; it is never an append-only transaction authority.
 
-On resume, one journal-proven incomplete staging directory may be deleted and
-replayed. Any mutation or malformed state in a closed row, ledger, snapshot,
-owner marker, identity map, contact map, or semantic option refuses. Tests kill
-the process after every durable operation and prove at-most-one-row replay,
-unchanged closed rows, and equality with an uninterrupted run. Closed-state
-tampering tests must remain distinct from expected unclosed staging recovery.
+Before any resume mutation, the complete `rows/` and `.row-staging/`
+inventories are checked against the deterministic plan, ledger prefix,
+checkpoint, and row journal. At most one recognized staging directory or one
+exact next committed-but-unledgered row is permitted, and only when the journal
+authorizes that exact index, identity, and byte set. One exact predecessor
+checkpoint or a missing checkpoint after a valid ledger advance is repaired;
+every other lag or residue refuses. Only the journal-proven incomplete staging
+directory may be durably deleted and replayed. Any mutation or malformed state
+in a closed row, ledger, snapshot, owner marker, identity map, contact map, or
+semantic option refuses. Tests kill the process after every durable operation
+and prove at-most-one-row replay, unchanged closed rows, exact checkpoint repair
+including the final row, and equality with an uninterrupted run. Closed-state
+tampering tests remain distinct from expected journal-authorized recovery.
 
 The ordinary manifest validator still runs for public manifest compatibility.
 A new atomic-run validator additionally verifies exact sidecar keys,
@@ -834,15 +860,18 @@ hash, ledger hash, and semantic artifact-tree hash.
 ## CLI safety ladder and live-smoke receipt
 
 The command prints only the resolved interpreter, opaque snapshot binding,
-semantic option hash, and private output directory before work. It never prints
-source prose or identifiers.
+semantic option hash, and private output directory before work. During a long
+run it emits aggregate-only considered/retained/excluded counts at a
+nonsemantic operator-selected progress interval and at shutdown boundaries. It
+never prints source prose, participants, locators, per-row identifiers, or
+hashes. Hostile-sentinel tests cover the progress channel.
 
 Required progression:
 
 1. synthetic and mutated fixture suite;
 2. a one-retained-message run using `--max-retained 1` into a new private tree;
 3. owner TTY review that mints `imessage-atomic-live-smoke-receipt.json` at a
-   separate private path;
+   separately pinned path under the same `ai-prose-baselines-private` root;
 4. a six-retained-message run into another new tree consuming that receipt;
 5. an independent deterministic rebuild of the six-message run and semantic
    hash comparison;
@@ -851,6 +880,15 @@ Required progression:
 The live-smoke receipt binds the exact smoke-policy digest. Six-message and full
 runs must consume it and match that digest. `--max-messages` remains an overflow
 ceiling throughout.
+
+Minting first validates the complete smoke run and accepts only its exact
+`acquisition-receipt.json` path. Source and destination are resolved beneath
+the same pinned owner-only private-root descriptor with no symlink, hard-link,
+owner, mode, inode, or ancestor substitution. The destination is outside every
+ancestor containing `run-owner.json`, outside any Git worktree, and is
+exclusive-created at mode `0600` followed by parent-directory fsync. The
+confirmation phrase is compared byte-for-byte; leading/trailing whitespace is
+not accepted.
 
 ## Required downstream integration
 
@@ -886,9 +924,13 @@ authority: it closes connected components over both `source_group` and exact
 `content_sha256`/`normalized_text_sha256`. The duplicate edge for semantic
 locking is specifically the exporter's frozen `_normalize_text()` UTF-8 bytes
 hashed as `normalized_text_sha256`; exact byte hashes remain an additional edge.
-Add a cross-repo fixture with equal cleaned content in different chats proving
+Add a public deterministic producer/export fixture with equal cleaned content
+in different chats. The paired `setec-voicewright` gate must consume that
+fixture in a non-skipping test through the real `plan_register_splits`, proving
 the two records remain distinct, one is duplicate-excluded under the existing
-rule, and both belong to one sealed split component.
+rule, and both belong to one sealed split component. A producer-local
+`importorskip` seam may remain supplementary, but it cannot satisfy this
+acceptance criterion or the Phase 1 return contract by itself.
 
 ## Named implementation and documentation deliverables
 
@@ -934,8 +976,10 @@ No literal capability-count bump is allowed; registration remains drop-in.
    violations refuse.
 9. WAL-present snapshot creation, quick-check, after-scan rehash, snapshot
    mutation, and exact-resume binding tests pass.
-10. Kill-point tests after every durable operation recover one unclosed staging
-    row; all closed-state tampering tests refuse.
+10. Kill-point tests after every durable operation recover only the one
+    row-journal-authorized staging or committed-unledgered row; repair an
+    immediate-predecessor or missing checkpoint, including after the final row;
+    all unevidenced residue and closed-state tampering tests refuse.
 11. Deterministic bounded rebuilds produce byte-identical semantic artifacts,
     ledger, manifest, locator universe, and artifact-tree hashes.
 12. Candidate, selected, considered, not-considered-after-bound, retained, and
@@ -950,7 +994,8 @@ No literal capability-count bump is allowed; registration remains drop-in.
 16. The exporter fixture proves one document per retained GUID, atomic unit
     semantics, valid HMAC locators without legacy regression, distinct duplicate
     events, chat split locking, cross-chat normalized-duplicate component
-    locking, and no chat/day eligibility closure.
+    locking through a non-skipping paired Voicewright test, and no chat/day
+    eligibility closure.
 
 ## Out of scope
 

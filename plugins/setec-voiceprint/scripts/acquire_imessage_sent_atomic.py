@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
-"""Foundations and immutable snapshot preflight for atomic iMessage acquisition.
-
-This increment freezes identity, time, grouping, AI-posture, snapshot, schema,
-and parser contracts. Full discovery and row emission remain disabled.
-"""
+"""Transactional, private acquisition of one authorship row per sent message."""
 
 from __future__ import annotations
 
@@ -58,6 +54,9 @@ MAX_SMOKE_POLICY_BYTES = 256 * 1024
 MAX_PRIVATE_CONTACT_MAP_BYTES = 256 * 1024 * 1024
 MAX_PRIVATE_SOURCE_IDENTITY_MAP_BYTES = 512 * 1024 * 1024
 MAX_RUN_OWNER_BYTES = 64 * 1024
+MAX_ROW_JOURNAL_BYTES = 4 * 1024 * 1024
+MAX_ROW_STATE_BYTES = 1024 * 1024 * 1024
+MAX_LIVE_SMOKE_RECEIPT_BYTES = 64 * 1024
 MAX_PRIVATE_TREE_DEPTH = 64
 MAX_PRIVATE_TREE_NODES = 1_000_000
 BOOTSTRAP_JOURNAL_FILENAME = "bootstrap-journal.json"
@@ -67,6 +66,16 @@ SMOKE_POLICY_FILENAME = "smoke-policy.json"
 PRIVATE_CONTACT_MAP_FILENAME = "private-contact-map.json"
 PRIVATE_SOURCE_IDENTITY_MAP_FILENAME = "private-source-identity-map.json"
 RUN_OWNER_FILENAME = "run-owner.json"
+ROW_JOURNAL_FILENAME = ".row-transaction.json"
+ROW_STAGING_DIRNAME = ".row-staging"
+ROWS_DIRNAME = "rows"
+ROW_TRANSACTION_STATES = (
+    "prepared",
+    "staged",
+    "committed_unledgered",
+    "ledger_closed",
+    "checkpoint_closed",
+)
 INITIALIZATION_DEPENDENCY_FILENAMES = (
     SEMANTIC_OPTIONS_FILENAME,
     RUN_CONTROLS_FILENAME,
@@ -421,7 +430,7 @@ class AtomicRunConfig:
     max_messages: int = 250_000
     max_retained: int | None = None
     allow_empty: bool = False
-    checkpoint_interval: int = 1
+    progress_interval: int = 100
     live_smoke_receipt: Path | None = None
 
 
@@ -527,7 +536,11 @@ def load_hmac_key(path: Path) -> bytes:
     )
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     directory_flag = getattr(os, "O_DIRECTORY", 0)
-    if not nofollow or not directory_flag or os.open not in os.supports_dir_fd:
+    # Do not compare the current callable identity against
+    # `os.supports_dir_fd`: race tests intentionally wrap `os.open` while
+    # preserving its dir_fd behavior.  Missing dir_fd support still fails
+    # closed at the first descriptor-relative open.
+    if not nofollow or not directory_flag:
         raise HmacKeyError("host lacks secure descriptor-relative key loading")
     common_flags = nofollow | getattr(os, "O_CLOEXEC", 0) | getattr(
         os, "O_NONBLOCK", 0
@@ -801,7 +814,7 @@ def run_controls_payload(
     max_retained: int | None,
     allow_empty: bool,
     checkpoint_schema: str,
-    checkpoint_interval: int,
+    checkpoint_interval: int = 1,
 ) -> dict[str, Any]:
     """Build initialization-stable behavioral controls, excluding invocation state."""
 
@@ -813,8 +826,8 @@ def run_controls_payload(
         raise AtomicAcquisitionError("max_retained control is invalid")
     if type(allow_empty) is not bool:
         raise AtomicAcquisitionError("allow_empty control is invalid")
-    if type(checkpoint_interval) is not int or checkpoint_interval < 1:
-        raise AtomicAcquisitionError("checkpoint interval is invalid")
+    if type(checkpoint_interval) is not int or checkpoint_interval != 1:
+        raise AtomicAcquisitionError("checkpoint interval is frozen at exactly one row")
     return {
         "schema": "setec-imessage-atomic-run-controls/1",
         "max_messages": max_messages,
@@ -1469,6 +1482,8 @@ def _decode_canonical_private_json(
             )
     except BootstrapStateError:
         raise
+    except RecursionError as exc:
+        raise BootstrapStateError(f"{artifact_label} is not valid JSON") from exc
     except Exception as exc:
         raise BootstrapStateError(f"{artifact_label} schema is invalid") from exc
     return validated
@@ -1754,8 +1769,12 @@ def _durable_atomic_private_file_at(
             final_after_swap = os.stat(
                 filename, dir_fd=parent_fd, follow_symlinks=False
             )
+            # renameatx_np legitimately changes ctime.  The predecessor was
+            # matched byte/identity-exactly immediately before the exchange;
+            # after it, device+inode is the stable proof that the exchanged
+            # names still reference those same two inodes.
             if (
-                _stat_identity(replaced) != expected_existing_identity
+                _stat_identity(replaced)[:2] != expected_existing_identity[:2]
                 or _stat_identity(final_after_swap)[:2]
                 != _stat_identity(after_write)[:2]
             ):
@@ -1811,7 +1830,8 @@ def _durable_atomic_private_file_at(
                 safe_pair = (
                     expected_existing_identity is not None
                     and after_write is not None
-                    and _stat_identity(retained) == expected_existing_identity
+                        and _stat_identity(retained)[:2]
+                        == expected_existing_identity[:2]
                     and _stat_identity(published)[:2]
                     == _stat_identity(after_write)[:2]
                 )
@@ -1929,6 +1949,260 @@ def _write_private_canonical_json_at(
         validator=validator,
         artifact_label=artifact_label,
     )
+
+
+def _read_private_bytes_at(
+    parent_fd: int,
+    filename: str,
+    *,
+    max_bytes: int,
+    artifact_label: str,
+) -> tuple[bytes, tuple[int, int, int, int, int]]:
+    """Read one stable owner-only regular file through its pinned parent."""
+
+    _bootstrap_basename(filename, f"{artifact_label} filename")
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            filename,
+            os.O_RDONLY
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_NONBLOCK", 0),
+            dir_fd=parent_fd,
+        )
+        before = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or before.st_uid != os.getuid()
+            or stat.S_IMODE(before.st_mode) != 0o600
+            or before.st_nlink != 1
+            or before.st_size > max_bytes
+        ):
+            raise BootstrapStateError(f"{artifact_label} inode is invalid")
+        chunks: list[bytes] = []
+        remaining = max_bytes + 1
+        while remaining:
+            chunk = os.read(descriptor, min(1024 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        raw = b"".join(chunks)
+        after = os.fstat(descriptor)
+        named = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+    except BootstrapStateError:
+        raise
+    except OSError as exc:
+        raise BootstrapStateError(f"cannot read {artifact_label}") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    if (
+        len(raw) > max_bytes
+        or _stat_identity(before) != _stat_identity(after)
+        or _stat_identity(after) != _stat_identity(named)
+    ):
+        raise BootstrapStateError(f"{artifact_label} changed while reading")
+    return raw, _stat_identity(after)
+
+
+def _durable_atomic_private_bytes_at(
+    parent_fd: int,
+    filename: str,
+    raw: bytes,
+    *,
+    expected_existing: bytes | None,
+    max_bytes: int,
+    artifact_label: str,
+) -> None:
+    """Exclusive-create or byte-CAS one non-JSON private file on macOS."""
+
+    if sys.platform != "darwin":
+        raise BootstrapStateError(
+            "durable private artifact state is available only on the macOS host"
+        )
+    _bootstrap_basename(filename, f"{artifact_label} filename")
+    if type(raw) is not bytes or len(raw) > max_bytes:
+        raise BootstrapStateError(f"{artifact_label} payload size is invalid")
+    expected_identity: tuple[int, int, int, int, int] | None = None
+    if expected_existing is not None:
+        observed, expected_identity = _read_private_bytes_at(
+            parent_fd,
+            filename,
+            max_bytes=max_bytes,
+            artifact_label=artifact_label,
+        )
+        if observed != expected_existing:
+            raise BootstrapStateError(
+                f"{artifact_label} compare-and-swap bytes drifted"
+            )
+    else:
+        try:
+            os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            pass
+        else:
+            raise BootstrapStateError(f"{artifact_label} already exists")
+
+    temporary = f".{filename}.{secrets.token_hex(16)}.tmp"
+    descriptor: int | None = None
+    after_write: os.stat_result | None = None
+    swapped = False
+    linked = False
+    committed = False
+    try:
+        descriptor = os.open(
+            temporary,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NONBLOCK", 0),
+            0o600,
+            dir_fd=parent_fd,
+        )
+        os.fchmod(descriptor, 0o600)
+        created = os.fstat(descriptor)
+        if (
+            not stat.S_ISREG(created.st_mode)
+            or created.st_uid != os.getuid()
+            or stat.S_IMODE(created.st_mode) != 0o600
+            or created.st_nlink != 1
+        ):
+            raise BootstrapStateError(f"{artifact_label} temporary inode is invalid")
+        view = memoryview(raw)
+        written = 0
+        while written < len(view):
+            count = os.write(descriptor, view[written:])
+            if count <= 0:
+                raise BootstrapStateError(f"{artifact_label} write was incomplete")
+            written += count
+        os.fsync(descriptor)
+        after_write = os.fstat(descriptor)
+        named_temp = os.stat(temporary, dir_fd=parent_fd, follow_symlinks=False)
+        if (
+            _stat_identity(created)[:2] != _stat_identity(after_write)[:2]
+            or _stat_identity(after_write) != _stat_identity(named_temp)
+            or after_write.st_nlink != 1
+        ):
+            raise BootstrapRecoveryRequired(
+                f"{artifact_label} temporary pathname requires recovery"
+            )
+        if expected_existing is None:
+            os.link(
+                temporary,
+                filename,
+                src_dir_fd=parent_fd,
+                dst_dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+            linked = True
+            os.unlink(temporary, dir_fd=parent_fd)
+        else:
+            current = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+            if (
+                expected_identity is None
+                or _stat_identity(current) != expected_identity
+            ):
+                raise BootstrapStateError(
+                    f"{artifact_label} compare-and-swap identity drifted"
+                )
+            _macos_swap_names_at(parent_fd, temporary, filename)
+            swapped = True
+            retained = os.stat(temporary, dir_fd=parent_fd, follow_symlinks=False)
+            published = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+            if (
+                _stat_identity(retained)[:2] != expected_identity[:2]
+                or _stat_identity(published)[:2] != _stat_identity(after_write)[:2]
+            ):
+                raise BootstrapRecoveryRequired(
+                    f"{artifact_label} exchange identity drifted"
+                )
+        published_raw, published_identity = _read_private_bytes_at(
+            parent_fd,
+            filename,
+            max_bytes=max_bytes,
+            artifact_label=artifact_label,
+        )
+        if (
+            published_raw != raw
+            or after_write is None
+            or published_identity[:2] != _stat_identity(after_write)[:2]
+        ):
+            raise BootstrapRecoveryRequired(
+                f"published {artifact_label} bytes drifted"
+            )
+        os.fsync(parent_fd)
+        if swapped:
+            os.unlink(temporary, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            swapped = False
+        linked = False
+        committed = True
+    except (BootstrapStateError, OSError) as caught:
+        failure = (
+            caught
+            if isinstance(caught, BootstrapStateError)
+            else BootstrapStateError(f"cannot durably publish {artifact_label}")
+        )
+        if swapped:
+            raise BootstrapRecoveryRequired(
+                f"{artifact_label} exchange requires locked recovery"
+            ) from failure
+        if linked:
+            raise BootstrapRecoveryRequired(
+                f"{artifact_label} create requires locked recovery"
+            ) from failure
+        raise failure from (caught if caught is not failure else None)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        if not swapped and not linked and not committed and after_write is not None:
+            try:
+                residue = os.stat(temporary, dir_fd=parent_fd, follow_symlinks=False)
+                if _stat_identity(residue)[:2] == _stat_identity(after_write)[:2]:
+                    os.unlink(temporary, dir_fd=parent_fd)
+            except OSError:
+                pass
+
+
+def _macos_rename_exclusive_between_at(
+    source_fd: int,
+    source: str,
+    destination_fd: int,
+    destination: str,
+) -> None:
+    """Atomically move one directory between pinned parents without replace."""
+
+    if sys.platform != "darwin":
+        raise BootstrapStateError("exclusive private rename requires macOS")
+    source = _bootstrap_basename(source, "rename source")
+    destination = _bootstrap_basename(destination, "rename destination")
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    function = libc.renameatx_np
+    function.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
+    function.restype = ctypes.c_int
+    if function(
+        source_fd,
+        source.encode("utf-8"),
+        destination_fd,
+        destination.encode("utf-8"),
+        0x00000004,
+    ) != 0:
+        error = ctypes.get_errno()
+        raise BootstrapStateError("cannot exclusively commit private row") from OSError(
+            error, "renameatx_np failed"
+        )
 
 
 @dataclass
@@ -6433,6 +6707,8 @@ def process_selected_candidates(
     include_group_chats: bool,
     max_retained: int | None = None,
     preprocessor: Callable[[str], tuple[str, dict[str, Any]]] = _default_preprocessor,
+    progress: Callable[[dict[str, int]], None] | None = None,
+    progress_interval: int = 100,
 ) -> AtomicProcessingResult:
     """Process a full universe or the canonical prefix emitting N rows."""
 
@@ -6442,10 +6718,13 @@ def process_selected_candidates(
         type(max_retained) is not int or max_retained < 1
     ):
         raise AtomicAcquisitionError("max_retained must be a positive exact integer")
+    if type(progress_interval) is not int or progress_interval < 1:
+        raise AtomicAcquisitionError("progress interval must be a positive exact integer")
     rows: list[AtomicProcessedRow] = []
     counts: Counter[str] = Counter()
     retained = 0
     for candidate in universe.selected:
+        bound_reached = False
         processed = process_candidate(
             candidate,
             include_group_chats=include_group_chats,
@@ -6456,16 +6735,31 @@ def process_selected_candidates(
         if processed.disposition == "retained":
             retained += 1
             if max_retained is not None and retained == max_retained:
-                break
+                bound_reached = True
         else:
             if processed.disposition not in EXCLUSION_REASONS:
                 raise AtomicAcquisitionError("unknown final exclusion reason")
             counts[processed.disposition] += 1
+        considered = len(rows)
+        if progress is not None and considered % progress_interval == 0:
+            progress({
+                "considered": considered,
+                "retained": retained,
+                "excluded": considered - retained,
+            })
+        if bound_reached:
+            break
     considered = len(rows)
     not_considered = universe.selected_outgoing_rows - considered
     excluded_total = sum(counts.values())
     if considered != retained + excluded_total or not_considered < 0:
         raise AtomicAcquisitionError("candidate processing accounting is invalid")
+    if progress is not None and considered % progress_interval != 0:
+        progress({
+            "considered": considered,
+            "retained": retained,
+            "excluded": excluded_total,
+        })
     return AtomicProcessingResult(
         schema="setec-imessage-atomic-processing-result/1",
         selected_outgoing_rows=universe.selected_outgoing_rows,
@@ -12240,6 +12534,8 @@ def _write_new_file(path: Path, raw: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     try:
         with path.open("xb") as handle:
+            if os.name != "nt":
+                os.fchmod(handle.fileno(), 0o600)
             handle.write(raw)
             handle.flush()
             os.fsync(handle.fileno())
@@ -12279,6 +12575,875 @@ def _read_canonical_object(path: Path, label: str) -> tuple[dict[str, Any], byte
     if type(value) is not dict or _canonical_json_bytes(value) != raw:
         raise AtomicAcquisitionError(f"{label} is not canonical")
     return value, raw
+
+
+def _row_relative_parts(relative: str) -> tuple[str, ...]:
+    if type(relative) is not str or not relative:
+        raise AtomicAcquisitionError("atomic row path is invalid")
+    parts = tuple(relative.split("/"))
+    if any(_bootstrap_basename(part, "row path component") != part for part in parts):
+        raise AtomicAcquisitionError("atomic row path is invalid")
+    return parts
+
+
+def _canonical_object_validator(value: dict[str, Any]) -> dict[str, Any]:
+    if type(value) is not dict:
+        raise BootstrapStateError("private JSON root is invalid")
+    return value
+
+
+class _SyntheticFixtureRowIo:
+    """Portable fixture-only row I/O; never selected by the live CLI."""
+
+    def __init__(self, root: Path) -> None:
+        self.root = Path(root).absolute()
+
+    def _path(self, relative: str) -> Path:
+        return self.root.joinpath(*_row_relative_parts(relative))
+
+    def root_names(self) -> tuple[str, ...]:
+        return tuple(sorted((item.name for item in self.root.iterdir()), key=os.fsencode))
+
+    def exists(self, relative: str) -> bool:
+        return self._path(relative).exists()
+
+    def ensure_directory(self, relative: str) -> None:
+        path = self.root
+        for part in _row_relative_parts(relative):
+            path = path / part
+            if path.exists():
+                if path.is_symlink() or not path.is_dir():
+                    raise AtomicAcquisitionError("synthetic row directory is invalid")
+                continue
+            path.mkdir(mode=0o700)
+
+    def list_directory(self, relative: str) -> tuple[str, ...]:
+        path = self._path(relative)
+        if path.is_symlink() or not path.is_dir():
+            raise AtomicAcquisitionError("synthetic row directory is invalid")
+        return tuple(sorted((item.name for item in path.iterdir()), key=os.fsencode))
+
+    def read_bytes(self, relative: str, label: str) -> bytes:
+        path = self._path(relative)
+        if path.is_symlink() or not path.is_file():
+            raise AtomicAcquisitionError(f"{label} is not a regular file")
+        try:
+            return path.read_bytes()
+        except OSError as exc:
+            raise AtomicAcquisitionError(f"cannot read {label}") from exc
+
+    def write_bytes(
+        self,
+        relative: str,
+        raw: bytes,
+        *,
+        expected_existing: bytes | None,
+        label: str,
+    ) -> None:
+        path = self._path(relative)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if expected_existing is None:
+            _write_new_file(path, raw)
+        else:
+            _atomic_rewrite(path, raw, expected_existing)
+
+    def write_json(
+        self,
+        relative: str,
+        payload: dict[str, Any],
+        *,
+        expected_existing: bytes | None,
+        validator: Callable[[dict[str, Any]], dict[str, Any]],
+        label: str,
+    ) -> bytes:
+        raw = _canonical_json_bytes(payload)
+        if validator(payload) != payload:
+            raise AtomicAcquisitionError(f"{label} schema drifted")
+        self.write_bytes(
+            relative,
+            raw,
+            expected_existing=expected_existing,
+            label=label,
+        )
+        return raw
+
+    def remove_file(self, relative: str, *, expected: bytes, label: str) -> None:
+        path = self._path(relative)
+        if self.read_bytes(relative, label) != expected:
+            raise AtomicAcquisitionError(f"{label} changed before removal")
+        path.unlink()
+        if os.name != "nt":
+            descriptor = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+
+    def remove_empty_directory(self, relative: str) -> None:
+        path = self._path(relative)
+        if self.list_directory(relative):
+            raise AtomicAcquisitionError("row staging directory is not empty")
+        path.rmdir()
+
+    def seal_directory(self, relative: str, expected_files: Mapping[str, bytes]) -> None:
+        expected_names = tuple(expected_files)
+        if self.list_directory(relative) != tuple(sorted(expected_names, key=os.fsencode)):
+            raise AtomicAcquisitionError("row directory inventory drifted")
+        for name, raw in expected_files.items():
+            if self.read_bytes(f"{relative}/{name}", "atomic row artifact") != raw:
+                raise AtomicAcquisitionError("row directory bytes drifted")
+
+    def commit_directory(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected_files: Mapping[str, bytes],
+    ) -> None:
+        self.seal_directory(source, expected_files)
+        source_path = self._path(source)
+        destination_path = self._path(destination)
+        if destination_path.exists():
+            raise AtomicAcquisitionError("committed atomic row already exists")
+        try:
+            os.rename(source_path, destination_path)
+        except OSError as exc:
+            raise AtomicAcquisitionError("cannot commit atomic row") from exc
+
+
+@dataclass
+class _PinnedRowDirectorySeal:
+    relative: str
+    directory_fd: int
+    directory_identity: tuple[int, int, int, int, int, int, int, int]
+    children: dict[
+        str,
+        tuple[
+            int,
+            tuple[int, int, int, int, int, int, int, int],
+            str,
+            int,
+        ],
+    ]
+
+
+class LiveDurableRowIo:
+    """Descriptor-relative macOS publisher borrowing the pinned promoted root."""
+
+    def __init__(
+        self,
+        root: Path,
+        *,
+        final_fd: int,
+        parent_fd: int,
+        final_name: str,
+        journal_name: str,
+        lock_fd: int,
+        lock_name: str,
+    ) -> None:
+        _require_live_private_tree_ops()
+        self.root = Path(root).absolute()
+        self.final_fd = final_fd
+        self.parent_fd = parent_fd
+        self.final_name = _bootstrap_basename(final_name, "final name")
+        self.journal_name = _bootstrap_basename(journal_name, "journal name")
+        self.lock_fd = lock_fd
+        self.lock_name = lock_name
+        self._pending_row_seal: _PinnedRowDirectorySeal | None = None
+        self._verify_root()
+
+    def close(self) -> None:
+        self._close_pending_row_seal()
+
+    def _close_pending_row_seal(self) -> None:
+        seal = self._pending_row_seal
+        self._pending_row_seal = None
+        if seal is None:
+            return
+        first_error: OSError | None = None
+        for descriptor, _identity, _digest, _size in seal.children.values():
+            try:
+                os.close(descriptor)
+            except OSError as exc:
+                if first_error is None:
+                    first_error = exc
+        try:
+            os.close(seal.directory_fd)
+        except OSError as exc:
+            if first_error is None:
+                first_error = exc
+        if first_error is not None:
+            raise BootstrapRecoveryRequired(
+                "pinned atomic row descriptor close requires recovery"
+            ) from first_error
+
+    def _verify_root(self) -> None:
+        _verify_bootstrap_lock_held_at(
+            self.parent_fd,
+            self.journal_name,
+            self.lock_fd,
+            self.lock_name,
+        )
+        opened = os.fstat(self.final_fd)
+        named = os.stat(
+            self.final_name,
+            dir_fd=self.parent_fd,
+            follow_symlinks=False,
+        )
+        _validate_private_tree_inode(
+            opened,
+            kind="directory",
+            owner_uid=os.getuid(),
+            label="promoted atomic run",
+        )
+        if _private_node_identity(opened) != _private_node_identity(named):
+            raise BootstrapStateError("promoted atomic run pathname drifted")
+
+    def _open_directory(self, parts: tuple[str, ...]) -> int:
+        self._verify_root()
+        descriptor = os.dup(self.final_fd)
+        try:
+            _validate_private_tree_inode(
+                os.fstat(descriptor),
+                kind="directory",
+                owner_uid=os.getuid(),
+                label="atomic run directory",
+            )
+            for part in parts:
+                following, _ = _open_private_tree_node_at(
+                    descriptor,
+                    part,
+                    kind="directory",
+                    owner_uid=os.getuid(),
+                    ops=_PrivateTreeOsOps(),
+                    label="atomic row directory",
+                )
+                os.close(descriptor)
+                descriptor = following
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def _open_parent(self, relative: str) -> tuple[int, str]:
+        parts = _row_relative_parts(relative)
+        return self._open_directory(parts[:-1]), parts[-1]
+
+    def root_names(self) -> tuple[str, ...]:
+        self._verify_root()
+        names, _ = _stable_private_directory_names(
+            self.final_fd,
+            owner_uid=os.getuid(),
+            ops=_PrivateTreeOsOps(),
+            label="promoted atomic run",
+        )
+        self._verify_root()
+        return names
+
+    def exists(self, relative: str) -> bool:
+        parent_fd, name = self._open_parent(relative)
+        try:
+            try:
+                os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return False
+            return True
+        finally:
+            os.close(parent_fd)
+
+    def ensure_directory(self, relative: str) -> None:
+        current = os.dup(self.final_fd)
+        try:
+            for part in _row_relative_parts(relative):
+                try:
+                    following, _ = _open_private_tree_node_at(
+                        current,
+                        part,
+                        kind="directory",
+                        owner_uid=os.getuid(),
+                        ops=_PrivateTreeOsOps(),
+                        label="atomic row directory",
+                    )
+                except FileNotFoundError:
+                    try:
+                        os.mkdir(part, 0o700, dir_fd=current)
+                        following, identity = _open_private_tree_node_at(
+                            current,
+                            part,
+                            kind="directory",
+                            owner_uid=os.getuid(),
+                            ops=_PrivateTreeOsOps(),
+                            label="atomic row directory",
+                        )
+                        os.fchmod(following, 0o700)
+                        identity = _private_node_identity(os.fstat(following))
+                        if _stable_private_directory_inventory(
+                            following,
+                            (),
+                            owner_uid=os.getuid(),
+                            ops=_PrivateTreeOsOps(),
+                            label="new atomic row directory",
+                        ) != identity:
+                            raise BootstrapRecoveryRequired(
+                                "new atomic row directory identity drifted"
+                            )
+                        os.fsync(following)
+                        os.fsync(current)
+                        _verify_private_tree_named_identity(
+                            current,
+                            part,
+                            _private_node_identity(os.fstat(following)),
+                            ops=_PrivateTreeOsOps(),
+                            label="new atomic row directory",
+                        )
+                    except BaseException:
+                        raise
+                os.close(current)
+                current = following
+            self._verify_root()
+        except BaseException:
+            raise
+        finally:
+            os.close(current)
+
+    def list_directory(self, relative: str) -> tuple[str, ...]:
+        descriptor = self._open_directory(_row_relative_parts(relative))
+        try:
+            names, _ = _stable_private_directory_names(
+                descriptor,
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="atomic row directory",
+            )
+            return names
+        finally:
+            os.close(descriptor)
+
+    def read_bytes(self, relative: str, label: str) -> bytes:
+        parent_fd, name = self._open_parent(relative)
+        try:
+            raw, _ = _read_private_bytes_at(
+                parent_fd,
+                name,
+                max_bytes=MAX_ROW_STATE_BYTES,
+                artifact_label=label,
+            )
+            return raw
+        finally:
+            os.close(parent_fd)
+
+    def write_bytes(
+        self,
+        relative: str,
+        raw: bytes,
+        *,
+        expected_existing: bytes | None,
+        label: str,
+    ) -> None:
+        self._verify_root()
+        parent_fd, name = self._open_parent(relative)
+        try:
+            _durable_atomic_private_bytes_at(
+                parent_fd,
+                name,
+                raw,
+                expected_existing=expected_existing,
+                max_bytes=MAX_ROW_STATE_BYTES,
+                artifact_label=label,
+            )
+        finally:
+            os.close(parent_fd)
+        self._verify_root()
+
+    def write_json(
+        self,
+        relative: str,
+        payload: dict[str, Any],
+        *,
+        expected_existing: bytes | None,
+        validator: Callable[[dict[str, Any]], dict[str, Any]],
+        label: str,
+    ) -> bytes:
+        self._verify_root()
+        parent_fd, name = self._open_parent(relative)
+        raw = _canonical_json_bytes(payload)
+        try:
+            _write_private_canonical_json_at(
+                parent_fd,
+                name,
+                payload,
+                max_bytes=(
+                    MAX_ROW_JOURNAL_BYTES
+                    if relative == ROW_JOURNAL_FILENAME
+                    else MAX_ROW_STATE_BYTES
+                ),
+                validator=validator,
+                artifact_label=label,
+                replace_existing=expected_existing is not None,
+                expected_existing_digest=(
+                    _sha256_tag(expected_existing)
+                    if expected_existing is not None
+                    else None
+                ),
+            )
+        finally:
+            os.close(parent_fd)
+        self._verify_root()
+        return raw
+
+    def remove_file(self, relative: str, *, expected: bytes, label: str) -> None:
+        self._verify_root()
+        parent_fd, name = self._open_parent(relative)
+        try:
+            raw, identity = _read_private_bytes_at(
+                parent_fd,
+                name,
+                max_bytes=MAX_ROW_STATE_BYTES,
+                artifact_label=label,
+            )
+            if raw != expected:
+                raise BootstrapStateError(f"{label} changed before removal")
+            named = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            if _stat_identity(named) != identity:
+                raise BootstrapStateError(f"{label} identity drifted before removal")
+            os.unlink(name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            try:
+                os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise BootstrapRecoveryRequired(f"{label} removal was not durable")
+        finally:
+            os.close(parent_fd)
+        self._verify_root()
+
+    def remove_empty_directory(self, relative: str) -> None:
+        self._verify_root()
+        parent_fd, name = self._open_parent(relative)
+        descriptor: int | None = None
+        try:
+            descriptor, identity = _open_private_tree_node_at(
+                parent_fd,
+                name,
+                kind="directory",
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            )
+            if _stable_private_directory_inventory(
+                descriptor,
+                (),
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            ) != identity:
+                raise BootstrapStateError("row staging directory identity drifted")
+            os.fsync(descriptor)
+            os.close(descriptor)
+            descriptor = None
+            _verify_private_tree_named_identity(
+                parent_fd,
+                name,
+                identity,
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            )
+            os.rmdir(name, dir_fd=parent_fd)
+            os.fsync(parent_fd)
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            os.close(parent_fd)
+        self._verify_root()
+
+    def _pin_row_directory(
+        self,
+        relative: str,
+        expected_files: Mapping[str, bytes],
+    ) -> _PinnedRowDirectorySeal:
+        if (
+            type(expected_files) is not dict
+            or not expected_files
+            or any(
+                type(name) is not str
+                or type(raw) is not bytes
+                or _bootstrap_basename(name, "row artifact name") != name
+                for name, raw in expected_files.items()
+            )
+        ):
+            raise BootstrapStateError("atomic row seal expectation is invalid")
+        descriptor = self._open_directory(_row_relative_parts(relative))
+        children: dict[
+            str,
+            tuple[
+                int,
+                tuple[int, int, int, int, int, int, int, int],
+                str,
+                int,
+            ],
+        ] = {}
+        try:
+            _stable_private_directory_inventory(
+                descriptor,
+                tuple(sorted(expected_files, key=os.fsencode)),
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="atomic row directory",
+            )
+            for name, expected_raw in expected_files.items():
+                child_fd, opened_identity = _open_private_tree_node_at(
+                    descriptor,
+                    name,
+                    kind="file",
+                    owner_uid=os.getuid(),
+                    ops=_PrivateTreeOsOps(),
+                    label="atomic row artifact",
+                )
+                try:
+                    digest, size, hashed_identity = _stream_hash_private_fd(
+                        child_fd,
+                        ops=_PrivateTreeOsOps(),
+                    )
+                    if (
+                        hashed_identity != opened_identity
+                        or digest != _sha256_tag(expected_raw)
+                        or size != len(expected_raw)
+                    ):
+                        raise BootstrapStateError("atomic row artifact bytes drifted")
+                    os.fsync(child_fd)
+                    digest, size, final_identity = _stream_hash_private_fd(
+                        child_fd,
+                        ops=_PrivateTreeOsOps(),
+                    )
+                    if (
+                        digest != _sha256_tag(expected_raw)
+                        or size != len(expected_raw)
+                    ):
+                        raise BootstrapRecoveryRequired(
+                            "atomic row artifact changed during fsync"
+                        )
+                    _verify_private_tree_named_identity(
+                        descriptor,
+                        name,
+                        final_identity,
+                        ops=_PrivateTreeOsOps(),
+                        label="atomic row artifact",
+                    )
+                    children[name] = (child_fd, final_identity, digest, size)
+                except BaseException:
+                    os.close(child_fd)
+                    raise
+            os.fsync(descriptor)
+            directory_identity = _stable_private_directory_inventory(
+                descriptor,
+                tuple(sorted(expected_files, key=os.fsencode)),
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="atomic row directory",
+            )
+            for name, (_fd, identity, _digest, _size) in children.items():
+                _verify_private_tree_named_identity(
+                    descriptor,
+                    name,
+                    identity,
+                    ops=_PrivateTreeOsOps(),
+                    label="atomic row artifact",
+                )
+            self._verify_root()
+            return _PinnedRowDirectorySeal(
+                relative=relative,
+                directory_fd=descriptor,
+                directory_identity=directory_identity,
+                children=children,
+            )
+        except BaseException as exc:
+            for child_fd, _identity, _digest, _size in children.values():
+                os.close(child_fd)
+            os.close(descriptor)
+            if isinstance(exc, OSError):
+                raise BootstrapStateError("cannot seal atomic row directory") from exc
+            raise
+
+    def _verify_pinned_row_seal(
+        self,
+        seal: _PinnedRowDirectorySeal,
+        expected_files: Mapping[str, bytes],
+    ) -> None:
+        directory_info = os.fstat(seal.directory_fd)
+        _validate_private_tree_inode(
+            directory_info,
+            kind="directory",
+            owner_uid=os.getuid(),
+            label="pinned atomic row directory",
+        )
+        if _private_node_identity(directory_info) != seal.directory_identity:
+            raise BootstrapStateError("pinned atomic row directory drifted")
+        _stable_private_directory_inventory(
+            seal.directory_fd,
+            tuple(sorted(expected_files, key=os.fsencode)),
+            owner_uid=os.getuid(),
+            ops=_PrivateTreeOsOps(),
+            label="pinned atomic row directory",
+        )
+        if set(seal.children) != set(expected_files):
+            raise BootstrapStateError("pinned atomic row evidence drifted")
+        for name, expected_raw in expected_files.items():
+            child_fd, expected_identity, expected_digest, expected_size = (
+                seal.children[name]
+            )
+            digest, size, identity = _stream_hash_private_fd(
+                child_fd,
+                ops=_PrivateTreeOsOps(),
+            )
+            if (
+                identity != expected_identity
+                or digest != expected_digest
+                or digest != _sha256_tag(expected_raw)
+                or size != expected_size
+                or size != len(expected_raw)
+            ):
+                raise BootstrapStateError("pinned atomic row artifact drifted")
+            _verify_private_tree_named_identity(
+                seal.directory_fd,
+                name,
+                expected_identity,
+                ops=_PrivateTreeOsOps(),
+                label="pinned atomic row artifact",
+            )
+
+    def seal_directory(self, relative: str, expected_files: Mapping[str, bytes]) -> None:
+        self._close_pending_row_seal()
+        self._pending_row_seal = self._pin_row_directory(relative, expected_files)
+
+    def commit_directory(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected_files: Mapping[str, bytes],
+    ) -> None:
+        self._verify_root()
+        source_fd, source_name = self._open_parent(source)
+        destination_fd, destination_name = self._open_parent(destination)
+        seal = self._pending_row_seal
+        if seal is None or seal.relative != source:
+            self._close_pending_row_seal()
+            seal = self._pin_row_directory(source, expected_files)
+            self._pending_row_seal = seal
+        renamed = False
+        try:
+            self._verify_pinned_row_seal(seal, expected_files)
+            _verify_private_tree_named_identity(
+                source_fd,
+                source_name,
+                seal.directory_identity,
+                ops=_PrivateTreeOsOps(),
+                label="staged atomic row",
+            )
+            try:
+                os.stat(destination_name, dir_fd=destination_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise BootstrapStateError("committed atomic row already exists")
+            os.fsync(seal.directory_fd)
+            self._verify_pinned_row_seal(seal, expected_files)
+            _verify_private_tree_named_identity(
+                source_fd,
+                source_name,
+                seal.directory_identity,
+                ops=_PrivateTreeOsOps(),
+                label="staged atomic row",
+            )
+            _macos_rename_exclusive_between_at(
+                source_fd,
+                source_name,
+                destination_fd,
+                destination_name,
+            )
+            renamed = True
+            destination_info = os.stat(
+                destination_name,
+                dir_fd=destination_fd,
+                follow_symlinks=False,
+            )
+            if (
+                _private_node_identity(destination_info)[:2]
+                != seal.directory_identity[:2]
+            ):
+                raise BootstrapRecoveryRequired("committed atomic row identity drifted")
+            try:
+                os.stat(source_name, dir_fd=source_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise BootstrapRecoveryRequired("staged atomic row name survived commit")
+            seal.directory_identity = _private_node_identity(
+                os.fstat(seal.directory_fd)
+            )
+            self._verify_pinned_row_seal(seal, expected_files)
+            os.fsync(destination_fd)
+            os.fsync(source_fd)
+            destination_after = os.stat(
+                destination_name,
+                dir_fd=destination_fd,
+                follow_symlinks=False,
+            )
+            if (
+                _private_node_identity(destination_after)[:2]
+                != seal.directory_identity[:2]
+            ):
+                raise BootstrapRecoveryRequired("committed atomic row changed after fsync")
+            self._verify_pinned_row_seal(seal, expected_files)
+        except BootstrapRecoveryRequired:
+            raise
+        except (BootstrapStateError, OSError) as exc:
+            if renamed:
+                raise BootstrapRecoveryRequired(
+                    "committed atomic row requires locked recovery"
+                ) from exc
+            if isinstance(exc, BootstrapStateError):
+                raise
+            raise BootstrapStateError("cannot commit atomic row") from exc
+        finally:
+            os.close(source_fd)
+            os.close(destination_fd)
+            self._close_pending_row_seal()
+        self._verify_root()
+
+
+class _PrivateReadOnlyRowIo:
+    """Descriptor-pinned, no-follow reader for a completed private run."""
+
+    def __init__(self, root: Path) -> None:
+        if os.name == "nt":
+            raise BootstrapStateError(
+                "descriptor-relative private validation is unavailable on Windows"
+            )
+        self.root = Path(root).expanduser().absolute()
+        self.parent_fd, self.final_name = _open_private_parent_dirfd(self.root)
+        self.final_fd: int | None = None
+        try:
+            self.final_fd, _ = _open_private_tree_node_at(
+                self.parent_fd,
+                self.final_name,
+                kind="directory",
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="completed atomic run",
+            )
+            self._verify_root()
+        except BaseException:
+            if self.final_fd is not None:
+                os.close(self.final_fd)
+            os.close(self.parent_fd)
+            raise
+
+    def close(self) -> None:
+        descriptor = self.final_fd
+        if descriptor is None:
+            return
+        self.final_fd = None
+        try:
+            os.close(descriptor)
+        finally:
+            os.close(self.parent_fd)
+
+    def _verify_root(self) -> None:
+        if self.final_fd is None:
+            raise BootstrapStateError("completed atomic run reader is closed")
+        opened = os.fstat(self.final_fd)
+        named = os.stat(
+            self.final_name,
+            dir_fd=self.parent_fd,
+            follow_symlinks=False,
+        )
+        absolute = os.stat(self.root, follow_symlinks=False)
+        for info in (opened, named, absolute):
+            _validate_private_tree_inode(
+                info,
+                kind="directory",
+                owner_uid=os.getuid(),
+                label="completed atomic run",
+            )
+        identity = _private_node_identity(opened)
+        if any(_private_node_identity(info) != identity for info in (named, absolute)):
+            raise BootstrapStateError("completed atomic run pathname drifted")
+
+    def _open_directory(self, parts: tuple[str, ...]) -> int:
+        self._verify_root()
+        assert self.final_fd is not None
+        descriptor = os.dup(self.final_fd)
+        try:
+            for part in parts:
+                following, _ = _open_private_tree_node_at(
+                    descriptor,
+                    part,
+                    kind="directory",
+                    owner_uid=os.getuid(),
+                    ops=_PrivateTreeOsOps(),
+                    label="completed atomic run directory",
+                )
+                os.close(descriptor)
+                descriptor = following
+            return descriptor
+        except BaseException:
+            os.close(descriptor)
+            raise
+
+    def _open_parent(self, relative: str) -> tuple[int, str]:
+        parts = _row_relative_parts(relative)
+        return self._open_directory(parts[:-1]), parts[-1]
+
+    def root_names(self) -> tuple[str, ...]:
+        self._verify_root()
+        assert self.final_fd is not None
+        names, _ = _stable_private_directory_names(
+            self.final_fd,
+            owner_uid=os.getuid(),
+            ops=_PrivateTreeOsOps(),
+            label="completed atomic run",
+        )
+        self._verify_root()
+        return names
+
+    def exists(self, relative: str) -> bool:
+        parent_fd, name = self._open_parent(relative)
+        try:
+            try:
+                os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                return False
+            return True
+        finally:
+            os.close(parent_fd)
+
+    def list_directory(self, relative: str) -> tuple[str, ...]:
+        descriptor = self._open_directory(_row_relative_parts(relative))
+        try:
+            names, _ = _stable_private_directory_names(
+                descriptor,
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="completed atomic run directory",
+            )
+            return names
+        finally:
+            os.close(descriptor)
+
+    def read_bytes(self, relative: str, label: str) -> bytes:
+        parent_fd, name = self._open_parent(relative)
+        try:
+            raw, _ = _read_private_bytes_at(
+                parent_fd,
+                name,
+                max_bytes=MAX_ROW_STATE_BYTES,
+                artifact_label=label,
+            )
+            return raw
+        finally:
+            os.close(parent_fd)
 
 
 def _ledger_payload(
@@ -12345,57 +13510,588 @@ def _expected_row_files(row: PlannedAtomicRow) -> dict[str, bytes]:
     }
 
 
-def _verify_committed_row(path: Path, row: PlannedAtomicRow) -> None:
+def _validated_row_transaction_payload(value: object) -> dict[str, Any]:
+    expected_keys = {
+        "schema",
+        "state",
+        "previous_journal_digest",
+        "row_index",
+        "source_ordinal",
+        "entry_locator",
+        "disposition",
+        "row_stem",
+        "expected_files",
+        "predecessor_ledger_digest",
+        "predecessor_checkpoint_digest",
+    }
+    if type(value) is not dict or set(value) != expected_keys:
+        raise BootstrapStateError("row transaction key set is invalid")
+    state = value["state"]
+    disposition = value["disposition"]
+    expected_files = value["expected_files"]
+    if (
+        value["schema"] != "setec-imessage-atomic-row-transaction/1"
+        or state not in ROW_TRANSACTION_STATES
+        or type(value["row_index"]) is not int
+        or value["row_index"] < 0
+        or not _is_sha256_tag(value["predecessor_ledger_digest"])
+        or not _is_sha256_tag(value["predecessor_checkpoint_digest"])
+        or disposition not in {"retained", *EXCLUSION_REASONS}
+    ):
+        raise BootstrapStateError("row transaction binding is invalid")
+    _binding_text("row transaction source ordinal", value["source_ordinal"])
+    _binding_text("row transaction entry locator", value["entry_locator"])
+    previous = value["previous_journal_digest"]
+    if (state == "prepared") != (previous is None) or (
+        previous is not None and not _is_sha256_tag(previous)
+    ):
+        raise BootstrapStateError("row transaction predecessor is invalid")
+    if type(expected_files) is not dict:
+        raise BootstrapStateError("row transaction file evidence is invalid")
+    for name, evidence in expected_files.items():
+        _bootstrap_basename(name, "row transaction file")
+        if (
+            type(evidence) is not dict
+            or set(evidence) != {"byte_size", "sha256"}
+            or type(evidence["byte_size"]) is not int
+            or evidence["byte_size"] < 0
+            or not _is_sha256_tag(evidence["sha256"])
+        ):
+            raise BootstrapStateError("row transaction file evidence is invalid")
+    if disposition == "retained":
+        _bootstrap_basename(value["row_stem"], "row transaction stem")
+        if not expected_files:
+            raise BootstrapStateError("retained row transaction has no files")
+    elif value["row_stem"] is not None or expected_files:
+        raise BootstrapStateError("excluded row transaction has file evidence")
+    allowed = (
+        ROW_TRANSACTION_STATES
+        if disposition == "retained"
+        else ("prepared", "ledger_closed", "checkpoint_closed")
+    )
+    if state not in allowed:
+        raise BootstrapStateError("row transaction state is invalid for disposition")
+    return json.loads(_canonical_json_bytes(value))
+
+
+def _row_file_evidence(row: PlannedAtomicRow) -> dict[str, dict[str, Any]]:
+    if row.disposition != "retained":
+        return {}
+    return {
+        name: {"byte_size": len(raw), "sha256": _sha256_tag(raw)}
+        for name, raw in _expected_row_files(row).items()
+    }
+
+
+def _row_transaction_payload(
+    row: PlannedAtomicRow,
+    row_index: int,
+    *,
+    state: str,
+    previous_journal_digest: str | None,
+    predecessor_ledger_digest: str,
+    predecessor_checkpoint_digest: str,
+) -> dict[str, Any]:
+    return _validated_row_transaction_payload({
+        "schema": "setec-imessage-atomic-row-transaction/1",
+        "state": state,
+        "previous_journal_digest": previous_journal_digest,
+        "row_index": row_index,
+        "source_ordinal": row.source_ordinal,
+        "entry_locator": row.entry_locator,
+        "disposition": row.disposition,
+        "row_stem": row.row_stem,
+        "expected_files": _row_file_evidence(row),
+        "predecessor_ledger_digest": predecessor_ledger_digest,
+        "predecessor_checkpoint_digest": predecessor_checkpoint_digest,
+    })
+
+
+def _read_io_object(
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo,
+    relative: str,
+    label: str,
+    *,
+    validator: Callable[[dict[str, Any]], dict[str, Any]] = _canonical_object_validator,
+    max_bytes: int = MAX_ROW_STATE_BYTES,
+) -> tuple[dict[str, Any], bytes]:
+    raw = io.read_bytes(relative, label)
+    payload = _decode_canonical_private_json(
+        raw,
+        max_bytes=max_bytes,
+        validator=validator,
+        artifact_label=label,
+    )
+    return payload, raw
+
+
+def _verify_row_directory_io(
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo,
+    relative: str,
+    row: PlannedAtomicRow,
+    *,
+    allow_prefix: bool,
+) -> tuple[str, ...]:
     expected = _expected_row_files(row)
-    if not path.is_dir() or set(item.name for item in path.iterdir()) != set(expected):
+    order = tuple(expected)
+    actual = io.list_directory(relative)
+    actual_set = set(actual)
+    if allow_prefix:
+        valid_sets = {frozenset(order[:index]) for index in range(len(order) + 1)}
+        if frozenset(actual_set) not in valid_sets:
+            raise AtomicAcquisitionError("row staging inventory is not an exact prefix")
+    elif actual_set != set(order):
         raise AtomicAcquisitionError("committed atomic row inventory drifted")
-    for name, raw in expected.items():
-        item = path / name
-        if item.is_symlink() or not item.is_file() or item.read_bytes() != raw:
+    for name in actual:
+        raw = io.read_bytes(f"{relative}/{name}", "atomic row artifact")
+        if raw != expected[name]:
             raise AtomicAcquisitionError("committed atomic row bytes drifted")
+    return actual
 
 
-def _commit_retained_row(
-    run_dir: Path, row: PlannedAtomicRow,
-    fault: Callable[[str], None] | None = None,
+def _checkpoint_raw_for_ledger(ledger: dict[str, Any], ledger_raw: bytes) -> bytes:
+    return _canonical_json_bytes(_checkpoint_payload(ledger_raw, ledger))
+
+
+def _fault_boundary(
+    fault: Callable[[str], None] | None,
+    boundary: str,
 ) -> None:
-    if row.row_stem is None:
-        raise AtomicAcquisitionError("retained row stem is absent")
-    rows_dir = run_dir / "rows"
-    staging_root = run_dir / ".row-staging"
-    rows_dir.mkdir(exist_ok=True)
-    staging_root.mkdir(exist_ok=True)
-    final = rows_dir / row.row_stem
-    stage = staging_root / row.row_stem
-    if final.exists():
-        _verify_committed_row(final, row)
-        return
-    if stage.exists():
-        if not stage.is_dir():
-            raise AtomicAcquisitionError("row staging residue is invalid")
-        for item in stage.iterdir():
-            if item.is_dir() or item.is_symlink():
-                raise AtomicAcquisitionError("row staging residue is indirected")
-            item.unlink()
-        stage.rmdir()
-    stage.mkdir()
-    for boundary, (name, raw) in zip(("text", "sidecar", "fragment"), _expected_row_files(row).items()):
-        _write_new_file(stage / name, raw)
-        if fault is not None:
-            fault(f"after_{boundary}")
-    _verify_committed_row(stage, row)
-    try:
-        os.rename(stage, final)
-    except OSError as exc:
-        if final.exists():
-            _verify_committed_row(final, row)
-        else:
-            raise AtomicAcquisitionError("cannot commit atomic row") from exc
     if fault is not None:
-        fault("after_row_commit")
+        fault(boundary)
 
 
-def _semantic_tree_payload(run_dir: Path) -> dict[str, Any]:
+def _preflight_row_publication(
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo,
+    planned: Sequence[PlannedAtomicRow],
+    result: AtomicProcessingResult,
+    *,
+    owner: dict[str, Any],
+    source_map: dict[str, Any],
+) -> dict[str, Any]:
+    """Classify the complete durable row/staging inventory before mutation."""
+
+    fixed = {
+        SNAPSHOT_FILENAME,
+        *INITIALIZATION_ARTIFACT_FILENAMES,
+    }
+    mutable = {
+        ROWS_DIRNAME,
+        ROW_STAGING_DIRNAME,
+        ROW_JOURNAL_FILENAME,
+        "source-ledger.json",
+        "checkpoint.json",
+        "draft_manifest.jsonl",
+        "acquisition-receipt.json",
+    }
+    root_names = set(io.root_names())
+    unknown = root_names - fixed - mutable
+    if unknown:
+        raise AtomicAcquisitionError("atomic row top-level residue is not authorized")
+    ledger_present = "source-ledger.json" in root_names
+    if not ledger_present:
+        forbidden = root_names & (
+            mutable
+            - {ROWS_DIRNAME, ROW_STAGING_DIRNAME}
+        )
+        rows = io.list_directory(ROWS_DIRNAME) if ROWS_DIRNAME in root_names else ()
+        staging = (
+            io.list_directory(ROW_STAGING_DIRNAME)
+            if ROW_STAGING_DIRNAME in root_names
+            else ()
+        )
+        if forbidden or rows or staging:
+            raise AtomicAcquisitionError("unevidenced atomic row residue refuses")
+        return {
+            "fresh": True,
+            "closed_count": 0,
+            "ledger": None,
+            "ledger_raw": None,
+            "checkpoint_raw": None,
+            "checkpoint_status": "missing",
+            "journal": None,
+            "journal_raw": None,
+            "journal_ledgered": False,
+            "staged_form": None,
+        }
+
+    ledger, ledger_raw = _read_io_object(
+        io, "source-ledger.json", "source ledger"
+    )
+    ledger_rows = ledger.get("rows")
+    if type(ledger_rows) is not list:
+        raise AtomicAcquisitionError("source ledger row coverage is invalid")
+    closed_count = len(ledger_rows)
+    if not 0 <= closed_count <= len(planned):
+        raise AtomicAcquisitionError("source ledger prefix is outside the row plan")
+    expected_incomplete = _ledger_payload(
+        planned,
+        closed_count,
+        owner=owner,
+        source_map=source_map,
+        result=result,
+        complete=False,
+    )
+    expected_complete = _ledger_payload(
+        planned,
+        len(planned),
+        owner=owner,
+        source_map=source_map,
+        result=result,
+        complete=True,
+    )
+    if ledger != expected_incomplete and not (
+        closed_count == len(planned) and ledger == expected_complete
+    ):
+        raise AtomicAcquisitionError("source ledger does not match planned prefix")
+    if ledger.get("complete") is not True and closed_count == len(planned) and planned:
+        raise AtomicAcquisitionError("source ledger final prefix is not closed")
+
+    checkpoint_raw: bytes | None = None
+    checkpoint_status = "missing"
+    current_checkpoint_raw = _checkpoint_raw_for_ledger(ledger, ledger_raw)
+    predecessor_checkpoint_raw: bytes | None = None
+    if closed_count:
+        predecessor_ledger = _ledger_payload(
+            planned,
+            closed_count - 1,
+            owner=owner,
+            source_map=source_map,
+            result=result,
+            complete=False,
+        )
+        predecessor_ledger_raw = _canonical_json_bytes(predecessor_ledger)
+        predecessor_checkpoint_raw = _checkpoint_raw_for_ledger(
+            predecessor_ledger, predecessor_ledger_raw
+        )
+    elif ledger.get("complete") is True:
+        predecessor_ledger = _ledger_payload(
+            planned,
+            0,
+            owner=owner,
+            source_map=source_map,
+            result=result,
+            complete=False,
+        )
+        predecessor_ledger_raw = _canonical_json_bytes(predecessor_ledger)
+        predecessor_checkpoint_raw = _checkpoint_raw_for_ledger(
+            predecessor_ledger, predecessor_ledger_raw
+        )
+    if "checkpoint.json" in root_names:
+        _checkpoint, checkpoint_raw = _read_io_object(
+            io, "checkpoint.json", "checkpoint"
+        )
+        if checkpoint_raw == current_checkpoint_raw:
+            checkpoint_status = "current"
+        elif (
+            predecessor_checkpoint_raw is not None
+            and checkpoint_raw == predecessor_checkpoint_raw
+        ):
+            checkpoint_status = "predecessor"
+        else:
+            raise AtomicAcquisitionError("checkpoint is not current or immediate predecessor")
+
+    journal: dict[str, Any] | None = None
+    journal_raw: bytes | None = None
+    journal_ledgered = False
+    staged_form: str | None = None
+    if ROW_JOURNAL_FILENAME in root_names:
+        journal, journal_raw = _read_io_object(
+            io,
+            ROW_JOURNAL_FILENAME,
+            "row transaction",
+            validator=_validated_row_transaction_payload,
+            max_bytes=MAX_ROW_JOURNAL_BYTES,
+        )
+        index = journal["row_index"]
+        if not 0 <= index < len(planned):
+            raise AtomicAcquisitionError("row transaction index is outside the plan")
+        row = planned[index]
+        predecessor_ledger = _ledger_payload(
+            planned,
+            index,
+            owner=owner,
+            source_map=source_map,
+            result=result,
+            complete=False,
+        )
+        predecessor_ledger_raw = _canonical_json_bytes(predecessor_ledger)
+        predecessor_checkpoint_raw = _checkpoint_raw_for_ledger(
+            predecessor_ledger, predecessor_ledger_raw
+        )
+        expected_prepared = _row_transaction_payload(
+            row,
+            index,
+            state="prepared",
+            previous_journal_digest=None,
+            predecessor_ledger_digest=_sha256_tag(predecessor_ledger_raw),
+            predecessor_checkpoint_digest=_sha256_tag(predecessor_checkpoint_raw),
+        )
+        immutable = set(expected_prepared) - {"state", "previous_journal_digest"}
+        if any(journal[key] != expected_prepared[key] for key in immutable):
+            raise AtomicAcquisitionError("row transaction does not bind the planned row")
+        if closed_count == index:
+            journal_ledgered = False
+        elif closed_count == index + 1:
+            journal_ledgered = True
+        else:
+            raise AtomicAcquisitionError("row transaction and ledger prefix diverged")
+        state = journal["state"]
+        if row.disposition == "retained":
+            if state in {"prepared", "staged"} and journal_ledgered:
+                raise AtomicAcquisitionError("retained row ledger advanced before commit")
+            if state in {"ledger_closed", "checkpoint_closed"} and not journal_ledgered:
+                raise AtomicAcquisitionError("retained row journal outran the ledger")
+        else:
+            if state in {"ledger_closed", "checkpoint_closed"} and not journal_ledgered:
+                raise AtomicAcquisitionError("excluded row journal outran the ledger")
+
+        if not journal_ledgered:
+            if checkpoint_status != "current":
+                raise AtomicAcquisitionError("row predecessor checkpoint is not closed")
+        elif state == "checkpoint_closed":
+            if checkpoint_status != "current":
+                raise AtomicAcquisitionError("checkpoint-closed transaction lost its checkpoint")
+        elif state == "ledger_closed":
+            if checkpoint_status not in {"current", "predecessor", "missing"}:
+                raise AtomicAcquisitionError("ledger-closed checkpoint state is invalid")
+        elif checkpoint_status not in {"predecessor", "missing"}:
+            raise AtomicAcquisitionError("checkpoint advanced before ledger-close authority")
+    else:
+        if checkpoint_status != "current":
+            repairable_empty_boundary = closed_count == 0 and (
+                ledger.get("complete") is False or not planned
+            )
+            if not repairable_empty_boundary:
+                raise AtomicAcquisitionError("unevidenced checkpoint lag refuses")
+        if ledger.get("complete") is not True and (
+            "draft_manifest.jsonl" in root_names
+            or "acquisition-receipt.json" in root_names
+        ):
+            raise AtomicAcquisitionError("aggregate artifacts preceded ledger closure")
+
+    rows_names = (
+        io.list_directory(ROWS_DIRNAME) if ROWS_DIRNAME in root_names else ()
+    )
+    staging_names = (
+        io.list_directory(ROW_STAGING_DIRNAME)
+        if ROW_STAGING_DIRNAME in root_names
+        else ()
+    )
+    expected_rows = {
+        row.row_stem
+        for row in planned[:closed_count]
+        if row.disposition == "retained" and row.row_stem is not None
+    }
+    authorized_extra: str | None = None
+    authorized_stage: str | None = None
+    if journal is not None:
+        row = planned[journal["row_index"]]
+        state = journal["state"]
+        if row.disposition == "retained" and row.row_stem is not None:
+            if journal_ledgered or state in {"committed_unledgered", "ledger_closed", "checkpoint_closed"}:
+                expected_rows.add(row.row_stem)
+                authorized_extra = row.row_stem
+            elif state == "staged":
+                in_rows = row.row_stem in rows_names
+                in_staging = row.row_stem in staging_names
+                if in_rows == in_staging:
+                    raise AtomicAcquisitionError("staged row has ambiguous physical state")
+                if in_rows:
+                    expected_rows.add(row.row_stem)
+                    authorized_extra = row.row_stem
+                    staged_form = "committed"
+                else:
+                    authorized_stage = row.row_stem
+                    staged_form = "staged"
+            elif state == "prepared" and row.row_stem in staging_names:
+                authorized_stage = row.row_stem
+                staged_form = "partial"
+    if set(rows_names) != expected_rows:
+        raise AtomicAcquisitionError("unevidenced committed row residue refuses")
+    expected_staging = {authorized_stage} if authorized_stage is not None else set()
+    if set(staging_names) != expected_staging:
+        raise AtomicAcquisitionError("unevidenced row staging residue refuses")
+    for index, row in enumerate(planned):
+        if row.disposition != "retained" or row.row_stem is None:
+            continue
+        if row.row_stem in expected_rows:
+            _verify_row_directory_io(
+                io,
+                f"{ROWS_DIRNAME}/{row.row_stem}",
+                row,
+                allow_prefix=False,
+            )
+    if authorized_stage is not None and journal is not None:
+        row = planned[journal["row_index"]]
+        _verify_row_directory_io(
+            io,
+            f"{ROW_STAGING_DIRNAME}/{authorized_stage}",
+            row,
+            allow_prefix=journal["state"] == "prepared",
+        )
+    return {
+        "fresh": False,
+        "closed_count": closed_count,
+        "ledger": ledger,
+        "ledger_raw": ledger_raw,
+        "checkpoint_raw": checkpoint_raw,
+        "checkpoint_status": checkpoint_status,
+        "journal": journal,
+        "journal_raw": journal_raw,
+        "journal_ledgered": journal_ledgered,
+        "staged_form": staged_form,
+    }
+
+
+def _advance_row_journal(
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo,
+    journal: dict[str, Any],
+    journal_raw: bytes,
+    state: str,
+) -> tuple[dict[str, Any], bytes]:
+    advanced = dict(journal)
+    advanced["state"] = state
+    advanced["previous_journal_digest"] = _sha256_tag(journal_raw)
+    advanced = _validated_row_transaction_payload(advanced)
+    raw = io.write_json(
+        ROW_JOURNAL_FILENAME,
+        advanced,
+        expected_existing=journal_raw,
+        validator=_validated_row_transaction_payload,
+        label="row transaction",
+    )
+    return advanced, raw
+
+
+def _resume_authorized_row_transaction(
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo,
+    planned: Sequence[PlannedAtomicRow],
+    result: AtomicProcessingResult,
+    state: dict[str, Any],
+    *,
+    owner: dict[str, Any],
+    source_map: dict[str, Any],
+    fault: Callable[[str], None] | None,
+) -> None:
+    journal = state["journal"]
+    journal_raw = state["journal_raw"]
+    if type(journal) is not dict or type(journal_raw) is not bytes:
+        raise AtomicAcquisitionError("row transaction resume state is absent")
+    index = journal["row_index"]
+    row = planned[index]
+    journal_state = journal["state"]
+
+    if journal_state == "prepared" and row.disposition == "retained":
+        if row.row_stem is None:
+            raise AtomicAcquisitionError("retained row stem is absent")
+        stage = f"{ROW_STAGING_DIRNAME}/{row.row_stem}"
+        if state["staged_form"] == "partial":
+            actual = _verify_row_directory_io(io, stage, row, allow_prefix=True)
+            expected = _expected_row_files(row)
+            for name in actual:
+                io.remove_file(
+                    f"{stage}/{name}",
+                    expected=expected[name],
+                    label="journal-authorized staged row file",
+                )
+            io.remove_empty_directory(stage)
+        io.ensure_directory(stage)
+        boundaries = ("text", "sidecar", "fragment")
+        for boundary, (name, raw) in zip(boundaries, _expected_row_files(row).items()):
+            io.write_bytes(
+                f"{stage}/{name}",
+                raw,
+                expected_existing=None,
+                label=f"atomic row {boundary}",
+            )
+            _fault_boundary(fault, f"after_{boundary}")
+        _verify_row_directory_io(io, stage, row, allow_prefix=False)
+        io.seal_directory(stage, _expected_row_files(row))
+        journal, journal_raw = _advance_row_journal(
+            io, journal, journal_raw, "staged"
+        )
+        _fault_boundary(fault, "after_journal_staged")
+        journal_state = "staged"
+
+    if journal_state == "staged":
+        if row.row_stem is None:
+            raise AtomicAcquisitionError("staged row stem is absent")
+        if state["staged_form"] != "committed":
+            io.commit_directory(
+                f"{ROW_STAGING_DIRNAME}/{row.row_stem}",
+                f"{ROWS_DIRNAME}/{row.row_stem}",
+                expected_files=_expected_row_files(row),
+            )
+            _fault_boundary(fault, "after_row_commit")
+        journal, journal_raw = _advance_row_journal(
+            io, journal, journal_raw, "committed_unledgered"
+        )
+        _fault_boundary(fault, "after_journal_committed_unledgered")
+        journal_state = "committed_unledgered"
+
+    if journal_state in {"prepared", "committed_unledgered"}:
+        if not state["journal_ledgered"]:
+            ledger = _ledger_payload(
+                planned,
+                index + 1,
+                owner=owner,
+                source_map=source_map,
+                result=result,
+                complete=index + 1 == len(planned),
+            )
+            ledger_raw = io.write_json(
+                "source-ledger.json",
+                ledger,
+                expected_existing=state["ledger_raw"],
+                validator=_canonical_object_validator,
+                label="source ledger",
+            )
+            state["ledger"] = ledger
+            state["ledger_raw"] = ledger_raw
+            state["journal_ledgered"] = True
+            _fault_boundary(fault, "after_ledger")
+        journal, journal_raw = _advance_row_journal(
+            io, journal, journal_raw, "ledger_closed"
+        )
+        _fault_boundary(fault, "after_journal_ledger_closed")
+        journal_state = "ledger_closed"
+
+    if journal_state == "ledger_closed":
+        ledger = state["ledger"]
+        ledger_raw = state["ledger_raw"]
+        expected_checkpoint = _checkpoint_raw_for_ledger(ledger, ledger_raw)
+        if state["checkpoint_raw"] != expected_checkpoint:
+            checkpoint_payload = _checkpoint_payload(ledger_raw, ledger)
+            checkpoint_raw = io.write_json(
+                "checkpoint.json",
+                checkpoint_payload,
+                expected_existing=state["checkpoint_raw"],
+                validator=_canonical_object_validator,
+                label="checkpoint",
+            )
+            state["checkpoint_raw"] = checkpoint_raw
+            _fault_boundary(fault, "after_checkpoint")
+        journal, journal_raw = _advance_row_journal(
+            io, journal, journal_raw, "checkpoint_closed"
+        )
+        _fault_boundary(fault, "after_journal_checkpoint_closed")
+        journal_state = "checkpoint_closed"
+
+    if journal_state == "checkpoint_closed":
+        io.remove_file(
+            ROW_JOURNAL_FILENAME,
+            expected=journal_raw,
+            label="row transaction",
+        )
+        _fault_boundary(fault, "after_journal_removed")
+
+
+def _semantic_tree_payload(
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo | _PrivateReadOnlyRowIo,
+) -> dict[str, Any]:
+    """Rebuild the semantic tree exclusively through the selected row I/O layer."""
+
     fixed = {
         RUN_OWNER_FILENAME,
         SEMANTIC_OPTIONS_FILENAME,
@@ -12405,108 +14101,44 @@ def _semantic_tree_payload(run_dir: Path) -> dict[str, Any]:
         "checkpoint.json",
         "draft_manifest.jsonl",
     }
-    paths = [run_dir / name for name in fixed]
-    rows = run_dir / "rows"
-    if rows.exists():
-        paths.extend(item for item in rows.rglob("*") if item.is_file())
-    entries = []
-    for path in sorted(paths, key=lambda item: item.relative_to(run_dir).as_posix()):
-        raw = path.read_bytes()
+    relative_paths = list(fixed)
+    if io.exists(ROWS_DIRNAME):
+        for stem in io.list_directory(ROWS_DIRNAME):
+            _bootstrap_basename(stem, "semantic row stem")
+            for name in io.list_directory(f"{ROWS_DIRNAME}/{stem}"):
+                _bootstrap_basename(name, "semantic row artifact")
+                relative_paths.append(f"{ROWS_DIRNAME}/{stem}/{name}")
+    entries: list[dict[str, Any]] = []
+    for relative in sorted(relative_paths):
+        raw = io.read_bytes(relative, "semantic tree artifact")
         entries.append({
-            "path": path.relative_to(run_dir).as_posix(),
+            "path": relative,
             "sha256": _sha256_tag(raw),
             "byte_size": len(raw),
         })
     return {"schema": "setec-imessage-atomic-semantic-tree/1", "entries": entries}
 
 
-def publish_planned_rows(
-    run_dir: Path,
-    planned: Sequence[PlannedAtomicRow],
-    result: AtomicProcessingResult,
-    fault: Callable[[str], None] | None = None,
+def _acquisition_receipt_payload(
+    *,
+    owner: dict[str, Any],
+    smoke_policy: dict[str, Any],
+    controls: dict[str, Any],
+    source_map: dict[str, Any],
+    ledger: dict[str, Any],
+    ledger_raw: bytes,
+    manifest_raw: bytes,
+    semantic_tree: dict[str, Any],
 ) -> dict[str, Any]:
-    """Resume or publish the deterministic row prefix and final aggregate artifacts."""
+    """Rebuild the complete receipt without accepting receipt-owned authority."""
 
-    root = Path(run_dir).absolute()
-    owner, _ = _read_canonical_object(root / RUN_OWNER_FILENAME, "run owner")
-    source_map, _ = _read_canonical_object(
-        root / PRIVATE_SOURCE_IDENTITY_MAP_FILENAME, "source identity map"
-    )
-    ledger_path = root / "source-ledger.json"
-    checkpoint_path = root / "checkpoint.json"
-    if ledger_path.exists():
-        ledger, ledger_raw = _read_canonical_object(ledger_path, "source ledger")
-        closed_count = len(ledger.get("rows", [])) if type(ledger.get("rows")) is list else -1
-        expected = _ledger_payload(
-            planned, closed_count, owner=owner, source_map=source_map,
-            result=result, complete=False,
-        )
-        if ledger != expected and not (
-            ledger.get("complete") is True and ledger == _ledger_payload(
-                planned, len(planned), owner=owner, source_map=source_map,
-                result=result, complete=True,
-            )
-        ):
-            raise AtomicAcquisitionError("source ledger does not match planned prefix")
-    else:
-        closed_count = 0
-        ledger = _ledger_payload(
-            planned, 0, owner=owner, source_map=source_map, result=result, complete=False,
-        )
-        ledger_raw = _canonical_json_bytes(ledger)
-        _write_new_file(ledger_path, ledger_raw)
-    for index in range(closed_count, len(planned)):
-        row = planned[index]
-        if row.disposition == "retained":
-            _commit_retained_row(root, row, fault)
-        next_ledger = _ledger_payload(
-            planned, index + 1, owner=owner, source_map=source_map,
-            result=result, complete=index + 1 == len(planned),
-        )
-        next_raw = _canonical_json_bytes(next_ledger)
-        _atomic_rewrite(ledger_path, next_raw, ledger_raw)
-        ledger, ledger_raw = next_ledger, next_raw
-        if fault is not None:
-            fault("after_ledger")
-        checkpoint = _checkpoint_payload(ledger_raw, ledger)
-        prior_checkpoint = checkpoint_path.read_bytes() if checkpoint_path.exists() else None
-        _atomic_rewrite(checkpoint_path, _canonical_json_bytes(checkpoint), prior_checkpoint)
-    if not planned:
-        if fault is not None:
-            fault("after_checkpoint")
-        ledger = _ledger_payload(
-            planned, 0, owner=owner, source_map=source_map, result=result, complete=True,
-        )
-        next_raw = _canonical_json_bytes(ledger)
-        _atomic_rewrite(ledger_path, next_raw, ledger_raw)
-        ledger_raw = next_raw
-        checkpoint = _checkpoint_payload(ledger_raw, ledger)
-        _atomic_rewrite(checkpoint_path, _canonical_json_bytes(checkpoint), None)
-    expected_checkpoint_raw = _canonical_json_bytes(_checkpoint_payload(ledger_raw, ledger))
-    if checkpoint_path.exists():
-        if checkpoint_path.read_bytes() != expected_checkpoint_raw:
-            raise AtomicAcquisitionError("checkpoint does not bind the closed ledger")
-    else:
-        _write_new_file(checkpoint_path, expected_checkpoint_raw)
-        if fault is not None:
-            fault("after_checkpoint")
-    fragments = [row.fragment for row in planned if row.fragment is not None]
-    fragments.sort(key=lambda value: (value["unix_nanoseconds"], value["entry_locator"]))
-    manifest_raw = b"".join(_canonical_json_bytes(value["entry"]) for value in fragments)
-    manifest_path = root / "draft_manifest.jsonl"
-    if manifest_path.exists() and manifest_path.read_bytes() != manifest_raw:
-        raise AtomicAcquisitionError("aggregate manifest drifted")
-    if not manifest_path.exists():
-        _write_new_file(manifest_path, manifest_raw)
-        if fault is not None:
-            fault("after_manifest")
-    smoke_policy, _ = _read_canonical_object(root / SMOKE_POLICY_FILENAME, "smoke policy")
-    controls, _ = _read_canonical_object(root / RUN_CONTROLS_FILENAME, "run controls")
-    tree = _semantic_tree_payload(root)
-    receipt = {
+    return {
         "schema": "setec-imessage-atomic-acquisition-receipt/1",
-        "tool": {"name": TOOL_NAME, "version": TOOL_VERSION, "capability_id": CAPABILITY_ID},
+        "tool": {
+            "name": TOOL_NAME,
+            "version": TOOL_VERSION,
+            "capability_id": CAPABILITY_ID,
+        },
         "snapshot_metadata": smoke_policy["snapshot_metadata"],
         "atomic_schema": smoke_policy["atomic_schema"],
         "snapshot_file_sha256": owner["snapshot_file_sha256"],
@@ -12520,189 +14152,781 @@ def publish_planned_rows(
         "timezone": owner["timezone"],
         "max_retained": controls["max_retained"],
         "allow_empty": controls["allow_empty"],
-        "full_universe_eligibility_closure": ledger["not_considered_after_bound"] == 0,
+        "full_universe_eligibility_closure": (
+            ledger["not_considered_after_bound"] == 0
+        ),
         "counts": {
             "candidate": source_map["candidate_outgoing_rows"],
             "selected": ledger["selected_outgoing_rows"],
             "considered": ledger["considered_rows"],
             "not_considered_after_bound": ledger["not_considered_after_bound"],
             "retained": ledger["retained_rows"],
-            "excluded_considered_by_final_reason": ledger["excluded_considered_by_final_reason"],
+            "excluded_considered_by_final_reason": (
+                ledger["excluded_considered_by_final_reason"]
+            ),
         },
-        "candidate_locator_universe_hash": source_map["candidate_locator_universe_hash"],
-        "selected_locator_universe_hash": source_map["selected_locator_universe_hash"],
+        "candidate_locator_universe_hash": (
+            source_map["candidate_locator_universe_hash"]
+        ),
+        "selected_locator_universe_hash": (
+            source_map["selected_locator_universe_hash"]
+        ),
         "manifest_sha256": _sha256_tag(manifest_raw),
         "ledger_sha256": _sha256_tag(ledger_raw),
-        "semantic_tree_sha256": canonical_payload_digest(tree),
+        "semantic_tree_sha256": canonical_payload_digest(semantic_tree),
         "privacy": {"contains_source_prose": False, "contains_raw_identity": False},
     }
-    receipt_path = root / "acquisition-receipt.json"
+
+
+def publish_planned_rows(
+    run_dir: Path,
+    planned: Sequence[PlannedAtomicRow],
+    result: AtomicProcessingResult,
+    fault: Callable[[str], None] | None = None,
+    *,
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo | None = None,
+) -> dict[str, Any]:
+    """Resume row-journal-authorized state, then derive final aggregates."""
+
+    root = Path(run_dir).absolute()
+    row_io = io or _SyntheticFixtureRowIo(root)
+    if row_io.root != root:
+        raise AtomicAcquisitionError("row I/O root does not match the run directory")
+    owner, _ = _read_io_object(row_io, RUN_OWNER_FILENAME, "run owner")
+    source_map, _ = _read_io_object(
+        row_io, PRIVATE_SOURCE_IDENTITY_MAP_FILENAME, "source identity map"
+    )
+
+    while True:
+        state = _preflight_row_publication(
+            row_io,
+            planned,
+            result,
+            owner=owner,
+            source_map=source_map,
+        )
+        if state["fresh"]:
+            row_io.ensure_directory(ROWS_DIRNAME)
+            row_io.ensure_directory(ROW_STAGING_DIRNAME)
+            ledger = _ledger_payload(
+                planned,
+                0,
+                owner=owner,
+                source_map=source_map,
+                result=result,
+                complete=False,
+            )
+            ledger_raw = row_io.write_json(
+                "source-ledger.json",
+                ledger,
+                expected_existing=None,
+                validator=_canonical_object_validator,
+                label="source ledger",
+            )
+            _fault_boundary(fault, "after_initial_ledger")
+            checkpoint = _checkpoint_payload(ledger_raw, ledger)
+            row_io.write_json(
+                "checkpoint.json",
+                checkpoint,
+                expected_existing=None,
+                validator=_canonical_object_validator,
+                label="checkpoint",
+            )
+            _fault_boundary(fault, "after_initial_checkpoint")
+            continue
+        if state["journal"] is not None:
+            _resume_authorized_row_transaction(
+                row_io,
+                planned,
+                result,
+                state,
+                owner=owner,
+                source_map=source_map,
+                fault=fault,
+            )
+            continue
+        ledger = state["ledger"]
+        ledger_raw = state["ledger_raw"]
+        if type(ledger) is not dict or type(ledger_raw) is not bytes:
+            raise AtomicAcquisitionError("source ledger resume state is invalid")
+        if state["checkpoint_status"] != "current":
+            checkpoint = _checkpoint_payload(ledger_raw, ledger)
+            row_io.write_json(
+                "checkpoint.json",
+                checkpoint,
+                expected_existing=state["checkpoint_raw"],
+                validator=_canonical_object_validator,
+                label="checkpoint",
+            )
+            _fault_boundary(fault, "after_checkpoint")
+            continue
+        closed_count = state["closed_count"]
+        if closed_count < len(planned):
+            row = planned[closed_count]
+            predecessor_checkpoint = _checkpoint_raw_for_ledger(ledger, ledger_raw)
+            journal = _row_transaction_payload(
+                row,
+                closed_count,
+                state="prepared",
+                previous_journal_digest=None,
+                predecessor_ledger_digest=_sha256_tag(ledger_raw),
+                predecessor_checkpoint_digest=_sha256_tag(predecessor_checkpoint),
+            )
+            row_io.write_json(
+                ROW_JOURNAL_FILENAME,
+                journal,
+                expected_existing=None,
+                validator=_validated_row_transaction_payload,
+                label="row transaction",
+            )
+            _fault_boundary(fault, "after_journal_prepared")
+            continue
+        if ledger.get("complete") is not True:
+            if planned:
+                raise AtomicAcquisitionError("nonempty final ledger is not complete")
+            complete_ledger = _ledger_payload(
+                planned,
+                0,
+                owner=owner,
+                source_map=source_map,
+                result=result,
+                complete=True,
+            )
+            row_io.write_json(
+                "source-ledger.json",
+                complete_ledger,
+                expected_existing=ledger_raw,
+                validator=_canonical_object_validator,
+                label="source ledger",
+            )
+            _fault_boundary(fault, "after_ledger")
+            continue
+        break
+
+    ledger = state["ledger"]
+    ledger_raw = state["ledger_raw"]
+    expected_checkpoint_raw = _checkpoint_raw_for_ledger(ledger, ledger_raw)
+    if state["checkpoint_raw"] != expected_checkpoint_raw:
+        raise AtomicAcquisitionError("checkpoint does not bind the closed ledger")
+    fragments = [row.fragment for row in planned if row.fragment is not None]
+    fragments.sort(key=lambda value: (value["unix_nanoseconds"], value["entry_locator"]))
+    manifest_raw = b"".join(_canonical_json_bytes(value["entry"]) for value in fragments)
+    if row_io.exists("draft_manifest.jsonl"):
+        if row_io.read_bytes("draft_manifest.jsonl", "aggregate manifest") != manifest_raw:
+            raise AtomicAcquisitionError("aggregate manifest drifted")
+    else:
+        row_io.write_bytes(
+            "draft_manifest.jsonl",
+            manifest_raw,
+            expected_existing=None,
+            label="aggregate manifest",
+        )
+        _fault_boundary(fault, "after_manifest")
+    smoke_policy, _ = _read_io_object(row_io, SMOKE_POLICY_FILENAME, "smoke policy")
+    controls, _ = _read_io_object(row_io, RUN_CONTROLS_FILENAME, "run controls")
+    tree = _semantic_tree_payload(row_io)
+    receipt = _acquisition_receipt_payload(
+        owner=owner,
+        smoke_policy=smoke_policy,
+        controls=controls,
+        source_map=source_map,
+        ledger=ledger,
+        ledger_raw=ledger_raw,
+        manifest_raw=manifest_raw,
+        semantic_tree=tree,
+    )
     receipt_raw = _canonical_json_bytes(receipt)
-    if receipt_path.exists() and receipt_path.read_bytes() != receipt_raw:
-        raise AtomicAcquisitionError("acquisition receipt drifted")
-    if not receipt_path.exists():
-        _write_new_file(receipt_path, receipt_raw)
-        if fault is not None:
-            fault("after_receipt")
+    if row_io.exists("acquisition-receipt.json"):
+        if row_io.read_bytes("acquisition-receipt.json", "acquisition receipt") != receipt_raw:
+            raise AtomicAcquisitionError("acquisition receipt drifted")
+    else:
+        row_io.write_json(
+            "acquisition-receipt.json",
+            receipt,
+            expected_existing=None,
+            validator=_canonical_object_validator,
+            label="acquisition receipt",
+        )
+        _fault_boundary(fault, "after_receipt")
     return receipt
 
 
-def _strict_validate_atomic_run_root(root: Path) -> None:
+def _is_hmac_locator(value: object) -> bool:
+    return (
+        type(value) is str
+        and value.startswith("hmac-sha256:")
+        and len(value) == 76
+        and all(char in "0123456789abcdef" for char in value[12:])
+    )
+
+
+def _validated_snapshot_for_run(
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo | _PrivateReadOnlyRowIo,
+    *,
+    semantic: dict[str, Any],
+    controls: dict[str, Any],
+    expected_metadata: dict[str, Any],
+    expected_schema: dict[str, Any],
+) -> AtomicCandidateUniverse:
+    """Rehash, inspect, and rescan the immutable snapshot without receipt authority."""
+
+    metadata = SnapshotMetadata(**_validated_bootstrap_snapshot(expected_metadata))
+    window = semantic["local_date_window"]
+    since = _dt.date.fromisoformat(window["since"]) if window["since"] else None
+    until = _dt.date.fromisoformat(window["until"]) if window["until"] else None
+    if (
+        sys.platform == "darwin"
+        and isinstance(io, (LiveDurableRowIo, _PrivateReadOnlyRowIo))
+    ):
+        io._verify_root()
+        final_fd = io.final_fd
+        if final_fd is None:
+            raise BootstrapStateError("atomic run reader is closed")
+        snapshot_fd, snapshot_identity = _open_private_tree_node_at(
+            final_fd,
+            SNAPSHOT_FILENAME,
+            kind="file",
+            owner_uid=os.getuid(),
+            ops=_PrivateTreeOsOps(),
+            label="validator snapshot file",
+        )
+        try:
+            file_hash, byte_size, hashed_identity = _stream_hash_private_fd(
+                snapshot_fd, ops=_PrivateTreeOsOps()
+            )
+        finally:
+            os.close(snapshot_fd)
+        root_identity = _private_node_identity(os.fstat(final_fd))
+        if (
+            hashed_identity != snapshot_identity
+            or file_hash != metadata.file_sha256
+            or byte_size != metadata.byte_size
+        ):
+            raise AtomicAcquisitionError("atomic run snapshot bytes drifted")
+        evidence = ClosedSnapshotEvidence(
+            metadata=metadata,
+            snapshot_identity=snapshot_identity,
+            staging_identity=root_identity,
+            snapshot_device_inode=snapshot_identity[:2],
+            staging_device_inode=root_identity[:2],
+            inventory=io.root_names(),
+        )
+        _closed, schema_info, universe = _discover_closed_snapshot_universe_at(
+            io.parent_fd,
+            final_fd,
+            io.final_name,
+            io.root,
+            evidence,
+            expected_staging_device_inode=root_identity[:2],
+            expected_staging_names=io.root_names(),
+            semantic_options=semantic,
+            run_controls=controls,
+        )
+    else:
+        snapshot_path = io.root / SNAPSHOT_FILENAME
+        try:
+            snapshot_info = snapshot_path.lstat()
+        except OSError as exc:
+            raise SnapshotError("cannot inspect atomic run snapshot") from exc
+        if not stat.S_ISREG(snapshot_info.st_mode) or stat.S_ISLNK(snapshot_info.st_mode):
+            raise SnapshotError("atomic run snapshot is not a regular file")
+        first_hash, first_size = _stream_hash_and_size(snapshot_path)
+        conn = _open_read_only_database(snapshot_path)
+        try:
+            _quick_check(conn)
+            recomputed = _snapshot_metadata_from_hash(
+                conn, file_hash=first_hash, byte_size=first_size
+            )
+            schema_info = atomic_schema_preflight(conn)
+            universe = discover_candidate_universe(
+                conn,
+                schema_info,
+                apple_date_unit=semantic["apple_date_unit"],
+                timezone_name=semantic["timezone"],
+                since=since,
+                until=until,
+                max_messages=controls["max_messages"],
+            )
+        finally:
+            conn.close()
+        second_hash, second_size = _stream_hash_and_size(snapshot_path)
+        if (
+            recomputed != metadata
+            or second_hash != first_hash
+            or second_size != first_size
+        ):
+            raise AtomicAcquisitionError("atomic run snapshot metadata drifted")
+    if asdict(schema_info) != expected_schema:
+        raise AtomicAcquisitionError("atomic run snapshot schema drifted")
+    return universe
+
+
+def _validate_private_identity_maps(
+    contact_map: dict[str, Any],
+    source_map: dict[str, Any],
+    universe: AtomicCandidateUniverse,
+) -> tuple[dict[str, dict[str, Any]], dict[str, dict[str, Any]]]:
+    if set(contact_map) != {"schema", "contacts"} or contact_map.get("schema") != (
+        "setec-imessage-atomic-private-contact-map/1"
+    ):
+        raise AtomicAcquisitionError("atomic contact map schema drifted")
+    contacts = contact_map.get("contacts")
+    if type(contacts) is not list:
+        raise AtomicAcquisitionError("atomic contact map coverage drifted")
+    contact_by_group: dict[str, dict[str, Any]] = {}
+    contact_by_chat: dict[str, dict[str, Any]] = {}
+    for index, row in enumerate(contacts, start=1):
+        if type(row) is not dict or set(row) != {
+            "contact_alias", "group_locator", "chat_guid", "chat_identifier",
+            "room_name", "style", "group_status",
+        }:
+            raise AtomicAcquisitionError("atomic contact map row schema drifted")
+        if (
+            row["contact_alias"] != f"contact-{index:06d}"
+            or not _is_hmac_locator(row["group_locator"])
+            or row["group_locator"] in contact_by_group
+            or row["chat_guid"] in contact_by_chat
+            or type(row["style"]) is not int
+            or type(row["chat_identifier"]) not in {str, type(None)}
+            or type(row["room_name"]) not in {str, type(None)}
+        ):
+            raise AtomicAcquisitionError("atomic contact map row binding drifted")
+        validate_stable_guid(row["chat_guid"], identity="chat")
+        chat_identifier = _normalized_optional_text(row["chat_identifier"])
+        room_name = _normalized_optional_text(row["room_name"])
+        if (
+            chat_identifier != row["chat_identifier"]
+            or room_name != row["room_name"]
+            or classify_group_status(room_name, row["style"]) != row["group_status"]
+        ):
+            raise AtomicAcquisitionError("atomic contact map metadata drifted")
+        contact_by_group[row["group_locator"]] = row
+        contact_by_chat[row["chat_guid"]] = row
+    if [row["group_locator"] for row in contacts] != sorted(contact_by_group):
+        raise AtomicAcquisitionError("atomic contact map ordering drifted")
+
+    if set(source_map) != {
+        "schema", "candidate_outgoing_rows", "selected_outgoing_rows",
+        "candidate_locator_universe_hash", "selected_locator_universe_hash", "entries",
+    } or source_map.get("schema") != (
+        "setec-imessage-atomic-private-source-identity-map/1"
+    ):
+        raise AtomicAcquisitionError("atomic source map schema drifted")
+    entries = source_map.get("entries")
+    if type(entries) is not list:
+        raise AtomicAcquisitionError("atomic source map coverage drifted")
+    source_by_locator: dict[str, dict[str, Any]] = {}
+    source_by_guid: dict[str, dict[str, Any]] = {}
+    chat_groups: dict[str, str] = {}
+    selected_locators: list[str] = []
+    for index, row in enumerate(entries, start=1):
+        if type(row) is not dict or set(row) != {
+            "source_ordinal", "entry_locator", "message_guid", "group_locator",
+            "contact_alias", "selected",
+        }:
+            raise AtomicAcquisitionError("atomic source map row schema drifted")
+        if (
+            row["source_ordinal"] != f"source-{index:06d}"
+            or not _is_hmac_locator(row["entry_locator"])
+            or not _is_hmac_locator(row["group_locator"])
+            or type(row["selected"]) is not bool
+            or type(row["contact_alias"]) not in {str, type(None)}
+            or row["entry_locator"] in source_by_locator
+            or row["message_guid"] in source_by_guid
+        ):
+            raise AtomicAcquisitionError("atomic source map row binding drifted")
+        validate_stable_guid(row["message_guid"], identity="message")
+        source_by_locator[row["entry_locator"]] = row
+        source_by_guid[row["message_guid"]] = row
+        if row["selected"]:
+            selected_locators.append(row["entry_locator"])
+    candidate_locators = [row["entry_locator"] for row in entries]
+    if candidate_locators != sorted(candidate_locators):
+        raise AtomicAcquisitionError("atomic source map ordering drifted")
+    if (
+        source_map["candidate_outgoing_rows"] != len(entries)
+        or source_map["selected_outgoing_rows"] != len(selected_locators)
+        or source_map["candidate_locator_universe_hash"]
+        != _locator_universe_hash(candidate_locators)
+        or source_map["selected_locator_universe_hash"]
+        != _locator_universe_hash(selected_locators)
+        or len(entries) != universe.candidate_outgoing_rows
+        or len(selected_locators) != universe.selected_outgoing_rows
+    ):
+        raise AtomicAcquisitionError("atomic source map universe binding drifted")
+
+    selected_guids = {candidate.message_guid for candidate in universe.selected}
+    expected_guids = {candidate.message_guid for candidate in universe.candidates}
+    if set(source_by_guid) != expected_guids:
+        raise AtomicAcquisitionError("atomic source map snapshot coverage drifted")
+    selected_chats: set[str] = set()
+    for candidate in universe.candidates:
+        row = source_by_guid[candidate.message_guid]
+        selected = candidate.message_guid in selected_guids
+        previous_group = chat_groups.setdefault(candidate.chat_guid, row["group_locator"])
+        if previous_group != row["group_locator"] or row["selected"] is not selected:
+            raise AtomicAcquisitionError("atomic source map snapshot binding drifted")
+        contact = contact_by_chat.get(candidate.chat_guid)
+        if selected:
+            selected_chats.add(candidate.chat_guid)
+            if (
+                contact is None
+                or contact["group_locator"] != row["group_locator"]
+                or contact["contact_alias"] != row["contact_alias"]
+                or contact["chat_identifier"] != _normalized_optional_text(candidate.chat_identifier)
+                or contact["room_name"] != _normalized_optional_text(candidate.room_name)
+                or contact["style"] != candidate.style
+                or contact["group_status"] != candidate.group_status
+            ):
+                raise AtomicAcquisitionError("atomic source/contact map binding drifted")
+        elif row["contact_alias"] is not None:
+            raise AtomicAcquisitionError("atomic unselected source gained an alias")
+    if set(contact_by_chat) != selected_chats:
+        raise AtomicAcquisitionError("atomic contact map selected coverage drifted")
+    return source_by_locator, source_by_guid
+
+
+def _validate_atomic_run_io(
+    root: Path,
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo | _PrivateReadOnlyRowIo,
+) -> dict[str, Any]:
     required = {
         SNAPSHOT_FILENAME, *INITIALIZATION_ARTIFACT_FILENAMES,
-        "source-ledger.json", "checkpoint.json", "draft_manifest.jsonl",
-        "acquisition-receipt.json",
+        ROWS_DIRNAME, ROW_STAGING_DIRNAME, "source-ledger.json", "checkpoint.json",
+        "draft_manifest.jsonl", "acquisition-receipt.json",
     }
-    optional = {"rows", ".row-staging"}
-    actual = {item.name for item in root.iterdir()}
-    if not required <= actual or actual - required - optional:
+    if set(io.root_names()) != required:
         raise AtomicAcquisitionError("atomic run top-level inventory drifted")
-    staging = root / ".row-staging"
-    if staging.exists() and (not staging.is_dir() or any(staging.iterdir())):
+    if io.list_directory(ROW_STAGING_DIRNAME):
         raise AtomicAcquisitionError("atomic run staging inventory is not empty")
-    owner, _ = _read_canonical_object(root / RUN_OWNER_FILENAME, "run owner")
-    source_map, source_raw = _read_canonical_object(
-        root / PRIVATE_SOURCE_IDENTITY_MAP_FILENAME, "source identity map"
+
+    semantic, semantic_raw = _read_io_object(
+        io, SEMANTIC_OPTIONS_FILENAME, "semantic options",
+        validator=_validated_semantic_options, max_bytes=MAX_SEMANTIC_OPTIONS_BYTES,
     )
-    _contact, contact_raw = _read_canonical_object(
-        root / PRIVATE_CONTACT_MAP_FILENAME, "contact map"
+    controls, controls_raw = _read_io_object(
+        io, RUN_CONTROLS_FILENAME, "run controls",
+        validator=_validated_run_controls, max_bytes=MAX_RUN_CONTROLS_BYTES,
     )
-    semantic, _ = _read_canonical_object(root / SEMANTIC_OPTIONS_FILENAME, "semantic options")
-    controls, _ = _read_canonical_object(root / RUN_CONTROLS_FILENAME, "run controls")
-    smoke, _ = _read_canonical_object(root / SMOKE_POLICY_FILENAME, "smoke policy")
-    snapshot_hash, snapshot_size = _stream_hash_and_size(root / SNAPSHOT_FILENAME)
-    if (
-        snapshot_hash != owner.get("snapshot_file_sha256")
-        or snapshot_hash != smoke.get("snapshot_metadata", {}).get("file_sha256")
-        or snapshot_size != smoke.get("snapshot_metadata", {}).get("byte_size")
-        or canonical_payload_digest(semantic) != owner.get("semantic_options_digest")
-        or canonical_payload_digest(controls) != owner.get("run_controls_digest")
-        or canonical_payload_digest(smoke) != owner.get("smoke_policy_digest")
-        or _sha256_tag(contact_raw) != owner.get("contact_map_hash")
-        or _sha256_tag(source_raw) != owner.get("source_identity_map_hash")
+    smoke, smoke_raw = _read_io_object(
+        io, SMOKE_POLICY_FILENAME, "smoke policy",
+        validator=_validated_smoke_policy, max_bytes=MAX_SMOKE_POLICY_BYTES,
+    )
+    contact_map, contact_raw = _read_io_object(
+        io, PRIVATE_CONTACT_MAP_FILENAME, "contact map",
+        max_bytes=MAX_PRIVATE_CONTACT_MAP_BYTES,
+    )
+    source_map, source_raw = _read_io_object(
+        io, PRIVATE_SOURCE_IDENTITY_MAP_FILENAME, "source identity map",
+        max_bytes=MAX_PRIVATE_SOURCE_IDENTITY_MAP_BYTES,
+    )
+    owner, _owner_raw = _read_io_object(
+        io, RUN_OWNER_FILENAME, "run owner", max_bytes=MAX_RUN_OWNER_BYTES,
+    )
+    if controls["checkpoint_schema"] != "setec-imessage-atomic-checkpoint/1":
+        raise AtomicAcquisitionError("atomic checkpoint schema control drifted")
+    universe = _validated_snapshot_for_run(
+        io,
+        semantic=semantic,
+        controls=controls,
+        expected_metadata=smoke["snapshot_metadata"],
+        expected_schema=smoke["atomic_schema"],
+    )
+    source_by_locator, source_by_guid = _validate_private_identity_maps(
+        contact_map, source_map, universe
+    )
+    expected_owner = run_owner_payload(
+        snapshot_metadata=SnapshotMetadata(**smoke["snapshot_metadata"]),
+        semantic_options=semantic,
+        run_controls=controls,
+        smoke_policy=smoke,
+        hmac_key_id_value=smoke["hmac"]["key_id"],
+        contact_map_hash=_sha256_tag(contact_raw),
+        source_identity_map_hash=_sha256_tag(source_raw),
+    )
+    if owner != expected_owner or (
+        canonical_payload_digest(semantic) != _sha256_tag(semantic_raw)
+        or canonical_payload_digest(controls) != _sha256_tag(controls_raw)
+        or canonical_payload_digest(smoke) != _sha256_tag(smoke_raw)
     ):
-        raise AtomicAcquisitionError("atomic run initialization binding drifted")
-    ledger, ledger_raw = _read_canonical_object(root / "source-ledger.json", "source ledger")
-    checkpoint, _ = _read_canonical_object(root / "checkpoint.json", "checkpoint")
-    receipt, _ = _read_canonical_object(root / "acquisition-receipt.json", "receipt")
-    if set(ledger) != {
+        raise AtomicAcquisitionError("atomic run owner or option binding drifted")
+
+    ledger, ledger_raw = _read_io_object(io, "source-ledger.json", "source ledger")
+    ledger_keys = {
         "schema", "snapshot_file_sha256", "semantic_options_digest",
         "run_controls_digest", "smoke_policy_digest", "selected_outgoing_rows",
         "considered_rows", "not_considered_after_bound", "retained_rows",
         "excluded_considered_by_final_reason", "candidate_locator_universe_hash",
         "selected_locator_universe_hash", "complete", "rows",
-    } or set(checkpoint) != {
-        "schema", "snapshot_file_sha256", "semantic_options_digest",
-        "run_controls_digest", "smoke_policy_digest", "ledger_sha256",
-        "considered_rows", "retained_rows", "complete",
-    } or set(receipt) != {
-        "schema", "tool", "snapshot_metadata", "atomic_schema",
-        "snapshot_file_sha256", "semantic_options_digest", "run_controls_digest",
-        "smoke_policy_digest", "hmac_key_id", "contact_map_hash",
-        "source_identity_map_hash", "ai_boundary_version", "timezone",
-        "max_retained", "allow_empty", "full_universe_eligibility_closure",
-        "counts", "candidate_locator_universe_hash", "selected_locator_universe_hash",
-        "manifest_sha256", "ledger_sha256", "semantic_tree_sha256", "privacy",
-    }:
-        raise AtomicAcquisitionError("atomic run aggregate schema drifted")
-    exclusions = ledger.get("excluded_considered_by_final_reason")
-    expected_counts = {
-        "candidate": source_map["candidate_outgoing_rows"],
-        "selected": ledger["selected_outgoing_rows"],
-        "considered": ledger["considered_rows"],
-        "not_considered_after_bound": ledger["not_considered_after_bound"],
-        "retained": ledger["retained_rows"],
-        "excluded_considered_by_final_reason": exclusions,
     }
+    exclusions = ledger.get("excluded_considered_by_final_reason")
+    rows = ledger.get("rows")
+    integer_counts = (
+        ledger.get("selected_outgoing_rows"), ledger.get("considered_rows"),
+        ledger.get("not_considered_after_bound"), ledger.get("retained_rows"),
+    )
     if (
-        type(exclusions) is not dict or set(exclusions) != set(EXCLUSION_REASONS)
+        set(ledger) != ledger_keys
+        or ledger.get("schema") != "setec-imessage-atomic-source-ledger/1"
+        or ledger.get("complete") is not True
+        or type(rows) is not list
+        or type(exclusions) is not dict
+        or set(exclusions) != set(EXCLUSION_REASONS)
+        or any(type(value) is not int or value < 0 for value in integer_counts)
+        or any(type(value) is not int or value < 0 for value in exclusions.values())
+        or ledger["snapshot_file_sha256"] != owner["snapshot_file_sha256"]
+        or ledger["semantic_options_digest"] != owner["semantic_options_digest"]
+        or ledger["run_controls_digest"] != owner["run_controls_digest"]
+        or ledger["smoke_policy_digest"] != owner["smoke_policy_digest"]
+        or ledger["candidate_locator_universe_hash"]
+        != source_map["candidate_locator_universe_hash"]
+        or ledger["selected_locator_universe_hash"]
+        != source_map["selected_locator_universe_hash"]
+        or ledger["selected_outgoing_rows"] != universe.selected_outgoing_rows
+        or ledger["considered_rows"] != len(rows)
         or ledger["selected_outgoing_rows"]
         != ledger["considered_rows"] + ledger["not_considered_after_bound"]
-        or ledger["considered_rows"] != ledger["retained_rows"] + sum(exclusions.values())
-        or receipt.get("counts") != expected_counts
-        or receipt.get("full_universe_eligibility_closure")
-        != (ledger["not_considered_after_bound"] == 0)
-        or receipt.get("snapshot_metadata") != smoke["snapshot_metadata"]
-        or receipt.get("atomic_schema") != smoke["atomic_schema"]
-        or receipt.get("max_retained") != controls["max_retained"]
-        or receipt.get("allow_empty") != controls["allow_empty"]
-        or checkpoint.get("ledger_sha256") != _sha256_tag(ledger_raw)
+        or ledger["considered_rows"]
+        != ledger["retained_rows"] + sum(exclusions.values())
     ):
-        raise AtomicAcquisitionError("atomic run count or receipt binding drifted")
+        raise AtomicAcquisitionError("atomic source ledger binding drifted")
+    max_retained = controls["max_retained"]
+    if (
+        (max_retained is None and ledger["not_considered_after_bound"] != 0)
+        or (max_retained is not None and ledger["retained_rows"] > max_retained)
+        or (
+            ledger["not_considered_after_bound"] > 0
+            and ledger["retained_rows"] != max_retained
+        )
+        or (ledger["retained_rows"] == 0 and controls["allow_empty"] is not True)
+    ):
+        raise AtomicAcquisitionError("atomic bounded-run equation drifted")
 
-
-def validate_atomic_run(run_dir: Path) -> dict[str, Any]:
-    """Read-only validation of a completed atomic producer tree."""
-
-    root = Path(run_dir).absolute()
-    ledger, ledger_raw = _read_canonical_object(root / "source-ledger.json", "source ledger")
-    checkpoint, _ = _read_canonical_object(root / "checkpoint.json", "checkpoint")
-    receipt, _ = _read_canonical_object(root / "acquisition-receipt.json", "receipt")
-    if ledger.get("complete") is not True:
-        raise AtomicAcquisitionError("atomic run ledger is incomplete")
-    retained = [row for row in ledger.get("rows", []) if row.get("disposition") == "retained"]
-    rows_root = root / "rows"
-    _strict_validate_atomic_run_root(root)
-    actual_rows = {item.name for item in rows_root.iterdir()} if rows_root.exists() else set()
-    if actual_rows != {row["row_stem"] for row in retained}:
-        raise AtomicAcquisitionError("atomic run row inventory drifted")
-    fragments = []
-    locators = set()
-    for ledger_row in retained:
-        stem = ledger_row["row_stem"]
-        directory = rows_root / stem
-        names = {item.name for item in directory.iterdir()}
-        expected_names = {f"{stem}.txt", f"{stem}.meta.json", f"{stem}.fragment.json"}
-        if names != expected_names:
-            raise AtomicAcquisitionError("atomic run row inventory drifted")
-        text = (directory / f"{stem}.txt").read_bytes()
-        sidecar, _ = _read_canonical_object(directory / f"{stem}.meta.json", "sidecar")
-        fragment, _ = _read_canonical_object(directory / f"{stem}.fragment.json", "fragment")
-        locator = sidecar.get("author_corpus_entry_locator")
-        if set(sidecar) != {
-            "schema", "content_hash", "word_count", "unix_nanoseconds", "local_date",
-            "group_status", "author_corpus_group_locator", "author_corpus_entry_locator",
-            "author_corpus_unit_kind", "author_corpus_unit_index",
-            "author_corpus_unit_count", "snapshot_file_sha256",
-            "semantic_options_digest", "preprocessing", "hmac_key_id", "tool",
-        } or set(fragment) != {
-            "schema", "entry", "entry_locator", "unix_nanoseconds",
-            "semantic_options_digest", "snapshot_file_sha256",
+    selected_locator_order = [
+        source_by_guid[candidate.message_guid]["entry_locator"]
+        for candidate in universe.selected
+    ]
+    if [row.get("entry_locator") for row in rows] != selected_locator_order[: len(rows)]:
+        raise AtomicAcquisitionError("atomic ledger canonical prefix drifted")
+    derived_counts: Counter[str] = Counter()
+    retained_rows: list[dict[str, Any]] = []
+    for row in rows:
+        if type(row) is not dict or set(row) != {
+            "source_ordinal", "entry_locator", "disposition", "content_sha256",
+            "word_count", "row_stem",
         }:
+            raise AtomicAcquisitionError("atomic ledger row schema drifted")
+        source = source_by_locator.get(row["entry_locator"])
+        if source is None or row["source_ordinal"] != source["source_ordinal"]:
+            raise AtomicAcquisitionError("atomic ledger source binding drifted")
+        disposition = row["disposition"]
+        if disposition not in {"retained", *EXCLUSION_REASONS}:
+            raise AtomicAcquisitionError("atomic ledger disposition drifted")
+        derived_counts[disposition] += 1
+        if disposition == "retained":
+            if (
+                not _is_sha256_tag(row["content_sha256"])
+                or type(row["word_count"]) is not int
+                or row["word_count"] < 0
+                or type(row["row_stem"]) is not str
+            ):
+                raise AtomicAcquisitionError("atomic retained ledger row drifted")
+            retained_rows.append(row)
+        elif any(row[name] is not None for name in ("content_sha256", "word_count", "row_stem")):
+            raise AtomicAcquisitionError("atomic excluded ledger row gained row data")
+    if derived_counts.get("retained", 0) != ledger["retained_rows"] or any(
+        derived_counts.get(reason, 0) != exclusions[reason]
+        for reason in EXCLUSION_REASONS
+    ):
+        raise AtomicAcquisitionError("atomic ledger disposition counts drifted")
+
+    actual_row_stems = set(io.list_directory(ROWS_DIRNAME))
+    expected_row_stems = {row["row_stem"] for row in retained_rows}
+    if actual_row_stems != expected_row_stems:
+        raise AtomicAcquisitionError("atomic run row inventory drifted")
+    candidates_by_guid = {candidate.message_guid: candidate for candidate in universe.candidates}
+    source_guid_by_locator = {
+        row["entry_locator"]: row["message_guid"] for row in source_map["entries"]
+    }
+    fragments: list[dict[str, Any]] = []
+    seen_locators: set[str] = set()
+    sidecar_keys = {
+        "schema", "content_hash", "word_count", "unix_nanoseconds", "local_date",
+        "group_status", "author_corpus_group_locator", "author_corpus_entry_locator",
+        "author_corpus_unit_kind", "author_corpus_unit_index",
+        "author_corpus_unit_count", "snapshot_file_sha256",
+        "semantic_options_digest", "preprocessing", "hmac_key_id", "tool",
+    }
+    fragment_keys = {
+        "schema", "entry", "entry_locator", "unix_nanoseconds",
+        "semantic_options_digest", "snapshot_file_sha256",
+    }
+    for ledger_row in retained_rows:
+        locator = ledger_row["entry_locator"]
+        source = source_by_locator[locator]
+        candidate = candidates_by_guid[source_guid_by_locator[locator]]
+        stem = ledger_row["row_stem"]
+        expected_stem = (
+            f"{source['contact_alias']}-{candidate.local_date.isoformat()}-"
+            f"{locator.removeprefix('hmac-sha256:')[:16]}"
+        )
+        if stem != expected_stem or locator in seen_locators:
+            raise AtomicAcquisitionError("atomic row stem or locator drifted")
+        seen_locators.add(locator)
+        expected_names = {
+            f"{stem}.txt", f"{stem}.meta.json", f"{stem}.fragment.json"
+        }
+        if set(io.list_directory(f"{ROWS_DIRNAME}/{stem}")) != expected_names:
+            raise AtomicAcquisitionError("atomic run row inventory drifted")
+        text_raw = io.read_bytes(
+            f"{ROWS_DIRNAME}/{stem}/{stem}.txt", "atomic row text"
+        )
+        try:
+            text = text_raw.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise AtomicAcquisitionError("atomic row text is not UTF-8") from exc
+        if not text.strip():
+            raise AtomicAcquisitionError("atomic retained row text is empty")
+        sidecar, _ = _read_io_object(
+            io, f"{ROWS_DIRNAME}/{stem}/{stem}.meta.json", "atomic sidecar"
+        )
+        fragment, _ = _read_io_object(
+            io, f"{ROWS_DIRNAME}/{stem}/{stem}.fragment.json", "atomic fragment"
+        )
+        if set(sidecar) != sidecar_keys or set(fragment) != fragment_keys:
             raise AtomicAcquisitionError("atomic run row schema drifted")
-        if locator in locators or locator != ledger_row["entry_locator"]:
-            raise AtomicAcquisitionError("atomic run entry locator drifted")
-        locators.add(locator)
-        if (
-            _sha256_tag(text) != sidecar.get("content_hash")
-            or sidecar.get("content_hash") != ledger_row["content_sha256"]
-            or len(text.decode("utf-8").split()) != sidecar.get("word_count")
-            or sidecar.get("author_corpus_unit_kind") != "atomic_message"
-            or sidecar.get("author_corpus_unit_index") != 0
-            or sidecar.get("author_corpus_unit_count") != 1
-            or fragment.get("entry_locator") != locator
-            or fragment.get("entry", {}).get("content_hash") != sidecar.get("content_hash")
-        ):
+        preprocessing = sidecar.get("preprocessing")
+        if type(preprocessing) is not dict:
+            raise AtomicAcquisitionError("atomic sidecar preprocessing drifted")
+        expected_sidecar = {
+            "schema": "setec-imessage-atomic-sidecar/1",
+            "content_hash": _sha256_tag(text_raw),
+            "word_count": len(text.split()),
+            "unix_nanoseconds": candidate.unix_nanoseconds,
+            "local_date": candidate.local_date.isoformat(),
+            "group_status": candidate.group_status,
+            "author_corpus_group_locator": source["group_locator"],
+            "author_corpus_entry_locator": locator,
+            "author_corpus_unit_kind": "atomic_message",
+            "author_corpus_unit_index": 0,
+            "author_corpus_unit_count": 1,
+            "snapshot_file_sha256": owner["snapshot_file_sha256"],
+            "semantic_options_digest": owner["semantic_options_digest"],
+            "preprocessing": preprocessing,
+            "hmac_key_id": owner["hmac"]["key_id"],
+            "tool": {"name": TOOL_NAME, "version": TOOL_VERSION},
+        }
+        if sidecar != expected_sidecar:
             raise AtomicAcquisitionError("atomic run row binding drifted")
+        locator_hex = locator.removeprefix("hmac-sha256:")
+        entry = {
+            "id": f"imessage-atomic-{locator_hex}",
+            "path": f"rows/{stem}/{stem}.txt",
+            "author": semantic["author"],
+            "persona": semantic["persona"],
+            "register": semantic["register"],
+            "date_written": candidate.local_date.isoformat(),
+            "ai_status": ai_status_for_local_date(candidate.local_date),
+            "language_status": "native",
+            "word_count": len(text.split()),
+            "use": ["voice_profile"],
+            "split": "baseline",
+            "privacy": "private",
+            "content_hash": _sha256_tag(text_raw),
+            "source": "imessage_local",
+            "corpus_role": "identity_baseline",
+            "era": era_for_local_date(candidate.local_date),
+            "consent_status": "author_consent",
+            "acquired_via": "acquire_imessage_sent_atomic_1",
+        }
+        expected_fragment = {
+            "schema": "setec-imessage-atomic-manifest-fragment/1",
+            "entry": entry,
+            "entry_locator": locator,
+            "unix_nanoseconds": candidate.unix_nanoseconds,
+            "semantic_options_digest": owner["semantic_options_digest"],
+            "snapshot_file_sha256": owner["snapshot_file_sha256"],
+        }
+        if fragment != expected_fragment or ledger_row != {
+            "source_ordinal": source["source_ordinal"],
+            "entry_locator": locator,
+            "disposition": "retained",
+            "content_sha256": _sha256_tag(text_raw),
+            "word_count": len(text.split()),
+            "row_stem": stem,
+        }:
+            raise AtomicAcquisitionError("atomic fragment or ledger rebuild drifted")
         fragments.append(fragment)
+
     fragments.sort(key=lambda value: (value["unix_nanoseconds"], value["entry_locator"]))
     manifest_raw = b"".join(_canonical_json_bytes(value["entry"]) for value in fragments)
-    if (root / "draft_manifest.jsonl").read_bytes() != manifest_raw:
+    if io.read_bytes("draft_manifest.jsonl", "aggregate manifest") != manifest_raw:
         raise AtomicAcquisitionError("atomic run manifest derivation drifted")
-    if (
-        checkpoint.get("ledger_sha256") != _sha256_tag(ledger_raw)
-        or checkpoint.get("complete") is not True
-        or receipt.get("ledger_sha256") != _sha256_tag(ledger_raw)
-        or receipt.get("manifest_sha256") != _sha256_tag(manifest_raw)
-        or receipt.get("semantic_tree_sha256") != canonical_payload_digest(_semantic_tree_payload(root))
-    ):
-        raise AtomicAcquisitionError("atomic run aggregate binding drifted")
+    checkpoint, _ = _read_io_object(io, "checkpoint.json", "checkpoint")
+    if checkpoint != _checkpoint_payload(ledger_raw, ledger):
+        raise AtomicAcquisitionError("atomic run checkpoint drifted")
+    receipt, receipt_raw = _read_io_object(io, "acquisition-receipt.json", "receipt")
+    semantic_tree = _semantic_tree_payload(io)
+    expected_receipt = _acquisition_receipt_payload(
+        owner=owner,
+        smoke_policy=smoke,
+        controls=controls,
+        source_map=source_map,
+        ledger=ledger,
+        ledger_raw=ledger_raw,
+        manifest_raw=manifest_raw,
+        semantic_tree=semantic_tree,
+    )
+    if receipt != expected_receipt:
+        raise AtomicAcquisitionError("atomic acquisition receipt drifted")
+    forbidden_identities = {
+        row["message_guid"] for row in source_map["entries"]
+    } | {
+        value
+        for row in contact_map["contacts"]
+        for value in (
+            row["chat_guid"], row["chat_identifier"], row["room_name"]
+        )
+        if type(value) is str and value
+    }
+    forbidden_raw = tuple(value.encode("utf-8") for value in forbidden_identities)
+    for entry in semantic_tree["entries"]:
+        raw = io.read_bytes(entry["path"], "semantic privacy artifact")
+        if any(sentinel in raw for sentinel in forbidden_raw):
+            raise AtomicAcquisitionError("atomic semantic tree leaks raw identity")
+    if any(sentinel in receipt_raw for sentinel in forbidden_raw):
+        raise AtomicAcquisitionError("atomic acquisition receipt leaks raw identity")
     return {
         "status": "closed",
-        "retained_rows": len(retained),
+        "retained_rows": ledger["retained_rows"],
         "considered_rows": ledger["considered_rows"],
         "not_considered_after_bound": ledger["not_considered_after_bound"],
     }
+
+
+def validate_atomic_run(
+    run_dir: Path,
+    *,
+    io: _SyntheticFixtureRowIo | LiveDurableRowIo | _PrivateReadOnlyRowIo | None = None,
+) -> dict[str, Any]:
+    """Strictly reconstruct and validate a completed atomic producer tree."""
+
+    root = Path(run_dir).expanduser().absolute()
+    owned_reader: _PrivateReadOnlyRowIo | None = None
+    row_io = io
+    if row_io is None:
+        if os.name != "nt" and PRIVATE_ROOT_COMPONENT in root.parts:
+            owned_reader = _PrivateReadOnlyRowIo(root)
+            row_io = owned_reader
+        else:
+            row_io = _SyntheticFixtureRowIo(root)
+    if row_io.root != root:
+        raise AtomicAcquisitionError("validator row I/O root does not match the run")
+    try:
+        return _validate_atomic_run_io(root, row_io)
+    finally:
+        if owned_reader is not None:
+            owned_reader.close()
 
 
 def _date_argument(value: str) -> _dt.date:
@@ -12767,54 +14991,247 @@ def _synthetic_fixture_bootstrap(
     return final, universe, schema, initialization
 
 
-def _consume_live_smoke_receipt(path: Path, expected_digest: str) -> None:
-    payload, _ = _read_canonical_object(path, "live smoke receipt")
+def _private_root_path(path: Path) -> Path:
+    absolute = Path(path).expanduser().absolute()
+    indices = [
+        index
+        for index, component in enumerate(absolute.parts)
+        if component == PRIVATE_ROOT_COMPONENT
+    ]
+    if not indices:
+        raise AtomicAcquisitionError("path is outside the required private root")
+    return Path(*absolute.parts[: indices[-1] + 1])
+
+
+def _same_pinned_private_root(first: Path, second: Path) -> Path:
+    first_root = _private_root_path(first)
+    second_root = _private_root_path(second)
+    if first_root != second_root:
+        raise AtomicAcquisitionError("live smoke paths do not share one private root")
+    first_fd, _ = _open_private_parent_dirfd(first_root / ".private-root-anchor")
+    second_fd, _ = _open_private_parent_dirfd(second_root / ".private-root-anchor")
+    try:
+        if _device_inode(os.fstat(first_fd)) != _device_inode(os.fstat(second_fd)):
+            raise AtomicAcquisitionError("live smoke private-root inode drifted")
+    finally:
+        os.close(first_fd)
+        os.close(second_fd)
+    return first_root
+
+
+def _require_receipt_location_outside_run_or_repo(path: Path, private_root: Path) -> None:
+    parent = Path(path).expanduser().absolute().parent
+    try:
+        parent.relative_to(private_root)
+    except ValueError as exc:
+        raise AtomicAcquisitionError("live smoke receipt escapes the private root") from exc
+    private_parent_fd, _ = _open_private_parent_dirfd(
+        parent / ".live-smoke-parent-anchor"
+    )
+    os.close(private_parent_fd)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+    descriptors: list[int] = []
+    try:
+        current = os.open(parent.parts[0], flags)
+        descriptors.append(current)
+        for part in parent.parts[1:]:
+            following = os.open(part, flags, dir_fd=current)
+            if not stat.S_ISDIR(os.fstat(following).st_mode):
+                os.close(following)
+                raise AtomicAcquisitionError(
+                    "live smoke receipt ancestry is not a directory"
+                )
+            descriptors.append(following)
+            current = following
+        for descriptor in descriptors:
+            for marker in (RUN_OWNER_FILENAME, ".git"):
+                try:
+                    os.stat(marker, dir_fd=descriptor, follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                except OSError as exc:
+                    raise AtomicAcquisitionError(
+                        "cannot inspect live smoke receipt ancestry"
+                    ) from exc
+                raise AtomicAcquisitionError(
+                    "live smoke receipt must be outside every run and repository subtree"
+                )
+    except AtomicAcquisitionError:
+        raise
+    except OSError as exc:
+        raise AtomicAcquisitionError(
+            "cannot pin live smoke receipt ancestry"
+        ) from exc
+    finally:
+        for descriptor in reversed(descriptors):
+            os.close(descriptor)
+
+
+def _validated_live_smoke_receipt_payload(value: object) -> dict[str, Any]:
+    if type(value) is not dict or set(value) != {
+        "schema", "smoke_policy_digest", "approved_run_receipt_sha256",
+        "retained_rows", "approved_by", "confirmed_at",
+    }:
+        raise BootstrapStateError("live smoke receipt schema is invalid")
+    confirmed_at = value.get("confirmed_at")
+    try:
+        parsed = _dt.datetime.fromisoformat(confirmed_at)
+    except (TypeError, ValueError) as exc:
+        raise BootstrapStateError("live smoke receipt time is invalid") from exc
     if (
-        set(payload) != {
-            "schema", "smoke_policy_digest", "approved_run_receipt_sha256",
-            "retained_rows", "approved_by", "confirmed_at",
-        }
-        or payload.get("schema") != "setec-imessage-atomic-live-smoke-receipt/1"
-        or payload.get("smoke_policy_digest") != expected_digest
-        or payload.get("retained_rows") != 1
-        or payload.get("approved_by") != "owner-tty"
+        value.get("schema") != "setec-imessage-atomic-live-smoke-receipt/1"
+        or not _is_sha256_tag(value.get("smoke_policy_digest"))
+        or not _is_sha256_tag(value.get("approved_run_receipt_sha256"))
+        or value.get("retained_rows") != 1
+        or value.get("approved_by") != "owner-tty"
+        or parsed.tzinfo != _dt.timezone.utc
+        or parsed.isoformat(timespec="seconds") != confirmed_at
     ):
-        raise AtomicAcquisitionError("live smoke receipt does not authorize this source policy")
+        raise BootstrapStateError("live smoke receipt binding is invalid")
+    return json.loads(_canonical_json_bytes(value))
+
+
+def _read_live_smoke_receipt_private(
+    path: Path,
+    *,
+    anchor_run_dir: Path,
+) -> tuple[dict[str, Any], bytes]:
+    receipt_path = Path(path).expanduser().absolute()
+    if receipt_path.name != "imessage-atomic-live-smoke-receipt.json":
+        raise AtomicAcquisitionError("live smoke receipt path is not exact")
+    private_root = _same_pinned_private_root(receipt_path, anchor_run_dir)
+    _require_receipt_location_outside_run_or_repo(receipt_path, private_root)
+    parent_fd, name = _open_private_parent_dirfd(receipt_path)
+    try:
+        payload, _identity, _digest, raw = _read_private_canonical_json_at(
+            parent_fd,
+            name,
+            max_bytes=MAX_LIVE_SMOKE_RECEIPT_BYTES,
+            validator=_validated_live_smoke_receipt_payload,
+            artifact_label="live smoke receipt",
+        )
+        return payload, raw
+    finally:
+        os.close(parent_fd)
+
+
+def _consume_live_smoke_receipt(
+    path: Path,
+    expected_digest: str,
+    *,
+    run_dir: Path,
+) -> None:
+    payload, _ = _read_live_smoke_receipt_private(path, anchor_run_dir=run_dir)
+    if payload["smoke_policy_digest"] != expected_digest:
+        raise AtomicAcquisitionError(
+            "live smoke receipt does not authorize this source policy"
+        )
 
 
 def mint_live_smoke_receipt(run_receipt_path: Path, output_path: Path) -> dict[str, Any]:
     """Mint the sole human boundary; this function never acquires or rewrites a run."""
 
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        raise AtomicAcquisitionError("live smoke approval requires an interactive TTY")
-    receipt_path = Path(run_receipt_path).absolute()
+    receipt_path = Path(run_receipt_path).expanduser().absolute()
+    if receipt_path.name != "acquisition-receipt.json":
+        raise AtomicAcquisitionError("smoke approval requires the exact acquisition receipt path")
     run_dir = receipt_path.parent
-    receipt, receipt_raw = _read_canonical_object(receipt_path, "smoke acquisition receipt")
-    controls, _ = _read_canonical_object(run_dir / RUN_CONTROLS_FILENAME, "run controls")
-    if (
-        controls.get("max_retained") != 1
-        or controls.get("allow_empty") is not False
-        or receipt.get("counts", {}).get("retained") != 1
-    ):
-        raise AtomicAcquisitionError("only a nonempty one-row smoke run can be approved")
-    destination = Path(output_path).absolute()
-    if (destination.parent / RUN_OWNER_FILENAME).exists():
-        raise AtomicAcquisitionError("live smoke receipt must be outside the run directory")
-    if destination.exists():
-        raise AtomicAcquisitionError("cannot publish new atomic artifact")
-    phrase = "APPROVE IMESSAGE ATOMIC LIVE SMOKE"
-    print(f"Type {phrase} to approve the inspected one-row smoke run:", flush=True)
-    if input().strip() != phrase:
-        raise AtomicAcquisitionError("live smoke approval phrase did not match")
-    payload = {
-        "schema": "setec-imessage-atomic-live-smoke-receipt/1",
-        "smoke_policy_digest": receipt["smoke_policy_digest"],
-        "approved_run_receipt_sha256": _sha256_tag(receipt_raw),
-        "retained_rows": 1,
-        "approved_by": "owner-tty",
-        "confirmed_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
-    }
-    _write_new_file(destination, _canonical_json_bytes(payload))
+    destination = Path(output_path).expanduser().absolute()
+    if destination.name != "imessage-atomic-live-smoke-receipt.json":
+        raise AtomicAcquisitionError("live smoke receipt output path is not exact")
+    private_root = _same_pinned_private_root(receipt_path, destination)
+    _require_receipt_location_outside_run_or_repo(destination, private_root)
+    reader = _PrivateReadOnlyRowIo(run_dir)
+    destination_parent_fd: int | None = None
+    try:
+        validate_atomic_run(run_dir, io=reader)
+        receipt, receipt_raw = _read_io_object(
+            reader, "acquisition-receipt.json", "smoke acquisition receipt"
+        )
+        controls, _ = _read_io_object(
+            reader,
+            RUN_CONTROLS_FILENAME,
+            "run controls",
+            validator=_validated_run_controls,
+            max_bytes=MAX_RUN_CONTROLS_BYTES,
+        )
+        if (
+            controls.get("max_retained") != 1
+            or controls.get("allow_empty") is not False
+            or receipt.get("counts", {}).get("retained") != 1
+        ):
+            raise AtomicAcquisitionError(
+                "only a nonempty one-row smoke run can be approved"
+            )
+        if not sys.stdin.isatty() or not sys.stdout.isatty():
+            raise AtomicAcquisitionError(
+                "live smoke approval requires an interactive TTY"
+            )
+        destination_parent_fd, destination_name = _open_private_parent_dirfd(
+            destination
+        )
+        try:
+            os.stat(
+                destination_name,
+                dir_fd=destination_parent_fd,
+                follow_symlinks=False,
+            )
+        except FileNotFoundError:
+            pass
+        else:
+            raise AtomicAcquisitionError("cannot publish new atomic artifact")
+        phrase = "APPROVE IMESSAGE ATOMIC LIVE SMOKE"
+        print(f"Type {phrase} to approve the inspected one-row smoke run:", flush=True)
+        if input() != phrase:
+            raise AtomicAcquisitionError("live smoke approval phrase did not match")
+        validate_atomic_run(run_dir, io=reader)
+        final_receipt, final_receipt_raw = _read_io_object(
+            reader, "acquisition-receipt.json", "smoke acquisition receipt"
+        )
+        final_controls, _ = _read_io_object(
+            reader,
+            RUN_CONTROLS_FILENAME,
+            "run controls",
+            validator=_validated_run_controls,
+            max_bytes=MAX_RUN_CONTROLS_BYTES,
+        )
+        if (
+            final_receipt != receipt
+            or final_receipt_raw != receipt_raw
+            or final_controls != controls
+        ):
+            raise AtomicAcquisitionError(
+                "smoke run changed during owner approval"
+            )
+        payload = {
+            "schema": "setec-imessage-atomic-live-smoke-receipt/1",
+            "smoke_policy_digest": receipt["smoke_policy_digest"],
+            "approved_run_receipt_sha256": _sha256_tag(receipt_raw),
+            "retained_rows": 1,
+            "approved_by": "owner-tty",
+            "confirmed_at": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+        }
+        _write_private_canonical_json_at(
+            destination_parent_fd,
+            destination_name,
+            payload,
+            max_bytes=MAX_LIVE_SMOKE_RECEIPT_BYTES,
+            validator=_validated_live_smoke_receipt_payload,
+            artifact_label="live smoke receipt",
+            replace_existing=False,
+            expected_existing_digest=None,
+        )
+    finally:
+        try:
+            if destination_parent_fd is not None:
+                os.close(destination_parent_fd)
+        finally:
+            reader.close()
     return payload
 
 
@@ -12828,7 +15245,7 @@ def _prepare_live_bootstrap_for_run(
     AtomicCandidateUniverse,
     AtomicSchemaInfo,
     InitializationClosure,
-    tuple[int, str, int, str],
+    tuple[int, str, int, str, int, str],
 ]:
     """Acquire the live bootstrap descriptors or close every acquired handle."""
 
@@ -12836,6 +15253,7 @@ def _prepare_live_bootstrap_for_run(
     final_name = _bootstrap_basename(config.run_id, "run ID")
     journal_name = bootstrap_journal_name(final_name)
     parent_fd, _ = _open_private_parent_dirfd(output_root / journal_name)
+    final_fd: int | None = None
     try:
         lock_fd, lock_name = _acquire_bootstrap_lock_at(parent_fd, journal_name)
     except BaseException:
@@ -12863,28 +15281,58 @@ def _prepare_live_bootstrap_for_run(
             lock_fd=lock_fd, lock_name=lock_name, key_bytes=key,
             semantic_options=semantic, run_controls=controls,
         )
-        try:
-            run_dir = output_root / final_name
-            universe = prepared.evidence.universe
-            schema = prepared.evidence.schema_info
-            initialization = prepared.evidence.initialization
-        finally:
-            os.close(prepared.final_fd)
+        final_fd = prepared.final_fd
+        run_dir = output_root / final_name
+        universe = prepared.evidence.universe
+        schema = prepared.evidence.schema_info
+        initialization = prepared.evidence.initialization
         return (
             run_dir,
             universe,
             schema,
             initialization,
-            (parent_fd, journal_name, lock_fd, lock_name),
+            (parent_fd, journal_name, lock_fd, lock_name, final_fd, final_name),
         )
     except BaseException:
+        if final_fd is not None:
+            try:
+                os.close(final_fd)
+            except OSError:
+                pass
         try:
             _release_bootstrap_lock_at(
                 parent_fd, journal_name, lock_fd, lock_name,
             )
         finally:
-            os.close(parent_fd)
+            try:
+                os.close(lock_fd)
+            finally:
+                os.close(parent_fd)
         raise
+
+
+def _close_live_row_handles(
+    cleanup: tuple[int, str, int, str, int, str]
+) -> None:
+    parent_fd, journal_name, lock_fd, lock_name, final_fd, _final_name = cleanup
+    close_error: BaseException | None = None
+    try:
+        os.close(final_fd)
+    except BaseException as exc:
+        close_error = exc
+    try:
+        _release_bootstrap_lock_at(parent_fd, journal_name, lock_fd, lock_name)
+    except BaseException as exc:
+        if close_error is None:
+            close_error = exc
+    for descriptor in (lock_fd, parent_fd):
+        try:
+            os.close(descriptor)
+        except BaseException as exc:
+            if close_error is None:
+                close_error = exc
+    if close_error is not None:
+        raise close_error
 
 
 def run(
@@ -12914,13 +15362,20 @@ def run(
         max_messages=config.max_messages, max_retained=config.max_retained,
         allow_empty=config.allow_empty,
         checkpoint_schema="setec-imessage-atomic-checkpoint/1",
-        checkpoint_interval=config.checkpoint_interval,
+        checkpoint_interval=1,
     )
+    if type(config.progress_interval) is not int or config.progress_interval < 1:
+        raise AtomicAcquisitionError(
+            "progress interval must be a positive exact integer"
+        )
     if bootstrap is not None:
         run_dir, universe, schema, initialization = bootstrap(
             config, key, semantic, controls
         )
         cleanup = None
+        row_io: _SyntheticFixtureRowIo | LiveDurableRowIo = (
+            _SyntheticFixtureRowIo(run_dir)
+        )
     else:
         if sys.platform != "darwin":
             raise AtomicAcquisitionError(
@@ -12929,33 +15384,53 @@ def run(
         run_dir, universe, schema, initialization, cleanup = (
             _prepare_live_bootstrap_for_run(config, key, semantic, controls)
         )
+        parent_fd, journal_name, lock_fd, lock_name, final_fd, final_name = cleanup
+        try:
+            row_io = LiveDurableRowIo(
+                run_dir,
+                final_fd=final_fd,
+                parent_fd=parent_fd,
+                final_name=final_name,
+                journal_name=journal_name,
+                lock_fd=lock_fd,
+                lock_name=lock_name,
+            )
+        except BaseException:
+            try:
+                _close_live_row_handles(cleanup)
+            except BaseException:
+                pass
+            raise
     try:
         owner = initialization.artifact(RUN_OWNER_FILENAME).payload
         if bootstrap is None and config.max_retained != 1:
             if config.live_smoke_receipt is None:
                 raise AtomicAcquisitionError("non-smoke run requires a live smoke receipt")
             _consume_live_smoke_receipt(
-                config.live_smoke_receipt, owner["smoke_policy_digest"]
+                config.live_smoke_receipt,
+                owner["smoke_policy_digest"],
+                run_dir=run_dir,
             )
         result = process_selected_candidates(
             universe, schema, include_group_chats=config.include_group_chats,
             max_retained=config.max_retained, preprocessor=preprocessor,
+            progress=progress, progress_interval=config.progress_interval,
         )
         if result.retained_rows == 0 and not config.allow_empty:
             raise AtomicAcquisitionError("atomic acquisition retained zero rows")
         planned = plan_row_artifacts(result, universe, initialization, semantic, key)
-        receipt = publish_planned_rows(run_dir, planned, result)
-        summary = validate_atomic_run(run_dir)
+        receipt = publish_planned_rows(run_dir, planned, result, io=row_io)
+        summary = validate_atomic_run(run_dir, io=row_io)
         if progress is not None:
             progress(dict(summary))
         return receipt
     finally:
-        if cleanup is not None:
-            parent_fd, journal_name, lock_fd, lock_name = cleanup
-            try:
-                _release_bootstrap_lock_at(parent_fd, journal_name, lock_fd, lock_name)
-            finally:
-                os.close(parent_fd)
+        try:
+            if isinstance(row_io, LiveDurableRowIo):
+                row_io.close()
+        finally:
+            if cleanup is not None:
+                _close_live_row_handles(cleanup)
 
 
 def snapshot_metadata_payload(metadata: SnapshotMetadata) -> dict[str, object]:
@@ -12973,16 +15448,26 @@ def _timezone_argument(value: str) -> str:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    """Build the fail-closed parser for the future atomic acquirer."""
+    """Build the fail-closed parser for atomic acquisition and validation."""
 
     parser = argparse.ArgumentParser(
         prog=TOOL_NAME,
         description=(
-            "Validate the pure options for atomic sent-iMessage acquisition. "
-            "Live database acquisition is not implemented in this tranche."
+            "Acquire, validate, or approve private atomic sent-iMessage artifacts."
         ),
     )
-    group_policy = parser.add_mutually_exclusive_group(required=True)
+    actions = parser.add_mutually_exclusive_group()
+    actions.add_argument(
+        "--validate-run",
+        type=Path,
+        help="Validate one completed private atomic run and exit.",
+    )
+    actions.add_argument(
+        "--mint-live-smoke-receipt",
+        action="store_true",
+        help="Approve a validated one-row smoke run and exit.",
+    )
+    group_policy = parser.add_mutually_exclusive_group()
     group_policy.add_argument(
         "--include-group-chats",
         dest="include_group_chats",
@@ -12998,19 +15483,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.set_defaults(include_group_chats=None)
     parser.add_argument(
         "--timezone",
-        required=True,
         type=_timezone_argument,
         help="Required explicit IANA timezone used for local-date derivation.",
     )
     parser.add_argument(
         "--apple-date-unit",
-        required=True,
         choices=("seconds", "nanoseconds"),
         help="Exact unit of message.date values; auto-detection is forbidden.",
     )
     parser.add_argument(
         "--hmac-key",
-        required=True,
         type=Path,
         help="Existing owner-only persistent HMAC key path.",
     )
@@ -13025,10 +15507,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-messages", type=int, default=250_000)
     parser.add_argument("--max-retained", type=int)
     parser.add_argument("--allow-empty", action="store_true")
-    parser.add_argument("--checkpoint-interval", type=int, default=1)
+    parser.add_argument(
+        "--progress-interval",
+        type=int,
+        default=100,
+        help="Emit aggregate-only progress after this many considered rows.",
+    )
     parser.add_argument("--live-smoke-receipt", type=Path)
-    parser.add_argument("--validate-run", type=Path)
-    parser.add_argument("--mint-live-smoke-receipt", action="store_true")
     parser.add_argument("--smoke-run-receipt", type=Path)
     parser.add_argument("--receipt-out", type=Path)
     return parser
@@ -13049,6 +15534,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         mint_live_smoke_receipt(args.smoke_run_receipt, args.receipt_out)
         return 0
     required = {
+        "--include-group-chats/--exclude-group-chats": args.include_group_chats,
+        "--timezone": args.timezone,
+        "--apple-date-unit": args.apple_date_unit,
+        "--hmac-key": args.hmac_key,
         "--source-db": args.source_db,
         "--output-root": args.output_root,
         "--run-id": args.run_id,
@@ -13068,7 +15557,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         apple_date_unit=args.apple_date_unit, timezone_name=args.timezone,
         max_messages=args.max_messages, max_retained=args.max_retained,
         allow_empty=args.allow_empty,
-        checkpoint_interval=args.checkpoint_interval,
+        progress_interval=args.progress_interval,
         live_smoke_receipt=args.live_smoke_receipt,
     )
     run(config, key_bytes=key, progress=lambda summary: print(
