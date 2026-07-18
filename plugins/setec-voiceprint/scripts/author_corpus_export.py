@@ -47,9 +47,11 @@ PACKAGE_HASH_SCHEMA = "setec-author-corpus-package-hash/1"
 REGISTER_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}(?:\.[a-z][a-z0-9_-]{0,31})+$")
 SHA_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
 PRIVATE_LOCATOR_RE = re.compile(r"^sha256:[0-9a-f]{64}$")
+ATOMIC_PRIVATE_LOCATOR_RE = re.compile(r"^hmac-sha256:[0-9a-f]{64}$")
 
 SOURCE_VALUES = {
     "imessage_sent": "imessage_local",
+    "imessage_sent_atomic": "imessage_local",
     "gmail_sent": "gmail_takeout_local",
     "document_local": None,
 }
@@ -78,7 +80,10 @@ DOCUMENT_ATTESTATION_KEYS = {
     "author_identities", "corpus_role", "use", "consent_status",
     "allowed_ai_status",
 }
-UNIT_KINDS = {"message_batch", "turn", "email", "essay", "section", "chapter", "document"}
+UNIT_KINDS = {
+    "message_batch", "atomic_message", "turn", "email", "essay", "section",
+    "chapter", "document",
+}
 BIDI_CONTROLS = {
     chr(cp) for cp in (
         0x061C, 0x200E, 0x200F, 0x202A, 0x202B, 0x202C, 0x202D, 0x202E,
@@ -457,7 +462,9 @@ def _load_document_map(path: Path) -> tuple[dict[str, dict[str, Any]], str]:
         for name in ("private_document_locator", "private_entry_locator"):
             if type(row[name]) is not str or not PRIVATE_LOCATOR_RE.fullmatch(row[name]):
                 raise ValueError("document map locator is malformed")
-        if row["unit_kind"] not in UNIT_KINDS - {"message_batch", "turn", "email"}:
+        if row["unit_kind"] not in UNIT_KINDS - {
+            "message_batch", "atomic_message", "turn", "email",
+        }:
             raise ValueError("document map unit_kind is invalid")
         if type(row["unit_index"]) is not int or row["unit_index"] < 0:
             raise ValueError("document map unit_index must be a nonnegative exact integer")
@@ -596,6 +603,18 @@ def _gmail_order_timestamp(meta: dict[str, Any]) -> tuple[str | None, bool]:
 def _source_locators(
     kind: str, entry: dict[str, Any], meta: dict[str, Any],
 ) -> tuple[str, str, bool, str | None]:
+    if kind == "imessage_sent_atomic":
+        group = meta.get("author_corpus_group_locator")
+        item = meta.get("author_corpus_entry_locator")
+        if not (
+            isinstance(group, str) and ATOMIC_PRIVATE_LOCATOR_RE.fullmatch(group)
+            and isinstance(item, str) and ATOMIC_PRIVATE_LOCATOR_RE.fullmatch(item)
+        ):
+            raise ValueError("atomic iMessage locator is malformed")
+        unix_nanoseconds = meta.get("unix_nanoseconds")
+        if type(unix_nanoseconds) is not int:
+            raise ValueError("atomic iMessage order timestamp must be an exact integer")
+        return group, item, False, None
     if kind == "imessage_sent":
         group = meta.get("author_corpus_group_locator")
         item = meta.get("author_corpus_entry_locator")
@@ -797,6 +816,16 @@ def build_export(
                 )
                 if kind == "imessage_sent":
                     unit_kind, unit_index, unit_count = "message_batch", 0, 1
+                elif kind == "imessage_sent_atomic":
+                    unit_kind = meta.get("author_corpus_unit_kind")
+                    unit_index = meta.get("author_corpus_unit_index")
+                    unit_count = meta.get("author_corpus_unit_count")
+                    if (
+                        unit_kind != "atomic_message"
+                        or type(unit_index) is not int or unit_index != 0
+                        or type(unit_count) is not int or unit_count != 1
+                    ):
+                        raise ValueError("atomic iMessage unit semantics are invalid")
                 else:
                     unit_kind, unit_index, unit_count = "email", -1, 0
             private_entry_key = (kind, private_entry)
@@ -903,25 +932,35 @@ def build_export(
                 f"max_text_bytes must be an exact int in [1, {MAX_SMOKE_TEXT_BYTES}]"
             )
         groups: dict[
-            str,
+            tuple[str, str],
             list[tuple[dict[str, Any], bytes, str, tuple[bool, str, str] | None, bool]],
         ] = {}
         for item in built:
-            groups.setdefault(item[0]["source_group"], []).append(item)
-        by_pair: dict[tuple[str, str], list[tuple[int, int, str]]] = {}
-        for source_group, items in groups.items():
+            record = item[0]
+            selection_key = (
+                ("atomic", record["id"])
+                if record["source_kind"] == "imessage_sent_atomic"
+                else ("group", record["source_group"])
+            )
+            groups.setdefault(selection_key, []).append(item)
+        by_pair: dict[
+            tuple[str, str], list[tuple[int, int, tuple[str, str]]]
+        ] = {}
+        for selection_key, items in groups.items():
             pairs = {(item[0]["source_kind"], item[0]["register"]) for item in items}
             if len(pairs) != 1:
                 raise ValueError("source group spans multiple source/register identities")
             pair = next(iter(pairs))
             by_pair.setdefault(pair, []).append(
-                (len(items), sum(len(item[1]) for item in items), source_group)
+                (len(items), sum(len(item[1]) for item in items), selection_key)
             )
         selected_groups = {
             min(candidates)[2] for candidates in by_pair.values()
         }
         representative = [
-            item for item in built if item[0]["source_group"] in selected_groups
+            item for selection_key, items in groups.items()
+            if selection_key in selected_groups
+            for item in items
         ]
         if len(representative) > max_records:
             raise ValueError(
@@ -1100,6 +1139,17 @@ def _verify_package(records: list[dict[str, Any]], texts: dict[str, bytes],
         }
         if len(identities) != 1:
             raise ValueError("source group identity is inconsistent")
+        if group[0]["source_kind"] == "imessage_sent_atomic":
+            if any(
+                record["unit_kind"] != "atomic_message"
+                or record["unit_index"] != 0
+                or record["unit_count"] != 1
+                for record in group
+            ):
+                raise ValueError("atomic iMessage unit semantics are invalid")
+            continue
+        if any(record["unit_kind"] == "atomic_message" for record in group):
+            raise ValueError("atomic_message is reserved for atomic iMessage records")
         count = group[0]["unit_count"]
         if len(group) != count or {row["unit_index"] for row in group} != set(range(count)):
             raise ValueError("source group unit order is incomplete or ambiguous")

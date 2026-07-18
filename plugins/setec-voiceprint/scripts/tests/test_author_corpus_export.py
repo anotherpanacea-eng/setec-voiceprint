@@ -58,6 +58,59 @@ def _source(root: Path, kind: str, text: str, *, ai_status: str = "pre_ai_human"
     return manifest
 
 
+def _atomic_imessage_source(root: Path) -> Path:
+    kind = "imessage_sent_atomic"
+    src = root / kind
+    src.mkdir(parents=True, exist_ok=True)
+    group_locator = "hmac-sha256:" + "a" * 64
+    message_texts = [
+        "An atomic message with deliberately repeated content.",
+        "An atomic message with deliberately repeated content.",
+        "A third atomic message in the same chat and local day.",
+    ]
+    entries = []
+    for index, text in enumerate(message_texts, 1):
+        text_path = src / f"message-{index}.txt"
+        text_bytes = text.encode("utf-8")
+        text_path.write_bytes(text_bytes)
+        content_hash = E._sha(text_bytes)
+        text_path.with_suffix(".meta.json").write_text(json.dumps({
+            "content_hash": content_hash,
+            "unix_nanoseconds": 1_700_000_000_000_000_000 + index,
+            "author_corpus_group_locator": group_locator,
+            "author_corpus_entry_locator": "hmac-sha256:" + f"{index:064x}",
+            "author_corpus_unit_kind": "atomic_message",
+            "author_corpus_unit_index": 0,
+            "author_corpus_unit_count": 1,
+        }), encoding="utf-8")
+        entries.append({
+            "id": f"atomic-event-{index}",
+            "path": text_path.name,
+            "author": "Joshua",
+            "persona": "joshua",
+            "register": "personal",
+            "date_written": "2017-01-02",
+            "ai_status": "pre_ai_human",
+            "language_status": "native",
+            "word_count": len(text.split()),
+            "use": ["voice_profile"],
+            "split": "baseline",
+            "privacy": "private",
+            "content_hash": content_hash,
+            "source": E.SOURCE_VALUES[kind],
+            "corpus_role": "identity_baseline",
+            "era": "pre_chatgpt",
+            "consent_status": "author_consent",
+            "acquired_via": "acquire_imessage_sent_atomic_1",
+        })
+    manifest = src / "draft_manifest.jsonl"
+    manifest.write_text(
+        "".join(json.dumps(entry) + "\n" for entry in entries),
+        encoding="utf-8",
+    )
+    return manifest
+
+
 def _document_source(root: Path, *, count: int = 3):
     src = root / "document_local"
     src.mkdir(parents=True, exist_ok=True)
@@ -439,6 +492,15 @@ def test_document_map_rejects_duplicate_positions(private_root: Path):
         E._load_document_map(document_map)
 
 
+def test_document_map_rejects_atomic_message_unit_kind(private_root: Path):
+    _, document_map, _ = _document_source(private_root)
+    rows = [json.loads(line) for line in document_map.read_text().splitlines()]
+    rows[0]["unit_kind"] = "atomic_message"
+    document_map.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    with pytest.raises(ValueError, match="unit_kind is invalid"):
+        E._load_document_map(document_map)
+
+
 def test_document_smoke_is_whole_group_and_byte_bounded(private_root: Path):
     manifest, document_map, attestation = _document_source(private_root, count=21)
     kwargs = {
@@ -576,6 +638,75 @@ def test_legacy_imessage_contact_label_group_is_degraded(private_root: Path):
         allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
     )
     assert receipt["record_atomic_degraded"] is True
+
+
+def test_atomic_imessage_preserves_events_duplicates_and_record_atomic_bounds(
+    private_root: Path,
+):
+    manifest = _atomic_imessage_source(private_root)
+    kwargs = {
+        "sources": {"imessage_sent_atomic": manifest},
+        "register_map": {"imessage_sent_atomic:personal": "text.personal"},
+        "allowed_ai_status": ["pre_ai_human"],
+        "persona": "joshua",
+        "hmac_key": b"k" * 32,
+    }
+    records, texts, receipt, _, _ = E.build_export(**kwargs)
+    assert len(records) == 3
+    assert len(texts) == 2
+    assert {record["unit_kind"] for record in records} == {"atomic_message"}
+    assert {record["unit_index"] for record in records} == {0}
+    assert {record["unit_count"] for record in records} == {1}
+    assert len({record["source_group"] for record in records}) == 1
+    repeated_hash = E._sha(
+        b"An atomic message with deliberately repeated content."
+    )
+    duplicate_events = [
+        record for record in records if record["content_sha256"] == repeated_hash
+    ]
+    assert len(duplicate_events) == 2
+    assert len({record["id"] for record in duplicate_events}) == 2
+    assert len({record["source_entry_fingerprint"] for record in duplicate_events}) == 2
+    assert receipt["counts"]["by_source_kind"] == {"imessage_sent_atomic": 3}
+    assert receipt["record_atomic_degraded"] is False
+    E._verify_package(records, texts, receipt, hmac_key=b"k" * 32)
+
+    bounded, bounded_texts, bounded_receipt, _, _ = E.build_export(
+        **kwargs, max_records=1, max_text_bytes=1_000_000,
+    )
+    assert len(bounded) == 1
+    assert bounded[0]["source_group"] == records[0]["source_group"]
+    assert bounded[0]["unit_kind"] == "atomic_message"
+    assert bounded[0]["unit_index"] == 0 and bounded[0]["unit_count"] == 1
+    E._verify_package(
+        bounded, bounded_texts, bounded_receipt, hmac_key=b"k" * 32,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("author_corpus_group_locator", "sha256:" + "a" * 64, "locator"),
+        ("unix_nanoseconds", True, "order timestamp"),
+        ("author_corpus_unit_count", 2, "unit semantics"),
+    ],
+)
+def test_atomic_imessage_sidecar_never_degrades(
+    private_root: Path, field: str, value, message: str,
+):
+    manifest = _atomic_imessage_source(private_root)
+    meta_path = manifest.parent / "message-1.meta.json"
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta[field] = value
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        E.build_export(
+            sources={"imessage_sent_atomic": manifest},
+            register_map={"imessage_sent_atomic:personal": "text.personal"},
+            allowed_ai_status=["pre_ai_human"],
+            persona="joshua",
+            hmac_key=b"k" * 32,
+        )
 
 
 def test_disallowed_ai_status_and_missing_map_refuse(private_root: Path):

@@ -87,6 +87,15 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
   historical sent-source output lacks thread/order identity.
   Tracked in #311; the pinned voicewright consumer/split planner is the separate R1b.
 
+- **Atomic sent-iMessage producer (implemented, not activated).**
+  `acquire_imessage_sent_atomic` now freezes the private snapshot and seven-file
+  initialization layout, exact per-run journal/lock names, prefix-resumable
+  dependency closure, and fail-closed promotion recovery, then emits atomic rows
+  through a durable ledger/checkpoint transaction with a portable closed-run
+  validator and owner-TTY smoke ladder. `author_corpus_export` consumes the emitted
+  source without expanding bounded export to chat peers. A real Mac run remains an
+  owner-operated corpus action rather than part of this code change.
+
 Supplements the 2026-06-06 pass below for the **1.110 → 1.116** window. At the time of this pass the plugin was at **1.116.0** (the 2026-06-17 section above carries it to 1.117.0; the 2026-06-06 section below still says 1.109.x). Where this conflicts with the older reconciliation or the inline markers, this is authoritative.
 
 ### Shipped since 2026-06-06
