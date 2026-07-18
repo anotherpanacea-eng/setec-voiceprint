@@ -11967,9 +11967,62 @@ def test_private_validator_refuses_mode_link_and_no_follow_mutations(
         A.validate_atomic_run(run_dir)
 
 
+def _install_portable_live_smoke_writer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Keep receipt contract tests portable without weakening the macOS writer."""
+
+    def create_only(
+        parent_fd: int,
+        filename: str,
+        payload: dict[str, object],
+        **kwargs: object,
+    ) -> str:
+        assert kwargs["replace_existing"] is False
+        assert kwargs["expected_existing_digest"] is None
+        validator = kwargs["validator"]
+        max_bytes = kwargs["max_bytes"]
+        artifact_label = kwargs["artifact_label"]
+        assert callable(validator)
+        assert type(max_bytes) is int
+        assert type(artifact_label) is str
+        raw = A._canonical_json_bytes(payload)
+        A._decode_canonical_private_json(
+            raw,
+            max_bytes=max_bytes,
+            validator=validator,
+            artifact_label=artifact_label,
+        )
+        descriptor = os.open(
+            filename,
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+            0o600,
+            dir_fd=parent_fd,
+        )
+        try:
+            pending = memoryview(raw)
+            while pending:
+                written = os.write(descriptor, pending)
+                if written <= 0:
+                    raise OSError("portable receipt fixture write made no progress")
+                pending = pending[written:]
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.fsync(parent_fd)
+        return A._sha256_tag(raw)
+
+    monkeypatch.setattr(A, "_write_private_canonical_json_at", create_only)
+
+
 def test_live_smoke_receipt_requires_tty_and_one_row_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _install_portable_live_smoke_writer(monkeypatch)
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
     private_root.mkdir(mode=0o700)
     os.chmod(private_root, 0o700)
@@ -12124,6 +12177,7 @@ def test_live_smoke_mint_refuses_unsafe_destination_topology(
 def test_live_smoke_consumption_reuses_pinned_topology_and_digest_guards(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _install_portable_live_smoke_writer(monkeypatch)
     private_root, run_dir, run_receipt = _completed_private_smoke_run(tmp_path)
     approval = private_root / "imessage-atomic-live-smoke-receipt.json"
     monkeypatch.setattr(
