@@ -224,12 +224,21 @@ def build_thread_roots_and_target_keys(
         if entry_locator not in target_locators:
             continue
         if entry_locator in target_keys:
-            duplicate_targets.add(entry_locator)
+            # A Takeout export can carry the same sent message twice (a
+            # label-overlap / export-merge duplicate). Byte-identical copies
+            # are ONE source: either key reproduces the committed row
+            # identically, so binding to the first is safe and the rerun /
+            # resume path must not refuse. Differing content under one
+            # Message-ID stays a hard refusal: the committed row's source
+            # binding would be ambiguous (never guess which copy backs it).
+            if box.get_bytes(key) != box.get_bytes(target_keys[entry_locator]):
+                duplicate_targets.add(entry_locator)
         else:
             target_keys[entry_locator] = key
     if duplicate_targets:
         raise ManifestIntegrityError(
-            "source mbox repeats a committed stable entry locator"
+            "source mbox repeats a committed stable entry locator with "
+            "differing message content"
         )
     return _resolve_thread_roots(parents, ambiguous), target_keys
 
@@ -2084,6 +2093,34 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
                 f"{TOOL_NAME}: refusing corrupt committed output: {exc}\n"
             )
             return 2
+        if not index_valid and not inspection.rows:
+            # An UNEVIDENCED directory (no committed manifest rows, no valid
+            # resume checkpoint) that already holds piece-shaped files cannot
+            # be told apart from someone else's corpus: every tree under the
+            # private root passes the privacy gate, so sweeping here could
+            # silently destroy a foreign corpus reached via a mistyped
+            # --output-dir. Legitimate crash residue always lives in an
+            # EVIDENCED tree - the thread-index checkpoint is persisted before
+            # the first piece is ever written. Refuse loudly, before any
+            # repair/reconcile mutation. Counts only: stems are
+            # subject-derived and must not be echoed.
+            stray_pieces = 0
+            if opts.output_dir.exists():
+                stray_pieces = sum(
+                    1 for _ in opts.output_dir.glob("*.txt")
+                ) + sum(
+                    1 for _ in opts.output_dir.glob("*.meta.json")
+                )
+            if stray_pieces:
+                sys.stderr.write(
+                    f"{TOOL_NAME}: refusing to write into {opts.output_dir}: "
+                    f"it already holds {stray_pieces} .txt/.meta.json piece "
+                    "file(s) but no committed manifest rows and no valid "
+                    "resume checkpoint for this mbox + parameters. Use a "
+                    "fresh output directory; reconciliation never deletes "
+                    "pieces it cannot prove are its own crash residue.\n"
+                )
+                return 2
         if inspection.repair_bytes is not None:
             _atomic_write_text(
                 opts.manifest_path,

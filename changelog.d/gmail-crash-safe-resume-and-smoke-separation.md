@@ -14,7 +14,15 @@
   `acquired_at` timestamp, which are regenerated on every run; a resume against a
   changed mbox/params fails loud. `--max-items N` counts rows already committed to
   the manifest, so a crash after `k` commits followed by an identical resume
-  finishes at exactly `N` total rows, not `k + N`.
+  finishes at exactly `N` total rows, not `k + N`. A Takeout export that carries
+  the same sent message twice (byte-identical, same Message-ID) does not brick the
+  rerun/resume path: the duplicate binds to one source and dedupe commits it once;
+  only *differing* content under one Message-ID stays a hard fail-closed refusal.
+  Reconciliation only ever deletes residue it can prove is its own: an
+  *unevidenced* output directory (no committed manifest rows and no valid resume
+  checkpoint) that already holds `.txt`/`.meta.json` files is refused loudly
+  before any mutation — every corpus under the private root passes the privacy
+  gate, so a mistyped `--output-dir` at a foreign corpus tree must never be swept.
 - `acquire_gmail_sent`: the recipient redaction map (`recipient_map.json`) is now
   persisted durably (atomic unique-temp write + fsync + read-back) whenever a new
   `recipient_NN` label appears and **before** the dependent manifest row commits,

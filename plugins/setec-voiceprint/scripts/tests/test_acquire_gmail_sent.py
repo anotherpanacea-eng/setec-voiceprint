@@ -1182,23 +1182,58 @@ def test_post_crash_rerun_is_idempotent(tmp_path, mbox, golden):
     assert _capture(out) == golden
 
 
-def test_preexisting_orphan_is_reacquired_not_skipped(tmp_path, mbox, golden):
-    # F2 regression: a .txt+.meta with a matching content_hash but NO manifest
-    # row must be reconciled (deleted + re-acquired), not skipped forever.
-    src = _out(tmp_path / "src")
-    assert _run(mbox, src) == 0
-    # Seed a FRESH tree with one piece's orphan pair (no manifest, no index).
-    out = _out(tmp_path / "dst")
-    out.mkdir(parents=True)
-    one_txt = sorted(src.glob("*.txt"))[0]
-    one_meta = src / (one_txt.stem + ".meta.json")
-    (out / one_txt.name).write_bytes(one_txt.read_bytes())
-    (out / one_meta.name).write_bytes(one_meta.read_bytes())
+def test_preexisting_orphan_is_reacquired_not_skipped(
+    tmp_path, mbox, golden, monkeypatch,
+):
+    # F2 regression: a .txt+.meta pair with a matching content_hash but NO
+    # manifest row must be reconciled (deleted + re-acquired), not
+    # dedupe-skipped forever. Constructed the only way it can legitimately
+    # arise - a kill between the sidecar write and its manifest append (here
+    # on the very FIRST piece, so ZERO rows are committed but the tree is
+    # still evidenced by the pass-1 thread-index checkpoint).
+    out = _out(tmp_path)
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, 1),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    assert _committed_count(out) == 0
+    orphans = sorted(out.glob("*.txt"))
+    assert orphans, "expected an orphan piece pair before the resume"
+    orphan_stem = orphans[0].stem
+    monkeypatch.undo()
 
     assert _run(mbox, out) == 0
     ids = {r["id"] for r in _entries(out)}
-    assert one_txt.stem in ids, "orphan was skipped instead of re-acquired"
+    assert orphan_stem in ids, "orphan was skipped instead of re-acquired"
     assert _capture(out) == golden
+
+
+def test_unevidenced_dir_with_foreign_pieces_refuses_and_preserves(
+    tmp_path, mbox, capsys,
+):
+    # Every corpus under ai-prose-baselines-private passes the privacy gate,
+    # so a mistyped --output-dir pointing at a FOREIGN corpus tree must not
+    # let reconciliation delete its .txt/.meta.json files. A directory with
+    # piece-shaped files but no committed rows and no valid resume checkpoint
+    # is unevidenced: refuse loudly, write nothing, echo no stems.
+    out = _out(tmp_path)
+    out.mkdir(parents=True)
+    foreign_txt = out / "unrelated-corpus-piece.txt"
+    foreign_meta = out / "unrelated-corpus-piece.meta.json"
+    foreign_body = "foreign corpus text that is not ours"
+    foreign_txt.write_text(foreign_body, encoding="utf-8")
+    foreign_meta.write_text("{}\n", encoding="utf-8")
+
+    assert _run(mbox, out) == 2
+    assert foreign_txt.read_text(encoding="utf-8") == foreign_body
+    assert foreign_meta.exists()
+    assert not (out / "draft_manifest.jsonl").exists()
+    assert not (out / G.THREAD_INDEX_NAME).exists()
+    err = capsys.readouterr().err
+    assert "refusing to write into" in err
+    assert "unrelated-corpus-piece" not in err  # no stem echo (privacy)
 
 
 def test_stray_tmp_files_are_swept(tmp_path, mbox, golden):
@@ -1209,6 +1244,52 @@ def test_stray_tmp_files_are_swept(tmp_path, mbox, golden):
     assert _run(mbox, out) == 0
     assert not list(out.glob("*.tmp"))
     assert _capture(out) == golden
+
+
+def _first_message_block(raw: bytes) -> tuple[int, int]:
+    start = raw.index(b"From ")
+    end = raw.index(b"\nFrom ", start) + 1
+    return start, end
+
+
+def test_byte_identical_duplicate_message_keeps_rerun_alive(tmp_path, mbox):
+    # A Takeout mbox can carry the same sent message twice (byte-identical,
+    # same Message-ID: a label-overlap / export-merge duplicate). Dedupe
+    # commits it once on run 1; the duplicate must NOT brick the idempotent
+    # rerun / resume path with a duplicate-locator refusal afterwards.
+    raw = mbox.read_bytes()
+    start, end = _first_message_block(raw)
+    mbox.write_bytes(raw + raw[start:end])
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    rows = _committed_count(out)
+    assert rows > 0
+    before = (out / "draft_manifest.jsonl").read_bytes()
+    assert _run(mbox, out) == 0, (
+        "byte-identical source duplicate must not refuse the rerun/resume"
+    )
+    assert (out / "draft_manifest.jsonl").read_bytes() == before
+    assert _committed_count(out) == rows
+
+
+def test_differing_content_under_one_message_id_still_refuses_rerun(
+    tmp_path, mbox, capsys,
+):
+    # Two DIFFERENT sent bodies under one Message-ID stay ambiguous: the
+    # committed row's source binding cannot be authenticated, so the rerun
+    # must refuse fail-closed, never guess which copy backs the row.
+    raw = mbox.read_bytes()
+    start, end = _first_message_block(raw)
+    mutated = raw[start:end].replace(
+        b"PLAIN.", b"MUTATED duplicate body under the same Message-ID.",
+    )
+    assert mutated != raw[start:end]
+    mbox.write_bytes(raw + mutated)
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    assert _run(mbox, out) == 2
+    err = capsys.readouterr().err
+    assert "repeats a committed stable entry locator" in err
 
 
 def test_mbox_identity_guard_fails_loud_on_changed_mbox(tmp_path, mbox):
