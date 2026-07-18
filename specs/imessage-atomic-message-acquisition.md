@@ -918,6 +918,19 @@ and prove at-most-one-row replay, unchanged closed rows, exact checkpoint repair
 including the final row, and equality with an uninterrupted run. Closed-state
 tampering tests remain distinct from expected journal-authorized recovery.
 
+The promoted-bootstrap verifier runs before this row-layer reconciliation and
+must not make a legitimate row checkpoint unresumable. It accepts either the
+exact initialization inventory or that inventory plus only the reserved
+row-layer top-level names: `rows/`, `.row-staging/`, `.row-transaction.json`,
+`source-ledger.json`, `checkpoint.json`, `draft_manifest.jsonl`, and
+`acquisition-receipt.json`. With row-layer names present it re-proves a stable
+root inventory, exact snapshot bytes, and every initialization artifact through
+the retained final-directory descriptor, but delegates the contents and legal
+combination of those reserved names to the exhaustive row preflight that runs
+next through the same held descriptor and lock. Any other top-level name still
+refuses at bootstrap; accepting the reserved names may not skip or weaken row
+preflight.
+
 The ordinary manifest validator still runs for public manifest compatibility.
 A new atomic-run validator additionally verifies exact sidecar keys,
 text/content hash/word count, locator shape and uniqueness, snapshot/options
