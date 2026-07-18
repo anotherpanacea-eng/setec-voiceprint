@@ -13,6 +13,7 @@ fallback, the metadata-privacy grep, and the use/ai_status kwargs.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from email import message_from_bytes
@@ -91,6 +92,7 @@ def _process_flowed_message(
     message = message_from_bytes(raw)
     out = _out(tmp_path)
     args = G.build_arg_parser().parse_args([
+        "acquire",
         "--mbox-path", str(tmp_path / "unused.mbox"),
         "--own-address", bf.OWN,
         "--output-dir", str(out),
@@ -799,14 +801,22 @@ def test_unwindowed_full_export_refuses_without_receipt(tmp_path, mbox):
         ])
 
 
-def test_live_smoke_confirmed_requires_tty(tmp_path, mbox):
+def test_inband_live_smoke_confirmed_is_hard_refused(
+    tmp_path, mbox, monkeypatch, capsys,
+):
+    # The acquisition-time in-band approval path is removed. --live-smoke-confirmed
+    # hard-refuses (rc 2) even from an interactive TTY, and mints no receipt —
+    # approval may only happen through the separated smoke/approve-smoke flow.
     out = _out(tmp_path)
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
     rc = G.main([
         "--mbox-path", str(mbox), "--own-address", bf.OWN,
         "--output-dir", str(out), "--min-words-per-piece", "5",
         "--since", "2000-01-01", "--live-smoke-confirmed",
     ])
     assert rc == 2
+    assert "has been removed" in capsys.readouterr().err
+    assert not (out / G.RECEIPT_NAME).exists()
 
 
 def test_localized_sent_label_zero_output_fails_closed(tmp_path, mbox, capsys):
@@ -849,21 +859,19 @@ def test_allow_empty_is_explicit_success(tmp_path, mbox):
     ) == 0
 
 
-def test_allow_empty_cannot_mint_live_smoke_receipt(
+def test_inband_live_smoke_confirmed_refused_even_with_allow_empty(
     tmp_path, mbox, monkeypatch
 ):
+    # Even combined with --allow-empty on a TTY, the removed in-band approval
+    # path refuses (rc 2) before acquiring anything and mints no receipt.
     out = _out(tmp_path)
     monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
 
     assert _run(
         mbox,
         out,
-        [
-            "--sent-label-token", "DefinitelyNotTheSentLabel",
-            "--allow-empty",
-            "--live-smoke-confirmed",
-        ],
-    ) == 0
+        ["--allow-empty", "--live-smoke-confirmed"],
+    ) == 2
     assert not (out / G.RECEIPT_NAME).exists()
 
 
@@ -874,6 +882,525 @@ def test_dedupe_only_rerun_is_success_without_manifest_growth(tmp_path, mbox):
 
     assert _run(mbox, out) == 0
     assert (out / "draft_manifest.jsonl").read_text() == before
+
+
+# =================================================================
+# Crash-safe resume: kill-point / reconciliation / single-invocation
+# =================================================================
+#
+# The advertised replay invariant is NOT full byte-identity. Two provenance
+# stamps are re-generated on every run: the manifest ``acquired_via`` (built from
+# date.today()) and the sidecar ``acquired_at`` (datetime.now()). Instead of
+# silently dropping them before comparing — which would HIDE a real difference
+# and let the test claim more than it proves — ``_capture`` ASSERTS each is
+# present and well-formed on every row/sidecar, then normalizes it to a fixed
+# placeholder that stays in the compared structure. The equality assertions
+# therefore prove exactly the true invariant: identical content (.txt bytes,
+# content hashes, recipient map) and identical manifest/sidecar rows EXCEPT for
+# those two named, verified-present, re-stamped provenance fields.
+
+_ACQUIRED_VIA_RE = re.compile(r"^acquire_gmail_sent_\d{4}-\d{2}-\d{2}$")
+_ACQUIRED_AT_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}")
+
+
+def _capture(out: Path):
+    manifest = [
+        json.loads(l)
+        for l in (out / "draft_manifest.jsonl").read_text().splitlines()
+        if l.strip()
+    ]
+    for row in manifest:
+        via = row.get("acquired_via")
+        assert isinstance(via, str) and _ACQUIRED_VIA_RE.match(via), via
+        row["acquired_via"] = "<acquired_via>"  # verified present, then normalized
+    txts = {p.name: p.read_bytes() for p in sorted(out.glob("*.txt"))}
+    metas = {}
+    for p in sorted(out.glob("*.meta.json")):
+        data = json.loads(p.read_text())
+        at = data.get("acquired_at")
+        assert isinstance(at, str) and _ACQUIRED_AT_RE.match(at), at
+        data["acquired_at"] = "<acquired_at>"  # verified present, then normalized
+        metas[p.name] = data
+    rmap = b""
+    if (out / "recipient_map.json").exists():
+        rmap = (out / "recipient_map.json").read_bytes()
+    return manifest, txts, metas, rmap
+
+
+@pytest.fixture
+def golden(tmp_path_factory, mbox):
+    out = (tmp_path_factory.mktemp("golden")
+           / "ai-prose-baselines-private" / "identity" / "personal_email" / "joshua")
+    assert _run(mbox, out) == 0
+    cap = _capture(out)
+    assert cap[0], "golden produced no manifest rows"
+    return cap
+
+
+def _committed_count(out: Path) -> int:
+    mf = out / "draft_manifest.jsonl"
+    if not mf.exists():
+        return 0
+    return sum(1 for l in mf.read_text().splitlines() if l.strip())
+
+
+def test_single_full_invocation_matches_uninterrupted(tmp_path, mbox, golden):
+    # One invocation = index pass + one processing pass; output equals golden.
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    assert (out / G.THREAD_INDEX_NAME).exists()  # index persisted for resume
+    assert _capture(out) == golden
+
+
+def test_resume_reuses_persisted_index_and_skips_pass1(tmp_path, mbox, golden, monkeypatch):
+    # Run 1: complete pass 1 (index persisted), raise before the first emit.
+    out = _out(tmp_path)
+    monkeypatch.setattr(G, "emit_piece", _raiser("kill before first emit"))
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    assert (out / G.THREAD_INDEX_NAME).exists()
+    monkeypatch.undo()
+
+    # Run 2 (resume): build_thread_roots must NOT be called (index reused).
+    calls = {"n": 0}
+    real = G.build_thread_roots
+    monkeypatch.setattr(
+        G, "build_thread_roots",
+        lambda box: (calls.__setitem__("n", calls["n"] + 1), real(box))[1],
+    )
+    assert _run(mbox, out) == 0
+    assert calls["n"] == 0, "resume redid pass 1 despite a valid index"
+    assert _capture(out) == golden
+
+
+def _raiser(msg, fail_on=1):
+    state = {"n": 0}
+
+    def go(*a, **k):
+        state["n"] += 1
+        if state["n"] >= fail_on:
+            raise RuntimeError(msg)
+
+    return go
+
+
+def _counting_wrapper(orig, fail_on, side_effect=None):
+    state = {"n": 0}
+
+    def wrapper(*a, **k):
+        state["n"] += 1
+        if state["n"] == fail_on:
+            if side_effect is not None:
+                side_effect(*a, **k)
+            raise RuntimeError("kill-point")
+        return orig(*a, **k)
+
+    return wrapper
+
+
+def test_kill_after_txt_before_meta_replays_to_golden(tmp_path, mbox, golden, monkeypatch):
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+    # ac._write_text_atomic backs ONLY the sidecar write inside write_piece.
+    monkeypatch.setattr(
+        G.ac, "_write_text_atomic",
+        _counting_wrapper(G.ac._write_text_atomic, fail_on),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    # An orphan .txt (stem uncommitted) exists; no manifest row for it.
+    assert _committed_count(out) == fail_on - 1
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    assert _capture(out) == golden
+
+
+def test_kill_after_meta_before_manifest_replays_to_golden(tmp_path, mbox, golden, monkeypatch):
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, fail_on),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    assert _committed_count(out) == fail_on - 1
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    assert _capture(out) == golden
+
+
+def test_torn_manifest_tail_is_repaired_on_resume(tmp_path, mbox, golden, monkeypatch):
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+
+    def torn_write(manifest_path, entry, **kw):
+        with open(manifest_path, "a", encoding="utf-8") as f:
+            f.write('{"id": "torn-partial-line-no-newl')  # partial, unterminated
+
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, fail_on, side_effect=torn_write),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    raw = (out / "draft_manifest.jsonl").read_bytes()
+    assert not raw.endswith(b"\n"), "expected a torn (unterminated) tail line"
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    final = (out / "draft_manifest.jsonl").read_bytes()
+    assert final.endswith(b"\n")
+    for line in final.decode().splitlines():
+        json.loads(line)  # every line parses; torn line was dropped
+    assert _capture(out) == golden
+
+
+def test_mid_stream_resume_preserves_row_order_and_recipient_map(tmp_path, mbox, golden, monkeypatch):
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, fail_on),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+    partial_rows = [json.loads(l) for l in
+                    (out / "draft_manifest.jsonl").read_text().splitlines() if l.strip()]
+    for row in partial_rows:
+        # Normalize the one re-stamped provenance field the same way _capture
+        # does (after asserting it is present), so the pre-crash rows compare
+        # against the resumed capture on their stable content only.
+        assert isinstance(row.get("acquired_via"), str)
+        row["acquired_via"] = "<acquired_via>"
+    monkeypatch.undo()
+
+    assert _run(mbox, out) == 0
+    manifest, _, _, rmap = _capture(out)
+    # Rows 1..N committed pre-crash keep their content and order across the resume.
+    assert manifest[: len(partial_rows)] == partial_rows
+    assert (manifest, rmap) == (golden[0], golden[3])
+
+
+def test_post_crash_rerun_is_idempotent(tmp_path, mbox, golden):
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    before = (out / "draft_manifest.jsonl").read_bytes()
+    assert _run(mbox, out) == 0  # dedupe-only rerun
+    assert (out / "draft_manifest.jsonl").read_bytes() == before
+    assert _capture(out) == golden
+
+
+def test_preexisting_orphan_is_reacquired_not_skipped(tmp_path, mbox, golden):
+    # F2 regression: a .txt+.meta with a matching content_hash but NO manifest
+    # row must be reconciled (deleted + re-acquired), not skipped forever.
+    src = _out(tmp_path / "src")
+    assert _run(mbox, src) == 0
+    # Seed a FRESH tree with one piece's orphan pair (no manifest, no index).
+    out = _out(tmp_path / "dst")
+    out.mkdir(parents=True)
+    one_txt = sorted(src.glob("*.txt"))[0]
+    one_meta = src / (one_txt.stem + ".meta.json")
+    (out / one_txt.name).write_bytes(one_txt.read_bytes())
+    (out / one_meta.name).write_bytes(one_meta.read_bytes())
+
+    assert _run(mbox, out) == 0
+    ids = {r["id"] for r in _entries(out)}
+    assert one_txt.stem in ids, "orphan was skipped instead of re-acquired"
+    assert _capture(out) == golden
+
+
+def test_stray_tmp_files_are_swept(tmp_path, mbox, golden):
+    out = _out(tmp_path)
+    out.mkdir(parents=True)
+    (out / "leftover.txt.deadbeef.tmp").write_text("junk")
+    (out / "draft_manifest.jsonl.deadbeef.tmp").write_text("junk")
+    assert _run(mbox, out) == 0
+    assert not list(out.glob("*.tmp"))
+    assert _capture(out) == golden
+
+
+def test_mbox_identity_guard_fails_loud_on_changed_mbox(tmp_path, mbox):
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    assert _committed_count(out) > 0
+    # Mutate the source mbox → its sha no longer matches the checkpoint.
+    with open(mbox, "ab") as f:
+        f.write(b"\nFrom mutation@example.com Mon Jun 15 12:00:00 2020\n")
+    with pytest.raises(SystemExit):
+        _run(mbox, out)
+
+
+def test_max_items_counts_committed_rows_across_resume(tmp_path, mbox, monkeypatch):
+    # A crash after k commits, then an identical resume, must finish at exactly
+    # --max-items TOTAL rows (not k + max-items). The fixture has more acquirable
+    # pieces than `cap`, so the buggy k+cap total is distinguishable from cap.
+    out = _out(tmp_path)
+    cap = 6
+    # Run 1: crash on the 4th manifest append → exactly 3 committed rows.
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, 4),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out, ["--max-items", str(cap)])
+    assert _committed_count(out) == 3
+    monkeypatch.undo()
+
+    # Run 2 (identical resume): the 3 already-committed rows count toward the
+    # cap, so the run stops at exactly `cap` total, never 3 + cap.
+    assert _run(mbox, out, ["--max-items", str(cap)]) == 0
+    assert _committed_count(out) == cap
+
+
+def test_recipient_map_is_durable_before_each_commit(
+    tmp_path, mbox, golden, monkeypatch,
+):
+    # Every committed manifest row references recipient_NN labels whose raw->label
+    # mapping lives ONLY in recipient_map.json. That map must be on disk before a
+    # dependent row commits, so a mid-run crash never leaves a committed row whose
+    # label mapping was never persisted. (Pre-fix, the map was written only at a
+    # clean close, so a crash left committed rows with no recipient map at all.)
+    out = _out(tmp_path)
+    total = len(golden[0])
+    fail_on = total // 2 + 1
+    monkeypatch.setattr(
+        G.ac, "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, fail_on),
+    )
+    with pytest.raises(RuntimeError):
+        _run(mbox, out)
+
+    rmap_path = out / "recipient_map.json"
+    assert rmap_path.exists(), "recipient map was not persisted before commits"
+    persisted_labels = set(json.loads(rmap_path.read_text()).values())
+    committed = [
+        json.loads(l)
+        for l in (out / "draft_manifest.jsonl").read_text().splitlines()
+        if l.strip()
+    ]
+    assert committed, "expected committed rows before the crash"
+    for row in committed:
+        for label in re.findall(r"recipient_\d+", row.get("notes", "")):
+            assert label in persisted_labels, (
+                f"{label} referenced by a committed row but absent from the "
+                "durably persisted recipient map"
+            )
+    monkeypatch.undo()
+
+    # A clean resume still reproduces the golden recipient map byte-for-byte.
+    assert _run(mbox, out) == 0
+    assert _capture(out)[3] == golden[3]
+
+
+# =================================================================
+# Lane B: smoke approval separated from acquisition
+# =================================================================
+
+
+def _smoke(mbox, out, extra=None):
+    argv = [
+        "smoke", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--output-dir", str(out), "--min-words-per-piece", "5",
+        "--since", "2000-01-01", "--until", "2100-01-01",
+    ]
+    return G.main(argv + (extra or []))
+
+
+def test_smoke_writes_descriptor_and_mints_no_receipt(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    desc = json.loads((smoke_dir / G.SMOKE_DESCRIPTOR_NAME).read_text())
+    assert desc["schema"] == G.SMOKE_DESCRIPTOR_SCHEMA
+    assert desc["acquired"] > 0
+    assert desc["manifest_rows"] == desc["acquired"]
+    assert "behavior_fingerprint" in desc
+    assert not (smoke_dir / G.RECEIPT_NAME).exists()  # smoke never mints approval
+
+
+def test_smoke_requires_window(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    rc = G.main([
+        "smoke", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--output-dir", str(smoke_dir), "--min-words-per-piece", "5",
+    ])
+    assert rc == 2
+    assert not (smoke_dir / G.SMOKE_DESCRIPTOR_NAME).exists()
+
+
+def test_validate_smoke_clean_tree_exits_zero_and_writes_nothing(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    before = {p.name: p.read_bytes() for p in smoke_dir.iterdir() if p.is_file()}
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 0
+    after = {p.name: p.read_bytes() for p in smoke_dir.iterdir() if p.is_file()}
+    assert after == before  # read-only: nothing written or changed
+
+
+def test_validate_smoke_detects_orphan(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    # Drop one manifest row, leaving its .txt/.meta → orphan sidecar.
+    mf = smoke_dir / "draft_manifest.jsonl"
+    lines = [l for l in mf.read_text().splitlines() if l.strip()]
+    mf.write_text("\n".join(lines[:-1]) + "\n")
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 2
+
+
+def test_validate_smoke_detects_stale_mbox(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    with open(mbox, "ab") as f:
+        f.write(b"\n")  # mbox changed since smoke → stale
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 2
+
+
+def test_approve_smoke_requires_tty(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: False)
+    rc = G.main(["approve-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir), "--output-dir", str(full)])
+    assert rc == 2
+    assert not (full / G.RECEIPT_NAME).exists()
+
+
+def test_approve_smoke_mints_receipt_without_acquiring(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    rc = G.main(["approve-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir), "--output-dir", str(full)])
+    assert rc == 0
+    receipt = json.loads((full / G.RECEIPT_NAME).read_text())
+    assert receipt["schema"] == G.RECEIPT_SCHEMA
+    # approve acquires nothing: FULL holds ONLY the receipt.
+    assert not list(full.glob("*.txt"))
+    assert not (full / "draft_manifest.jsonl").exists()
+
+
+def test_full_run_accepts_receipt_from_separate_smoke_tree(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    assert G.main(["approve-smoke", "--mbox-path", str(mbox),
+                   "--smoke-dir", str(smoke_dir), "--output-dir", str(full)]) == 0
+    monkeypatch.undo()
+    # Unwindowed full run into the DIFFERENT tree is accepted by the gate.
+    rc = G.main([
+        "acquire", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--output-dir", str(full), "--min-words-per-piece", "5",
+    ])
+    assert rc == 0
+    assert list(full.glob("*.txt"))
+
+
+def test_gate_refuses_when_min_words_differs_from_smoke(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    assert G.main(["approve-smoke", "--mbox-path", str(mbox),
+                   "--smoke-dir", str(smoke_dir), "--output-dir", str(full)]) == 0
+    monkeypatch.undo()
+    # A looser word floor than the reviewed smoke must refuse at the gate.
+    with pytest.raises(SystemExit):
+        G.main([
+            "acquire", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+            "--output-dir", str(full), "--min-words-per-piece", "9",
+        ])
+
+
+def _tamper_descriptor(smoke_dir: Path, **changes) -> None:
+    path = smoke_dir / G.SMOKE_DESCRIPTOR_NAME
+    desc = json.loads(path.read_text())
+    desc.update(changes)
+    path.write_text(
+        json.dumps(desc, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+
+
+@pytest.mark.parametrize("changes,reason", [
+    ({"manifest_rows": 999}, "descriptor_manifest_rows_mismatch"),
+    ({"acquired": 999}, "descriptor_acquired_mismatch"),
+    ({"behavior_fingerprint": "deadbeef" * 8}, "descriptor_fingerprint_mismatch"),
+])
+def test_validate_smoke_rejects_tampered_descriptor(
+    tmp_path, mbox, changes, reason, capsys,
+):
+    # A hand-edited descriptor whose recorded counts/fingerprint no longer match
+    # the actual tree (and the recorded params) is rejected — the values are
+    # recomputed and verified, not trusted.
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    _tamper_descriptor(smoke_dir, **changes)
+    capsys.readouterr()  # drain the smoke-run summary from stderr
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 2
+    assert json.loads(capsys.readouterr().err)["smoke_validate"] == reason
+
+
+def test_validate_smoke_rejects_tampered_behavior_params(tmp_path, mbox, capsys):
+    # Editing behavior_params alone breaks the fingerprint it must reproduce.
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    path = smoke_dir / G.SMOKE_DESCRIPTOR_NAME
+    desc = json.loads(path.read_text())
+    desc["behavior_params"]["min_words"] = desc["behavior_params"]["min_words"] + 100
+    path.write_text(
+        json.dumps(desc, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
+    capsys.readouterr()  # drain the smoke-run summary from stderr
+    rc = G.main(["validate-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir)])
+    assert rc == 2
+    assert json.loads(capsys.readouterr().err)["smoke_validate"] == (
+        "descriptor_fingerprint_mismatch"
+    )
+
+
+def test_approve_smoke_refuses_tampered_descriptor_and_mints_nothing(
+    tmp_path, mbox, monkeypatch,
+):
+    # approve-smoke recomputes/verifies the descriptor BEFORE prompting or
+    # minting, so a tampered descriptor yields no receipt even from a TTY 'y'.
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    _tamper_descriptor(smoke_dir, acquired=999)
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    rc = G.main(["approve-smoke", "--mbox-path", str(mbox),
+                 "--smoke-dir", str(smoke_dir), "--output-dir", str(full)])
+    assert rc == 2
+    assert not (full / G.RECEIPT_NAME).exists()
+    assert not list(full.glob("*.txt"))
+
+
+def test_legacy_flat_cli_still_routes_to_acquire(tmp_path, mbox):
+    # The subcommand refactor must not break the flat CLI (all prior callers).
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    assert list(out.glob("*.txt"))
 
 
 if __name__ == "__main__":

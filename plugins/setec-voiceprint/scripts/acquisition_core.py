@@ -37,12 +37,14 @@ import argparse
 import datetime as _dt
 import hashlib
 import json
+import os
 import re
 import sys
 import time
 import unicodedata
 import urllib.parse
 import urllib.robotparser
+import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
@@ -296,14 +298,52 @@ class StableRedactionMap:
         stable = self.stable_id(normalized)
         return self._display_names.get(normalized, stable)
 
-    def save(self) -> None:
+    def entry_count(self) -> int:
+        """Number of raw->label assignments currently held.
+
+        A durability-conscious caller compares this across pieces to detect when
+        a new label appeared and the map must be re-persisted before the next
+        dependent record commits.  Kept as an explicit method (not ``__len__``)
+        so the object's truthiness is unchanged for existing callers.
+        """
+        return len(self._map)
+
+    def save(self, *, fsync: bool = False) -> None:
+        """Persist the raw->label map to ``self.path`` atomically.
+
+        The default (``fsync=False``) preserves the historical, non-durable write
+        byte-for-byte — including platform newline translation — for every
+        existing caller.  ``fsync=True`` makes the write crash-durable: it writes
+        an exact-byte (LF) payload to a uniquely-named temp, flushes it to disk,
+        reads it back and verifies it before the atomic ``os.replace``.  A caller
+        that treats a manifest row as its commit marker (e.g.
+        ``acquire_gmail_sent``) uses ``fsync=True`` so the label map is on disk
+        before it commits any row that references those labels.
+        """
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = self.path.with_name(self.path.name + ".tmp")
-        tmp.write_text(
-            json.dumps(self._map, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        tmp.replace(self.path)
+        payload = json.dumps(self._map, indent=2, sort_keys=True) + "\n"
+        if not fsync:
+            tmp = self.path.with_name(self.path.name + ".tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            tmp.replace(self.path)
+            return
+        tmp = self.path.with_name(f"{self.path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            with open(tmp, "w", encoding="utf-8", newline="") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            if tmp.read_text(encoding="utf-8") != payload:
+                raise OSError(
+                    f"{self._map_name} read-back mismatch for {self.path}"
+                )
+            os.replace(tmp, self.path)
+        finally:
+            try:
+                if tmp.exists():
+                    tmp.unlink()
+            except OSError:
+                pass
 
 
 # --------------- Privacy guard ------------------------------------
@@ -857,11 +897,41 @@ def _unique_stem(piece: AcquiredPiece, output_dir: Path) -> str:
     return candidate
 
 
+def _write_bytes_atomic(path: Path, data: bytes) -> None:
+    """Publish ``data`` to ``path`` atomically (unique temp + fsync + replace).
+
+    A kill before the ``os.replace`` leaves either the previous file (or none)
+    plus an inert, uniquely-named ``*.tmp`` sibling — never a truncated target.
+    The temp name ends in ``.tmp`` so a reconciliation sweep (``*.tmp`` glob)
+    can collect a leftover after a crash.  Same-directory temp keeps the rename
+    on one volume, which is what makes it atomic on both POSIX and NTFS.
+    """
+    tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(data)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            if tmp.exists():
+                tmp.unlink()
+        except OSError:
+            pass
+
+
+def _write_text_atomic(path: Path, text: str) -> None:
+    """UTF-8 text form of :func:`_write_bytes_atomic` (used for the sidecar)."""
+    _write_bytes_atomic(path, text.encode("utf-8"))
+
+
 def write_piece(
     piece: AcquiredPiece,
     *,
     output_dir: Path,
     scraper_version: str,
+    extra_meta: dict[str, Any] | None = None,
 ) -> tuple[Path, Path]:
     """Write one acquired piece to disk.
 
@@ -874,6 +944,17 @@ def write_piece(
     guards against *stem* collisions — two different-content pieces whose
     ``filename_stem()`` slugs coincide — by appending a short content-hash
     suffix, so the second piece never silently clobbers the first.
+
+    Both files are published atomically (unique temp + fsync + ``os.replace``),
+    so a kill mid-write can never leave a truncated ``.txt`` or ``.meta.json``.
+    The final bytes are identical to a plain in-place write, so callers that do
+    not pass ``extra_meta`` get byte-for-byte unchanged output.
+
+    ``extra_meta`` (default ``None``) merges caller-supplied keys into the
+    sidecar dict *before* the single atomic sidecar write.  A source that needs
+    private locators in the sidecar (e.g. ``acquire_gmail_sent``) passes them
+    here so the sidecar is never persisted in a locator-less intermediate
+    state — there is no second rewrite to be interrupted between.
     """
     output_dir.mkdir(parents=True, exist_ok=True)
     stem = _unique_stem(piece, output_dir)
@@ -882,7 +963,7 @@ def write_piece(
     # The content hash is over the UTF-8 bytes of ``cleaned_text``.  Write those
     # exact bytes so Windows universal-newline translation cannot change LF to
     # CRLF (or pre-existing CRLF to CR-CR-LF) after the hash was computed.
-    text_path.write_bytes(piece.cleaned_text.encode("utf-8"))
+    _write_bytes_atomic(text_path, piece.cleaned_text.encode("utf-8"))
     meta = {
         "source_url": piece.source_url,
         "title": piece.title,
@@ -896,9 +977,10 @@ def write_piece(
         "scraper_version": scraper_version,
         "preprocessing": piece.preprocessing_meta,
     }
-    meta_path.write_text(
-        json.dumps(meta, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    if extra_meta:
+        meta.update(extra_meta)
+    _write_text_atomic(
+        meta_path, json.dumps(meta, indent=2, sort_keys=True) + "\n",
     )
     return text_path, meta_path
 
@@ -1060,18 +1142,28 @@ def compose_manifest_entry(
 
 
 def append_manifest_entry(
-    manifest_path: Path, entry: dict[str, Any],
+    manifest_path: Path, entry: dict[str, Any], *, fsync: bool = False,
 ) -> None:
     """Append one JSON entry as a JSONL line to ``manifest_path``.
 
     Creates the file (and parent directories) if it doesn't exist.
     Each entry is on its own line, newline-terminated, sorted-key
     serialized for stable diffs.
+
+    ``fsync`` (default ``False``) additionally flushes the OS buffer to disk
+    after the append.  A crash-resumable caller that treats the manifest row as
+    its single commit marker passes ``fsync=True`` so a completed row survives a
+    power loss; other callers keep the previous, unflushed behavior unchanged.
+    Append mode means only the trailing line can ever be torn by a mid-write
+    kill, which a startup tail-repair can drop.
     """
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     line = json.dumps(entry, sort_keys=True, ensure_ascii=False)
     with manifest_path.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+        if fsync:
+            f.flush()
+            os.fsync(f.fileno())
 
 
 # --------------- HTML extraction helpers --------------------------
