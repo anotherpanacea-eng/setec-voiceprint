@@ -14791,6 +14791,9 @@ def _resume_authorized_row_transaction(
         journal, journal_raw = _advance_row_journal(
             io, journal, journal_raw, "staged"
         )
+        state["journal"] = journal
+        state["journal_raw"] = journal_raw
+        state["staged_form"] = "staged"
         _fault_boundary(fault, "after_journal_staged")
         journal_state = "staged"
 
@@ -14807,6 +14810,9 @@ def _resume_authorized_row_transaction(
         journal, journal_raw = _advance_row_journal(
             io, journal, journal_raw, "committed_unledgered"
         )
+        state["journal"] = journal
+        state["journal_raw"] = journal_raw
+        state["staged_form"] = "committed"
         _fault_boundary(fault, "after_journal_committed_unledgered")
         journal_state = "committed_unledgered"
 
@@ -14830,10 +14836,13 @@ def _resume_authorized_row_transaction(
             state["ledger"] = ledger
             state["ledger_raw"] = ledger_raw
             state["journal_ledgered"] = True
+            state["closed_count"] = index + 1
             _fault_boundary(fault, "after_ledger")
         journal, journal_raw = _advance_row_journal(
             io, journal, journal_raw, "ledger_closed"
         )
+        state["journal"] = journal
+        state["journal_raw"] = journal_raw
         _fault_boundary(fault, "after_journal_ledger_closed")
         journal_state = "ledger_closed"
 
@@ -14851,10 +14860,14 @@ def _resume_authorized_row_transaction(
                 label="checkpoint",
             )
             state["checkpoint_raw"] = checkpoint_raw
+            state["checkpoint_status"] = "current"
             _fault_boundary(fault, "after_checkpoint")
         journal, journal_raw = _advance_row_journal(
             io, journal, journal_raw, "checkpoint_closed"
         )
+        state["journal"] = journal
+        state["journal_raw"] = journal_raw
+        state["checkpoint_status"] = "current"
         _fault_boundary(fault, "after_journal_checkpoint_closed")
         journal_state = "checkpoint_closed"
 
@@ -14864,6 +14877,12 @@ def _resume_authorized_row_transaction(
             expected=journal_raw,
             label="row transaction",
         )
+        state["journal"] = None
+        state["journal_raw"] = None
+        state["journal_ledgered"] = False
+        state["staged_form"] = None
+        state["closed_count"] = max(state["closed_count"], index + 1)
+        state["checkpoint_status"] = "current"
         _fault_boundary(fault, "after_journal_removed")
 
 
@@ -14991,111 +15010,155 @@ def publish_planned_rows(
         row_io, PRIVATE_SOURCE_IDENTITY_MAP_FILENAME, "source identity map"
     )
 
-    while True:
-        state = _preflight_row_publication(
+    state = _preflight_row_publication(
+        row_io,
+        planned,
+        result,
+        owner=owner,
+        source_map=source_map,
+    )
+    if state["fresh"]:
+        row_io.ensure_directory(ROWS_DIRNAME)
+        row_io.ensure_directory(ROW_STAGING_DIRNAME)
+        ledger = _ledger_payload(
+            planned,
+            0,
+            owner=owner,
+            source_map=source_map,
+            result=result,
+            complete=False,
+        )
+        ledger_raw = row_io.write_json(
+            "source-ledger.json",
+            ledger,
+            expected_existing=None,
+            validator=_canonical_object_validator,
+            label="source ledger",
+        )
+        state.update({
+            "fresh": False,
+            "ledger": ledger,
+            "ledger_raw": ledger_raw,
+            "closed_count": 0,
+        })
+        _fault_boundary(fault, "after_initial_ledger")
+        checkpoint = _checkpoint_payload(ledger_raw, ledger)
+        checkpoint_raw = row_io.write_json(
+            "checkpoint.json",
+            checkpoint,
+            expected_existing=None,
+            validator=_canonical_object_validator,
+            label="checkpoint",
+        )
+        state["checkpoint_raw"] = checkpoint_raw
+        state["checkpoint_status"] = "current"
+        _fault_boundary(fault, "after_initial_checkpoint")
+
+    if state["journal"] is not None:
+        _resume_authorized_row_transaction(
             row_io,
             planned,
             result,
+            state,
             owner=owner,
             source_map=source_map,
+            fault=fault,
         )
-        if state["fresh"]:
-            row_io.ensure_directory(ROWS_DIRNAME)
-            row_io.ensure_directory(ROW_STAGING_DIRNAME)
-            ledger = _ledger_payload(
-                planned,
-                0,
-                owner=owner,
-                source_map=source_map,
-                result=result,
-                complete=False,
-            )
-            ledger_raw = row_io.write_json(
-                "source-ledger.json",
-                ledger,
-                expected_existing=None,
-                validator=_canonical_object_validator,
-                label="source ledger",
-            )
-            _fault_boundary(fault, "after_initial_ledger")
-            checkpoint = _checkpoint_payload(ledger_raw, ledger)
-            row_io.write_json(
-                "checkpoint.json",
-                checkpoint,
-                expected_existing=None,
-                validator=_canonical_object_validator,
-                label="checkpoint",
-            )
-            _fault_boundary(fault, "after_initial_checkpoint")
-            continue
-        if state["journal"] is not None:
-            _resume_authorized_row_transaction(
-                row_io,
-                planned,
-                result,
-                state,
-                owner=owner,
-                source_map=source_map,
-                fault=fault,
-            )
-            continue
+
+    ledger = state["ledger"]
+    ledger_raw = state["ledger_raw"]
+    if type(ledger) is not dict or type(ledger_raw) is not bytes:
+        raise AtomicAcquisitionError("source ledger resume state is invalid")
+    if state["checkpoint_status"] != "current":
+        checkpoint = _checkpoint_payload(ledger_raw, ledger)
+        checkpoint_raw = row_io.write_json(
+            "checkpoint.json",
+            checkpoint,
+            expected_existing=state["checkpoint_raw"],
+            validator=_canonical_object_validator,
+            label="checkpoint",
+        )
+        state["checkpoint_raw"] = checkpoint_raw
+        state["checkpoint_status"] = "current"
+        _fault_boundary(fault, "after_checkpoint")
+
+    while state["closed_count"] < len(planned):
+        closed_count = state["closed_count"]
         ledger = state["ledger"]
         ledger_raw = state["ledger_raw"]
         if type(ledger) is not dict or type(ledger_raw) is not bytes:
             raise AtomicAcquisitionError("source ledger resume state is invalid")
-        if state["checkpoint_status"] != "current":
-            checkpoint = _checkpoint_payload(ledger_raw, ledger)
-            row_io.write_json(
-                "checkpoint.json",
-                checkpoint,
-                expected_existing=state["checkpoint_raw"],
-                validator=_canonical_object_validator,
-                label="checkpoint",
-            )
-            _fault_boundary(fault, "after_checkpoint")
-            continue
-        closed_count = state["closed_count"]
-        if closed_count < len(planned):
-            row = planned[closed_count]
-            predecessor_checkpoint = _checkpoint_raw_for_ledger(ledger, ledger_raw)
-            journal = _row_transaction_payload(
-                row,
-                closed_count,
-                state="prepared",
-                previous_journal_digest=None,
-                predecessor_ledger_digest=_sha256_tag(ledger_raw),
-                predecessor_checkpoint_digest=_sha256_tag(predecessor_checkpoint),
-            )
-            row_io.write_json(
-                ROW_JOURNAL_FILENAME,
-                journal,
-                expected_existing=None,
-                validator=_validated_row_transaction_payload,
-                label="row transaction",
-            )
-            _fault_boundary(fault, "after_journal_prepared")
-            continue
-        if ledger.get("complete") is not True:
-            if planned:
-                raise AtomicAcquisitionError("nonempty final ledger is not complete")
-            complete_ledger = _ledger_payload(
-                planned,
-                0,
-                owner=owner,
-                source_map=source_map,
-                result=result,
-                complete=True,
-            )
-            row_io.write_json(
-                "source-ledger.json",
-                complete_ledger,
-                expected_existing=ledger_raw,
-                validator=_canonical_object_validator,
-                label="source ledger",
-            )
-            _fault_boundary(fault, "after_ledger")
-            continue
-        break
+        row = planned[closed_count]
+        predecessor_checkpoint = _checkpoint_raw_for_ledger(ledger, ledger_raw)
+        journal = _row_transaction_payload(
+            row,
+            closed_count,
+            state="prepared",
+            previous_journal_digest=None,
+            predecessor_ledger_digest=_sha256_tag(ledger_raw),
+            predecessor_checkpoint_digest=_sha256_tag(predecessor_checkpoint),
+        )
+        journal_raw = row_io.write_json(
+            ROW_JOURNAL_FILENAME,
+            journal,
+            expected_existing=None,
+            validator=_validated_row_transaction_payload,
+            label="row transaction",
+        )
+        state.update({
+            "journal": journal,
+            "journal_raw": journal_raw,
+            "journal_ledgered": False,
+            "staged_form": None,
+        })
+        _fault_boundary(fault, "after_journal_prepared")
+        _resume_authorized_row_transaction(
+            row_io,
+            planned,
+            result,
+            state,
+            owner=owner,
+            source_map=source_map,
+            fault=fault,
+        )
+
+    ledger = state["ledger"]
+    ledger_raw = state["ledger_raw"]
+    if type(ledger) is not dict or type(ledger_raw) is not bytes:
+        raise AtomicAcquisitionError("source ledger resume state is invalid")
+    if ledger.get("complete") is not True:
+        if planned:
+            raise AtomicAcquisitionError("nonempty final ledger is not complete")
+        complete_ledger = _ledger_payload(
+            planned,
+            0,
+            owner=owner,
+            source_map=source_map,
+            result=result,
+            complete=True,
+        )
+        ledger_raw = row_io.write_json(
+            "source-ledger.json",
+            complete_ledger,
+            expected_existing=ledger_raw,
+            validator=_canonical_object_validator,
+            label="source ledger",
+        )
+        state["ledger"] = complete_ledger
+        state["ledger_raw"] = ledger_raw
+        state["checkpoint_status"] = "predecessor"
+        _fault_boundary(fault, "after_ledger")
+        checkpoint = _checkpoint_payload(ledger_raw, complete_ledger)
+        checkpoint_raw = row_io.write_json(
+            "checkpoint.json",
+            checkpoint,
+            expected_existing=state["checkpoint_raw"],
+            validator=_canonical_object_validator,
+            label="checkpoint",
+        )
+        state["checkpoint_raw"] = checkpoint_raw
+        state["checkpoint_status"] = "current"
+        _fault_boundary(fault, "after_checkpoint")
 
     ledger = state["ledger"]
     ledger_raw = state["ledger_raw"]

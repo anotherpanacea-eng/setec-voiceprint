@@ -19,7 +19,11 @@ counts and stores it as an exact rational, keeping semantic artifacts inside
 the float-free canonical JSON domain. A strictly validated closed atomic run
 can now supply its already-approved snapshot by exact descriptor-pinned copy,
 preserving the whole-file hash required by the live-smoke receipt instead of
-rewriting SQLite header bytes through another backup. Live readiness still requires
+rewriting SQLite header bytes through another backup. Row publication now runs
+the exhaustive historical-tree reconciliation once per invocation/resume and
+carries only verified durable transaction state between rows, removing the
+quadratic rescan that made full acquisitions impractical while preserving the
+same per-row journal, ledger, and checkpoint gates. Live readiness still requires
 the owner-confirmed one-row smoke, the real resumable run, and a green paired
 Voicewright fixture gate.
 `author_corpus_export` also recognizes atomic message units and preserves

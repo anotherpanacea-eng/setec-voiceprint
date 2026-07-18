@@ -12446,6 +12446,7 @@ def _synthetic_row_publication_case(
     run_dir: Path,
     *,
     chatless_message_ids: tuple[int, ...] = (),
+    max_retained: int | None = 1,
 ) -> tuple[tuple[A.PlannedAtomicRow, ...], A.AtomicProcessingResult]:
     run_dir.mkdir()
     snapshot_path = run_dir / A.SNAPSHOT_FILENAME
@@ -12474,7 +12475,7 @@ def _synthetic_row_publication_case(
     )
     controls = A.run_controls_payload(
         max_messages=10,
-        max_retained=1,
+        max_retained=max_retained,
         allow_empty=False,
         checkpoint_schema="setec-imessage-atomic-checkpoint/2",
     )
@@ -12484,7 +12485,7 @@ def _synthetic_row_publication_case(
     )
     result = A.process_selected_candidates(
         universe, schema, include_group_chats=False,
-        max_retained=1,
+        max_retained=max_retained,
         preprocessor=lambda text: (text, {"rules": []}),
     )
     planned = A.plan_row_artifacts(
@@ -12493,6 +12494,57 @@ def _synthetic_row_publication_case(
     for artifact in initialization.artifacts:
         (run_dir / artifact.filename).write_bytes(artifact.raw)
     return planned, result
+
+
+def test_row_publication_preflight_is_constant_per_invocation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    run_dir = tmp_path / "multi-row"
+    planned, result = _synthetic_row_publication_case(
+        run_dir, max_retained=None
+    )
+    assert len(planned) == 3
+    real_preflight = A._preflight_row_publication
+    calls = 0
+
+    def counted(*args: object, **kwargs: object):
+        nonlocal calls
+        calls += 1
+        return real_preflight(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(A, "_preflight_row_publication", counted)
+    first = A.publish_planned_rows(run_dir, planned, result)
+    assert calls == 1
+    second = A.publish_planned_rows(run_dir, planned, result)
+    assert calls == 2
+    assert first == second
+    assert A.validate_atomic_run(run_dir)["retained_rows"] == 3
+
+
+def test_row_publication_fresh_resume_rechecks_prior_row_mutation(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "mutated-resume"
+    planned, result = _synthetic_row_publication_case(
+        run_dir, max_retained=None
+    )
+    removed = 0
+
+    def stop_after_first(observed: str) -> None:
+        nonlocal removed
+        if observed == "after_journal_removed":
+            removed += 1
+            if removed == 1:
+                raise RuntimeError("stop after first row")
+
+    with pytest.raises(RuntimeError, match="first row"):
+        A.publish_planned_rows(run_dir, planned, result, fault=stop_after_first)
+    first = planned[0]
+    assert first.row_stem is not None
+    target = run_dir / A.ROWS_DIRNAME / first.row_stem / f"{first.row_stem}.txt"
+    target.write_bytes(b"mutated")
+    with pytest.raises(A.AtomicAcquisitionError, match="committed atomic row bytes"):
+        A.publish_planned_rows(run_dir, planned, result)
 
 
 def test_one_row_run_with_two_chatless_holds_reports_conserved_aggregate_counts(
