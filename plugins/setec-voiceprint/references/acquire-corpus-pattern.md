@@ -38,6 +38,26 @@ Every acquisition script follows the same six-step pipeline. Three steps are the
 
 The shared steps are factored into `scripts/acquisition_core.py`. The source-specific steps are what a new acquisition script implements.
 
+### Atomic-authorship exception
+
+`acquire_imessage_sent_atomic` is a deliberate exception to the ordinary
+piece-writer identity above. Its transaction authority is one stable outgoing
+message event, not cleaned-text uniqueness: two independently authored events
+with equal cleaned text remain two source records. The atomic path therefore
+must not use `content_hash_already_present()`, `write_piece()`, or
+`append_manifest_entry()` as row-closure authority. Its contract instead calls
+for a row-specific text/sidecar/manifest-fragment transaction, followed by a
+canonical source ledger and checkpoint; the aggregate manifest is derived from
+closed fragments.
+
+The current `todo` implementation freezes the fail-closed initialization seam:
+a descriptor-pinned SQLite snapshot, five dependency JSON artifacts, and
+`run-owner.json` form the exact seven-file staging tree. A per-run external
+journal and stable flock-protected lock authorize prefix recovery, owner close,
+ready close, exclusive promotion, and final-tree recovery. The public CLI still
+refuses live acquisition after validating its options, so this registration is
+not a corpus activation or a claim that row emission is complete.
+
 ## What `acquisition_core.py` gives you
 
 The helpers below cover the parts every acquisition script needs. New scripts should consume these rather than reimplement.
