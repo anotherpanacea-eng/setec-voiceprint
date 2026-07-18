@@ -138,32 +138,36 @@ def _private_locator(kind: str, raw: str) -> str:
     return "sha256:" + hashlib.sha256(_PRIVATE_LOCATOR_DOMAIN + payload).hexdigest()
 
 
-def build_thread_roots(messages) -> dict[str, str | None]:
-    """Resolve Message-ID parent chains globally without exporting raw ids."""
-    parents: dict[str, str | None] = {}
-    ambiguous: set[str] = set()
-    for msg in messages:
-        own = _header_message_ids(msg.get("Message-ID"))
-        if len(own) != 1:
-            continue
-        own_id = own[0]
-        references = _header_message_ids(msg.get("References"))
-        in_reply_to = _header_message_ids(msg.get("In-Reply-To"))
-        parent: str | None
-        if references:
-            parent = references[0]
-        elif len(in_reply_to) == 1:
-            parent = in_reply_to[0]
-        elif in_reply_to:
-            parent = None
-            ambiguous.add(own_id)
-        else:
-            parent = None
-        if own_id in parents:
-            ambiguous.add(own_id)
-        else:
-            parents[own_id] = parent
+def _record_thread_parent(
+    msg: Message,
+    parents: dict[str, str | None],
+    ambiguous: set[str],
+) -> str | None:
+    own = _header_message_ids(msg.get("Message-ID"))
+    if len(own) != 1:
+        return None
+    own_id = own[0]
+    references = _header_message_ids(msg.get("References"))
+    in_reply_to = _header_message_ids(msg.get("In-Reply-To"))
+    if references:
+        parent = references[0]
+    elif len(in_reply_to) == 1:
+        parent = in_reply_to[0]
+    elif in_reply_to:
+        parent = None
+        ambiguous.add(own_id)
+    else:
+        parent = None
+    if own_id in parents:
+        ambiguous.add(own_id)
+    else:
+        parents[own_id] = parent
+    return own_id
 
+
+def _resolve_thread_roots(
+    parents: dict[str, str | None], ambiguous: set[str],
+) -> dict[str, str | None]:
     resolved: dict[str, str | None] = {}
     for start in parents:
         if start in resolved:
@@ -179,8 +183,6 @@ def build_thread_roots(messages) -> dict[str, str | None]:
                 root = None
                 break
             if current in positions:
-                # A directed parent cycle invalidates the cycle and every row
-                # whose only route reaches it.
                 root = None
                 break
             if current not in parents or parents[current] is None:
@@ -194,6 +196,42 @@ def build_thread_roots(messages) -> dict[str, str | None]:
         for message_id in reversed(path):
             resolved[message_id] = root
     return resolved
+
+
+def build_thread_roots(messages) -> dict[str, str | None]:
+    """Resolve Message-ID parent chains globally without exporting raw ids."""
+    parents: dict[str, str | None] = {}
+    ambiguous: set[str] = set()
+    for msg in messages:
+        _record_thread_parent(msg, parents, ambiguous)
+    return _resolve_thread_roots(parents, ambiguous)
+
+
+def build_thread_roots_and_target_keys(
+    box: mailbox.mbox, target_locators: set[str],
+) -> tuple[dict[str, str | None], dict[str, object]]:
+    """Index roots and retain only mailbox keys for committed locators."""
+    parents: dict[str, str | None] = {}
+    ambiguous: set[str] = set()
+    target_keys: dict[str, object] = {}
+    duplicate_targets: set[str] = set()
+    for key in box.iterkeys():
+        msg = box.get_message(key)
+        own_id = _record_thread_parent(msg, parents, ambiguous)
+        if own_id is None:
+            continue
+        entry_locator = _private_locator("entry", own_id)
+        if entry_locator not in target_locators:
+            continue
+        if entry_locator in target_keys:
+            duplicate_targets.add(entry_locator)
+        else:
+            target_keys[entry_locator] = key
+    if duplicate_targets:
+        raise ManifestIntegrityError(
+            "source mbox repeats a committed stable entry locator"
+        )
+    return _resolve_thread_roots(parents, ambiguous), target_keys
 
 
 def private_message_locators(
@@ -772,43 +810,27 @@ def _has_weak_quote_signal(
     )
 
 
-# Service-appended listing-share / app-promo footers (e.g. Zillow) are a
-# trailing block of promo-label lines + standalone store/listing URL lines.
-# Strip only a TRAILING block that contains at least one such URL, stopping at
-# the first authored line -- so authored prose that merely cites iTunes/Zillow
-# mid-body is preserved.
-_FOOTER_HOST_RE = re.compile(
-    r"(?i)https?://(?:www\.)?"
-    r"(?:zillow\.com|itunes\.apple\.com|apps\.apple\.com|play\.google\.com)/\S*"
+# Zillow's share-by-email service appends this exact four-part signature:
+# recognized listing label, Zillow homedetails URL, recognized app label, and
+# the matching app-store URL. Requiring the whole ordered sequence prevents a
+# lone listing URL (or authored prose containing one) from becoming a deletion
+# boundary merely because it happens to be the final line.
+_ZILLOW_SHARE_FOOTER_RE = re.compile(
+    r"(?is)(?:^|\n)"
+    r"(?:view this (?:home|listing) on zillow):[ \t]*\n"
+    r"https?://(?:www\.)?zillow\.com/homedetails/\S+[ \t]*\n"
+    r"(?:[ \t]*\n)?"
+    r"(?:download the free zillow iphone app:[ \t]*\n"
+    r"https?://(?:itunes\.apple\.com|apps\.apple\.com)/\S+"
+    r"|download the free zillow android app:[ \t]*\n"
+    r"https?://play\.google\.com/\S+)"
+    r"[ \t\n]*\Z"
 )
-_FOOTER_LABEL_RE = re.compile(
-    r"(?i)^(?:view|download|load|get|see|find)\b[^\n]*"
-    r"\b(?:zillow|home|app|listing)\b[^\n]*$"
-)
-
-
-def _is_footer_line(stripped: str) -> bool:
-    return (
-        stripped == ""
-        or bool(_FOOTER_HOST_RE.search(stripped))
-        or bool(_FOOTER_LABEL_RE.match(stripped))
-    )
 
 
 def _strip_promo_footer(text: str) -> str:
-    lines = text.split("\n")
-    i = len(lines)
-    saw_url = False
-    while i > 0:
-        stripped = lines[i - 1].strip()
-        if not _is_footer_line(stripped):
-            break
-        if _FOOTER_HOST_RE.search(stripped):
-            saw_url = True
-        i -= 1
-    if saw_url and i < len(lines):
-        return "\n".join(lines[:i]).rstrip()
-    return text
+    match = _ZILLOW_SHARE_FOOTER_RE.search(text)
+    return text[:match.start()].rstrip() if match else text
 
 
 def _trim_signature(
@@ -969,11 +991,14 @@ def build_notes(msg: Message, recipients: ac.StableRedactionMap, *,
 
 
 RECEIPT_NAME = ".live_smoke_passed"
-RECEIPT_SCHEMA = "gmail_live_smoke_receipt_v2"
+RECEIPT_SCHEMA = "gmail_live_smoke_receipt_v3"
 SMOKE_DESCRIPTOR_NAME = ".smoke_descriptor.json"
-SMOKE_DESCRIPTOR_SCHEMA = "gmail_smoke_descriptor_v1"
+SMOKE_DESCRIPTOR_SCHEMA = "gmail_smoke_descriptor_v2"
 THREAD_INDEX_NAME = "._thread_index.json"
-_BEHAVIOR_FP_DOMAIN = b"gmail-behavior-fp-v2\x00"
+RESUME_CHECKPOINT_SCHEMA = "gmail_resume_checkpoint_v4"
+EXTRACTION_POLICY_VERSION = "gmail_extraction_policy_2026-07-18_v1"
+_BEHAVIOR_FP_DOMAIN = b"gmail-behavior-fp-v3\x00"
+_RESUME_FP_DOMAIN = b"gmail-resume-fp-v3\x00"
 
 
 def _file_sha256(path: Path) -> str:
@@ -983,6 +1008,11 @@ def _file_sha256(path: Path) -> str:
             h.update(chunk)
     return h.hexdigest()
 
+
+
+def _extraction_code_sha256() -> str:
+    """Hash the extraction implementation that a human-reviewed smoke ran."""
+    return _file_sha256(Path(__file__).resolve())
 
 def _atomic_write_text(path: Path, text: str) -> None:
     """Publish text to ``path`` atomically (unique temp + fsync + replace).
@@ -1032,6 +1062,8 @@ def _behavior_fingerprint_from_public(params: object) -> str | None:
         sent_label_token = params["sent_label_token"]
         min_words = params["min_words"]
         register = params["register"]
+        extraction_policy = params["extraction_policy_version"]
+        extraction_code_sha = params["extraction_code_sha256"]
     except (KeyError, TypeError):
         return None
     if not isinstance(own_address, list) or not all(
@@ -1051,6 +1083,10 @@ def _behavior_fingerprint_from_public(params: object) -> str | None:
     h.update(str(register).encode())
     h.update(b"\x00")
     h.update(b"author_consent")  # enforced in parse_options; bound for honesty
+    h.update(b"\x00")
+    h.update(str(extraction_policy).encode())
+    h.update(b"\x00")
+    h.update(str(extraction_code_sha).encode())
     h.update(b"\x00")
     if name_map_sha:
         h.update(str(name_map_sha).encode())
@@ -1097,6 +1133,10 @@ def enforce_live_smoke_gate(
                     rec.get("schema") == RECEIPT_SCHEMA
                     and rec.get("mbox_sha256") == current_sha
                     and rec.get("params") == _behavior_fingerprint(opts)
+                    and rec.get("extraction_policy_version")
+                    == EXTRACTION_POLICY_VERSION
+                    and rec.get("extraction_code_sha256")
+                    == _extraction_code_sha256()
                 )
             except (OSError, json.JSONDecodeError):
                 ok = False
@@ -1127,6 +1167,8 @@ def _write_receipt(
         "params": params,
         "window": window,
         "confirmed": True,
+        "extraction_policy_version": EXTRACTION_POLICY_VERSION,
+        "extraction_code_sha256": _extraction_code_sha256(),
     }
     data.update(extra)
     _atomic_write_text(
@@ -1150,73 +1192,235 @@ def _write_receipt(
 # content hashes, .txt bytes, recipient map, and every other row field match.
 
 
-def _manifest_valid_prefix(data: bytes) -> bytes:
-    """Return the longest newline-terminated, all-lines-JSON-parseable prefix.
+class ManifestIntegrityError(ValueError):
+    """Committed manifest state is unsafe to resume or mutate."""
 
-    Append-only single-writer means only the trailing line can be torn by a
-    mid-write kill (a partial line with no closing newline, or — defensively —
-    a non-parseable last line).  Everything up to the last good ``\\n`` boundary
-    is durable.
+
+@dataclass(frozen=True)
+class _ManifestInspection:
+    rows: tuple[dict, ...]
+    repair_bytes: bytes | None = None
+
+
+def _inspect_manifest(manifest_path: Path) -> _ManifestInspection:
+    """Parse committed rows and identify only an unterminated final tail.
+
+    ``append_manifest_entry`` writes a complete JSON object and then its newline.
+    Therefore every newline-terminated row is committed and must parse as an
+    object; only a final row lacking its newline is repairable crash residue.
     """
+    if not manifest_path.exists():
+        return _ManifestInspection(())
+    data = manifest_path.read_bytes()
     if not data:
-        return b""
-    end = data.rfind(b"\n")
-    if end == -1:
-        return b""  # a single torn line, no committed row yet
-    prefix = data[: end + 1]
-    # Defensive: verify every retained line parses; trim back on any bad line.
-    good_len = 0
-    for raw in prefix.splitlines(keepends=True):
-        stripped = raw.strip()
-        if not stripped:
-            good_len += len(raw)
+        return _ManifestInspection(())
+    raw_lines = data.splitlines(keepends=True)
+    rows: list[dict] = []
+    prefix_len = 0
+    for index, raw in enumerate(raw_lines):
+        final = index == len(raw_lines) - 1
+        terminated = raw.endswith(b"\n")
+        payload = raw.rstrip(b"\r\n").strip()
+        if final and not terminated:
+            return _ManifestInspection(tuple(rows), data[:prefix_len])
+        if not payload:
+            prefix_len += len(raw)
             continue
         try:
-            json.loads(stripped)
-        except (json.JSONDecodeError, UnicodeDecodeError):
-            break
-        good_len += len(raw)
-    return prefix[:good_len]
+            row = json.loads(payload)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ManifestIntegrityError(
+                f"manifest line {index + 1} is malformed"
+            ) from exc
+        if not isinstance(row, dict):
+            raise ManifestIntegrityError(
+                f"manifest line {index + 1} is not an object"
+            )
+        rows.append(row)
+        prefix_len += len(raw)
+    return _ManifestInspection(tuple(rows))
 
 
-def _repair_manifest_tail(manifest_path: Path) -> None:
-    """Drop a torn trailing manifest line left by a kill during an append.
-
-    Rewrites the manifest atomically ONLY when a torn tail is detected, so a
-    clean manifest is left byte-for-byte untouched (a dedupe-only rerun does not
-    perturb it).
-    """
-    if not manifest_path.exists():
-        return
-    data = manifest_path.read_bytes()
-    good = _manifest_valid_prefix(data)
-    if good != data:
-        _atomic_write_text(manifest_path, good.decode("utf-8"))
-
-
-def _load_committed(manifest_path: Path) -> tuple[set[str], set[str]]:
-    """Return (committed_hashes, committed_ids) from the repaired manifest.
-
-    ``committed_ids`` are manifest-row ids (== filename stems); dedupe keys on
-    ``committed_hashes`` (the piece content hash), matching the prior
-    ``content_hash_already_present`` semantics but O(n) instead of O(n^2).
-    """
+def _validate_committed_rows(
+    rows: tuple[dict, ...], *, manifest_path: Path, output_dir: Path,
+) -> tuple[set[str], set[str], set[str]]:
+    """Validate every committed text/sidecar/hash/locator before any mutation."""
     hashes: set[str] = set()
     ids: set[str] = set()
-    if not manifest_path.exists():
-        return hashes, ids
-    for line in manifest_path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        row = json.loads(line)
+    entry_locators: set[str] = set()
+    locator_re = re.compile(r"^sha256:[0-9a-f]{64}$")
+    for line_number, row in enumerate(rows, start=1):
         rid = row.get("id")
         chash = row.get("content_hash")
-        if isinstance(rid, str):
-            ids.add(rid)
-        if isinstance(chash, str):
-            hashes.add(chash)
-    return hashes, ids
+        rel_path = row.get("path")
+        if (
+            not isinstance(rid, str) or not rid
+            or Path(rid).name != rid or "/" in rid or "\\" in rid
+        ):
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} has an invalid id"
+            )
+        if rid in ids:
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} repeats an id"
+            )
+        if not isinstance(chash, str) or not locator_re.fullmatch(chash):
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} has an invalid content_hash"
+            )
+        if chash in hashes:
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} repeats a content hash"
+            )
+        if not isinstance(rel_path, str) or not rel_path:
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} has no text path"
+            )
+        recorded_path = Path(rel_path)
+        if not recorded_path.is_absolute():
+            recorded_path = manifest_path.parent / recorded_path
+        expected_text = output_dir / f"{rid}.txt"
+        if recorded_path.resolve() != expected_text.resolve():
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} text path does not match its id"
+            )
+        meta_path = output_dir / f"{rid}.meta.json"
+        try:
+            stored_text = expected_text.read_bytes().decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise ManifestIntegrityError(
+                f"committed text for manifest line {line_number} is missing or unreadable"
+            ) from exc
+        if ac.compute_content_hash(stored_text) != chash:
+            raise ManifestIntegrityError(
+                f"committed text for manifest line {line_number} content hash mismatches"
+            )
+        try:
+            sidecar = json.loads(meta_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, UnicodeDecodeError) as exc:
+            raise ManifestIntegrityError(
+                f"committed sidecar for manifest line {line_number} is missing or unreadable"
+            ) from exc
+        if not isinstance(sidecar, dict) or sidecar.get("content_hash") != chash:
+            raise ManifestIntegrityError(
+                f"committed sidecar for manifest line {line_number} content hash mismatches"
+            )
+        if not locator_re.fullmatch(
+            str(sidecar.get("author_corpus_entry_locator", ""))
+        ):
+            raise ManifestIntegrityError(
+                f"committed sidecar for manifest line {line_number} lacks a valid entry locator"
+            )
+        ids.add(rid)
+        hashes.add(chash)
+        entry_locators.add(sidecar["author_corpus_entry_locator"])
+    return hashes, ids, entry_locators
+
+
+def _validate_committed_source_bindings(
+    rows: tuple[dict, ...],
+    *,
+    opts: "Options",
+    recipients: ac.StableRedactionMap,
+    box: mailbox.mbox,
+    thread_roots: dict[str, str | None],
+    target_keys: dict[str, object],
+) -> None:
+    """Authenticate committed provenance/content using targeted mbox keys only."""
+    expected_acquired_via = f"{TOOL_NAME}_{opts.acquired_via_date.isoformat()}"
+    for line_number, row in enumerate(rows, start=1):
+        rid = row["id"]
+        meta_path = opts.output_dir / f"{rid}.meta.json"
+        sidecar = json.loads(meta_path.read_text(encoding="utf-8"))
+        if row.get("acquired_via") != expected_acquired_via:
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} has false acquisition provenance"
+            )
+        if (
+            sidecar.get("scraper") != expected_acquired_via
+            or sidecar.get("scraper_version") != SCRAPER_VERSION
+            or sidecar.get("source_url") != "gmail_takeout_local"
+        ):
+            raise ManifestIntegrityError(
+                f"committed sidecar for line {line_number} has false scraper provenance"
+            )
+        entry_locator = sidecar["author_corpus_entry_locator"]
+        source_key = target_keys.get(entry_locator)
+        if source_key is None:
+            raise ManifestIntegrityError(
+                f"committed sidecar for line {line_number} is not in the source"
+            )
+        msg = box.get_message(source_key)
+        before_recipients = recipients.entry_count()
+        try:
+            prepared = process_message(
+                msg, opts, recipients, Summary(), thread_roots=thread_roots,
+            )
+        except ValueError as exc:
+            raise ManifestIntegrityError(
+                f"source message for line {line_number} cannot be revalidated"
+            ) from exc
+        if recipients.entry_count() != before_recipients:
+            raise ManifestIntegrityError(
+                "recipient map is incomplete for committed source rows"
+            )
+        if prepared is None or prepared.private_entry_locator != entry_locator:
+            raise ManifestIntegrityError(
+                f"committed locator for line {line_number} cannot be reproduced"
+            )
+        if prepared.piece.content_hash != row["content_hash"]:
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} does not match its source message"
+            )
+        expected_row = ac.compose_manifest_entry(
+            prepared.piece,
+            text_path=opts.output_dir / f"{rid}.txt",
+            manifest_relative_to=opts.manifest_path.parent,
+            corpus_role="identity_baseline",
+            use=["voice_profile"],
+            ai_status=_ai_status_from_date(prepared.piece.date_written),
+        )
+        expected_row.setdefault("era", prepared.piece.era)
+        expected_row.setdefault("consent_status", prepared.piece.consent_status)
+        expected_row.setdefault("acquired_via", prepared.piece.acquired_via)
+        if row != expected_row:
+            raise ManifestIntegrityError(
+                f"manifest line {line_number} has false deterministic metadata"
+            )
+
+        acquired_at = sidecar.get("acquired_at")
+        try:
+            acquired_at_parsed = _dt.datetime.fromisoformat(acquired_at)
+        except (TypeError, ValueError) as exc:
+            raise ManifestIntegrityError(
+                f"committed sidecar for line {line_number} has invalid acquired_at"
+            ) from exc
+        if acquired_at_parsed.tzinfo is None:
+            raise ManifestIntegrityError(
+                f"committed sidecar for line {line_number} has naive acquired_at"
+            )
+        actual_sidecar = dict(sidecar)
+        actual_sidecar.pop("acquired_at")
+        piece = prepared.piece
+        expected_sidecar = {
+            "source_url": piece.source_url,
+            "title": piece.title,
+            "author": piece.author,
+            "date_written": (
+                piece.date_written.isoformat() if piece.date_written else None
+            ),
+            "raw_byte_length": piece.raw_byte_length,
+            "content_hash": piece.content_hash,
+            "word_count": piece.word_count,
+            "scraper": piece.acquired_via,
+            "scraper_version": SCRAPER_VERSION,
+            "preprocessing": piece.preprocessing_meta,
+        }
+        expected_sidecar.update(_private_meta_fields(prepared))
+        if actual_sidecar != expected_sidecar:
+            raise ManifestIntegrityError(
+                f"committed sidecar for line {line_number} has false deterministic metadata"
+            )
 
 
 def _reconcile_output(output_dir: Path, committed_ids: set[str]) -> dict[str, int]:
@@ -1250,27 +1454,55 @@ def _reconcile_output(output_dir: Path, committed_ids: set[str]) -> dict[str, in
     return counts
 
 
+def _roots_sha256(roots: dict[str, str | None]) -> str:
+    payload = json.dumps(
+        roots,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(b"gmail-thread-roots-v1\x00" + payload).hexdigest()
+
+
 def _thread_index_load(output_dir: Path) -> dict | None:
     path = output_dir / THREAD_INDEX_NAME
     if not path.exists():
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except (OSError, json.JSONDecodeError, UnicodeDecodeError):
         return None
-    if not isinstance(data, dict) or not isinstance(data.get("roots"), dict):
+    if (
+        not isinstance(data, dict)
+        or data.get("schema") != RESUME_CHECKPOINT_SCHEMA
+        or not isinstance(data.get("resume_fingerprint"), str)
+        or not re.fullmatch(
+            r"[0-9a-f]{64}", str(data.get("thread_roots_sha256", ""))
+        )
+        or not isinstance(data.get("acquired_via_date"), str)
+    ):
+        return None
+    try:
+        _dt.date.fromisoformat(data["acquired_via_date"])
+    except ValueError:
         return None
     return data
 
 
 def _thread_index_save(
-    output_dir: Path, mbox_sha: str, params: str,
-    roots: dict[str, str | None],
+    output_dir: Path, mbox_sha: str, resume_fingerprint: str,
+    roots: dict[str, str | None], acquired_via_date: _dt.date,
 ) -> None:
     _atomic_write_text(
         output_dir / THREAD_INDEX_NAME,
         json.dumps(
-            {"mbox_sha256": mbox_sha, "params": params, "roots": roots},
+            {
+                "schema": RESUME_CHECKPOINT_SCHEMA,
+                "mbox_sha256": mbox_sha,
+                "resume_fingerprint": resume_fingerprint,
+                "thread_roots_sha256": _roots_sha256(roots),
+                "acquired_via_date": acquired_via_date.isoformat(),
+            },
             indent=2, sort_keys=True,
         ) + "\n",
     )
@@ -1299,6 +1531,7 @@ class Options:
     allow_empty: bool
     dry_run: bool
     live_smoke_confirmed: bool
+    acquired_via_date: _dt.date
 
 
 @dataclass
@@ -1358,12 +1591,14 @@ class Summary:
             f"Recipient map written to: {recipient_map_path} "
             "(KEEP PRIVATE, do not commit)",
         ]
-        # Signature-contamination visibility guardrail.
-        for text, n in self.trailing_counter.most_common(3):
-            level = "WARNING: " if n >= 10 else ""
+        # Signature-contamination visibility without echoing private prose.
+        if self.trailing_counter:
+            maximum = max(self.trailing_counter.values())
+            level = "WARNING: " if maximum >= 10 else ""
             lines.append(
-                f"{level}Most common trailing text (check for an un-caught "
-                f"signature): {text!r} ({n} occurrences)"
+                f"{level}Trailing-text repetition audit: "
+                f"{len(self.trailing_counter)} patterns tracked; "
+                f"maximum frequency {maximum}."
             )
         return "\n".join(lines) + "\n"
 
@@ -1482,6 +1717,10 @@ def _parse_date(value: str | None) -> _dt.date | None:
     return _dt.date.fromisoformat(value) if value else None
 
 
+def _acquisition_date_today() -> _dt.date:
+    return _dt.date.today()
+
+
 def parse_options(args: argparse.Namespace) -> Options:
     if args.consent_status != "author_consent":
         raise SystemExit(f"{TOOL_NAME}: --consent-status must be author_consent.")
@@ -1525,6 +1764,7 @@ def parse_options(args: argparse.Namespace) -> Options:
         allow_empty=bool(args.allow_empty),
         dry_run=args.dry_run,
         live_smoke_confirmed=args.live_smoke_confirmed,
+        acquired_via_date=_acquisition_date_today(),
     )
 
 
@@ -1635,7 +1875,7 @@ def process_message(
         cleaned_text=cleaned,
         raw_byte_length=len(body.encode("utf-8")),
         preprocessing_meta=meta,
-        acquired_via=f"{TOOL_NAME}_{_dt.date.today().isoformat()}",
+        acquired_via=f"{TOOL_NAME}_{opts.acquired_via_date.isoformat()}",
         consent_status="author_consent",
         era=ac.era_from_date(date),
         notes=notes,
@@ -1678,6 +1918,9 @@ def emit_piece(
     was swept by reconciliation before this pass) and is re-emitted.
     """
     piece = prepared.piece
+    if prepared.private_entry_locator is None:
+        raise ValueError("message has no stable entry locator")
+
     if piece.content_hash in committed_hashes:
         summary.skipped_duplicate += 1
         return
@@ -1770,27 +2013,81 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
     summary = Summary()
     box = mailbox.mbox(str(opts.mbox_path))
 
-    # --- single-full-invocation resume: reconcile crash residue, then reuse a
-    # persisted thread index so a resume does not redo pass 1. ---
+    # --- resume is fail-closed: inspect + source-bind + validate every
+    # committed artifact before repairing a tail or deleting crash residue. ---
     committed_hashes: set[str] = set()
     committed_ids: set[str] = set()
     thread_roots: dict[str, str | None] | None = None
+    resume_fp: str | None = None
     if not opts.dry_run:
-        params_fp = _behavior_fingerprint(opts)
-        _repair_manifest_tail(opts.manifest_path)
-        committed_hashes, committed_ids = _load_committed(opts.manifest_path)
+        resume_fp = _resume_fingerprint(opts)
+        try:
+            inspection = _inspect_manifest(opts.manifest_path)
+        except (OSError, ManifestIntegrityError) as exc:
+            sys.stderr.write(f"{TOOL_NAME}: refusing unsafe manifest: {exc}\n")
+            return 2
         index_data = _thread_index_load(opts.output_dir)
         index_valid = bool(
             index_data
             and index_data.get("mbox_sha256") == mbox_sha
-            and index_data.get("params") == params_fp
+            and index_data.get("resume_fingerprint") == resume_fp
         )
-        if index_data and not index_valid and committed_ids:
+        if inspection.rows and not index_valid:
             raise SystemExit(
-                f"{TOOL_NAME}: refusing to resume — the mbox hash or filter "
-                "parameters changed since the committed checkpoint. Committed "
-                "manifest rows are bound to a different source/params. Start a "
-                "fresh output directory, or restore the original inputs."
+                f"{TOOL_NAME}: refusing to resume - committed manifest rows "
+                "have no valid source-bound checkpoint for this mbox and exact "
+                "selection/metadata parameters. Start a fresh output directory, "
+                "or restore the original checkpoint and inputs."
+            )
+        try:
+            (
+                committed_hashes,
+                committed_ids,
+                target_locators,
+            ) = _validate_committed_rows(
+                inspection.rows,
+                manifest_path=opts.manifest_path,
+                output_dir=opts.output_dir,
+            )
+            target_keys: dict[str, object] = {}
+            if index_valid and index_data is not None:
+                source_roots, target_keys = build_thread_roots_and_target_keys(
+                    box, target_locators,
+                )
+                if (
+                    _roots_sha256(source_roots)
+                    != index_data["thread_roots_sha256"]
+                ):
+                    if inspection.rows:
+                        raise SystemExit(
+                            f"{TOOL_NAME}: refusing to resume - checkpoint thread "
+                            "roots do not match the source mbox."
+                        )
+                    index_valid = False
+                else:
+                    thread_roots = source_roots
+                    opts.acquired_via_date = _dt.date.fromisoformat(
+                        index_data["acquired_via_date"]
+                    )
+            if inspection.rows:
+                assert thread_roots is not None
+                _validate_committed_source_bindings(
+                    inspection.rows,
+                    opts=opts,
+                    recipients=recipients,
+                    box=box,
+                    thread_roots=thread_roots,
+                    target_keys=target_keys,
+                )
+        except (OSError, ManifestIntegrityError) as exc:
+            sys.stderr.write(
+                f"{TOOL_NAME}: refusing corrupt committed output: {exc}\n"
+            )
+            return 2
+        if inspection.repair_bytes is not None:
+            _atomic_write_text(
+                opts.manifest_path,
+                inspection.repair_bytes.decode("utf-8"),
             )
         counts = _reconcile_output(opts.output_dir, committed_ids)
         if any(counts.values()):
@@ -1800,15 +2097,12 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
                 f"orphan_meta={counts['orphan_meta']} "
                 f"stray_tmp={counts['stray_tmp']}).\n"
             )
-        if index_valid and index_data is not None:
-            thread_roots = dict(index_data["roots"])
 
     if thread_roots is None:
         thread_roots = build_thread_roots(box)
-        if not opts.dry_run and mbox_sha is not None:
+        if not opts.dry_run and mbox_sha is not None and resume_fp is not None:
             _thread_index_save(
-                opts.output_dir, mbox_sha, _behavior_fingerprint(opts),
-                thread_roots,
+                opts.output_dir, mbox_sha, resume_fp, thread_roots, opts.acquired_via_date,
             )
 
     # --max-items caps the TOTAL committed rows, not the rows added this run.
@@ -1838,7 +2132,9 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
         if opts.dry_run:
             summary.acquired += 1
             if summary.acquired <= 5:
-                sys.stderr.write(f"  would write: {prepared.piece.title!r}\n")
+                sys.stderr.write(
+                    f"  dry-run eligible item {summary.acquired}\n"
+                )
             continue
         # Durability ordering: any recipient label this piece introduced must be
         # on disk BEFORE the manifest row that references it commits. Persist the
@@ -1850,10 +2146,14 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
         emit_piece(prepared, opts, summary, committed_hashes, committed_ids)
 
     dedupe_only = summary.acquired == 0 and summary.skipped_duplicate > 0
+    at_committed_cap = (
+        bool(committed_ids) and len(committed_ids) >= opts.max_items
+    )
     empty_is_error = (
         summary.acquired == 0
         and not dedupe_only
         and not opts.allow_empty
+        and not at_committed_cap
     )
     if empty_is_error:
         if (
@@ -1889,12 +2189,12 @@ def run(args: argparse.Namespace, *, mode: str = "acquire") -> int:
         recipients.save(fsync=True)
         (opts.output_dir / "README.md").write_text(README_TEXT, encoding="utf-8")
         window = f"{opts.since}..{opts.until}"
-        if mode == "smoke" and summary.acquired > 0 and mbox_sha is not None:
+        if mode == "smoke" and committed_ids and mbox_sha is not None:
             # `smoke` never mints approval; it records a descriptor that a
             # later `approve-smoke` (TTY) validates and binds a receipt to.
             write_smoke_descriptor(
                 opts, mbox_sha=mbox_sha, window=window,
-                acquired=summary.acquired, manifest_rows=len(committed_ids),
+                acquired=len(committed_ids), manifest_rows=len(committed_ids),
             )
         # NOTE: approval is NEVER minted here. The acquisition-time in-band
         # --live-smoke-confirmed path was removed (it is hard-refused above);
@@ -1934,7 +2234,34 @@ def _behavior_params_public(opts: "Options") -> dict[str, object]:
         "own_sig_lines_sha256": own_sig_sha,
         "register": opts.register,
         "consent_status": "author_consent",
+        "extraction_policy_version": EXTRACTION_POLICY_VERSION,
+        "extraction_code_sha256": _extraction_code_sha256(),
     }
+
+
+def _resume_params_public(opts: "Options") -> dict[str, object]:
+    """All source-selection and emitted-metadata determinants for resume."""
+    return {
+        "behavior": _behavior_params_public(opts),
+        "since": opts.since.isoformat() if opts.since else None,
+        "until": opts.until.isoformat() if opts.until else None,
+        "author": opts.author,
+        "persona": opts.persona,
+        "output_dir": str(opts.output_dir.resolve()),
+        "manifest_path": str(opts.manifest_path.resolve()),
+        "recipient_map_path": str(opts.recipient_map_path.resolve()),
+        "scraper_version": SCRAPER_VERSION,
+    }
+
+
+def _resume_fingerprint(opts: "Options") -> str:
+    payload = json.dumps(
+        _resume_params_public(opts),
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(_RESUME_FP_DOMAIN + payload).hexdigest()
 
 
 def write_smoke_descriptor(
@@ -1988,6 +2315,15 @@ def validate_smoke_tree(smoke_dir: Path, mbox_path: Path) -> SmokeValidation:
         descriptor.get("schema") != SMOKE_DESCRIPTOR_SCHEMA
     ):
         return SmokeValidation(False, "descriptor_schema")
+    behavior_params = descriptor.get("behavior_params")
+    if (
+        not isinstance(behavior_params, dict)
+        or behavior_params.get("extraction_policy_version")
+        != EXTRACTION_POLICY_VERSION
+        or behavior_params.get("extraction_code_sha256")
+        != _extraction_code_sha256()
+    ):
+        return SmokeValidation(False, "stale_extraction_policy", descriptor=descriptor)
     if not mbox_path.exists():
         return SmokeValidation(False, "mbox_missing", descriptor=descriptor)
     if _file_sha256(mbox_path) != descriptor.get("mbox_sha256"):
@@ -1997,15 +2333,23 @@ def validate_smoke_tree(smoke_dir: Path, mbox_path: Path) -> SmokeValidation:
     if not manifest_path.exists():
         return SmokeValidation(False, "no_manifest", descriptor=descriptor)
     try:
-        manifest_ids = {
-            json.loads(line)["id"]
-            for line in manifest_path.read_text(encoding="utf-8").splitlines()
-            if line.strip()
-        }
-    except (OSError, json.JSONDecodeError, KeyError):
+        inspection = _inspect_manifest(manifest_path)
+    except (OSError, ManifestIntegrityError):
         return SmokeValidation(False, "manifest_unreadable", descriptor=descriptor)
-    if not manifest_ids:
+    if inspection.repair_bytes is not None:
+        return SmokeValidation(False, "manifest_unreadable", descriptor=descriptor)
+    if not inspection.rows:
         return SmokeValidation(False, "empty_tree", descriptor=descriptor)
+    try:
+        _, manifest_ids, _ = _validate_committed_rows(
+            inspection.rows,
+            manifest_path=manifest_path,
+            output_dir=smoke_dir,
+        )
+    except ManifestIntegrityError:
+        return SmokeValidation(
+            False, "committed_artifact_invalid", descriptor=descriptor,
+        )
 
     meta_stems = {
         p.name[: -len(".meta.json")] for p in smoke_dir.glob("*.meta.json")

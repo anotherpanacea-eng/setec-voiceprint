@@ -5,6 +5,7 @@ Subject: Lunch plans, Alice?
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-1@example.invalid>
 
 PLAIN.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -16,6 +17,7 @@ Subject: ok
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-2@example.invalid>
 
 BELOWMIN.
 hi
@@ -28,6 +30,7 @@ Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
 In-Reply-To: <abc@x>
+Message-ID: <fixture-3@example.invalid>
 
 PLAINREPLY.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -43,6 +46,7 @@ Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/html; charset=utf-8
 References: <def@x>
+Message-ID: <fixture-4@example.invalid>
 
 <div>a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose HTMLREPLY marker</div><div class="gmail_quote"><div class="gmail_attr">On Sun, Jun 14, 2020, Jonathan Alexander Smith-Whitmore &lt;jonathan.smith.whitmore@longdomain.example.com&gt; wrote:</div><blockquote class="gmail_quote">QUOTED_CORRESPONDENT_TEXT_SHOULD_NEVER_APPEAR</blockquote></div>
 
@@ -54,6 +58,7 @@ Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
 In-Reply-To: <w@x>
+Message-ID: <fixture-5@example.invalid>
 
 WRAPPED.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -69,6 +74,7 @@ Subject: With signature
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-6@example.invalid>
 
 SIGNED.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -83,6 +89,7 @@ Subject: Fwd: something
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-7@example.invalid>
 
 ---------- Forwarded message ---------
 From: x
@@ -96,6 +103,7 @@ Subject: Fwd: with comment
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-8@example.invalid>
 
 FWDCOMMENT.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose see below.
@@ -113,6 +121,7 @@ Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
 In-Reply-To: <weird@x>
+Message-ID: <fixture-9@example.invalid>
 
 UNRESOLVED.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -128,6 +137,7 @@ Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
 In-Reply-To: <clean@x>
+Message-ID: <fixture-10@example.invalid>
 
 CLEANREPLY.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -139,6 +149,7 @@ Subject: Not from me
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-11@example.invalid>
 
 NOTOWN.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -150,6 +161,7 @@ Subject: Echoed
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Important
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-12@example.invalid>
 
 NOTSENT.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -161,6 +173,7 @@ Subject: To be sent later
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: To be Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-13@example.invalid>
 
 SUBSTRLABEL.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -173,6 +186,7 @@ Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
 Auto-Submitted: auto-replied
+Message-ID: <fixture-14@example.invalid>
 
 AUTOREPLIED.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -184,6 +198,7 @@ Subject: Old one
 Date: Tue, 15 Jan 2013 12:00:00 -0500
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-15@example.invalid>
 
 OLD2013.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -196,6 +211,7 @@ Subject: Group note
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-16@example.invalid>
 
 MULTICC.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -206,6 +222,7 @@ To: alice@example.com
 Subject: No labels header
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-17@example.invalid>
 
 NOLABELS.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose
@@ -216,6 +233,7 @@ To: alice@example.com
 Date: Mon, 15 Jun 2020 12:00:00 -0400
 X-Gmail-Labels: Sent
 Content-Type: text/plain; charset=utf-8
+Message-ID: <fixture-18@example.invalid>
 
 NOSUBJECT.
 a genuinely composed message with plenty of words in it so that it clears the minimum word floor comfortably and reads like real prose

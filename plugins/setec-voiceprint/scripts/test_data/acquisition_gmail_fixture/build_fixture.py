@@ -59,6 +59,11 @@ def build_fixture(path: Path = MBOX_PATH) -> Path:
         # first line (e.g. a forward marker). Pass tag=None for cases where
         # a leading line would change semantics (forward-no-comment).
         full = (f"{tag}.\n{body}" if tag else body)
+        headers = dict(kw.pop("extra_headers", None) or {})
+        headers.setdefault(
+            "Message-ID", f"<fixture-{len(msgs) + 1}@example.invalid>",
+        )
+        kw["extra_headers"] = headers
         msgs.append(_mbox_from(kw.get("frm", OWN)) + _msg(body=full, **kw))
 
     add("PLAIN", frm=OWN, to=[R_ALICE], subject="Lunch plans, Alice?", body=LONG)

@@ -12,6 +12,7 @@ fallback, the metadata-privacy grep, and the use/ai_status kwargs.
 
 from __future__ import annotations
 
+import datetime as dt
 import json
 import re
 import sys
@@ -1025,8 +1026,9 @@ def test_single_full_invocation_matches_uninterrupted(tmp_path, mbox, golden):
     assert _capture(out) == golden
 
 
-def test_resume_reuses_persisted_index_and_skips_pass1(tmp_path, mbox, golden, monkeypatch):
-    # Run 1: complete pass 1 (index persisted), raise before the first emit.
+def test_resume_reauthenticates_index_with_targeted_streaming_pass(
+    tmp_path, mbox, golden, monkeypatch,
+):
     out = _out(tmp_path)
     monkeypatch.setattr(G, "emit_piece", _raiser("kill before first emit"))
     with pytest.raises(RuntimeError):
@@ -1034,15 +1036,25 @@ def test_resume_reuses_persisted_index_and_skips_pass1(tmp_path, mbox, golden, m
     assert (out / G.THREAD_INDEX_NAME).exists()
     monkeypatch.undo()
 
-    # Run 2 (resume): build_thread_roots must NOT be called (index reused).
-    calls = {"n": 0}
-    real = G.build_thread_roots
+    calls = {"roots_only": 0, "targeted": 0}
+    real_roots = G.build_thread_roots
+    real_targeted = G.build_thread_roots_and_target_keys
     monkeypatch.setattr(
         G, "build_thread_roots",
-        lambda box: (calls.__setitem__("n", calls["n"] + 1), real(box))[1],
+        lambda box: (
+            calls.__setitem__("roots_only", calls["roots_only"] + 1),
+            real_roots(box),
+        )[1],
+    )
+    monkeypatch.setattr(
+        G, "build_thread_roots_and_target_keys",
+        lambda box, targets: (
+            calls.__setitem__("targeted", calls["targeted"] + 1),
+            real_targeted(box, targets),
+        )[1],
     )
     assert _run(mbox, out) == 0
-    assert calls["n"] == 0, "resume redid pass 1 despite a valid index"
+    assert calls == {"roots_only": 0, "targeted": 1}
     assert _capture(out) == golden
 
 
@@ -1475,6 +1487,357 @@ def test_legacy_flat_cli_still_routes_to_acquire(tmp_path, mbox):
     assert _run(mbox, out) == 0
     assert list(out.glob("*.txt"))
 
+
+
+# =================================================================
+# Independent-review hostile regressions
+# =================================================================
+
+
+def _tree_bytes(out: Path) -> dict[str, bytes]:
+    return {
+        str(path.relative_to(out)): path.read_bytes()
+        for path in sorted(out.rglob("*"))
+        if path.is_file()
+    }
+
+
+def _parsed_opts(mbox: Path, out: Path, extra=None) -> G.Options:
+    argv = [
+        "acquire", "--mbox-path", str(mbox), "--own-address", bf.OWN,
+        "--output-dir", str(out), "--min-words-per-piece", "5",
+        "--since", "2000-01-01", "--until", "2100-01-01",
+    ]
+    args = G.build_arg_parser().parse_args(argv + (extra or []))
+    return G.parse_options(args)
+
+
+def test_self_consistent_old_extraction_policy_smoke_cannot_mint_approval(
+    tmp_path, mbox,
+):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    descriptor_path = smoke_dir / G.SMOKE_DESCRIPTOR_NAME
+    descriptor = json.loads(descriptor_path.read_text())
+    params = descriptor["behavior_params"]
+    params["extraction_policy_version"] = "pre-footer-policy"
+    params["extraction_code_sha256"] = "0" * 64
+    descriptor["behavior_fingerprint"] = G._behavior_fingerprint_from_public(params)
+    descriptor_path.write_text(
+        json.dumps(descriptor, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    assert G.main([
+        "approve-smoke", "--mbox-path", str(mbox),
+        "--smoke-dir", str(smoke_dir), "--output-dir", str(full),
+    ]) == 2
+    assert not (full / G.RECEIPT_NAME).exists()
+
+
+@pytest.mark.parametrize("flag,value", [
+    ("--since", "2010-01-01"),
+    ("--until", "2025-01-01"),
+    ("--author", "different-author"),
+    ("--persona", "different-persona"),
+    ("--min-words-per-piece", "6"),
+])
+def test_resume_fingerprint_covers_selection_and_metadata_determinants(
+    tmp_path, mbox, flag, value,
+):
+    out = _out(tmp_path)
+    base = G._resume_fingerprint(_parsed_opts(mbox, out))
+    changed = G._resume_fingerprint(_parsed_opts(mbox, out, [flag, value]))
+    assert changed != base
+
+
+@pytest.mark.parametrize("damage", [
+    "missing", "malformed", "invalid_utf8", "changed",
+    "missing_roots_digest", "malformed_roots_digest", "changed_roots_digest",
+])
+def test_committed_rows_require_intact_source_bound_checkpoint_without_mutation(
+    tmp_path, mbox, damage,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    checkpoint = out / G.THREAD_INDEX_NAME
+    if damage == "missing":
+        checkpoint.unlink()
+    elif damage == "malformed":
+        checkpoint.write_text("{broken", encoding="utf-8")
+    elif damage == "invalid_utf8":
+        checkpoint.write_bytes(b"\xff\xfe\x80")
+    else:
+        data = json.loads(checkpoint.read_text())
+        if damage == "changed":
+            data["resume_fingerprint"] = "0" * 64
+        elif damage == "missing_roots_digest":
+            data.pop("thread_roots_sha256")
+        elif damage == "malformed_roots_digest":
+            data["thread_roots_sha256"] = 7
+        else:
+            data["thread_roots_sha256"] = "0" * 64
+        checkpoint.write_text(json.dumps(data) + "\n", encoding="utf-8")
+    before = _tree_bytes(out)
+
+    with pytest.raises(SystemExit):
+        _run(mbox, out, ["--max-items", "3"])
+    assert _tree_bytes(out) == before
+
+
+@pytest.mark.parametrize("flag,value", [
+    ("--since", "2010-01-01"),
+    ("--until", "2025-01-01"),
+    ("--author", "different-author"),
+    ("--persona", "different-persona"),
+])
+def test_changed_resume_parameters_refuse_before_mutation(
+    tmp_path, mbox, flag, value,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    before = _tree_bytes(out)
+    with pytest.raises(SystemExit):
+        _run(mbox, out, ["--max-items", "3", flag, value])
+    assert _tree_bytes(out) == before
+
+
+def test_newline_terminated_malformed_interior_row_refuses_zero_mutation(
+    tmp_path, mbox,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "4"]) == 0
+    manifest = out / "draft_manifest.jsonl"
+    lines = manifest.read_bytes().splitlines(keepends=True)
+    manifest.write_bytes(lines[0] + b"{malformed-interior}\n" + b"".join(lines[1:]))
+    (out / "crash-orphan.txt").write_text("must survive refusal", encoding="utf-8")
+    (out / "crash-orphan.meta.json").write_text("{}", encoding="utf-8")
+    (out / "stray.tmp").write_text("must survive refusal", encoding="utf-8")
+    before = _tree_bytes(out)
+
+    assert _run(mbox, out, ["--max-items", "4"]) == 2
+    assert _tree_bytes(out) == before
+
+
+@pytest.mark.parametrize("bad_final", [b"{invalid-final}\n", b"[]\n"])
+def test_newline_terminated_invalid_final_row_refuses_without_mutation(
+    tmp_path, mbox, bad_final,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    manifest = out / "draft_manifest.jsonl"
+    with manifest.open("ab") as fh:
+        fh.write(bad_final)
+    (out / "crash-orphan.txt").write_text("must survive refusal", encoding="utf-8")
+    before = _tree_bytes(out)
+
+    assert _run(mbox, out, ["--max-items", "3"]) == 2
+    assert _tree_bytes(out) == before
+
+
+@pytest.mark.parametrize("damage", [
+    "text", "sidecar_hash", "missing_locator", "forged_locator",
+    "manifest_hash", "manifest_acquired_via", "manifest_ai_status",
+    "manifest_privacy", "manifest_word_count", "sidecar_scraper",
+    "sidecar_version", "sidecar_thread", "sidecar_order", "sidecar_title",
+])
+def test_corrupt_committed_artifact_refuses_before_dedupe_or_cleanup(
+    tmp_path, mbox, damage,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    manifest = out / "draft_manifest.jsonl"
+    rows = _entries(out)
+    row = rows[0]
+    text_path = out / f"{row['id']}.txt"
+    meta_path = out / f"{row['id']}.meta.json"
+    if damage == "text":
+        text_path.write_bytes(text_path.read_bytes() + b" tampered")
+    elif damage == "sidecar_hash":
+        meta = json.loads(meta_path.read_text())
+        meta["content_hash"] = "sha256:" + "0" * 64
+        meta_path.write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    elif damage == "missing_locator":
+        meta = json.loads(meta_path.read_text())
+        meta.pop("author_corpus_entry_locator")
+        meta_path.write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    elif damage == "forged_locator":
+        meta = json.loads(meta_path.read_text())
+        meta["author_corpus_entry_locator"] = "sha256:" + "0" * 64
+        meta_path.write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    elif damage == "manifest_hash":
+        rows[0]["content_hash"] = "sha256:" + "0" * 64
+        manifest.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in rows),
+            encoding="utf-8",
+        )
+    elif damage == "manifest_acquired_via":
+        rows[0]["acquired_via"] = "acquire_gmail_sent_1999-01-01"
+        manifest.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in rows),
+            encoding="utf-8",
+        )
+    elif damage in {
+        "manifest_ai_status", "manifest_privacy", "manifest_word_count",
+    }:
+        key, value = {
+            "manifest_ai_status": ("ai_status", "human"),
+            "manifest_privacy": ("privacy", "public"),
+            "manifest_word_count": ("word_count", rows[0]["word_count"] + 1),
+        }[damage]
+        rows[0][key] = value
+        manifest.write_text(
+            "".join(json.dumps(item, sort_keys=True) + "\n" for item in rows),
+            encoding="utf-8",
+        )
+    else:
+        meta = json.loads(meta_path.read_text())
+        key = {
+            "sidecar_scraper": "scraper",
+            "sidecar_version": "scraper_version",
+            "sidecar_thread": "author_corpus_thread_locator",
+            "sidecar_order": "author_corpus_order_timestamp",
+            "sidecar_title": "title",
+        }[damage]
+        meta[key] = "forged"
+        meta_path.write_text(json.dumps(meta) + "\n", encoding="utf-8")
+    (out / "uncommitted.txt").write_text("must not be deleted", encoding="utf-8")
+    before = _tree_bytes(out)
+
+    assert _run(mbox, out, ["--max-items", "3"]) == 2
+    assert _tree_bytes(out) == before
+
+
+@pytest.mark.parametrize("body", [
+    (
+        "I am sending you the listing separately.\n"
+        "http://www.zillow.com/homedetails/2123354710_zpid"
+    ),
+    (
+        "The authored sentence contains a URL "
+        "http://www.zillow.com/homedetails/2123354710_zpid"
+    ),
+    (
+        "View this home on Zillow:\n"
+        "http://www.zillow.com/homedetails/2123354710_zpid"
+    ),
+])
+def test_incomplete_or_authored_zillow_urls_are_never_removed(body):
+    assert G._trim_signature(body, None) == body
+
+
+def test_resumed_smoke_descriptor_acquired_is_total_committed_rows(
+    tmp_path, mbox, monkeypatch,
+):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    monkeypatch.setattr(
+        G.ac,
+        "append_manifest_entry",
+        _counting_wrapper(G.ac.append_manifest_entry, 3),
+    )
+    with pytest.raises(RuntimeError):
+        _smoke(mbox, smoke_dir, ["--max-items", "4"])
+    assert _committed_count(smoke_dir) == 2
+    monkeypatch.undo()
+
+    assert _smoke(mbox, smoke_dir, ["--max-items", "4"]) == 0
+    descriptor = json.loads(
+        (smoke_dir / G.SMOKE_DESCRIPTOR_NAME).read_text()
+    )
+    assert descriptor["acquired"] == 4
+    assert descriptor["manifest_rows"] == 4
+
+
+def test_already_at_max_items_rerun_succeeds_and_preserves_checkpoint(
+    tmp_path, mbox,
+):
+    out = _out(tmp_path)
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    checkpoint = out / G.THREAD_INDEX_NAME
+    manifest = out / "draft_manifest.jsonl"
+    checkpoint_before = checkpoint.read_bytes()
+    manifest_before = manifest.read_bytes()
+
+    assert _run(mbox, out, ["--max-items", "3"]) == 0
+    assert checkpoint.read_bytes() == checkpoint_before
+    assert manifest.read_bytes() == manifest_before
+
+def test_staged_cap_increase_resumes_across_midnight_with_frozen_provenance(
+    tmp_path, mbox, monkeypatch,
+):
+    out = _out(tmp_path)
+    first_day = dt.date(2026, 7, 18)
+    second_day = dt.date(2026, 7, 19)
+    monkeypatch.setattr(G, "_acquisition_date_today", lambda: first_day)
+    first_opts = _parsed_opts(mbox, out, ["--max-items", "2"])
+    larger_opts = _parsed_opts(mbox, out, ["--max-items", "4"])
+    assert G._resume_fingerprint(first_opts) == G._resume_fingerprint(larger_opts)
+    assert _run(mbox, out, ["--max-items", "2"]) == 0
+    checkpoint = out / G.THREAD_INDEX_NAME
+    checkpoint_before = checkpoint.read_bytes()
+    checkpoint_data = json.loads(checkpoint_before)
+    assert checkpoint_data["acquired_via_date"] == first_day.isoformat()
+    assert "roots" not in checkpoint_data
+    assert "roots_sha256" not in checkpoint_data
+
+    monkeypatch.setattr(G, "_acquisition_date_today", lambda: second_day)
+    assert _run(mbox, out, ["--max-items", "4"]) == 0
+    assert _committed_count(out) == 4
+    assert checkpoint.read_bytes() == checkpoint_before
+    assert {
+        row["acquired_via"] for row in _entries(out)
+    } == {f"{G.TOOL_NAME}_{first_day.isoformat()}"}
+
+
+@pytest.mark.parametrize("body", [
+    (
+        "Authored lead-in.\nView this home on Zillow:\n"
+        "http://www.zillow.com/homedetails/2123354710_zpid\n"
+        "Download the free Zillow Android app:\n"
+        "https://itunes.apple.com/us/app/zillow/id310738695"
+    ),
+    (
+        "Authored lead-in.\nView this listing on Zillow:\n"
+        "https://www.zillow.com/homedetails/2123354710_zpid\n"
+        "Download the free Zillow iPhone app:\n"
+        "https://play.google.com/store/apps/details?id=com.zillow.android.zillowmap"
+    ),
+])
+def test_mismatched_zillow_platform_store_sequences_are_preserved(body):
+    assert G._trim_signature(body, None) == body
+
+def test_summary_stderr_never_echoes_private_trailing_prose(tmp_path, capsys):
+    sentinel = "PRIVATE_BODY_TAIL_SENTINEL_NEVER_PRINT"
+    summary = G.Summary()
+    summary.trailing_counter[sentinel] = 12
+    sys.stderr.write(summary.render(
+        manifest_path=tmp_path / "manifest.jsonl",
+        recipient_map_path=tmp_path / "recipients.json",
+    ))
+    stderr = capsys.readouterr().err
+    assert sentinel not in stderr
+    assert "Trailing-text repetition audit" in stderr
+    assert "maximum frequency 12" in stderr
+
+
+def test_dry_run_stderr_never_echoes_private_subject(
+    tmp_path, mbox, capsys,
+):
+    sentinel = b"PRIVATE_SUBJECT_SENTINEL_NEVER_PRINT"
+    private_mbox = tmp_path / "private-subject.mbox"
+    raw = mbox.read_bytes()
+    assert b"Subject: Lunch plans, Alice?" in raw
+    private_mbox.write_bytes(raw.replace(
+        b"Subject: Lunch plans, Alice?", b"Subject: " + sentinel, 1,
+    ))
+
+    assert _run(
+        private_mbox, _out(tmp_path), ["--dry-run", "--max-items", "1"],
+    ) == 0
+    stderr = capsys.readouterr().err
+    assert sentinel.decode() not in stderr
+    assert "dry-run eligible item 1" in stderr
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
