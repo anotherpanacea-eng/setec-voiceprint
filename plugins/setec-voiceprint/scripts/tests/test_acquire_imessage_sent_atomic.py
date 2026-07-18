@@ -608,6 +608,32 @@ def test_canonical_json_rejects_values_outside_closed_domain(value: object) -> N
         A.canonical_payload_digest(value)
 
 
+def test_preprocessing_metadata_encodes_legacy_strip_ratio_exactly() -> None:
+    normalized = A._canonical_preprocessing_metadata({
+        "applied": True,
+        "input_tokens_before": 3,
+        "input_tokens_after": 2,
+        "tokens_stripped": 1,
+        "strip_ratio": 1 / 3,
+    })
+
+    assert normalized["strip_ratio"] == {"numerator": 1, "denominator": 3}
+    assert b"0.333" not in A._canonical_json_bytes(normalized)
+
+
+@pytest.mark.parametrize("ratio", [0.0, 0.5, float("nan"), float("inf")])
+def test_preprocessing_metadata_rejects_ratio_not_bound_to_counts(
+    ratio: float,
+) -> None:
+    with pytest.raises(A.AtomicAcquisitionError, match="strip ratio"):
+        A._canonical_preprocessing_metadata({
+            "input_tokens_before": 3,
+            "input_tokens_after": 2,
+            "tokens_stripped": 1,
+            "strip_ratio": ratio,
+        })
+
+
 def test_bootstrap_journal_state_chain_is_closed_and_deterministic() -> None:
     previous = None
     payloads = []
@@ -12131,7 +12157,13 @@ def test_row_plan_derives_exportable_atomic_artifacts_from_closed_bootstrap() ->
         universe,
         schema,
         include_group_chats=False,
-        preprocessor=lambda text: (text, {"rules": []}),
+        preprocessor=lambda text: (text, {
+            "rules": [],
+            "input_tokens_before": 1,
+            "input_tokens_after": 1,
+            "tokens_stripped": 0,
+            "strip_ratio": 0.0,
+        }),
     )
     planned = A.plan_row_artifacts(result, universe, initialization, semantic, KEY)
 
@@ -12142,6 +12174,10 @@ def test_row_plan_derives_exportable_atomic_artifacts_from_closed_bootstrap() ->
     assert row.text_bytes == b"text"
     assert row.sidecar["author_corpus_unit_kind"] == "atomic_message"
     assert row.sidecar["author_corpus_unit_count"] == 1
+    assert row.sidecar["preprocessing"]["strip_ratio"] == {
+        "numerator": 0,
+        "denominator": 1,
+    }
     assert row.fragment["entry"]["path"] == f"rows/{row.row_stem}/{row.row_stem}.txt"
     assert row.fragment["entry"]["register"] == "personal"
     assert row.ledger_row["entry_locator"] == row.entry_locator

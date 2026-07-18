@@ -759,6 +759,38 @@ def canonical_payload_digest(value: object) -> str:
     return _sha256_tag(_canonical_json_bytes(value))
 
 
+def _canonical_preprocessing_metadata(metadata: dict[str, Any]) -> dict[str, Any]:
+    """Convert legacy preprocessing's redundant float ratio to an exact rational."""
+
+    if type(metadata) is not dict:
+        raise AtomicAcquisitionError("preprocessing metadata is not an object")
+    normalized = dict(metadata)
+    if "strip_ratio" in normalized:
+        ratio = normalized["strip_ratio"]
+        before = normalized.get("input_tokens_before")
+        after = normalized.get("input_tokens_after")
+        stripped = normalized.get("tokens_stripped")
+        if (
+            type(ratio) is not float
+            or type(before) is not int
+            or type(after) is not int
+            or type(stripped) is not int
+            or before < 0
+            or after < 0
+            or after > before
+            or stripped != before - after
+            or ratio != (stripped / before if before else 0.0)
+        ):
+            raise AtomicAcquisitionError(
+                "preprocessing strip ratio is not bound to token counts"
+            )
+        normalized["strip_ratio"] = {
+            "numerator": stripped,
+            "denominator": before if before else 1,
+        }
+    return json.loads(_canonical_json_bytes(normalized))
+
+
 def _is_sha256_tag(value: object) -> bool:
     return (
         type(value) is str
@@ -12987,7 +13019,9 @@ def plan_row_artifacts(
             "author_corpus_unit_count": 1,
             "snapshot_file_sha256": owner["snapshot_file_sha256"],
             "semantic_options_digest": owner["semantic_options_digest"],
-            "preprocessing": json.loads(_canonical_json_bytes(processed.preprocessing_metadata)),
+            "preprocessing": _canonical_preprocessing_metadata(
+                processed.preprocessing_metadata
+            ),
             "hmac_key_id": hmac_key_id(key),
             "tool": {"name": TOOL_NAME, "version": TOOL_VERSION},
         }

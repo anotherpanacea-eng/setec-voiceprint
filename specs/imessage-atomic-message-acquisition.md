@@ -838,6 +838,14 @@ semantic option hash, preprocessing metadata, HMAC key ID, and a fixed
 tool/version identifier. Downstream document identity equals the entry locator;
 there is no third private document-locator field.
 
+The legacy preprocessor's floating `strip_ratio` is redundant with its exact
+integer `tokens_stripped` and `input_tokens_before` counts and may not widen the
+closed semantic JSON domain. Before sidecar serialization, the producer must
+verify the float equals the ratio derived from those counts and replace it with
+an exact `{numerator, denominator}` object, using denominator one for the
+zero-token `0/1` case. All other preprocessing values must already belong to
+the closed canonical JSON domain.
+
 Two equal-content events produce two committed row directories, sidecars, and
 manifest fragments with distinct entry locators and equal content hashes. The
 capability must not call `content_hash_already_present()` and must not use
