@@ -1859,6 +1859,7 @@ def process_message(
 
     cleaned, meta = ac.preprocess_text(kept)
     cleaned = cleaned.strip()
+    cleaned = _redact_addresses(cleaned, recipients)
     if not cleaned:
         summary.skipped_empty_after_preprocess += 1
         return None

@@ -642,6 +642,41 @@ def test_process_message_redacts_address_in_subject(tmp_path):
     assert "recipient_" in prepared.piece.title
 
 
+def test_process_message_redacts_standalone_address_in_body(tmp_path):
+    raw_address = "standalone.body@leak.invalid"
+    message = message_from_bytes(
+        b"From: " + bf.OWN.encode() + b"\r\n"
+        b"To: visible-recipient@example.invalid\r\n"
+        b"X-Gmail-Labels: Sent\r\n"
+        b"Date: Fri, 17 Jul 2026 12:00:00 -0400\r\n"
+        b"Subject: Address privacy regression\r\n"
+        b"Message-ID: <body-addr@example.invalid>\r\n"
+        b"\r\n"
+        b"Please contact standalone.body@leak.invalid about our meeting tomorrow.\r\n"
+    )
+    out = _out(tmp_path)
+    args = G.build_arg_parser().parse_args([
+        "acquire",
+        "--mbox-path", str(tmp_path / "unused.mbox"),
+        "--own-address", bf.OWN,
+        "--output-dir", str(out),
+        "--min-words-per-piece", "1",
+    ])
+    opts = G.parse_options(args)
+    recipients = G.ac.StableRedactionMap(
+        opts.recipient_map_path,
+        label_prefix="recipient",
+        normalize_key=lambda address: address.strip().lower(),
+        reuse_gaps=False,
+        map_name="recipient map",
+    )
+
+    prepared = G.process_message(message, opts, recipients, G.Summary())
+
+    assert prepared is not None
+    assert raw_address not in prepared.piece.cleaned_text
+    assert "recipient_" in prepared.piece.cleaned_text
+
 def test_multiline_zillow_share_footer_is_stripped_with_provenance():
     body = (
         "Thought you might like this place, it is near the park.\n"
