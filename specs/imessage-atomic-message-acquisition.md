@@ -79,6 +79,23 @@ Changing the original live database is irrelevant after snapshot creation;
 changing the snapshot refuses. Tests must cover a source with committed rows in
 WAL and deliberate mid-run snapshot mutation.
 
+When `--source-db` is the exact `source-snapshot.db` inside a strictly validated
+closed atomic run, materialization must preserve those approved bytes instead
+of passing them through SQLite backup again. Before validation, the producer
+pins the owner-only run root and its exact snapshot child and retains both
+descriptors. The entire closed-run validator operates through that pinned root;
+the owner and receipt snapshot evidence must bind the same held snapshot inode
+and initial hash. The producer then copies from that held descriptor into a new
+owner-only destination inode, fsyncs it and the staging directory, runs the same
+SQLite quick-check and metadata extraction, and proves the initial source hash,
+post-copy source hash, destination hash, sizes, validator/owner-bound snapshot
+evidence, run-root pathname/inode, and snapshot child binding are all still
+equal through the final destination fsync and metadata verification. Any source
+outside that closed-run topology continues to use SQLite backup. This exact
+closed-snapshot reuse is required so a live-smoke receipt bound to the approved
+whole-file snapshot hash can authorize the uncapped run; it may not accept an
+arbitrary database merely named `source-snapshot.db`.
+
 The snapshot itself is private raw-source state. It is never listed in the
 semantic artifact-tree hash and is the only database the run may read after
 preflight.

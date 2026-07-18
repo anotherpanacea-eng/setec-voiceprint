@@ -2492,6 +2492,9 @@ class _PrivateTreeOsOps:
     def read(self, descriptor: int, size: int) -> bytes:
         return os.read(descriptor, size)
 
+    def write(self, descriptor: int, raw: bytes | memoryview) -> int:
+        return os.write(descriptor, raw)
+
     def seek(self, descriptor: int, offset: int, whence: int) -> int:
         return os.lseek(descriptor, offset, whence)
 
@@ -4469,12 +4472,81 @@ def _materialize_consistent_snapshot_in_precreated_staging_at(
     snapshot_opener = _snapshot_opener or _open_read_only_database
     connection_binder = _connection_binder or _open_inode_bound_sqlite_connection
     snapshot_path = staging / SNAPSHOT_FILENAME
+    closed_run_reader: Any = None
     source_fd: int | None = None
     snapshot_fd: int | None = None
     source_conn: Any = None
     destination_conn: Any = None
     snapshot_conn: Any = None
     snapshot_created = False
+    exact_reuse = source.name == SNAPSHOT_FILENAME
+    closed_root_identity: tuple[int, int, int, int, int, int, int, int] | None = None
+    closed_source_identity: tuple[int, int, int, int, int, int, int, int] | None = None
+    closed_source_hash: str | None = None
+    closed_source_size: int | None = None
+
+    def validate_closed_run_evidence() -> tuple[str, int]:
+        if closed_run_reader is None:
+            raise SnapshotError("closed snapshot reader is unavailable")
+        try:
+            validate_atomic_run(source.parent, io=closed_run_reader)
+            owner, _ = _read_io_object(
+                closed_run_reader, RUN_OWNER_FILENAME, "closed source owner"
+            )
+            smoke, _ = _read_io_object(
+                closed_run_reader, SMOKE_POLICY_FILENAME, "closed source policy"
+            )
+            receipt, _ = _read_io_object(
+                closed_run_reader,
+                "acquisition-receipt.json",
+                "closed source receipt",
+            )
+            snapshot_metadata = smoke.get("snapshot_metadata")
+            expected_hash = owner.get("snapshot_file_sha256")
+            expected_size = (
+                snapshot_metadata.get("byte_size")
+                if type(snapshot_metadata) is dict
+                else None
+            )
+            if (
+                not _is_sha256_tag(expected_hash)
+                or type(expected_size) is not int
+                or expected_size < 0
+                or snapshot_metadata.get("file_sha256") != expected_hash
+                or receipt.get("snapshot_file_sha256") != expected_hash
+            ):
+                raise SnapshotError("closed source snapshot evidence drifted")
+            return expected_hash, expected_size
+        except SnapshotError:
+            raise
+        except AtomicAcquisitionError as exc:
+            raise SnapshotError("closed atomic source run validation failed") from exc
+
+    def verify_closed_source_binding() -> None:
+        if (
+            closed_run_reader is None
+            or closed_run_reader.final_fd is None
+            or source_fd is None
+            or closed_root_identity is None
+            or closed_source_identity is None
+        ):
+            raise SnapshotError("closed source binding is incomplete")
+        closed_run_reader._verify_root()
+        root_opened = ops.fstat(closed_run_reader.final_fd)
+        if _private_node_identity(root_opened) != closed_root_identity:
+            raise SnapshotError("closed source run root drifted")
+        opened = ops.fstat(source_fd)
+        named = ops.stat(SNAPSHOT_FILENAME, dir_fd=closed_run_reader.final_fd)
+        absolute = ops.stat_path(source)
+        for info in (opened, named, absolute):
+            _validate_private_tree_inode(
+                info,
+                kind="file",
+                owner_uid=ops.getuid(),
+                label="closed source snapshot",
+            )
+            if _private_node_identity(info) != closed_source_identity:
+                raise SnapshotError("closed source snapshot binding drifted")
     try:
         _verify_pinned_staging_binding_at(
             parent_fd,
@@ -4485,23 +4557,60 @@ def _materialize_consistent_snapshot_in_precreated_staging_at(
             expected_names=(),
             ops=ops,
         )
-        source_fd = ops.open_path(
-            source,
+        source_flags = (
             os.O_RDONLY
             | getattr(os, "O_NOFOLLOW", 0)
             | getattr(os, "O_CLOEXEC", 0)
-            | getattr(os, "O_NONBLOCK", 0),
+            | getattr(os, "O_NONBLOCK", 0)
         )
+        if exact_reuse:
+            try:
+                closed_run_reader = _PrivateReadOnlyRowIo(source.parent)
+                assert closed_run_reader.final_fd is not None
+                closed_root_identity = _private_node_identity(
+                    ops.fstat(closed_run_reader.final_fd)
+                )
+                source_fd = ops.open(
+                    SNAPSHOT_FILENAME,
+                    source_flags,
+                    dir_fd=closed_run_reader.final_fd,
+                )
+            except (OSError, AtomicAcquisitionError) as exc:
+                raise SnapshotError("cannot pin closed atomic source run") from exc
+        else:
+            source_fd = ops.open_path(source, source_flags)
         source_opened = ops.fstat(source_fd)
         if not stat.S_ISREG(source_opened.st_mode):
             raise SnapshotError("SQLite source is not a regular file")
         source_device_inode = _device_inode(source_opened)
-        _verify_pinned_source_binding(
-            source_fd,
-            source,
-            expected_device_inode=source_device_inode,
-            ops=ops,
-        )
+        if exact_reuse:
+            _validate_private_tree_inode(
+                source_opened,
+                kind="file",
+                owner_uid=ops.getuid(),
+                label="closed source snapshot",
+            )
+            closed_source_identity = _private_node_identity(source_opened)
+            verify_closed_source_binding()
+            expected_hash, expected_size = validate_closed_run_evidence()
+            verify_closed_source_binding()
+            closed_source_hash, closed_source_size, hashed_identity = (
+                _stream_hash_private_fd(source_fd, ops=ops)
+            )
+            if (
+                hashed_identity != closed_source_identity
+                or closed_source_hash != expected_hash
+                or closed_source_size != expected_size
+            ):
+                raise SnapshotError("closed source snapshot evidence drifted")
+            verify_closed_source_binding()
+        else:
+            _verify_pinned_source_binding(
+                source_fd,
+                source,
+                expected_device_inode=source_device_inode,
+                ops=ops,
+            )
         snapshot_fd = ops.open(
             SNAPSHOT_FILENAME,
             os.O_RDWR
@@ -4542,15 +4651,109 @@ def _materialize_consistent_snapshot_in_precreated_staging_at(
                 expected_device_inode=snapshot_device_inode,
                 ops=ops,
             )
-            _verify_pinned_source_binding(
-                source_fd,
-                source,
-                expected_device_inode=source_device_inode,
-                ops=ops,
-            )
+            if exact_reuse:
+                verify_closed_source_binding()
+            else:
+                _verify_pinned_source_binding(
+                    source_fd,
+                    source,
+                    expected_device_inode=source_device_inode,
+                    ops=ops,
+                )
             return staging_identity, snapshot_identity
 
         guard()
+        if exact_reuse:
+            if closed_source_hash is None or closed_source_size is None:
+                raise SnapshotError("closed source snapshot evidence is incomplete")
+            ops.seek(source_fd, 0, os.SEEK_SET)
+            remaining = closed_source_size
+            while remaining:
+                chunk = ops.read(source_fd, min(1024 * 1024, remaining))
+                if type(chunk) is not bytes or not chunk:
+                    raise SnapshotError("closed source snapshot copy was incomplete")
+                view = memoryview(chunk)
+                written = 0
+                while written < len(view):
+                    count = ops.write(snapshot_fd, view[written:])
+                    if type(count) is not int or not 0 < count <= len(view) - written:
+                        raise SnapshotError(
+                            "closed source snapshot write was incomplete"
+                        )
+                    written += count
+                remaining -= len(chunk)
+            if ops.read(source_fd, 1):
+                raise SnapshotError("closed source snapshot size drifted")
+            guard()
+            ops.fsync(snapshot_fd)
+            ops.fsync(staging_fd)
+            guard()
+            destination_hash, destination_size, destination_identity = (
+                _stream_hash_private_fd(snapshot_fd, ops=ops)
+            )
+            post_source_hash, post_source_size, post_source_identity = (
+                _stream_hash_private_fd(source_fd, ops=ops)
+            )
+            if (
+                destination_hash != closed_source_hash
+                or destination_size != closed_source_size
+                or post_source_hash != closed_source_hash
+                or post_source_size != closed_source_size
+                or post_source_identity != closed_source_identity
+            ):
+                raise SnapshotError("closed source snapshot copy drifted")
+            guard()
+            snapshot_conn = connection_binder(
+                snapshot_opener,
+                snapshot_path,
+                snapshot_device_inode,
+                "SQLite verifier",
+            )
+            guard()
+            _quick_check(snapshot_conn)
+            metadata = _snapshot_metadata_from_hash(
+                snapshot_conn,
+                file_hash=destination_hash,
+                byte_size=destination_size,
+            )
+            guard()
+            snapshot_conn.close()
+            snapshot_conn = None
+            ops.fsync(snapshot_fd)
+            ops.fsync(staging_fd)
+            guard()
+            expected_hash, expected_size = validate_closed_run_evidence()
+            guard()
+            final_hash, final_size, final_identity = _stream_hash_private_fd(
+                snapshot_fd, ops=ops
+            )
+            final_source_hash, final_source_size, final_source_identity = (
+                _stream_hash_private_fd(source_fd, ops=ops)
+            )
+            staging_identity, snapshot_identity = guard()
+            if (
+                expected_hash != closed_source_hash
+                or expected_size != closed_source_size
+                or final_hash != closed_source_hash
+                or final_size != closed_source_size
+                or final_identity != destination_identity
+                or snapshot_identity != final_identity
+                or final_source_hash != closed_source_hash
+                or final_source_size != closed_source_size
+                or final_source_identity != closed_source_identity
+                or metadata.file_sha256 != closed_source_hash
+                or metadata.byte_size != closed_source_size
+            ):
+                raise SnapshotError("closed source snapshot reuse evidence drifted")
+            return ClosedSnapshotEvidence(
+                metadata=metadata,
+                snapshot_identity=snapshot_identity,
+                staging_identity=staging_identity,
+                snapshot_device_inode=snapshot_device_inode,
+                staging_device_inode=expected_staging_device_inode,
+                inventory=(SNAPSHOT_FILENAME,),
+            )
+
         source_conn = connection_binder(
             source_opener,
             source,
@@ -4623,13 +4826,15 @@ def _materialize_consistent_snapshot_in_precreated_staging_at(
             staging_device_inode=expected_staging_device_inode,
             inventory=(SNAPSHOT_FILENAME,),
         )
-    except (OSError, sqlite3.Error, SnapshotError, BootstrapStateError) as exc:
+    except (OSError, sqlite3.Error, AtomicAcquisitionError) as exc:
         if snapshot_created:
             raise BootstrapRecoveryRequired(
                 "private snapshot materialization requires locked recovery"
             ) from exc
         if isinstance(exc, (SnapshotError, BootstrapStateError)):
             raise
+        if exact_reuse:
+            raise SnapshotError("closed atomic source run validation failed") from exc
         raise SnapshotError("cannot begin pinned SQLite snapshot") from exc
     finally:
         active_exception = sys.exc_info()[0] is not None
@@ -4648,6 +4853,12 @@ def _materialize_consistent_snapshot_in_precreated_staging_at(
                 except OSError as exc:
                     if close_failure is None:
                         close_failure = exc
+        if closed_run_reader is not None:
+            try:
+                closed_run_reader.close()
+            except OSError as exc:
+                if close_failure is None:
+                    close_failure = exc
         if close_failure is not None and not active_exception:
             if snapshot_created:
                 raise BootstrapRecoveryRequired(

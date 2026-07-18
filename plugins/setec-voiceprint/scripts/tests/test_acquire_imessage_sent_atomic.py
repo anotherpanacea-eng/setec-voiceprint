@@ -2517,6 +2517,15 @@ class _FakeTreeOps:
             callback(node, self)
         return chunk
 
+    def write(self, descriptor: int, raw: bytes | memoryview) -> int:
+        node = self.nodes[descriptor]
+        value = bytes(raw)
+        start = self.offsets[descriptor]
+        node.data = node.data[:start] + value + node.data[start + len(value):]
+        self.offsets[descriptor] += len(value)
+        node.version += 1
+        return len(value)
+
     def seek(self, descriptor: int, offset: int, whence: int) -> int:
         if whence == os.SEEK_SET:
             position = offset
@@ -3311,6 +3320,190 @@ def test_live_snapshot_in_progress_reset_refuses_non_macos() -> None:
             "run.staging",
             expected_staging_device_inode=(7, 701),
         )
+
+
+def _real_exact_snapshot_reuse_environment(
+    tmp_path: Path,
+) -> tuple[Path, Path, int, int, tuple[int, int]]:
+    _private_root, run_dir, _receipt = _completed_private_smoke_run(tmp_path)
+    source = run_dir / A.SNAPSHOT_FILENAME
+    output_root = run_dir.parent
+    staging = output_root / "exact-reuse.staging"
+    staging.mkdir(mode=0o700)
+    os.chmod(staging, 0o700)
+    parent_fd = os.open(output_root, os.O_RDONLY | os.O_DIRECTORY)
+    staging_fd = os.open(staging, os.O_RDONLY | os.O_DIRECTORY)
+    return source, staging, parent_fd, staging_fd, A._device_inode(staging.stat())
+
+
+def test_closed_snapshot_reuse_preserves_exact_hash_and_policy_digest(
+    tmp_path: Path,
+) -> None:
+    source, staging, parent_fd, staging_fd, staging_inode = (
+        _real_exact_snapshot_reuse_environment(tmp_path)
+    )
+    source_raw = source.read_bytes()
+    smoke = json.loads((source.parent / A.SMOKE_POLICY_FILENAME).read_bytes())
+    try:
+        evidence = A._materialize_consistent_snapshot_in_precreated_staging_at(
+            parent_fd,
+            staging_fd,
+            staging.name,
+            staging,
+            source,
+            expected_staging_device_inode=staging_inode,
+            _ops=A._PrivateTreeOsOps(),
+        )
+    finally:
+        os.close(staging_fd)
+        os.close(parent_fd)
+
+    copied = staging / A.SNAPSHOT_FILENAME
+    assert copied.read_bytes() == source_raw
+    assert evidence.metadata.file_sha256 == A._sha256_tag(source_raw)
+    assert evidence.metadata.file_sha256 == smoke["snapshot_metadata"]["file_sha256"]
+    assert evidence.metadata.byte_size == len(source_raw)
+
+
+def test_arbitrary_same_named_database_refuses_before_destination_mutation(
+    tmp_path: Path,
+) -> None:
+    source_root = tmp_path / "arbitrary-source"
+    source_root.mkdir(mode=0o700)
+    source = source_root / A.SNAPSHOT_FILENAME
+    connection = sqlite3.connect(source)
+    connection.execute("CREATE TABLE fixture(value TEXT)")
+    connection.commit()
+    connection.close()
+    os.chmod(source, 0o600)
+    staging_parent = tmp_path / "destination"
+    staging_parent.mkdir(mode=0o700)
+    staging = staging_parent / "arbitrary.staging"
+    staging.mkdir(mode=0o700)
+    parent_fd = os.open(staging_parent, os.O_RDONLY | os.O_DIRECTORY)
+    staging_fd = os.open(staging, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        with pytest.raises(A.SnapshotError, match="closed atomic source run"):
+            A._materialize_consistent_snapshot_in_precreated_staging_at(
+                parent_fd,
+                staging_fd,
+                staging.name,
+                staging,
+                source,
+                expected_staging_device_inode=A._device_inode(staging.stat()),
+                _ops=A._PrivateTreeOsOps(),
+            )
+    finally:
+        os.close(staging_fd)
+        os.close(parent_fd)
+    assert tuple(staging.iterdir()) == ()
+
+
+class _ExactReuseFaultOps(A._PrivateTreeOsOps):
+    def __init__(
+        self,
+        source: Path,
+        *,
+        mutate_source_during_copy: bool = False,
+        drift_destination_after_fsync: bool = False,
+        short_writes: bool = False,
+    ) -> None:
+        self.source = source
+        self.source_inode = A._device_inode(source.stat())
+        self.mutate_source_during_copy = mutate_source_during_copy
+        self.drift_destination_after_fsync = drift_destination_after_fsync
+        self.short_writes = short_writes
+        self.source_seek_count = 0
+        self.source_mutated = False
+        self.destination_drifted = False
+
+    def seek(self, descriptor: int, offset: int, whence: int) -> int:
+        if A._device_inode(os.fstat(descriptor)) == self.source_inode and offset == 0:
+            self.source_seek_count += 1
+        return super().seek(descriptor, offset, whence)
+
+    def read(self, descriptor: int, size: int) -> bytes:
+        raw = super().read(descriptor, size)
+        if (
+            raw
+            and self.mutate_source_during_copy
+            and self.source_seek_count == 2
+            and not self.source_mutated
+        ):
+            with self.source.open("ab") as handle:
+                handle.write(b"drift")
+            self.source_mutated = True
+        return raw
+
+    def write(self, descriptor: int, raw: bytes | memoryview) -> int:
+        if self.short_writes and len(raw) > 7:
+            return os.write(descriptor, raw[:7])
+        return super().write(descriptor, raw)
+
+    def fsync(self, descriptor: int) -> None:
+        super().fsync(descriptor)
+        info = os.fstat(descriptor)
+        if (
+            self.drift_destination_after_fsync
+            and stat.S_ISREG(info.st_mode)
+            and A._device_inode(info) != self.source_inode
+            and not self.destination_drifted
+        ):
+            os.lseek(descriptor, 0, os.SEEK_END)
+            os.write(descriptor, b"drift")
+            self.destination_drifted = True
+
+
+@pytest.mark.parametrize("failure", ["source-mutation", "destination-drift"])
+def test_closed_snapshot_reuse_copy_drift_requires_recovery(
+    tmp_path: Path, failure: str
+) -> None:
+    source, staging, parent_fd, staging_fd, staging_inode = (
+        _real_exact_snapshot_reuse_environment(tmp_path)
+    )
+    ops = _ExactReuseFaultOps(
+        source,
+        mutate_source_during_copy=failure == "source-mutation",
+        drift_destination_after_fsync=failure == "destination-drift",
+    )
+    try:
+        with pytest.raises(A.BootstrapRecoveryRequired, match="locked recovery"):
+            A._materialize_consistent_snapshot_in_precreated_staging_at(
+                parent_fd,
+                staging_fd,
+                staging.name,
+                staging,
+                source,
+                expected_staging_device_inode=staging_inode,
+                _ops=ops,
+            )
+    finally:
+        os.close(staging_fd)
+        os.close(parent_fd)
+    assert (staging / A.SNAPSHOT_FILENAME).exists()
+
+
+def test_closed_snapshot_reuse_handles_short_destination_writes(
+    tmp_path: Path,
+) -> None:
+    source, staging, parent_fd, staging_fd, staging_inode = (
+        _real_exact_snapshot_reuse_environment(tmp_path)
+    )
+    source_hash = A._sha256_tag(source.read_bytes())
+    try:
+        evidence = A._materialize_consistent_snapshot_in_precreated_staging_at(
+            parent_fd,
+            staging_fd,
+            staging.name,
+            staging,
+            source,
+            expected_staging_device_inode=staging_inode,
+            _ops=_ExactReuseFaultOps(source, short_writes=True),
+        )
+    finally:
+        os.close(staging_fd)
+        os.close(parent_fd)
+    assert evidence.metadata.file_sha256 == source_hash
 
 
 def test_pinned_snapshot_materialization_closes_exact_durable_evidence(
