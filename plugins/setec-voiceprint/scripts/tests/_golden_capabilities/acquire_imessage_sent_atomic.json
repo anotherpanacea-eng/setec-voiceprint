@@ -6,11 +6,12 @@
   "handoff": "none",
   "consumers": [],
   "family": "acquisition",
-  "purpose": "Establish a fail-closed private acquisition path for one outgoing iMessage/SMS event per stable message GUID, preserving atomic authorship identity instead of bundling a contact-day transcript.",
+  "purpose": "WIP contract for a fail-closed private acquisition path for one outgoing iMessage/SMS event per stable message GUID, preserving atomic authorship identity instead of bundling a contact-day transcript. It is not an operator-ready corpus acquisition or export surface.",
   "use_when": [
-    "acquiring an owner-controlled, one-message-per-unit sent-iMessage identity baseline on macOS after the synthetic suite and one-row smoke approval pass"
+    "reviewing or completing the synthetic atomic-message contract and its downstream exporter seam"
   ],
   "do_not_use_when": [
+    "any live or synthetic corpus acquisition, export, training, or activation is needed; the full row-durability, recovery, validation, and consumer-contract gates are not closed",
     "received or third-party messages would be included (the contract is limited to outgoing is_from_me=1 rows)",
     "the legacy contact-day aggregate is acceptable (use acquire_imessage_sent for that legacy representation)"
   ],
@@ -20,9 +21,8 @@
   "outputs": {
     "schema_version": "1.0",
     "artifacts": [
-      "immutable snapshot and private initialization closure",
-      "one committed text, sidecar, and manifest fragment per retained outgoing event",
-      "resumable source ledger, checkpoint, aggregate manifest, receipt, and semantic tree hash"
+      "no supported operator artifact while the capability remains WIP",
+      "a public deterministic exporter-seam fixture only; it contains synthetic prose and proves no live corpus acquisition"
     ]
   },
   "compute": {

@@ -50,13 +50,16 @@ for a row-specific text/sidecar/manifest-fragment transaction, followed by a
 canonical source ledger and checkpoint; the aggregate manifest is derived from
 closed fragments.
 
-The current `todo` implementation freezes the fail-closed initialization seam:
-a descriptor-pinned SQLite snapshot, five dependency JSON artifacts, and
-`run-owner.json` form the exact seven-file staging tree. A per-run external
-journal and stable flock-protected lock authorize prefix recovery, owner close,
-ready close, exclusive promotion, and final-tree recovery. The public CLI still
-refuses live acquisition after validating its options, so this registration is
-not a corpus activation or a claim that row emission is complete.
+The atomic path is currently **WIP and not READY for operator use**. Its
+descriptor-pinned snapshot, initialization closure, row-transaction work, and
+strict validator pass the portable and macOS-synthetic gates; that is not
+authorization to export, train on, or activate a real corpus. The public fixture at
+`scripts/tests/fixtures/imessage_atomic_export_seam/` contains only synthetic
+prose and pins the exporter boundary: independent events remain independent,
+chat locators remain split-only, and cross-chat normalized duplicates remain
+visible to the downstream split planner. Live readiness still requires the
+owner-confirmed one-row smoke and real resumable run, plus a green paired
+Voicewright fixture gate.
 
 ## What `acquisition_core.py` gives you
 
