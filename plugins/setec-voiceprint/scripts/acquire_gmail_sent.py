@@ -62,6 +62,15 @@ _FORWARD_MARKERS = (
     re.compile(r"^-+\s*Forwarded message\s*-+\s*$", re.I),
     re.compile(r"^Begin forwarded message:\s*$", re.I),
 )
+# Case-folded marker text used by the one-pass flowed-run scanner below.
+_DASHED_SPAN_MARKERS = (
+    ("original message", "original_message"),
+    ("forwarded message", "forward"),
+)
+_BEGIN_FORWARDED_SPAN = re.compile(r"Begin forwarded message:", re.I)
+_ATTR_SPAN_TERMINAL = re.compile(r"\bwrote:\s*")
+
+
 _SIG_DELIM = "-- "
 _HTML_STRIP_SELECTORS = ("div.gmail_quote", ".gmail_attr", "blockquote")
 _ADDR_TOKEN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
@@ -358,53 +367,156 @@ def _semantic_line_classes(
             boundaries[i] = "original_message"
         elif any(pattern.match(stripped) for pattern in _FORWARD_MARKERS):
             boundaries[i] = "forward"
-    # A semantic marker can itself be split by format=flowed.  Classifying only
-    # the physical lines misses cases such as DelSp=yes "wro " + "te:";
-    # an authored flowed line immediately before that span could then absorb
-    # the attribution start and hide third-party prose from the later trimmer.
-    # Discover such spans before rendering, and give every member one boundary
-    # class so the renderer may join the span internally but never across it.
-    for start, content in enumerate(contents):
-        if authored_literal_gt[start] or boundaries[start] is not None:
+    # Reconstruct each maximal same-depth flowed run exactly once. Physical
+    # start/end offsets let markers split across any number of RFC 3676
+    # fragments remain visible without repeatedly rescanning a growing string.
+    run_start = 0
+    while run_start < len(contents):
+        if authored_literal_gt[run_start] or boundaries[run_start] is not None:
+            run_start += 1
             continue
-        stripped = content.strip()
-        likely_boundary_start = (
-            content.lstrip().startswith("On ")
-            or stripped.startswith("-")
-            or stripped.casefold().startswith("begin ")
-        )
-        if not likely_boundary_start:
+        run_end = run_start
+        while (
+            run_end + 1 < len(contents)
+            and contents[run_end].endswith(" ")
+            and provenance[run_end + 1].quote_depth
+            == provenance[run_start].quote_depth
+            and not authored_literal_gt[run_end + 1]
+            and boundaries[run_end + 1] is None
+        ):
+            run_end += 1
+        if run_end == run_start:
+            run_start += 1
             continue
-        candidate = content
-        end = start
-        while candidate.endswith(" ") and end + 1 < len(contents):
-            next_index = end + 1
+
+        chunks: list[str] = []
+        start_offsets: list[int] = []
+        end_offset_to_index: dict[int, int] = {}
+        cursor = 0
+        for index in range(run_start, run_end + 1):
+            start_offsets.append(cursor)
+            chunk = contents[index]
+            if index < run_end and delsp:
+                chunk = chunk[:-1]
+            chunks.append(chunk)
+            cursor += len(chunk)
+            end_offset_to_index[cursor] = index
+        joined = "".join(chunks)
+
+        # Scan fixed-form markers once per reconstructed run. A physical start
+        # and physical end are both required; dash runs and whitespace are
+        # advanced monotonically so hostile fragmentation remains linear.
+        start_offset_to_index = {
+            offset: run_start + local_index
+            for local_index, offset in enumerate(start_offsets)
+        }
+        for match in _BEGIN_FORWARDED_SPAN.finditer(joined):
+            offset = match.start()
+            index = start_offset_to_index.get(offset)
+            if index is None:
+                continue
+            terminal_offset = match.end()
+            while terminal_offset < len(joined) and joined[terminal_offset].isspace():
+                terminal_offset += 1
+            terminal = end_offset_to_index.get(terminal_offset)
+            if terminal is not None:
+                for span_index in range(index, terminal + 1):
+                    boundaries[span_index] = "forward"
+
+        dash_cursor = 0
+        physical_start_cursor = 0
+        while True:
+            offset = joined.find("-", dash_cursor)
+            if offset < 0:
+                break
+            dash_end = offset + 1
+            while dash_end < len(joined) and joined[dash_end] == "-":
+                dash_end += 1
+            dash_cursor = dash_end
+            while (
+                physical_start_cursor < len(start_offsets)
+                and start_offsets[physical_start_cursor] < offset
+            ):
+                physical_start_cursor += 1
             if (
-                provenance[next_index].quote_depth
-                != provenance[start].quote_depth
-                or authored_literal_gt[next_index]
-                or boundaries[next_index] is not None
+                physical_start_cursor >= len(start_offsets)
+                or start_offsets[physical_start_cursor] >= dash_end
             ):
-                break
-            candidate = (
-                candidate[:-1] if delsp else candidate
-            ) + contents[next_index]
-            end = next_index
-            candidate_stripped = candidate.strip()
-            boundary: str | None = None
-            if _ORIGINAL_MESSAGE.match(candidate_stripped):
-                boundary = "original_message"
-            elif any(
-                pattern.match(candidate_stripped)
-                for pattern in _FORWARD_MARKERS
+                continue
+            index = run_start + physical_start_cursor
+            phrase_start = dash_end
+            while phrase_start < len(joined) and joined[phrase_start].isspace():
+                phrase_start += 1
+            boundary = None
+            phrase_end = phrase_start
+            for phrase, candidate_boundary in _DASHED_SPAN_MARKERS:
+                if joined[phrase_start:phrase_start + len(phrase)].casefold() == phrase:
+                    boundary = candidate_boundary
+                    phrase_end = phrase_start + len(phrase)
+                    break
+            if boundary is None:
+                continue
+            while phrase_end < len(joined) and joined[phrase_end].isspace():
+                phrase_end += 1
+            if phrase_end >= len(joined) or joined[phrase_end] != "-":
+                continue
+            terminal_offset = phrase_end + 1
+            while terminal_offset < len(joined) and joined[terminal_offset] == "-":
+                terminal_offset += 1
+            dash_cursor = terminal_offset
+            while terminal_offset < len(joined) and joined[terminal_offset].isspace():
+                terminal_offset += 1
+            terminal = end_offset_to_index.get(terminal_offset)
+            if terminal is not None:
+                for span_index in range(index, terminal + 1):
+                    boundaries[span_index] = boundary
+
+        # Attribution starts and terminals are found independently in the one
+        # reconstructed string. Pair each terminal with the nearest preceding
+        # physical start that reconstructs to "On "; there is no fragment cap.
+        on_candidates = [
+            (offset, run_start + local_index)
+            for local_index, offset in enumerate(start_offsets)
+            if joined.startswith("On ", offset)
+        ]
+        candidate_cursor = 0
+        latest_candidate: tuple[int, int] | None = None
+        terminal_fragment_cursor = 0
+        for match in _ATTR_SPAN_TERMINAL.finditer(joined):
+            terminal = end_offset_to_index.get(match.end())
+            if terminal is None:
+                continue
+            while (
+                candidate_cursor < len(on_candidates)
+                and on_candidates[candidate_cursor][0] <= match.start()
             ):
-                boundary = "forward"
-            elif _ATTR_TERMINAL.match(candidate_stripped):
-                boundary = "attribution"
-            if boundary is not None:
-                for index in range(start, end + 1):
-                    boundaries[index] = boundary
-                break
+                latest_candidate = on_candidates[candidate_cursor]
+                candidate_cursor += 1
+            if latest_candidate is not None:
+                _, attribution_start = latest_candidate
+                # One physical 'On ' start can introduce only one attribution.
+                # Consume it whether the span is accepted or crosses a marker.
+                latest_candidate = None
+                if not any(
+                    boundaries[index] is not None
+                    for index in range(attribution_start, terminal + 1)
+                ):
+                    for index in range(attribution_start, terminal + 1):
+                        boundaries[index] = "attribution"
+                    continue
+            # A terminal with no trustworthy "On " start is still a hard weak
+            # signal. Mark every physical fragment that contributed to wrote:.
+            while (
+                terminal_fragment_cursor + 1 < len(start_offsets)
+                and start_offsets[terminal_fragment_cursor + 1] <= match.start()
+            ):
+                terminal_fragment_cursor += 1
+            terminal_start = run_start + terminal_fragment_cursor
+            for index in range(terminal_start, terminal + 1):
+                if boundaries[index] is None:
+                    boundaries[index] = "attribution_terminal_unresolved"
+
+        run_start = run_end + 1
 
     # Classify an entire wrapped attribution so its start cannot be erased by
     # flowed joining before the later terminal 'wrote:' line is inspected.
@@ -504,23 +616,24 @@ def _unwrap_flowed_details(text: str, *, delsp: bool = False) -> _ExtractedBody:
         rendered_source = source
         content = contents[i]
         semantic_boundary = classes[i].boundary
-        while content.endswith(" ") and i + 1 < len(contents):
+        joined_parts = [content]
+        while joined_parts[-1].endswith(" ") and i + 1 < len(contents):
             next_source = provenance[i + 1]
             next_content = contents[i + 1]
             if next_source.quote_depth != source.quote_depth:
                 break
             next_boundary = classes[i + 1].boundary
             # A boundary span may join internally so it renders as the semantic
-            # marker the downstream trimmer recognizes.  Crossing into or out
+            # marker the downstream trimmer recognizes. Crossing into or out
             # of a boundary remains forbidden.
             if semantic_boundary is None:
                 if next_boundary is not None:
                     break
             elif next_boundary != semantic_boundary:
                 break
-            # RFC 3676 preserves the trailing soft-break space by default.
-            # Only ``DelSp=yes`` removes it before the physical lines join.
-            content = (content[:-1] if delsp else content) + next_content
+            if delsp:
+                joined_parts[-1] = joined_parts[-1][:-1]
+            joined_parts.append(next_content)
             if next_source.authored_literal_gt:
                 rendered_source = _LineProvenance(
                     source.quote_depth,
@@ -528,6 +641,7 @@ def _unwrap_flowed_details(text: str, *, delsp: bool = False) -> _ExtractedBody:
                     True,
                 )
             i += 1
+        content = "".join(joined_parts)
         out.append(_render_flowed_line(source.quote_depth, content))
         out_provenance.append(rendered_source)
         i += 1

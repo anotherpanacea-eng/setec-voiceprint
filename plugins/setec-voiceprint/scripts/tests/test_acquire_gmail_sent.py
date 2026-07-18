@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from email import message_from_bytes
 from email.message import EmailMessage
 from pathlib import Path
@@ -233,6 +234,172 @@ def test_format_flowed_delsp_boundary_emerging_after_join_is_not_absorbed(
     assert cleaned == "MY_AUTHORED_PROSE remains safely in this message"
     assert "THIRD_PARTY_HEADER_NAME" not in cleaned
     assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in cleaned
+
+
+def test_format_flowed_delsp_detects_attribution_split_inside_prefix(
+    tmp_path,
+):
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            "O ",
+            "n Fri, Jul 17, 2026, THIRD_PARTY_HEADER_NAME wro ",
+            "te:",
+            "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+        delsp=True,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert cleaned == "MY_AUTHORED_PROSE remains safely in this message"
+    assert "THIRD_PARTY_HEADER_NAME" not in cleaned
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in cleaned
+
+
+@pytest.mark.parametrize(
+    "split",
+    range(1, len("Begin forwarded message:")),
+)
+def test_format_flowed_delsp_detects_forward_marker_at_every_split(
+    tmp_path, split,
+):
+    marker_text = "Begin forwarded message:"
+    tail = marker_text[split:]
+    if tail.startswith(" "):
+        tail = " " + tail  # RFC 3676 space-stuffing preserves content space
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            marker_text[:split] + " ",
+            tail,
+            "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+        ],
+        is_reply=False,
+        delsp=True,
+    )
+    assert prepared.piece.cleaned_text == (
+        "MY_AUTHORED_PROSE remains safely in this message"
+    )
+
+
+def test_format_flowed_boundary_scan_is_bounded_on_long_chain():
+    text = "\n".join(["On x "] * 2000 + ["end"])
+    unwrapped = G._unwrap_flowed(text, delsp=True)
+    assert unwrapped.startswith("On xOn x")
+    assert unwrapped.endswith("end")
+
+
+def test_format_flowed_terminal_scans_stay_linear():
+    unresolved = "\n".join(["x wrote: "] * 10_000 + ["end"])
+    crossed_boundary = "\n".join(
+        ["On sender ", "Begin forwarded message: "]
+        + ["filler "] * 10_000
+        + ["x wrote: "] * 10_000
+        + ["end"]
+    )
+    long_dash_run = "\n".join(["- "] * 20_000 + ["end"])
+    started = time.perf_counter()
+    G._unwrap_flowed(unresolved, delsp=True)
+    G._unwrap_flowed(crossed_boundary, delsp=True)
+    G._unwrap_flowed(long_dash_run, delsp=True)
+    assert time.perf_counter() - started < 2.0
+
+
+def test_format_flowed_delsp_detects_attribution_across_eight_fragments(
+    tmp_path,
+):
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            "O ",
+            "n Fri,  ",
+            "Jul 17,  ",
+            "2026,  ",
+            "THIRD_ ",
+            "PARTY_ ",
+            "NAME wro ",
+            "te:",
+            "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+        delsp=True,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert cleaned == "MY_AUTHORED_PROSE remains safely in this message"
+    assert "THIRD_PARTY" not in cleaned
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in cleaned
+
+
+@pytest.mark.parametrize(
+    ("marker", "is_reply"),
+    (
+        ("-----Original Message-----", True),
+        ("---------- Forwarded message ---------", False),
+    ),
+)
+def test_format_flowed_delsp_detects_dashed_marker_split_at_every_character(
+    tmp_path, marker, is_reply,
+):
+    fragments = [
+        "   " if character == " " else character + " "
+        for character in marker[:-1]
+    ] + [marker[-1]]
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            *fragments,
+            "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+        ],
+        is_reply=is_reply,
+        delsp=True,
+    )
+    assert prepared.piece.cleaned_text == (
+        "MY_AUTHORED_PROSE remains safely in this message"
+    )
+
+
+def test_format_flowed_marker_offsets_survive_expanding_unicode_casefold(tmp_path):
+    marker = "Begin forwarded message:"
+    fragments = [
+        "   " if character == " " else character + " "
+        for character in marker[:-1]
+    ] + [marker[-1]]
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED Stra\u00dfe remains mine ",
+            *fragments,
+            "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+        ],
+        is_reply=False,
+        delsp=True,
+    )
+    assert prepared.piece.cleaned_text == "MY_AUTHORED Stra\u00dfe remains mine"
+
+
+def test_format_flowed_dashed_marker_after_authored_trailing_dash_is_detected(
+    tmp_path,
+):
+    marker = "-----Original Message-----"
+    fragments = [
+        "   " if character == " " else character + " "
+        for character in marker[:-1]
+    ] + [marker[-1]]
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE safely ends-with- ",
+            *fragments,
+            "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+        delsp=True,
+    )
+    assert prepared.piece.cleaned_text == "MY_AUTHORED_PROSE safely ends-with-"
 
 
 def test_format_flowed_quoted_signature_separator_is_never_joined():
