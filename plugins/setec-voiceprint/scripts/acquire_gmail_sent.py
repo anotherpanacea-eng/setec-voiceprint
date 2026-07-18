@@ -772,11 +772,52 @@ def _has_weak_quote_signal(
     )
 
 
+# Service-appended listing-share / app-promo footers (e.g. Zillow) are a
+# trailing block of promo-label lines + standalone store/listing URL lines.
+# Strip only a TRAILING block that contains at least one such URL, stopping at
+# the first authored line -- so authored prose that merely cites iTunes/Zillow
+# mid-body is preserved.
+_FOOTER_HOST_RE = re.compile(
+    r"(?i)https?://(?:www\.)?"
+    r"(?:zillow\.com|itunes\.apple\.com|apps\.apple\.com|play\.google\.com)/\S*"
+)
+_FOOTER_LABEL_RE = re.compile(
+    r"(?i)^(?:view|download|load|get|see|find)\b[^\n]*"
+    r"\b(?:zillow|home|app|listing)\b[^\n]*$"
+)
+
+
+def _is_footer_line(stripped: str) -> bool:
+    return (
+        stripped == ""
+        or bool(_FOOTER_HOST_RE.search(stripped))
+        or bool(_FOOTER_LABEL_RE.match(stripped))
+    )
+
+
+def _strip_promo_footer(text: str) -> str:
+    lines = text.split("\n")
+    i = len(lines)
+    saw_url = False
+    while i > 0:
+        stripped = lines[i - 1].strip()
+        if not _is_footer_line(stripped):
+            break
+        if _FOOTER_HOST_RE.search(stripped):
+            saw_url = True
+        i -= 1
+    if saw_url and i < len(lines):
+        return "\n".join(lines[:i]).rstrip()
+    return text
+
+
 def _trim_signature(
     text: str,
     own_sig_lines: Optional[list[str]],
     provenance: tuple[_LineProvenance, ...] | None = None,
 ) -> str:
+    text = _strip_promo_footer(text)
+    provenance = _prefix_provenance(text, provenance)
     lines = text.split("\n")
     for i, semantic in enumerate(_rendered_semantic_lines(lines, provenance)):
         if semantic.boundary == "signature":
@@ -900,6 +941,10 @@ def _addresses(msg: Message, header: str) -> list[str]:
             out.append(addr)
     return out
 
+
+def _redact_addresses(text: str, recipients: ac.StableRedactionMap) -> str:
+    """Replace raw email-address tokens with stable recipient labels."""
+    return _ADDR_TOKEN.sub(lambda m: recipients.display(m.group(0)), text)
 
 
 def build_notes(msg: Message, recipients: ac.StableRedactionMap, *,
@@ -1577,7 +1622,7 @@ def process_message(
     if len(tail) >= 30:
         summary.trailing_counter[tail] += 1
 
-    title = _decode_header(msg.get("Subject"))
+    title = _redact_addresses(_decode_header(msg.get("Subject")), recipients)
     notes = build_notes(msg, recipients, forwarded_with_comment=fwd_present)
 
     piece = ac.AcquiredPiece(

@@ -595,6 +595,79 @@ def test_metadata_privacy_no_raw_recipient_addr(tmp_path, mbox):
     assert any("recipient_" in (e.get("notes") or "") for e in _entries(out))
 
 
+def test_subject_line_recipient_address_is_redacted_to_label(tmp_path):
+    recipients = G.ac.StableRedactionMap(
+        tmp_path / "recipient_map.json",
+        label_prefix="recipient",
+        normalize_key=lambda address: address.strip().lower(),
+        reuse_gaps=False,
+        map_name="recipient map",
+    )
+    raw = "Re: forward to Alice.Example@mail.invalid before Friday"
+    redacted = G._redact_addresses(raw, recipients)
+    assert "Alice.Example@mail.invalid" not in redacted
+    assert "@mail.invalid" not in redacted
+    assert "recipient_" in redacted
+    assert G._redact_addresses(raw, recipients) == redacted
+
+
+def test_process_message_redacts_address_in_subject(tmp_path):
+    message = message_from_bytes(
+        b"From: " + bf.OWN.encode() + b"\r\n"
+        b"To: visible-recipient@example.invalid\r\n"
+        b"X-Gmail-Labels: Sent\r\n"
+        b"Date: Fri, 17 Jul 2026 12:00:00 -0400\r\n"
+        b"Subject: notes for third.party@leak.invalid re the plan\r\n"
+        b"Message-ID: <subject-addr@example.invalid>\r\n"
+        b"\r\n"
+        b"This is my authored body with enough words to pass the floor easily.\r\n"
+    )
+    out = _out(tmp_path)
+    args = G.build_arg_parser().parse_args([
+        "acquire",
+        "--mbox-path", str(tmp_path / "unused.mbox"),
+        "--own-address", bf.OWN, "--output-dir", str(out),
+        "--min-words-per-piece", "1",
+    ])
+    opts = G.parse_options(args)
+    recipients = G.ac.StableRedactionMap(
+        opts.recipient_map_path, label_prefix="recipient",
+        normalize_key=lambda address: address.strip().lower(),
+        reuse_gaps=False, map_name="recipient map",
+    )
+    prepared = G.process_message(message, opts, recipients, G.Summary())
+    assert prepared is not None
+    assert "third.party@leak.invalid" not in prepared.piece.title
+    assert "recipient_" in prepared.piece.title
+
+
+def test_multiline_zillow_share_footer_is_stripped_with_provenance():
+    body = (
+        "Thought you might like this place, it is near the park.\n"
+        "\n"
+        "View this home on Zillow:\n"
+        "http://www.zillow.com/homedetails/2123354710_zpid\n"
+        "\n"
+        "Download the free Zillow iPhone app:\n"
+        "http://itunes.apple.com/us/app/id310738695?mt=8"
+    )
+    details = G._unwrap_flowed_details(body)
+    kept = G._trim_signature(
+        details.text, None, details.line_provenance,
+    )
+    assert "zillow.com" not in kept.lower()
+    assert "itunes.apple.com" not in kept
+    assert kept == "Thought you might like this place, it is near the park."
+
+
+def test_authored_service_citation_midbody_is_preserved():
+    body = (
+        "Start with Oxford's Peter Millican at iTunes U: "
+        "http://itunes.apple.com/x\n"
+        "and tell me what you think of the lectures."
+    )
+    assert G._trim_signature(body, None) == body
+
 def test_name_map_rejects_address_valued_alias(tmp_path, mbox, capsys):
     out = _out(tmp_path)
     name_map = tmp_path / "name-map.json"
