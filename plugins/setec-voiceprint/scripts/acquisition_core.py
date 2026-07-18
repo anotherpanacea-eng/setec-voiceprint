@@ -76,6 +76,23 @@ DEFAULT_BASELINES_FALLBACK = (
 )
 
 
+def _filesystem_path(path: Path) -> Path | str:
+    """Return an OS-call path, adding extended-length syntax on Windows.
+
+    A UUID temp sibling can cross ``MAX_PATH`` even when the final path does
+    not. Keep caller-facing ``Path`` values ordinary, do not resolve links,
+    and leave POSIX calls on their existing path objects.
+    """
+    if os.name != "nt":
+        return path
+    absolute = os.path.abspath(os.fspath(path))
+    if absolute.startswith("\\\\?\\"):
+        return absolute
+    if absolute.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + absolute[2:]
+    return "\\\\?\\" + absolute
+
+
 # --------------- Slug + hash utilities -----------------------------
 
 
@@ -907,16 +924,18 @@ def _write_bytes_atomic(path: Path, data: bytes) -> None:
     on one volume, which is what makes it atomic on both POSIX and NTFS.
     """
     tmp = path.with_name(f"{path.name}.{uuid.uuid4().hex}.tmp")
+    tmp_fs = _filesystem_path(tmp)
+    final_fs = _filesystem_path(path)
     try:
-        with open(tmp, "wb") as fh:
+        with open(tmp_fs, "wb") as fh:
             fh.write(data)
             fh.flush()
             os.fsync(fh.fileno())
-        os.replace(tmp, path)
+        os.replace(tmp_fs, final_fs)
     finally:
         try:
-            if tmp.exists():
-                tmp.unlink()
+            if os.path.exists(tmp_fs):
+                os.unlink(tmp_fs)
         except OSError:
             pass
 

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -117,6 +118,52 @@ def test_write_piece_preserves_exact_hashed_utf8_bytes(tmp_path):
     assert ac.compute_content_hash(text_path.read_bytes().decode("utf-8")) == (
         piece.content_hash
     )
+
+
+def test_write_bytes_atomic_short_path_preserves_replace_and_cleanup(tmp_path):
+    target = tmp_path / "atomic.bin"
+    target.write_bytes(b"old bytes")
+
+    ac._write_bytes_atomic(target, b"new exact bytes\x00\xff")
+
+    assert target.read_bytes() == b"new exact bytes\x00\xff"
+    assert list(tmp_path.glob("atomic.bin.*.tmp")) == []
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows MAX_PATH regression")
+def test_windows_uuid_temp_at_max_path_writes_complete_piece(tmp_path):
+    piece = _piece("first line\nsecond line with caf\u00e9")
+    stem = piece.filename_stem()
+    legacy_meta_tmp_name = f"{stem}.meta.json.{'a' * 32}.tmp"
+    base = os.path.abspath(os.fspath(tmp_path))
+    padding = 260 - len(base) - 2 - len(legacy_meta_tmp_name)
+    if not 16 <= padding <= 240:
+        pytest.skip("basetemp cannot produce the exact MAX_PATH fixture")
+    output_dir = tmp_path / ("p" * padding)
+    output_dir.mkdir()
+
+    text_path = output_dir / f"{stem}.txt"
+    meta_path = output_dir / f"{stem}.meta.json"
+    legacy_text_tmp = text_path.with_name(
+        f"{text_path.name}.{'a' * 32}.tmp"
+    )
+    legacy_meta_tmp = meta_path.with_name(legacy_meta_tmp_name)
+    assert len(os.path.abspath(os.fspath(legacy_text_tmp))) == 254
+    assert len(os.path.abspath(os.fspath(legacy_meta_tmp))) == 260
+    assert len(os.path.abspath(os.fspath(text_path))) == 217
+    assert len(os.path.abspath(os.fspath(meta_path))) == 223
+
+    written_text, written_meta = ac.write_piece(
+        piece, output_dir=output_dir, scraper_version="long-path-test",
+    )
+
+    assert written_text == text_path
+    assert written_meta == meta_path
+    assert written_text.read_bytes() == piece.cleaned_text.encode("utf-8")
+    assert json.loads(written_meta.read_text(encoding="utf-8"))[
+        "content_hash"
+    ] == piece.content_hash
+    assert list(output_dir.glob("*.tmp")) == []
 
 
 def test_disambiguated_stem_is_filesystem_safe(tmp_path):
