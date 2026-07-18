@@ -107,6 +107,18 @@ def test_write_piece_disambiguates_stem_collision(tmp_path):
     assert t2.read_text().startswith("beta")  # the first file is NOT clobbered
 
 
+def test_write_piece_preserves_exact_hashed_utf8_bytes(tmp_path):
+    text = "first line\nsecond line\n\ngenuine paragraph with caf\u00e9"
+    piece = _piece(text)
+    text_path, _ = ac.write_piece(
+        piece, output_dir=tmp_path, scraper_version="t",
+    )
+    assert text_path.read_bytes() == text.encode("utf-8")
+    assert ac.compute_content_hash(text_path.read_bytes().decode("utf-8")) == (
+        piece.content_hash
+    )
+
+
 def test_disambiguated_stem_is_filesystem_safe(tmp_path):
     p1, p2 = _piece("x " * 200), _piece("y " * 200)
     ac.write_piece(p1, output_dir=tmp_path, scraper_version="t")
@@ -194,13 +206,67 @@ def test_content_hash_dedup_still_matches_unchanged_bytes(tmp_path):
     """Happy path preserved: a piece whose paired .txt is on disk and
     unmodified is still correctly reported as already present (the
     recompute equals the recorded hash equals the incoming hash)."""
-    piece = _piece("stable corpus body " * 40)
+    # Include LF so this catches Windows universal-newline conversion:
+    # dedupe must hash the exact stored UTF-8 bytes, just as write_piece does.
+    piece = _piece(("stable corpus body\n" * 40) + "final line")
     _, meta_path = ac.write_piece(
         piece, output_dir=tmp_path, scraper_version="t",
     )
     assert (
         ac.content_hash_already_present(piece.content_hash, tmp_path)
         == meta_path
+    )
+
+
+def test_content_hash_dedup_recognizes_legacy_windows_crlf_bytes(tmp_path):
+    """Old Windows writes translated hashed LF text to CRLF on disk."""
+    logical_text = "legacy first line\nlegacy second line\n"
+    piece = _piece(logical_text)
+    stem = piece.filename_stem()
+    text_path = tmp_path / f"{stem}.txt"
+    meta_path = tmp_path / f"{stem}.meta.json"
+    text_path.write_bytes(logical_text.replace("\n", "\r\n").encode("utf-8"))
+    meta_path.write_text(
+        json.dumps({"content_hash": piece.content_hash}), encoding="utf-8",
+    )
+
+    assert (
+        ac.content_hash_already_present(piece.content_hash, tmp_path) == meta_path
+    )
+
+
+@pytest.mark.parametrize(
+    "stored_bytes",
+    (
+        b"legacy first line\r\nlegacy second line\n",
+        b"legacy first line\rlegacy second line",
+        b"legacy first line\r\r\nlegacy second line\r\r\n",
+    ),
+    ids=("mixed-lf-crlf", "lone-cr", "crcrlf"),
+)
+def test_content_hash_dedup_rejects_noncanonical_legacy_newlines(
+    tmp_path, stored_bytes,
+):
+    logical_text = "legacy first line\nlegacy second line\n"
+    piece = _piece(logical_text)
+    stem = piece.filename_stem()
+    (tmp_path / f"{stem}.txt").write_bytes(stored_bytes)
+    (tmp_path / f"{stem}.meta.json").write_text(
+        json.dumps({"content_hash": piece.content_hash}), encoding="utf-8",
+    )
+
+    assert ac.content_hash_already_present(piece.content_hash, tmp_path) is None
+
+
+def test_content_hash_dedup_preserves_exact_new_crlf_bytes(tmp_path):
+    """New writer hashes and verifies intentional CRLF without normalization."""
+    piece = _piece("intentional first line\r\nintentional second line\r\n")
+    text_path, meta_path = ac.write_piece(
+        piece, output_dir=tmp_path, scraper_version="t",
+    )
+    assert text_path.read_bytes() == piece.cleaned_text.encode("utf-8")
+    assert (
+        ac.content_hash_already_present(piece.content_hash, tmp_path) == meta_path
     )
 
 

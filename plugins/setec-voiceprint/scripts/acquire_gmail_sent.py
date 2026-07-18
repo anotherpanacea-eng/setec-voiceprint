@@ -56,13 +56,21 @@ DEFAULT_SENT_TOKEN = "Sent"
 # signal for it, so ai_status is "unknown". Distinct from era's boundary.
 SMART_COMPOSE_DATE = _dt.date(2018, 5, 1)
 
-_ATTR_LINE = re.compile(r"^On .+ wrote:\s*$")
 _ATTR_TERMINAL = re.compile(r".*\bwrote:\s*$")
 _ORIGINAL_MESSAGE = re.compile(r"^-+\s*Original Message\s*-+\s*$", re.I)
 _FORWARD_MARKERS = (
     re.compile(r"^-+\s*Forwarded message\s*-+\s*$", re.I),
     re.compile(r"^Begin forwarded message:\s*$", re.I),
 )
+# Case-folded marker text used by the one-pass flowed-run scanner below.
+_DASHED_SPAN_MARKERS = (
+    ("original message", "original_message"),
+    ("forwarded message", "forward"),
+)
+_BEGIN_FORWARDED_SPAN = re.compile(r"Begin forwarded message:", re.I)
+_ATTR_SPAN_TERMINAL = re.compile(r"\bwrote:\s*")
+
+
 _SIG_DELIM = "-- "
 _HTML_STRIP_SELECTORS = ("div.gmail_quote", ".gmail_attr", "blockquote")
 _ADDR_TOKEN = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
@@ -255,52 +263,427 @@ def _decode_part(part: Message) -> str:
     if payload is None:
         return ""
     charset = part.get_content_charset() or "utf-8"
-    return payload.decode(charset, "replace")
+    decoded = payload.decode(charset, "replace")
+    # MIME payload bytes commonly retain CRLF even though the rest of the
+    # acquisition pipeline is line-oriented around LF.  Canonicalize here,
+    # before format=flowed unwrapping and preprocessing.  Otherwise CR remains
+    # attached to each logical line, defeating both ``line.endswith(" ")`` and
+    # LF-based whitespace rules.  It also prevents Windows text-mode writing
+    # from translating CRLF a second time into CR-CR-LF.
+    return decoded.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _unwrap_flowed(text: str) -> str:
-    """Minimal RFC 3676 format=flowed unwrap: a line ending in a space is
-    soft-wrapped and joined with the next, EXCEPT the exact `-- `
-    signature line, which is never joined across (so Phase 2's signature
-    detection still finds it)."""
-    lines = text.split("\n")
-    out: list[str] = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        if line == _SIG_DELIM:
-            out.append(line)
-            i += 1
+@dataclass(frozen=True)
+class _LineProvenance:
+    """Transport facts that must survive RFC 3676 rendering."""
+
+    quote_depth: int
+    space_stuffed: bool
+    authored_literal_gt: bool = False
+
+
+class _ProvenancedText(str):
+    """A normal string carrying immutable RFC 3676 line provenance."""
+
+    def __new__(
+        cls,
+        value: str,
+        line_provenance: tuple[_LineProvenance, ...],
+    ):
+        instance = super().__new__(cls, value)
+        object.__setattr__(instance, "_line_provenance", line_provenance)
+        return instance
+
+    @property
+    def line_provenance(self) -> tuple[_LineProvenance, ...]:
+        return self._line_provenance
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError("_ProvenancedText is immutable")
+
+
+@dataclass(frozen=True)
+class _ExtractedBody:
+    text: str
+    line_provenance: tuple[_LineProvenance, ...] | None = None
+
+
+@dataclass(frozen=True)
+class _SemanticLine:
+    content: str
+    quote_depth: int
+    boundary: str | None = None
+
+
+def _flowed_line_parts(line: str) -> tuple[_LineProvenance, str]:
+    """Return RFC 3676 provenance and unstuffed line content.
+
+    Space-stuffing is applied after any quote marks on transmission.  Remove
+    that transport-only space before deciding whether the content is flowed.
+    Keeping quote depth separate is security-relevant: joining an authored
+    line to a quoted continuation would hide the continuation's leading ``>``
+    from the downstream third-party-quote trimmer.
+    """
+    depth = 0
+    while depth < len(line) and line[depth] == ">":
+        depth += 1
+    content = line[depth:]
+    space_stuffed = content.startswith(" ")
+    if space_stuffed:
+        content = content[1:]
+    return _LineProvenance(
+        depth,
+        space_stuffed,
+        depth == 0 and space_stuffed and content.startswith(">"),
+    ), content
+
+
+def _render_flowed_line(depth: int, content: str) -> str:
+    """Render an unstuffed flowed line while retaining its quote boundary."""
+    return (">" * depth) + content
+
+
+def _semantic_line_classes(
+    contents: list[str],
+    provenance: list[_LineProvenance] | tuple[_LineProvenance, ...],
+    *,
+    delsp: bool = False,
+) -> tuple[_SemanticLine, ...]:
+    """Classify every semantic boundary from one shared source of truth."""
+    if len(contents) != len(provenance):
+        raise ValueError("line provenance must align with body lines")
+
+    boundaries: list[str | None] = [None] * len(contents)
+    authored_literal_gt = [
+        source.authored_literal_gt for source in provenance
+    ]
+    for i, content in enumerate(contents):
+        if authored_literal_gt[i]:
             continue
-        while (line.endswith(" ") and line != _SIG_DELIM
-               and i + 1 < len(lines) and lines[i + 1] != _SIG_DELIM):
-            line = line[:-1] + lines[i + 1]
+        stripped = content.strip()
+        if content == _SIG_DELIM:
+            boundaries[i] = "signature"
+        elif _ORIGINAL_MESSAGE.match(stripped):
+            boundaries[i] = "original_message"
+        elif any(pattern.match(stripped) for pattern in _FORWARD_MARKERS):
+            boundaries[i] = "forward"
+    # Reconstruct each maximal same-depth flowed run exactly once. Physical
+    # start/end offsets let markers split across any number of RFC 3676
+    # fragments remain visible without repeatedly rescanning a growing string.
+    run_start = 0
+    while run_start < len(contents):
+        if authored_literal_gt[run_start] or boundaries[run_start] is not None:
+            run_start += 1
+            continue
+        run_end = run_start
+        while (
+            run_end + 1 < len(contents)
+            and contents[run_end].endswith(" ")
+            and provenance[run_end + 1].quote_depth
+            == provenance[run_start].quote_depth
+            and not authored_literal_gt[run_end + 1]
+            and boundaries[run_end + 1] is None
+        ):
+            run_end += 1
+        if run_end == run_start:
+            run_start += 1
+            continue
+
+        chunks: list[str] = []
+        start_offsets: list[int] = []
+        end_offset_to_index: dict[int, int] = {}
+        cursor = 0
+        for index in range(run_start, run_end + 1):
+            start_offsets.append(cursor)
+            chunk = contents[index]
+            if index < run_end and delsp:
+                chunk = chunk[:-1]
+            chunks.append(chunk)
+            cursor += len(chunk)
+            end_offset_to_index[cursor] = index
+        joined = "".join(chunks)
+
+        # Scan fixed-form markers once per reconstructed run. A physical start
+        # and physical end are both required; dash runs and whitespace are
+        # advanced monotonically so hostile fragmentation remains linear.
+        start_offset_to_index = {
+            offset: run_start + local_index
+            for local_index, offset in enumerate(start_offsets)
+        }
+        for match in _BEGIN_FORWARDED_SPAN.finditer(joined):
+            offset = match.start()
+            index = start_offset_to_index.get(offset)
+            if index is None:
+                continue
+            terminal_offset = match.end()
+            while terminal_offset < len(joined) and joined[terminal_offset].isspace():
+                terminal_offset += 1
+            terminal = end_offset_to_index.get(terminal_offset)
+            if terminal is not None:
+                for span_index in range(index, terminal + 1):
+                    boundaries[span_index] = "forward"
+
+        dash_cursor = 0
+        physical_start_cursor = 0
+        while True:
+            offset = joined.find("-", dash_cursor)
+            if offset < 0:
+                break
+            dash_end = offset + 1
+            while dash_end < len(joined) and joined[dash_end] == "-":
+                dash_end += 1
+            dash_cursor = dash_end
+            while (
+                physical_start_cursor < len(start_offsets)
+                and start_offsets[physical_start_cursor] < offset
+            ):
+                physical_start_cursor += 1
+            if (
+                physical_start_cursor >= len(start_offsets)
+                or start_offsets[physical_start_cursor] >= dash_end
+            ):
+                continue
+            index = run_start + physical_start_cursor
+            phrase_start = dash_end
+            while phrase_start < len(joined) and joined[phrase_start].isspace():
+                phrase_start += 1
+            boundary = None
+            phrase_end = phrase_start
+            for phrase, candidate_boundary in _DASHED_SPAN_MARKERS:
+                if joined[phrase_start:phrase_start + len(phrase)].casefold() == phrase:
+                    boundary = candidate_boundary
+                    phrase_end = phrase_start + len(phrase)
+                    break
+            if boundary is None:
+                continue
+            while phrase_end < len(joined) and joined[phrase_end].isspace():
+                phrase_end += 1
+            if phrase_end >= len(joined) or joined[phrase_end] != "-":
+                continue
+            terminal_offset = phrase_end + 1
+            while terminal_offset < len(joined) and joined[terminal_offset] == "-":
+                terminal_offset += 1
+            dash_cursor = terminal_offset
+            while terminal_offset < len(joined) and joined[terminal_offset].isspace():
+                terminal_offset += 1
+            terminal = end_offset_to_index.get(terminal_offset)
+            if terminal is not None:
+                for span_index in range(index, terminal + 1):
+                    boundaries[span_index] = boundary
+
+        # Attribution starts and terminals are found independently in the one
+        # reconstructed string. Pair each terminal with the nearest preceding
+        # physical start that reconstructs to "On "; there is no fragment cap.
+        on_candidates = [
+            (offset, run_start + local_index)
+            for local_index, offset in enumerate(start_offsets)
+            if joined.startswith("On ", offset)
+        ]
+        candidate_cursor = 0
+        latest_candidate: tuple[int, int] | None = None
+        terminal_fragment_cursor = 0
+        for match in _ATTR_SPAN_TERMINAL.finditer(joined):
+            terminal = end_offset_to_index.get(match.end())
+            if terminal is None:
+                continue
+            while (
+                candidate_cursor < len(on_candidates)
+                and on_candidates[candidate_cursor][0] <= match.start()
+            ):
+                latest_candidate = on_candidates[candidate_cursor]
+                candidate_cursor += 1
+            if latest_candidate is not None:
+                _, attribution_start = latest_candidate
+                # One physical 'On ' start can introduce only one attribution.
+                # Consume it whether the span is accepted or crosses a marker.
+                latest_candidate = None
+                if not any(
+                    boundaries[index] is not None
+                    for index in range(attribution_start, terminal + 1)
+                ):
+                    for index in range(attribution_start, terminal + 1):
+                        boundaries[index] = "attribution"
+                    continue
+            # A terminal with no trustworthy "On " start is still a hard weak
+            # signal. Mark every physical fragment that contributed to wrote:.
+            while (
+                terminal_fragment_cursor + 1 < len(start_offsets)
+                and start_offsets[terminal_fragment_cursor + 1] <= match.start()
+            ):
+                terminal_fragment_cursor += 1
+            terminal_start = run_start + terminal_fragment_cursor
+            for index in range(terminal_start, terminal + 1):
+                if boundaries[index] is None:
+                    boundaries[index] = "attribution_terminal_unresolved"
+
+        run_start = run_end + 1
+
+    # Classify an entire wrapped attribution so its start cannot be erased by
+    # flowed joining before the later terminal 'wrote:' line is inspected.
+    for terminal, content in enumerate(contents):
+        if authored_literal_gt[terminal]:
+            continue
+        if not _ATTR_TERMINAL.match(content.strip()):
+            continue
+        # A terminal-looking physical continuation belongs to authored text
+        # when an earlier same-depth flowed segment began with a space-stuffed
+        # literal '>'. Preserve that provenance until the segments are joined.
+        cursor = terminal - 1
+        authored_flow_continuation = False
+        while cursor >= 0:
+            if (
+                provenance[cursor].quote_depth
+                != provenance[terminal].quote_depth
+                or not contents[cursor].endswith(" ")
+            ):
+                break
+            if authored_literal_gt[cursor]:
+                authored_flow_continuation = True
+                break
+            if boundaries[cursor] is not None:
+                break
+            cursor -= 1
+        if authored_flow_continuation:
+            continue
+        start = terminal
+        lo = max(0, terminal - 6)
+        found_start = False
+        while start >= lo:
+            if contents[start].lstrip().startswith("On "):
+                for index in range(start, terminal + 1):
+                    if boundaries[index] is None:
+                        boundaries[index] = "attribution"
+                found_start = True
+                break
+            start -= 1
+        if not found_start and boundaries[terminal] is None:
+            boundaries[terminal] = "attribution_terminal_unresolved"
+
+    return tuple(
+        _SemanticLine(content, provenance[i].quote_depth, boundaries[i])
+        for i, content in enumerate(contents)
+    )
+
+
+def _rendered_semantic_lines(
+    lines: list[str],
+    provenance: tuple[_LineProvenance, ...] | None,
+) -> tuple[_SemanticLine, ...]:
+    """Recover classifier inputs without reinterpreting flowed authored text."""
+    if provenance is not None:
+        if len(lines) != len(provenance):
+            raise ValueError("line provenance must align with body lines")
+        contents: list[str] = []
+        for line, source in zip(lines, provenance):
+            prefix = ">" * source.quote_depth
+            if prefix and not line.startswith(prefix):
+                raise ValueError("rendered quote depth does not match provenance")
+            contents.append(line[len(prefix):] if prefix else line)
+        return _semantic_line_classes(contents, provenance)
+
+    # For non-flowed/plain and HTML bodies, retain the existing conservative
+    # inference that leading quote marks after indentation are genuine quotes.
+    contents = []
+    inferred = []
+    for line in lines:
+        content = line.lstrip()
+        depth = 0
+        while depth < len(content) and content[depth] == ">":
+            depth += 1
+        contents.append(content[depth:])
+        inferred.append(_LineProvenance(depth, False))
+    return _semantic_line_classes(contents, inferred)
+
+
+def _unwrap_flowed_details(text: str, *, delsp: bool = False) -> _ExtractedBody:
+    """Unwrap RFC 3676 ``format=flowed`` text.
+
+    A content line ending in a space is soft-wrapped and may join only to a
+    following line at the same quote depth.  The soft-break space is retained
+    unless the MIME part declares ``DelSp=yes``.  Space-stuffing is removed,
+    and the exact ``-- `` signature delimiter is never treated as flowed so
+    Phase 2's signature detection still finds it.
+    """
+    parsed = [_flowed_line_parts(line) for line in text.split("\n")]
+    provenance = [source for source, _ in parsed]
+    contents = [content for _, content in parsed]
+    classes = _semantic_line_classes(contents, provenance, delsp=delsp)
+    out: list[str] = []
+    out_provenance: list[_LineProvenance] = []
+    i = 0
+    while i < len(contents):
+        source = provenance[i]
+        rendered_source = source
+        content = contents[i]
+        semantic_boundary = classes[i].boundary
+        joined_parts = [content]
+        while joined_parts[-1].endswith(" ") and i + 1 < len(contents):
+            next_source = provenance[i + 1]
+            next_content = contents[i + 1]
+            if next_source.quote_depth != source.quote_depth:
+                break
+            next_boundary = classes[i + 1].boundary
+            # A boundary span may join internally so it renders as the semantic
+            # marker the downstream trimmer recognizes. Crossing into or out
+            # of a boundary remains forbidden.
+            if semantic_boundary is None:
+                if next_boundary is not None:
+                    break
+            elif next_boundary != semantic_boundary:
+                break
+            if delsp:
+                joined_parts[-1] = joined_parts[-1][:-1]
+            joined_parts.append(next_content)
+            if next_source.authored_literal_gt:
+                rendered_source = _LineProvenance(
+                    source.quote_depth,
+                    rendered_source.space_stuffed,
+                    True,
+                )
             i += 1
-        out.append(line)
+        content = "".join(joined_parts)
+        out.append(_render_flowed_line(source.quote_depth, content))
+        out_provenance.append(rendered_source)
         i += 1
-    return "\n".join(out)
+    rendered_provenance = tuple(out_provenance)
+    rendered = _ProvenancedText("\n".join(out), rendered_provenance)
+    return _ExtractedBody(rendered, rendered_provenance)
 
 
-def extract_body(msg: Message) -> str:
+def _unwrap_flowed(text: str, *, delsp: bool = False) -> str:
+    """Backward-compatible string-only wrapper around flowed extraction."""
+    return _unwrap_flowed_details(text, delsp=delsp).text
+
+
+def _extract_body_details(msg: Message) -> _ExtractedBody:
     """Prefer text/plain; fall back to text/html with the Gmail
     reply-DOM containers stripped BEFORE flattening. Returns "" when no
     body part exists (attachment-only message)."""
     plain: Optional[str] = None
     plain_flowed = False
+    plain_delsp = False
     html: Optional[str] = None
     for part in _iter_body_parts(msg):
         ctype = part.get_content_type()
         if ctype == "text/plain" and plain is None:
             plain = _decode_part(part)
             plain_flowed = (part.get_param("format") or "").lower() == "flowed"
+            plain_delsp = (part.get_param("delsp") or "").lower() == "yes"
         elif ctype == "text/html" and html is None:
             html = _decode_part(part)
     if plain is not None and plain.strip():
-        return _unwrap_flowed(plain) if plain_flowed else plain
+        if plain_flowed:
+            return _unwrap_flowed_details(plain, delsp=plain_delsp)
+        return _ExtractedBody(plain)
     if html is not None and html.strip():
         text, _ = ac.html_to_text(html, strip_selectors=_HTML_STRIP_SELECTORS)
-        return text
-    return ""
+        return _ExtractedBody(text)
+    return _ExtractedBody("")
+
+
+def extract_body(msg: Message) -> str:
+    """Return the preferred body as text, preserving the public v1 API."""
+    return _extract_body_details(msg).text
 
 
 def _iter_body_parts(part: Message):
@@ -335,58 +718,68 @@ class TrimResult:
     kept_no_signal: bool = False
     kept_no_headers: bool = False
     residual_attribution: bool = False
+    kept_provenance: tuple[_LineProvenance, ...] | None = None
 
 
-def _find_forward_marker(lines: list[str]) -> int:
-    for i, line in enumerate(lines):
-        for pat in _FORWARD_MARKERS:
-            if pat.match(line.strip()):
-                return i
-    return -1
+def _find_forward_marker(
+    lines: list[str],
+    provenance: tuple[_LineProvenance, ...] | None = None,
+) -> int:
+    classes = _rendered_semantic_lines(lines, provenance)
+    return next(
+        (
+            i for i, semantic in enumerate(classes)
+            if semantic.quote_depth == 0
+            and semantic.boundary == "forward"
+        ),
+        -1,
+    )
 
 
-def _find_quote_boundary(lines: list[str]) -> int:
+def _find_quote_boundary(
+    lines: list[str],
+    provenance: tuple[_LineProvenance, ...] | None = None,
+) -> int:
     """Return the first line index that begins quoted content, or -1.
     Attribution lines are matched wrap-aware by back-scanning from a
     terminal `... wrote:` line up to a leading `On ` within a small
     window, so a wrapped `On <date>, <name> <addr>\\nwrote:` is trimmed
     whole (its address never survives)."""
-    for i, line in enumerate(lines):
-        s = line.strip()
-        if _ATTR_LINE.match(s) or _ORIGINAL_MESSAGE.match(s):
-            return i
-        if _ATTR_TERMINAL.match(s):
-            # wrapped attribution: back-scan for the 'On ' start.
-            j = i
-            lo = max(0, i - 6)
-            while j >= lo:
-                if lines[j].lstrip().startswith("On "):
-                    return j
-                j -= 1
-        if s.startswith(">"):
-            return i
-    return -1
+    classes = _rendered_semantic_lines(lines, provenance)
+    return next(
+        (
+            i for i, semantic in enumerate(classes)
+            if semantic.quote_depth > 0
+            or semantic.boundary in {"attribution", "original_message"}
+        ),
+        -1,
+    )
 
 
-def _has_weak_quote_signal(body: str) -> bool:
-    low = body.lower()
-    if "wrote:" in low or "original message" in low:
-        # anchored: a line-ending 'wrote:' or the original-message rule,
-        # not the bare word mid-sentence.
-        for line in body.split("\n"):
-            s = line.strip()
-            if _ATTR_TERMINAL.match(s) or _ORIGINAL_MESSAGE.match(s):
-                return True
-    for line in body.split("\n"):
-        if line.lstrip().startswith(">"):
-            return True
-    return False
+def _has_weak_quote_signal(
+    body: str,
+    provenance: tuple[_LineProvenance, ...] | None = None,
+) -> bool:
+    classes = _rendered_semantic_lines(body.split("\n"), provenance)
+    return any(
+        semantic.quote_depth > 0
+        or semantic.boundary in {
+            "attribution",
+            "attribution_terminal_unresolved",
+            "original_message",
+        }
+        for semantic in classes
+    )
 
 
-def _trim_signature(text: str, own_sig_lines: Optional[list[str]]) -> str:
+def _trim_signature(
+    text: str,
+    own_sig_lines: Optional[list[str]],
+    provenance: tuple[_LineProvenance, ...] | None = None,
+) -> str:
     lines = text.split("\n")
-    for i, line in enumerate(lines):
-        if line == _SIG_DELIM:
+    for i, semantic in enumerate(_rendered_semantic_lines(lines, provenance)):
+        if semantic.boundary == "signature":
             return "\n".join(lines[:i]).rstrip()
     if own_sig_lines:
         joined = "\n".join(own_sig_lines).strip()
@@ -396,44 +789,78 @@ def _trim_signature(text: str, own_sig_lines: Optional[list[str]]) -> str:
     return text.rstrip()
 
 
+def _prefix_provenance(
+    text: str,
+    provenance: tuple[_LineProvenance, ...] | None,
+) -> tuple[_LineProvenance, ...] | None:
+    if provenance is None or not text:
+        return None
+    return provenance[:len(text.split("\n"))]
+
+
 def trim_body(
     body: str,
     *,
     is_reply: bool,
     own_sig_lines: Optional[list[str]],
+    line_provenance: tuple[_LineProvenance, ...] | None = None,
 ) -> TrimResult:
+    if line_provenance is None and isinstance(body, _ProvenancedText):
+        line_provenance = body.line_provenance
     lines = body.split("\n")
+    if line_provenance is not None and len(line_provenance) != len(lines):
+        raise ValueError("line provenance must align with body lines")
 
     # Phase 1a: forwarded marker (checked first).
-    fwd = _find_forward_marker(lines)
+    fwd = _find_forward_marker(lines, line_provenance)
     if fwd != -1:
-        lead = "\n".join(lines[:fwd]).strip()
-        if not lead:
+        lead = "\n".join(lines[:fwd]).rstrip()
+        if not lead.strip():
             return TrimResult(kept="", dropped=True,
                               forwarded_no_comment=True,
                               drop_reason="forwarded_no_comment")
         composed = lead
+        composed_provenance = _prefix_provenance(
+            composed,
+            line_provenance[:fwd] if line_provenance is not None else None,
+        )
     else:
-        boundary = _find_quote_boundary(lines)
+        boundary = _find_quote_boundary(lines, line_provenance)
         if boundary != -1:
             composed = "\n".join(lines[:boundary]).rstrip()
+            composed_provenance = _prefix_provenance(
+                composed,
+                line_provenance[:boundary]
+                if line_provenance is not None else None,
+            )
         else:
             # No boundary located.
-            if is_reply and _has_weak_quote_signal(body):
+            if is_reply and _has_weak_quote_signal(body, line_provenance):
                 return TrimResult(kept="", dropped=True,
                                   drop_reason="quote_boundary_unresolved")
             composed = body.rstrip()
+            composed_provenance = _prefix_provenance(
+                composed, line_provenance,
+            )
             if is_reply:
                 # confirmed reply, no quote-shaped content -> clean.
                 res = TrimResult(kept="", kept_no_signal=True)
             else:
                 res = TrimResult(kept="", kept_no_headers=True)
-            res.kept = _trim_signature(composed, own_sig_lines)
+            res.kept = _trim_signature(
+                composed, own_sig_lines, composed_provenance,
+            )
+            res.kept_provenance = _prefix_provenance(
+                res.kept, composed_provenance,
+            )
             return res
 
     # Phase 2: always-run signature trim on whatever Phase 1 kept.
-    kept = _trim_signature(composed, own_sig_lines)
-    return TrimResult(kept=kept)
+    kept = _trim_signature(composed, own_sig_lines, composed_provenance)
+    return TrimResult(
+        kept=kept,
+        kept_provenance=_prefix_provenance(kept, composed_provenance),
+    )
 
 
 # --------------- recipient redaction ------------------------------
@@ -798,17 +1225,25 @@ def process_message(
         if opts.until and date > opts.until:
             return None
 
-    body = extract_body(msg)
+    extracted = _extract_body_details(msg)
+    body = extracted.text
     if not body.strip():
         summary.skipped_no_body += 1
         return None
 
     is_reply = bool(msg.get("In-Reply-To") or msg.get("References"))
-    fwd_present = _find_forward_marker(body.split("\n")) != -1
+    fwd_present = _find_forward_marker(
+        body.split("\n"), extracted.line_provenance,
+    ) != -1
     if is_reply or fwd_present:
         summary.reply_checked += 1
 
-    trim = trim_body(body, is_reply=is_reply, own_sig_lines=opts.own_sig_lines)
+    trim = trim_body(
+        body,
+        is_reply=is_reply,
+        own_sig_lines=opts.own_sig_lines,
+        line_provenance=extracted.line_provenance,
+    )
     if trim.dropped:
         if trim.forwarded_no_comment:
             summary.skipped_forwarded_no_comment += 1
@@ -824,8 +1259,10 @@ def process_message(
 
     # HTML residual-attribution backstop (fail-closed if the DOM strip
     # missed a reply container and an attribution line survived).
-    for line in kept.split("\n"):
-        if _ATTR_LINE.match(line.strip()):
+    for semantic in _rendered_semantic_lines(
+        kept.split("\n"), trim.kept_provenance,
+    ):
+        if semantic.boundary == "attribution":
             summary.skipped_html_residual_attribution += 1
             return None
 

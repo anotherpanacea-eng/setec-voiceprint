@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import json
 import sys
+import time
+from email import message_from_bytes
 from email.message import EmailMessage
 from pathlib import Path
 
@@ -57,6 +59,58 @@ def _txt(out: Path) -> str:
     return "\n".join(p.read_text() for p in out.glob("*.txt"))
 
 
+def _process_flowed_message(
+    tmp_path: Path,
+    body_lines: list[str],
+    *,
+    is_reply: bool,
+    delsp: bool = False,
+) -> G.PreparedMessage:
+    headers = [
+        f"From: {bf.OWN}",
+        "To: visible-recipient@example.invalid",
+        "X-Gmail-Labels: Sent",
+        "Date: Fri, 17 Jul 2026 12:00:00 -0400",
+        "Subject: Flowed semantic boundary",
+        "Message-ID: <flowed-boundary@example.invalid>",
+        (
+            "Content-Type: text/plain; charset=utf-8; format=flowed; DelSp=yes"
+            if delsp
+            else "Content-Type: text/plain; charset=utf-8; format=flowed"
+        ),
+        "Content-Transfer-Encoding: 8bit",
+    ]
+    if is_reply:
+        headers.insert(6, "In-Reply-To: <parent@example.invalid>")
+    raw = (
+        "\r\n".join(headers)
+        + "\r\n\r\n"
+        + "\r\n".join(body_lines)
+        + "\r\n"
+    ).encode("utf-8")
+    message = message_from_bytes(raw)
+    out = _out(tmp_path)
+    args = G.build_arg_parser().parse_args([
+        "--mbox-path", str(tmp_path / "unused.mbox"),
+        "--own-address", bf.OWN,
+        "--output-dir", str(out),
+        "--min-words-per-piece", "1",
+        "--since", "2000-01-01",
+        "--until", "2100-01-01",
+    ])
+    opts = G.parse_options(args)
+    recipients = G.ac.StableRedactionMap(
+        opts.recipient_map_path,
+        label_prefix="recipient",
+        normalize_key=lambda address: address.strip().lower(),
+        reuse_gaps=False,
+        map_name="recipient map",
+    )
+    prepared = G.process_message(message, opts, recipients, G.Summary())
+    assert prepared is not None
+    return prepared
+
+
 def test_leak_sentinels_never_in_output(tmp_path, mbox):
     out = _out(tmp_path)
     assert _run(mbox, out) == 0
@@ -90,6 +144,434 @@ def test_attached_message_rfc822_body_is_not_acquired():
     body = G.extract_body(outer)
     assert "covering note" in body
     assert "THIRD_PARTY_ATTACHED_PROSE_MUST_NOT_APPEAR" not in body
+
+
+def test_crlf_is_canonicalized_before_format_flowed_unwrap():
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"\r\n"
+        b"A soft wrapped line \r\n"
+        b"continues here.\r\n"
+        b"\r\n"
+        b"A genuine paragraph remains.\r\n"
+    )
+    body = G.extract_body(message)
+    assert body == (
+        "A soft wrapped line continues here.\n\n"
+        "A genuine paragraph remains.\n"
+    )
+    assert "\r" not in body
+
+
+def test_format_flowed_delsp_yes_removes_soft_break_space():
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed; DelSp=yes\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"\r\n"
+        b"A compound soft- \r\n"
+        b"wrapped word.\r\n"
+    )
+    assert G.extract_body(message) == "A compound soft-wrapped word.\n"
+
+
+def test_format_flowed_removes_space_stuffing_and_joins_equal_quote_depth():
+    assert G._unwrap_flowed(" From sender\n  indented\n") == (
+        "From sender\n indented\n"
+    )
+    assert G._unwrap_flowed("> quoted soft \n> continuation\n") == (
+        ">quoted soft continuation\n"
+    )
+
+
+def test_format_flowed_never_joins_authored_text_to_quoted_reply():
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"In-Reply-To: <parent@example.test>\r\n"
+        b"\r\n"
+        b"My authored reply ends here \r\n"
+        b"> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR\r\n"
+    )
+    body = G.extract_body(message)
+    trimmed = G.trim_body(body, is_reply=True, own_sig_lines=None)
+    assert trimmed.kept == "My authored reply ends here"
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in trimmed.kept
+
+
+def test_format_flowed_never_joins_authored_text_to_reply_attribution():
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"In-Reply-To: <parent@example.test>\r\n"
+        b"\r\n"
+        b"My authored reply ends here \r\n"
+        b"On Tue, Example Sender wrote:\r\n"
+        b"> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR\r\n"
+    )
+    body = G.extract_body(message)
+    trimmed = G.trim_body(body, is_reply=True, own_sig_lines=None)
+    assert trimmed.kept == "My authored reply ends here"
+    assert "Example Sender" not in trimmed.kept
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in trimmed.kept
+
+
+def test_format_flowed_delsp_boundary_emerging_after_join_is_not_absorbed(
+    tmp_path,
+):
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            "On Fri, Jul 17, 2026, THIRD_PARTY_HEADER_NAME wro ",
+            "te:",
+            "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+        delsp=True,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert cleaned == "MY_AUTHORED_PROSE remains safely in this message"
+    assert "THIRD_PARTY_HEADER_NAME" not in cleaned
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in cleaned
+
+
+def test_format_flowed_delsp_detects_attribution_split_inside_prefix(
+    tmp_path,
+):
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            "O ",
+            "n Fri, Jul 17, 2026, THIRD_PARTY_HEADER_NAME wro ",
+            "te:",
+            "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+        delsp=True,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert cleaned == "MY_AUTHORED_PROSE remains safely in this message"
+    assert "THIRD_PARTY_HEADER_NAME" not in cleaned
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in cleaned
+
+
+@pytest.mark.parametrize(
+    "split",
+    range(1, len("Begin forwarded message:")),
+)
+def test_format_flowed_delsp_detects_forward_marker_at_every_split(
+    tmp_path, split,
+):
+    marker_text = "Begin forwarded message:"
+    tail = marker_text[split:]
+    if tail.startswith(" "):
+        tail = " " + tail  # RFC 3676 space-stuffing preserves content space
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            marker_text[:split] + " ",
+            tail,
+            "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+        ],
+        is_reply=False,
+        delsp=True,
+    )
+    assert prepared.piece.cleaned_text == (
+        "MY_AUTHORED_PROSE remains safely in this message"
+    )
+
+
+def test_format_flowed_boundary_scan_is_bounded_on_long_chain():
+    text = "\n".join(["On x "] * 2000 + ["end"])
+    unwrapped = G._unwrap_flowed(text, delsp=True)
+    assert unwrapped.startswith("On xOn x")
+    assert unwrapped.endswith("end")
+
+
+def test_format_flowed_terminal_scans_stay_linear():
+    unresolved = "\n".join(["x wrote: "] * 10_000 + ["end"])
+    crossed_boundary = "\n".join(
+        ["On sender ", "Begin forwarded message: "]
+        + ["filler "] * 10_000
+        + ["x wrote: "] * 10_000
+        + ["end"]
+    )
+    long_dash_run = "\n".join(["- "] * 20_000 + ["end"])
+    started = time.perf_counter()
+    G._unwrap_flowed(unresolved, delsp=True)
+    G._unwrap_flowed(crossed_boundary, delsp=True)
+    G._unwrap_flowed(long_dash_run, delsp=True)
+    assert time.perf_counter() - started < 2.0
+
+
+def test_format_flowed_delsp_detects_attribution_across_eight_fragments(
+    tmp_path,
+):
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            "O ",
+            "n Fri,  ",
+            "Jul 17,  ",
+            "2026,  ",
+            "THIRD_ ",
+            "PARTY_ ",
+            "NAME wro ",
+            "te:",
+            "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+        delsp=True,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert cleaned == "MY_AUTHORED_PROSE remains safely in this message"
+    assert "THIRD_PARTY" not in cleaned
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in cleaned
+
+
+@pytest.mark.parametrize(
+    ("marker", "is_reply"),
+    (
+        ("-----Original Message-----", True),
+        ("---------- Forwarded message ---------", False),
+    ),
+)
+def test_format_flowed_delsp_detects_dashed_marker_split_at_every_character(
+    tmp_path, marker, is_reply,
+):
+    fragments = [
+        "   " if character == " " else character + " "
+        for character in marker[:-1]
+    ] + [marker[-1]]
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            *fragments,
+            "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+        ],
+        is_reply=is_reply,
+        delsp=True,
+    )
+    assert prepared.piece.cleaned_text == (
+        "MY_AUTHORED_PROSE remains safely in this message"
+    )
+
+
+def test_format_flowed_marker_offsets_survive_expanding_unicode_casefold(tmp_path):
+    marker = "Begin forwarded message:"
+    fragments = [
+        "   " if character == " " else character + " "
+        for character in marker[:-1]
+    ] + [marker[-1]]
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED Stra\u00dfe remains mine ",
+            *fragments,
+            "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+        ],
+        is_reply=False,
+        delsp=True,
+    )
+    assert prepared.piece.cleaned_text == "MY_AUTHORED Stra\u00dfe remains mine"
+
+
+def test_format_flowed_dashed_marker_after_authored_trailing_dash_is_detected(
+    tmp_path,
+):
+    marker = "-----Original Message-----"
+    fragments = [
+        "   " if character == " " else character + " "
+        for character in marker[:-1]
+    ] + [marker[-1]]
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE safely ends-with- ",
+            *fragments,
+            "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+        delsp=True,
+    )
+    assert prepared.piece.cleaned_text == "MY_AUTHORED_PROSE safely ends-with-"
+
+
+def test_format_flowed_quoted_signature_separator_is_never_joined():
+    assert G._unwrap_flowed("> quoted flowed \n> -- \n> signature\n") == (
+        ">quoted flowed \n>-- \n>signature\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("boundary_lines", "is_reply"),
+    (
+        (
+            [
+                "-----Original Message-----",
+                "From: THIRD_PARTY_HEADER_NAME <third.party@example.invalid>",
+                "Subject: THIRD_PARTY_HEADER_SUBJECT",
+                "",
+                "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+            ],
+            True,
+        ),
+        (
+            [
+                "---------- Forwarded message ---------",
+                "From: THIRD_PARTY_HEADER_NAME <third.party@example.invalid>",
+                "Subject: THIRD_PARTY_HEADER_SUBJECT",
+                "",
+                "THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+            ],
+            False,
+        ),
+        (
+            [
+                "On Fri, Jul 17, 2026, THIRD_PARTY_HEADER_NAME ",
+                "<third.party@example.invalid> ",
+                "wrote:",
+                "> From: THIRD_PARTY_HEADER_NAME <third.party@example.invalid>",
+                "> Subject: THIRD_PARTY_HEADER_SUBJECT",
+                "> THIRD_PARTY_PROSE_MUST_NOT_APPEAR",
+            ],
+            True,
+        ),
+    ),
+    ids=("original-message", "forward", "wrapped-attribution"),
+)
+def test_process_message_flowed_boundaries_exclude_third_party_content(
+    tmp_path, boundary_lines, is_reply,
+):
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this cleaned message ",
+            *boundary_lines,
+        ],
+        is_reply=is_reply,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert "MY_AUTHORED_PROSE" in cleaned
+    assert "THIRD_PARTY_HEADER_NAME" not in cleaned
+    assert "THIRD_PARTY_HEADER_SUBJECT" not in cleaned
+    assert "third.party@example.invalid" not in cleaned
+    assert "THIRD_PARTY_PROSE_MUST_NOT_APPEAR" not in cleaned
+
+
+def test_flowed_space_stuffed_authored_gt_preserves_quote_provenance(tmp_path):
+    message = message_from_bytes(
+        b"Content-Type: text/plain; charset=utf-8; format=flowed\r\n"
+        b"Content-Transfer-Encoding: 8bit\r\n"
+        b"In-Reply-To: <parent@example.test>\r\n"
+        b"\r\n"
+        b" > authored comparison remains mine\r\n"
+        b"> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR\r\n"
+    )
+    extracted = G._extract_body_details(message)
+    assert extracted.text.startswith("> authored comparison remains mine\n")
+    assert extracted.line_provenance is not None
+    assert extracted.line_provenance[0].quote_depth == 0
+    assert extracted.line_provenance[0].space_stuffed
+    assert extracted.line_provenance[0].authored_literal_gt
+    assert extracted.line_provenance[1].quote_depth == 1
+
+    trimmed = G.trim_body(
+        extracted.text,
+        is_reply=True,
+        own_sig_lines=None,
+        line_provenance=extracted.line_provenance,
+    )
+    assert trimmed.kept == "> authored comparison remains mine"
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in trimmed.kept
+
+    public_body = G.extract_body(message)
+    assert isinstance(public_body, str)
+    assert public_body == extracted.text
+    assert json.loads(json.dumps({"body": public_body})) == {
+        "body": str(public_body),
+    }
+    with pytest.raises(AttributeError, match="immutable"):
+        public_body.line_provenance = ()
+    direct_trimmed = G.trim_body(
+        public_body,
+        is_reply=True,
+        own_sig_lines=None,
+    )
+    assert direct_trimmed.kept == "> authored comparison remains mine"
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in direct_trimmed.kept
+
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            " > authored comparison remains mine",
+            "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+    )
+    assert prepared.piece.cleaned_text == "> authored comparison remains mine"
+
+
+@pytest.mark.parametrize(
+    ("authored_line", "is_reply"),
+    (
+        (" > I wrote:", True),
+        (" > On Friday I wrote:", False),
+    ),
+    ids=("reply-terminal", "nonreply-attribution-shaped"),
+)
+def test_process_message_keeps_space_stuffed_authored_attribution_shapes(
+    tmp_path, authored_line, is_reply,
+):
+    prepared = _process_flowed_message(
+        tmp_path,
+        [authored_line, "MY AUTHORED CONTINUATION remains in this message"],
+        is_reply=is_reply,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert authored_line[1:] in cleaned
+    assert "MY AUTHORED CONTINUATION" in cleaned
+
+
+@pytest.mark.parametrize(
+    ("body_lines", "expected"),
+    (
+        (
+            [
+                "My authored lead ",
+                " > I wrote:",
+                "MY AUTHORED CONTINUATION remains here",
+                "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+            ],
+            "My authored lead > I wrote:",
+        ),
+        (
+            [
+                " > On Friday ",
+                "I wrote:",
+                "MY AUTHORED CONTINUATION remains here",
+                "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+            ],
+            "> On Friday I wrote:",
+        ),
+    ),
+    ids=("literal-gt-continuation", "literal-gt-flow-start"),
+)
+def test_process_message_preserves_literal_gt_across_flowed_joins(
+    tmp_path, body_lines, expected,
+):
+    prepared = _process_flowed_message(
+        tmp_path, body_lines, is_reply=True,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert expected in cleaned
+    assert "MY AUTHORED CONTINUATION" in cleaned
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in cleaned
 
 
 def test_wrapped_attribution_addr_absent(tmp_path, mbox):
