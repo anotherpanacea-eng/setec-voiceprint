@@ -78,7 +78,13 @@ def _bootstrap_snapshot_payload() -> dict[str, object]:
 def _bootstrap_universe_payload() -> dict[str, object]:
     return {
         "candidate_outgoing_rows": 3,
+        "candidate_eligible_rows": 3,
+        "held_missing_chat_join_rows": 0,
+        "ambiguous_multi_chat_rows": 0,
         "selected_outgoing_rows": 3,
+        "selected_eligible_rows": 3,
+        "selected_held_missing_chat_join_rows": 0,
+        "selected_ambiguous_multi_chat_rows": 0,
         "candidate_locator_universe_hash": "sha256:" + "3" * 64,
         "selected_locator_universe_hash": "sha256:" + "4" * 64,
     }
@@ -97,6 +103,7 @@ def _bootstrap_artifacts(state: str) -> dict[str, str]:
                 A.SMOKE_POLICY_FILENAME: "sha256:" + "d" * 64,
                 A.PRIVATE_CONTACT_MAP_FILENAME: "sha256:" + "8" * 64,
                 A.PRIVATE_SOURCE_IDENTITY_MAP_FILENAME: "sha256:" + "9" * 64,
+                A.PRIVATE_SOURCE_HOLD_LEDGER_FILENAME: "sha256:" + "7" * 64,
             }
         )
     if index >= A.BOOTSTRAP_STATES.index("owner_closed"):
@@ -175,6 +182,32 @@ def _candidate_fixture(
     )
     conn.commit()
     return conn, A.atomic_schema_preflight(conn)
+
+
+def _candidate_universe(
+    candidates: tuple[A.AtomicCandidate, ...],
+    selected: tuple[A.AtomicCandidate, ...],
+    *,
+    held: tuple[A.AtomicHeldSourceRow, ...] = (),
+    selected_held: tuple[A.AtomicHeldSourceRow, ...] = (),
+) -> A.AtomicCandidateUniverse:
+    """Construct an exact v2 universe for focused synthetic tests."""
+
+    return A.AtomicCandidateUniverse(
+        schema="setec-imessage-atomic-candidate-universe/2",
+        candidate_outgoing_rows=len(candidates) + len(held),
+        candidate_eligible_rows=len(candidates),
+        held_missing_chat_join_rows=len(held),
+        ambiguous_multi_chat_rows=0,
+        selected_outgoing_rows=len(selected) + len(selected_held),
+        selected_eligible_rows=len(selected),
+        selected_held_missing_chat_join_rows=len(selected_held),
+        selected_ambiguous_multi_chat_rows=0,
+        candidates=candidates,
+        selected=selected,
+        held=held,
+        selected_held=selected_held,
+    )
 
 
 def _required_cli(*group_flag: str) -> list[str]:
@@ -403,7 +436,7 @@ def test_semantic_run_and_smoke_payload_bindings_are_closed() -> None:
         max_messages=100,
         max_retained=6,
         allow_empty=False,
-        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+        checkpoint_schema="setec-imessage-atomic-checkpoint/2",
         checkpoint_interval=1,
     )
     metadata = A.SnapshotMetadata(
@@ -450,7 +483,7 @@ def test_semantic_run_and_smoke_payload_bindings_are_closed() -> None:
         max_messages=100,
         max_retained=1,
         allow_empty=False,
-        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+        checkpoint_schema="setec-imessage-atomic-checkpoint/2",
         checkpoint_interval=1,
     )
     assert A.canonical_payload_digest(changed_controls) != A.canonical_payload_digest(
@@ -624,7 +657,7 @@ def test_run_owner_marker_binds_snapshot_options_smoke_key_and_maps() -> None:
         max_messages=100,
         max_retained=1,
         allow_empty=False,
-        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+        checkpoint_schema="setec-imessage-atomic-checkpoint/2",
         checkpoint_interval=1,
     )
     key_id = "sha256:" + "e" * 64
@@ -642,6 +675,7 @@ def test_run_owner_marker_binds_snapshot_options_smoke_key_and_maps() -> None:
         hmac_key_id_value=key_id,
         contact_map_hash="sha256:" + "8" * 64,
         source_identity_map_hash="sha256:" + "9" * 64,
+        source_hold_ledger_hash="sha256:" + "7" * 64,
     )
     assert owner == A.run_owner_payload(
         snapshot_metadata=snapshot,
@@ -651,6 +685,7 @@ def test_run_owner_marker_binds_snapshot_options_smoke_key_and_maps() -> None:
         hmac_key_id_value=key_id,
         contact_map_hash="sha256:" + "8" * 64,
         source_identity_map_hash="sha256:" + "9" * 64,
+        source_hold_ledger_hash="sha256:" + "7" * 64,
     )
     assert owner["snapshot_file_sha256"] == snapshot.file_sha256
     assert owner["semantic_options_digest"] == A.canonical_payload_digest(semantic)
@@ -682,7 +717,7 @@ def test_run_owner_marker_refuses_smoke_or_control_drift() -> None:
         max_messages=100,
         max_retained=None,
         allow_empty=False,
-        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+        checkpoint_schema="setec-imessage-atomic-checkpoint/2",
         checkpoint_interval=1,
     )
     key_id = "sha256:" + "e" * 64
@@ -700,6 +735,7 @@ def test_run_owner_marker_refuses_smoke_or_control_drift() -> None:
         "hmac_key_id_value": key_id,
         "contact_map_hash": "sha256:" + "8" * 64,
         "source_identity_map_hash": "sha256:" + "9" * 64,
+        "source_hold_ledger_hash": "sha256:" + "7" * 64,
     }
     with pytest.raises(A.AtomicAcquisitionError, match="smoke policy binding"):
         A.run_owner_payload(**{**kwargs, "smoke_policy": {**smoke, "semantic_options": {
@@ -750,12 +786,8 @@ def test_private_maps_are_candidate_complete_selected_chat_stable_and_rowid_free
         ),
     )
     selected = (candidates[2], candidates[1], candidates[0])
-    universe = A.AtomicCandidateUniverse(
-        "setec-imessage-atomic-candidate-universe/1",
-        len(candidates),
-        len(selected),
-        tuple(reversed(candidates)),
-        tuple(reversed(selected)),
+    universe = _candidate_universe(
+        tuple(reversed(candidates)), tuple(reversed(selected))
     )
     key = b"m" * 32
     contacts = A.private_contact_map_payload(universe, key)
@@ -765,19 +797,14 @@ def test_private_maps_are_candidate_complete_selected_chat_stable_and_rowid_free
     ]
     assert sources["candidate_outgoing_rows"] == 4
     assert sources["selected_outgoing_rows"] == 3
+    assert sources["schema"] == "setec-imessage-atomic-private-source-identity-map/2"
     assert [row["source_ordinal"] for row in sources["entries"]] == [
         "source-000001", "source-000002", "source-000003", "source-000004"
     ]
     assert all("rowid" not in key.casefold() for row in sources["entries"] for key in row)
-    outside = next(row for row in sources["entries"] if not row["selected"])
+    outside = next(row for row in sources["entries"] if not row["selected_by_date"])
     assert outside["contact_alias"] is None
-    rebuilt = A.AtomicCandidateUniverse(
-        universe.schema,
-        universe.candidate_outgoing_rows,
-        universe.selected_outgoing_rows,
-        tuple(candidates),
-        tuple(selected),
-    )
+    rebuilt = _candidate_universe(tuple(candidates), tuple(selected))
     assert A.private_contact_map_payload(rebuilt, key) == contacts
     assert A.private_source_identity_map_payload(rebuilt, key, contacts) == sources
 
@@ -788,10 +815,7 @@ def test_private_source_map_refuses_contact_or_membership_drift() -> None:
         1, "message-guid", "chat-guid", None, None, 45,
         A.GROUP_STATUS_DIRECT, 1, day, "text", None, 0, 0, None, (),
     )
-    universe = A.AtomicCandidateUniverse(
-        "setec-imessage-atomic-candidate-universe/1", 1, 1,
-        (candidate,), (candidate,),
-    )
+    universe = _candidate_universe((candidate,), (candidate,))
     contacts = A.private_contact_map_payload(universe, b"m" * 32)
     with pytest.raises(A.AtomicAcquisitionError, match="contact map binding"):
         A.private_source_identity_map_payload(
@@ -804,6 +828,27 @@ def test_private_source_map_refuses_contact_or_membership_drift() -> None:
         )
 
 
+def test_private_source_map_does_not_alias_unselected_row_in_selected_chat() -> None:
+    day = dt.date(2020, 1, 1)
+    selected = A.AtomicCandidate(
+        1, "message-guid-selected", "chat-guid-shared", None, None, 45,
+        A.GROUP_STATUS_DIRECT, 1, day, "selected", None, 0, 0, None, (),
+    )
+    outside = replace(
+        selected,
+        snapshot_rowid=2,
+        message_guid="message-guid-outside",
+        local_date=dt.date(2020, 1, 2),
+        text="outside",
+    )
+    universe = _candidate_universe((selected, outside), (selected,))
+    contact = A.private_contact_map_payload(universe, KEY)
+    source = A.private_source_identity_map_payload(universe, KEY, contact)
+    rows = {row["message_guid"]: row for row in source["entries"]}
+    assert rows[selected.message_guid]["contact_alias"] == "contact-000001"
+    assert rows[outside.message_guid]["contact_alias"] is None
+
+
 def test_private_maps_canonicalize_blank_contact_and_refuse_boolean_counts(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -812,10 +857,7 @@ def test_private_maps_canonicalize_blank_contact_and_refuse_boolean_counts(
         1, "message-guid", "chat-guid", "   ", "", 45,
         A.GROUP_STATUS_DIRECT, 1, day, "text", None, 0, 0, None, (),
     )
-    universe = A.AtomicCandidateUniverse(
-        "setec-imessage-atomic-candidate-universe/1", 1, 1,
-        (candidate,), (candidate,),
-    )
+    universe = _candidate_universe((candidate,), (candidate,))
     contact = A.private_contact_map_payload(universe, b"m" * 32)
     assert contact["contacts"][0]["chat_identifier"] is None
     assert contact["contacts"][0]["room_name"] is None
@@ -833,13 +875,62 @@ def test_private_maps_canonicalize_blank_contact_and_refuse_boolean_counts(
             )
 
     second = replace(candidate, snapshot_rowid=2, message_guid="message-guid-2")
-    two = A.AtomicCandidateUniverse(
-        universe.schema, 2, 2, (candidate, second), (candidate, second)
-    )
+    two = _candidate_universe((candidate, second), (candidate, second))
     contact_two = A.private_contact_map_payload(two, b"m" * 32)
     monkeypatch.setattr(A, "entry_locator", lambda *_args: "hmac-sha256:" + "0" * 64)
     with pytest.raises(A.AtomicAcquisitionError, match="entry locators collide"):
         A.private_source_identity_map_payload(two, b"m" * 32, contact_two)
+
+
+def test_chatless_hold_ledger_is_prose_free_and_preserves_date_selection(
+    tmp_path: Path,
+) -> None:
+    conn, schema = _candidate_fixture(tmp_path / "chatless-hold.db")
+    conn.execute("DELETE FROM chat_message_join WHERE message_id IN (2, 3)")
+    conn.execute(
+        "UPDATE message SET date = ? WHERE ROWID = 3",
+        (_apple_ns(dt.date(2020, 6, 16)),),
+    )
+    conn.commit()
+    universe = A.discover_candidate_universe(
+        conn,
+        schema,
+        apple_date_unit="nanoseconds",
+        timezone_name="UTC",
+        until=dt.date(2020, 6, 15),
+        max_messages=3,
+    )
+    contact = A.private_contact_map_payload(universe, KEY)
+    source = A.private_source_identity_map_payload(universe, KEY, contact)
+    ledger = A.private_source_hold_ledger_payload(
+        universe,
+        KEY,
+        source,
+        snapshot_file_sha256="sha256:" + "a" * 64,
+    )
+
+    assert universe.candidate_outgoing_rows == 3
+    assert universe.candidate_eligible_rows == 1
+    assert universe.held_missing_chat_join_rows == 2
+    assert universe.selected_outgoing_rows == 2
+    assert universe.selected_eligible_rows == 1
+    assert universe.selected_held_missing_chat_join_rows == 1
+    held_source = [
+        row for row in source["entries"]
+        if row["chat_join_disposition"] == "missing_chat_join"
+    ]
+    assert sorted(row["selected_by_date"] for row in held_source) == [False, True]
+    assert sorted(row["selected_by_date"] for row in ledger["holds"]) == [False, True]
+    assert all(row["group_locator"] is None for row in held_source)
+    assert all(row["contact_alias"] is None for row in held_source)
+    serialized = A._canonical_json_bytes(ledger).decode("utf-8")
+    for private_value in (
+        "message-guid-b", "message-guid-c", "same text", "third text",
+        "chat-guid-shared",
+    ):
+        assert private_value not in serialized
+    assert "snapshot_rowid" not in serialized
+    conn.close()
 
 
 def _initialization_fixture() -> tuple[
@@ -872,13 +963,7 @@ def _initialization_fixture() -> tuple[
         None,
         (),
     )
-    universe = A.AtomicCandidateUniverse(
-        "setec-imessage-atomic-candidate-universe/1",
-        1,
-        1,
-        (candidate,),
-        (candidate,),
-    )
+    universe = _candidate_universe((candidate,), (candidate,))
     semantic = A.semantic_options_payload(
         since=None,
         until=None,
@@ -895,7 +980,7 @@ def _initialization_fixture() -> tuple[
         max_messages=100,
         max_retained=None,
         allow_empty=False,
-        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+        checkpoint_schema="setec-imessage-atomic-checkpoint/2",
         checkpoint_interval=1,
     )
     return snapshot, schema, universe, semantic, controls
@@ -909,6 +994,7 @@ def test_smoke_policy_validator_rebuilds_exact_closed_schema() -> None:
         schema_info=schema,
         hmac_key_id_value=A.hmac_key_id(KEY),
     )
+    assert smoke["schema"] == "setec-imessage-atomic-smoke-policy/2"
     assert A._validated_smoke_policy(smoke) == smoke
     with pytest.raises(A.BootstrapStateError, match="drifted"):
         A._validated_smoke_policy(
@@ -918,7 +1004,7 @@ def test_smoke_policy_validator_rebuilds_exact_closed_schema() -> None:
         A._validated_smoke_policy({**smoke, "alien": True})
 
 
-def test_initialization_closure_is_exact_seven_file_tree_and_key_bound() -> None:
+def test_initialization_closure_is_exact_eight_file_tree_and_key_bound() -> None:
     snapshot, schema, universe, semantic, controls = _initialization_fixture()
     closure = A.build_initialization_closure(
         snapshot_metadata=snapshot,
@@ -928,12 +1014,16 @@ def test_initialization_closure_is_exact_seven_file_tree_and_key_bound() -> None
         semantic_options=semantic,
         run_controls=controls,
     )
+    assert len(A.INITIALIZATION_DEPENDENCY_FILENAMES) == 6
+    assert len(closure.artifacts) == 7
+    assert len(closure.expected_tree.children) == 8
     assert [item.filename for item in closure.artifacts] == [
         A.SEMANTIC_OPTIONS_FILENAME,
         A.RUN_CONTROLS_FILENAME,
         A.SMOKE_POLICY_FILENAME,
         A.PRIVATE_CONTACT_MAP_FILENAME,
         A.PRIVATE_SOURCE_IDENTITY_MAP_FILENAME,
+        A.PRIVATE_SOURCE_HOLD_LEDGER_FILENAME,
         A.RUN_OWNER_FILENAME,
     ]
     assert set(closure.expected_tree.children) == {
@@ -945,18 +1035,28 @@ def test_initialization_closure_is_exact_seven_file_tree_and_key_bound() -> None
         for node in closure.expected_tree.children.values()
     )
     owner = closure.artifact(A.RUN_OWNER_FILENAME).payload
+    assert owner["schema"] == "setec-imessage-atomic-run-owner/2"
     assert owner["contact_map_hash"] == closure.artifact(
         A.PRIVATE_CONTACT_MAP_FILENAME
     ).digest
     assert owner["source_identity_map_hash"] == closure.artifact(
         A.PRIVATE_SOURCE_IDENTITY_MAP_FILENAME
     ).digest
+    assert owner["source_hold_ledger_hash"] == closure.artifact(
+        A.PRIVATE_SOURCE_HOLD_LEDGER_FILENAME
+    ).digest
     source = closure.artifact(A.PRIVATE_SOURCE_IDENTITY_MAP_FILENAME).payload
     assert closure.universe_binding == {
         key: source[key]
         for key in (
             "candidate_outgoing_rows",
+            "candidate_eligible_rows",
+            "held_missing_chat_join_rows",
+            "ambiguous_multi_chat_rows",
             "selected_outgoing_rows",
+            "selected_eligible_rows",
+            "selected_held_missing_chat_join_rows",
+            "selected_ambiguous_multi_chat_rows",
             "candidate_locator_universe_hash",
             "selected_locator_universe_hash",
         )
@@ -1025,7 +1125,9 @@ def test_private_map_membership_requires_tuple_unique_positive_rowids() -> None:
             replace(
                 universe,
                 candidate_outgoing_rows=2,
+                candidate_eligible_rows=2,
                 selected_outgoing_rows=2,
+                selected_eligible_rows=2,
                 candidates=(candidate, duplicate),
                 selected=(candidate, duplicate),
             ),
@@ -1044,11 +1146,7 @@ def test_private_source_map_rejects_selected_unselected_group_collision(
         message_guid="message-guid-outside",
         chat_guid="chat-guid-outside",
     )
-    two = replace(
-        universe,
-        candidate_outgoing_rows=2,
-        candidates=(selected, outside),
-    )
+    two = _candidate_universe((selected, outside), (selected,))
     monkeypatch.setattr(
         A, "group_locator", lambda *_args: "hmac-sha256:" + "0" * 64
     )
@@ -4960,7 +5058,7 @@ def test_run_controls_reject_invalid_values(kwargs: dict[str, object]) -> None:
         "max_messages": 100,
         "max_retained": None,
         "allow_empty": False,
-        "checkpoint_schema": "setec-imessage-atomic-checkpoint/1",
+        "checkpoint_schema": "setec-imessage-atomic-checkpoint/2",
         "checkpoint_interval": 1,
     }
     valid.update(kwargs)
@@ -5605,7 +5703,7 @@ def test_candidate_universe_rejects_conflicting_chat_join(tmp_path: Path) -> Non
     )
     conn.execute("INSERT INTO chat_message_join VALUES (11, 1)")
     conn.commit()
-    with pytest.raises(A.StableGuidError, match="exactly one stable chat"):
+    with pytest.raises(A.StableGuidError, match="ambiguous multi-chat"):
         A.discover_candidate_universe(
             conn,
             schema,
@@ -5680,20 +5778,33 @@ def test_candidate_universe_rejects_runtime_type_drift(
     conn.close()
 
 
-def test_candidate_universe_rejects_missing_candidate_chat_join(
+def test_candidate_universe_holds_missing_chat_join_without_blocking(
     tmp_path: Path,
 ) -> None:
     conn, schema = _candidate_fixture(tmp_path / "candidate.db")
     conn.execute("DELETE FROM chat_message_join WHERE message_id = 1")
     conn.commit()
-    with pytest.raises(A.SchemaPreflightError, match="chat identity runtime type"):
-        A.discover_candidate_universe(
-            conn,
-            schema,
-            apple_date_unit="nanoseconds",
-            timezone_name="UTC",
-            max_messages=3,
-        )
+    universe = A.discover_candidate_universe(
+        conn,
+        schema,
+        apple_date_unit="nanoseconds",
+        timezone_name="UTC",
+        max_messages=3,
+    )
+    assert universe.candidate_outgoing_rows == 3
+    assert universe.candidate_eligible_rows == 2
+    assert universe.held_missing_chat_join_rows == 1
+    assert universe.ambiguous_multi_chat_rows == 0
+    assert universe.selected_outgoing_rows == 3
+    assert universe.selected_eligible_rows == 2
+    assert universe.selected_held_missing_chat_join_rows == 1
+    assert universe.selected_ambiguous_multi_chat_rows == 0
+    assert len(universe.held) == len(universe.selected_held) == 1
+    assert universe.held[0].reason == "missing_chat_join"
+    assert all(
+        candidate.message_guid != universe.held[0].message_guid
+        for candidate in universe.candidates
+    )
     conn.close()
 
 
@@ -5795,13 +5906,7 @@ def test_snapshot_discovery_rehashes_after_scan(
         connection.close()
         with snapshot.open("ab") as handle:
             handle.write(b"post-scan-drift")
-        return A.AtomicCandidateUniverse(
-            schema="setec-imessage-atomic-candidate-universe/1",
-            candidate_outgoing_rows=0,
-            selected_outgoing_rows=0,
-            candidates=(),
-            selected=(),
-        )
+        return _candidate_universe((), ())
 
     monkeypatch.setattr(A, "discover_candidate_universe", mutate_during_scan)
     with pytest.raises(A.SnapshotError, match="hash or size drifted"):
@@ -5873,7 +5978,7 @@ def _closed_universe_scan_environment(
         max_messages=3,
         max_retained=None,
         allow_empty=False,
-        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+        checkpoint_schema="setec-imessage-atomic-checkpoint/2",
         checkpoint_interval=1,
     )
     evidence = A.ClosedSnapshotEvidence(
@@ -7226,7 +7331,7 @@ def test_integrate_bootstrap_universe_refuses_later_state_before_helpers(
         run_controls=controls,
     )
     completed = dict(holder[0]["completed_artifacts"])  # type: ignore[arg-type]
-    for artifact in closure.artifacts[:5]:
+    for artifact in closure.artifacts[:-1]:
         completed[artifact.filename] = artifact.digest
     holder[0] = A.bootstrap_journal_payload(
         state="options_maps_closed",
@@ -11227,13 +11332,7 @@ def test_bounded_processing_counts_prefix_without_relabeling_tail(
         replace(base, message_guid="retained-guid-1", text="first retained"),
         replace(base, message_guid="retained-guid-2", text="second retained"),
     )
-    universe = A.AtomicCandidateUniverse(
-        schema="setec-imessage-atomic-candidate-universe/1",
-        candidate_outgoing_rows=3,
-        selected_outgoing_rows=3,
-        candidates=rows,
-        selected=rows,
-    )
+    universe = _candidate_universe(rows, rows)
     result = A.process_selected_candidates(
         universe,
         schema,
@@ -11255,13 +11354,7 @@ def test_selected_messages_are_preprocessed_independently(tmp_path: Path) -> Non
         replace(base, message_guid="first-guid", text="first atomic message"),
         replace(base, message_guid="second-guid", text="second atomic message"),
     )
-    universe = A.AtomicCandidateUniverse(
-        schema="setec-imessage-atomic-candidate-universe/1",
-        candidate_outgoing_rows=2,
-        selected_outgoing_rows=2,
-        candidates=rows,
-        selected=rows,
-    )
+    universe = _candidate_universe(rows, rows)
     seen: list[str] = []
 
     def recording_preprocessor(text: str):
@@ -11402,7 +11495,15 @@ def test_durable_row_publication_resumes_and_validates(tmp_path: Path) -> None:
     assert first == second
     assert summary == {
         "status": "closed",
+        "candidate_outgoing_rows": 3,
+        "candidate_eligible_rows": 3,
         "retained_rows": 1,
+        "held_missing_chat_join_rows": 0,
+        "ambiguous_multi_chat_rows": 0,
+        "selected_outgoing_rows": 3,
+        "selected_eligible_rows": 3,
+        "selected_held_missing_chat_join_rows": 0,
+        "selected_ambiguous_multi_chat_rows": 0,
         "considered_rows": 1,
         "not_considered_after_bound": 2,
     }
@@ -11418,10 +11519,18 @@ def test_durable_row_publication_resumes_and_validates(tmp_path: Path) -> None:
 
 def _synthetic_row_publication_case(
     run_dir: Path,
+    *,
+    chatless_message_ids: tuple[int, ...] = (),
 ) -> tuple[tuple[A.PlannedAtomicRow, ...], A.AtomicProcessingResult]:
     run_dir.mkdir()
     snapshot_path = run_dir / A.SNAPSHOT_FILENAME
     conn, schema = _candidate_fixture(snapshot_path)
+    if chatless_message_ids:
+        conn.executemany(
+            "DELETE FROM chat_message_join WHERE message_id = ?",
+            ((message_id,) for message_id in chatless_message_ids),
+        )
+        conn.commit()
     snapshot = A._snapshot_metadata(conn, snapshot_path)
     universe = A.discover_candidate_universe(
         conn,
@@ -11442,7 +11551,7 @@ def _synthetic_row_publication_case(
         max_messages=10,
         max_retained=1,
         allow_empty=False,
-        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+        checkpoint_schema="setec-imessage-atomic-checkpoint/2",
     )
     initialization = A.build_initialization_closure(
         snapshot_metadata=snapshot, schema_info=schema, universe=universe,
@@ -11459,6 +11568,84 @@ def _synthetic_row_publication_case(
     for artifact in initialization.artifacts:
         (run_dir / artifact.filename).write_bytes(artifact.raw)
     return planned, result
+
+
+def test_one_row_run_with_two_chatless_holds_reports_conserved_aggregate_counts(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "one-row-two-holds"
+    planned, result = _synthetic_row_publication_case(
+        run_dir, chatless_message_ids=(2, 3)
+    )
+    before = (run_dir / A.PRIVATE_SOURCE_HOLD_LEDGER_FILENAME).read_bytes()
+
+    with pytest.raises(RuntimeError, match="synthetic hold crash"):
+        A.publish_planned_rows(
+            run_dir,
+            planned,
+            result,
+            fault=lambda boundary: (
+                (_ for _ in ()).throw(RuntimeError("synthetic hold crash"))
+                if boundary == "after_row_commit"
+                else None
+            ),
+        )
+    assert (run_dir / A.PRIVATE_SOURCE_HOLD_LEDGER_FILENAME).read_bytes() == before
+    A.publish_planned_rows(run_dir, planned, result)
+    A.publish_planned_rows(run_dir, planned, result)
+    assert (run_dir / A.PRIVATE_SOURCE_HOLD_LEDGER_FILENAME).read_bytes() == before
+
+    assert A.validate_atomic_run(run_dir) == {
+        "status": "closed",
+        "candidate_outgoing_rows": 3,
+        "candidate_eligible_rows": 1,
+        "retained_rows": 1,
+        "held_missing_chat_join_rows": 2,
+        "ambiguous_multi_chat_rows": 0,
+        "selected_outgoing_rows": 3,
+        "selected_eligible_rows": 1,
+        "selected_held_missing_chat_join_rows": 2,
+        "selected_ambiguous_multi_chat_rows": 0,
+        "considered_rows": 1,
+        "not_considered_after_bound": 0,
+    }
+    receipt_raw = (run_dir / "acquisition-receipt.json").read_bytes()
+    ledger_raw = (run_dir / "source-ledger.json").read_bytes()
+    for private_value in (b"message-guid-b", b"message-guid-c", b"same text", b"third text"):
+        assert private_value not in before
+        assert private_value not in receipt_raw
+        assert private_value not in ledger_raw
+
+
+@pytest.mark.parametrize("mutation", ["missing", "mutated", "reordered"])
+def test_atomic_validator_refuses_chatless_hold_ledger_drift(
+    tmp_path: Path, mutation: str,
+) -> None:
+    run_dir = tmp_path / mutation
+    planned, result = _synthetic_row_publication_case(
+        run_dir, chatless_message_ids=(2, 3)
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    assert A.validate_atomic_run(run_dir)["held_missing_chat_join_rows"] == 2
+    path = run_dir / A.PRIVATE_SOURCE_HOLD_LEDGER_FILENAME
+    if mutation == "missing":
+        path.unlink()
+    elif mutation == "mutated":
+        _rewrite_canonical_json(
+            path,
+            lambda payload: payload["holds"][0].__setitem__(
+                "reason", "forged"
+            ),
+        )
+    else:
+        _rewrite_canonical_json(
+            path,
+            lambda payload: payload.__setitem__(
+                "holds", list(reversed(payload["holds"]))
+            ),
+        )
+    with pytest.raises(A.AtomicAcquisitionError):
+        A.validate_atomic_run(run_dir)
 
 
 def _tree_bytes(root: Path) -> dict[str, bytes]:
@@ -12070,6 +12257,54 @@ class _TtyBuffer(io.StringIO):
         return True
 
 
+def test_chatless_holds_run_through_live_smoke_mint_and_consumption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_portable_live_smoke_writer(monkeypatch)
+    private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    private_root.mkdir(mode=0o700)
+    os.chmod(private_root, 0o700)
+    source = private_root / "chat.db"
+    conn, _schema = _candidate_fixture(source)
+    conn.execute("DELETE FROM chat_message_join WHERE message_id IN (2, 3)")
+    conn.commit()
+    conn.close()
+    output_root = private_root / "runs"
+    output_root.mkdir(mode=0o700)
+    os.chmod(output_root, 0o700)
+    config = A.AtomicRunConfig(
+        source_db=source, output_root=output_root, run_id="smoke-chatless",
+        persona="joshua", author="Joshua Miller", register="personal",
+        since=None, until=None, include_group_chats=False,
+        apple_date_unit="nanoseconds", timezone_name="UTC",
+        max_messages=10, max_retained=1, allow_empty=False,
+    )
+    A.run(
+        config, key_bytes=KEY, bootstrap=A._synthetic_fixture_bootstrap,
+        preprocessor=lambda text: (text, {"rules": []}),
+    )
+    run_dir = output_root / "smoke-chatless"
+    summary = A.validate_atomic_run(run_dir)
+    assert summary["retained_rows"] == 1
+    assert summary["candidate_outgoing_rows"] == 3
+    assert summary["candidate_eligible_rows"] == 1
+    assert summary["held_missing_chat_join_rows"] == 2
+    assert summary["selected_held_missing_chat_join_rows"] == 2
+    assert summary["ambiguous_multi_chat_rows"] == 0
+
+    approval = private_root / "imessage-atomic-live-smoke-receipt.json"
+    monkeypatch.setattr(
+        A.sys, "stdin", _TtyBuffer("APPROVE IMESSAGE ATOMIC LIVE SMOKE\n")
+    )
+    monkeypatch.setattr(A.sys, "stdout", _TtyBuffer())
+    minted = A.mint_live_smoke_receipt(
+        run_dir / "acquisition-receipt.json", approval
+    )
+    A._consume_live_smoke_receipt(
+        approval, minted["smoke_policy_digest"], run_dir=run_dir
+    )
+
+
 @pytest.mark.parametrize(
     "typed",
     [
@@ -12215,12 +12450,12 @@ def test_candidate_receipt_rejects_alien_or_mutated_selected_rows(
         max_messages=3,
     )
     alien = replace(universe.selected[0], snapshot_rowid=99999)
-    with pytest.raises(A.AtomicAcquisitionError, match="identity coverage"):
+    with pytest.raises(A.AtomicAcquisitionError, match="selected membership"):
         A.candidate_universe_receipt_payload(
             replace(universe, selected=(alien, *universe.selected[1:])), KEY
         )
     mutated = replace(universe.selected[0], message_guid="mutated-guid")
-    with pytest.raises(A.AtomicAcquisitionError, match="identity coverage"):
+    with pytest.raises(A.AtomicAcquisitionError, match="selected membership"):
         A.candidate_universe_receipt_payload(
             replace(universe, selected=(mutated, *universe.selected[1:])), KEY
         )

@@ -5,7 +5,12 @@ The atomic path's stable message/chat HMAC identities, exact integer timestamps
 and timezone handling, descriptor-pinned snapshot/bootstrap, staged row
 transaction, resumable ledger/checkpoint, derived manifest, validator, and
 one-row owner-TTY smoke ladder now pass their portable and macOS-synthetic
-durability, recovery, and reconstruction gates. Live readiness still requires
+durability, recovery, and reconstruction gates. Outgoing source rows with no
+chat join are now conserved in a deterministic owner-only hold ledger under
+`missing_chat_join`; they are never published or assigned a fallback identity,
+while orphaned joins and ambiguous multi-chat identities remain fatal. The hold
+ledger is initialization-resumable and bound into owner, checkpoint, receipt,
+semantic-tree, and strict-validation evidence. Live readiness still requires
 the owner-confirmed one-row smoke, the real resumable run, and a green paired
 Voicewright fixture gate.
 `author_corpus_export` also recognizes atomic message units and preserves

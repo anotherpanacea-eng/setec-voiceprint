@@ -87,8 +87,9 @@ preflight.
 
 `candidate_outgoing_rows` means every distinct `message.ROWID` row in the
 immutable snapshot satisfying runtime INTEGER `is_from_me = 1`, before any date
-window. Runtime timestamp type/range and stable message/chat identity are
-validated for every candidate before local-date selection. A malformed date
+window. Runtime timestamp type/range and stable message identity are validated
+for every candidate before local-date selection; stable chat identity is
+validated for every actual join row. A malformed date
 therefore fails closed even when its intended window membership is unknowable.
 
 Date/window filters and the explicit group-chat policy are semantic options
@@ -99,21 +100,42 @@ Every candidate row, including one later outside the window or excluded, must
 have:
 
 - declared TEXT affinity for `message.guid` and `chat.guid`;
-- runtime `typeof(...) == 'text'` for both values;
-- nonblank GUIDs with no leading/trailing whitespace, NUL, or control code;
+- runtime `typeof(message.guid) == 'text'` and, for every actual join row,
+  runtime `typeof(chat.guid) == 'text'`;
+- a nonblank message GUID and, for every actual join row, a nonblank chat GUID,
+  all with no leading/trailing whitespace, NUL, or control code;
 - one unique message GUID across distinct message rows;
-- exactly one distinct nonblank chat GUID across all `chat_message_join` rows.
+- either no `chat_message_join` row or exactly one distinct nonblank chat GUID
+  across all `chat_message_join` rows.
 
 Duplicate join copies are collapsed only when message GUID and chat GUID agree.
-Missing, malformed, duplicate, or conflicting identity fails the whole run
-without echoing the raw value. `ROWID` is snapshot-local audit evidence only and
-cannot enter persistent identity, ordering tie-breaks, or semantic hashes.
+Exactly zero join rows places the candidate in the owner-only
+`missing_chat_join` hold ledger and makes it ineligible for publication; this
+case is recognized only when every projected join and chat field from the left
+join is NULL. A partial join, an orphaned join whose chat row is absent, a
+malformed or duplicate identity, or conflicting chat identity fails the whole
+run without echoing the raw value. `ROWID` is snapshot-local audit evidence only
+and cannot enter persistent identity, ordering tie-breaks, or semantic hashes.
 Repeated chat GUIDs across messages are required and permitted. A chat GUID
 fails only when one message joins conflicting chat GUIDs or the same chat GUID
 has contradictory chat-row identity metadata. `chat_identifier` may be used
 only inside the owner-only contact alias map and never as stable group identity.
 Missing/blank `chat_identifier` is recorded as absent; alias allocation still
 uses the stable chat GUID and does not fall back to ROWID.
+
+Discovery partitions the immutable outgoing universe before prose processing:
+
+`candidate_outgoing_rows = candidate_eligible_rows +
+held_missing_chat_join_rows + ambiguous_multi_chat_rows`.
+
+The same partition is reported for the selected date window. A successful run
+requires `ambiguous_multi_chat_rows = 0`; any nonzero ambiguous count fails
+before bootstrap promotion or row publication. `--max-messages` is a ceiling on
+all selected outgoing rows, including selected holds, while row processing and
+`--max-retained` operate only on `selected_eligible_rows`.
+
+`selected_outgoing_rows = selected_eligible_rows +
+selected_held_missing_chat_join_rows + selected_ambiguous_multi_chat_rows`.
 
 Schema preflight freezes declared affinities and runtime types for all fields
 used by extraction: `message.guid TEXT`; `message.text TEXT` with NULL allowed;
@@ -165,7 +187,7 @@ timezone.
 
 ## Structural extraction and exclusions
 
-Rows are processed in canonical order. For each selected row:
+Rows are processed in canonical order. For each selected eligible row:
 
 1. validate stable identity and exact timestamp before any exclusion;
 2. apply closed structural exclusions for reactions, group actions, automated
@@ -191,9 +213,9 @@ is `attachment_only`; object-replacement/no usable sender text is
 `attachment_only`; no text, attributed-body content, object-replacement marker,
 or joined attachment is `missing_text`.
 
-For a full run the equations are:
+For a full run the processing equations are:
 
-`selected_outgoing_rows = considered_rows`, and
+`selected_eligible_rows = considered_rows`, and
 
 `considered_rows = retained_rows + sum(excluded_considered_by_final_reason)`.
 
@@ -201,7 +223,7 @@ For a bounded run, identity and timestamp validation still covers every
 candidate and selected row, but prose processing stops after the canonical
 prefix that emits N retained rows. Its equations are:
 
-`selected_outgoing_rows = considered_rows + not_considered_after_bound`, and
+`selected_eligible_rows = considered_rows + not_considered_after_bound`, and
 
 `considered_rows = retained_rows + sum(excluded_considered_by_final_reason)`.
 
@@ -211,8 +233,9 @@ decision. The bounded receipt cannot claim full-universe eligibility closure.
 `--max-messages N` remains a refusal ceiling on `selected_outgoing_rows`; it
 never means â€œtake the first N.â€ A separate `--max-retained N` selects a
 deterministic canonical prefix for bounded validation. The receipt reports the
-full selected count, the bounded considered count, and all retained/excluded
-counts without conflating the ceiling with sampling.
+full candidate and selected partition counts, the bounded eligible/considered
+counts, and all retained/excluded counts without conflating eligibility,
+publication, the ceiling, or sampling.
 
 ## Keyed private identities
 
@@ -317,31 +340,35 @@ Initialization JSON ceilings include the trailing LF and are fixed as follows:
 - `smoke-policy.json`: 256 KiB;
 - `private-contact-map.json`: 256 MiB;
 - `private-source-identity-map.json`: 512 MiB;
+- `private-source-hold-ledger.json`: 512 MiB;
 - `run-owner.json`: 64 KiB.
 
-All six payloads are independently rebuilt and closed against their named
+All seven payloads are independently rebuilt and closed against their named
 ceiling before the first JSON artifact write. Smoke policy reconstructs and
 validates its embedded semantic options, snapshot metadata, atomic schema,
-tool, and HMAC binding. Contact and source maps are recomputed from the fresh
-snapshot universe and persistent HMAC key; source reconstruction uses a newly
-recomputed contact map, never the on-disk map. Owner reconstruction uses the
-reverified snapshot and schema, fresh options/policy/key ID, and hashes of the
-exact canonical map bytes. On-disk fields and journal digests are comparison
-targets only and are never reconstruction inputs.
+tool, HMAC binding, and exact `chat_join_policy_version`. Contact and source
+maps and the hold ledger are recomputed from the fresh snapshot universe and
+persistent HMAC key; source reconstruction uses a newly recomputed contact map,
+never the on-disk map, and hold reconstruction uses the fresh source map, never
+the on-disk map. Owner reconstruction uses the reverified snapshot and schema,
+fresh options/policy/key ID, and hashes of the exact canonical map and hold
+bytes. On-disk fields and journal digests are comparison targets only and are
+never reconstruction inputs.
 
 The fixed create order is semantic options, run controls, smoke policy, private
-contact map, private source identity map, then run owner. Each file is immutable:
+contact map, private source identity map, private source hold ledger, then run
+owner. Each file is immutable:
 a missing name is exclusively created, while a residue after a crash is stable-
 read and accepted only when its schema, exact bytes, and digest equal the fresh
 closure. An existing malformed or mismatched file refuses; initialization never
 CAS-replaces one member independently. Before `options_maps_closed`, the first
-five files are stable-reread and their read digests populate the journal; the
+six files are stable-reread and their read digests populate the journal; the
 source-map counts and universe hashes must equal `universe_binding`. Owner is
 then recomputed from those authoritative dependencies, created or verified,
-and all six files are stable-reread before `owner_closed`.
+and all seven files are stable-reread before `owner_closed`.
 
-The pre-promotion physical staging tree contains exactly seven direct regular
-files and no subdirectories: `source-snapshot.db` plus those six JSON artifacts.
+The pre-promotion physical staging tree contains exactly eight direct regular
+files and no subdirectories: `source-snapshot.db` plus those seven JSON artifacts.
 The expected snapshot node comes from its verified byte size and file hash; each
 JSON node comes from its exact closed raw bytes. External journal and lock names
 remain sibling bootstrap state and are excluded. This physical seal includes
@@ -509,7 +536,7 @@ staging descriptor exactly once, while success transfers it.
 
 Restart from an authoritative `universe_closed` journal is verify-only. It
 pins and revalidates the exact one-file snapshot tree, performs the complete
-descriptor-pinned scan again, and rebuilds all six initialization artifacts in
+descriptor-pinned scan again, and rebuilds all seven initialization artifacts in
 memory from canonical options, controls, and key bytes. The freshly derived
 smoke-policy byte digest and locator-universe binding must exactly equal the
 journal; the journal's values are comparison targets, never reconstruction
@@ -533,7 +560,8 @@ ordinary refusals.
 The `universe_closed` to `options_maps_closed` stage is prefix-resumable without
 weakening the earlier snapshot-only boundary. Its dedicated resumer accepts
 exactly the snapshot plus a leading prefix of semantic options, run controls,
-smoke policy, private contact map, and private source-identity map. A gap,
+smoke policy, private contact map, private source-identity map, and private
+source hold ledger. A gap,
 unknown name, owner marker, or other inventory refuses. Snapshot verification
 and universe discovery receive that exact stage-authorized inventory, but still
 reconstruct every artifact from the pinned database, canonical options, and
@@ -543,19 +571,19 @@ must equal the freshly closed bytes before creation can continue.
 One closer consumes the reconstructed `universe_closed` descriptor, creates
 only the missing suffix in fixed order, and rechecks the predecessor journal,
 flock, final-name absence, staging pathname, and exact prefix before and after
-each artifact call. After all five files are stable-reread, those reads--not
+each artifact call. After all six files are stable-reread, those reads--not
 writer return values or journal claims--supply the completed-artifact digests.
-The closer seals the exact six-file tree (snapshot plus five dependencies;
+The closer seals the exact seven-file tree (snapshot plus six dependencies;
 `run-owner.json` remains absent), performs one sequential journal CAS, then
 rereads the published journal, reseals the same tree, and stable-rereads all
-five dependencies again. Once a creation call may have begun, all failure and
+six dependencies again. Once a creation call may have begun, all failure and
 descriptor-close ambiguity is recovery-required; malformed preexisting residue
 is never removed or replaced.
 
 Restart from authoritative `options_maps_closed` is verify-only. It opens the
-exact six-file inventory, revalidates and rescans the snapshot while permitting
-those names, rebuilds the complete six-artifact initialization closure in
-memory, and compares the first five exact bytes, smoke digest, universe binding,
+exact seven-file inventory, revalidates and rescans the snapshot while permitting
+those names, rebuilds the complete seven-artifact initialization closure in
+memory, and compares the first six exact bytes, smoke digest, universe binding,
 and completed-artifact map against disk and journal. It seals twice around
 unchanged-journal, flock, and final-name checks and transfers one descriptor.
 It never invokes an artifact writer or journal advance, and any drift is an
@@ -568,33 +596,33 @@ reconstructor and closer; `options_maps_closed` routes through only its
 verify-only resumer; later states refuse without helper invocation. It binds a
 direct resume to the exact journal/digest read for classification, binds a
 closer result to the one-step predecessor and exact consumed descriptor, and
-independently fstats and seals the returned six-file tree before transfer.
+independently fstats and seals the returned seven-file tree before transfer.
 Invalid verify-only results close ordinarily, while any invalid closer result
 after publication closes as recovery-required. A delegated failure never
 causes branch fallback or reclassification.
 
 The `options_maps_closed` to `owner_closed` stage has one recognized crash
-residue: the exact six-file dependency tree may additionally contain
+residue: the exact seven-file dependency tree may additionally contain
 `run-owner.json`. Its dedicated verify-only reconstructor always rescans the
-snapshot, rebuilds the full closure, stable-rereads the five dependencies, and
+snapshot, rebuilds the full closure, stable-rereads the six dependencies, and
 recomputes the owner from those read bytes before comparing an existing owner
 residue. The prior handoff's dependency evidence and the on-disk owner are
 comparison targets, never owner-construction authority. Any other inventory or
 owner mismatch refuses without replacement.
 
-The sole owner closer rereads all five dependencies again, requires equality
+The sole owner closer rereads all six dependencies again, requires equality
 with the prepared handoff and journal, and passes that fresh evidence to owner
 recomputation. If the owner is absent it performs one create-or-verify call; if
-present it adopts it only after a full six-artifact stable reread. Final reread
+present it adopts it only after a full seven-artifact stable reread. Final reread
 digests populate `owner_closed.completed_artifacts`. The closer seals the exact
-seven-file tree before and after one sequential CAS and repeats journal, flock,
+eight-file tree before and after one sequential CAS and repeats journal, flock,
 final-name, pathname, snapshot, and closure checks before descriptor transfer.
 Once owner creation may have begun, failures are recovery-required; residue
 verification before creation remains an ordinary fail-closed refusal.
 
 Authoritative `owner_closed` restart is verify-only: it reconstructs the
-snapshot universe and all six initialization artifacts, stable-rereads the
-exact seven-file tree, checks the journal's complete artifact map, and seals
+snapshot universe and all seven initialization artifacts, stable-rereads the
+exact eight-file tree, checks the journal's complete artifact map, and seals
 twice around terminal journal/lock/final-name checks. It invokes neither owner
 writer nor journal advance.
 
@@ -607,7 +635,7 @@ Direct resume is bound to the exact classified journal bytes and digest; close
 is bound to the one-step `options_maps_closed` predecessor and must transfer
 the exact consumed staging descriptor. The classifier independently fstats the
 descriptor, reconstructs the complete closure, validates all final reread
-evidence, seals the exact seven-file tree, and repeats terminal journal, flock,
+evidence, seals the exact eight-file tree, and repeats terminal journal, flock,
 and final-name checks before transfer. Invalid verify-only results close with
 an ordinary refusal. Invalid closer results, including descriptor substitution,
 close every returned or retained staging descriptor and require explicit
@@ -616,11 +644,11 @@ causes branch fallback or reclassification.
 
 The `owner_closed` to `ready_to_promote` closer performs no artifact creation.
 It consumes the exact owner descriptor, reconstructs and validates the complete
-initialization closure, stable-rereads all six JSON artifacts, and requires the
-seven-file inventory and completed-artifact map to remain unchanged. It rereads
+initialization closure, stable-rereads all seven JSON artifacts, and requires the
+eight-file inventory and completed-artifact map to remain unchanged. It rereads
 the authoritative predecessor journal, verifies the stable flock, pinned
 staging pathname and inode, and absence of the final name, then seals the exact
-tree before one sequential journal CAS. After publication it rereads all six
+tree before one sequential journal CAS. After publication it rereads all seven
 artifacts, reseals the tree, and repeats terminal journal, lock, pathname, and
 final-name checks before transferring the same descriptor. Ordinary drift
 before CAS refuses; a durable-seal ambiguity is preserved, and every failure
@@ -652,7 +680,7 @@ fallback or reclassification.
 Normal promotion consumes the exact ready staging descriptor and holds it
 across the name change. Immediately before mutation it rereads the unchanged
 `ready_to_promote` journal, verifies the flock, final-name absence, staging
-pathname/inode and seven-name inventory, rereads all six initialization
+pathname/inode and eight-name inventory, rereads all seven initialization
 artifacts, and reseals the exact tree. The staging name is then renamed to the
 final name with macOS destination-exclusion semantics; an ordinary rename that
 could replace an existing destination is forbidden. The same still-open
@@ -674,10 +702,10 @@ owns the latter two recovery forms; neither the staging-only ready verifier nor
 an earlier-state classifier may adopt them.
 
 A journal-authorized final-only verifier owns both `ready_to_promote` plus final
-and `promoted` plus final. It requires staging absent, opens the exact seven-file
+and `promoted` plus final. It requires staging absent, opens the exact eight-file
 final directory no-follow, verifies the immutable snapshot, rescans its complete
-candidate universe, rebuilds the six-artifact closure from the supplied key and
-canonical options, stable-rereads all six JSON files, and checks the journal's
+candidate universe, rebuilds the seven-artifact closure from the supplied key and
+canonical options, stable-rereads all seven JSON files, and checks the journal's
 snapshot metadata, smoke digest, universe binding, and complete artifact map.
 It seals twice around unchanged-journal, stable-flock, staging-absence, and
 final-path identity checks. The owner marker and all handoff objects are only
@@ -687,7 +715,7 @@ descriptor.
 
 Recovery from exact `ready_to_promote` plus final consumes that independently
 verified descriptor, repeats full snapshot/closure/artifact validation, rereads
-all six files, and reseals the snapshot-bound final tree before publishing the
+all seven files, and reseals the snapshot-bound final tree before publishing the
 single missing `promoted` CAS. The ready digest is the exact predecessor and all
 closed bindings remain unchanged. Published-journal, flock, final-only names,
 artifact reread, and snapshot-bound seal checks repeat before descriptor
@@ -697,7 +725,7 @@ existing `promoted` journal is verify-only and performs no journal advance.
 
 `private-contact-map.json` has schema
 `setec-imessage-atomic-private-contact-map/1`. Its `contacts` array contains one
-row per distinct chat in the complete selected universe, sorted by
+row per distinct chat in the complete selected eligible universe, sorted by
 `group_locator`. Each row has exactly `contact_alias`, `group_locator`, raw
 `chat_guid`, raw-or-null `chat_identifier`, raw-or-null `room_name`, exact
 integer `style`, and closed `group_status`. Aliases are `contact-` followed by a
@@ -705,21 +733,43 @@ six-digit, one-based ordinal in that sorted order. No discovery order, date,
 ROWID, or bounded-processing state participates.
 
 `private-source-identity-map.json` has schema
-`setec-imessage-atomic-private-source-identity-map/1`. Its `entries` array
+`setec-imessage-atomic-private-source-identity-map/2`. Its `entries` array
 covers every candidate, including candidates outside the selected date window,
 and sorts by `entry_locator`. Each row has exactly `source_ordinal` (`source-`
 plus a six-digit, one-based ordinal), `entry_locator`, raw `message_guid`,
-`group_locator`, `contact_alias` or null, and exact boolean `selected`.
-`contact_alias` is non-null exactly for selected chats. Snapshot ROWID is
-forbidden from this map and from its ordering. Candidate and selected counts
-and both locator-universe hashes are stored at the map top level and must
-rederive from the entries.
+nullable `group_locator`, nullable `contact_alias`, exact boolean
+`selected_by_date`,
+and `chat_join_disposition` equal to `eligible` or `missing_chat_join`.
+Held rows inside the date window have `selected_by_date = true` but remain
+ineligible for row processing. Held rows have null group/contact fields;
+eligible rows preserve the exactly-one stable chat identity invariant.
+`contact_alias` is non-null exactly when `selected_by_date` is true and the
+disposition is `eligible`. Snapshot ROWID
+is forbidden from this map and from its ordering. Candidate, eligible, held,
+ambiguous, and selected-partition counts and both locator-universe hashes are
+stored at the map top level and must rederive from the entries.
+`selected_locator_universe_hash` covers every date-selected outgoing locator,
+including held locators; deterministic processing order is separately derived
+from the selected eligible subset.
 
-`run-owner.json` has schema `setec-imessage-atomic-run-owner/1` and exactly the
+`private-source-hold-ledger.json` is an immutable initialization dependency with
+schema `setec-imessage-atomic-private-source-hold-ledger/1`. Its `holds` array is
+sorted by `entry_locator`; each row has exactly `source_ordinal`,
+`entry_locator`, `reason: missing_chat_join`, and exact boolean
+`selected_by_date`. It contains no message prose, raw GUID, handle, chat
+fallback, or snapshot ROWID. The ledger binds the snapshot hash, candidate and
+selected hold counts, candidate locator-universe hash, and disposition-policy
+version. Bootstrap create-or-verify makes holds exactly once across crash and
+resume. Validation reconstructs the ledger from the pinned snapshot, private
+source identity map, HMAC key, and frozen options; missing, reordered,
+duplicated, or mutated hold evidence refuses.
+
+`run-owner.json` has schema `setec-imessage-atomic-run-owner/2` and exactly the
 following top-level fields: `schema`, `capability_id`, `tool`,
 `snapshot_file_sha256`, `semantic_options_digest`, `run_controls_digest`,
 `smoke_policy_digest`, `timezone`, `hmac`, `preprocessing`, `group_policy`,
-`ai_boundary_version`, `contact_map_hash`, and `source_identity_map_hash`.
+`ai_boundary_version`, `chat_join_policy_version`, `contact_map_hash`,
+`source_identity_map_hash`, and `source_hold_ledger_hash`.
 The nested tool, HMAC, and preprocessing objects use the exact fields produced
 by `run_owner_payload()`. Every value is recomputed from the closed snapshot,
 option payloads, key ID, and exact canonical map bytes; an existing marker is
@@ -733,8 +783,9 @@ Three canonical option payloads are distinct:
 - `run_controls/1`: initialization-stable behavioral controls only:
   max-message ceiling, max-retained bound, allow-empty, checkpoint schema, and
   a frozen checkpoint interval of exactly one row;
-- `smoke_policy/1`: semantic payload plus snapshot/tool/schema/HMAC-key ID,
-  excluding only the bounded max-retained value and other run controls.
+- `smoke_policy/2`: semantic payload plus snapshot/tool/schema/HMAC-key ID and
+  exact `chat_join_policy_version`, excluding only the bounded max-retained
+  value and other run controls.
 
 Destination/run ID, invocation-only resume action, smoke-receipt path, lock
 path, and aggregate-only progress/reporting interval are
@@ -773,7 +824,7 @@ Optional operator timing belongs only in an unbound log block.
 
 ## Recoverable row transaction
 
-One selected row is the transaction unit. A transient canonical
+One selected eligible row is the transaction unit. A transient canonical
 `.row-transaction.json` is the sole authority for physical state not yet
 closed by both ledger and checkpoint. It binds the row index, source ordinal,
 entry locator, disposition, nullable row stem, exact expected file
@@ -848,14 +899,18 @@ manifest hash are over their exact canonical bytes. The semantic artifact-tree
 inventory is sorted by slash-normalized relative path and stores each file's
 SHA-256 and byte size. It includes committed row files, canonical ledger,
 checkpoint, owner marker, aggregate manifest, and deterministic state. It
-excludes the final receipt itself, snapshot, raw-ID maps, lock, transient
-journal/staging, and unbound operator logs, preventing self-reference.
+includes the private hold ledger by whole-artifact hash. It excludes the final
+receipt itself, snapshot, raw-ID maps, lock, transient journal/staging, and
+unbound operator logs, preventing self-reference.
 
 The final receipt binds snapshot metadata, schema fingerprint, all three option
 digests, tool/version, AI boundary, timezone, HMAC key ID, contact-map hash,
-source-identity-map hash, candidate/selected/considered/not-considered/retained
-and per-reason considered-exclusion counts, locator-universe hash, manifest
-hash, ledger hash, and semantic artifact-tree hash.
+source-identity-map hash, private hold-ledger hash, disposition-policy version,
+all candidate/selected eligibility and hold counts,
+considered/not-considered/retained and per-reason considered-exclusion counts,
+locator-universe hash, manifest hash, ledger hash, and semantic artifact-tree
+hash. `published` is an aggregate alias for `retained_rows`, never for the
+candidate-eligible partition.
 
 ## CLI safety ladder and live-smoke receipt
 
@@ -872,14 +927,18 @@ Required progression:
 2. a one-retained-message run using `--max-retained 1` into a new private tree;
 3. owner TTY review that mints `imessage-atomic-live-smoke-receipt.json` at a
    separately pinned path under the same `ai-prose-baselines-private` root;
-4. a six-retained-message run into another new tree consuming that receipt;
-5. an independent deterministic rebuild of the six-message run and semantic
-   hash comparison;
-6. the full run with checkpoint/resume enabled.
+4. for the 2026-07-18 chatless-row policy takeover only, proceed directly to
+   the full resumable run after the one-row run reports exactly two candidate
+   and selected `missing_chat_join` holds, zero ambiguity, validates closed,
+   and receives the owner TTY approval. This phase-specific authorization
+   supersedes the older six-row intermediate run and rebuild only; all portable,
+   synthetic, exporter, and Voicewright seam gates remain mandatory.
 
-The live-smoke receipt binds the exact smoke-policy digest. Six-message and full
-runs must consume it and match that digest. `--max-messages` remains an overflow
-ceiling throughout.
+The live-smoke receipt binds the exact smoke-policy digest. The smoke policy
+includes `chat_join_policy_version = imessage-chat-join-policy-v2`, so a receipt
+minted under the earlier all-or-nothing identity policy cannot authorize the
+revised disposition behavior. Full runs must consume and match that digest.
+`--max-messages` remains an overflow ceiling throughout.
 
 Minting first validates the complete smoke run and accepts only its exact
 `acquisition-receipt.json` path. Source and destination are resolved beneath

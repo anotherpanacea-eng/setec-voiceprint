@@ -53,6 +53,7 @@ MAX_RUN_CONTROLS_BYTES = 16 * 1024
 MAX_SMOKE_POLICY_BYTES = 256 * 1024
 MAX_PRIVATE_CONTACT_MAP_BYTES = 256 * 1024 * 1024
 MAX_PRIVATE_SOURCE_IDENTITY_MAP_BYTES = 512 * 1024 * 1024
+MAX_PRIVATE_SOURCE_HOLD_LEDGER_BYTES = 512 * 1024 * 1024
 MAX_RUN_OWNER_BYTES = 64 * 1024
 MAX_ROW_JOURNAL_BYTES = 4 * 1024 * 1024
 MAX_ROW_STATE_BYTES = 1024 * 1024 * 1024
@@ -65,7 +66,9 @@ RUN_CONTROLS_FILENAME = "run-controls.json"
 SMOKE_POLICY_FILENAME = "smoke-policy.json"
 PRIVATE_CONTACT_MAP_FILENAME = "private-contact-map.json"
 PRIVATE_SOURCE_IDENTITY_MAP_FILENAME = "private-source-identity-map.json"
+PRIVATE_SOURCE_HOLD_LEDGER_FILENAME = "private-source-hold-ledger.json"
 RUN_OWNER_FILENAME = "run-owner.json"
+CHAT_JOIN_POLICY_VERSION = "imessage-chat-join-policy-v2"
 ROW_JOURNAL_FILENAME = ".row-transaction.json"
 ROW_STAGING_DIRNAME = ".row-staging"
 ROWS_DIRNAME = "rows"
@@ -82,6 +85,7 @@ INITIALIZATION_DEPENDENCY_FILENAMES = (
     SMOKE_POLICY_FILENAME,
     PRIVATE_CONTACT_MAP_FILENAME,
     PRIVATE_SOURCE_IDENTITY_MAP_FILENAME,
+    PRIVATE_SOURCE_HOLD_LEDGER_FILENAME,
 )
 INITIALIZATION_ARTIFACT_FILENAMES = (
     *INITIALIZATION_DEPENDENCY_FILENAMES,
@@ -373,12 +377,31 @@ class AtomicCandidate:
 
 
 @dataclass(frozen=True)
+class AtomicHeldSourceRow:
+    """One outgoing source row withheld before prose processing."""
+
+    snapshot_rowid: int
+    message_guid: str
+    unix_nanoseconds: int
+    local_date: _dt.date
+    reason: str
+
+
+@dataclass(frozen=True)
 class AtomicCandidateUniverse:
     schema: str
     candidate_outgoing_rows: int
+    candidate_eligible_rows: int
+    held_missing_chat_join_rows: int
+    ambiguous_multi_chat_rows: int
     selected_outgoing_rows: int
+    selected_eligible_rows: int
+    selected_held_missing_chat_join_rows: int
+    selected_ambiguous_multi_chat_rows: int
     candidates: tuple[AtomicCandidate, ...]
     selected: tuple[AtomicCandidate, ...]
+    held: tuple[AtomicHeldSourceRow, ...]
+    selected_held: tuple[AtomicHeldSourceRow, ...]
 
 
 @dataclass(frozen=True)
@@ -983,7 +1006,8 @@ def smoke_policy_payload(
     # nested policy embedded in this returned payload.
     semantic_copy = json.loads(_canonical_json_bytes(semantic_validated))
     return {
-        "schema": "setec-imessage-atomic-smoke-policy/1",
+        "schema": "setec-imessage-atomic-smoke-policy/2",
+        "chat_join_policy_version": CHAT_JOIN_POLICY_VERSION,
         "semantic_options": semantic_copy,
         "snapshot_metadata": asdict(snapshot_metadata),
         "atomic_schema": asdict(schema_info),
@@ -1003,6 +1027,7 @@ def _validated_smoke_policy(payload: object) -> dict[str, Any]:
     try:
         if type(payload) is not dict or set(payload) != {
             "schema",
+            "chat_join_policy_version",
             "semantic_options",
             "snapshot_metadata",
             "atomic_schema",
@@ -1053,6 +1078,7 @@ def run_owner_payload(
     hmac_key_id_value: str,
     contact_map_hash: str,
     source_identity_map_hash: str,
+    source_hold_ledger_hash: str,
 ) -> dict[str, Any]:
     """Build the fully bound, path-free owner marker written before prose."""
 
@@ -1061,7 +1087,7 @@ def run_owner_payload(
     if type(snapshot_metadata) is not SnapshotMetadata:
         raise AtomicAcquisitionError("owner snapshot metadata is invalid")
     if type(smoke_policy) is not dict or set(smoke_policy) != {
-        "schema", "semantic_options", "snapshot_metadata", "atomic_schema", "tool", "hmac"
+        "schema", "chat_join_policy_version", "semantic_options", "snapshot_metadata", "atomic_schema", "tool", "hmac"
     }:
         raise AtomicAcquisitionError("owner smoke policy is invalid")
     atomic_schema = smoke_policy.get("atomic_schema")
@@ -1085,11 +1111,12 @@ def run_owner_payload(
         ("owner HMAC key ID", hmac_key_id_value),
         ("owner contact map hash", contact_map_hash),
         ("owner source identity map hash", source_identity_map_hash),
+        ("owner source hold ledger hash", source_hold_ledger_hash),
     ):
         if not _is_sha256_tag(value):
             raise AtomicAcquisitionError(f"{name} is invalid")
     return {
-        "schema": "setec-imessage-atomic-run-owner/1",
+        "schema": "setec-imessage-atomic-run-owner/2",
         "capability_id": CAPABILITY_ID,
         "tool": {"name": TOOL_NAME, "version": TOOL_VERSION},
         "snapshot_file_sha256": snapshot_metadata.file_sha256,
@@ -1101,8 +1128,10 @@ def run_owner_payload(
         "preprocessing": dict(semantic["preprocessing"]),
         "group_policy": semantic["group_policy"],
         "ai_boundary_version": semantic["ai_boundary_version"],
+        "chat_join_policy_version": CHAT_JOIN_POLICY_VERSION,
         "contact_map_hash": contact_map_hash,
         "source_identity_map_hash": source_identity_map_hash,
+        "source_hold_ledger_hash": source_hold_ledger_hash,
     }
 
 
@@ -1167,7 +1196,13 @@ def _validated_bootstrap_snapshot(value: object) -> dict[str, Any]:
 def _validated_universe_binding(value: object) -> dict[str, Any]:
     expected = {
         "candidate_outgoing_rows",
+        "candidate_eligible_rows",
+        "held_missing_chat_join_rows",
+        "ambiguous_multi_chat_rows",
         "selected_outgoing_rows",
+        "selected_eligible_rows",
+        "selected_held_missing_chat_join_rows",
+        "selected_ambiguous_multi_chat_rows",
         "candidate_locator_universe_hash",
         "selected_locator_universe_hash",
     }
@@ -1175,12 +1210,32 @@ def _validated_universe_binding(value: object) -> dict[str, Any]:
         raise BootstrapStateError("bootstrap universe binding is invalid")
     candidate_count = value["candidate_outgoing_rows"]
     selected_count = value["selected_outgoing_rows"]
+    candidate_eligible = value["candidate_eligible_rows"]
+    candidate_held = value["held_missing_chat_join_rows"]
+    candidate_ambiguous = value["ambiguous_multi_chat_rows"]
+    selected_eligible = value["selected_eligible_rows"]
+    selected_held = value["selected_held_missing_chat_join_rows"]
+    selected_ambiguous = value["selected_ambiguous_multi_chat_rows"]
     if (
         type(candidate_count) is not int
         or candidate_count < 0
         or type(selected_count) is not int
         or selected_count < 0
         or selected_count > candidate_count
+        or any(
+            type(count) is not int or count < 0
+            for count in (
+                candidate_eligible, candidate_held, candidate_ambiguous,
+                selected_eligible, selected_held, selected_ambiguous,
+            )
+        )
+        or candidate_count != candidate_eligible + candidate_held + candidate_ambiguous
+        or selected_count != selected_eligible + selected_held + selected_ambiguous
+        or selected_eligible > candidate_eligible
+        or selected_held > candidate_held
+        or selected_ambiguous > candidate_ambiguous
+        or candidate_ambiguous != 0
+        or selected_ambiguous != 0
         or not _is_sha256_tag(value["candidate_locator_universe_hash"])
         or not _is_sha256_tag(value["selected_locator_universe_hash"])
     ):
@@ -1253,6 +1308,7 @@ def bootstrap_journal_payload(
         SMOKE_POLICY_FILENAME,
         PRIVATE_CONTACT_MAP_FILENAME,
         PRIVATE_SOURCE_IDENTITY_MAP_FILENAME,
+        PRIVATE_SOURCE_HOLD_LEDGER_FILENAME,
     }
     owner_artifacts = maps_artifacts | {RUN_OWNER_FILENAME}
     if index < BOOTSTRAP_STATES.index("snapshot_closed"):
@@ -5295,6 +5351,8 @@ def discover_candidate_universe(
     message_guids: set[str] = set()
     chat_metadata: dict[str, tuple[str | None, str | None, int]] = {}
     candidates: list[AtomicCandidate] = []
+    held: list[AtomicHeldSourceRow] = []
+    ambiguous_local_dates: list[_dt.date] = []
     for rowid, joined_rows in grouped.items():
         first = joined_rows[0]
         (
@@ -5333,7 +5391,22 @@ def discover_candidate_universe(
                 or joined_associated != associated_type
                 or joined_item != item_type
                 or joined_reply != reply_link
-                or type(join_message_id) is not int
+            ):
+                raise SchemaPreflightError("candidate chat identity runtime type is invalid")
+            join_projection = (
+                join_message_id, join_chat_id, chat_rowid, chat_guid,
+                chat_identifier, room_name, style,
+            )
+            if all(value is None for value in join_projection):
+                if len(joined_rows) != 1:
+                    raise SchemaPreflightError(
+                        "candidate missing-chat join projection is malformed"
+                    )
+                continue
+            if any(value is None for value in (join_message_id, join_chat_id, chat_rowid, chat_guid, style)):
+                raise SchemaPreflightError("candidate chat join is partial or orphaned")
+            if (
+                type(join_message_id) is not int
                 or type(join_chat_id) is not int
                 or type(chat_rowid) is not int
                 or type(chat_identifier) not in (str, type(None))
@@ -5353,8 +5426,20 @@ def discover_candidate_universe(
             global_previous = chat_metadata.setdefault(stable_chat_guid, metadata)
             if global_previous != metadata:
                 raise StableGuidError("contradictory stable chat identity metadata")
+        if not identities:
+            held.append(
+                AtomicHeldSourceRow(
+                    snapshot_rowid=rowid,
+                    message_guid=message_guid,
+                    unix_nanoseconds=unix_nanoseconds,
+                    local_date=local_date,
+                    reason="missing_chat_join",
+                )
+            )
+            continue
         if len(identities) != 1:
-            raise StableGuidError("candidate does not resolve to exactly one stable chat GUID")
+            ambiguous_local_dates.append(local_date)
+            continue
         chat_guid, metadata = next(iter(identities.items()))
         chat_identifier, room_name, style = metadata
         candidates.append(
@@ -5382,20 +5467,53 @@ def discover_candidate_universe(
             candidate.message_guid.encode("utf-8"),
         )
     )
+    held.sort(
+        key=lambda candidate: (
+            candidate.unix_nanoseconds,
+            candidate.message_guid.encode("utf-8"),
+        )
+    )
     selected = tuple(
         candidate
         for candidate in candidates
         if (since is None or candidate.local_date >= since)
         and (until is None or candidate.local_date <= until)
     )
-    if len(selected) > max_messages:
+    selected_held = tuple(
+        candidate
+        for candidate in held
+        if (since is None or candidate.local_date >= since)
+        and (until is None or candidate.local_date <= until)
+    )
+    ambiguous_multi_chat_rows = len(ambiguous_local_dates)
+    selected_ambiguous_multi_chat_rows = sum(
+        1
+        for local_date in ambiguous_local_dates
+        if (since is None or local_date >= since)
+        and (until is None or local_date <= until)
+    )
+    selected_outgoing_rows = (
+        len(selected) + len(selected_held) + selected_ambiguous_multi_chat_rows
+    )
+    candidate_outgoing_rows = len(candidates) + len(held) + ambiguous_multi_chat_rows
+    if selected_outgoing_rows > max_messages:
         raise AtomicAcquisitionError("selected outgoing rows exceed max_messages ceiling")
+    if ambiguous_multi_chat_rows:
+        raise StableGuidError("outgoing candidate universe contains ambiguous multi-chat rows")
     return AtomicCandidateUniverse(
-        schema="setec-imessage-atomic-candidate-universe/1",
-        candidate_outgoing_rows=len(candidates),
-        selected_outgoing_rows=len(selected),
+        schema="setec-imessage-atomic-candidate-universe/2",
+        candidate_outgoing_rows=candidate_outgoing_rows,
+        candidate_eligible_rows=len(candidates),
+        held_missing_chat_join_rows=len(held),
+        ambiguous_multi_chat_rows=0,
+        selected_outgoing_rows=selected_outgoing_rows,
+        selected_eligible_rows=len(selected),
+        selected_held_missing_chat_join_rows=len(selected_held),
+        selected_ambiguous_multi_chat_rows=0,
         candidates=tuple(candidates),
         selected=selected,
+        held=tuple(held),
+        selected_held=selected_held,
     )
 
 
@@ -5671,8 +5789,12 @@ def _validated_reconstructed_initialization_closure(
     )
     contact = private_contact_map_payload(universe, key)
     source = private_source_identity_map_payload(universe, key, contact)
+    hold = private_source_hold_ledger_payload(
+        universe, key, source, snapshot_file_sha256=metadata.file_sha256
+    )
     contact_digest = _sha256_tag(_canonical_json_bytes(contact))
     source_digest = _sha256_tag(_canonical_json_bytes(source))
+    hold_digest = _sha256_tag(_canonical_json_bytes(hold))
     owner = run_owner_payload(
         snapshot_metadata=metadata,
         semantic_options=semantic,
@@ -5681,6 +5803,7 @@ def _validated_reconstructed_initialization_closure(
         hmac_key_id_value=key_id,
         contact_map_hash=contact_digest,
         source_identity_map_hash=source_digest,
+        source_hold_ledger_hash=hold_digest,
     )
     specifications = (
         (
@@ -5712,6 +5835,12 @@ def _validated_reconstructed_initialization_closure(
             "private source identity map",
             MAX_PRIVATE_SOURCE_IDENTITY_MAP_BYTES,
             source,
+        ),
+        (
+            PRIVATE_SOURCE_HOLD_LEDGER_FILENAME,
+            "private source hold ledger",
+            MAX_PRIVATE_SOURCE_HOLD_LEDGER_BYTES,
+            hold,
         ),
         (RUN_OWNER_FILENAME, "run owner", MAX_RUN_OWNER_BYTES, owner),
     )
@@ -5756,7 +5885,17 @@ def _validated_reconstructed_initialization_closure(
     expected_universe = _validated_universe_binding(
         {
             "candidate_outgoing_rows": source["candidate_outgoing_rows"],
+            "candidate_eligible_rows": source["candidate_eligible_rows"],
+            "held_missing_chat_join_rows": source["held_missing_chat_join_rows"],
+            "ambiguous_multi_chat_rows": source["ambiguous_multi_chat_rows"],
             "selected_outgoing_rows": source["selected_outgoing_rows"],
+            "selected_eligible_rows": source["selected_eligible_rows"],
+            "selected_held_missing_chat_join_rows": source[
+                "selected_held_missing_chat_join_rows"
+            ],
+            "selected_ambiguous_multi_chat_rows": source[
+                "selected_ambiguous_multi_chat_rows"
+            ],
             "candidate_locator_universe_hash": source[
                 "candidate_locator_universe_hash"
             ],
@@ -6712,7 +6851,7 @@ def process_selected_candidates(
 ) -> AtomicProcessingResult:
     """Process a full universe or the canonical prefix emitting N rows."""
 
-    if universe.selected_outgoing_rows != len(universe.selected):
+    if universe.selected_eligible_rows != len(universe.selected):
         raise AtomicAcquisitionError("selected candidate universe count drifted")
     if max_retained is not None and (
         type(max_retained) is not int or max_retained < 1
@@ -6750,7 +6889,7 @@ def process_selected_candidates(
         if bound_reached:
             break
     considered = len(rows)
-    not_considered = universe.selected_outgoing_rows - considered
+    not_considered = universe.selected_eligible_rows - considered
     excluded_total = sum(counts.values())
     if considered != retained + excluded_total or not_considered < 0:
         raise AtomicAcquisitionError("candidate processing accounting is invalid")
@@ -6762,7 +6901,7 @@ def process_selected_candidates(
         })
     return AtomicProcessingResult(
         schema="setec-imessage-atomic-processing-result/1",
-        selected_outgoing_rows=universe.selected_outgoing_rows,
+        selected_outgoing_rows=universe.selected_eligible_rows,
         considered_rows=considered,
         not_considered_after_bound=not_considered,
         retained_rows=retained,
@@ -6785,12 +6924,19 @@ def candidate_universe_receipt_payload(
     """Describe candidate/selected closure without raw identities or prose."""
 
     key = _validate_hmac_key(key_bytes)
-    for value in (universe.candidate_outgoing_rows, universe.selected_outgoing_rows):
+    _validated_candidate_membership(universe)
+    for value in (
+        universe.candidate_outgoing_rows, universe.candidate_eligible_rows,
+        universe.held_missing_chat_join_rows, universe.ambiguous_multi_chat_rows,
+        universe.selected_outgoing_rows, universe.selected_eligible_rows,
+        universe.selected_held_missing_chat_join_rows,
+        universe.selected_ambiguous_multi_chat_rows,
+    ):
         if type(value) is not int or value < 0:
             raise AtomicAcquisitionError("candidate receipt counts are invalid")
-    if len(universe.candidates) != universe.candidate_outgoing_rows:
+    if len(universe.candidates) != universe.candidate_eligible_rows:
         raise AtomicAcquisitionError("candidate receipt coverage drifted")
-    if len(universe.selected) != universe.selected_outgoing_rows:
+    if len(universe.selected) != universe.selected_eligible_rows:
         raise AtomicAcquisitionError("selected candidate identity coverage drifted")
     candidate_by_rowid: dict[int, AtomicCandidate] = {}
     for candidate in universe.candidates:
@@ -6824,18 +6970,43 @@ def candidate_universe_receipt_payload(
                 "local_date": candidate.local_date.isoformat(),
                 "group_status": candidate.group_status,
                 "attachment_count": len(candidate.attachment_ids),
-                "selected": selected,
+                "selected_by_date": selected,
             }
         )
+    selected_held_guids = {row.message_guid for row in universe.selected_held}
+    for held in universe.held:
+        item = entry_locator(key, held.message_guid)
+        locators.append(item)
+        selected = held.message_guid in selected_held_guids
+        if selected:
+            selected_locators.append(item)
+        records.append({
+            "entry_locator": item,
+            "group_locator": None,
+            "unix_nanoseconds": held.unix_nanoseconds,
+            "local_date": held.local_date.isoformat(),
+            "group_status": None,
+            "attachment_count": None,
+            "selected_by_date": selected,
+            "chat_join_disposition": "missing_chat_join",
+        })
+    for record in records:
+        record.setdefault("chat_join_disposition", "eligible")
     if len(records) != universe.candidate_outgoing_rows:
         raise AtomicAcquisitionError("candidate receipt coverage drifted")
     if len(selected_locators) != universe.selected_outgoing_rows:
         raise AtomicAcquisitionError("selected candidate locator coverage drifted")
     records.sort(key=lambda row: (row["unix_nanoseconds"], row["entry_locator"]))
     return {
-        "schema": "setec-imessage-atomic-candidate-receipt/1",
+        "schema": "setec-imessage-atomic-candidate-receipt/2",
         "candidate_outgoing_rows": universe.candidate_outgoing_rows,
+        "candidate_eligible_rows": universe.candidate_eligible_rows,
+        "held_missing_chat_join_rows": universe.held_missing_chat_join_rows,
+        "ambiguous_multi_chat_rows": universe.ambiguous_multi_chat_rows,
         "selected_outgoing_rows": universe.selected_outgoing_rows,
+        "selected_eligible_rows": universe.selected_eligible_rows,
+        "selected_held_missing_chat_join_rows": universe.selected_held_missing_chat_join_rows,
+        "selected_ambiguous_multi_chat_rows": universe.selected_ambiguous_multi_chat_rows,
         "hmac_key_id": hmac_key_id(key),
         "candidate_locator_universe_hash": _locator_universe_hash(locators),
         "selected_locator_universe_hash": _locator_universe_hash(selected_locators),
@@ -6848,20 +7019,44 @@ def _validated_candidate_membership(
     universe: AtomicCandidateUniverse,
 ) -> tuple[tuple[AtomicCandidate, ...], frozenset[str]]:
     if type(universe) is not AtomicCandidateUniverse or universe.schema != (
-        "setec-imessage-atomic-candidate-universe/1"
+        "setec-imessage-atomic-candidate-universe/2"
     ):
         raise AtomicAcquisitionError("private map candidate universe is invalid")
-    if type(universe.candidates) is not tuple or type(universe.selected) is not tuple:
+    if any(
+        type(value) is not tuple
+        for value in (
+            universe.candidates, universe.selected, universe.held,
+            universe.selected_held,
+        )
+    ):
         raise AtomicAcquisitionError("private map universe membership is not closed")
     candidates = universe.candidates
     selected = universe.selected
     if (
         type(universe.candidate_outgoing_rows) is not int
         or universe.candidate_outgoing_rows < 0
+        or type(universe.candidate_eligible_rows) is not int
+        or universe.candidate_eligible_rows < 0
+        or type(universe.held_missing_chat_join_rows) is not int
+        or universe.held_missing_chat_join_rows < 0
+        or type(universe.ambiguous_multi_chat_rows) is not int
+        or universe.ambiguous_multi_chat_rows != 0
         or type(universe.selected_outgoing_rows) is not int
         or universe.selected_outgoing_rows < 0
-        or universe.candidate_outgoing_rows != len(candidates)
-        or universe.selected_outgoing_rows != len(selected)
+        or type(universe.selected_eligible_rows) is not int
+        or universe.selected_eligible_rows < 0
+        or type(universe.selected_held_missing_chat_join_rows) is not int
+        or universe.selected_held_missing_chat_join_rows < 0
+        or type(universe.selected_ambiguous_multi_chat_rows) is not int
+        or universe.selected_ambiguous_multi_chat_rows != 0
+        or universe.candidate_eligible_rows != len(candidates)
+        or universe.held_missing_chat_join_rows != len(universe.held)
+        or universe.candidate_outgoing_rows
+        != universe.candidate_eligible_rows + universe.held_missing_chat_join_rows
+        or universe.selected_eligible_rows != len(selected)
+        or universe.selected_held_missing_chat_join_rows != len(universe.selected_held)
+        or universe.selected_outgoing_rows
+        != universe.selected_eligible_rows + universe.selected_held_missing_chat_join_rows
     ):
         raise AtomicAcquisitionError("private map universe counts drifted")
     by_guid: dict[str, AtomicCandidate] = {}
@@ -6906,6 +7101,23 @@ def _validated_candidate_membership(
         if previous_metadata != metadata:
             raise AtomicAcquisitionError("private contact metadata drifted")
         by_guid[guid] = candidate
+    held_by_guid: dict[str, AtomicHeldSourceRow] = {}
+    for held in universe.held:
+        if (
+            type(held) is not AtomicHeldSourceRow
+            or type(held.snapshot_rowid) is not int
+            or held.snapshot_rowid < 1
+            or held.snapshot_rowid in rowids
+            or held.reason != "missing_chat_join"
+            or type(held.unix_nanoseconds) is not int
+            or type(held.local_date) is not _dt.date
+        ):
+            raise AtomicAcquisitionError("private map held source row is invalid")
+        rowids.add(held.snapshot_rowid)
+        guid = validate_stable_guid(held.message_guid, identity="message")
+        if guid in by_guid or guid in held_by_guid:
+            raise AtomicAcquisitionError("private map message identity repeats")
+        held_by_guid[guid] = held
     selected_guids: set[str] = set()
     for candidate in selected:
         if (
@@ -6915,6 +7127,15 @@ def _validated_candidate_membership(
         ):
             raise AtomicAcquisitionError("private map selected membership drifted")
         selected_guids.add(candidate.message_guid)
+    selected_held_guids: set[str] = set()
+    for held in universe.selected_held:
+        if (
+            type(held) is not AtomicHeldSourceRow
+            or held_by_guid.get(held.message_guid) != held
+            or held.message_guid in selected_held_guids
+        ):
+            raise AtomicAcquisitionError("private map selected hold membership drifted")
+        selected_held_guids.add(held.message_guid)
     return candidates, frozenset(selected_guids)
 
 
@@ -6997,7 +7218,8 @@ def private_source_identity_map_payload(
         row["group_locator"]: row["contact_alias"]
         for row in expected_contacts["contacts"]
     }
-    if len(candidates) > 999_999:
+    all_count = len(candidates) + len(universe.held)
+    if all_count > 999_999:
         raise AtomicAcquisitionError("private source ordinal space is exhausted")
     chat_guids = sorted({candidate.chat_guid for candidate in candidates})
     located_chats = [
@@ -7005,21 +7227,35 @@ def private_source_identity_map_payload(
     ]
     if len({row[0] for row in located_chats}) != len(located_chats):
         raise AtomicAcquisitionError("private source group locators collide")
-    locator_rows = [
+    locator_rows: list[tuple[str, AtomicCandidate | AtomicHeldSourceRow, str | None, str]] = [
         (
             entry_locator(key, candidate.message_guid),
             candidate,
             group_locator(key, candidate.chat_guid),
+            "eligible",
         )
         for candidate in candidates
     ]
+    locator_rows.extend(
+        (
+            entry_locator(key, held.message_guid),
+            held,
+            None,
+            "missing_chat_join",
+        )
+        for held in universe.held
+    )
     if len({row[0] for row in locator_rows}) != len(locator_rows):
         raise AtomicAcquisitionError("private source entry locators collide")
     ordered = sorted(locator_rows, key=lambda row: row[0])
     entries = []
     selected_locators = []
-    for index, (entry, candidate, group) in enumerate(ordered, start=1):
-        selected = candidate.message_guid in selected_guids
+    selected_held_guids = {row.message_guid for row in universe.selected_held}
+    for index, (entry, candidate, group, disposition) in enumerate(ordered, start=1):
+        selected = (
+            candidate.message_guid in selected_guids
+            or candidate.message_guid in selected_held_guids
+        )
         if selected:
             selected_locators.append(entry)
         entries.append({
@@ -7027,17 +7263,83 @@ def private_source_identity_map_payload(
             "entry_locator": entry,
             "message_guid": candidate.message_guid,
             "group_locator": group,
-            "contact_alias": aliases.get(group),
-            "selected": selected,
+            "contact_alias": (
+                aliases.get(group) if selected and group is not None else None
+            ),
+            "selected_by_date": selected,
+            "chat_join_disposition": disposition,
         })
     candidate_locators = [row["entry_locator"] for row in entries]
     return {
-        "schema": "setec-imessage-atomic-private-source-identity-map/1",
+        "schema": "setec-imessage-atomic-private-source-identity-map/2",
         "candidate_outgoing_rows": len(entries),
+        "candidate_eligible_rows": universe.candidate_eligible_rows,
+        "held_missing_chat_join_rows": universe.held_missing_chat_join_rows,
+        "ambiguous_multi_chat_rows": universe.ambiguous_multi_chat_rows,
         "selected_outgoing_rows": len(selected_locators),
+        "selected_eligible_rows": universe.selected_eligible_rows,
+        "selected_held_missing_chat_join_rows": universe.selected_held_missing_chat_join_rows,
+        "selected_ambiguous_multi_chat_rows": universe.selected_ambiguous_multi_chat_rows,
         "candidate_locator_universe_hash": _locator_universe_hash(candidate_locators),
         "selected_locator_universe_hash": _locator_universe_hash(selected_locators),
         "entries": entries,
+    }
+
+
+def private_source_hold_ledger_payload(
+    universe: AtomicCandidateUniverse,
+    key_bytes: bytes,
+    source_map: dict[str, Any],
+    *,
+    snapshot_file_sha256: str,
+) -> dict[str, Any]:
+    """Bind every chatless source disposition without prose or raw identity."""
+
+    _validated_candidate_membership(universe)
+    key = _validate_hmac_key(key_bytes)
+    if not _is_sha256_tag(snapshot_file_sha256):
+        raise AtomicAcquisitionError("private source hold snapshot binding is invalid")
+    expected_contact = private_contact_map_payload(universe, key)
+    expected_source = private_source_identity_map_payload(
+        universe, key, expected_contact
+    )
+    if source_map != expected_source:
+        raise AtomicAcquisitionError("private source hold map binding drifted")
+    source_by_locator = {
+        row["entry_locator"]: row for row in source_map["entries"]
+    }
+    selected_held = {row.message_guid for row in universe.selected_held}
+    holds: list[dict[str, Any]] = []
+    for held in universe.held:
+        locator = entry_locator(key, held.message_guid)
+        source = source_by_locator.get(locator)
+        if (
+            type(source) is not dict
+            or source.get("chat_join_disposition") != "missing_chat_join"
+            or source.get("group_locator") is not None
+            or source.get("contact_alias") is not None
+        ):
+            raise AtomicAcquisitionError("private source hold identity drifted")
+        holds.append({
+            "source_ordinal": source["source_ordinal"],
+            "entry_locator": locator,
+            "reason": "missing_chat_join",
+            "selected_by_date": held.message_guid in selected_held,
+        })
+    holds.sort(key=lambda row: row["entry_locator"])
+    return {
+        "schema": "setec-imessage-atomic-private-source-hold-ledger/1",
+        "snapshot_file_sha256": snapshot_file_sha256,
+        "chat_join_policy_version": CHAT_JOIN_POLICY_VERSION,
+        "candidate_outgoing_rows": universe.candidate_outgoing_rows,
+        "held_missing_chat_join_rows": universe.held_missing_chat_join_rows,
+        "selected_held_missing_chat_join_rows": (
+            universe.selected_held_missing_chat_join_rows
+        ),
+        "candidate_locator_universe_hash": source_map[
+            "candidate_locator_universe_hash"
+        ],
+        "holds": holds,
     }
 
 
@@ -7160,6 +7462,12 @@ def build_initialization_closure(
         )
         contact = private_contact_map_payload(universe, key)
         source = private_source_identity_map_payload(universe, key, contact)
+        hold = private_source_hold_ledger_payload(
+            universe,
+            key,
+            source,
+            snapshot_file_sha256=bound_snapshot.file_sha256,
+        )
 
         semantic_closed = _close_private_json(
             filename=SEMANTIC_OPTIONS_FILENAME,
@@ -7218,6 +7526,25 @@ def build_initialization_closure(
                 artifact_label="private source identity map",
             ),
         )
+        hold_closed = _close_private_json(
+            filename=PRIVATE_SOURCE_HOLD_LEDGER_FILENAME,
+            label="private source hold ledger",
+            max_bytes=MAX_PRIVATE_SOURCE_HOLD_LEDGER_BYTES,
+            payload=hold,
+            validator=_contextual_exact_payload_validator(
+                private_source_hold_ledger_payload(
+                    universe,
+                    key,
+                    private_source_identity_map_payload(
+                        universe,
+                        key,
+                        private_contact_map_payload(universe, key),
+                    ),
+                    snapshot_file_sha256=bound_snapshot.file_sha256,
+                ),
+                artifact_label="private source hold ledger",
+            ),
+        )
         owner = run_owner_payload(
             snapshot_metadata=bound_snapshot,
             semantic_options=semantic,
@@ -7226,6 +7553,7 @@ def build_initialization_closure(
             hmac_key_id_value=key_id,
             contact_map_hash=contact_closed.digest,
             source_identity_map_hash=source_closed.digest,
+            source_hold_ledger_hash=hold_closed.digest,
         )
         owner_closed = _close_private_json(
             filename=RUN_OWNER_FILENAME,
@@ -7241,6 +7569,7 @@ def build_initialization_closure(
                     hmac_key_id_value=key_id,
                     contact_map_hash=contact_closed.digest,
                     source_identity_map_hash=source_closed.digest,
+                    source_hold_ledger_hash=hold_closed.digest,
                 ),
                 artifact_label="run owner",
             ),
@@ -7251,6 +7580,7 @@ def build_initialization_closure(
             smoke_closed,
             contact_closed,
             source_closed,
+            hold_closed,
             owner_closed,
         )
         if len({artifact.filename for artifact in artifacts}) != len(artifacts):
@@ -7258,7 +7588,13 @@ def build_initialization_closure(
         universe_binding = _validated_universe_binding(
             {
                 "candidate_outgoing_rows": source["candidate_outgoing_rows"],
+                "candidate_eligible_rows": source["candidate_eligible_rows"],
+                "held_missing_chat_join_rows": source["held_missing_chat_join_rows"],
+                "ambiguous_multi_chat_rows": source["ambiguous_multi_chat_rows"],
                 "selected_outgoing_rows": source["selected_outgoing_rows"],
+                "selected_eligible_rows": source["selected_eligible_rows"],
+                "selected_held_missing_chat_join_rows": source["selected_held_missing_chat_join_rows"],
+                "selected_ambiguous_multi_chat_rows": source["selected_ambiguous_multi_chat_rows"],
                 "candidate_locator_universe_hash": source[
                     "candidate_locator_universe_hash"
                 ],
@@ -7293,6 +7629,7 @@ def build_initialization_closure(
             SMOKE_POLICY_FILENAME,
             PRIVATE_CONTACT_MAP_FILENAME,
             PRIVATE_SOURCE_IDENTITY_MAP_FILENAME,
+            PRIVATE_SOURCE_HOLD_LEDGER_FILENAME,
             RUN_OWNER_FILENAME,
         }:
             raise BootstrapStateError("initialization tree inventory drifted")
@@ -7389,7 +7726,17 @@ def _reread_initialization_dependencies_at(
     source_binding = _validated_universe_binding(
         {
             "candidate_outgoing_rows": source.get("candidate_outgoing_rows"),
+            "candidate_eligible_rows": source.get("candidate_eligible_rows"),
+            "held_missing_chat_join_rows": source.get("held_missing_chat_join_rows"),
+            "ambiguous_multi_chat_rows": source.get("ambiguous_multi_chat_rows"),
             "selected_outgoing_rows": source.get("selected_outgoing_rows"),
+            "selected_eligible_rows": source.get("selected_eligible_rows"),
+            "selected_held_missing_chat_join_rows": source.get(
+                "selected_held_missing_chat_join_rows"
+            ),
+            "selected_ambiguous_multi_chat_rows": source.get(
+                "selected_ambiguous_multi_chat_rows"
+            ),
             "candidate_locator_universe_hash": source.get(
                 "candidate_locator_universe_hash"
             ),
@@ -7453,7 +7800,17 @@ def _reread_initialization_dependency_prefix_at(
         source_binding = _validated_universe_binding(
             {
                 "candidate_outgoing_rows": source.get("candidate_outgoing_rows"),
+                "candidate_eligible_rows": source.get("candidate_eligible_rows"),
+                "held_missing_chat_join_rows": source.get("held_missing_chat_join_rows"),
+                "ambiguous_multi_chat_rows": source.get("ambiguous_multi_chat_rows"),
                 "selected_outgoing_rows": source.get("selected_outgoing_rows"),
+                "selected_eligible_rows": source.get("selected_eligible_rows"),
+                "selected_held_missing_chat_join_rows": source.get(
+                    "selected_held_missing_chat_join_rows"
+                ),
+                "selected_ambiguous_multi_chat_rows": source.get(
+                    "selected_ambiguous_multi_chat_rows"
+                ),
                 "candidate_locator_universe_hash": source.get(
                     "candidate_locator_universe_hash"
                 ),
@@ -7538,6 +7895,7 @@ def _owner_from_initialization_dependency_evidence(
         hmac_key_id_value=smoke["hmac"]["key_id"],
         contact_map_hash=evidence[PRIVATE_CONTACT_MAP_FILENAME][0],
         source_identity_map_hash=evidence[PRIVATE_SOURCE_IDENTITY_MAP_FILENAME][0],
+        source_hold_ledger_hash=evidence[PRIVATE_SOURCE_HOLD_LEDGER_FILENAME][0],
     )
     closed = _close_private_json(
         filename=RUN_OWNER_FILENAME,
@@ -7569,7 +7927,7 @@ def _write_initialization_owner_at(
 def _reread_initialization_closure_at(
     parent_fd: int, closure: InitializationClosure
 ) -> dict[str, tuple[str, bytes]]:
-    """Stable-read all six files from an independently rebuilt closure."""
+    """Stable-read all seven files from an independently rebuilt closure."""
 
     if type(closure) is not InitializationClosure:
         raise BootstrapStateError("initialization closure is invalid")
@@ -12331,8 +12689,8 @@ def processing_receipt_payload(
     ):
         raise AtomicAcquisitionError("processing receipt row accounting drifted")
     return {
-        "schema": "setec-imessage-atomic-processing-receipt/1",
-        "selected_outgoing_rows": result.selected_outgoing_rows,
+        "schema": "setec-imessage-atomic-processing-receipt/2",
+        "selected_eligible_rows": result.selected_outgoing_rows,
         "considered_rows": result.considered_rows,
         "not_considered_after_bound": result.not_considered_after_bound,
         "retained_rows": result.retained_rows,
@@ -12362,7 +12720,7 @@ def plan_row_artifacts(
         raise AtomicAcquisitionError("row plan inputs are invalid")
     if (
         result.schema != "setec-imessage-atomic-processing-result/1"
-        or result.selected_outgoing_rows != universe.selected_outgoing_rows
+        or result.selected_outgoing_rows != universe.selected_eligible_rows
         or result.considered_rows != len(result.rows)
         or result.considered_rows + result.not_considered_after_bound
         != result.selected_outgoing_rows
@@ -12383,8 +12741,8 @@ def plan_row_artifacts(
     if (
         contact_map.get("schema") != "setec-imessage-atomic-private-contact-map/1"
         or source_map.get("schema")
-        != "setec-imessage-atomic-private-source-identity-map/1"
-        or owner.get("schema") != "setec-imessage-atomic-run-owner/1"
+        != "setec-imessage-atomic-private-source-identity-map/2"
+        or owner.get("schema") != "setec-imessage-atomic-run-owner/2"
         or owner.get("semantic_options_digest") != canonical_payload_digest(semantic)
         or owner.get("snapshot_file_sha256") is None
     ):
@@ -12415,7 +12773,7 @@ def plan_row_artifacts(
         source = sources.get(item_locator)
         if (
             type(source) is not dict
-            or source.get("selected") is not True
+            or source.get("selected_by_date") is not True
             or source.get("group_locator") != chat_locator
             or source.get("contact_alias") != aliases.get(chat_locator)
         ):
@@ -13464,12 +13822,24 @@ def _ledger_payload(
     exclusions = {reason: counts.get(reason, 0) for reason in EXCLUSION_REASONS}
     finished = complete and closed_count == len(planned)
     return {
-        "schema": "setec-imessage-atomic-source-ledger/1",
+        "schema": "setec-imessage-atomic-source-ledger/2",
         "snapshot_file_sha256": owner["snapshot_file_sha256"],
         "semantic_options_digest": owner["semantic_options_digest"],
         "run_controls_digest": owner["run_controls_digest"],
         "smoke_policy_digest": owner["smoke_policy_digest"],
-        "selected_outgoing_rows": result.selected_outgoing_rows,
+        "source_hold_ledger_hash": owner["source_hold_ledger_hash"],
+        "candidate_outgoing_rows": source_map["candidate_outgoing_rows"],
+        "candidate_eligible_rows": source_map["candidate_eligible_rows"],
+        "held_missing_chat_join_rows": source_map["held_missing_chat_join_rows"],
+        "ambiguous_multi_chat_rows": source_map["ambiguous_multi_chat_rows"],
+        "selected_outgoing_rows": source_map["selected_outgoing_rows"],
+        "selected_eligible_rows": result.selected_outgoing_rows,
+        "selected_held_missing_chat_join_rows": source_map[
+            "selected_held_missing_chat_join_rows"
+        ],
+        "selected_ambiguous_multi_chat_rows": source_map[
+            "selected_ambiguous_multi_chat_rows"
+        ],
         "considered_rows": considered,
         "not_considered_after_bound": (
             result.not_considered_after_bound if finished else result.selected_outgoing_rows - considered
@@ -13485,12 +13855,25 @@ def _ledger_payload(
 
 def _checkpoint_payload(ledger_raw: bytes, ledger: dict[str, Any]) -> dict[str, Any]:
     return {
-        "schema": "setec-imessage-atomic-checkpoint/1",
+        "schema": "setec-imessage-atomic-checkpoint/2",
         "snapshot_file_sha256": ledger["snapshot_file_sha256"],
         "semantic_options_digest": ledger["semantic_options_digest"],
         "run_controls_digest": ledger["run_controls_digest"],
         "smoke_policy_digest": ledger["smoke_policy_digest"],
+        "source_hold_ledger_hash": ledger["source_hold_ledger_hash"],
         "ledger_sha256": _sha256_tag(ledger_raw),
+        "candidate_outgoing_rows": ledger["candidate_outgoing_rows"],
+        "candidate_eligible_rows": ledger["candidate_eligible_rows"],
+        "held_missing_chat_join_rows": ledger["held_missing_chat_join_rows"],
+        "ambiguous_multi_chat_rows": ledger["ambiguous_multi_chat_rows"],
+        "selected_outgoing_rows": ledger["selected_outgoing_rows"],
+        "selected_eligible_rows": ledger["selected_eligible_rows"],
+        "selected_held_missing_chat_join_rows": ledger[
+            "selected_held_missing_chat_join_rows"
+        ],
+        "selected_ambiguous_multi_chat_rows": ledger[
+            "selected_ambiguous_multi_chat_rows"
+        ],
         "considered_rows": ledger["considered_rows"],
         "retained_rows": ledger["retained_rows"],
         "complete": ledger["complete"],
@@ -14097,6 +14480,7 @@ def _semantic_tree_payload(
         SEMANTIC_OPTIONS_FILENAME,
         RUN_CONTROLS_FILENAME,
         SMOKE_POLICY_FILENAME,
+        PRIVATE_SOURCE_HOLD_LEDGER_FILENAME,
         "source-ledger.json",
         "checkpoint.json",
         "draft_manifest.jsonl",
@@ -14133,7 +14517,7 @@ def _acquisition_receipt_payload(
     """Rebuild the complete receipt without accepting receipt-owned authority."""
 
     return {
-        "schema": "setec-imessage-atomic-acquisition-receipt/1",
+        "schema": "setec-imessage-atomic-acquisition-receipt/2",
         "tool": {
             "name": TOOL_NAME,
             "version": TOOL_VERSION,
@@ -14148,6 +14532,8 @@ def _acquisition_receipt_payload(
         "hmac_key_id": owner["hmac"]["key_id"],
         "contact_map_hash": owner["contact_map_hash"],
         "source_identity_map_hash": owner["source_identity_map_hash"],
+        "source_hold_ledger_hash": owner["source_hold_ledger_hash"],
+        "chat_join_policy_version": owner["chat_join_policy_version"],
         "ai_boundary_version": owner["ai_boundary_version"],
         "timezone": owner["timezone"],
         "max_retained": controls["max_retained"],
@@ -14157,10 +14543,21 @@ def _acquisition_receipt_payload(
         ),
         "counts": {
             "candidate": source_map["candidate_outgoing_rows"],
-            "selected": ledger["selected_outgoing_rows"],
+            "candidate_eligible": source_map["candidate_eligible_rows"],
+            "held_missing_chat_join": source_map["held_missing_chat_join_rows"],
+            "ambiguous_multi_chat": source_map["ambiguous_multi_chat_rows"],
+            "selected": source_map["selected_outgoing_rows"],
+            "selected_eligible": source_map["selected_eligible_rows"],
+            "selected_held_missing_chat_join": source_map[
+                "selected_held_missing_chat_join_rows"
+            ],
+            "selected_ambiguous_multi_chat": source_map[
+                "selected_ambiguous_multi_chat_rows"
+            ],
             "considered": ledger["considered_rows"],
             "not_considered_after_bound": ledger["not_considered_after_bound"],
             "retained": ledger["retained_rows"],
+            "published": ledger["retained_rows"],
             "excluded_considered_by_final_reason": (
                 ledger["excluded_considered_by_final_reason"]
             ),
@@ -14506,10 +14903,14 @@ def _validate_private_identity_maps(
         raise AtomicAcquisitionError("atomic contact map ordering drifted")
 
     if set(source_map) != {
-        "schema", "candidate_outgoing_rows", "selected_outgoing_rows",
+        "schema", "candidate_outgoing_rows", "candidate_eligible_rows",
+        "held_missing_chat_join_rows", "ambiguous_multi_chat_rows",
+        "selected_outgoing_rows", "selected_eligible_rows",
+        "selected_held_missing_chat_join_rows",
+        "selected_ambiguous_multi_chat_rows",
         "candidate_locator_universe_hash", "selected_locator_universe_hash", "entries",
     } or source_map.get("schema") != (
-        "setec-imessage-atomic-private-source-identity-map/1"
+        "setec-imessage-atomic-private-source-identity-map/2"
     ):
         raise AtomicAcquisitionError("atomic source map schema drifted")
     entries = source_map.get("entries")
@@ -14522,30 +14923,48 @@ def _validate_private_identity_maps(
     for index, row in enumerate(entries, start=1):
         if type(row) is not dict or set(row) != {
             "source_ordinal", "entry_locator", "message_guid", "group_locator",
-            "contact_alias", "selected",
+            "contact_alias", "selected_by_date", "chat_join_disposition",
         }:
             raise AtomicAcquisitionError("atomic source map row schema drifted")
         if (
             row["source_ordinal"] != f"source-{index:06d}"
             or not _is_hmac_locator(row["entry_locator"])
-            or not _is_hmac_locator(row["group_locator"])
-            or type(row["selected"]) is not bool
+            or type(row["selected_by_date"]) is not bool
+            or row["chat_join_disposition"] not in {"eligible", "missing_chat_join"}
+            or type(row["group_locator"]) not in {str, type(None)}
             or type(row["contact_alias"]) not in {str, type(None)}
             or row["entry_locator"] in source_by_locator
             or row["message_guid"] in source_by_guid
         ):
             raise AtomicAcquisitionError("atomic source map row binding drifted")
+        if (
+            (row["chat_join_disposition"] == "eligible")
+            != _is_hmac_locator(row["group_locator"])
+            or (
+                row["chat_join_disposition"] == "missing_chat_join"
+                and (row["group_locator"] is not None or row["contact_alias"] is not None)
+            )
+        ):
+            raise AtomicAcquisitionError("atomic source map disposition drifted")
         validate_stable_guid(row["message_guid"], identity="message")
         source_by_locator[row["entry_locator"]] = row
         source_by_guid[row["message_guid"]] = row
-        if row["selected"]:
+        if row["selected_by_date"]:
             selected_locators.append(row["entry_locator"])
     candidate_locators = [row["entry_locator"] for row in entries]
     if candidate_locators != sorted(candidate_locators):
         raise AtomicAcquisitionError("atomic source map ordering drifted")
     if (
         source_map["candidate_outgoing_rows"] != len(entries)
+        or source_map["candidate_eligible_rows"] != universe.candidate_eligible_rows
+        or source_map["held_missing_chat_join_rows"]
+        != universe.held_missing_chat_join_rows
+        or source_map["ambiguous_multi_chat_rows"] != 0
         or source_map["selected_outgoing_rows"] != len(selected_locators)
+        or source_map["selected_eligible_rows"] != universe.selected_eligible_rows
+        or source_map["selected_held_missing_chat_join_rows"]
+        != universe.selected_held_missing_chat_join_rows
+        or source_map["selected_ambiguous_multi_chat_rows"] != 0
         or source_map["candidate_locator_universe_hash"]
         != _locator_universe_hash(candidate_locators)
         or source_map["selected_locator_universe_hash"]
@@ -14556,7 +14975,9 @@ def _validate_private_identity_maps(
         raise AtomicAcquisitionError("atomic source map universe binding drifted")
 
     selected_guids = {candidate.message_guid for candidate in universe.selected}
-    expected_guids = {candidate.message_guid for candidate in universe.candidates}
+    expected_guids = {
+        candidate.message_guid for candidate in universe.candidates
+    } | {held.message_guid for held in universe.held}
     if set(source_by_guid) != expected_guids:
         raise AtomicAcquisitionError("atomic source map snapshot coverage drifted")
     selected_chats: set[str] = set()
@@ -14564,7 +14985,11 @@ def _validate_private_identity_maps(
         row = source_by_guid[candidate.message_guid]
         selected = candidate.message_guid in selected_guids
         previous_group = chat_groups.setdefault(candidate.chat_guid, row["group_locator"])
-        if previous_group != row["group_locator"] or row["selected"] is not selected:
+        if (
+            previous_group != row["group_locator"]
+            or row["selected_by_date"] is not selected
+            or row["chat_join_disposition"] != "eligible"
+        ):
             raise AtomicAcquisitionError("atomic source map snapshot binding drifted")
         contact = contact_by_chat.get(candidate.chat_guid)
         if selected:
@@ -14581,6 +15006,16 @@ def _validate_private_identity_maps(
                 raise AtomicAcquisitionError("atomic source/contact map binding drifted")
         elif row["contact_alias"] is not None:
             raise AtomicAcquisitionError("atomic unselected source gained an alias")
+    selected_held_guids = {held.message_guid for held in universe.selected_held}
+    for held in universe.held:
+        row = source_by_guid[held.message_guid]
+        if (
+            row["chat_join_disposition"] != "missing_chat_join"
+            or row["group_locator"] is not None
+            or row["contact_alias"] is not None
+            or row["selected_by_date"] is not (held.message_guid in selected_held_guids)
+        ):
+            raise AtomicAcquisitionError("atomic held source map binding drifted")
     if set(contact_by_chat) != selected_chats:
         raise AtomicAcquisitionError("atomic contact map selected coverage drifted")
     return source_by_locator, source_by_guid
@@ -14620,10 +15055,14 @@ def _validate_atomic_run_io(
         io, PRIVATE_SOURCE_IDENTITY_MAP_FILENAME, "source identity map",
         max_bytes=MAX_PRIVATE_SOURCE_IDENTITY_MAP_BYTES,
     )
+    hold_ledger, hold_raw = _read_io_object(
+        io, PRIVATE_SOURCE_HOLD_LEDGER_FILENAME, "private source hold ledger",
+        max_bytes=MAX_PRIVATE_SOURCE_HOLD_LEDGER_BYTES,
+    )
     owner, _owner_raw = _read_io_object(
         io, RUN_OWNER_FILENAME, "run owner", max_bytes=MAX_RUN_OWNER_BYTES,
     )
-    if controls["checkpoint_schema"] != "setec-imessage-atomic-checkpoint/1":
+    if controls["checkpoint_schema"] != "setec-imessage-atomic-checkpoint/2":
         raise AtomicAcquisitionError("atomic checkpoint schema control drifted")
     universe = _validated_snapshot_for_run(
         io,
@@ -14635,6 +15074,35 @@ def _validate_atomic_run_io(
     source_by_locator, source_by_guid = _validate_private_identity_maps(
         contact_map, source_map, universe
     )
+    selected_held_guids = {row.message_guid for row in universe.selected_held}
+    expected_holds = sorted(
+        (
+            {
+                "source_ordinal": source_by_guid[held.message_guid]["source_ordinal"],
+                "entry_locator": source_by_guid[held.message_guid]["entry_locator"],
+                "reason": "missing_chat_join",
+                "selected_by_date": held.message_guid in selected_held_guids,
+            }
+            for held in universe.held
+        ),
+        key=lambda row: row["entry_locator"],
+    )
+    expected_hold_ledger = {
+        "schema": "setec-imessage-atomic-private-source-hold-ledger/1",
+        "snapshot_file_sha256": smoke["snapshot_metadata"]["file_sha256"],
+        "chat_join_policy_version": CHAT_JOIN_POLICY_VERSION,
+        "candidate_outgoing_rows": universe.candidate_outgoing_rows,
+        "held_missing_chat_join_rows": universe.held_missing_chat_join_rows,
+        "selected_held_missing_chat_join_rows": (
+            universe.selected_held_missing_chat_join_rows
+        ),
+        "candidate_locator_universe_hash": source_map[
+            "candidate_locator_universe_hash"
+        ],
+        "holds": expected_holds,
+    }
+    if hold_ledger != expected_hold_ledger:
+        raise AtomicAcquisitionError("atomic private source hold ledger drifted")
     expected_owner = run_owner_payload(
         snapshot_metadata=SnapshotMetadata(**smoke["snapshot_metadata"]),
         semantic_options=semantic,
@@ -14643,6 +15111,7 @@ def _validate_atomic_run_io(
         hmac_key_id_value=smoke["hmac"]["key_id"],
         contact_map_hash=_sha256_tag(contact_raw),
         source_identity_map_hash=_sha256_tag(source_raw),
+        source_hold_ledger_hash=_sha256_tag(hold_raw),
     )
     if owner != expected_owner or (
         canonical_payload_digest(semantic) != _sha256_tag(semantic_raw)
@@ -14654,7 +15123,12 @@ def _validate_atomic_run_io(
     ledger, ledger_raw = _read_io_object(io, "source-ledger.json", "source ledger")
     ledger_keys = {
         "schema", "snapshot_file_sha256", "semantic_options_digest",
-        "run_controls_digest", "smoke_policy_digest", "selected_outgoing_rows",
+        "run_controls_digest", "smoke_policy_digest", "source_hold_ledger_hash",
+        "candidate_outgoing_rows", "candidate_eligible_rows",
+        "held_missing_chat_join_rows", "ambiguous_multi_chat_rows",
+        "selected_outgoing_rows", "selected_eligible_rows",
+        "selected_held_missing_chat_join_rows",
+        "selected_ambiguous_multi_chat_rows",
         "considered_rows", "not_considered_after_bound", "retained_rows",
         "excluded_considered_by_final_reason", "candidate_locator_universe_hash",
         "selected_locator_universe_hash", "complete", "rows",
@@ -14662,12 +15136,16 @@ def _validate_atomic_run_io(
     exclusions = ledger.get("excluded_considered_by_final_reason")
     rows = ledger.get("rows")
     integer_counts = (
-        ledger.get("selected_outgoing_rows"), ledger.get("considered_rows"),
+        ledger.get("candidate_outgoing_rows"), ledger.get("candidate_eligible_rows"),
+        ledger.get("held_missing_chat_join_rows"), ledger.get("ambiguous_multi_chat_rows"),
+        ledger.get("selected_outgoing_rows"), ledger.get("selected_eligible_rows"),
+        ledger.get("selected_held_missing_chat_join_rows"),
+        ledger.get("selected_ambiguous_multi_chat_rows"), ledger.get("considered_rows"),
         ledger.get("not_considered_after_bound"), ledger.get("retained_rows"),
     )
     if (
         set(ledger) != ledger_keys
-        or ledger.get("schema") != "setec-imessage-atomic-source-ledger/1"
+        or ledger.get("schema") != "setec-imessage-atomic-source-ledger/2"
         or ledger.get("complete") is not True
         or type(rows) is not list
         or type(exclusions) is not dict
@@ -14678,13 +15156,31 @@ def _validate_atomic_run_io(
         or ledger["semantic_options_digest"] != owner["semantic_options_digest"]
         or ledger["run_controls_digest"] != owner["run_controls_digest"]
         or ledger["smoke_policy_digest"] != owner["smoke_policy_digest"]
+        or ledger["source_hold_ledger_hash"] != owner["source_hold_ledger_hash"]
+        or ledger["candidate_outgoing_rows"] != universe.candidate_outgoing_rows
+        or ledger["candidate_eligible_rows"] != universe.candidate_eligible_rows
+        or ledger["held_missing_chat_join_rows"]
+        != universe.held_missing_chat_join_rows
+        or ledger["ambiguous_multi_chat_rows"] != 0
         or ledger["candidate_locator_universe_hash"]
         != source_map["candidate_locator_universe_hash"]
         or ledger["selected_locator_universe_hash"]
         != source_map["selected_locator_universe_hash"]
         or ledger["selected_outgoing_rows"] != universe.selected_outgoing_rows
-        or ledger["considered_rows"] != len(rows)
+        or ledger["selected_eligible_rows"] != universe.selected_eligible_rows
+        or ledger["selected_held_missing_chat_join_rows"]
+        != universe.selected_held_missing_chat_join_rows
+        or ledger["selected_ambiguous_multi_chat_rows"] != 0
+        or ledger["candidate_outgoing_rows"]
+        != ledger["candidate_eligible_rows"]
+        + ledger["held_missing_chat_join_rows"]
+        + ledger["ambiguous_multi_chat_rows"]
         or ledger["selected_outgoing_rows"]
+        != ledger["selected_eligible_rows"]
+        + ledger["selected_held_missing_chat_join_rows"]
+        + ledger["selected_ambiguous_multi_chat_rows"]
+        or ledger["considered_rows"] != len(rows)
+        or ledger["selected_eligible_rows"]
         != ledger["considered_rows"] + ledger["not_considered_after_bound"]
         or ledger["considered_rows"]
         != ledger["retained_rows"] + sum(exclusions.values())
@@ -14898,7 +15394,19 @@ def _validate_atomic_run_io(
         raise AtomicAcquisitionError("atomic acquisition receipt leaks raw identity")
     return {
         "status": "closed",
+        "candidate_outgoing_rows": ledger["candidate_outgoing_rows"],
+        "candidate_eligible_rows": ledger["candidate_eligible_rows"],
         "retained_rows": ledger["retained_rows"],
+        "held_missing_chat_join_rows": ledger["held_missing_chat_join_rows"],
+        "ambiguous_multi_chat_rows": ledger["ambiguous_multi_chat_rows"],
+        "selected_outgoing_rows": ledger["selected_outgoing_rows"],
+        "selected_eligible_rows": ledger["selected_eligible_rows"],
+        "selected_held_missing_chat_join_rows": ledger[
+            "selected_held_missing_chat_join_rows"
+        ],
+        "selected_ambiguous_multi_chat_rows": ledger[
+            "selected_ambiguous_multi_chat_rows"
+        ],
         "considered_rows": ledger["considered_rows"],
         "not_considered_after_bound": ledger["not_considered_after_bound"],
     }
@@ -15361,7 +15869,7 @@ def run(
     controls = run_controls_payload(
         max_messages=config.max_messages, max_retained=config.max_retained,
         allow_empty=config.allow_empty,
-        checkpoint_schema="setec-imessage-atomic-checkpoint/1",
+        checkpoint_schema="setec-imessage-atomic-checkpoint/2",
         checkpoint_interval=1,
     )
     if type(config.progress_interval) is not int or config.progress_interval < 1:
