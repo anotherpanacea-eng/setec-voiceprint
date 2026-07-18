@@ -10,7 +10,11 @@ chat join are now conserved in a deterministic owner-only hold ledger under
 `missing_chat_join`; they are never published or assigned a fallback identity,
 while orphaned joins and ambiguous multi-chat identities remain fatal. The hold
 ledger is initialization-resumable and bound into owner, checkpoint, receipt,
-semantic-tree, and strict-validation evidence. Live readiness still requires
+semantic-tree, and strict-validation evidence. Durable create-new publication
+now uses macOS destination-exclusive rename for both JSON state and row bytes,
+avoiding synchronized-filesystem hard-link metadata races while preserving
+inode-bound verification, parent fsync, and recovery-required ambiguity. Live
+readiness still requires
 the owner-confirmed one-row smoke, the real resumable run, and a green paired
 Voicewright fixture gate.
 `author_corpus_export` also recognizes atomic message units and preserves

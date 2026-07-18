@@ -1737,9 +1737,118 @@ def _macos_rename_exclusive_at(parent_fd: int, source: str, destination: str) ->
     )
     if result != 0:
         error = ctypes.get_errno()
-        raise BootstrapStateError("cannot exclusively promote private tree") from OSError(
+        raise BootstrapStateError("cannot exclusively rename private entry") from OSError(
             error, "renameatx_np failed"
         )
+
+
+def _durably_publish_exclusive_private_file_at(
+    parent_fd: int,
+    temporary: str,
+    filename: str,
+    *,
+    fsynced_identity: tuple[int, int, int, int, int],
+    verify_published: Callable[[], tuple[int, int, int, int, int]],
+    artifact_label: str,
+) -> None:
+    """Rename-create one private file without guessing after mutation begins."""
+
+    def verify_exact_publication() -> None:
+        identity = verify_published()
+        try:
+            named = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+        except OSError as exc:
+            raise BootstrapStateError(
+                f"{artifact_label} create binding drifted"
+            ) from exc
+        if (
+            identity[:2] != fsynced_identity[:2]
+            or _stat_identity(named)[:2] != fsynced_identity[:2]
+            or not stat.S_ISREG(named.st_mode)
+            or named.st_uid != os.getuid()
+            or stat.S_IMODE(named.st_mode) != 0o600
+            or named.st_nlink != 1
+        ):
+            raise BootstrapStateError(
+                f"{artifact_label} create binding drifted"
+            )
+
+    try:
+        _macos_rename_exclusive_at(parent_fd, temporary, filename)
+    except BaseException as rename_exc:
+        # The wrapper may have renamed successfully before reporting failure.
+        # Classify both descriptor-relative names, but never mutate either one.
+        try:
+            try:
+                temp_info = os.stat(
+                    temporary, dir_fd=parent_fd, follow_symlinks=False
+                )
+            except FileNotFoundError:
+                temp_info = None
+            try:
+                final_info = os.stat(
+                    filename, dir_fd=parent_fd, follow_symlinks=False
+                )
+            except FileNotFoundError:
+                final_info = None
+        except BaseException as classify_exc:
+            raise BootstrapRecoveryRequired(
+                f"{artifact_label} exclusive rename outcome is ambiguous"
+            ) from classify_exc
+        temp_exact = (
+            temp_info is not None
+            and _stat_identity(temp_info)[:2] == fsynced_identity[:2]
+            and stat.S_ISREG(temp_info.st_mode)
+            and temp_info.st_uid == os.getuid()
+            and stat.S_IMODE(temp_info.st_mode) == 0o600
+            and temp_info.st_nlink == 1
+        )
+        final_exact = (
+            final_info is not None
+            and _stat_identity(final_info)[:2] == fsynced_identity[:2]
+            and stat.S_ISREG(final_info.st_mode)
+            and final_info.st_uid == os.getuid()
+            and stat.S_IMODE(final_info.st_mode) == 0o600
+            and final_info.st_nlink == 1
+        )
+        if temp_info is None and final_exact:
+            try:
+                verify_exact_publication()
+            except BaseException as verify_exc:
+                raise BootstrapRecoveryRequired(
+                    f"{artifact_label} exclusive rename outcome is ambiguous"
+                ) from verify_exc
+            raise BootstrapRecoveryRequired(
+                f"{artifact_label} exclusive rename may have committed"
+            ) from rename_exc
+        if temp_exact:
+            raise BootstrapRecoveryRequired(
+                f"{artifact_label} exclusive rename left temporary residue"
+            ) from rename_exc
+        raise BootstrapRecoveryRequired(
+            f"{artifact_label} exclusive rename outcome is ambiguous"
+        ) from rename_exc
+
+    try:
+        verify_exact_publication()
+    except BaseException as verify_exc:
+        raise BootstrapRecoveryRequired(
+            f"{artifact_label} create verification requires recovery"
+        ) from verify_exc
+
+    try:
+        os.fsync(parent_fd)
+    except BaseException as fsync_exc:
+        raise BootstrapRecoveryRequired(
+            f"{artifact_label} parent durability requires recovery"
+        ) from fsync_exc
+
+    try:
+        verify_exact_publication()
+    except BaseException as post_fsync_exc:
+        raise BootstrapRecoveryRequired(
+            f"{artifact_label} post-fsync verification requires recovery"
+        ) from post_fsync_exc
 
 
 def _durable_atomic_private_file_at(
@@ -1764,12 +1873,25 @@ def _durable_atomic_private_file_at(
         validator=validator,
         artifact_label=artifact_label,
     )
+    try:
+        initial = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+    except FileNotFoundError:
+        initial = None
+    if replace_existing:
+        if (
+            initial is None
+            or expected_existing_identity is None
+            or _stat_identity(initial) != expected_existing_identity
+        ):
+            raise BootstrapStateError("bootstrap journal compare-and-swap failed")
+    elif initial is not None or expected_existing_identity is not None:
+        raise BootstrapStateError("bootstrap journal create precondition failed")
+
     temporary = f".{filename}.{secrets.token_hex(16)}.tmp"
     descriptor: int | None = None
     after_write: os.stat_result | None = None
+    temporary_created = False
     swapped = False
-    linked_create = False
-    committed = False
     try:
         descriptor = os.open(
             temporary,
@@ -1782,6 +1904,7 @@ def _durable_atomic_private_file_at(
             0o600,
             dir_fd=parent_fd,
         )
+        temporary_created = True
         os.fchmod(descriptor, 0o600)
         created = os.fstat(descriptor)
         if (
@@ -1804,18 +1927,22 @@ def _durable_atomic_private_file_at(
         if (
             _stat_identity(created)[:2] != _stat_identity(after_write)[:2]
             or _stat_identity(after_write) != _stat_identity(temp_path)
+            or not stat.S_ISREG(after_write.st_mode)
+            or after_write.st_uid != os.getuid()
+            or stat.S_IMODE(after_write.st_mode) != 0o600
             or after_write.st_nlink != 1
+            or not stat.S_ISREG(temp_path.st_mode)
+            or temp_path.st_uid != os.getuid()
+            or stat.S_IMODE(temp_path.st_mode) != 0o600
+            or temp_path.st_nlink != 1
         ):
             raise BootstrapRecoveryRequired(
                 "bootstrap temporary pathname requires locked recovery"
             )
 
-        try:
-            current = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
-        except FileNotFoundError:
-            current = None
         if replace_existing:
-            if current is None or expected_existing_identity is None or _stat_identity(
+            current = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+            if expected_existing_identity is None or _stat_identity(
                 current
             ) != expected_existing_identity:
                 raise BootstrapStateError("bootstrap journal compare-and-swap failed")
@@ -1836,45 +1963,56 @@ def _durable_atomic_private_file_at(
             ):
                 raise BootstrapStateError("bootstrap journal compare-and-swap failed")
         else:
-            if current is not None or expected_existing_identity is not None:
-                raise BootstrapStateError("bootstrap journal create precondition failed")
-            os.link(
+            _durably_publish_exclusive_private_file_at(
+                parent_fd,
                 temporary,
                 filename,
-                src_dir_fd=parent_fd,
-                dst_dir_fd=parent_fd,
-                follow_symlinks=False,
+                fsynced_identity=_stat_identity(after_write),
+                verify_published=lambda: _verify_private_bytes_at(
+                    parent_fd,
+                    filename,
+                    raw,
+                    max_bytes=max_bytes,
+                    validator=validator,
+                    artifact_label=artifact_label,
+                ),
+                artifact_label=artifact_label,
             )
-            linked_create = True
-            os.unlink(temporary, dir_fd=parent_fd)
-        final_identity = _verify_private_bytes_at(
-            parent_fd,
-            filename,
-            raw,
-            max_bytes=max_bytes,
-            validator=validator,
-            artifact_label=artifact_label,
-        )
-        if final_identity[:2] != _stat_identity(after_write)[:2]:
-            raise BootstrapStateError("published bootstrap inode is not the fsynced inode")
-        final_info = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
-        if _stat_identity(final_info) != final_identity or final_info.st_nlink != 1:
-            raise BootstrapStateError("published bootstrap inode has extra links")
-        # The new name and the retained predecessor name (for an advance) are
-        # durable before the predecessor is discarded.
-        os.fsync(parent_fd)
         if swapped:
+            final_identity = _verify_private_bytes_at(
+                parent_fd,
+                filename,
+                raw,
+                max_bytes=max_bytes,
+                validator=validator,
+                artifact_label=artifact_label,
+            )
+            if final_identity[:2] != _stat_identity(after_write)[:2]:
+                raise BootstrapStateError(
+                    "published bootstrap inode is not the fsynced inode"
+                )
+            final_info = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
+            if _stat_identity(final_info) != final_identity or final_info.st_nlink != 1:
+                raise BootstrapStateError("published bootstrap inode has extra links")
+            # The new name and retained predecessor are durable before discard.
+            os.fsync(parent_fd)
             os.unlink(temporary, dir_fd=parent_fd)
             os.fsync(parent_fd)
             swapped = False
-        linked_create = False
-        committed = True
-    except (BootstrapStateError, OSError) as caught:
-        failure = (
-            caught
-            if isinstance(caught, BootstrapStateError)
-            else BootstrapStateError("cannot durably write private bootstrap state")
-        )
+    except BaseException as caught:
+        if isinstance(caught, BootstrapStateError):
+            failure = caught
+        elif isinstance(caught, OSError):
+            failure = BootstrapStateError(
+                "cannot durably write private bootstrap state"
+            )
+        elif temporary_created or swapped:
+            failure = BootstrapRecoveryRequired(
+                "bootstrap temporary residue requires locked recovery"
+            )
+            failure.__cause__ = caught
+        else:
+            raise
         if swapped:
             try:
                 retained = os.stat(
@@ -1891,7 +2029,7 @@ def _durable_atomic_private_file_at(
                     and _stat_identity(published)[:2]
                     == _stat_identity(after_write)[:2]
                 )
-            except OSError:
+            except BaseException:
                 safe_pair = False
             if not safe_pair:
                 raise BootstrapRecoveryRequired(
@@ -1901,43 +2039,30 @@ def _durable_atomic_private_file_at(
                 _macos_swap_names_at(parent_fd, temporary, filename)
                 os.fsync(parent_fd)
                 swapped = False
-            except (BootstrapStateError, OSError) as rollback_exc:
+            except BaseException as rollback_exc:
                 raise BootstrapRecoveryRequired(
                     "bootstrap journal rollback requires locked recovery"
                 ) from rollback_exc
-        elif linked_create:
-            try:
-                published = os.stat(
-                    filename, dir_fd=parent_fd, follow_symlinks=False
-                )
-                if after_write is None or _stat_identity(published)[:2] != _stat_identity(
-                    after_write
-                )[:2]:
-                    raise BootstrapRecoveryRequired(
-                        "bootstrap create requires locked recovery"
-                    )
-                os.unlink(filename, dir_fd=parent_fd)
-                os.fsync(parent_fd)
-                linked_create = False
-            except BootstrapRecoveryRequired:
-                raise
-            except OSError as rollback_exc:
-                raise BootstrapRecoveryRequired(
-                    "bootstrap create rollback requires locked recovery"
-                ) from rollback_exc
+            raise BootstrapRecoveryRequired(
+                "bootstrap journal rollback retained temporary residue"
+            ) from failure
+        elif temporary_created:
+            if isinstance(failure, BootstrapRecoveryRequired):
+                raise failure
+            raise BootstrapRecoveryRequired(
+                "bootstrap temporary residue requires locked recovery"
+            ) from failure
         raise failure from (caught if caught is not failure else None)
     finally:
         if descriptor is not None:
-            os.close(descriptor)
-        if not swapped and not linked_create and not committed and after_write is not None:
             try:
-                residue = os.stat(
-                    temporary, dir_fd=parent_fd, follow_symlinks=False
-                )
-                if _stat_identity(residue)[:2] == _stat_identity(after_write)[:2]:
-                    os.unlink(temporary, dir_fd=parent_fd)
-            except OSError:
-                pass
+                os.close(descriptor)
+            except BaseException as close_exc:
+                if temporary_created:
+                    raise BootstrapRecoveryRequired(
+                        "bootstrap temporary descriptor close requires recovery"
+                    ) from close_exc
+                raise
     return _sha256_tag(raw)
 
 
@@ -2104,9 +2229,8 @@ def _durable_atomic_private_bytes_at(
     temporary = f".{filename}.{secrets.token_hex(16)}.tmp"
     descriptor: int | None = None
     after_write: os.stat_result | None = None
+    temporary_created = False
     swapped = False
-    linked = False
-    committed = False
     try:
         descriptor = os.open(
             temporary,
@@ -2119,6 +2243,7 @@ def _durable_atomic_private_bytes_at(
             0o600,
             dir_fd=parent_fd,
         )
+        temporary_created = True
         os.fchmod(descriptor, 0o600)
         created = os.fstat(descriptor)
         if (
@@ -2141,21 +2266,40 @@ def _durable_atomic_private_bytes_at(
         if (
             _stat_identity(created)[:2] != _stat_identity(after_write)[:2]
             or _stat_identity(after_write) != _stat_identity(named_temp)
+            or not stat.S_ISREG(after_write.st_mode)
+            or after_write.st_uid != os.getuid()
+            or stat.S_IMODE(after_write.st_mode) != 0o600
             or after_write.st_nlink != 1
+            or not stat.S_ISREG(named_temp.st_mode)
+            or named_temp.st_uid != os.getuid()
+            or stat.S_IMODE(named_temp.st_mode) != 0o600
+            or named_temp.st_nlink != 1
         ):
             raise BootstrapRecoveryRequired(
                 f"{artifact_label} temporary pathname requires recovery"
             )
         if expected_existing is None:
-            os.link(
+            def verify_created_bytes() -> tuple[int, int, int, int, int]:
+                published_raw, published_identity = _read_private_bytes_at(
+                    parent_fd,
+                    filename,
+                    max_bytes=max_bytes,
+                    artifact_label=artifact_label,
+                )
+                if published_raw != raw:
+                    raise BootstrapStateError(
+                        f"published {artifact_label} bytes drifted"
+                    )
+                return published_identity
+
+            _durably_publish_exclusive_private_file_at(
+                parent_fd,
                 temporary,
                 filename,
-                src_dir_fd=parent_fd,
-                dst_dir_fd=parent_fd,
-                follow_symlinks=False,
+                fsynced_identity=_stat_identity(after_write),
+                verify_published=verify_created_bytes,
+                artifact_label=artifact_label,
             )
-            linked = True
-            os.unlink(temporary, dir_fd=parent_fd)
         else:
             current = os.stat(filename, dir_fd=parent_fd, follow_symlinks=False)
             if (
@@ -2176,52 +2320,60 @@ def _durable_atomic_private_bytes_at(
                 raise BootstrapRecoveryRequired(
                     f"{artifact_label} exchange identity drifted"
                 )
-        published_raw, published_identity = _read_private_bytes_at(
-            parent_fd,
-            filename,
-            max_bytes=max_bytes,
-            artifact_label=artifact_label,
-        )
-        if (
-            published_raw != raw
-            or after_write is None
-            or published_identity[:2] != _stat_identity(after_write)[:2]
-        ):
-            raise BootstrapRecoveryRequired(
-                f"published {artifact_label} bytes drifted"
-            )
-        os.fsync(parent_fd)
         if swapped:
+            published_raw, published_identity = _read_private_bytes_at(
+                parent_fd,
+                filename,
+                max_bytes=max_bytes,
+                artifact_label=artifact_label,
+            )
+            if (
+                published_raw != raw
+                or after_write is None
+                or published_identity[:2] != _stat_identity(after_write)[:2]
+            ):
+                raise BootstrapRecoveryRequired(
+                    f"published {artifact_label} bytes drifted"
+                )
+            os.fsync(parent_fd)
             os.unlink(temporary, dir_fd=parent_fd)
             os.fsync(parent_fd)
             swapped = False
-        linked = False
-        committed = True
-    except (BootstrapStateError, OSError) as caught:
-        failure = (
-            caught
-            if isinstance(caught, BootstrapStateError)
-            else BootstrapStateError(f"cannot durably publish {artifact_label}")
-        )
+    except BaseException as caught:
+        if isinstance(caught, BootstrapStateError):
+            failure = caught
+        elif isinstance(caught, OSError):
+            failure = BootstrapStateError(
+                f"cannot durably publish {artifact_label}"
+            )
+        elif temporary_created or swapped:
+            failure = BootstrapRecoveryRequired(
+                f"{artifact_label} temporary residue requires recovery"
+            )
+            failure.__cause__ = caught
+        else:
+            raise
         if swapped:
             raise BootstrapRecoveryRequired(
                 f"{artifact_label} exchange requires locked recovery"
             ) from failure
-        if linked:
+        if temporary_created:
+            if isinstance(failure, BootstrapRecoveryRequired):
+                raise failure
             raise BootstrapRecoveryRequired(
-                f"{artifact_label} create requires locked recovery"
+                f"{artifact_label} temporary residue requires recovery"
             ) from failure
         raise failure from (caught if caught is not failure else None)
     finally:
         if descriptor is not None:
-            os.close(descriptor)
-        if not swapped and not linked and not committed and after_write is not None:
             try:
-                residue = os.stat(temporary, dir_fd=parent_fd, follow_symlinks=False)
-                if _stat_identity(residue)[:2] == _stat_identity(after_write)[:2]:
-                    os.unlink(temporary, dir_fd=parent_fd)
-            except OSError:
-                pass
+                os.close(descriptor)
+            except BaseException as close_exc:
+                if temporary_created:
+                    raise BootstrapRecoveryRequired(
+                        f"{artifact_label} temporary descriptor close requires recovery"
+                    ) from close_exc
+                raise
 
 
 def _macos_rename_exclusive_between_at(

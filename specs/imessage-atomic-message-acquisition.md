@@ -294,8 +294,32 @@ constants, invalid UTF-8, non-object roots, schema violations, and any bytes
 other than the exact canonical serialization. The schema validator must return
 the same canonical bytes it was given.
 
-Creation is exclusive and publishes only an fsynced owner-only temporary inode;
-an existing destination refuses. Mutable artifacts use digest compare-and-swap:
+Every durable private-file creation, both canonical JSON and opaque bytes
+(including staged row text/fragments and the live-smoke receipt), is exclusive
+and publishes only an fsynced owner-only temporary inode; an existing
+destination refuses. All create-new callers share one macOS
+`renameatx_np(RENAME_EXCL)` from the pinned temporary name to the absent final
+name, with no hard-link transition or replacement-capable fallback, because
+synchronized filesystems may expose delayed link-count metadata. After the
+exclusive rename, the final name must bind the same device/inode with exact
+bytes, owner, mode, and link count one both before and after the pinned parent
+directory is fsynced. An ordinary destination precondition refusal occurs
+before temporary creation. Once a temporary inode is created, any temporary
+byte, identity, owner, mode, link-count, write, fsync, or pathname drift leaves
+the residue and is `BootstrapRecoveryRequired`; a `finally` cleanup may not
+unlink it using only device/inode equality. The rename attempt is mutation-
+ambiguous until the pinned temporary and final names are reclassified. After a
+temporary inode has been created, a failed or uncertain rename leaves that
+temporary or final residue and is `BootstrapRecoveryRequired`; destination
+collision is an ordinary refusal only when detected before temporary creation.
+A missing or drifted temporary, a final name bound to the fsynced inode, or any
+uncertain combination is likewise `BootstrapRecoveryRequired`. Once the
+exclusive rename succeeds,
+every later verification or parent-fsync failure is recovery-required and must
+leave the final residue for journal/closure-authorized adoption. No pathname-
+based rollback or unlink is permitted because it cannot conditionally remove a
+specific inode under concurrent replacement. Mutable artifacts use
+digest compare-and-swap:
 the expected canonical digest must match a stable read, and the exact inode
 identity from that read must still be the predecessor exchanged at publication.
 The macOS `renameatx_np(RENAME_SWAP)` exchange retains that predecessor until
@@ -303,8 +327,9 @@ the new name and parent directory are fsynced and verified. Rollback ambiguity
 raises `BootstrapRecoveryRequired`; durable writes refuse on non-macOS hosts.
 Byte ceilings are supplied by each closed artifact schema rather than inferred
 from the input. The bootstrap journal is the first consumer of this common
-layer; contact map, source map, owner marker, ledgers, and checkpoints must use
-the same layer and may not call legacy corpus writers.
+layer; contact map, source map, owner marker, ledgers, checkpoints, receipts,
+and staged row bytes must use the same create-new primitive and may not call
+legacy corpus writers.
 
 Descriptor-relative reads are supported on POSIX hosts so Linux CI can exercise
 closed-byte validation; only durable mutation and replacement are macOS-only.
