@@ -63,6 +63,7 @@ def _process_flowed_message(
     body_lines: list[str],
     *,
     is_reply: bool,
+    delsp: bool = False,
 ) -> G.PreparedMessage:
     headers = [
         f"From: {bf.OWN}",
@@ -71,7 +72,11 @@ def _process_flowed_message(
         "Date: Fri, 17 Jul 2026 12:00:00 -0400",
         "Subject: Flowed semantic boundary",
         "Message-ID: <flowed-boundary@example.invalid>",
-        "Content-Type: text/plain; charset=utf-8; format=flowed",
+        (
+            "Content-Type: text/plain; charset=utf-8; format=flowed; DelSp=yes"
+            if delsp
+            else "Content-Type: text/plain; charset=utf-8; format=flowed"
+        ),
         "Content-Transfer-Encoding: 8bit",
     ]
     if is_reply:
@@ -208,6 +213,26 @@ def test_format_flowed_never_joins_authored_text_to_reply_attribution():
     assert trimmed.kept == "My authored reply ends here"
     assert "Example Sender" not in trimmed.kept
     assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in trimmed.kept
+
+
+def test_format_flowed_delsp_boundary_emerging_after_join_is_not_absorbed(
+    tmp_path,
+):
+    prepared = _process_flowed_message(
+        tmp_path,
+        [
+            "MY_AUTHORED_PROSE remains safely in this message ",
+            "On Fri, Jul 17, 2026, THIRD_PARTY_HEADER_NAME wro ",
+            "te:",
+            "> THIRD_PARTY_QUOTE_MUST_NOT_APPEAR",
+        ],
+        is_reply=True,
+        delsp=True,
+    )
+    cleaned = prepared.piece.cleaned_text
+    assert cleaned == "MY_AUTHORED_PROSE remains safely in this message"
+    assert "THIRD_PARTY_HEADER_NAME" not in cleaned
+    assert "THIRD_PARTY_QUOTE_MUST_NOT_APPEAR" not in cleaned
 
 
 def test_format_flowed_quoted_signature_separator_is_never_joined():

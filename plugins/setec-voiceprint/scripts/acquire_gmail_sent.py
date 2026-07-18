@@ -337,6 +337,8 @@ def _render_flowed_line(depth: int, content: str) -> str:
 def _semantic_line_classes(
     contents: list[str],
     provenance: list[_LineProvenance] | tuple[_LineProvenance, ...],
+    *,
+    delsp: bool = False,
 ) -> tuple[_SemanticLine, ...]:
     """Classify every semantic boundary from one shared source of truth."""
     if len(contents) != len(provenance):
@@ -356,6 +358,53 @@ def _semantic_line_classes(
             boundaries[i] = "original_message"
         elif any(pattern.match(stripped) for pattern in _FORWARD_MARKERS):
             boundaries[i] = "forward"
+    # A semantic marker can itself be split by format=flowed.  Classifying only
+    # the physical lines misses cases such as DelSp=yes "wro " + "te:";
+    # an authored flowed line immediately before that span could then absorb
+    # the attribution start and hide third-party prose from the later trimmer.
+    # Discover such spans before rendering, and give every member one boundary
+    # class so the renderer may join the span internally but never across it.
+    for start, content in enumerate(contents):
+        if authored_literal_gt[start] or boundaries[start] is not None:
+            continue
+        stripped = content.strip()
+        likely_boundary_start = (
+            content.lstrip().startswith("On ")
+            or stripped.startswith("-")
+            or stripped.casefold().startswith("begin ")
+        )
+        if not likely_boundary_start:
+            continue
+        candidate = content
+        end = start
+        while candidate.endswith(" ") and end + 1 < len(contents):
+            next_index = end + 1
+            if (
+                provenance[next_index].quote_depth
+                != provenance[start].quote_depth
+                or authored_literal_gt[next_index]
+                or boundaries[next_index] is not None
+            ):
+                break
+            candidate = (
+                candidate[:-1] if delsp else candidate
+            ) + contents[next_index]
+            end = next_index
+            candidate_stripped = candidate.strip()
+            boundary: str | None = None
+            if _ORIGINAL_MESSAGE.match(candidate_stripped):
+                boundary = "original_message"
+            elif any(
+                pattern.match(candidate_stripped)
+                for pattern in _FORWARD_MARKERS
+            ):
+                boundary = "forward"
+            elif _ATTR_TERMINAL.match(candidate_stripped):
+                boundary = "attribution"
+            if boundary is not None:
+                for index in range(start, end + 1):
+                    boundaries[index] = boundary
+                break
 
     # Classify an entire wrapped attribution so its start cannot be erased by
     # flowed joining before the later terminal 'wrote:' line is inspected.
@@ -446,7 +495,7 @@ def _unwrap_flowed_details(text: str, *, delsp: bool = False) -> _ExtractedBody:
     parsed = [_flowed_line_parts(line) for line in text.split("\n")]
     provenance = [source for source, _ in parsed]
     contents = [content for _, content in parsed]
-    classes = _semantic_line_classes(contents, provenance)
+    classes = _semantic_line_classes(contents, provenance, delsp=delsp)
     out: list[str] = []
     out_provenance: list[_LineProvenance] = []
     i = 0
@@ -455,18 +504,19 @@ def _unwrap_flowed_details(text: str, *, delsp: bool = False) -> _ExtractedBody:
         rendered_source = source
         content = contents[i]
         semantic_boundary = classes[i].boundary
-        while (
-            content.endswith(" ")
-            and semantic_boundary is None
-            and i + 1 < len(contents)
-        ):
+        while content.endswith(" ") and i + 1 < len(contents):
             next_source = provenance[i + 1]
             next_content = contents[i + 1]
             if next_source.quote_depth != source.quote_depth:
                 break
-            # Every classifier boundary is hard. This covers markers,
-            # signatures, and both one-line and wrapped attributions.
-            if classes[i + 1].boundary is not None:
+            next_boundary = classes[i + 1].boundary
+            # A boundary span may join internally so it renders as the semantic
+            # marker the downstream trimmer recognizes.  Crossing into or out
+            # of a boundary remains forbidden.
+            if semantic_boundary is None:
+                if next_boundary is not None:
+                    break
+            elif next_boundary != semantic_boundary:
                 break
             # RFC 3676 preserves the trailing soft-break space by default.
             # Only ``DelSp=yes`` removes it before the physical lines join.
