@@ -7,6 +7,7 @@ import argparse
 from collections import Counter
 import datetime as _dt
 from dataclasses import asdict, dataclass, replace
+import errno
 import hashlib
 import hmac
 import json
@@ -13285,40 +13286,174 @@ def plan_row_artifacts(
     return tuple(planned)
 
 
-def _write_new_file(path: Path, raw: bytes) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        with path.open("xb") as handle:
-            if os.name != "nt":
-                os.fchmod(handle.fileno(), 0o600)
-            handle.write(raw)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except OSError as exc:
-        raise AtomicAcquisitionError("cannot publish new atomic artifact") from exc
+# ---------------------------------------------------------------------------
+# Trusted-root confinement for the portable row/bootstrap writer.
+#
+# The portable writer publishes into run trees that may sit on operator-visible
+# storage.  Any path-based mutation re-resolves the whole path through the
+# kernel, so an attacker who swaps an intermediate directory component for a
+# symlink / reparse point between the writer's inspection and its use redirects
+# the write, read, or rename outside the originally inspected root.  These
+# helpers bind every operation to a freshly pinned root descriptor and walk each
+# relative component with O_NOFOLLOW dir_fd opens, so a swapped intermediate
+# component fails closed (ELOOP) instead of redirecting.  Hosts without
+# descriptor-relative primitives (Windows) fail closed with no path-based
+# fallback, and only platforms whose libc provides an atomic no-replace rename
+# (macOS renameatx_np RENAME_EXCL, Linux renameat2 RENAME_NOREPLACE) are
+# supported.
+# ---------------------------------------------------------------------------
 
 
-def _atomic_rewrite(path: Path, raw: bytes, expected: bytes | None) -> None:
-    if path.exists():
-        if expected is None or path.read_bytes() != expected:
-            raise AtomicAcquisitionError("closed atomic state changed before rewrite")
-    elif expected is not None:
-        raise AtomicAcquisitionError("closed atomic state disappeared before rewrite")
-    temporary = path.with_name(f".{path.name}.{secrets.token_hex(16)}.tmp")
-    _write_new_file(temporary, raw)
+def _require_confined_tree_platform() -> None:
+    """Refuse portable tree I/O on hosts without the confinement invariant."""
+
+    if os.name == "nt":
+        raise AtomicAcquisitionError(
+            "portable tree writer requires POSIX descriptor-relative I/O"
+        )
+    if (
+        not getattr(os, "O_NOFOLLOW", 0)
+        or not getattr(os, "O_DIRECTORY", 0)
+        or os.open not in os.supports_dir_fd
+        or os.mkdir not in os.supports_dir_fd
+        or os.unlink not in os.supports_dir_fd
+        or os.rmdir not in os.supports_dir_fd
+        or os.rename not in os.supports_dir_fd
+        or os.stat not in os.supports_dir_fd
+    ):
+        raise AtomicAcquisitionError(
+            "portable tree writer requires descriptor-relative I/O "
+            "(dir_fd + O_NOFOLLOW)"
+        )
+    if sys.platform != "darwin" and not sys.platform.startswith("linux"):
+        raise AtomicAcquisitionError(
+            "portable tree writer has no atomic no-replace rename on this platform"
+        )
+
+
+def _confined_dir_open_flags() -> int:
+    return (
+        os.O_RDONLY
+        | getattr(os, "O_DIRECTORY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
+
+
+def _open_confined_root_fd(root: Path) -> int:
+    """Pin a tree root through component-wise O_NOFOLLOW opens (no symlink hops)."""
+
+    _require_confined_tree_platform()
+    absolute = Path(root).expanduser().absolute()
+    if ".." in absolute.parts or not absolute.name:
+        raise AtomicAcquisitionError("portable tree root path is invalid")
+    flags = _confined_dir_open_flags()
     try:
-        os.replace(temporary, path)
+        current = os.open(absolute.parts[0], flags)
     except OSError as exc:
-        raise AtomicAcquisitionError("cannot atomically publish state") from exc
+        raise AtomicAcquisitionError("cannot pin portable tree root") from exc
     try:
-        directory_fd = os.open(path.parent, os.O_RDONLY)
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    except OSError:
-        if os.name != "nt":
-            raise
+        for component in absolute.parts[1:]:
+            following = os.open(component, flags, dir_fd=current)
+            try:
+                is_dir = stat.S_ISDIR(os.fstat(following).st_mode)
+            except OSError as exc:
+                os.close(following)
+                raise AtomicAcquisitionError(
+                    "cannot pin portable tree root"
+                ) from exc
+            if not is_dir:
+                os.close(following)
+                raise AtomicAcquisitionError(
+                    "portable tree root component is not a directory"
+                )
+            os.close(current)
+            current = following
+        return current
+    except AtomicAcquisitionError:
+        os.close(current)
+        raise
+    except OSError as exc:
+        os.close(current)
+        raise AtomicAcquisitionError("cannot pin portable tree root") from exc
+
+
+def _write_all_fd(descriptor: int, raw: bytes) -> None:
+    view = memoryview(raw)
+    while view:
+        written = os.write(descriptor, view)
+        if written <= 0:
+            raise OSError("portable atomic write made no progress")
+        view = view[written:]
+
+
+def _confined_rename_noreplace_at(
+    source_fd: int,
+    source: str,
+    destination_fd: int,
+    destination: str,
+    *,
+    label: str,
+) -> None:
+    """Atomically move one entry between pinned parents without replacement.
+
+    Uses the platform's no-replace renameat primitive so exclusive-create is
+    preserved.  A pre-existing destination raises a bounded "already exists"
+    error; a host without the primitive fails closed (never a path-based or
+    replacing fallback).
+    """
+
+    source = _bootstrap_basename(source, "portable rename source")
+    destination = _bootstrap_basename(destination, "portable rename destination")
+    import ctypes
+
+    libc = ctypes.CDLL(None, use_errno=True)
+    if sys.platform == "darwin":
+        function = getattr(libc, "renameatx_np", None)
+        flag = 0x00000004  # RENAME_EXCL
+    elif sys.platform.startswith("linux"):
+        function = getattr(libc, "renameat2", None)
+        flag = 0x00000001  # RENAME_NOREPLACE
+    else:
+        function = None
+        flag = 0
+    if function is None:
+        raise AtomicAcquisitionError(
+            f"{label} requires an atomic no-replace rename primitive"
+        )
+    function.argtypes = [
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_char_p,
+        ctypes.c_uint,
+    ]
+    function.restype = ctypes.c_int
+    ctypes.set_errno(0)
+    result = function(
+        source_fd,
+        os.fsencode(source),
+        destination_fd,
+        os.fsencode(destination),
+        flag,
+    )
+    if result != 0:
+        code = ctypes.get_errno()
+        if code in {errno.EEXIST, errno.ENOTEMPTY}:
+            raise AtomicAcquisitionError(f"{label} destination already exists")
+        if code in {
+            errno.ENOSYS,
+            errno.EINVAL,
+            errno.ENOTSUP,
+            getattr(errno, "EOPNOTSUPP", errno.ENOTSUP),
+        }:
+            raise AtomicAcquisitionError(
+                f"{label} requires an atomic no-replace rename primitive"
+            )
+        raise AtomicAcquisitionError(f"cannot {label}") from OSError(
+            code, os.strerror(code)
+        )
 
 
 def _read_canonical_object(path: Path, label: str) -> tuple[dict[str, Any], bytes]:
@@ -13348,44 +13483,287 @@ def _canonical_object_validator(value: dict[str, Any]) -> dict[str, Any]:
 
 
 class _SyntheticFixtureRowIo:
-    """Portable fixture-only row I/O; never selected by the live CLI."""
+    """Descriptor-relative portable row I/O bound to one inspected root.
+
+    Never selected by the live macOS CLI (which uses ``LiveDurableRowIo``);
+    this writer publishes into portable/synthetic run trees that may live on
+    operator-visible storage.  Every read and mutation re-pins ``self.root``
+    through component-wise O_NOFOLLOW directory opens and operates against the
+    pinned parent descriptor, so an attacker who swaps an intermediate
+    component for a symlink / reparse point between inspection and use fails
+    closed (ELOOP) instead of redirecting the operation outside the trusted
+    root.  Construction fails closed on hosts without descriptor-relative I/O.
+    """
 
     def __init__(self, root: Path) -> None:
         self.root = Path(root).absolute()
+        _require_confined_tree_platform()
 
-    def _path(self, relative: str) -> Path:
-        return self.root.joinpath(*_row_relative_parts(relative))
+    # -- descriptor-relative traversal ------------------------------------
+
+    def _descend(self, parent_fd: int, component: str) -> int:
+        """Open one child directory O_NOFOLLOW; close ``parent_fd`` on success."""
+
+        flags = _confined_dir_open_flags()
+        try:
+            child = os.open(component, flags, dir_fd=parent_fd)
+        except OSError as exc:
+            raise AtomicAcquisitionError("portable row directory is invalid") from exc
+        try:
+            if not stat.S_ISDIR(os.fstat(child).st_mode):
+                raise AtomicAcquisitionError("portable row directory is invalid")
+        except BaseException:
+            os.close(child)
+            raise
+        os.close(parent_fd)
+        return child
+
+    def _descend_optional(self, parent_fd: int, component: str) -> int | None:
+        """Like ``_descend`` but return ``None`` for an absent child.
+
+        A symlink / reparse point or non-directory still fails closed; only a
+        genuinely missing component reads as absent.  On absence ``parent_fd``
+        is left open for the caller to close.
+        """
+
+        flags = _confined_dir_open_flags()
+        try:
+            child = os.open(component, flags, dir_fd=parent_fd)
+        except FileNotFoundError:
+            return None
+        except OSError as exc:
+            raise AtomicAcquisitionError("portable row directory is invalid") from exc
+        try:
+            if not stat.S_ISDIR(os.fstat(child).st_mode):
+                raise AtomicAcquisitionError("portable row directory is invalid")
+        except BaseException:
+            os.close(child)
+            raise
+        os.close(parent_fd)
+        return child
+
+    def _open_dir_fd(self, parts: tuple[str, ...]) -> int:
+        """Return a descriptor for the confined directory named by ``parts``."""
+
+        current = _open_confined_root_fd(self.root)
+        try:
+            for component in parts:
+                current = self._descend(current, component)
+            return current
+        except BaseException:
+            os.close(current)
+            raise
+
+    def _open_parent_fd(
+        self, parts: tuple[str, ...], *, missing_ok: bool = False
+    ) -> tuple[int | None, str]:
+        """Return ``(parent_fd, leaf_name)`` for the confined leaf ``parts``.
+
+        With ``missing_ok`` a missing intermediate component yields
+        ``(None, leaf)`` instead of raising; a symlinked intermediate always
+        fails closed.  The caller closes any returned descriptor.
+        """
+
+        current = _open_confined_root_fd(self.root)
+        try:
+            for component in parts[:-1]:
+                if missing_ok:
+                    child = self._descend_optional(current, component)
+                    if child is None:
+                        os.close(current)
+                        return None, parts[-1]
+                    current = child
+                else:
+                    current = self._descend(current, component)
+            return current, parts[-1]
+        except BaseException:
+            os.close(current)
+            raise
+
+    def _read_regular_at(self, parent_fd: int, name: str, label: str) -> bytes:
+        """Read one regular file relative to ``parent_fd`` without following it."""
+
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+            | getattr(os, "O_NONBLOCK", 0)
+        )
+        fd = os.open(name, flags, dir_fd=parent_fd)
+        try:
+            if not stat.S_ISREG(os.fstat(fd).st_mode):
+                raise AtomicAcquisitionError(f"{label} is not a regular file")
+            chunks: list[bytes] = []
+            while True:
+                try:
+                    chunk = os.read(fd, 1024 * 1024)
+                except OSError as exc:
+                    raise AtomicAcquisitionError(f"cannot read {label}") from exc
+                if not chunk:
+                    break
+                chunks.append(chunk)
+            return b"".join(chunks)
+        finally:
+            os.close(fd)
+
+    def _create_regular_at(self, parent_fd: int, name: str, raw: bytes) -> None:
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+            | getattr(os, "O_CLOEXEC", 0)
+        )
+        try:
+            fd = os.open(name, flags, 0o600, dir_fd=parent_fd)
+        except OSError as exc:
+            raise AtomicAcquisitionError(
+                "cannot publish new atomic artifact"
+            ) from exc
+        try:
+            os.fchmod(fd, 0o600)
+            _write_all_fd(fd, raw)
+            os.fsync(fd)
+        except OSError as exc:
+            raise AtomicAcquisitionError(
+                "cannot publish new atomic artifact"
+            ) from exc
+        finally:
+            os.close(fd)
+
+    def _rewrite_regular_at(
+        self, parent_fd: int, name: str, raw: bytes, expected: bytes
+    ) -> None:
+        try:
+            current = self._read_regular_at(parent_fd, name, "closed atomic state")
+        except FileNotFoundError as exc:
+            raise AtomicAcquisitionError(
+                "closed atomic state disappeared before rewrite"
+            ) from exc
+        except OSError as exc:
+            raise AtomicAcquisitionError(
+                "closed atomic state is indirected before rewrite"
+            ) from exc
+        if current != expected:
+            raise AtomicAcquisitionError("closed atomic state changed before rewrite")
+        temporary = f".{name}.{secrets.token_hex(16)}.tmp"
+        self._create_regular_at(parent_fd, temporary, raw)
+        try:
+            os.rename(temporary, name, src_dir_fd=parent_fd, dst_dir_fd=parent_fd)
+        except OSError as exc:
+            try:
+                os.unlink(temporary, dir_fd=parent_fd)
+            except OSError:
+                pass
+            raise AtomicAcquisitionError("cannot atomically publish state") from exc
+
+    def _rename_confined_exclusive(
+        self, source_parts: tuple[str, ...], dest_parts: tuple[str, ...], *, label: str
+    ) -> None:
+        source_parent_fd, source_name = self._open_parent_fd(source_parts)
+        dest_parent_fd: int | None = None
+        try:
+            dest_parent_fd, dest_name = self._open_parent_fd(dest_parts)
+            _confined_rename_noreplace_at(
+                source_parent_fd, source_name, dest_parent_fd, dest_name, label=label
+            )
+            os.fsync(source_parent_fd)
+            if dest_parent_fd != source_parent_fd:
+                os.fsync(dest_parent_fd)
+        finally:
+            if dest_parent_fd is not None:
+                os.close(dest_parent_fd)
+            os.close(source_parent_fd)
+
+    # -- portable row I/O surface -----------------------------------------
 
     def root_names(self) -> tuple[str, ...]:
-        return tuple(sorted((item.name for item in self.root.iterdir()), key=os.fsencode))
+        dir_fd = self._open_dir_fd(())
+        try:
+            names = os.listdir(dir_fd)
+        except OSError as exc:
+            raise AtomicAcquisitionError("cannot inventory portable row root") from exc
+        finally:
+            os.close(dir_fd)
+        return tuple(sorted(names, key=os.fsencode))
 
     def exists(self, relative: str) -> bool:
-        return self._path(relative).exists()
+        parts = _row_relative_parts(relative)
+        parent_fd, name = self._open_parent_fd(parts, missing_ok=True)
+        if parent_fd is None:
+            return False
+        try:
+            info = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise AtomicAcquisitionError(
+                "cannot inspect portable row artifact"
+            ) from exc
+        finally:
+            os.close(parent_fd)
+        if stat.S_ISLNK(info.st_mode):
+            raise AtomicAcquisitionError("portable row artifact is indirected")
+        return True
 
     def ensure_directory(self, relative: str) -> None:
-        path = self.root
-        for part in _row_relative_parts(relative):
-            path = path / part
-            if path.exists():
-                if path.is_symlink() or not path.is_dir():
-                    raise AtomicAcquisitionError("synthetic row directory is invalid")
-                continue
-            path.mkdir(mode=0o700)
+        parts = _row_relative_parts(relative)
+        flags = _confined_dir_open_flags()
+        current = _open_confined_root_fd(self.root)
+        try:
+            for component in parts:
+                try:
+                    child = os.open(component, flags, dir_fd=current)
+                except FileNotFoundError:
+                    try:
+                        os.mkdir(component, 0o700, dir_fd=current)
+                        os.fsync(current)
+                        child = os.open(component, flags, dir_fd=current)
+                    except OSError as exc:
+                        raise AtomicAcquisitionError(
+                            "cannot create portable row directory"
+                        ) from exc
+                except OSError as exc:
+                    raise AtomicAcquisitionError(
+                        "portable row directory is invalid"
+                    ) from exc
+                try:
+                    if not stat.S_ISDIR(os.fstat(child).st_mode):
+                        raise AtomicAcquisitionError(
+                            "portable row directory is invalid"
+                        )
+                except BaseException:
+                    os.close(child)
+                    raise
+                os.close(current)
+                current = child
+        finally:
+            os.close(current)
 
     def list_directory(self, relative: str) -> tuple[str, ...]:
-        path = self._path(relative)
-        if path.is_symlink() or not path.is_dir():
-            raise AtomicAcquisitionError("synthetic row directory is invalid")
-        return tuple(sorted((item.name for item in path.iterdir()), key=os.fsencode))
+        parts = _row_relative_parts(relative)
+        dir_fd = self._open_dir_fd(parts)
+        try:
+            names = os.listdir(dir_fd)
+        except OSError as exc:
+            raise AtomicAcquisitionError(
+                "portable row directory is invalid"
+            ) from exc
+        finally:
+            os.close(dir_fd)
+        return tuple(sorted(names, key=os.fsencode))
 
     def read_bytes(self, relative: str, label: str) -> bytes:
-        path = self._path(relative)
-        if path.is_symlink() or not path.is_file():
-            raise AtomicAcquisitionError(f"{label} is not a regular file")
+        parts = _row_relative_parts(relative)
+        parent_fd, name = self._open_parent_fd(parts)
         try:
-            return path.read_bytes()
+            return self._read_regular_at(parent_fd, name, label)
+        except AtomicAcquisitionError:
+            raise
         except OSError as exc:
-            raise AtomicAcquisitionError(f"cannot read {label}") from exc
+            raise AtomicAcquisitionError(f"{label} is not a regular file") from exc
+        finally:
+            os.close(parent_fd)
 
     def write_bytes(
         self,
@@ -13395,12 +13773,16 @@ class _SyntheticFixtureRowIo:
         expected_existing: bytes | None,
         label: str,
     ) -> None:
-        path = self._path(relative)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        if expected_existing is None:
-            _write_new_file(path, raw)
-        else:
-            _atomic_rewrite(path, raw, expected_existing)
+        parts = _row_relative_parts(relative)
+        parent_fd, name = self._open_parent_fd(parts)
+        try:
+            if expected_existing is None:
+                self._create_regular_at(parent_fd, name, raw)
+            else:
+                self._rewrite_regular_at(parent_fd, name, raw, expected_existing)
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
 
     def write_json(
         self,
@@ -13423,22 +13805,40 @@ class _SyntheticFixtureRowIo:
         return raw
 
     def remove_file(self, relative: str, *, expected: bytes, label: str) -> None:
-        path = self._path(relative)
-        if self.read_bytes(relative, label) != expected:
-            raise AtomicAcquisitionError(f"{label} changed before removal")
-        path.unlink()
-        if os.name != "nt":
-            descriptor = os.open(path.parent, os.O_RDONLY)
+        parts = _row_relative_parts(relative)
+        parent_fd, name = self._open_parent_fd(parts)
+        try:
             try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+                current = self._read_regular_at(parent_fd, name, label)
+            except FileNotFoundError as exc:
+                raise AtomicAcquisitionError(
+                    f"{label} is not a regular file"
+                ) from exc
+            if current != expected:
+                raise AtomicAcquisitionError(f"{label} changed before removal")
+            try:
+                os.unlink(name, dir_fd=parent_fd)
+            except OSError as exc:
+                raise AtomicAcquisitionError(f"cannot remove {label}") from exc
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
 
     def remove_empty_directory(self, relative: str) -> None:
-        path = self._path(relative)
+        parts = _row_relative_parts(relative)
         if self.list_directory(relative):
             raise AtomicAcquisitionError("row staging directory is not empty")
-        path.rmdir()
+        parent_fd, name = self._open_parent_fd(parts)
+        try:
+            try:
+                os.rmdir(name, dir_fd=parent_fd)
+            except OSError as exc:
+                raise AtomicAcquisitionError(
+                    "cannot remove portable row directory"
+                ) from exc
+            os.fsync(parent_fd)
+        finally:
+            os.close(parent_fd)
 
     def seal_directory(self, relative: str, expected_files: Mapping[str, bytes]) -> None:
         expected_names = tuple(expected_files)
@@ -13456,14 +13856,29 @@ class _SyntheticFixtureRowIo:
         expected_files: Mapping[str, bytes],
     ) -> None:
         self.seal_directory(source, expected_files)
-        source_path = self._path(source)
-        destination_path = self._path(destination)
-        if destination_path.exists():
+        if self.exists(destination):
             raise AtomicAcquisitionError("committed atomic row already exists")
         try:
-            os.rename(source_path, destination_path)
-        except OSError as exc:
-            raise AtomicAcquisitionError("cannot commit atomic row") from exc
+            self._rename_confined_exclusive(
+                _row_relative_parts(source),
+                _row_relative_parts(destination),
+                label="commit atomic row",
+            )
+        except AtomicAcquisitionError as exc:
+            if "already exists" in str(exc):
+                raise AtomicAcquisitionError(
+                    "committed atomic row already exists"
+                ) from exc
+            raise
+
+    def rename_tree_exclusive(self, source: str, destination: str) -> None:
+        """Atomically promote one confined subtree onto a fresh sibling name."""
+
+        self._rename_confined_exclusive(
+            _row_relative_parts(source),
+            _row_relative_parts(destination),
+            label="promote portable tree",
+        )
 
 
 @dataclass
@@ -15915,7 +16330,9 @@ def _synthetic_fixture_bootstrap(
 ) -> tuple[Path, AtomicCandidateUniverse, AtomicSchemaInfo, InitializationClosure]:
     """Portable fixture-only bootstrap; never dispatched by the CLI."""
 
+    output_tree = _SyntheticFixtureRowIo(config.output_root.absolute())
     final = config.output_root.absolute() / _bootstrap_basename(config.run_id, "run ID")
+    final_name = final.name
     if final.exists():
         snapshot = final / SNAPSHOT_FILENAME
         conn = _open_read_only_database(snapshot)
@@ -15933,11 +16350,15 @@ def _synthetic_fixture_bootstrap(
             snapshot_metadata=metadata, schema_info=schema, universe=universe,
             key_bytes=key_bytes, semantic_options=semantic, run_controls=controls,
         )
+        final_tree = _SyntheticFixtureRowIo(final)
         for artifact in initialization.artifacts:
-            if (final / artifact.filename).read_bytes() != artifact.raw:
+            if final_tree.read_bytes(
+                artifact.filename, "synthetic bootstrap artifact"
+            ) != artifact.raw:
                 raise AtomicAcquisitionError("synthetic bootstrap binding drifted")
         return final, universe, schema, initialization
     staging = final.with_name(bootstrap_staging_name(final.name))
+    staging_name = staging.name
     snapshot, metadata = materialize_consistent_snapshot(config.source_db, staging)
     conn = _open_read_only_database(snapshot)
     try:
@@ -15954,8 +16375,13 @@ def _synthetic_fixture_bootstrap(
         key_bytes=key_bytes, semantic_options=semantic, run_controls=controls,
     )
     for artifact in initialization.artifacts:
-        _write_new_file(staging / artifact.filename, artifact.raw)
-    os.rename(staging, final)
+        output_tree.write_bytes(
+            f"{staging_name}/{artifact.filename}",
+            artifact.raw,
+            expected_existing=None,
+            label="synthetic bootstrap artifact",
+        )
+    output_tree.rename_tree_exclusive(staging_name, final_name)
     return final, universe, schema, initialization
 
 
