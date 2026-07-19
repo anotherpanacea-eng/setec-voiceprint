@@ -3,10 +3,11 @@
 existing ``voice_fingerprint._load_encoder`` seam, plus the opt-in
 ``crosslingual_voice_distance --encoder muar`` parallel block.
 
-ALL tests are model-free / stub-only (the spec-02 discipline): the
-``_load_encoder`` seam is monkeypatched to a deterministic stub, so no real
-weights are downloaded or loaded, no GPU, no network. They cover the M1 (stdlib)
-numbered acceptance criteria from ``specs/28-styledistance-encoder-upgrade.md``:
+ALL tests are model-free: the surface tests monkeypatch ``_load_encoder`` to a
+deterministic stub, and the low-level adapter regressions use a tiny tensor
+protocol fake. No real weights are downloaded or loaded; no torch, GPU, or
+network is required. They cover the M1 (stdlib) numbered acceptance criteria
+from ``specs/28-styledistance-encoder-upgrade.md``:
 
   1.  alias registration + default-preserving
   2.  seam dispatch via stub (styledistance / muar) for all three modes
@@ -383,6 +384,132 @@ def test_device_threaded_to_encoder(tmp_path: Path, stub_loader):
     assert rc == 0
     # The loader recorded (model, device).
     assert stub_loader[-1] == ("styledistance", "cuda:0")
+
+
+# ============ 6b. Real adapter plumbing, fake tensors =================
+
+
+class _FakeTensor:
+    """Small numpy-backed subset of the torch tensor protocol used here.
+
+    ``numpy()`` refuses until ``float()`` has been called, reproducing the
+    bfloat16 boundary without importing torch in core-tier CI.
+    """
+
+    def __init__(self, data, *, converted: bool = False):
+        import numpy as np
+
+        self.data = np.asarray(data)
+        self.converted = converted
+
+    def unsqueeze(self, dim):
+        import numpy as np
+
+        return _FakeTensor(np.expand_dims(self.data, dim), converted=self.converted)
+
+    def type_as(self, other):
+        return _FakeTensor(self.data.astype(other.data.dtype))
+
+    def sum(self, dim):
+        return _FakeTensor(self.data.sum(axis=dim), converted=self.converted)
+
+    def clamp(self, min):
+        import numpy as np
+
+        return _FakeTensor(np.maximum(self.data, min), converted=self.converted)
+
+    def dim(self):
+        return self.data.ndim
+
+    def float(self):
+        return _FakeTensor(self.data.astype("float32"), converted=True)
+
+    def detach(self):
+        return self
+
+    def cpu(self):
+        return self
+
+    def numpy(self):
+        if not self.converted:
+            raise TypeError("Got unsupported ScalarType BFloat16")
+        return self.data
+
+    def __mul__(self, other):
+        return _FakeTensor(self.data * other.data)
+
+    def __truediv__(self, other):
+        return _FakeTensor(self.data / other.data)
+
+
+class _FakeNoGrad:
+    def __enter__(self):
+        return None
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FakeTorch:
+    @staticmethod
+    def no_grad():
+        return _FakeNoGrad()
+
+
+class _FakeTokenizer:
+    def __call__(self, texts, **kwargs):
+        assert len(texts) == 2
+        return {
+            "input_ids": _FakeTensor([[1, 2, 0], [3, 4, 5]]),
+            "attention_mask": _FakeTensor([[1, 1, 0], [1, 1, 1]]),
+        }
+
+
+def test_styledistance_bf16_cast_and_masked_mean_pooling():
+    """Ignore a conflicting CLS pooler and cast before numpy conversion."""
+    import numpy as np
+
+    hidden = _FakeTensor([
+        [[1, 0], [3, 0], [99, 99]],
+        [[0, 2], [0, 4], [0, 6]],
+    ])
+    wrong_pooler = _FakeTensor([[0, 1], [1, 0]])
+
+    class _Model:
+        def __call__(self, **kwargs):
+            return types.SimpleNamespace(
+                last_hidden_state=hidden,
+                pooler_output=wrong_pooler,
+            )
+
+    encoder = vf._StyleDistanceEncoder("fake")
+    encoder._tokenizer = _FakeTokenizer()
+    encoder._model = _Model()
+    encoder._torch = _FakeTorch()
+    observed = encoder.encode(["first", "second"])
+
+    assert observed.dtype == np.dtype("float32")
+    assert np.allclose(observed, np.asarray([[1, 0], [0, 1]], dtype="float32"))
+
+
+@pytest.mark.parametrize("encoder_class", (vf._LUAREncoder, vf._MUAREncoder))
+def test_episode_encoders_cast_bf16_before_numpy(encoder_class):
+    import numpy as np
+
+    class _Model:
+        def __call__(self, **kwargs):
+            return _FakeTensor([[1, 2], [3, 4]])
+
+    encoder = encoder_class("fake")
+    encoder._tokenizer = _FakeTokenizer()
+    encoder._model = _Model()
+    encoder._torch = _FakeTorch()
+    observed = encoder.encode(["first", "second"])
+
+    expected = np.asarray([[1, 2], [3, 4]], dtype="float32")
+    expected /= np.linalg.norm(expected, axis=1, keepdims=True)
+    assert observed.dtype == np.dtype("float32")
+    assert np.allclose(observed, expected)
 
 
 # ============ 7. Crosslingual default unchanged =======================

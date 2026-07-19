@@ -305,9 +305,9 @@ class _StyleDistanceEncoder:
     Integration details (StyleDistance model card):
       * Loaded via ``transformers`` with ``AutoModel`` (same path as
         ``_LUAREncoder``; ``trust_remote_code`` honored per the card).
-      * Mean-pool over token embeddings (mask-weighted) when the model
-        returns ``last_hidden_state``; use a ``pooler_output`` /
-        sentence embedding if the card exposes one.
+      * Always mask-weighted mean-pool ``last_hidden_state``, matching the
+        model's sentence-transformers ``1_Pooling`` config. Ignore
+        ``pooler_output``: RoBERTa exposes an untrained CLS dense+tanh head.
       * Rows are L2-normalized before return so downstream cosine is a
         plain dot product.
     """
