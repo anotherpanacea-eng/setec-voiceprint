@@ -5,6 +5,7 @@ import dataclasses
 import datetime as dt
 import json
 import os
+import shutil
 import stat
 import subprocess
 import sys
@@ -18,6 +19,13 @@ if str(ROOT) not in sys.path:
 
 import author_corpus_export as E  # type: ignore
 import setec_run  # type: ignore
+
+
+ATOMIC_EXPORT_SEAM_FIXTURE = (
+    Path(__file__).resolve().parent
+    / "fixtures"
+    / "imessage_atomic_export_seam"
+)
 
 
 def _source(root: Path, kind: str, text: str, *, ai_status: str = "pre_ai_human",
@@ -56,6 +64,13 @@ def _source(root: Path, kind: str, text: str, *, ai_status: str = "pre_ai_human"
     manifest = src / "draft_manifest.jsonl"
     manifest.write_text(json.dumps(entry) + "\n", encoding="utf-8")
     return manifest
+
+
+def _atomic_imessage_source(root: Path) -> Path:
+    """Copy a public, acquirer-shaped atomic source into the private test root."""
+    src = root / "imessage_sent_atomic"
+    shutil.copytree(ATOMIC_EXPORT_SEAM_FIXTURE, src)
+    return src / "draft_manifest.jsonl"
 
 
 def _document_source(root: Path, *, count: int = 3):
@@ -439,6 +454,15 @@ def test_document_map_rejects_duplicate_positions(private_root: Path):
         E._load_document_map(document_map)
 
 
+def test_document_map_rejects_atomic_message_unit_kind(private_root: Path):
+    _, document_map, _ = _document_source(private_root)
+    rows = [json.loads(line) for line in document_map.read_text().splitlines()]
+    rows[0]["unit_kind"] = "atomic_message"
+    document_map.write_text("".join(json.dumps(row) + "\n" for row in rows))
+    with pytest.raises(ValueError, match="unit_kind is invalid"):
+        E._load_document_map(document_map)
+
+
 def test_document_smoke_is_whole_group_and_byte_bounded(private_root: Path):
     manifest, document_map, attestation = _document_source(private_root, count=21)
     kwargs = {
@@ -576,6 +600,109 @@ def test_legacy_imessage_contact_label_group_is_degraded(private_root: Path):
         allowed_ai_status=["pre_ai_human"], persona="joshua", hmac_key=b"k" * 32,
     )
     assert receipt["record_atomic_degraded"] is True
+
+
+def test_atomic_imessage_preserves_events_duplicates_and_record_atomic_bounds(
+    private_root: Path,
+):
+    manifest = _atomic_imessage_source(private_root)
+    kwargs = {
+        "sources": {"imessage_sent_atomic": manifest},
+        "register_map": {"imessage_sent_atomic:personal": "text.personal"},
+        "allowed_ai_status": ["pre_ai_human"],
+        "persona": "fixture_persona",
+        "hmac_key": b"k" * 32,
+    }
+    records, texts, receipt, _, _ = E.build_export(**kwargs)
+    assert len(records) == 3
+    assert len(texts) == 3
+    assert {record["unit_kind"] for record in records} == {"atomic_message"}
+    assert {record["unit_index"] for record in records} == {0}
+    assert {record["unit_count"] for record in records} == {1}
+    assert len({record["source_group"] for record in records}) == 2
+    for entry in (
+        json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines()
+    ):
+        meta = json.loads(
+            (manifest.parent / entry["path"]).with_suffix(".meta.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        expected_fingerprint = E._hmac(b"k" * 32, E.DOMAIN_ENTRY, {
+            "source_kind": "imessage_sent_atomic",
+            "private_entry_locator": meta["author_corpus_entry_locator"],
+            "content_sha256": entry["content_hash"],
+        }, "src:hmac-sha256:")
+        expected_group = E._hmac(b"k" * 32, E.DOMAIN_GROUP, {
+            "source_kind": "imessage_sent_atomic",
+            "private_group_locator": meta["author_corpus_group_locator"],
+        }, "grp:hmac-sha256:")
+        record = next(item for item in records
+                      if item["source_entry_fingerprint"] == expected_fingerprint)
+        assert record["source_group"] == expected_group
+    repeated_normalized_hash = E._sha(
+        b"An atomic note with a normalized ending."
+    )
+    duplicate_events = [
+        record for record in records
+        if record["normalized_text_sha256"] == repeated_normalized_hash
+    ]
+    assert len(duplicate_events) == 2
+    assert len({record["content_sha256"] for record in duplicate_events}) == 2
+    assert len({record["source_group"] for record in duplicate_events}) == 2
+    assert len({record["id"] for record in duplicate_events}) == 2
+    assert len({record["source_entry_fingerprint"] for record in duplicate_events}) == 2
+    assert receipt["counts"]["by_source_kind"] == {"imessage_sent_atomic": 3}
+    assert receipt["record_atomic_degraded"] is False
+    assert receipt["package_hash"] == (
+        "sha256:8a8228672661f0f7391457f3e741521c8433b155525f492a9d4fabc732322f88"
+    )
+    assert receipt["source_snapshot_sha256"] == (
+        "sha256:28aac74db65eaebd9f83e45c49ce1a06385d54006c930db81f8658d265a45222"
+    )
+    E._verify_package(records, texts, receipt, hmac_key=b"k" * 32)
+
+    bounded, bounded_texts, bounded_receipt, _, _ = E.build_export(
+        **kwargs, max_records=1, max_text_bytes=1_000_000,
+    )
+    assert len(bounded) == 1
+    assert any(
+        record["source_group"] == bounded[0]["source_group"]
+        and record["id"] != bounded[0]["id"]
+        for record in records
+    )
+    assert bounded[0]["unit_kind"] == "atomic_message"
+    assert bounded[0]["unit_index"] == 0 and bounded[0]["unit_count"] == 1
+    E._verify_package(
+        bounded, bounded_texts, bounded_receipt, hmac_key=b"k" * 32,
+    )
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("author_corpus_group_locator", "sha256:" + "a" * 64, "locator"),
+        ("unix_nanoseconds", True, "order timestamp"),
+        ("author_corpus_unit_count", 2, "unit semantics"),
+    ],
+)
+def test_atomic_imessage_sidecar_never_degrades(
+    private_root: Path, field: str, value, message: str,
+):
+    manifest = _atomic_imessage_source(private_root)
+    first_entry = json.loads(manifest.read_text(encoding="utf-8").splitlines()[0])
+    meta_path = (manifest.parent / first_entry["path"]).with_suffix(".meta.json")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    meta[field] = value
+    meta_path.write_text(json.dumps(meta), encoding="utf-8")
+    with pytest.raises(ValueError, match=message):
+        E.build_export(
+            sources={"imessage_sent_atomic": manifest},
+            register_map={"imessage_sent_atomic:personal": "text.personal"},
+            allowed_ai_status=["pre_ai_human"],
+            persona="fixture_persona",
+            hmac_key=b"k" * 32,
+        )
 
 
 def test_disallowed_ai_status_and_missing_map_refuse(private_root: Path):

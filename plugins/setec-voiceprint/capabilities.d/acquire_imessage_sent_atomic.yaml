@@ -1,0 +1,49 @@
+entries:
+- id: acquire_imessage_sent_atomic
+  script_path: plugins/setec-voiceprint/scripts/acquire_imessage_sent_atomic.py
+  surface: voice_coherence_acquisition
+  status: todo
+  handoff: none
+  consumers: []
+  family: acquisition
+  purpose: >-
+    WIP contract for a fail-closed private acquisition path for one outgoing
+    iMessage/SMS event per stable message GUID, preserving atomic authorship identity
+    instead of bundling a contact-day transcript. It is not an operator-ready corpus
+    acquisition or export surface.
+  use_when:
+  - reviewing or completing the synthetic atomic-message contract and its downstream
+    exporter seam
+  do_not_use_when:
+  - any live or synthetic corpus acquisition, export, training, or activation is needed;
+    the full row-durability, recovery, validation, and consumer-contract gates are not
+    closed
+  - received or third-party messages would be included (the contract is limited to
+    outgoing is_from_me=1 rows)
+  - the legacy contact-day aggregate is acceptable (use acquire_imessage_sent for that
+    legacy representation)
+  inputs:
+    target: local macOS Messages SQLite database (~/Library/Messages/chat.db),
+      read-only; the live path requires Full Disk Access, an owner-only
+      persistent HMAC key, an explicit Apple date unit and IANA timezone, and an
+      explicit group-chat policy; runs beyond the one-row smoke require the separate
+      owner-TTY smoke receipt
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - no supported operator artifact while the capability remains WIP
+    - a public deterministic exporter-seam fixture only; it contains synthetic prose and
+      proves no live corpus acquisition
+  compute:
+    tier: acquisition
+    cost_note: stdlib-only SQLite and deterministic filesystem logic; no network,
+      model, API, or GPU
+    length_floor_words: 0
+  registers:
+  - personal
+  dependencies:
+    python: []
+  examples: []
+  references:
+  - plugins/setec-voiceprint/references/acquire-corpus-pattern.md
+  - specs/imessage-atomic-message-acquisition.md

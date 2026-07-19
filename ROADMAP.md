@@ -87,6 +87,16 @@ From the arXiv capability review. Detector-flavored items stay descriptive/advis
   historical sent-source output lacks thread/order identity.
   Tracked in #311; the pinned voicewright consumer/split planner is the separate R1b.
 
+- **Atomic sent-iMessage producer (WIP, not READY).**
+  `acquire_imessage_sent_atomic` now passes its portable and macOS-synthetic private
+  snapshot, initialization, row-transaction, kill/recovery, strict validator, and
+  smoke-ladder gates. It is still not operator-ready: the owner-confirmed one-row live
+  smoke and real resumable run have not happened, and the paired Voicewright fixture
+  gate must land and pass CI. It must not export, train on, or activate a real corpus
+  before those gates close. The exporter fixture proves atomic event identity, chat
+  split-only grouping, cross-chat normalized-duplicate visibility, and record-atomic
+  bounded export.
+
 Supplements the 2026-06-06 pass below for the **1.110 → 1.116** window. At the time of this pass the plugin was at **1.116.0** (the 2026-06-17 section above carries it to 1.117.0; the 2026-06-06 section below still says 1.109.x). Where this conflicts with the older reconciliation or the inline markers, this is authoritative.
 
 ### Shipped since 2026-06-06
