@@ -55,6 +55,11 @@ trafilatura>=1.8
 # dates. python-dateutil normalizes all of those to `datetime.date`.
 python-dateutil>=2.8
 
+# IANA timezone data for Windows and other Python installations without a
+# system zoneinfo database. Atomic iMessage acquisition accepts explicit
+# non-UTC IANA zones and must resolve them consistently on every platform.
+tzdata>=2025.2
+
 # PDF inventory and text-layer extraction (commit 3 of the impostor-
 # corpus spec). Lighter than `pdfminer.six` for the inventory pass and
 # robust enough for text extraction on academic papers.

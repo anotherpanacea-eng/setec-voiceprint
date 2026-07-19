@@ -959,6 +959,764 @@ def test_chatless_hold_ledger_is_prose_free_and_preserves_date_selection(
     conn.close()
 
 
+def _offline_approved_case(
+    tmp_path: Path,
+    *,
+    chatless: bool = False,
+) -> tuple[A.AtomicRunConfig, A.OfflineApprovedImport, Path, Path]:
+    private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    private_root.mkdir(mode=0o700)
+    os.chmod(private_root, 0o700)
+    source = private_root / 'approved-source.db'
+    conn, _schema = _candidate_fixture(source)
+    if chatless:
+        conn.execute('DELETE FROM chat_message_join WHERE message_id IN (2, 3)')
+        conn.commit()
+    conn.close()
+
+    approved_root = private_root / 'approved-runs'
+    approved_root.mkdir(mode=0o700)
+    os.chmod(approved_root, 0o700)
+    approved_config = A.AtomicRunConfig(
+        source_db=source,
+        output_root=approved_root,
+        run_id='approved-smoke',
+        persona='joshua',
+        author='Joshua Miller',
+        register='personal',
+        since=None,
+        until=None,
+        include_group_chats=False,
+        apple_date_unit='nanoseconds',
+        timezone_name='UTC',
+        max_messages=10,
+        max_retained=1,
+        allow_empty=False,
+    )
+    A.run(
+        approved_config,
+        key_bytes=KEY,
+        bootstrap=A._synthetic_fixture_bootstrap,
+        preprocessor=lambda text: (text, {'rules': []}),
+    )
+    approved_run = approved_root / 'approved-smoke'
+    approved_receipt_raw = (approved_run / 'acquisition-receipt.json').read_bytes()
+    approved_receipt = json.loads(approved_receipt_raw)
+    live_receipt = private_root / 'imessage-atomic-live-smoke-receipt.json'
+    live_receipt.write_bytes(A._canonical_json_bytes({
+        'schema': 'setec-imessage-atomic-live-smoke-receipt/1',
+        'smoke_policy_digest': approved_receipt['smoke_policy_digest'],
+        'approved_run_receipt_sha256': A._sha256_tag(approved_receipt_raw),
+        'retained_rows': 1,
+        'approved_by': 'owner-tty',
+        'confirmed_at': '2026-07-18T12:00:00+00:00',
+    }))
+    os.chmod(live_receipt, 0o600)
+
+    archive = private_root / 'copied-archive.db'
+    source_conn = sqlite3.connect(source)
+    archive_conn = sqlite3.connect(archive)
+    try:
+        source_conn.backup(archive_conn)
+    finally:
+        archive_conn.close()
+        source_conn.close()
+    os.chmod(archive, 0o600)
+    output_root = private_root / 'offline-runs'
+    output_root.mkdir(mode=0o700)
+    os.chmod(output_root, 0o700)
+    config = A.AtomicRunConfig(
+        source_db=archive,
+        output_root=output_root,
+        run_id='offline-full',
+        persona='joshua',
+        author='Joshua Miller',
+        register='personal',
+        since=None,
+        until=None,
+        include_group_chats=False,
+        apple_date_unit='nanoseconds',
+        timezone_name='UTC',
+        max_messages=10,
+        max_retained=None,
+        allow_empty=False,
+    )
+    authorization = A.OfflineApprovedImport(
+        approved_smoke_run=approved_run,
+        live_smoke_receipt=live_receipt,
+        archive_equivalence_db=archive,
+    )
+    return config, authorization, approved_run, archive
+
+
+def _offline_semantic_controls(
+    config: A.AtomicRunConfig,
+) -> tuple[dict[str, object], dict[str, object]]:
+    semantic = A.semantic_options_payload(
+        since=config.since,
+        until=config.until,
+        include_group_chats=config.include_group_chats,
+        apple_date_unit=config.apple_date_unit,
+        timezone_name=config.timezone_name,
+        preprocessing_version='legacy-preprocess/1',
+        preprocessing_rules_id='imessage-atomic-rules/1',
+        persona=config.persona,
+        author=config.author,
+        register=config.register,
+    )
+    controls = A.run_controls_payload(
+        max_messages=config.max_messages,
+        max_retained=config.max_retained,
+        allow_empty=config.allow_empty,
+        checkpoint_schema='setec-imessage-atomic-checkpoint/2',
+        checkpoint_interval=1,
+    )
+    return semantic, controls
+
+
+@pytest.mark.parametrize(
+    'field',
+    ['smoke_policy_digest', 'approved_run_receipt_sha256'],
+)
+def test_offline_approved_refuses_receipt_binding_mismatch(
+    tmp_path: Path,
+    field: str,
+) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    _rewrite_canonical_json(
+        authorization.live_smoke_receipt,
+        lambda payload: payload.__setitem__(field, 'sha256:' + '0' * 64),
+    )
+    with pytest.raises(A.AtomicAcquisitionError, match='receipt|smoke-policy'):
+        A.run_offline_approved(
+            config,
+            authorization,
+            key_bytes=KEY,
+            preprocessor=lambda text: (text, {'rules': []}),
+        )
+
+
+def test_offline_approved_refuses_hmac_key_mismatch(tmp_path: Path) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    with pytest.raises(A.HmacKeyError, match='does not match'):
+        A.run_offline_approved(
+            config,
+            authorization,
+            key_bytes=bytes(reversed(KEY)),
+            preprocessor=lambda text: (text, {'rules': []}),
+        )
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_approved_refuses_output_outside_private_root_without_writes(
+    tmp_path: Path,
+) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    public_output = tmp_path / 'public-output'
+    public_output.mkdir(mode=0o700)
+    with pytest.raises(A.AtomicAcquisitionError, match='private root|private-root'):
+        A.run_offline_approved(
+            replace(config, output_root=public_output),
+            authorization,
+            key_bytes=KEY,
+            preprocessor=lambda text: (text, {'rules': []}),
+        )
+    assert list(public_output.iterdir()) == []
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX permission contract')
+@pytest.mark.parametrize('artifact', ['archive', 'receipt'])
+def test_offline_approved_refuses_readable_approval_artifact(
+    tmp_path: Path,
+    artifact: str,
+) -> None:
+    config, authorization, _approved, archive = _offline_approved_case(tmp_path)
+    path = archive if artifact == 'archive' else authorization.live_smoke_receipt
+    os.chmod(path, 0o644)
+    with pytest.raises(A.AtomicAcquisitionError, match='permissions|private root'):
+        A.run_offline_approved(
+            config,
+            authorization,
+            key_bytes=KEY,
+            preprocessor=lambda text: (text, {'rules': []}),
+        )
+
+
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX permission contract')
+def test_offline_key_loader_refuses_group_readable_key(tmp_path: Path) -> None:
+    _config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    key_path = authorization.live_smoke_receipt.parent / 'author-corpus-r1a.key'
+    key_path.write_bytes(KEY)
+    os.chmod(key_path, 0o640)
+    with pytest.raises(A.HmacKeyError, match='bounded|permissions'):
+        A.load_offline_approved_hmac_key(key_path, authorization)
+
+
+def test_offline_archive_scan_is_immutable_and_sidecar_free(tmp_path: Path) -> None:
+    config, authorization, _approved, archive = _offline_approved_case(tmp_path)
+    conn = sqlite3.connect(archive)
+    try:
+        assert conn.execute('PRAGMA journal_mode=WAL').fetchone() == ('wal',)
+    finally:
+        conn.close()
+    if os.name != 'nt':
+        os.chmod(archive, 0o600)
+    for suffix in ('-wal', '-shm', '-journal'):
+        archive.with_name(archive.name + suffix).unlink(missing_ok=True)
+    before = A._stream_hash_and_size(archive)
+    semantic, controls = _offline_semantic_controls(config)
+    context = A._authorize_offline_approved_import(
+        config,
+        authorization,
+        key_bytes=KEY,
+        semantic_options=semantic,
+        run_controls=controls,
+    )
+    assert context.universe.candidates
+    assert A._stream_hash_and_size(archive) == before
+    assert not any(
+        archive.with_name(archive.name + suffix).exists()
+        for suffix in ('-wal', '-shm', '-journal')
+    )
+
+
+@pytest.mark.parametrize('mutation', ['text', 'row', 'held'])
+def test_offline_approved_refuses_complete_archive_universe_drift(
+    tmp_path: Path,
+    mutation: str,
+) -> None:
+    config, authorization, _approved, archive = _offline_approved_case(
+        tmp_path,
+        chatless=True,
+    )
+    conn = sqlite3.connect(archive)
+    try:
+        if mutation == 'text':
+            conn.execute("UPDATE message SET text = 'changed text' WHERE ROWID = 1")
+        elif mutation == 'row':
+            conn.execute('UPDATE message SET is_from_me = 0 WHERE ROWID = 1')
+        else:
+            conn.execute(
+                'INSERT INTO chat_message_join(chat_id, message_id) VALUES (10, 2)'
+            )
+        conn.commit()
+    finally:
+        conn.close()
+    with pytest.raises(A.AtomicAcquisitionError, match='candidate universe'):
+        A.run_offline_approved(
+            config,
+            authorization,
+            key_bytes=KEY,
+            preprocessor=lambda text: (text, {'rules': []}),
+        )
+
+
+def test_snapshot_metadata_accepts_only_runtime_library_provenance() -> None:
+    expected = A.SnapshotMetadata(**_bootstrap_snapshot_payload())
+    observed = replace(expected, sqlite_library_version='3.42.0')
+    assert A._snapshot_metadata_matches_creator_binding(observed, expected)
+    for field, value in (
+        ('file_sha256', 'sha256:' + '9' * 64),
+        ('byte_size', 8192),
+        ('page_count', 2),
+        ('schema_fingerprint', 'sha256:' + '8' * 64),
+        ('sqlite_user_version', 1),
+        ('sqlite_application_id', 1),
+    ):
+        assert not A._snapshot_metadata_matches_creator_binding(
+            replace(observed, **{field: value}),
+            expected,
+        )
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_bootstrap_resumes_interrupted_approved_snapshot_copy(
+    tmp_path: Path,
+) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    semantic, controls = _offline_semantic_controls(config)
+    context = A._authorize_offline_approved_import(
+        config,
+        authorization,
+        key_bytes=KEY,
+        semantic_options=semantic,
+        run_controls=controls,
+    )
+
+    def interrupt(boundary: str) -> None:
+        if boundary == 'snapshot_published':
+            raise RuntimeError('simulated interruption')
+
+    with pytest.raises(RuntimeError, match='simulated interruption'):
+        A._offline_approved_bootstrap(
+            config,
+            KEY,
+            semantic,
+            controls,
+            context=context,
+            fault=interrupt,
+        )
+    run_dir, universe, _schema, _initialization = A._offline_approved_bootstrap(
+        config,
+        KEY,
+        semantic,
+        controls,
+        context=context,
+    )
+    assert run_dir == config.output_root / config.run_id
+    assert universe == context.universe
+    assert A._stream_hash_and_size(run_dir / A.SNAPSHOT_FILENAME)[0] == (
+        context.snapshot_metadata.file_sha256
+    )
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_bootstrap_refuses_foreign_staging_artifact(tmp_path: Path) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    semantic, controls = _offline_semantic_controls(config)
+    context = A._authorize_offline_approved_import(
+        config,
+        authorization,
+        key_bytes=KEY,
+        semantic_options=semantic,
+        run_controls=controls,
+    )
+
+    def interrupt(boundary: str) -> None:
+        if boundary == 'staging_created':
+            raise RuntimeError('simulated interruption')
+
+    with pytest.raises(RuntimeError):
+        A._offline_approved_bootstrap(
+            config,
+            KEY,
+            semantic,
+            controls,
+            context=context,
+            fault=interrupt,
+        )
+    staging_name, _journal_name = A._offline_bootstrap_names(config.run_id)
+    (config.output_root / staging_name / 'foreign.bin').write_bytes(b'foreign')
+    with pytest.raises(A.AtomicAcquisitionError, match='foreign'):
+        A._offline_approved_bootstrap(
+            config,
+            KEY,
+            semantic,
+            controls,
+            context=context,
+        )
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_bootstrap_resumes_zero_byte_snapshot_prefix(tmp_path: Path) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    semantic, controls = _offline_semantic_controls(config)
+    context = A._authorize_offline_approved_import(
+        config,
+        authorization,
+        key_bytes=KEY,
+        semantic_options=semantic,
+        run_controls=controls,
+    )
+
+    def interrupt(boundary: str) -> None:
+        if boundary == 'staging_created':
+            raise RuntimeError('simulated interruption')
+
+    with pytest.raises(RuntimeError, match='simulated interruption'):
+        A._offline_approved_bootstrap(
+            config,
+            KEY,
+            semantic,
+            controls,
+            context=context,
+            fault=interrupt,
+        )
+    staging_name, _journal_name = A._offline_bootstrap_names(config.run_id)
+    partial = config.output_root / staging_name / f'.{A.SNAPSHOT_FILENAME}.copying'
+    partial.write_bytes(b'')
+    os.chmod(partial, 0o600)
+    run_dir, _universe, _schema, _initialization = A._offline_approved_bootstrap(
+        config,
+        KEY,
+        semantic,
+        controls,
+        context=context,
+    )
+    assert A._stream_hash_and_size(run_dir / A.SNAPSHOT_FILENAME)[0] == (
+        context.snapshot_metadata.file_sha256
+    )
+
+
+def _bounded_tree_state(root: Path) -> tuple[tuple[object, ...], ...]:
+    root_info = root.lstat()
+    state: list[tuple[object, ...]] = [(
+        '.',
+        stat.S_IFMT(root_info.st_mode),
+        stat.S_IMODE(root_info.st_mode),
+        root_info.st_dev,
+        root_info.st_ino,
+        root_info.st_nlink,
+        root_info.st_size,
+        root_info.st_mtime_ns,
+        root_info.st_ctime_ns,
+        None,
+    )]
+    for parent, directory_names, file_names in os.walk(root, followlinks=False):
+        directory_names.sort(key=os.fsencode)
+        file_names.sort(key=os.fsencode)
+        for name in (*directory_names, *file_names):
+            path = Path(parent) / name
+            info = path.lstat()
+            raw = path.read_bytes() if stat.S_ISREG(info.st_mode) else None
+            state.append((
+                path.relative_to(root).as_posix(),
+                stat.S_IFMT(info.st_mode),
+                stat.S_IMODE(info.st_mode),
+                info.st_dev,
+                info.st_ino,
+                info.st_nlink,
+                info.st_size,
+                info.st_mtime_ns,
+                info.st_ctime_ns,
+                A._sha256_tag(raw) if raw is not None else None,
+            ))
+    return tuple(state)
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='real macOS descriptor race')
+def test_portable_row_write_contains_intermediate_symlink_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    root.mkdir(mode=0o700)
+    os.chmod(root, 0o700)
+    outside = tmp_path / 'outside'
+    outside.mkdir(mode=0o700)
+    os.chmod(outside, 0o700)
+    sentinel = outside / 'sentinel.bin'
+    sentinel.write_bytes(b'outside sentinel')
+    os.chmod(sentinel, 0o600)
+    outside_before = _bounded_tree_state(outside)
+    io = A.PortableDurableRowIo(root)
+    io.ensure_directory('rows')
+    original = A._durable_atomic_private_bytes_at
+    raced = False
+
+    def race(parent_fd: int, filename: str, raw: bytes, **kwargs: object) -> None:
+        nonlocal raced
+        if not raced:
+            raced = True
+            os.rename(root / 'rows', root / 'rows-parked')
+            os.symlink(outside, root / 'rows', target_is_directory=True)
+        original(parent_fd, filename, raw, **kwargs)
+
+    monkeypatch.setattr(A, '_durable_atomic_private_bytes_at', race)
+    try:
+        with pytest.raises(A.BootstrapRecoveryRequired, match='parent binding'):
+            io.write_bytes(
+                'rows/artifact.json',
+                b'{}',
+                expected_existing=None,
+                label='row artifact',
+            )
+    finally:
+        io.close()
+    assert _bounded_tree_state(outside) == outside_before
+    assert (root / 'rows-parked' / 'artifact.json').read_bytes() == b'{}'
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='real macOS descriptor race')
+def test_portable_directory_creation_contains_intermediate_symlink_replacement(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    root.mkdir(mode=0o700)
+    os.chmod(root, 0o700)
+    rows = root / 'rows'
+    rows.mkdir(mode=0o700)
+    os.chmod(rows, 0o700)
+    outside = tmp_path / 'outside'
+    outside.mkdir(mode=0o700)
+    os.chmod(outside, 0o700)
+    outside_before = _bounded_tree_state(outside)
+    io = A.PortableDurableRowIo(root)
+    original = A._open_private_tree_node_at
+    raced = False
+
+    def race(parent_fd: int, name: str, **kwargs: object) -> object:
+        nonlocal raced
+        if name == 'item' and not raced:
+            raced = True
+            os.rename(rows, root / 'rows-parked')
+            os.symlink(outside, rows, target_is_directory=True)
+        return original(parent_fd, name, **kwargs)
+
+    monkeypatch.setattr(A, '_open_private_tree_node_at', race)
+    try:
+        with pytest.raises(A.BootstrapRecoveryRequired, match='binding'):
+            io.ensure_directory('rows/item')
+    finally:
+        io.close()
+    assert _bounded_tree_state(outside) == outside_before
+    assert (root / 'rows-parked' / 'item').is_dir()
+
+
+@pytest.mark.parametrize('unsupported_platform', ['linux', 'win32'])
+def test_portable_tree_refuses_unsupported_backend_before_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    unsupported_platform: str,
+) -> None:
+    root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    root.mkdir(mode=0o700)
+    os.chmod(root, 0o700)
+    before = _bounded_tree_state(root)
+    monkeypatch.setattr(A.sys, 'platform', unsupported_platform)
+    with pytest.raises(A.BootstrapStateError, match='only on the macOS host'):
+        A.PortableDurableRowIo(root)
+    assert _bounded_tree_state(root) == before
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_portable_snapshot_resume_refuses_hardlinked_partial_without_escape(
+    tmp_path: Path,
+) -> None:
+    private = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    private.mkdir(mode=0o700)
+    os.chmod(private, 0o700)
+    root = private / 'output'
+    root.mkdir(mode=0o700)
+    os.chmod(root, 0o700)
+    source = private / 'approved.db'
+    source.write_bytes(b'approved snapshot bytes')
+    os.chmod(source, 0o600)
+    outside = tmp_path / 'outside'
+    outside.mkdir(mode=0o700)
+    os.chmod(outside, 0o700)
+    outside_partial = outside / 'partial.bin'
+    outside_partial.write_bytes(b'approved')
+    os.chmod(outside_partial, 0o600)
+    io = A.PortableDurableRowIo(root)
+    try:
+        io.ensure_directory('staging')
+        os.link(outside_partial, root / 'staging' / '.snapshot.copying')
+        outside_before = _bounded_tree_state(outside)
+        with pytest.raises(A.BootstrapStateError, match='partial inode is invalid'):
+            io.copy_file_resumable(
+                source,
+                'staging/.snapshot.copying',
+                'staging/snapshot.db',
+                expected_digest=A._sha256_tag(source.read_bytes()),
+                expected_size=source.stat().st_size,
+                label='approved snapshot',
+            )
+        assert _bounded_tree_state(outside) == outside_before
+    finally:
+        io.close()
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_bootstrap_refuses_raced_empty_final_destination(
+    tmp_path: Path,
+) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    semantic, controls = _offline_semantic_controls(config)
+    context = A._authorize_offline_approved_import(
+        config,
+        authorization,
+        key_bytes=KEY,
+        semantic_options=semantic,
+        run_controls=controls,
+    )
+    last_artifact = A._offline_initialization_artifacts(context)[-1].filename
+    final = config.output_root / config.run_id
+
+    def race(boundary: str) -> None:
+        if boundary == f'initialization:{last_artifact}':
+            final.mkdir(mode=0o700)
+            os.chmod(final, 0o700)
+
+    with pytest.raises(A.AtomicAcquisitionError, match='destination already exists'):
+        A._offline_approved_bootstrap(
+            config,
+            KEY,
+            semantic,
+            controls,
+            context=context,
+            fault=race,
+        )
+    assert list(final.iterdir()) == []
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_full_run_preserves_approved_policy_and_resumes_rows(
+    tmp_path: Path,
+) -> None:
+    config, authorization, approved_run, archive = _offline_approved_case(tmp_path)
+    conn = sqlite3.connect(archive)
+    try:
+        conn.execute('PRAGMA user_version=7')
+        conn.commit()
+    finally:
+        conn.close()
+    approved_hash = A._stream_hash_and_size(
+        approved_run / A.SNAPSHOT_FILENAME
+    )[0]
+    archive_hash = A._stream_hash_and_size(archive)[0]
+    assert archive_hash != approved_hash
+
+    receipt = A.run_offline_approved(
+        config,
+        authorization,
+        key_bytes=KEY,
+        preprocessor=lambda text: (text, {'rules': []}),
+    )
+    run_dir = config.output_root / config.run_id
+    smoke = json.loads((run_dir / A.SMOKE_POLICY_FILENAME).read_bytes())
+    live = json.loads(authorization.live_smoke_receipt.read_bytes())
+    assert A._stream_hash_and_size(run_dir / A.SNAPSHOT_FILENAME)[0] == approved_hash
+    if os.name != 'nt':
+        assert stat.S_IMODE((run_dir / A.SNAPSHOT_FILENAME).stat().st_mode) == 0o600
+    assert A.canonical_payload_digest(smoke) == live['smoke_policy_digest']
+    assert A.validate_atomic_run(run_dir)['retained_rows'] == 3
+    assert A.run_offline_approved(
+        config,
+        authorization,
+        key_bytes=KEY,
+        preprocessor=lambda text: (text, {'rules': []}),
+    ) == receipt
+    evidence_raw = (run_dir / A.OFFLINE_APPROVED_EVIDENCE_FILENAME).read_bytes()
+    evidence = json.loads(evidence_raw)
+    assert evidence['archive_file_sha256'] == archive_hash
+    assert evidence['approved_snapshot_file_sha256'] == approved_hash
+    assert evidence['counts']['candidate_outgoing_rows'] == 3
+    assert receipt['offline_approved_evidence_sha256'] == A._sha256_tag(evidence_raw)
+    assert not any('path' in key for key in evidence)
+    archive.unlink()
+    assert A.validate_atomic_run(run_dir)['retained_rows'] == 3
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_run_resumes_after_k_row_publications(tmp_path: Path) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    published = 0
+
+    def interrupt(boundary: str) -> None:
+        nonlocal published
+        if boundary == 'after_journal_removed':
+            published += 1
+            if published == 2:
+                raise RuntimeError('simulated row interruption')
+
+    with pytest.raises(RuntimeError, match='row interruption'):
+        A.run_offline_approved(
+            config,
+            authorization,
+            key_bytes=KEY,
+            preprocessor=lambda text: (text, {'rules': []}),
+            publication_fault=interrupt,
+        )
+    receipt = A.run_offline_approved(
+        config,
+        authorization,
+        key_bytes=KEY,
+        preprocessor=lambda text: (text, {'rules': []}),
+    )
+    assert receipt['counts']['retained'] == 3
+    assert A.validate_atomic_run(config.output_root / config.run_id)['retained_rows'] == 3
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_run_refuses_foreign_root_artifact_on_resume(tmp_path: Path) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+
+    def interrupt(boundary: str) -> None:
+        if boundary == 'after_initial_checkpoint':
+            raise RuntimeError('simulated row interruption')
+
+    with pytest.raises(RuntimeError):
+        A.run_offline_approved(
+            config,
+            authorization,
+            key_bytes=KEY,
+            preprocessor=lambda text: (text, {'rules': []}),
+            publication_fault=interrupt,
+        )
+    (config.output_root / config.run_id / 'foreign.bin').write_bytes(b'foreign')
+    with pytest.raises(A.AtomicAcquisitionError, match='residue'):
+        A.run_offline_approved(
+            config,
+            authorization,
+            key_bytes=KEY,
+            preprocessor=lambda text: (text, {'rules': []}),
+        )
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_run_refuses_group_readable_ledger_on_resume(tmp_path: Path) -> None:
+    config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    A.run_offline_approved(
+        config,
+        authorization,
+        key_bytes=KEY,
+        preprocessor=lambda text: (text, {'rules': []}),
+    )
+    ledger = config.output_root / config.run_id / 'source-ledger.json'
+    os.chmod(ledger, 0o644)
+    with pytest.raises(A.AtomicAcquisitionError, match='inode is invalid'):
+        A.run_offline_approved(
+            config,
+            authorization,
+            key_bytes=KEY,
+            preprocessor=lambda text: (text, {'rules': []}),
+        )
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+def test_offline_cli_loads_approved_portable_key_and_runs(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    config, authorization, _approved, archive = _offline_approved_case(tmp_path)
+    key_path = authorization.live_smoke_receipt.parent / 'author-corpus-r1a.key'
+    key_path.write_bytes(KEY)
+    os.chmod(key_path, 0o600)
+    assert A.main([
+        '--offline-approved-import',
+        '--exclude-group-chats',
+        '--timezone', 'UTC',
+        '--apple-date-unit', 'nanoseconds',
+        '--hmac-key', str(key_path),
+        '--approved-smoke-run', str(authorization.approved_smoke_run),
+        '--archive-equivalence-db', str(archive),
+        '--live-smoke-receipt', str(authorization.live_smoke_receipt),
+        '--output-root', str(config.output_root),
+        '--run-id', 'offline-cli-full',
+        '--persona', config.persona,
+        '--author', config.author,
+        '--register', config.register,
+        '--max-messages', '10',
+    ]) == 0
+    capsys.readouterr()
+    assert A.validate_atomic_run(
+        config.output_root / 'offline-cli-full'
+    )['retained_rows'] == 3
+
+
+def test_offline_cli_requires_all_approval_paths(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        A.main(['--offline-approved-import'])
+    assert exc_info.value.code == 2
+    error = capsys.readouterr().err
+    assert '--approved-smoke-run' in error
+    assert '--archive-equivalence-db' in error
+    assert '--live-smoke-receipt' in error
+    assert '--hmac-key' in error
+
+
 def _initialization_fixture() -> tuple[
     A.ClosedSnapshotEvidence,
     A.AtomicSchemaInfo,
@@ -12727,9 +13485,11 @@ def test_row_preflight_refuses_unevidenced_next_residue(tmp_path: Path) -> None:
 
 
 def _rewrite_canonical_json(path: Path, mutate) -> None:
+    original_mode = stat.S_IMODE(path.stat().st_mode)
     payload = json.loads(path.read_bytes())
     mutate(payload)
     path.write_bytes(A._canonical_json_bytes(payload))
+    os.chmod(path, original_mode)
 
 
 @pytest.mark.parametrize(

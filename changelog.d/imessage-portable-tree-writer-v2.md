@@ -1,0 +1,3 @@
+### Security
+
+**`acquire_imessage_sent_atomic` now confines receipt-bound offline imports to a pinned private-tree capability.** Offline bootstrap, resumable snapshot copying, initialization, row transactions, cleanup, and durability mutations use descriptor-relative no-follow operations with exclusive publication and inode-bound verification. Intermediate symlink replacement and hard-linked mutable residue cannot redirect writes outside the inspected root. Unsupported platforms, including the current Windows runtime, refuse before mutation instead of using a path-based fallback. The adapter remains private, local, verified with synthetic fixtures only in this change, and non-activating. Closes #324.

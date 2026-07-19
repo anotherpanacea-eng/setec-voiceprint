@@ -7,6 +7,7 @@ import argparse
 from collections import Counter
 import datetime as _dt
 from dataclasses import asdict, dataclass, replace
+import errno
 import hashlib
 import hmac
 import json
@@ -58,6 +59,8 @@ MAX_RUN_OWNER_BYTES = 64 * 1024
 MAX_ROW_JOURNAL_BYTES = 4 * 1024 * 1024
 MAX_ROW_STATE_BYTES = 1024 * 1024 * 1024
 MAX_LIVE_SMOKE_RECEIPT_BYTES = 64 * 1024
+MAX_OFFLINE_APPROVAL_JOURNAL_BYTES = 64 * 1024
+MAX_OFFLINE_APPROVED_EVIDENCE_BYTES = 64 * 1024
 MAX_PRIVATE_TREE_DEPTH = 64
 MAX_PRIVATE_TREE_NODES = 1_000_000
 BOOTSTRAP_JOURNAL_FILENAME = "bootstrap-journal.json"
@@ -68,6 +71,7 @@ PRIVATE_CONTACT_MAP_FILENAME = "private-contact-map.json"
 PRIVATE_SOURCE_IDENTITY_MAP_FILENAME = "private-source-identity-map.json"
 PRIVATE_SOURCE_HOLD_LEDGER_FILENAME = "private-source-hold-ledger.json"
 RUN_OWNER_FILENAME = "run-owner.json"
+OFFLINE_APPROVED_EVIDENCE_FILENAME = 'offline-approved-evidence.json'
 CHAT_JOIN_POLICY_VERSION = "imessage-chat-join-policy-v2"
 ROW_JOURNAL_FILENAME = ".row-transaction.json"
 ROW_STAGING_DIRNAME = ".row-staging"
@@ -457,6 +461,28 @@ class AtomicRunConfig:
     live_smoke_receipt: Path | None = None
 
 
+@dataclass(frozen=True)
+class OfflineApprovedImport:
+    """Explicit authority for one portable, non-activating archive import."""
+
+    approved_smoke_run: Path
+    live_smoke_receipt: Path
+    archive_equivalence_db: Path
+
+
+@dataclass(frozen=True)
+class _OfflineApprovedContext:
+    approved_snapshot: Path
+    approved_receipt_sha256: str
+    snapshot_metadata: SnapshotMetadata
+    schema_info: AtomicSchemaInfo
+    universe: AtomicCandidateUniverse
+    semantic_options: dict[str, Any]
+    run_controls: dict[str, Any]
+    initialization: InitializationClosure
+    offline_evidence: ClosedPrivateJson
+
+
 def apple_date_to_unix_ns(raw: int, unit: str) -> int:
     """Convert an Apple-epoch integer to integer Unix nanoseconds.
 
@@ -656,6 +682,105 @@ def hmac_key_id(key_bytes: bytes) -> str:
     key = _validate_hmac_key(key_bytes)
     digest = hashlib.sha256(_KEY_ID_DOMAIN + b"\x00" + key).hexdigest()
     return f"sha256:{digest}"
+
+
+def load_offline_approved_hmac_key(
+    path: Path,
+    authorization: OfflineApprovedImport,
+) -> bytes:
+    """Load a stable bounded key on Windows only for an approved offline run."""
+
+    if type(authorization) is not OfflineApprovedImport:
+        raise HmacKeyError('offline HMAC authorization is invalid')
+    key_path = Path(path).expanduser().absolute()
+    if '..' in Path(path).expanduser().parts:
+        raise HmacKeyError('offline HMAC key path is invalid')
+    artifact_paths = (
+        authorization.approved_smoke_run,
+        authorization.live_smoke_receipt,
+        authorization.archive_equivalence_db,
+    )
+    try:
+        roots = {_private_root_path(Path(item)) for item in artifact_paths}
+        key_root = _private_root_path(key_path)
+    except AtomicAcquisitionError as exc:
+        raise HmacKeyError('offline HMAC key private-root binding is invalid') from exc
+    if len(roots) != 1 or key_root not in roots:
+        raise HmacKeyError('offline HMAC key does not share the approved private root')
+    try:
+        resolved_root = key_root.resolve(strict=True)
+        key_path.resolve(strict=True).relative_to(resolved_root)
+        before = key_path.lstat()
+    except (OSError, ValueError) as exc:
+        raise HmacKeyError('cannot inspect offline HMAC key') from exc
+    if (
+        not stat.S_ISREG(before.st_mode)
+        or stat.S_ISLNK(before.st_mode)
+        or _is_reparse_or_symlink(key_path)
+        or before.st_size < 32
+        or before.st_size > MAX_HMAC_KEY_BYTES
+        or (
+            os.name != 'nt'
+            and (before.st_uid != os.getuid() or stat.S_IMODE(before.st_mode) & 0o077)
+        )
+    ):
+        raise HmacKeyError('offline HMAC key is not a bounded direct regular file')
+    flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOINHERIT', 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(key_path, flags)
+        opened_before = os.fstat(descriptor)
+        chunks: list[bytes] = []
+        remaining = MAX_HMAC_KEY_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        opened_after = os.fstat(descriptor)
+    except OSError as exc:
+        raise HmacKeyError('cannot read offline HMAC key') from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    try:
+        after = key_path.lstat()
+    except OSError as exc:
+        raise HmacKeyError('cannot re-inspect offline HMAC key') from exc
+    # Windows reports a different descriptor ``st_ctime_ns`` from the named
+    # path for an unchanged file (the descriptor value can reflect access-time
+    # bookkeeping). Device/inode/size/mtime are stable across lstat/fstat and
+    # still prove that the same bounded bytes were read; the two path lstat
+    # samples additionally catch a replacement during the read.
+    identity_fields = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns')
+    identities = (before, opened_before, opened_after, after)
+    if any(
+        getattr(identities[0], name) != getattr(item, name)
+        for item in identities[1:]
+        for name in identity_fields
+    ):
+        raise HmacKeyError('offline HMAC key changed while being read')
+    if os.name != 'nt' and any(
+        item.st_uid != os.getuid() or stat.S_IMODE(item.st_mode) & 0o077
+        for item in identities
+    ):
+        raise HmacKeyError('offline HMAC key permissions or ownership are invalid')
+    key = _validate_hmac_key(b''.join(chunks))
+    approved_run = _portable_directory(
+        authorization.approved_smoke_run,
+        'approved smoke run',
+    )
+    smoke, _ = _read_io_object(
+        _SyntheticFixtureRowIo(approved_run),
+        SMOKE_POLICY_FILENAME,
+        'approved smoke policy',
+        validator=_validated_smoke_policy,
+        max_bytes=MAX_SMOKE_POLICY_BYTES,
+    )
+    if smoke['hmac']['key_id'] != hmac_key_id(key):
+        raise HmacKeyError('offline HMAC key does not match the approved run')
+    return key
 
 
 def group_locator(key_bytes: bytes, chat_guid: object) -> str:
@@ -4227,6 +4352,25 @@ def _open_read_only_database(path: Path) -> sqlite3.Connection:
         raise SnapshotError("cannot open SQLite source read-only") from exc
 
 
+def _open_immutable_read_only_database(path: Path) -> sqlite3.Connection:
+    """Open a closed sidecar-free SQLite copy without creating WAL/SHM files."""
+
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(
+            path.resolve().as_uri() + "?mode=ro&immutable=1", uri=True
+        )
+        connection.execute("PRAGMA query_only=ON")
+        if connection.execute("PRAGMA query_only").fetchone() != (1,):
+            connection.close()
+            raise SnapshotError("SQLite immutable connection is not query-only")
+        return connection
+    except (OSError, sqlite3.Error) as exc:
+        if connection is not None:
+            connection.close()
+        raise SnapshotError("cannot open immutable SQLite source") from exc
+
+
 def _quick_check(conn: sqlite3.Connection) -> None:
     try:
         rows = list(conn.execute("PRAGMA quick_check"))
@@ -4347,6 +4491,25 @@ def _snapshot_metadata(
     return _snapshot_metadata_from_hash(
         conn, file_hash=file_hash, byte_size=byte_size
     )
+
+
+def _snapshot_metadata_matches_creator_binding(
+    observed: SnapshotMetadata,
+    expected: SnapshotMetadata,
+) -> bool:
+    """Compare DB-intrinsic evidence while preserving creator provenance.
+
+    ``sqlite_library_version`` describes the inspecting runtime, not bytes
+    embedded in the database.  It may therefore differ cross-runtime only
+    after every byte- and database-intrinsic field has matched exactly.
+    """
+
+    if type(observed) is not SnapshotMetadata or type(expected) is not SnapshotMetadata:
+        return False
+    return replace(
+        observed,
+        sqlite_library_version=expected.sqlite_library_version,
+    ) == expected
 
 
 def materialize_consistent_snapshot(
@@ -13347,41 +13510,81 @@ def _canonical_object_validator(value: dict[str, Any]) -> dict[str, Any]:
     return value
 
 
-class _SyntheticFixtureRowIo:
-    """Portable fixture-only row I/O; never selected by the live CLI."""
+class _PathBasedSyntheticRowIo:
+    """Path-based fixture publisher; never authorized for production use."""
 
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, *, strict_private_modes: bool = True) -> None:
         self.root = Path(root).absolute()
+        self.strict_private_modes = strict_private_modes
+        self._checked_directory(self.root, "portable row root")
+
+    def _checked_directory(self, path: Path, label: str) -> None:
+        candidate = _portable_directory(path, label)
+        if self.strict_private_modes and os.name != "nt":
+            _require_owner_only_mode(candidate, 0o700)
+
+    def _checked_file(self, path: Path, label: str) -> None:
+        candidate = _portable_regular_file(path, label)
+        if self.strict_private_modes and os.name != "nt":
+            _require_owner_only_mode(candidate, 0o600)
+            if candidate.stat().st_nlink != 1:
+                raise AtomicAcquisitionError(f"{label} has an invalid link count")
+
+    def _check_existing_ancestry(self, path: Path, label: str) -> None:
+        try:
+            relative = path.relative_to(self.root)
+        except ValueError as exc:
+            raise AtomicAcquisitionError(f"{label} escapes the portable row root") from exc
+        current = self.root
+        self._checked_directory(current, "portable row root")
+        for part in relative.parts[:-1]:
+            current = current / part
+            self._checked_directory(current, label)
 
     def _path(self, relative: str) -> Path:
         return self.root.joinpath(*_row_relative_parts(relative))
 
     def root_names(self) -> tuple[str, ...]:
+        self._checked_directory(self.root, "portable row root")
         return tuple(sorted((item.name for item in self.root.iterdir()), key=os.fsencode))
 
     def exists(self, relative: str) -> bool:
-        return self._path(relative).exists()
+        path = self._path(relative)
+        self._check_existing_ancestry(path, "portable row artifact")
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise AtomicAcquisitionError("cannot inspect portable row artifact") from exc
+        if stat.S_ISDIR(info.st_mode) and not stat.S_ISLNK(info.st_mode):
+            self._checked_directory(path, "portable row artifact")
+        else:
+            self._checked_file(path, "portable row artifact")
+        return True
 
     def ensure_directory(self, relative: str) -> None:
         path = self.root
         for part in _row_relative_parts(relative):
             path = path / part
             if path.exists():
-                if path.is_symlink() or not path.is_dir():
-                    raise AtomicAcquisitionError("synthetic row directory is invalid")
+                self._checked_directory(path, "portable row directory")
                 continue
             path.mkdir(mode=0o700)
+            if os.name != "nt":
+                os.chmod(path, 0o700)
+            _fsync_directory_portable(path.parent)
 
     def list_directory(self, relative: str) -> tuple[str, ...]:
         path = self._path(relative)
-        if path.is_symlink() or not path.is_dir():
-            raise AtomicAcquisitionError("synthetic row directory is invalid")
+        self._check_existing_ancestry(path, "portable row directory")
+        self._checked_directory(path, "portable row directory")
         return tuple(sorted((item.name for item in path.iterdir()), key=os.fsencode))
 
     def read_bytes(self, relative: str, label: str) -> bytes:
         path = self._path(relative)
-        if path.is_symlink() or not path.is_file():
-            raise AtomicAcquisitionError(f"{label} is not a regular file")
+        self._check_existing_ancestry(path, label)
+        self._checked_file(path, label)
         try:
             return path.read_bytes()
         except OSError as exc:
@@ -13401,6 +13604,7 @@ class _SyntheticFixtureRowIo:
             _write_new_file(path, raw)
         else:
             _atomic_rewrite(path, raw, expected_existing)
+        _fsync_directory_portable(path.parent)
 
     def write_json(
         self,
@@ -13423,22 +13627,146 @@ class _SyntheticFixtureRowIo:
         return raw
 
     def remove_file(self, relative: str, *, expected: bytes, label: str) -> None:
+        parts = _row_relative_parts(relative)
+        parent_parts = parts[:-1]
+        parent_fd = self._open_directory(parent_parts)
+        parent_identity = _private_node_identity(os.fstat(parent_fd))
+        mutation_started = False
+        try:
+            raw, identity = _read_private_bytes_at(
+                parent_fd,
+                parts[-1],
+                max_bytes=MAX_ROW_STATE_BYTES,
+                artifact_label=label,
+            )
+            if raw != expected:
+                raise BootstrapStateError(f"{label} changed before removal")
+            named = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+            if _stat_identity(named) != identity:
+                raise BootstrapStateError(f"{label} identity drifted before removal")
+            mutation_started = True
+            os.unlink(parts[-1], dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            try:
+                os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise BootstrapRecoveryRequired(f"{label} removal was not durable")
+            self._verify_named_directory_binding(
+                parent_parts,
+                parent_identity,
+                label=label,
+            )
+        except BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            if mutation_started:
+                raise BootstrapRecoveryRequired(
+                    f"{label} removal requires recovery"
+                ) from exc
+            raise
+        finally:
+            os.close(parent_fd)
+
+    def remove_empty_directory(self, relative: str) -> None:
+        parts = _row_relative_parts(relative)
+        parent_parts = parts[:-1]
+        parent_fd = self._open_directory(parent_parts)
+        parent_identity = _private_node_identity(os.fstat(parent_fd))
+        descriptor: int | None = None
+        mutation_started = False
+        try:
+            descriptor, identity = _open_private_tree_node_at(
+                parent_fd,
+                parts[-1],
+                kind="directory",
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            )
+            _stable_private_directory_inventory(
+                descriptor,
+                (),
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            )
+            os.fsync(descriptor)
+            _verify_private_tree_named_identity(
+                parent_fd,
+                parts[-1],
+                identity,
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            )
+            mutation_started = True
+            os.rmdir(parts[-1], dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            self._verify_named_directory_binding(
+                parent_parts,
+                parent_identity,
+                label="row staging directory",
+            )
+        except BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            if mutation_started:
+                raise BootstrapRecoveryRequired(
+                    "row staging directory removal requires recovery"
+                ) from exc
+            raise
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            os.close(parent_fd)
+
+    def commit_directory(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected_files: Mapping[str, bytes],
+    ) -> None:
+        source_parts = _row_relative_parts(source)[:-1]
+        destination_parts = _row_relative_parts(destination)[:-1]
+        source_parent = self._open_directory(source_parts)
+        destination_parent = self._open_directory(destination_parts)
+        try:
+            source_identity = _private_node_identity(os.fstat(source_parent))
+            destination_identity = _private_node_identity(os.fstat(destination_parent))
+        finally:
+            os.close(source_parent)
+            os.close(destination_parent)
+        super().commit_directory(
+            source,
+            destination,
+            expected_files=expected_files,
+        )
+        self._verify_named_directory_binding(
+            source_parts,
+            source_identity,
+            label="row publication source",
+        )
+        self._verify_named_directory_binding(
+            destination_parts,
+            destination_identity,
+            label="row publication destination",
+        )
+
+    def remove_file(self, relative: str, *, expected: bytes, label: str) -> None:
         path = self._path(relative)
         if self.read_bytes(relative, label) != expected:
             raise AtomicAcquisitionError(f"{label} changed before removal")
         path.unlink()
-        if os.name != "nt":
-            descriptor = os.open(path.parent, os.O_RDONLY)
-            try:
-                os.fsync(descriptor)
-            finally:
-                os.close(descriptor)
+        _fsync_directory_portable(path.parent)
 
     def remove_empty_directory(self, relative: str) -> None:
         path = self._path(relative)
         if self.list_directory(relative):
             raise AtomicAcquisitionError("row staging directory is not empty")
         path.rmdir()
+        _fsync_directory_portable(path.parent)
 
     def seal_directory(self, relative: str, expected_files: Mapping[str, bytes]) -> None:
         expected_names = tuple(expected_files)
@@ -13461,9 +13789,23 @@ class _SyntheticFixtureRowIo:
         if destination_path.exists():
             raise AtomicAcquisitionError("committed atomic row already exists")
         try:
-            os.rename(source_path, destination_path)
+            _rename_exclusive_portable(
+                source_path,
+                destination_path,
+                label="atomic row directory",
+            )
+            _fsync_directory_portable(source_path.parent)
+            if destination_path.parent != source_path.parent:
+                _fsync_directory_portable(destination_path.parent)
         except OSError as exc:
             raise AtomicAcquisitionError("cannot commit atomic row") from exc
+
+
+class _SyntheticFixtureRowIo(_PathBasedSyntheticRowIo):
+    """Fixture-only name retained for tests that explicitly inject a bootstrap."""
+
+    def __init__(self, root: Path) -> None:
+        super().__init__(root, strict_private_modes=False)
 
 
 @dataclass
@@ -14068,6 +14410,649 @@ class LiveDurableRowIo:
         self._verify_root()
 
 
+class PortableDurableRowIo(LiveDurableRowIo):
+    """Descriptor-relative production tree rooted in one pinned capability.
+
+    The portable offline adapter currently has one sound production backend:
+    macOS.  Other hosts refuse here, before any namespace mutation, rather than
+    falling back to pathname-based I/O.  A Windows implementation must provide
+    the same handle-relative no-reparse, no-replace, exchange/CAS, and directory
+    durability guarantees before it can be enabled.
+    """
+
+    def __init__(
+        self,
+        root: Path,
+        *,
+        _trusted_parent: "PortableDurableRowIo | None" = None,
+        _child_name: str | None = None,
+    ) -> None:
+        _require_live_private_tree_ops()
+        self.root = Path(root).absolute()
+        self._pending_row_seal = None
+        self._closed = False
+        if _trusted_parent is None:
+            if _child_name is not None:
+                raise BootstrapStateError("portable tree child authority is invalid")
+            parent_fd, name = _open_private_parent_dirfd(self.root)
+        else:
+            if _child_name is None:
+                raise BootstrapStateError("portable tree child name is missing")
+            _trusted_parent._verify_root()
+            name = _bootstrap_basename(_child_name, "portable tree child name")
+            parent_fd = os.dup(_trusted_parent.final_fd)
+        final_fd: int | None = None
+        try:
+            final_fd, _ = _open_private_tree_node_at(
+                parent_fd,
+                name,
+                kind="directory",
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="portable trusted root",
+            )
+        except BaseException:
+            os.close(parent_fd)
+            raise
+        self.parent_fd = parent_fd
+        self.final_name = name
+        self.final_fd = final_fd
+        self._verify_root()
+
+    @classmethod
+    def open_child(
+        cls,
+        parent: "PortableDurableRowIo",
+        child_name: str,
+    ) -> "PortableDurableRowIo":
+        """Pin a child using the existing capability, never its path text."""
+
+        name = _bootstrap_basename(child_name, "portable tree child name")
+        return cls(
+            parent.root / name,
+            _trusted_parent=parent,
+            _child_name=name,
+        )
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        first_error: BaseException | None = None
+        try:
+            self._close_pending_row_seal()
+        except BaseException as exc:
+            first_error = exc
+        for descriptor in (self.final_fd, self.parent_fd):
+            try:
+                os.close(descriptor)
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
+        if first_error is not None:
+            raise BootstrapRecoveryRequired(
+                "portable trusted-root close requires recovery"
+            ) from first_error
+
+    def _verify_root(self) -> None:
+        if self._closed:
+            raise BootstrapStateError("portable trusted root is closed")
+        opened = os.fstat(self.final_fd)
+        named = os.stat(
+            self.final_name,
+            dir_fd=self.parent_fd,
+            follow_symlinks=False,
+        )
+        _validate_private_tree_inode(
+            opened,
+            kind="directory",
+            owner_uid=os.getuid(),
+            label="portable trusted root",
+        )
+        if _private_node_identity(opened) != _private_node_identity(named):
+            raise BootstrapStateError("portable trusted-root name drifted")
+
+    def _verify_named_directory_binding(
+        self,
+        parts: tuple[str, ...],
+        expected: tuple[int, int, int, int, int, int, int, int],
+        *,
+        label: str,
+    ) -> None:
+        descriptor: int | None = None
+        try:
+            descriptor = self._open_directory(parts)
+            if _private_node_identity(os.fstat(descriptor))[:2] != expected[:2]:
+                raise BootstrapRecoveryRequired(f"{label} parent binding drifted")
+        except BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            raise BootstrapRecoveryRequired(
+                f"{label} parent binding requires recovery"
+            ) from exc
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+
+    def ensure_directory(self, relative: str) -> None:
+        parts = _row_relative_parts(relative)
+        current = os.dup(self.final_fd)
+        current_parts: tuple[str, ...] = ()
+        mutation_started = False
+        try:
+            for part in parts:
+                parent_identity = _private_node_identity(os.fstat(current))
+                created = False
+                try:
+                    following, child_identity = _open_private_tree_node_at(
+                        current,
+                        part,
+                        kind="directory",
+                        owner_uid=os.getuid(),
+                        ops=_PrivateTreeOsOps(),
+                        label="portable tree directory",
+                    )
+                except FileNotFoundError:
+                    mutation_started = True
+                    os.mkdir(part, 0o700, dir_fd=current)
+                    following, child_identity = _open_private_tree_node_at(
+                        current,
+                        part,
+                        kind="directory",
+                        owner_uid=os.getuid(),
+                        ops=_PrivateTreeOsOps(),
+                        label="portable tree directory",
+                    )
+                    created = True
+                    os.fchmod(following, 0o700)
+                    os.fsync(following)
+                    os.fsync(current)
+                if created:
+                    try:
+                        self._verify_named_directory_binding(
+                            current_parts,
+                            parent_identity,
+                            label="portable directory creation",
+                        )
+                        self._verify_named_directory_binding(
+                            (*current_parts, part),
+                            child_identity,
+                            label="portable directory creation",
+                        )
+                    except BaseException:
+                        os.close(following)
+                        raise
+                os.close(current)
+                current = following
+                current_parts = (*current_parts, part)
+        except BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            if mutation_started:
+                raise BootstrapRecoveryRequired(
+                    "portable directory creation requires recovery"
+                ) from exc
+            raise
+        finally:
+            os.close(current)
+        self._verify_root()
+
+    def write_bytes(
+        self,
+        relative: str,
+        raw: bytes,
+        *,
+        expected_existing: bytes | None,
+        label: str,
+    ) -> None:
+        """Mutate only through the pinned parent and rebind after durability."""
+
+        parts = _row_relative_parts(relative)
+        parent_parts = parts[:-1]
+        parent_fd = self._open_directory(parent_parts)
+        parent_identity = _private_node_identity(os.fstat(parent_fd))
+        mutation_started = False
+        try:
+            mutation_started = True
+            _durable_atomic_private_bytes_at(
+                parent_fd,
+                parts[-1],
+                raw,
+                expected_existing=expected_existing,
+                max_bytes=MAX_ROW_STATE_BYTES,
+                artifact_label=label,
+            )
+            self._verify_named_directory_binding(
+                parent_parts,
+                parent_identity,
+                label=label,
+            )
+        except BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            if mutation_started:
+                raise BootstrapRecoveryRequired(
+                    f"{label} mutation requires recovery"
+                ) from exc
+            raise
+        finally:
+            os.close(parent_fd)
+
+    def write_json(
+        self,
+        relative: str,
+        payload: dict[str, Any],
+        *,
+        expected_existing: bytes | None,
+        validator: Callable[[dict[str, Any]], dict[str, Any]],
+        label: str,
+    ) -> bytes:
+        raw = _canonical_json_bytes(payload)
+        if validator(payload) != payload:
+            raise BootstrapStateError(f"{label} schema drifted")
+        self.write_bytes(
+            relative,
+            raw,
+            expected_existing=expected_existing,
+            label=label,
+        )
+        return raw
+
+    def verify_file(
+        self,
+        relative: str,
+        *,
+        expected_digest: str,
+        expected_size: int,
+        label: str,
+    ) -> tuple[int, int, int, int, int, int, int, int]:
+        """Verify one named regular file through its pinned parent."""
+
+        if not _is_sha256_tag(expected_digest) or type(expected_size) is not int:
+            raise BootstrapStateError(f"{label} evidence is invalid")
+        parent_fd, name = self._open_parent(relative)
+        descriptor: int | None = None
+        try:
+            descriptor, identity = _open_private_tree_node_at(
+                parent_fd,
+                name,
+                kind="file",
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label=label,
+            )
+            digest, size, hashed_identity = _stream_hash_private_fd(
+                descriptor,
+                ops=_PrivateTreeOsOps(),
+            )
+            if (
+                identity != hashed_identity
+                or digest != expected_digest
+                or size != expected_size
+            ):
+                raise BootstrapStateError(f"{label} bytes drifted")
+            _verify_private_tree_named_identity(
+                parent_fd,
+                name,
+                identity,
+                ops=_PrivateTreeOsOps(),
+                label=label,
+            )
+            return identity
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            os.close(parent_fd)
+
+    def copy_file_resumable(
+        self,
+        source: Path,
+        temporary: str,
+        destination: str,
+        *,
+        expected_digest: str,
+        expected_size: int,
+        label: str,
+    ) -> None:
+        """Resume and exclusively publish a large file inside this capability."""
+
+        source_path = _portable_regular_file(source, label)
+        source_fd: int | None = None
+        temporary_fd: int | None = None
+        parent_fd: int | None = None
+        parent_parts = _row_relative_parts(temporary)[:-1]
+        parent_identity: tuple[int, int, int, int, int, int, int, int] | None = None
+        namespace_started = False
+        try:
+            source_fd = os.open(
+                source_path,
+                os.O_RDONLY
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_CLOEXEC", 0)
+                | getattr(os, "O_NONBLOCK", 0),
+            )
+            source_before = os.fstat(source_fd)
+            if (
+                not stat.S_ISREG(source_before.st_mode)
+                or source_before.st_uid != os.getuid()
+                or stat.S_IMODE(source_before.st_mode) != 0o600
+                or source_before.st_nlink != 1
+                or source_before.st_size != expected_size
+            ):
+                raise BootstrapStateError(f"{label} source inode is invalid")
+            temporary_parent, temporary_name = self._open_parent(temporary)
+            destination_parent, destination_name = self._open_parent(destination)
+            if _device_inode(os.fstat(temporary_parent)) != _device_inode(
+                os.fstat(destination_parent)
+            ):
+                os.close(destination_parent)
+                raise BootstrapStateError(f"{label} names do not share one parent")
+            os.close(destination_parent)
+            parent_fd = temporary_parent
+            parent_identity = _private_node_identity(os.fstat(parent_fd))
+            try:
+                os.stat(destination_name, dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                try:
+                    os.stat(temporary_name, dir_fd=parent_fd, follow_symlinks=False)
+                except FileNotFoundError:
+                    self.verify_file(
+                        destination,
+                        expected_digest=expected_digest,
+                        expected_size=expected_size,
+                        label=label,
+                    )
+                    return
+                raise BootstrapStateError(f"{label} staging is ambiguous")
+
+            try:
+                temporary_fd = os.open(
+                    temporary_name,
+                    os.O_RDWR
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_CLOEXEC", 0)
+                    | getattr(os, "O_NONBLOCK", 0),
+                    dir_fd=parent_fd,
+                )
+            except FileNotFoundError:
+                temporary_fd = os.open(
+                    temporary_name,
+                    os.O_RDWR
+                    | os.O_CREAT
+                    | os.O_EXCL
+                    | getattr(os, "O_NOFOLLOW", 0)
+                    | getattr(os, "O_CLOEXEC", 0)
+                    | getattr(os, "O_NONBLOCK", 0),
+                    0o600,
+                    dir_fd=parent_fd,
+                )
+                namespace_started = True
+                os.fchmod(temporary_fd, 0o600)
+                os.fsync(parent_fd)
+            temporary_info = os.fstat(temporary_fd)
+            if (
+                not stat.S_ISREG(temporary_info.st_mode)
+                or temporary_info.st_uid != os.getuid()
+                or stat.S_IMODE(temporary_info.st_mode) != 0o600
+                or temporary_info.st_nlink != 1
+                or temporary_info.st_size > expected_size
+            ):
+                raise BootstrapStateError(f"{label} partial inode is invalid")
+            partial_size = temporary_info.st_size
+            namespace_started = True
+            digest = hashlib.sha256()
+            compared = 0
+            while compared < partial_size:
+                amount = min(1024 * 1024, partial_size - compared)
+                source_chunk = os.read(source_fd, amount)
+                partial_chunk = os.read(temporary_fd, amount)
+                if source_chunk != partial_chunk or len(source_chunk) != amount:
+                    raise BootstrapStateError(
+                        f"{label} partial is not an approved prefix"
+                    )
+                digest.update(source_chunk)
+                compared += amount
+            os.lseek(temporary_fd, 0, os.SEEK_END)
+            while True:
+                chunk = os.read(source_fd, 1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                view = memoryview(chunk)
+                written = 0
+                while written < len(view):
+                    count = os.write(temporary_fd, view[written:])
+                    if count <= 0:
+                        raise BootstrapStateError(f"{label} copy was incomplete")
+                    written += count
+            if (
+                compared + (source_before.st_size - partial_size) != expected_size
+                or "sha256:" + digest.hexdigest() != expected_digest
+            ):
+                raise BootstrapStateError(f"{label} source bytes drifted")
+            source_after = os.fstat(source_fd)
+            if _stat_identity(source_before) != _stat_identity(source_after):
+                raise BootstrapStateError(f"{label} source identity drifted")
+            os.fsync(temporary_fd)
+            copied_identity = _private_node_identity(os.fstat(temporary_fd))
+            _verify_private_tree_named_identity(
+                parent_fd,
+                temporary_name,
+                copied_identity,
+                ops=_PrivateTreeOsOps(),
+                label=f"{label} partial",
+            )
+            namespace_started = True
+            _macos_rename_exclusive_at(parent_fd, temporary_name, destination_name)
+            os.fsync(parent_fd)
+            self.verify_file(
+                destination,
+                expected_digest=expected_digest,
+                expected_size=expected_size,
+                label=label,
+            )
+            assert parent_identity is not None
+            self._verify_named_directory_binding(
+                parent_parts,
+                parent_identity,
+                label=label,
+            )
+        except BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            if namespace_started:
+                raise BootstrapRecoveryRequired(
+                    f"{label} copy requires recovery"
+                ) from exc
+            if isinstance(exc, BootstrapStateError):
+                raise
+            raise BootstrapStateError(f"cannot copy {label}") from exc
+        finally:
+            for descriptor in (temporary_fd, source_fd, parent_fd):
+                if descriptor is not None:
+                    os.close(descriptor)
+
+    def commit_directory_evidence(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected_files: Mapping[str, tuple[str, int]],
+    ) -> None:
+        """Exclusively publish a flat directory verified without loading files."""
+
+        if not expected_files:
+            raise BootstrapStateError("portable directory evidence is empty")
+        if any(
+            _bootstrap_basename(name, "portable artifact name") != name
+            or type(evidence) is not tuple
+            or len(evidence) != 2
+            or not _is_sha256_tag(evidence[0])
+            or type(evidence[1]) is not int
+            or evidence[1] < 0
+            for name, evidence in expected_files.items()
+        ):
+            raise BootstrapStateError("portable directory evidence is invalid")
+        source_fd, source_name = self._open_parent(source)
+        destination_fd, destination_name = self._open_parent(destination)
+        directory_fd: int | None = None
+        child_fds: dict[
+            str,
+            tuple[int, tuple[int, int, int, int, int, int, int, int]],
+        ] = {}
+        renamed = False
+
+        def verify_children() -> None:
+            assert directory_fd is not None
+            for name, (child_fd, expected_identity) in child_fds.items():
+                digest, size, identity = _stream_hash_private_fd(
+                    child_fd,
+                    ops=_PrivateTreeOsOps(),
+                )
+                if (
+                    identity != expected_identity
+                    or (digest, size) != expected_files[name]
+                ):
+                    raise BootstrapRecoveryRequired(
+                        "portable staging artifact changed during publication"
+                    )
+                _verify_private_tree_named_identity(
+                    directory_fd,
+                    name,
+                    expected_identity,
+                    ops=_PrivateTreeOsOps(),
+                    label="portable staging artifact",
+                )
+
+        try:
+            directory_fd, directory_identity = _open_private_tree_node_at(
+                source_fd,
+                source_name,
+                kind="directory",
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="portable staging directory",
+            )
+            expected_names = tuple(sorted(expected_files, key=os.fsencode))
+            _stable_private_directory_inventory(
+                directory_fd,
+                expected_names,
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="portable staging directory",
+            )
+            for name, (digest, size) in expected_files.items():
+                child_fd, child_identity = _open_private_tree_node_at(
+                    directory_fd,
+                    name,
+                    kind="file",
+                    owner_uid=os.getuid(),
+                    ops=_PrivateTreeOsOps(),
+                    label="portable staging artifact",
+                )
+                observed_digest, observed_size, observed_identity = (
+                    _stream_hash_private_fd(child_fd, ops=_PrivateTreeOsOps())
+                )
+                if (
+                    observed_identity != child_identity
+                    or observed_digest != digest
+                    or observed_size != size
+                ):
+                    os.close(child_fd)
+                    raise BootstrapStateError("portable staging artifact drifted")
+                child_fds[name] = (child_fd, child_identity)
+                os.fsync(child_fd)
+            os.fsync(directory_fd)
+            verify_children()
+            if _stable_private_directory_inventory(
+                directory_fd,
+                expected_names,
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="portable staging directory",
+            )[:2] != directory_identity[:2]:
+                raise BootstrapRecoveryRequired(
+                    "portable staging directory identity drifted"
+                )
+            _verify_private_tree_named_identity(
+                source_fd,
+                source_name,
+                directory_identity,
+                ops=_PrivateTreeOsOps(),
+                label="portable staging directory",
+            )
+            try:
+                os.stat(destination_name, dir_fd=destination_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise BootstrapStateError("portable destination already exists")
+            _macos_rename_exclusive_between_at(
+                source_fd,
+                source_name,
+                destination_fd,
+                destination_name,
+            )
+            renamed = True
+            destination_info = os.stat(
+                destination_name,
+                dir_fd=destination_fd,
+                follow_symlinks=False,
+            )
+            if _private_node_identity(destination_info)[:2] != directory_identity[:2]:
+                raise BootstrapRecoveryRequired(
+                    "portable directory publication identity drifted"
+                )
+            try:
+                os.stat(source_name, dir_fd=source_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise BootstrapRecoveryRequired(
+                    "portable staging name survived publication"
+                )
+            verify_children()
+            os.fsync(destination_fd)
+            os.fsync(source_fd)
+            destination_after = os.stat(
+                destination_name,
+                dir_fd=destination_fd,
+                follow_symlinks=False,
+            )
+            if _private_node_identity(destination_after)[:2] != directory_identity[:2]:
+                raise BootstrapRecoveryRequired(
+                    "portable directory changed after parent durability"
+                )
+            _stable_private_directory_inventory(
+                directory_fd,
+                expected_names,
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="published portable directory",
+            )
+            verify_children()
+        except BootstrapRecoveryRequired:
+            raise
+        except (BootstrapStateError, OSError) as exc:
+            if renamed:
+                raise BootstrapRecoveryRequired(
+                    "portable directory publication requires recovery"
+                ) from exc
+            if isinstance(exc, BootstrapStateError):
+                raise
+            raise BootstrapStateError("cannot publish portable directory") from exc
+        finally:
+            for child_fd, _identity in child_fds.values():
+                os.close(child_fd)
+            if directory_fd is not None:
+                os.close(directory_fd)
+            os.close(source_fd)
+            os.close(destination_fd)
+        self._verify_root()
+
+
 class _PrivateReadOnlyRowIo:
     """Descriptor-pinned, no-follow reader for a completed private run."""
 
@@ -14455,6 +15440,8 @@ def _preflight_row_publication(
         SNAPSHOT_FILENAME,
         *INITIALIZATION_ARTIFACT_FILENAMES,
     }
+    if io.exists(OFFLINE_APPROVED_EVIDENCE_FILENAME):
+        fixed.add(OFFLINE_APPROVED_EVIDENCE_FILENAME)
     mutable = {
         ROWS_DIRNAME,
         ROW_STAGING_DIRNAME,
@@ -14901,6 +15888,8 @@ def _semantic_tree_payload(
         "checkpoint.json",
         "draft_manifest.jsonl",
     }
+    if io.exists(OFFLINE_APPROVED_EVIDENCE_FILENAME):
+        fixed.add(OFFLINE_APPROVED_EVIDENCE_FILENAME)
     relative_paths = list(fixed)
     if io.exists(ROWS_DIRNAME):
         for stem in io.list_directory(ROWS_DIRNAME):
@@ -14932,7 +15921,7 @@ def _acquisition_receipt_payload(
 ) -> dict[str, Any]:
     """Rebuild the complete receipt without accepting receipt-owned authority."""
 
-    return {
+    receipt = {
         "schema": "setec-imessage-atomic-acquisition-receipt/2",
         "tool": {
             "name": TOOL_NAME,
@@ -14989,6 +15978,18 @@ def _acquisition_receipt_payload(
         "semantic_tree_sha256": canonical_payload_digest(semantic_tree),
         "privacy": {"contains_source_prose": False, "contains_raw_identity": False},
     }
+
+
+    offline_entries = [
+        entry
+        for entry in semantic_tree['entries']
+        if entry['path'] == OFFLINE_APPROVED_EVIDENCE_FILENAME
+    ]
+    if len(offline_entries) > 1:
+        raise AtomicAcquisitionError('offline evidence semantic-tree binding is invalid')
+    if offline_entries:
+        receipt['offline_approved_evidence_sha256'] = offline_entries[0]['sha256']
+    return receipt
 
 
 def publish_planned_rows(
@@ -15308,7 +16309,7 @@ def _validated_snapshot_for_run(
             conn.close()
         second_hash, second_size = _stream_hash_and_size(snapshot_path)
         if (
-            recomputed != metadata
+            not _snapshot_metadata_matches_creator_binding(recomputed, metadata)
             or second_hash != first_hash
             or second_size != first_size
         ):
@@ -15490,7 +16491,10 @@ def _validate_atomic_run_io(
         ROWS_DIRNAME, ROW_STAGING_DIRNAME, "source-ledger.json", "checkpoint.json",
         "draft_manifest.jsonl", "acquisition-receipt.json",
     }
-    if set(io.root_names()) != required:
+    root_names = set(io.root_names())
+    if OFFLINE_APPROVED_EVIDENCE_FILENAME in root_names:
+        required.add(OFFLINE_APPROVED_EVIDENCE_FILENAME)
+    if root_names != required:
         raise AtomicAcquisitionError("atomic run top-level inventory drifted")
     if io.list_directory(ROW_STAGING_DIRNAME):
         raise AtomicAcquisitionError("atomic run staging inventory is not empty")
@@ -15534,6 +16538,19 @@ def _validate_atomic_run_io(
     source_by_locator, source_by_guid = _validate_private_identity_maps(
         contact_map, source_map, universe
     )
+    if OFFLINE_APPROVED_EVIDENCE_FILENAME in root_names:
+        offline_evidence, _ = _read_io_object(
+            io,
+            OFFLINE_APPROVED_EVIDENCE_FILENAME,
+            'offline approved evidence',
+            validator=_validated_offline_approved_evidence,
+            max_bytes=MAX_OFFLINE_APPROVED_EVIDENCE_BYTES,
+        )
+        _validate_offline_evidence_against_run(
+            offline_evidence,
+            smoke_policy=smoke,
+            source_map=source_map,
+        )
     selected_held_guids = {row.message_guid for row in universe.selected_held}
     expected_holds = sorted(
         (
@@ -15959,6 +16976,819 @@ def _synthetic_fixture_bootstrap(
     return final, universe, schema, initialization
 
 
+def _portable_regular_file(path: Path, label: str) -> Path:
+    absolute = Path(path).expanduser().absolute()
+    try:
+        info = absolute.lstat()
+    except OSError as exc:
+        raise AtomicAcquisitionError(f'cannot inspect {label}') from exc
+    if (
+        not stat.S_ISREG(info.st_mode)
+        or stat.S_ISLNK(info.st_mode)
+        or _is_reparse_or_symlink(absolute)
+    ):
+        raise AtomicAcquisitionError(f'{label} is not a direct regular file')
+    return absolute
+
+
+def _portable_directory(path: Path, label: str) -> Path:
+    absolute = Path(path).expanduser().absolute()
+    try:
+        info = absolute.lstat()
+    except OSError as exc:
+        raise AtomicAcquisitionError(f'cannot inspect {label}') from exc
+    if (
+        not stat.S_ISDIR(info.st_mode)
+        or stat.S_ISLNK(info.st_mode)
+        or _is_reparse_or_symlink(absolute)
+    ):
+        raise AtomicAcquisitionError(f'{label} is not a direct directory')
+    return absolute
+
+
+def _path_is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.resolve(strict=True).relative_to(parent.resolve(strict=True))
+    except ValueError:
+        return False
+    except OSError as exc:
+        raise AtomicAcquisitionError('cannot resolve offline approval path') from exc
+    return True
+
+
+def _consume_offline_live_smoke_receipt(
+    path: Path,
+    *,
+    approved_run: Path,
+) -> tuple[dict[str, Any], bytes]:
+    receipt_path = _portable_regular_file(path, 'offline live smoke receipt')
+    if receipt_path.name != 'imessage-atomic-live-smoke-receipt.json':
+        raise AtomicAcquisitionError('live smoke receipt path is not exact')
+    if _path_is_within(receipt_path, approved_run):
+        raise AtomicAcquisitionError('live smoke receipt must remain outside the approved run')
+    descriptor: int | None = None
+    try:
+        before = receipt_path.lstat()
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or stat.S_ISLNK(before.st_mode)
+            or _is_reparse_or_symlink(receipt_path)
+        ):
+            raise AtomicAcquisitionError('live smoke receipt is not a direct regular file')
+        if before.st_size > MAX_LIVE_SMOKE_RECEIPT_BYTES:
+            raise AtomicAcquisitionError('live smoke receipt exceeds its size bound')
+        flags = (
+            os.O_RDONLY
+            | getattr(os, 'O_BINARY', 0)
+            | getattr(os, 'O_NOINHERIT', 0)
+            | getattr(os, 'O_NOFOLLOW', 0)
+        )
+        descriptor = os.open(receipt_path, flags)
+        opened_before = os.fstat(descriptor)
+        chunks: list[bytes] = []
+        remaining = MAX_LIVE_SMOKE_RECEIPT_BYTES + 1
+        while remaining:
+            chunk = os.read(descriptor, min(64 * 1024, remaining))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            remaining -= len(chunk)
+        opened_after = os.fstat(descriptor)
+        after = receipt_path.lstat()
+    except OSError as exc:
+        raise AtomicAcquisitionError('cannot read live smoke receipt') from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    raw = b''.join(chunks)
+    identity_fields = ('st_dev', 'st_ino', 'st_size', 'st_mtime_ns')
+    identities = (before, opened_before, opened_after, after)
+    if any(
+        getattr(identities[0], field) != getattr(item, field)
+        for item in identities[1:]
+        for field in identity_fields
+    ) or stat.S_ISLNK(after.st_mode) or _is_reparse_or_symlink(receipt_path):
+        raise AtomicAcquisitionError('live smoke receipt changed while being read')
+    if len(raw) > MAX_LIVE_SMOKE_RECEIPT_BYTES:
+        raise AtomicAcquisitionError('live smoke receipt exceeds its size bound')
+    if os.name != 'nt' and any(
+        item.st_uid != os.getuid() or stat.S_IMODE(item.st_mode) != 0o600
+        for item in identities
+    ):
+        raise AtomicAcquisitionError('live smoke receipt permissions changed while being read')
+    payload = _decode_canonical_private_json(
+        raw,
+        max_bytes=MAX_LIVE_SMOKE_RECEIPT_BYTES,
+        validator=_validated_live_smoke_receipt_payload,
+        artifact_label='live smoke receipt',
+    )
+    return payload, raw
+
+
+def _scan_portable_candidate_universe(
+    database: Path,
+    *,
+    semantic_options: dict[str, Any],
+    max_messages: int,
+) -> tuple[SnapshotMetadata, AtomicSchemaInfo, AtomicCandidateUniverse]:
+    source = _portable_regular_file(database, 'offline equivalence database')
+    _reject_snapshot_sidecars(source)
+    first_hash, first_size = _stream_hash_and_size(source)
+    window = semantic_options['local_date_window']
+    since = _dt.date.fromisoformat(window['since']) if window['since'] else None
+    until = _dt.date.fromisoformat(window['until']) if window['until'] else None
+    conn = _open_immutable_read_only_database(source)
+    try:
+        _quick_check(conn)
+        metadata = _snapshot_metadata_from_hash(
+            conn,
+            file_hash=first_hash,
+            byte_size=first_size,
+        )
+        schema = atomic_schema_preflight(conn)
+        universe = discover_candidate_universe(
+            conn,
+            schema,
+            apple_date_unit=semantic_options['apple_date_unit'],
+            timezone_name=semantic_options['timezone'],
+            since=since,
+            until=until,
+            max_messages=max_messages,
+        )
+    finally:
+        conn.close()
+    _reject_snapshot_sidecars(source)
+    second_hash, second_size = _stream_hash_and_size(source)
+    if os.name != 'nt':
+        _require_owner_only_mode(source, 0o600)
+    if (second_hash, second_size) != (first_hash, first_size):
+        raise AtomicAcquisitionError('offline equivalence database changed during scan')
+    return metadata, schema, universe
+
+
+def _validated_offline_approved_evidence(value: object) -> dict[str, Any]:
+    keys = {
+        'schema',
+        'archive_file_sha256',
+        'archive_byte_size',
+        'approved_snapshot_file_sha256',
+        'schema_fingerprint',
+        'counts',
+        'candidate_locator_universe_hash',
+        'selected_locator_universe_hash',
+        'held_locator_universe_hash',
+        'selected_held_locator_universe_hash',
+        'approved_run_receipt_sha256',
+        'live_smoke_receipt_sha256',
+        'smoke_policy_digest',
+        'hmac_key_id',
+    }
+    count_keys = {
+        'candidate_outgoing_rows',
+        'candidate_eligible_rows',
+        'held_missing_chat_join_rows',
+        'ambiguous_multi_chat_rows',
+        'selected_outgoing_rows',
+        'selected_eligible_rows',
+        'selected_held_missing_chat_join_rows',
+        'selected_ambiguous_multi_chat_rows',
+    }
+    if (
+        type(value) is not dict
+        or set(value) != keys
+        or value.get('schema') != 'setec-imessage-atomic-offline-approved-evidence/1'
+        or type(value.get('archive_byte_size')) is not int
+        or value['archive_byte_size'] < 1
+        or type(value.get('counts')) is not dict
+        or set(value['counts']) != count_keys
+        or any(type(count) is not int or count < 0 for count in value['counts'].values())
+    ):
+        raise BootstrapStateError('offline approved evidence schema is invalid')
+    digest_fields = keys - {'schema', 'archive_byte_size', 'counts'}
+    if any(not _is_sha256_tag(value.get(name)) for name in digest_fields):
+        raise BootstrapStateError('offline approved evidence digest is invalid')
+    return json.loads(_canonical_json_bytes(value))
+
+
+def _offline_approved_evidence_payload(
+    *,
+    archive_metadata: SnapshotMetadata,
+    approved_snapshot: SnapshotMetadata,
+    schema_info: AtomicSchemaInfo,
+    source_map: dict[str, Any],
+    approved_run_receipt_sha256: str,
+    live_smoke_receipt_sha256: str,
+    smoke_policy_digest: str,
+    hmac_key_id_value: str,
+) -> dict[str, Any]:
+    held = sorted(
+        row['entry_locator']
+        for row in source_map['entries']
+        if row['chat_join_disposition'] == 'missing_chat_join'
+    )
+    selected_held = sorted(
+        row['entry_locator']
+        for row in source_map['entries']
+        if row['chat_join_disposition'] == 'missing_chat_join'
+        and row['selected_by_date']
+    )
+    count_names = (
+        'candidate_outgoing_rows',
+        'candidate_eligible_rows',
+        'held_missing_chat_join_rows',
+        'ambiguous_multi_chat_rows',
+        'selected_outgoing_rows',
+        'selected_eligible_rows',
+        'selected_held_missing_chat_join_rows',
+        'selected_ambiguous_multi_chat_rows',
+    )
+    return _validated_offline_approved_evidence({
+        'schema': 'setec-imessage-atomic-offline-approved-evidence/1',
+        'archive_file_sha256': archive_metadata.file_sha256,
+        'archive_byte_size': archive_metadata.byte_size,
+        'approved_snapshot_file_sha256': approved_snapshot.file_sha256,
+        'schema_fingerprint': schema_info.schema_fingerprint,
+        'counts': {name: source_map[name] for name in count_names},
+        'candidate_locator_universe_hash': source_map[
+            'candidate_locator_universe_hash'
+        ],
+        'selected_locator_universe_hash': source_map[
+            'selected_locator_universe_hash'
+        ],
+        'held_locator_universe_hash': _locator_universe_hash(held),
+        'selected_held_locator_universe_hash': _locator_universe_hash(selected_held),
+        'approved_run_receipt_sha256': approved_run_receipt_sha256,
+        'live_smoke_receipt_sha256': live_smoke_receipt_sha256,
+        'smoke_policy_digest': smoke_policy_digest,
+        'hmac_key_id': hmac_key_id_value,
+    })
+
+
+def _validate_offline_evidence_against_run(
+    evidence: dict[str, Any],
+    *,
+    smoke_policy: dict[str, Any],
+    source_map: dict[str, Any],
+) -> None:
+    validated = _validated_offline_approved_evidence(evidence)
+    approved_snapshot = SnapshotMetadata(**smoke_policy['snapshot_metadata'])
+    archive_metadata = replace(
+        approved_snapshot,
+        file_sha256=validated['archive_file_sha256'],
+        byte_size=validated['archive_byte_size'],
+    )
+    expected = _offline_approved_evidence_payload(
+        archive_metadata=archive_metadata,
+        approved_snapshot=approved_snapshot,
+        schema_info=AtomicSchemaInfo(**smoke_policy['atomic_schema']),
+        source_map=source_map,
+        approved_run_receipt_sha256=validated['approved_run_receipt_sha256'],
+        live_smoke_receipt_sha256=validated['live_smoke_receipt_sha256'],
+        smoke_policy_digest=canonical_payload_digest(smoke_policy),
+        hmac_key_id_value=smoke_policy['hmac']['key_id'],
+    )
+    if validated != expected:
+        raise AtomicAcquisitionError('offline approved evidence drifted from the run')
+
+
+def _authorize_offline_approved_import(
+    config: AtomicRunConfig,
+    authorization: OfflineApprovedImport,
+    *,
+    key_bytes: bytes,
+    semantic_options: dict[str, Any],
+    run_controls: dict[str, Any],
+) -> _OfflineApprovedContext:
+    if type(authorization) is not OfflineApprovedImport:
+        raise AtomicAcquisitionError('offline approval configuration is invalid')
+    key = _validate_hmac_key(key_bytes)
+    approved_run = _portable_directory(
+        authorization.approved_smoke_run,
+        'approved smoke run',
+    )
+    archive = _portable_regular_file(
+        authorization.archive_equivalence_db,
+        'offline equivalence database',
+    )
+    if os.name != 'nt':
+        _require_owner_only_mode(archive, 0o600)
+    if Path(config.source_db).expanduser().absolute() != archive:
+        raise AtomicAcquisitionError('offline source must be the equivalence database')
+    offline_paths = (
+        approved_run,
+        authorization.live_smoke_receipt,
+        archive,
+        config.output_root,
+    )
+    try:
+        roots = {_private_root_path(Path(path)) for path in offline_paths}
+        for path in offline_paths:
+            _require_private_destination(Path(path))
+        output_root = _portable_directory(config.output_root, 'offline output root')
+        _require_owner_only_mode(output_root, 0o700)
+    except (AtomicAcquisitionError, SnapshotError) as exc:
+        raise AtomicAcquisitionError('offline paths are not one closed private root') from exc
+    if len(roots) != 1:
+        raise AtomicAcquisitionError('offline paths do not share one private root')
+    try:
+        same_archive = os.path.samefile(archive, approved_run / SNAPSHOT_FILENAME)
+    except OSError as exc:
+        raise AtomicAcquisitionError('cannot compare offline archive identity') from exc
+    if same_archive or _path_is_within(archive, approved_run):
+        raise AtomicAcquisitionError(
+            'offline archive must be independent of the approved smoke run'
+        )
+
+    summary = validate_atomic_run(approved_run)
+    approved_io = _SyntheticFixtureRowIo(approved_run)
+    semantic, _ = _read_io_object(
+        approved_io,
+        SEMANTIC_OPTIONS_FILENAME,
+        'approved semantic options',
+        validator=_validated_semantic_options,
+        max_bytes=MAX_SEMANTIC_OPTIONS_BYTES,
+    )
+    approved_controls, _ = _read_io_object(
+        approved_io,
+        RUN_CONTROLS_FILENAME,
+        'approved run controls',
+        validator=_validated_run_controls,
+        max_bytes=MAX_RUN_CONTROLS_BYTES,
+    )
+    smoke, _ = _read_io_object(
+        approved_io,
+        SMOKE_POLICY_FILENAME,
+        'approved smoke policy',
+        validator=_validated_smoke_policy,
+        max_bytes=MAX_SMOKE_POLICY_BYTES,
+    )
+    owner, _ = _read_io_object(
+        approved_io,
+        RUN_OWNER_FILENAME,
+        'approved run owner',
+        max_bytes=MAX_RUN_OWNER_BYTES,
+    )
+    approved_receipt, approved_receipt_raw = _read_io_object(
+        approved_io,
+        'acquisition-receipt.json',
+        'approved acquisition receipt',
+    )
+    if (
+        summary.get('retained_rows') != 1
+        or approved_controls.get('max_retained') != 1
+        or approved_controls.get('allow_empty') is not False
+        or approved_receipt.get('counts', {}).get('retained') != 1
+    ):
+        raise AtomicAcquisitionError('offline approval requires a closed one-row smoke run')
+    if semantic != semantic_options:
+        raise AtomicAcquisitionError('offline semantic options differ from the approved run')
+    expected_controls = dict(approved_controls)
+    expected_controls['max_retained'] = None
+    if run_controls != expected_controls:
+        raise AtomicAcquisitionError(
+            'offline full-run controls may change only max_retained from one to unbounded'
+        )
+
+    live_receipt, live_receipt_raw = _consume_offline_live_smoke_receipt(
+        authorization.live_smoke_receipt,
+        approved_run=approved_run,
+    )
+    approved_receipt_sha256 = _sha256_tag(approved_receipt_raw)
+    approved_smoke_digest = canonical_payload_digest(smoke)
+    key_id = hmac_key_id(key)
+    if live_receipt['approved_run_receipt_sha256'] != approved_receipt_sha256:
+        raise AtomicAcquisitionError('live smoke receipt does not bind the approved run receipt')
+    if (
+        live_receipt['smoke_policy_digest'] != approved_smoke_digest
+        or approved_receipt.get('smoke_policy_digest') != approved_smoke_digest
+        or owner.get('smoke_policy_digest') != approved_smoke_digest
+    ):
+        raise AtomicAcquisitionError('approved smoke-policy digest binding drifted')
+    if (
+        smoke.get('hmac', {}).get('key_id') != key_id
+        or owner.get('hmac', {}).get('key_id') != key_id
+    ):
+        raise HmacKeyError('offline HMAC key does not match the approved run')
+
+    metadata = SnapshotMetadata(**smoke['snapshot_metadata'])
+    schema_info = AtomicSchemaInfo(**smoke['atomic_schema'])
+    approved_universe = _validated_snapshot_for_run(
+        approved_io,
+        semantic=semantic,
+        controls=approved_controls,
+        expected_metadata=smoke['snapshot_metadata'],
+        expected_schema=smoke['atomic_schema'],
+    )
+    archive_metadata, archive_schema, archive_universe = (
+        _scan_portable_candidate_universe(
+            archive,
+            semantic_options=semantic,
+            max_messages=approved_controls['max_messages'],
+        )
+    )
+    if archive_schema != schema_info:
+        raise AtomicAcquisitionError('archive schema differs from the approved snapshot')
+    if archive_universe != approved_universe:
+        raise AtomicAcquisitionError(
+            'archive candidate universe differs from the approved snapshot'
+        )
+
+    initialization = build_initialization_closure(
+        snapshot_metadata=metadata,
+        schema_info=schema_info,
+        universe=approved_universe,
+        key_bytes=key,
+        semantic_options=semantic_options,
+        run_controls=run_controls,
+    )
+    if initialization.artifact(SMOKE_POLICY_FILENAME).digest != approved_smoke_digest:
+        raise AtomicAcquisitionError('offline initialization changed the approved smoke policy')
+    source_map = initialization.artifact(PRIVATE_SOURCE_IDENTITY_MAP_FILENAME).payload
+    evidence_payload = _offline_approved_evidence_payload(
+        archive_metadata=archive_metadata,
+        approved_snapshot=metadata,
+        schema_info=schema_info,
+        source_map=source_map,
+        approved_run_receipt_sha256=approved_receipt_sha256,
+        live_smoke_receipt_sha256=_sha256_tag(live_receipt_raw),
+        smoke_policy_digest=approved_smoke_digest,
+        hmac_key_id_value=key_id,
+    )
+    offline_evidence = _close_private_json(
+        filename=OFFLINE_APPROVED_EVIDENCE_FILENAME,
+        label='offline approved evidence',
+        max_bytes=MAX_OFFLINE_APPROVED_EVIDENCE_BYTES,
+        payload=evidence_payload,
+        validator=_validated_offline_approved_evidence,
+    )
+    return _OfflineApprovedContext(
+        approved_snapshot=approved_run / SNAPSHOT_FILENAME,
+        approved_receipt_sha256=approved_receipt_sha256,
+        snapshot_metadata=metadata,
+        schema_info=schema_info,
+        universe=approved_universe,
+        semantic_options=semantic_options,
+        run_controls=run_controls,
+        initialization=initialization,
+        offline_evidence=offline_evidence,
+    )
+
+
+def _offline_bootstrap_names(run_id: str) -> tuple[str, str]:
+    final_name = _bootstrap_basename(run_id, 'run ID')
+    return (
+        f'.{final_name}.offline-approved-staging',
+        f'.{final_name}.offline-approved-journal.json',
+    )
+
+
+def _offline_bootstrap_journal_payload(
+    config: AtomicRunConfig,
+    context: _OfflineApprovedContext,
+) -> dict[str, Any]:
+    return {
+        'schema': 'setec-imessage-atomic-offline-approved-bootstrap/1',
+        'final_name': _bootstrap_basename(config.run_id, 'run ID'),
+        'approved_run_receipt_sha256': context.approved_receipt_sha256,
+        'snapshot_file_sha256': context.snapshot_metadata.file_sha256,
+        'snapshot_byte_size': context.snapshot_metadata.byte_size,
+        'semantic_options_digest': canonical_payload_digest(context.semantic_options),
+        'run_controls_digest': canonical_payload_digest(context.run_controls),
+        'hmac_key_id': context.initialization.artifact(RUN_OWNER_FILENAME).payload[
+            'hmac'
+        ]['key_id'],
+        'offline_evidence_sha256': context.offline_evidence.digest,
+    }
+
+
+def _offline_initialization_artifacts(
+    context: _OfflineApprovedContext,
+) -> tuple[ClosedPrivateJson, ...]:
+    return (*context.initialization.artifacts, context.offline_evidence)
+
+
+def _rename_exclusive_portable(source: Path, destination: Path, *, label: str) -> None:
+    """Atomically create one destination name without replacing foreign state."""
+
+    try:
+        if sys.platform == 'darwin':
+            import ctypes
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            function = libc.renamex_np
+            function.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+            function.restype = ctypes.c_int
+            if function(os.fsencode(source), os.fsencode(destination), 0x00000004) != 0:
+                value = ctypes.get_errno()
+                raise OSError(value, os.strerror(value), str(destination))
+            return
+        if sys.platform.startswith('linux'):
+            import ctypes
+
+            libc = ctypes.CDLL(None, use_errno=True)
+            function = getattr(libc, 'renameat2', None)
+            if function is None:
+                raise AtomicAcquisitionError(
+                    f'{label} publication requires atomic no-replace rename'
+                )
+            function.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            function.restype = ctypes.c_int
+            if function(
+                -100,
+                os.fsencode(source),
+                -100,
+                os.fsencode(destination),
+                1,
+            ) != 0:
+                value = ctypes.get_errno()
+                raise OSError(value, os.strerror(value), str(destination))
+            return
+        if os.name == 'nt':
+            os.rename(source, destination)
+            return
+        raise AtomicAcquisitionError(
+            f'{label} publication requires atomic no-replace rename'
+        )
+    except OSError as exc:
+        if exc.errno in {errno.EEXIST, errno.ENOTEMPTY} \
+                or getattr(exc, 'winerror', None) == 183:
+            raise AtomicAcquisitionError(f'{label} destination already exists') from exc
+        raise
+
+
+def _fsync_directory_portable(path: Path) -> None:
+    try:
+        descriptor = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    except OSError:
+        if os.name != 'nt':
+            raise
+
+
+def _verify_offline_snapshot(
+    tree: PortableDurableRowIo,
+    relative: str,
+    metadata: SnapshotMetadata,
+) -> None:
+    tree.verify_file(
+        relative,
+        expected_digest=metadata.file_sha256,
+        expected_size=metadata.byte_size,
+        label='offline approved snapshot copy',
+    )
+    parent = relative.rsplit('/', 1)[0] if '/' in relative else None
+    names = tree.list_directory(parent) if parent is not None else tree.root_names()
+    snapshot_name = relative.rsplit('/', 1)[-1]
+    forbidden = {snapshot_name + '-wal', snapshot_name + '-shm', snapshot_name + '-journal'}
+    if forbidden & set(names):
+        raise AtomicAcquisitionError('offline approved snapshot has SQLite sidecars')
+
+
+def _copy_offline_snapshot_resumable(
+    tree: PortableDurableRowIo,
+    source: Path,
+    temporary: str,
+    destination: str,
+    metadata: SnapshotMetadata,
+) -> None:
+    tree.copy_file_resumable(
+        source,
+        temporary,
+        destination,
+        expected_digest=metadata.file_sha256,
+        expected_size=metadata.byte_size,
+        label='approved smoke snapshot',
+    )
+    _verify_offline_snapshot(tree, destination, metadata)
+
+
+def _verify_offline_initialization(
+    tree: PortableDurableRowIo,
+    context: _OfflineApprovedContext,
+) -> None:
+    _verify_offline_snapshot(tree, SNAPSHOT_FILENAME, context.snapshot_metadata)
+    for artifact in _offline_initialization_artifacts(context):
+        raw = tree.read_bytes(artifact.filename, 'offline initialization artifact')
+        if raw != artifact.raw:
+            raise AtomicAcquisitionError('offline initialization artifact drifted')
+
+
+def _validate_offline_staging_prefix(
+    tree: PortableDurableRowIo,
+    staging: str,
+    context: _OfflineApprovedContext,
+) -> None:
+    names = tree.list_directory(staging)
+    temporary_name = f'.{SNAPSHOT_FILENAME}.copying'
+    artifact_order = tuple(
+        item.filename for item in _offline_initialization_artifacts(context)
+    )
+    allowed = {temporary_name, SNAPSHOT_FILENAME, *artifact_order}
+    if not set(names) <= allowed:
+        raise AtomicAcquisitionError('offline bootstrap staging contains a foreign artifact')
+    if temporary_name in names:
+        if set(names) != {temporary_name}:
+            raise AtomicAcquisitionError('offline partial snapshot staging is ambiguous')
+        return
+    if SNAPSHOT_FILENAME not in names:
+        if names:
+            raise AtomicAcquisitionError('offline bootstrap staging prefix is invalid')
+        return
+    _verify_offline_snapshot(
+        tree,
+        f'{staging}/{SNAPSHOT_FILENAME}',
+        context.snapshot_metadata,
+    )
+    present = tuple(name for name in artifact_order if name in names)
+    if present != artifact_order[: len(present)]:
+        raise AtomicAcquisitionError('offline initialization is not an exact prefix')
+    if set(names) != {SNAPSHOT_FILENAME, *present}:
+        raise AtomicAcquisitionError('offline initialization staging is ambiguous')
+    for artifact in _offline_initialization_artifacts(context)[: len(present)]:
+        if tree.read_bytes(
+            f'{staging}/{artifact.filename}',
+            'offline initialization artifact',
+        ) != artifact.raw:
+            raise AtomicAcquisitionError('offline initialization artifact drifted')
+
+
+def _offline_approved_bootstrap(
+    config: AtomicRunConfig,
+    key_bytes: bytes,
+    semantic_options: dict[str, Any],
+    run_controls: dict[str, Any],
+    *,
+    context: _OfflineApprovedContext,
+    fault: Callable[[str], None] | None = None,
+    return_row_io: bool = False,
+) -> (
+    tuple[Path, AtomicCandidateUniverse, AtomicSchemaInfo, InitializationClosure]
+    | tuple[
+        Path,
+        AtomicCandidateUniverse,
+        AtomicSchemaInfo,
+        InitializationClosure,
+        PortableDurableRowIo,
+    ]
+):
+    if (
+        semantic_options != context.semantic_options
+        or run_controls != context.run_controls
+        or hmac_key_id(_validate_hmac_key(key_bytes))
+        != context.initialization.artifact(RUN_OWNER_FILENAME).payload['hmac']['key_id']
+    ):
+        raise AtomicAcquisitionError('offline bootstrap authority changed before use')
+    output_root = Path(config.output_root).expanduser().absolute()
+    final_name = _bootstrap_basename(config.run_id, 'run ID')
+    final = output_root / final_name
+    staging_name, journal_name = _offline_bootstrap_names(config.run_id)
+    expected_journal = _offline_bootstrap_journal_payload(config, context)
+    expected_journal_raw = _canonical_json_bytes(expected_journal)
+    output_tree = PortableDurableRowIo(output_root)
+    row_tree: PortableDurableRowIo | None = None
+    transfer_row_tree = False
+    try:
+        if output_tree.exists(journal_name):
+            actual_journal_raw = output_tree.read_bytes(
+                journal_name,
+                'offline bootstrap journal',
+            )
+            if len(actual_journal_raw) > MAX_OFFLINE_APPROVAL_JOURNAL_BYTES:
+                raise AtomicAcquisitionError(
+                    'offline bootstrap journal exceeds its size bound'
+                )
+            try:
+                actual_journal = json.loads(actual_journal_raw)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise AtomicAcquisitionError(
+                    'offline bootstrap journal is unreadable'
+                ) from exc
+            if (
+                type(actual_journal) is not dict
+                or _canonical_json_bytes(actual_journal) != actual_journal_raw
+                or actual_journal != expected_journal
+                or actual_journal_raw != expected_journal_raw
+            ):
+                raise AtomicAcquisitionError(
+                    'offline bootstrap journal binding drifted'
+                )
+        else:
+            if output_tree.exists(final_name) or output_tree.exists(staging_name):
+                raise AtomicAcquisitionError(
+                    'offline bootstrap state lacks its approval journal'
+                )
+            output_tree.write_bytes(
+                journal_name,
+                expected_journal_raw,
+                expected_existing=None,
+                label='offline bootstrap journal',
+            )
+        _fault_boundary(fault, 'journal_closed')
+
+        if output_tree.exists(final_name):
+            if output_tree.exists(staging_name):
+                raise AtomicAcquisitionError(
+                    'offline bootstrap has both staging and final trees'
+                )
+            row_tree = PortableDurableRowIo.open_child(
+                output_tree,
+                final_name,
+            )
+            _verify_offline_initialization(row_tree, context)
+        else:
+            if output_tree.exists(staging_name):
+                output_tree.list_directory(staging_name)
+            else:
+                output_tree.ensure_directory(staging_name)
+            _fault_boundary(fault, 'staging_created')
+            _validate_offline_staging_prefix(output_tree, staging_name, context)
+
+            temporary = f'{staging_name}/.{SNAPSHOT_FILENAME}.copying'
+            snapshot = f'{staging_name}/{SNAPSHOT_FILENAME}'
+            _copy_offline_snapshot_resumable(
+                output_tree,
+                context.approved_snapshot,
+                temporary,
+                snapshot,
+                context.snapshot_metadata,
+            )
+            _fault_boundary(fault, 'snapshot_published')
+            _validate_offline_staging_prefix(output_tree, staging_name, context)
+            for artifact in _offline_initialization_artifacts(context):
+                relative = f'{staging_name}/{artifact.filename}'
+                if output_tree.exists(relative):
+                    if output_tree.read_bytes(
+                        relative,
+                        'offline initialization artifact',
+                    ) != artifact.raw:
+                        raise AtomicAcquisitionError(
+                            'offline initialization artifact drifted'
+                        )
+                else:
+                    output_tree.write_bytes(
+                        relative,
+                        artifact.raw,
+                        expected_existing=None,
+                        label='offline initialization artifact',
+                    )
+                _fault_boundary(fault, f'initialization:{artifact.filename}')
+            _validate_offline_staging_prefix(output_tree, staging_name, context)
+            staging_tree = PortableDurableRowIo.open_child(
+                output_tree,
+                staging_name,
+            )
+            try:
+                _verify_offline_initialization(staging_tree, context)
+            finally:
+                staging_tree.close()
+            evidence = {
+                SNAPSHOT_FILENAME: (
+                    context.snapshot_metadata.file_sha256,
+                    context.snapshot_metadata.byte_size,
+                ),
+                **{
+                    artifact.filename: (artifact.digest, len(artifact.raw))
+                    for artifact in _offline_initialization_artifacts(context)
+                },
+            }
+            output_tree.commit_directory_evidence(
+                staging_name,
+                final_name,
+                expected_files=evidence,
+            )
+            _fault_boundary(fault, 'promoted')
+            row_tree = PortableDurableRowIo.open_child(
+                output_tree,
+                final_name,
+            )
+            _verify_offline_initialization(row_tree, context)
+
+        result = (
+            final,
+            context.universe,
+            context.schema_info,
+            context.initialization,
+        )
+        if return_row_io:
+            transfer_row_tree = True
+            assert row_tree is not None
+            return (*result, row_tree)
+        return result
+    finally:
+        if row_tree is not None and not transfer_row_tree:
+            row_tree.close()
+        output_tree.close()
+
+
 def _private_root_path(path: Path) -> Path:
     absolute = Path(path).expanduser().absolute()
     indices = [
@@ -16308,6 +18138,7 @@ def run(
     *,
     key_bytes: bytes | None = None,
     bootstrap: Callable[[AtomicRunConfig, bytes, dict[str, Any], dict[str, Any]], tuple[Path, AtomicCandidateUniverse, AtomicSchemaInfo, InitializationClosure]] | None = None,
+    row_fault: Callable[[str], None] | None = None,
     preprocessor: Callable[[str], tuple[str, dict[str, Any]]] = _default_preprocessor,
     progress: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
@@ -16337,13 +18168,21 @@ def run(
             "progress interval must be a positive exact integer"
         )
     if bootstrap is not None:
-        run_dir, universe, schema, initialization = bootstrap(
-            config, key, semantic, controls
-        )
+        bootstrap_result = bootstrap(config, key, semantic, controls)
         cleanup = None
-        row_io: _SyntheticFixtureRowIo | LiveDurableRowIo = (
-            _SyntheticFixtureRowIo(run_dir)
-        )
+        if len(bootstrap_result) == 5:
+            run_dir, universe, schema, initialization, row_io = bootstrap_result
+            if type(row_io) is not PortableDurableRowIo:
+                raise AtomicAcquisitionError(
+                    'portable bootstrap returned invalid row authority'
+                )
+        else:
+            if bootstrap is not _synthetic_fixture_bootstrap:
+                raise AtomicAcquisitionError(
+                    'path-based bootstrap is authorized only for synthetic fixtures'
+                )
+            run_dir, universe, schema, initialization = bootstrap_result
+            row_io = _SyntheticFixtureRowIo(run_dir)
     else:
         if sys.platform != "darwin":
             raise AtomicAcquisitionError(
@@ -16387,7 +18226,13 @@ def run(
         if result.retained_rows == 0 and not config.allow_empty:
             raise AtomicAcquisitionError("atomic acquisition retained zero rows")
         planned = plan_row_artifacts(result, universe, initialization, semantic, key)
-        receipt = publish_planned_rows(run_dir, planned, result, io=row_io)
+        receipt = publish_planned_rows(
+            run_dir,
+            planned,
+            result,
+            fault=row_fault,
+            io=row_io,
+        )
         summary = validate_atomic_run(run_dir, io=row_io)
         if progress is not None:
             progress(dict(summary))
@@ -16399,6 +18244,80 @@ def run(
         finally:
             if cleanup is not None:
                 _close_live_row_handles(cleanup)
+
+
+def run_offline_approved(
+    config: AtomicRunConfig,
+    authorization: OfflineApprovedImport,
+    *,
+    key_bytes: bytes | None = None,
+    preprocessor: Callable[[str], tuple[str, dict[str, Any]]] = _default_preprocessor,
+    progress: Callable[[dict[str, Any]], None] | None = None,
+    publication_fault: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Run one receipt-bound portable import without invoking live acquisition."""
+
+    if type(config) is not AtomicRunConfig:
+        raise AtomicAcquisitionError('atomic run config is invalid')
+    key = _validate_hmac_key(key_bytes) if key_bytes is not None else None
+    if key is None:
+        raise HmacKeyError('offline run requires explicit HMAC key bytes')
+    semantic = semantic_options_payload(
+        since=config.since,
+        until=config.until,
+        include_group_chats=config.include_group_chats,
+        apple_date_unit=config.apple_date_unit,
+        timezone_name=config.timezone_name,
+        preprocessing_version='legacy-preprocess/1',
+        preprocessing_rules_id='imessage-atomic-rules/1',
+        persona=config.persona,
+        author=config.author,
+        register=config.register,
+    )
+    controls = run_controls_payload(
+        max_messages=config.max_messages,
+        max_retained=config.max_retained,
+        allow_empty=config.allow_empty,
+        checkpoint_schema='setec-imessage-atomic-checkpoint/2',
+        checkpoint_interval=1,
+    )
+    context = _authorize_offline_approved_import(
+        config,
+        authorization,
+        key_bytes=key,
+        semantic_options=semantic,
+        run_controls=controls,
+    )
+
+    def approved_bootstrap(
+        inner_config: AtomicRunConfig,
+        inner_key: bytes,
+        inner_semantic: dict[str, Any],
+        inner_controls: dict[str, Any],
+    ) -> tuple[
+        Path,
+        AtomicCandidateUniverse,
+        AtomicSchemaInfo,
+        InitializationClosure,
+        PortableDurableRowIo,
+    ]:
+        return _offline_approved_bootstrap(
+            inner_config,
+            inner_key,
+            inner_semantic,
+            inner_controls,
+            context=context,
+            return_row_io=True,
+        )
+
+    return run(
+        config,
+        key_bytes=key,
+        bootstrap=approved_bootstrap,
+        row_fault=publication_fault,
+        preprocessor=preprocessor,
+        progress=progress,
+    )
 
 
 def snapshot_metadata_payload(metadata: SnapshotMetadata) -> dict[str, object]:
@@ -16434,6 +18353,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--mint-live-smoke-receipt",
         action="store_true",
         help="Approve a validated one-row smoke run and exit.",
+    )
+    actions.add_argument(
+        '--offline-approved-import',
+        action='store_true',
+        help='Import a universe-equal copied archive under an existing live approval.',
     )
     group_policy = parser.add_mutually_exclusive_group()
     group_policy.add_argument(
@@ -16482,6 +18406,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         help="Emit aggregate-only progress after this many considered rows.",
     )
     parser.add_argument("--live-smoke-receipt", type=Path)
+    parser.add_argument('--approved-smoke-run', type=Path)
+    parser.add_argument('--archive-equivalence-db', type=Path)
     parser.add_argument("--smoke-run-receipt", type=Path)
     parser.add_argument("--receipt-out", type=Path)
     return parser
@@ -16501,24 +18427,45 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("minting requires --smoke-run-receipt and --receipt-out")
         mint_live_smoke_receipt(args.smoke_run_receipt, args.receipt_out)
         return 0
+    if args.offline_approved_import and args.source_db is not None:
+        parser.error('offline approved import uses --archive-equivalence-db, not --source-db')
     required = {
         "--include-group-chats/--exclude-group-chats": args.include_group_chats,
         "--timezone": args.timezone,
         "--apple-date-unit": args.apple_date_unit,
         "--hmac-key": args.hmac_key,
-        "--source-db": args.source_db,
         "--output-root": args.output_root,
         "--run-id": args.run_id,
         "--persona": args.persona,
         "--author": args.author,
         "--register": args.register,
     }
+    if args.offline_approved_import:
+        required.update({
+            '--approved-smoke-run': args.approved_smoke_run,
+            '--archive-equivalence-db': args.archive_equivalence_db,
+            '--live-smoke-receipt': args.live_smoke_receipt,
+        })
+    else:
+        required['--source-db'] = args.source_db
     missing = [name for name, value in required.items() if value is None]
     if missing:
-        parser.error("live acquisition requires " + ", ".join(missing))
-    key = load_hmac_key(args.hmac_key)
+        action = 'offline approved import' if args.offline_approved_import else 'live acquisition'
+        parser.error(action + ' requires ' + ', '.join(missing))
+    if args.offline_approved_import:
+        key = load_offline_approved_hmac_key(
+            args.hmac_key,
+            OfflineApprovedImport(
+                approved_smoke_run=args.approved_smoke_run,
+                live_smoke_receipt=args.live_smoke_receipt,
+                archive_equivalence_db=args.archive_equivalence_db,
+            ),
+        )
+    else:
+        key = load_hmac_key(args.hmac_key)
     config = AtomicRunConfig(
-        source_db=args.source_db, output_root=args.output_root,
+        source_db=(args.archive_equivalence_db if args.offline_approved_import else args.source_db),
+        output_root=args.output_root,
         run_id=args.run_id, persona=args.persona, author=args.author,
         register=args.register, since=args.since, until=args.until,
         include_group_chats=args.include_group_chats,
@@ -16528,9 +18475,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         progress_interval=args.progress_interval,
         live_smoke_receipt=args.live_smoke_receipt,
     )
-    run(config, key_bytes=key, progress=lambda summary: print(
-        json.dumps(summary, sort_keys=True)
-    ))
+    progress = lambda summary: print(json.dumps(summary, sort_keys=True))
+    if args.offline_approved_import:
+        run_offline_approved(
+            config,
+            OfflineApprovedImport(
+                approved_smoke_run=args.approved_smoke_run,
+                live_smoke_receipt=args.live_smoke_receipt,
+                archive_equivalence_db=args.archive_equivalence_db,
+            ),
+            key_bytes=key,
+            progress=progress,
+        )
+    else:
+        run(config, key_bytes=key, progress=progress)
     return 0
 
 
