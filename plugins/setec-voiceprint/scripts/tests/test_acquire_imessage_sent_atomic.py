@@ -7189,6 +7189,24 @@ def test_snapshot_verification_refuses_unbound_sidecar(tmp_path: Path) -> None:
         A.verify_snapshot(snapshot, metadata)
 
 
+def test_snapshot_guard_tolerates_only_provably_empty_wal_and_shm(
+    tmp_path: Path,
+) -> None:
+    snapshot = tmp_path / A.SNAPSHOT_FILENAME
+    snapshot.write_bytes(b"snapshot")
+    wal = snapshot.with_name(snapshot.name + "-wal")
+    shm = snapshot.with_name(snapshot.name + "-shm")
+    wal.write_bytes(b"")
+    shm.write_bytes(b"")
+    with pytest.warns(RuntimeWarning, match="provably empty") as caught:
+        A._reject_snapshot_sidecars(snapshot)
+    assert len(caught) == 2
+
+    shm.write_bytes(b"live index")
+    with pytest.raises(A.SnapshotError, match="unexpected SQLite sidecars"):
+        A._reject_snapshot_sidecars(snapshot)
+
+
 @pytest.mark.parametrize("suffix", ["-wal", "-shm", "-journal"])
 def test_snapshot_verification_refuses_dangling_sidecar_symlink(
     tmp_path: Path, suffix: str

@@ -196,6 +196,195 @@ class WindowsPortableDurableRowIo(A.PortableDurableRowIo):
         self._verify_root()
         return W.list_names(self.final_fd)
 
+    @staticmethod
+    def _row_journal_rewrite_residue(name: str) -> str | None:
+        prefix = f".{A.ROW_JOURNAL_FILENAME}."
+        if not name.startswith(prefix):
+            return None
+        remainder = name[len(prefix):]
+        token, separator, kind = remainder.partition(".")
+        if (
+            not separator
+            or len(token) != 32
+            or any(character not in "0123456789abcdef" for character in token)
+            or kind not in {"tmp", "replaced"}
+        ):
+            return None
+        return kind
+
+    @staticmethod
+    def _decode_row_journal_residue(raw: bytes) -> dict[str, Any]:
+        return A._decode_canonical_private_json(
+            raw,
+            max_bytes=A.MAX_ROW_JOURNAL_BYTES,
+            validator=A._validated_row_transaction_payload,
+            artifact_label="row transaction recovery residue",
+        )
+
+    @staticmethod
+    def _journal_rewrite_successor(
+        predecessor_raw: bytes,
+        predecessor: dict[str, Any],
+        successor: dict[str, Any],
+    ) -> bool:
+        allowed = {
+            "prepared": (
+                {"staged"}
+                if predecessor["disposition"] == "retained"
+                else {"ledger_closed"}
+            ),
+            "staged": {"committed_unledgered"},
+            "committed_unledgered": {"ledger_closed"},
+            "ledger_closed": {"checkpoint_closed"},
+            "checkpoint_closed": set(),
+        }
+        immutable = set(predecessor) - {"state", "previous_journal_digest"}
+        return (
+            successor["state"] in allowed[predecessor["state"]]
+            and successor["previous_journal_digest"]
+            == "sha256:" + hashlib.sha256(predecessor_raw).hexdigest()
+            and all(successor[key] == predecessor[key] for key in immutable)
+        )
+
+    def recover_row_journal_rewrite(self) -> None:
+        """Finish one provable interrupted journal CAS before closed inventory."""
+
+        names = self.root_names()
+        residues: dict[str, str] = {}
+        for name in names:
+            kind = self._row_journal_rewrite_residue(name)
+            if kind is None:
+                continue
+            if kind in residues:
+                raise A.BootstrapStateError(
+                    "row transaction recovery residue is ambiguous"
+                )
+            residues[kind] = name
+        if not residues:
+            return
+
+        ordered_names = [
+            name
+            for name in (
+                residues.get("replaced"),
+                A.ROW_JOURNAL_FILENAME if A.ROW_JOURNAL_FILENAME in names else None,
+                residues.get("tmp"),
+            )
+            if name is not None
+        ]
+        handles: dict[str, int] = {}
+        raws: dict[str, bytes] = {}
+        payloads: dict[str, dict[str, Any]] = {}
+        mutated = False
+        try:
+            for name in ordered_names:
+                handle = W.open_file(
+                    self.final_fd,
+                    name,
+                    writable=True,
+                    delete_access=True,
+                )
+                handles[name] = handle
+                raw = _read_bounded(
+                    handle,
+                    A.MAX_ROW_JOURNAL_BYTES,
+                    "row transaction recovery residue",
+                )
+                raws[name] = raw
+                payloads[name] = self._decode_row_journal_residue(raw)
+            for predecessor_name, successor_name in zip(
+                ordered_names, ordered_names[1:]
+            ):
+                if not self._journal_rewrite_successor(
+                    raws[predecessor_name],
+                    payloads[predecessor_name],
+                    payloads[successor_name],
+                ):
+                    raise A.BootstrapStateError(
+                        "row transaction recovery chain is invalid"
+                    )
+
+            temporary_name = residues.get("tmp")
+            backup_name = residues.get("replaced")
+            target_present = A.ROW_JOURNAL_FILENAME in handles
+            if (
+                temporary_name is not None
+                and len(ordered_names) == 1
+                and (
+                    payloads[temporary_name]["state"] != "prepared"
+                    or payloads[temporary_name]["previous_journal_digest"] is not None
+                )
+            ):
+                raise A.BootstrapStateError(
+                    "lone row transaction temporary is not an initial journal"
+                )
+
+            newest_name = ordered_names[-1]
+            if not target_present and backup_name is not None:
+                mutated = True
+                W.rename(
+                    handles[backup_name],
+                    self.final_fd,
+                    A.ROW_JOURNAL_FILENAME,
+                    replace=False,
+                )
+                handles[A.ROW_JOURNAL_FILENAME] = handles.pop(backup_name)
+                target_present = True
+                W.flush(self.final_fd)
+            elif backup_name is not None:
+                mutated = True
+                backup = handles.pop(backup_name)
+                W.delete(backup)
+                W.close(backup)
+                W.flush(self.final_fd)
+            if temporary_name is not None:
+                mutated = True
+                W.rename(
+                    handles[temporary_name],
+                    self.final_fd,
+                    A.ROW_JOURNAL_FILENAME,
+                    replace=target_present,
+                )
+                if target_present:
+                    W.close(handles.pop(A.ROW_JOURNAL_FILENAME))
+                handles[A.ROW_JOURNAL_FILENAME] = handles.pop(temporary_name)
+                W.flush(self.final_fd)
+            rebound = W.open_file(self.final_fd, A.ROW_JOURNAL_FILENAME)
+            try:
+                if _read_bounded(
+                    rebound,
+                    A.MAX_ROW_JOURNAL_BYTES,
+                    "recovered row transaction",
+                ) != raws[newest_name]:
+                    raise A.BootstrapRecoveryRequired(
+                        "recovered row transaction bytes drifted"
+                    )
+            finally:
+                W.close(rebound)
+            if any(
+                self._row_journal_rewrite_residue(name) is not None
+                for name in self.root_names()
+            ):
+                raise A.BootstrapRecoveryRequired(
+                    "row transaction recovery residue survived"
+                )
+            self._verify_root()
+        except A.BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            if mutated:
+                raise A.BootstrapRecoveryRequired(
+                    "row transaction rewrite recovery requires recovery"
+                ) from exc
+            if isinstance(exc, A.BootstrapStateError):
+                raise
+            raise A.BootstrapStateError(
+                "cannot inspect row transaction recovery residue"
+            ) from exc
+        finally:
+            for handle in handles.values():
+                W.close(handle)
+
     def exists(self, relative: str) -> bool:
         parent, name = self._open_parent(relative)
         handle: int | None = None

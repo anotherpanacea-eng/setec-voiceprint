@@ -4527,10 +4527,13 @@ def _snapshot_sidecars(snapshot: Path) -> tuple[Path, ...]:
     return tuple(found)
 
 
-def _provably_empty_snapshot_wal(path: Path) -> bool:
-    """Bind a direct WAL inode and prove it stayed empty during inspection."""
+def _provably_empty_snapshot_sidecar(path: Path, snapshot: Path) -> bool:
+    """Bind a direct WAL/SHM inode and prove it stayed empty during inspection."""
 
-    if path.name.endswith("-wal") is False:
+    if path.name not in {
+        snapshot.name + "-wal",
+        snapshot.name + "-shm",
+    }:
         return False
     descriptor: int | None = None
     try:
@@ -4576,18 +4579,22 @@ def _provably_empty_snapshot_wal(path: Path) -> bool:
 
 def _reject_snapshot_sidecars(snapshot: Path) -> None:
     blocking: list[Path] = []
+    empty_crash_vestiges: list[Path] = []
     for sidecar in _snapshot_sidecars(snapshot):
-        if sidecar.name == snapshot.name + "-wal" and _provably_empty_snapshot_wal(sidecar):
-            warnings.warn(
-                "WARNING: immutable snapshot has a provably empty crash-vestige WAL; "
-                "continuing without treating it as committed SQLite state",
-                RuntimeWarning,
-                stacklevel=2,
-            )
+        if _provably_empty_snapshot_sidecar(sidecar, snapshot):
+            empty_crash_vestiges.append(sidecar)
             continue
         blocking.append(sidecar)
     if blocking:
         raise SnapshotError("immutable snapshot has unexpected SQLite sidecars")
+    for sidecar in empty_crash_vestiges:
+        warnings.warn(
+            "WARNING: immutable snapshot has a provably empty crash-vestige "
+            f"{sidecar.name.removeprefix(snapshot.name + '-').upper()}; "
+            "continuing without treating it as committed SQLite state",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
 
 def _schema_rows(conn: sqlite3.Connection) -> list[dict[str, str]]:
@@ -16236,6 +16243,9 @@ def publish_planned_rows(
     source_map, _ = _read_io_object(
         row_io, PRIVATE_SOURCE_IDENTITY_MAP_FILENAME, "source identity map"
     )
+    recover_row_journal = getattr(row_io, "recover_row_journal_rewrite", None)
+    if recover_row_journal is not None:
+        recover_row_journal()
 
     state = _preflight_row_publication(
         row_io,

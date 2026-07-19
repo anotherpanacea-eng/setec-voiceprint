@@ -39,6 +39,25 @@ def _staged_row(io: A.PortableDurableRowIo, stem: str = "item") -> dict[str, byt
     return expected
 
 
+def _journal_raw(state: str, previous_raw: bytes | None = None) -> bytes:
+    payload = {
+        "schema": "setec-imessage-atomic-row-transaction/1",
+        "state": state,
+        "previous_journal_digest": (
+            None if previous_raw is None else A._sha256_tag(previous_raw)
+        ),
+        "row_index": 0,
+        "source_ordinal": "0",
+        "entry_locator": "fixture",
+        "disposition": "missing_text",
+        "row_stem": None,
+        "expected_files": {},
+        "predecessor_ledger_digest": "sha256:" + "0" * 64,
+        "predecessor_checkpoint_digest": "sha256:" + "1" * 64,
+    }
+    return A._canonical_json_bytes(A._validated_row_transaction_payload(payload))
+
+
 def _junction(link: Path, target: Path) -> None:
     completed = subprocess.run(
         ["cmd", "/d", "/c", "mklink", "/J", str(link), str(target)],
@@ -171,16 +190,79 @@ def test_windows_row_commit_keeps_destination_absent_guard(tmp_path: Path) -> No
     assert (root / A.ROW_STAGING_DIRNAME / "item" / "artifact.bin").read_bytes() == b"sealed bytes"
 
 
-def test_empty_wal_warns_but_nonempty_sidecars_refuse(tmp_path: Path) -> None:
+def test_empty_wal_and_shm_warn_but_nonempty_sidecars_refuse(tmp_path: Path) -> None:
     snapshot = tmp_path / A.SNAPSHOT_FILENAME
     snapshot.write_bytes(b"snapshot")
     wal = snapshot.with_name(snapshot.name + "-wal")
+    shm = snapshot.with_name(snapshot.name + "-shm")
     wal.write_bytes(b"")
-    with pytest.warns(RuntimeWarning, match="provably empty"):
+    shm.write_bytes(b"")
+    with pytest.warns(RuntimeWarning, match="provably empty") as caught:
         A._reject_snapshot_sidecars(snapshot)
+    assert len(caught) == 2
+    shm.write_bytes(b"live index")
+    with pytest.raises(A.SnapshotError, match="unexpected SQLite sidecars"):
+        A._reject_snapshot_sidecars(snapshot)
+    shm.write_bytes(b"")
     wal.write_bytes(b"committed")
     with pytest.raises(A.SnapshotError, match="unexpected SQLite sidecars"):
         A._reject_snapshot_sidecars(snapshot)
+
+
+def test_windows_reopens_and_recovers_proven_journal_rewrite_residues(
+    tmp_path: Path,
+) -> None:
+    root, io = _private_tree(tmp_path)
+    io.close()
+    prepared = _journal_raw("prepared")
+    temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'a' * 32}.tmp"
+    temporary.write_bytes(prepared)
+
+    io = A.PortableDurableRowIo(root)
+    try:
+        io.recover_row_journal_rewrite()
+    finally:
+        io.close()
+    target = root / A.ROW_JOURNAL_FILENAME
+    assert target.read_bytes() == prepared
+    assert not temporary.exists()
+
+    ledger_closed = _journal_raw("ledger_closed", prepared)
+    checkpoint_closed = _journal_raw("checkpoint_closed", ledger_closed)
+    backup = root / f".{A.ROW_JOURNAL_FILENAME}.{'b' * 32}.replaced"
+    target.replace(backup)
+    target.write_bytes(ledger_closed)
+    temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'c' * 32}.tmp"
+    temporary.write_bytes(checkpoint_closed)
+
+    io = A.PortableDurableRowIo(root)
+    try:
+        io.recover_row_journal_rewrite()
+    finally:
+        io.close()
+    assert target.read_bytes() == checkpoint_closed
+    assert not backup.exists()
+    assert not temporary.exists()
+
+
+def test_windows_refuses_invalid_lone_journal_temporary_without_mutation(
+    tmp_path: Path,
+) -> None:
+    root, io = _private_tree(tmp_path)
+    io.close()
+    prepared = _journal_raw("prepared")
+    invalid = _journal_raw("ledger_closed", prepared)
+    temporary = root / f".{A.ROW_JOURNAL_FILENAME}.{'d' * 32}.tmp"
+    temporary.write_bytes(invalid)
+
+    io = A.PortableDurableRowIo(root)
+    try:
+        with pytest.raises(A.BootstrapStateError, match="not an initial journal"):
+            io.recover_row_journal_rewrite()
+    finally:
+        io.close()
+    assert temporary.read_bytes() == invalid
+    assert not (root / A.ROW_JOURNAL_FILENAME).exists()
 
 
 def test_windows_hmac_key_loader_uses_direct_handle(tmp_path: Path) -> None:
