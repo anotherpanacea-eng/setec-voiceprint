@@ -128,6 +128,54 @@ def test_oversized_message_is_a_singleton_and_conserves_words() -> None:
     assert conservation["burst_member_words"] == 8
 
 
+@pytest.mark.parametrize("second_index", [0, 1])
+def test_non_increasing_source_index_refuses(second_index: int) -> None:
+    events = (
+        _retained(_source_row(1, timestamp_minutes=0)),
+        _retained(_source_row(second_index, timestamp_minutes=10)),
+    )
+    with pytest.raises(B.ReviewBurstError, match="strictly increasing"):
+        B.build_bursts(events, B.BurstConfig())
+
+
+@pytest.mark.parametrize(
+    "events",
+    [
+        (
+            _retained(_source_row(0, timestamp_minutes=10)),
+            _retained(_source_row(1, timestamp_minutes=9)),
+        ),
+        (
+            _retained(_source_row(0, timestamp_minutes=10)),
+            _excluded(),
+            _retained(_source_row(2, timestamp_minutes=9)),
+        ),
+    ],
+)
+def test_timestamp_regression_refuses_despite_increasing_index(
+    events: tuple[B.SourceEvent, ...],
+) -> None:
+    with pytest.raises(B.ReviewBurstError, match="timestamp precedes"):
+        B.build_bursts(events, B.BurstConfig())
+
+
+@pytest.mark.parametrize(
+    "payload,match",
+    [
+        (float("nan"), "canonical JSON domain"),
+        (1.5, "canonical JSON domain"),
+        ((1, 2), "canonical JSON domain"),
+        ({1: "one"}, "not a string"),
+    ],
+)
+def test_canonical_json_refuses_out_of_domain_payloads(
+    payload: object,
+    match: str,
+) -> None:
+    with pytest.raises(B.ReviewBurstError, match=match):
+        B._canonical_json(payload)
+
+
 def _atomic_schema(conn: sqlite3.Connection) -> None:
     definitions = {
         table: list(columns.items())
@@ -221,6 +269,7 @@ def _completed_source_run(tmp_path: Path) -> tuple[Path, Path]:
     return source_run, output_root
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_compose_integration_conserves_rows_and_holds_privately(tmp_path: Path) -> None:
     source_run, output_root = _completed_source_run(tmp_path)
     progress: list[dict[str, object]] = []
@@ -253,6 +302,7 @@ def test_compose_integration_conserves_rows_and_holds_privately(tmp_path: Path) 
     )
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_interrupted_pair_resumes_only_with_explicit_resume(tmp_path: Path) -> None:
     source_run, output_root = _completed_source_run(tmp_path)
     interrupted = False
@@ -288,6 +338,7 @@ def test_interrupted_pair_resumes_only_with_explicit_resume(tmp_path: Path) -> N
 
 
 @pytest.mark.parametrize("boundary", ["checkpoint_after_next", "checkpoint_after_swap"])
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_checkpoint_transaction_resumes_at_each_durable_boundary(
     tmp_path: Path,
     boundary: str,
@@ -320,6 +371,7 @@ def test_checkpoint_transaction_resumes_at_each_durable_boundary(
     ).exists()
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_resume_refuses_foreign_staging_residue(tmp_path: Path) -> None:
     source_run, output_root = _completed_source_run(tmp_path)
 
@@ -347,6 +399,7 @@ def test_resume_refuses_foreign_staging_residue(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_preflight_refuses_bounded_receipt_before_output(tmp_path: Path) -> None:
     source_run, output_root = _completed_source_run(tmp_path)
     receipt_path = source_run / "acquisition-receipt.json"
@@ -360,6 +413,7 @@ def test_preflight_refuses_bounded_receipt_before_output(tmp_path: Path) -> None
     assert not (output_root / ".bounded-package.review-burst-staging").exists()
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_source_hash_drift_refuses_before_output(tmp_path: Path) -> None:
     source_run, output_root = _completed_source_run(tmp_path)
     row_text = next((source_run / "rows").glob("*/*.txt"))
@@ -368,6 +422,22 @@ def test_source_hash_drift_refuses_before_output(tmp_path: Path) -> None:
     with pytest.raises(B.ReviewBurstError, match="source atomic run validation"):
         B.compose_review_bursts(source_run, output_root, "drift-package")
     assert not (output_root / "drift-package").exists()
+
+
+def test_ledger_retained_row_missing_source_ordinal_refuses(tmp_path: Path) -> None:
+    source_run, _output_root = _completed_source_run(tmp_path)
+    ledger_path = source_run / "source-ledger.json"
+    ledger = json.loads(ledger_path.read_bytes())
+    for row in ledger["rows"]:
+        row.pop("source_ordinal", None)
+    ledger_path.write_bytes(B._canonical_json(ledger))
+    os.chmod(ledger_path, 0o600)
+    reader = A._PrivateReadOnlyRowIo(source_run)
+    try:
+        with pytest.raises(B.ReviewBurstError, match="ordinal is invalid"):
+            B._load_source_events(reader)
+    finally:
+        reader.close()
 
 
 def test_private_production_refuses_non_macos(

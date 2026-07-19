@@ -106,11 +106,30 @@ def _sha256_tag(raw: bytes) -> str:
 
 
 def _canonical_json(payload: object) -> bytes:
+    def validate(item: object) -> None:
+        if item is None or type(item) in {bool, int, str}:
+            return
+        if type(item) is list:
+            for child in item:
+                validate(child)
+            return
+        if type(item) is dict:
+            for key, child in item.items():
+                if type(key) is not str:
+                    raise ReviewBurstError(
+                        "canonical JSON object key is not a string"
+                    )
+                validate(child)
+            return
+        raise ReviewBurstError("value is outside the canonical JSON domain")
+
+    validate(payload)
     return json.dumps(
         payload,
         ensure_ascii=False,
         sort_keys=True,
         separators=(",", ":"),
+        allow_nan=False,
     ).encode("utf-8") + b"\n"
 
 
@@ -502,6 +521,9 @@ def _load_source_events(
         stem = ledger_row.get("row_stem")
         if type(stem) is not str:
             raise ReviewBurstError("retained source row stem is invalid")
+        source_ordinal = ledger_row.get("source_ordinal")
+        if type(source_ordinal) is not str:
+            raise ReviewBurstError("retained source row ordinal is invalid")
         text_raw = reader.read_bytes(
             f"rows/{stem}/{stem}.txt", "retained source text"
         )
@@ -532,7 +554,7 @@ def _load_source_events(
             raise ReviewBurstError("retained source row binding drifted")
         events.append(SourceEvent(RetainedSourceRow(
             source_index=index,
-            source_ordinal=ledger_row["source_ordinal"],
+            source_ordinal=source_ordinal,
             entry_locator=locator,
             text_bytes=text_raw,
             content_sha256=_sha256_tag(text_raw),
@@ -568,6 +590,7 @@ def build_bursts(
             current_words = 0
 
     previous_source_index = -1
+    previous_retained: RetainedSourceRow | None = None
     for event in events:
         if event.retained is None:
             close_current()
@@ -577,12 +600,17 @@ def build_bursts(
         if row.source_index <= previous_source_index:
             raise ReviewBurstError("source event order is not strictly increasing")
         previous_source_index = row.source_index
+        if (
+            previous_retained is not None
+            and row.unix_nanoseconds < previous_retained.unix_nanoseconds
+        ):
+            raise ReviewBurstError("source event timestamp precedes its predecessor")
+        previous_retained = row
         if current:
             previous = current[-1]
             gap = row.unix_nanoseconds - previous.unix_nanoseconds
             compatible = (
-                gap >= 0
-                and gap <= gap_ns
+                gap <= gap_ns
                 and row.group_locator == previous.group_locator
                 and row.group_status == previous.group_status
                 and row.local_date == previous.local_date
