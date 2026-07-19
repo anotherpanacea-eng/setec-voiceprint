@@ -13550,6 +13550,39 @@ def test_atomic_validator_requires_adjudication_for_email_in_txt_body(
     }
 
 
+def test_row_publication_resumes_after_identity_adjudication(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "resume-after-adjudication"
+    email = "author@example.test"
+    planned, result = _synthetic_row_publication_case(
+        run_dir,
+        chat_identifier=email,
+        message_text=f"Please write to {email} about this.",
+    )
+    first_receipt = A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+    (run_dir / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME).write_bytes(
+        A._canonical_json_bytes({
+            "schema": "setec-imessage-atomic-adjudicated-identity-exclusions/1",
+            "rows": [{
+                "row_stem": stem,
+                "reason": (
+                    "owner rejected identity-bearing row from corpus ingestion"
+                ),
+                "owner_decision_date": "2026-07-19",
+            }],
+        })
+    )
+
+    resumed_receipt = A.publish_planned_rows(run_dir, planned, result)
+
+    assert resumed_receipt == first_receipt
+    summary = A.validate_atomic_run(run_dir)
+    assert summary["identity_scan"]["adjudicated_excluded_txt_rows"] == 1
+
+
 def test_atomic_validator_rejects_free_form_sidecar_preprocessing(
     tmp_path: Path,
 ) -> None:

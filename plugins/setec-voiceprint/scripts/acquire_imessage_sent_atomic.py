@@ -15679,6 +15679,8 @@ def _preflight_row_publication(
     }
     if io.exists(OFFLINE_APPROVED_EVIDENCE_FILENAME):
         fixed.add(OFFLINE_APPROVED_EVIDENCE_FILENAME)
+    if io.exists(ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME):
+        fixed.add(ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME)
     mutable = {
         ROWS_DIRNAME,
         ROW_STAGING_DIRNAME,
