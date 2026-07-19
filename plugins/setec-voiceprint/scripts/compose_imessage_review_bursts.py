@@ -225,7 +225,9 @@ class _ValidatedSourceView:
             raise ReviewBurstError("source changed after validation") from exc
 
 
-def _safe_name(value: str, label: str) -> str:
+def _safe_name(value: object, label: str) -> str:
+    if type(value) is not str:
+        raise ReviewBurstError(f"{label} is invalid")
     try:
         if "\x00" in value:
             raise ValueError("NUL is not a filesystem name character")

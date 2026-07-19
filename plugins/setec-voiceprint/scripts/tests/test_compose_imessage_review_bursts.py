@@ -203,9 +203,15 @@ def test_canonical_object_normalizes_recursive_parse_error(
         B._canonical_object(b"{}\n", "source ledger")
 
 
-def test_safe_name_refuses_lone_surrogate() -> None:
+@pytest.mark.parametrize(
+    "value",
+    [None, 7, "package-\ud800", "package-\x00suffix"],
+)
+def test_safe_name_refuses_typed_and_filesystem_invalid_values(
+    value: object,
+) -> None:
     with pytest.raises(B.ReviewBurstError, match="package ID is invalid"):
-        B._safe_name("package-\ud800", "package ID")
+        B._safe_name(value, "package ID")
 
 
 def _atomic_schema(conn: sqlite3.Connection) -> None:
