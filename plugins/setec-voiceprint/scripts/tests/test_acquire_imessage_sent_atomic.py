@@ -13524,3 +13524,100 @@ def test_processing_receipt_rejects_row_disposition_or_count_drift(
             KEY,
         )
     conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Portable-tree confinement: intermediate-directory replacement race.
+#
+# The portable row writer (`_SyntheticFixtureRowIo`) and the portable bootstrap
+# publish through the run tree.  If an attacker swaps an intermediate directory
+# component (e.g. ``rows``) for a symlink between the writer's inspection and
+# its use, a path-based writer follows the swapped component and redirects the
+# write/read outside the trusted root.  The writer must stay bound to the
+# originally inspected root and refuse symlink/reparse traversal (fail closed on
+# platforms without descriptor-relative I/O).
+#
+# The swap below uses real filesystem symlinks and models the mid-operation
+# intermediate replacement deterministically (no threads), so it is stable on
+# both the macOS host and the Linux CI runner.
+# ---------------------------------------------------------------------------
+
+
+def _portable_confinement_case(tmp_path: Path) -> tuple[Path, Path]:
+    root = tmp_path / A.PRIVATE_ROOT_COMPONENT / "run"
+    root.mkdir(mode=0o700, parents=True)
+    outside = tmp_path / "attacker-controlled"
+    outside.mkdir(mode=0o700)
+    return root, outside
+
+
+def _swap_component_for_symlink(component: Path, target: Path) -> None:
+    """Replace an existing intermediate directory with a symlink to ``target``."""
+
+    holding = component.with_name(component.name + ".displaced")
+    component.rename(holding)
+    component.symlink_to(target, target_is_directory=True)
+
+
+def test_portable_writer_write_refuses_intermediate_symlink_redirect(
+    tmp_path: Path,
+) -> None:
+    root, outside = _portable_confinement_case(tmp_path)
+    io = A._SyntheticFixtureRowIo(root)
+    io.ensure_directory(A.ROWS_DIRNAME)
+    _swap_component_for_symlink(root / A.ROWS_DIRNAME, outside)
+
+    with pytest.raises(A.AtomicAcquisitionError):
+        io.write_bytes(
+            f"{A.ROWS_DIRNAME}/leak.txt",
+            b"redirected-secret\n",
+            expected_existing=None,
+            label="atomic row artifact",
+        )
+    assert not (outside / "leak.txt").exists()
+
+
+def test_portable_writer_read_refuses_intermediate_symlink_redirect(
+    tmp_path: Path,
+) -> None:
+    root, outside = _portable_confinement_case(tmp_path)
+    (outside / "secret.txt").write_bytes(b"attacker-controlled\n")
+    io = A._SyntheticFixtureRowIo(root)
+    io.ensure_directory(A.ROWS_DIRNAME)
+    _swap_component_for_symlink(root / A.ROWS_DIRNAME, outside)
+
+    with pytest.raises(A.AtomicAcquisitionError):
+        io.read_bytes(f"{A.ROWS_DIRNAME}/secret.txt", "atomic row artifact")
+
+
+def test_portable_writer_commit_refuses_intermediate_symlink_redirect(
+    tmp_path: Path,
+) -> None:
+    root, outside = _portable_confinement_case(tmp_path)
+    io = A._SyntheticFixtureRowIo(root)
+    stem = "0001-portable"
+    source = f"{A.ROW_STAGING_DIRNAME}/{stem}"
+    destination = f"{A.ROWS_DIRNAME}/{stem}"
+    expected = {f"{stem}.txt": b"body\n"}
+    io.ensure_directory(A.ROWS_DIRNAME)
+    io.ensure_directory(source)
+    io.write_bytes(
+        f"{source}/{stem}.txt",
+        b"body\n",
+        expected_existing=None,
+        label="atomic row artifact",
+    )
+    _swap_component_for_symlink(root / A.ROWS_DIRNAME, outside)
+
+    with pytest.raises(A.AtomicAcquisitionError):
+        io.commit_directory(source, destination, expected_files=expected)
+    assert not (outside / stem).exists()
+
+
+def test_portable_writer_fails_closed_without_descriptor_support(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, _outside = _portable_confinement_case(tmp_path)
+    monkeypatch.setattr(A.os, "supports_dir_fd", set())
+    with pytest.raises(A.AtomicAcquisitionError, match="descriptor-relative"):
+        A._SyntheticFixtureRowIo(root)
