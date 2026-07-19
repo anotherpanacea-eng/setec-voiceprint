@@ -3336,6 +3336,16 @@ def _real_exact_snapshot_reuse_environment(
     return source, staging, parent_fd, staging_fd, A._device_inode(staging.stat())
 
 
+def _portable_exact_reuse_connection_binder(
+    opener: object,
+    path: Path,
+    _expected_device_inode: tuple[int, int],
+    _label: str,
+):
+    """Keep copy-policy tests portable; descriptor binding has separate macOS tests."""
+    return opener(path)  # type: ignore[operator]
+
+
 def test_closed_snapshot_reuse_preserves_exact_hash_and_policy_digest(
     tmp_path: Path,
 ) -> None:
@@ -3353,6 +3363,7 @@ def test_closed_snapshot_reuse_preserves_exact_hash_and_policy_digest(
             source,
             expected_staging_device_inode=staging_inode,
             _ops=A._PrivateTreeOsOps(),
+            _connection_binder=_portable_exact_reuse_connection_binder,
         )
     finally:
         os.close(staging_fd)
@@ -3476,6 +3487,7 @@ def test_closed_snapshot_reuse_copy_drift_requires_recovery(
                 source,
                 expected_staging_device_inode=staging_inode,
                 _ops=ops,
+                _connection_binder=_portable_exact_reuse_connection_binder,
             )
     finally:
         os.close(staging_fd)
@@ -3499,6 +3511,7 @@ def test_closed_snapshot_reuse_handles_short_destination_writes(
             source,
             expected_staging_device_inode=staging_inode,
             _ops=_ExactReuseFaultOps(source, short_writes=True),
+            _connection_binder=_portable_exact_reuse_connection_binder,
         )
     finally:
         os.close(staging_fd)
