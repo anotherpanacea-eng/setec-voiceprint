@@ -16885,6 +16885,37 @@ def _text_contains_forbidden_identity(
     return False
 
 
+def _validated_sidecar_preprocessing(
+    preprocessing: object,
+    forbidden_identities: Sequence[str],
+) -> dict[str, Any]:
+    """Scan the one sidecar region exact reconstruction does not cover."""
+
+    if type(preprocessing) is not dict:
+        raise AtomicAcquisitionError("atomic sidecar preprocessing drifted")
+    stack: list[object] = [preprocessing]
+    while stack:
+        value = stack.pop()
+        if type(value) is dict:
+            for key, child in value.items():
+                if type(key) is not str:
+                    raise AtomicAcquisitionError(
+                        "atomic sidecar preprocessing drifted"
+                    )
+                stack.append(key)
+                stack.append(child)
+        elif type(value) is list:
+            stack.extend(value)
+        elif type(value) is str:
+            if _text_contains_forbidden_identity(value, forbidden_identities):
+                raise AtomicAcquisitionError(
+                    "atomic sidecar preprocessing leaks raw identity"
+                )
+        elif value is not None and type(value) not in (bool, int):
+            raise AtomicAcquisitionError("atomic sidecar preprocessing drifted")
+    return preprocessing
+
+
 def _validate_atomic_run_io(
     root: Path,
     io: _SyntheticFixtureRowIo | LiveDurableRowIo | _PrivateReadOnlyRowIo,
@@ -17201,9 +17232,9 @@ def _validate_atomic_run_io(
         )
         if set(sidecar) != sidecar_keys or set(fragment) != fragment_keys:
             raise AtomicAcquisitionError("atomic run row schema drifted")
-        preprocessing = sidecar.get("preprocessing")
-        if type(preprocessing) is not dict:
-            raise AtomicAcquisitionError("atomic sidecar preprocessing drifted")
+        preprocessing = _validated_sidecar_preprocessing(
+            sidecar.get("preprocessing"), forbidden_identities
+        )
         expected_sidecar = {
             "schema": "setec-imessage-atomic-sidecar/1",
             "content_hash": _sha256_tag(text_raw),
@@ -17271,9 +17302,7 @@ def _validate_atomic_run_io(
     checkpoint, _ = _read_io_object(io, "checkpoint.json", "checkpoint")
     if checkpoint != _checkpoint_payload(ledger_raw, ledger):
         raise AtomicAcquisitionError("atomic run checkpoint drifted")
-    receipt, _receipt_raw = _read_io_object(
-        io, "acquisition-receipt.json", "receipt"
-    )
+    receipt, _ = _read_io_object(io, "acquisition-receipt.json", "receipt")
     semantic_tree = _semantic_tree_payload(io)
     expected_receipt = _acquisition_receipt_payload(
         owner=owner,

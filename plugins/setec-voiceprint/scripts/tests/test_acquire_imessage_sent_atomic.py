@@ -13550,6 +13550,120 @@ def test_atomic_validator_requires_adjudication_for_email_in_txt_body(
     }
 
 
+def test_atomic_validator_rejects_free_form_sidecar_preprocessing(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "sidecar-preprocessing"
+    email = "author@example.test"
+    planned, result = _synthetic_row_publication_case(
+        run_dir, chat_identifier=email
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+    sidecar_raw = (
+        run_dir / A.ROWS_DIRNAME / stem / f"{stem}.meta.json"
+    ).read_bytes()
+    published = json.loads(sidecar_raw)["preprocessing"]
+
+    assert A._validated_sidecar_preprocessing(published, (email,)) == published
+
+    smuggled_snippets = json.loads(json.dumps(published))
+    smuggled_snippets["stripped_text_by_rule"] = {
+        "signature_block": [f"Contact {email}"]
+    }
+    with pytest.raises(
+        A.AtomicAcquisitionError, match="preprocessing leaks raw identity"
+    ):
+        A._validated_sidecar_preprocessing(smuggled_snippets, (email,))
+
+    smuggled_key = json.loads(json.dumps(published))
+    smuggled_key[email] = True
+    with pytest.raises(
+        A.AtomicAcquisitionError, match="preprocessing leaks raw identity"
+    ):
+        A._validated_sidecar_preprocessing(smuggled_key, (email,))
+
+    shortcode_in_count = json.loads(json.dumps(published))
+    shortcode_in_count["tokens_stripped"] = 22224
+    assert A._validated_sidecar_preprocessing(
+        shortcode_in_count, ("22224",)
+    ) == shortcode_in_count
+
+    boundary_hit = json.loads(json.dumps(published))
+    boundary_hit["warning"] = "Stripped tokens near 22224 today."
+    with pytest.raises(
+        A.AtomicAcquisitionError, match="preprocessing leaks raw identity"
+    ):
+        A._validated_sidecar_preprocessing(boundary_hit, ("22224",))
+
+    non_json_scalar = json.loads(json.dumps(published))
+    non_json_scalar["rules"] = [b"bytes"]
+    with pytest.raises(
+        A.AtomicAcquisitionError, match="sidecar preprocessing drifted"
+    ):
+        A._validated_sidecar_preprocessing(non_json_scalar, (email,))
+
+    summary = A.validate_atomic_run(run_dir)
+    assert summary["identity_scan"]["scanned_txt_rows"] == 1
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    (
+        ({"schema": "wrong/1"}, "exclusions schema drifted"),
+        ({"note": "extra"}, "exclusions schema drifted"),
+        ({"rows": {}}, "exclusions rows are malformed"),
+        ({"rows": [[]]}, "exclusion row is malformed"),
+        (
+            {"rows": [{"row_stem": "unknown-stem"}]},
+            "exclusion binding drifted",
+        ),
+        ({"rows": [{"reason": ""}]}, "exclusion binding drifted"),
+        ({"rows": [{"reason": " padded "}]}, "exclusion binding drifted"),
+        (
+            {"rows": [{"owner_decision_date": "2026-7-19"}]},
+            "exclusion date is invalid",
+        ),
+        ({"rows": "duplicate"}, "exclusion binding drifted"),
+    ),
+)
+def test_atomic_validator_rejects_malformed_adjudication_files(
+    tmp_path: Path, mutation: dict[str, object], match: str
+) -> None:
+    run_dir = tmp_path / "malformed-adjudication"
+    email = "author@example.test"
+    planned, result = _synthetic_row_publication_case(
+        run_dir,
+        chat_identifier=email,
+        message_text=f"Please write to {email} about this.",
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+    valid_row = {
+        "row_stem": stem,
+        "reason": "owner rejected identity-bearing row from corpus ingestion",
+        "owner_decision_date": "2026-07-19",
+    }
+    payload: dict[str, object] = {
+        "schema": "setec-imessage-atomic-adjudicated-identity-exclusions/1",
+        "rows": [dict(valid_row)],
+    }
+    for key, value in mutation.items():
+        if key == "rows" and value == "duplicate":
+            payload["rows"] = [dict(valid_row), dict(valid_row)]
+        elif key == "rows" and type(value) is list and value and type(value[0]) is dict:
+            payload["rows"] = [{**valid_row, **value[0]}]
+        else:
+            payload[key] = value
+    (run_dir / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME).write_bytes(
+        A._canonical_json_bytes(payload)
+    )
+    with pytest.raises(A.AtomicAcquisitionError, match=match):
+        A.validate_atomic_run(run_dir)
+
+
 def test_row_publication_preflight_is_constant_per_invocation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
