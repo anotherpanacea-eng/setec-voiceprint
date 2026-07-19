@@ -1054,6 +1054,42 @@ rule, and both belong to one sealed split component. A producer-local
 `importorskip` seam may remain supplementary, but it cannot satisfy this
 acceptance criterion or the Phase 1 return contract by itself.
 
+## Receipt-bound offline approved import
+
+`--offline-approved-import` is the sole portable production path for processing
+a Mac-copied Messages database. It requires the validated one-row smoke run,
+its separately stored owner-TTY receipt, the matching persistent HMAC key, and
+an archive-equivalence database. The approved snapshot and archive are scanned
+with identical semantic options and must have the exact same schema and full
+`AtomicCandidateUniverse`, including candidate text/metadata and every held
+row. The archive is equivalence evidence only: initialization copies the
+approved snapshot bytes and preserves its signed smoke-policy digest.
+
+Cross-runtime validation may preserve the signed creator
+`sqlite_library_version` only when the snapshot hash, size, page metadata,
+schema fingerprint, SQLite IDs, quick-check, and candidate universe all match.
+The offline bootstrap acquires the output root once, component by component,
+with no-follow descriptor semantics. Its hash-bound journal, prefix-validated
+bounded copy, initialization writes, exclusive promotion, and subsequent row
+publisher all remain beneath that same pinned root capability and reuse the
+ordinary per-row journal/ledger/checkpoint resume protocol. Every mutable file
+must be a single-link owner-only regular inode. Foreign or drifted staging and
+final artifacts refuse. Create-new and directory publication require atomic
+no-replace operations; state replacement requires a true atomic exchange that
+retains the predecessor through successor and parent-durability verification.
+After any namespace or durability ambiguity, recovery residue is preserved and
+the checkpoint cannot advance. A path-free private evidence file records
+the archive hash/size, approved snapshot and schema hashes, complete aggregate
+universe counts/hashes, and approval receipt/key IDs; the semantic-tree and
+final receipt bind its hash so the supplied archive may be deleted after a
+validated completed run. A production backend is enabled only when it supplies
+handle/descriptor-relative no-follow opens, atomic no-replace publication,
+atomic exchange/CAS, and directory durability. The current macOS backend meets
+that gate; Windows and every other unsupported host refuse before their first
+mutation and have no path-based fallback. This path never mutates an input,
+never invokes the fixture bootstrap/writer, and does not activate, export, or
+train on the result.
+
 ## Named implementation and documentation deliverables
 
 - `scripts/acquire_imessage_sent_atomic.py`;
