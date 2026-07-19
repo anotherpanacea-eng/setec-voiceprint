@@ -1137,7 +1137,7 @@ def compose_review_bursts(
 
         if (staging_exists or journal_exists) and not resume:
             raise ReviewBurstError("existing review-burst state requires --resume")
-        if staging_exists != journal_exists:
+        if staging_exists and not journal_exists:
             raise ReviewBurstError("review-burst staging and journal state is ambiguous")
         if journal_exists:
             journal, _journal_raw, _journal_digest = _read_state_at(
@@ -1145,14 +1145,19 @@ def compose_review_bursts(
             )
             if journal != journal_expected:
                 raise ReviewBurstError("review-burst journal binding drifted")
-            staging_fd, _staging_identity = atomic._open_private_tree_node_at(
-                output_fd,
-                staging_name,
-                kind="directory",
-                owner_uid=os.getuid(),
-                ops=atomic._PrivateTreeOsOps(),
-                label="review-burst staging",
-            )
+            if staging_exists:
+                staging_fd, _staging_identity = atomic._open_private_tree_node_at(
+                    output_fd,
+                    staging_name,
+                    kind="directory",
+                    owner_uid=os.getuid(),
+                    ops=atomic._PrivateTreeOsOps(),
+                    label="review-burst staging",
+                )
+            else:
+                staging_fd, _staging_identity = atomic._create_private_staging_at(
+                    output_fd, staging_name
+                )
         else:
             _publish_resumable_file_at(
                 output_fd,

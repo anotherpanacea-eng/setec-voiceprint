@@ -337,6 +337,38 @@ def test_interrupted_pair_resumes_only_with_explicit_resume(tmp_path: Path) -> N
     ) == receipt
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_journal_only_crash_state_resumes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_run, output_root = _completed_source_run(tmp_path)
+    original_create = A._create_private_staging_at
+
+    def interrupt_before_staging(*args: object, **kwargs: object) -> object:
+        raise RuntimeError("crash after durable journal")
+
+    monkeypatch.setattr(A, "_create_private_staging_at", interrupt_before_staging)
+    with pytest.raises(RuntimeError, match="crash after durable journal"):
+        B.compose_review_bursts(source_run, output_root, "journal-only-package")
+
+    assert (
+        output_root / ".journal-only-package.review-burst-journal.json"
+    ).is_file()
+    assert not (
+        output_root / ".journal-only-package.review-burst-staging"
+    ).exists()
+
+    monkeypatch.setattr(A, "_create_private_staging_at", original_create)
+    receipt = B.compose_review_bursts(
+        source_run,
+        output_root,
+        "journal-only-package",
+        resume=True,
+    )
+    assert receipt["counts"]["source_retained_rows"] == 3
+
+
 @pytest.mark.parametrize("boundary", ["checkpoint_after_next", "checkpoint_after_swap"])
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_checkpoint_transaction_resumes_at_each_durable_boundary(
