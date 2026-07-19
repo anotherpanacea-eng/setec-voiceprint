@@ -2153,8 +2153,46 @@ def _durable_atomic_private_file_at(
                 raise BootstrapStateError("published bootstrap inode has extra links")
             # The new name and retained predecessor are durable before discard.
             os.fsync(parent_fd)
+            durable_identity = _verify_private_bytes_at(
+                parent_fd,
+                filename,
+                raw,
+                max_bytes=max_bytes,
+                validator=validator,
+                artifact_label=artifact_label,
+            )
+            retained_info = os.stat(
+                temporary,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+            if (
+                expected_existing_identity is None
+                or durable_identity[:2] != _stat_identity(after_write)[:2]
+                or _stat_identity(retained_info)[:2]
+                != expected_existing_identity[:2]
+                or not stat.S_ISREG(retained_info.st_mode)
+                or retained_info.st_uid != os.getuid()
+                or stat.S_IMODE(retained_info.st_mode) != 0o600
+                or retained_info.st_nlink != 1
+            ):
+                raise BootstrapRecoveryRequired(
+                    "bootstrap exchange changed before parent durability"
+                )
             os.unlink(temporary, dir_fd=parent_fd)
             os.fsync(parent_fd)
+            final_after_cleanup = _verify_private_bytes_at(
+                parent_fd,
+                filename,
+                raw,
+                max_bytes=max_bytes,
+                validator=validator,
+                artifact_label=artifact_label,
+            )
+            if final_after_cleanup[:2] != _stat_identity(after_write)[:2]:
+                raise BootstrapRecoveryRequired(
+                    "bootstrap successor changed during predecessor cleanup"
+                )
             swapped = False
     except BaseException as caught:
         if isinstance(caught, BootstrapStateError):
@@ -2493,8 +2531,47 @@ def _durable_atomic_private_bytes_at(
                     f"published {artifact_label} bytes drifted"
                 )
             os.fsync(parent_fd)
+            durable_raw, durable_identity = _read_private_bytes_at(
+                parent_fd,
+                filename,
+                max_bytes=max_bytes,
+                artifact_label=artifact_label,
+            )
+            retained_info = os.stat(
+                temporary,
+                dir_fd=parent_fd,
+                follow_symlinks=False,
+            )
+            if (
+                durable_raw != raw
+                or after_write is None
+                or expected_identity is None
+                or durable_identity[:2] != _stat_identity(after_write)[:2]
+                or _stat_identity(retained_info)[:2] != expected_identity[:2]
+                or not stat.S_ISREG(retained_info.st_mode)
+                or retained_info.st_uid != os.getuid()
+                or stat.S_IMODE(retained_info.st_mode) != 0o600
+                or retained_info.st_nlink != 1
+            ):
+                raise BootstrapRecoveryRequired(
+                    f"{artifact_label} exchange changed before parent durability"
+                )
             os.unlink(temporary, dir_fd=parent_fd)
             os.fsync(parent_fd)
+            final_raw, final_identity = _read_private_bytes_at(
+                parent_fd,
+                filename,
+                max_bytes=max_bytes,
+                artifact_label=artifact_label,
+            )
+            if (
+                final_raw != raw
+                or after_write is None
+                or final_identity[:2] != _stat_identity(after_write)[:2]
+            ):
+                raise BootstrapRecoveryRequired(
+                    f"{artifact_label} successor changed during predecessor cleanup"
+                )
             swapped = False
     except BaseException as caught:
         if isinstance(caught, BootstrapStateError):
@@ -13627,134 +13704,6 @@ class _PathBasedSyntheticRowIo:
         return raw
 
     def remove_file(self, relative: str, *, expected: bytes, label: str) -> None:
-        parts = _row_relative_parts(relative)
-        parent_parts = parts[:-1]
-        parent_fd = self._open_directory(parent_parts)
-        parent_identity = _private_node_identity(os.fstat(parent_fd))
-        mutation_started = False
-        try:
-            raw, identity = _read_private_bytes_at(
-                parent_fd,
-                parts[-1],
-                max_bytes=MAX_ROW_STATE_BYTES,
-                artifact_label=label,
-            )
-            if raw != expected:
-                raise BootstrapStateError(f"{label} changed before removal")
-            named = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
-            if _stat_identity(named) != identity:
-                raise BootstrapStateError(f"{label} identity drifted before removal")
-            mutation_started = True
-            os.unlink(parts[-1], dir_fd=parent_fd)
-            os.fsync(parent_fd)
-            try:
-                os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
-            except FileNotFoundError:
-                pass
-            else:
-                raise BootstrapRecoveryRequired(f"{label} removal was not durable")
-            self._verify_named_directory_binding(
-                parent_parts,
-                parent_identity,
-                label=label,
-            )
-        except BootstrapRecoveryRequired:
-            raise
-        except BaseException as exc:
-            if mutation_started:
-                raise BootstrapRecoveryRequired(
-                    f"{label} removal requires recovery"
-                ) from exc
-            raise
-        finally:
-            os.close(parent_fd)
-
-    def remove_empty_directory(self, relative: str) -> None:
-        parts = _row_relative_parts(relative)
-        parent_parts = parts[:-1]
-        parent_fd = self._open_directory(parent_parts)
-        parent_identity = _private_node_identity(os.fstat(parent_fd))
-        descriptor: int | None = None
-        mutation_started = False
-        try:
-            descriptor, identity = _open_private_tree_node_at(
-                parent_fd,
-                parts[-1],
-                kind="directory",
-                owner_uid=os.getuid(),
-                ops=_PrivateTreeOsOps(),
-                label="row staging directory",
-            )
-            _stable_private_directory_inventory(
-                descriptor,
-                (),
-                owner_uid=os.getuid(),
-                ops=_PrivateTreeOsOps(),
-                label="row staging directory",
-            )
-            os.fsync(descriptor)
-            _verify_private_tree_named_identity(
-                parent_fd,
-                parts[-1],
-                identity,
-                ops=_PrivateTreeOsOps(),
-                label="row staging directory",
-            )
-            mutation_started = True
-            os.rmdir(parts[-1], dir_fd=parent_fd)
-            os.fsync(parent_fd)
-            self._verify_named_directory_binding(
-                parent_parts,
-                parent_identity,
-                label="row staging directory",
-            )
-        except BootstrapRecoveryRequired:
-            raise
-        except BaseException as exc:
-            if mutation_started:
-                raise BootstrapRecoveryRequired(
-                    "row staging directory removal requires recovery"
-                ) from exc
-            raise
-        finally:
-            if descriptor is not None:
-                os.close(descriptor)
-            os.close(parent_fd)
-
-    def commit_directory(
-        self,
-        source: str,
-        destination: str,
-        *,
-        expected_files: Mapping[str, bytes],
-    ) -> None:
-        source_parts = _row_relative_parts(source)[:-1]
-        destination_parts = _row_relative_parts(destination)[:-1]
-        source_parent = self._open_directory(source_parts)
-        destination_parent = self._open_directory(destination_parts)
-        try:
-            source_identity = _private_node_identity(os.fstat(source_parent))
-            destination_identity = _private_node_identity(os.fstat(destination_parent))
-        finally:
-            os.close(source_parent)
-            os.close(destination_parent)
-        super().commit_directory(
-            source,
-            destination,
-            expected_files=expected_files,
-        )
-        self._verify_named_directory_binding(
-            source_parts,
-            source_identity,
-            label="row publication source",
-        )
-        self._verify_named_directory_binding(
-            destination_parts,
-            destination_identity,
-            label="row publication destination",
-        )
-
-    def remove_file(self, relative: str, *, expected: bytes, label: str) -> None:
         path = self._path(relative)
         if self.read_bytes(relative, label) != expected:
             raise AtomicAcquisitionError(f"{label} changed before removal")
@@ -14457,7 +14406,16 @@ class PortableDurableRowIo(LiveDurableRowIo):
         self.parent_fd = parent_fd
         self.final_name = name
         self.final_fd = final_fd
-        self._verify_root()
+        try:
+            self._verify_root()
+        except BaseException:
+            self._closed = True
+            for descriptor in (self.final_fd, self.parent_fd):
+                try:
+                    os.close(descriptor)
+                except OSError:
+                    pass
+            raise
 
     @classmethod
     def open_child(
@@ -14610,9 +14568,9 @@ class PortableDurableRowIo(LiveDurableRowIo):
         parts = _row_relative_parts(relative)
         parent_parts = parts[:-1]
         parent_fd = self._open_directory(parent_parts)
-        parent_identity = _private_node_identity(os.fstat(parent_fd))
         mutation_started = False
         try:
+            parent_identity = _private_node_identity(os.fstat(parent_fd))
             mutation_started = True
             _durable_atomic_private_bytes_at(
                 parent_fd,
@@ -14657,6 +14615,138 @@ class PortableDurableRowIo(LiveDurableRowIo):
             label=label,
         )
         return raw
+
+    def remove_file(self, relative: str, *, expected: bytes, label: str) -> None:
+        parts = _row_relative_parts(relative)
+        parent_parts = parts[:-1]
+        parent_fd = self._open_directory(parent_parts)
+        mutation_started = False
+        try:
+            parent_identity = _private_node_identity(os.fstat(parent_fd))
+            raw, identity = _read_private_bytes_at(
+                parent_fd,
+                parts[-1],
+                max_bytes=MAX_ROW_STATE_BYTES,
+                artifact_label=label,
+            )
+            if raw != expected:
+                raise BootstrapStateError(f"{label} changed before removal")
+            named = os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+            if _stat_identity(named) != identity:
+                raise BootstrapStateError(f"{label} identity drifted before removal")
+            mutation_started = True
+            os.unlink(parts[-1], dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            try:
+                os.stat(parts[-1], dir_fd=parent_fd, follow_symlinks=False)
+            except FileNotFoundError:
+                pass
+            else:
+                raise BootstrapRecoveryRequired(f"{label} removal was not durable")
+            self._verify_named_directory_binding(
+                parent_parts,
+                parent_identity,
+                label=label,
+            )
+        except BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            if mutation_started:
+                raise BootstrapRecoveryRequired(
+                    f"{label} removal requires recovery"
+                ) from exc
+            raise
+        finally:
+            os.close(parent_fd)
+
+    def remove_empty_directory(self, relative: str) -> None:
+        parts = _row_relative_parts(relative)
+        parent_parts = parts[:-1]
+        parent_fd = self._open_directory(parent_parts)
+        descriptor: int | None = None
+        mutation_started = False
+        try:
+            parent_identity = _private_node_identity(os.fstat(parent_fd))
+            descriptor, identity = _open_private_tree_node_at(
+                parent_fd,
+                parts[-1],
+                kind="directory",
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            )
+            _stable_private_directory_inventory(
+                descriptor,
+                (),
+                owner_uid=os.getuid(),
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            )
+            os.fsync(descriptor)
+            _verify_private_tree_named_identity(
+                parent_fd,
+                parts[-1],
+                identity,
+                ops=_PrivateTreeOsOps(),
+                label="row staging directory",
+            )
+            mutation_started = True
+            os.rmdir(parts[-1], dir_fd=parent_fd)
+            os.fsync(parent_fd)
+            self._verify_named_directory_binding(
+                parent_parts,
+                parent_identity,
+                label="row staging directory",
+            )
+        except BootstrapRecoveryRequired:
+            raise
+        except BaseException as exc:
+            if mutation_started:
+                raise BootstrapRecoveryRequired(
+                    "row staging directory removal requires recovery"
+                ) from exc
+            raise
+        finally:
+            if descriptor is not None:
+                os.close(descriptor)
+            os.close(parent_fd)
+
+    def commit_directory(
+        self,
+        source: str,
+        destination: str,
+        *,
+        expected_files: Mapping[str, bytes],
+    ) -> None:
+        source_parts = _row_relative_parts(source)[:-1]
+        destination_parts = _row_relative_parts(destination)[:-1]
+        source_parent = self._open_directory(source_parts)
+        try:
+            destination_parent = self._open_directory(destination_parts)
+        except BaseException:
+            os.close(source_parent)
+            raise
+        try:
+            source_identity = _private_node_identity(os.fstat(source_parent))
+            destination_identity = _private_node_identity(os.fstat(destination_parent))
+        finally:
+            os.close(source_parent)
+            os.close(destination_parent)
+        super().commit_directory(
+            source,
+            destination,
+            expected_files=expected_files,
+        )
+        self._verify_named_directory_binding(
+            source_parts,
+            source_identity,
+            label="row publication source",
+        )
+        self._verify_named_directory_binding(
+            destination_parts,
+            destination_identity,
+            label="row publication destination",
+        )
 
     def verify_file(
         self,
@@ -14720,6 +14810,7 @@ class PortableDurableRowIo(LiveDurableRowIo):
         source_fd: int | None = None
         temporary_fd: int | None = None
         parent_fd: int | None = None
+        destination_parent_fd: int | None = None
         parent_parts = _row_relative_parts(temporary)[:-1]
         parent_identity: tuple[int, int, int, int, int, int, int, int] | None = None
         namespace_started = False
@@ -14741,14 +14832,14 @@ class PortableDurableRowIo(LiveDurableRowIo):
             ):
                 raise BootstrapStateError(f"{label} source inode is invalid")
             temporary_parent, temporary_name = self._open_parent(temporary)
-            destination_parent, destination_name = self._open_parent(destination)
-            if _device_inode(os.fstat(temporary_parent)) != _device_inode(
-                os.fstat(destination_parent)
-            ):
-                os.close(destination_parent)
-                raise BootstrapStateError(f"{label} names do not share one parent")
-            os.close(destination_parent)
             parent_fd = temporary_parent
+            destination_parent_fd, destination_name = self._open_parent(destination)
+            if _device_inode(os.fstat(temporary_parent)) != _device_inode(
+                os.fstat(destination_parent_fd)
+            ):
+                raise BootstrapStateError(f"{label} names do not share one parent")
+            os.close(destination_parent_fd)
+            destination_parent_fd = None
             parent_identity = _private_node_identity(os.fstat(parent_fd))
             try:
                 os.stat(destination_name, dir_fd=parent_fd, follow_symlinks=False)
@@ -14870,7 +14961,12 @@ class PortableDurableRowIo(LiveDurableRowIo):
                 raise
             raise BootstrapStateError(f"cannot copy {label}") from exc
         finally:
-            for descriptor in (temporary_fd, source_fd, parent_fd):
+            for descriptor in (
+                temporary_fd,
+                source_fd,
+                destination_parent_fd,
+                parent_fd,
+            ):
                 if descriptor is not None:
                     os.close(descriptor)
 
@@ -14896,7 +14992,11 @@ class PortableDurableRowIo(LiveDurableRowIo):
         ):
             raise BootstrapStateError("portable directory evidence is invalid")
         source_fd, source_name = self._open_parent(source)
-        destination_fd, destination_name = self._open_parent(destination)
+        try:
+            destination_fd, destination_name = self._open_parent(destination)
+        except BaseException:
+            os.close(source_fd)
+            raise
         directory_fd: int | None = None
         child_fds: dict[
             str,

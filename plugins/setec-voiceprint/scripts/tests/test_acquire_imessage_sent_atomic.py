@@ -1519,6 +1519,53 @@ def test_portable_snapshot_resume_refuses_hardlinked_partial_without_escape(
 
 
 @pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.parametrize('kind', ['file', 'directory'])
+def test_portable_cleanup_failure_after_mutation_requires_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    root = tmp_path / A.PRIVATE_ROOT_COMPONENT
+    root.mkdir(mode=0o700)
+    os.chmod(root, 0o700)
+    io = A.PortableDurableRowIo(root)
+    io.ensure_directory('staging/item')
+    if kind == 'file':
+        io.write_bytes(
+            'staging/item/state.json',
+            b'{}',
+            expected_existing=None,
+            label='row state',
+        )
+        real_unlink = A.os.unlink
+
+        def unlink_then_fail(name: str, *, dir_fd: int) -> None:
+            real_unlink(name, dir_fd=dir_fd)
+            raise OSError('injected post-unlink failure')
+
+        monkeypatch.setattr(A.os, 'unlink', unlink_then_fail)
+        action = lambda: io.remove_file(  # noqa: E731
+            'staging/item/state.json',
+            expected=b'{}',
+            label='row state',
+        )
+    else:
+        real_rmdir = A.os.rmdir
+
+        def rmdir_then_fail(name: str, *, dir_fd: int) -> None:
+            real_rmdir(name, dir_fd=dir_fd)
+            raise OSError('injected post-rmdir failure')
+
+        monkeypatch.setattr(A.os, 'rmdir', rmdir_then_fail)
+        action = lambda: io.remove_empty_directory('staging/item')  # noqa: E731
+    try:
+        with pytest.raises(A.BootstrapRecoveryRequired, match='recovery'):
+            action()
+    finally:
+        io.close()
+
+
+@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
 def test_offline_bootstrap_refuses_raced_empty_final_destination(
     tmp_path: Path,
 ) -> None:
@@ -3073,6 +3120,84 @@ def test_private_json_swap_rollback_with_retained_temp_requires_recovery(
     residues = list(tmp_path.glob(f".{filename}.*.tmp"))
     assert len(residues) == 1
     assert residues[0].read_bytes() == new_raw
+
+
+@pytest.mark.parametrize("kind", ["json", "opaque"])
+def test_private_exchange_reverifies_successor_after_parent_fsync(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    kind: str,
+) -> None:
+    filename = "fixture.json" if kind == "json" else "fixture.bin"
+    old_raw = (
+        b'{"schema":"fixture/1","value":7}\n'
+        if kind == "json"
+        else b"old opaque value"
+    )
+    new_raw = (
+        b'{"schema":"fixture/1","value":8}\n'
+        if kind == "json"
+        else b"new opaque value"
+    )
+    attacker_raw = (
+        b'{"schema":"fixture/1","value":9}\n'
+        if kind == "json"
+        else b"attacker after fsync"
+    )
+    destination = tmp_path / filename
+    destination.write_bytes(old_raw)
+    os.chmod(destination, 0o600)
+    expected_identity = A._stat_identity(destination.stat())
+    parent_fd = os.open(tmp_path, os.O_RDONLY | os.O_DIRECTORY)
+    real_fsync = A.os.fsync
+    parent_fsyncs = 0
+
+    def fsync(descriptor: int) -> None:
+        nonlocal parent_fsyncs
+        if descriptor == parent_fd:
+            parent_fsyncs += 1
+            if parent_fsyncs == 1:
+                destination.write_bytes(attacker_raw)
+                os.chmod(destination, 0o600)
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(A.sys, "platform", "darwin")
+    monkeypatch.setattr(A, "_macos_swap_names_at", _portable_swap_names_at)
+    monkeypatch.setattr(A.os, "fsync", fsync)
+    try:
+        with pytest.raises(A.BootstrapRecoveryRequired):
+            if kind == "json":
+                A._durable_atomic_private_file_at(
+                    parent_fd,
+                    filename,
+                    new_raw,
+                    replace_existing=True,
+                    expected_existing_identity=expected_identity,
+                    max_bytes=1024,
+                    validator=_private_fixture_validator,
+                    artifact_label="private fixture",
+                )
+            else:
+                A._durable_atomic_private_bytes_at(
+                    parent_fd,
+                    filename,
+                    new_raw,
+                    expected_existing=old_raw,
+                    max_bytes=1024,
+                    artifact_label="opaque fixture",
+                )
+    finally:
+        os.close(parent_fd)
+
+    assert parent_fsyncs >= 1
+    residues = list(tmp_path.glob(f".{filename}.*.tmp"))
+    assert len(residues) == 1
+    if kind == "json":
+        assert destination.read_bytes() == old_raw
+        assert residues[0].read_bytes() == attacker_raw
+    else:
+        assert destination.read_bytes() == attacker_raw
+        assert residues[0].read_bytes() == old_raw
 
 
 def test_generic_private_json_replacement_binds_digest_and_inode(
