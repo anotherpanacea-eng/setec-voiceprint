@@ -402,14 +402,13 @@ def test_hmac_key_loader_rejects_group_or_world_access(tmp_path: Path) -> None:
         A.load_hmac_key(key_path)
 
 
-@pytest.mark.skipif(os.name != "nt", reason="Windows refusal contract")
-def test_hmac_key_loader_refuses_windows_host(tmp_path: Path) -> None:
+@pytest.mark.skipif(os.name != "nt", reason="Windows descriptor backend")
+def test_hmac_key_loader_accepts_direct_windows_file(tmp_path: Path) -> None:
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
     private_root.mkdir()
     key_path = private_root / "identity.key"
     key_path.write_bytes(KEY)
-    with pytest.raises(A.HmacKeyError, match="macOS/POSIX"):
-        A.load_hmac_key(key_path)
+    assert A.load_hmac_key(key_path) == KEY
 
 
 def test_locator_guid_failure_does_not_echo_private_identity() -> None:
@@ -1107,7 +1106,7 @@ def test_offline_approved_refuses_hmac_key_mismatch(tmp_path: Path) -> None:
         )
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_approved_refuses_output_outside_private_root_without_writes(
     tmp_path: Path,
 ) -> None:
@@ -1255,7 +1254,7 @@ def test_snapshot_metadata_accepts_only_runtime_library_provenance() -> None:
         )
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_bootstrap_resumes_interrupted_approved_snapshot_copy(
     tmp_path: Path,
 ) -> None:
@@ -1296,7 +1295,7 @@ def test_offline_bootstrap_resumes_interrupted_approved_snapshot_copy(
     )
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_bootstrap_refuses_foreign_staging_artifact(tmp_path: Path) -> None:
     config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
     semantic, controls = _offline_semantic_controls(config)
@@ -1333,7 +1332,7 @@ def test_offline_bootstrap_refuses_foreign_staging_artifact(tmp_path: Path) -> N
         )
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_bootstrap_resumes_zero_byte_snapshot_prefix(tmp_path: Path) -> None:
     config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
     semantic, controls = _offline_semantic_controls(config)
@@ -1490,17 +1489,16 @@ def test_portable_directory_creation_contains_intermediate_symlink_replacement(
     assert (root / 'rows-parked' / 'item').is_dir()
 
 
-@pytest.mark.parametrize('unsupported_platform', ['linux', 'win32'])
+@pytest.mark.skipif(os.name == 'nt', reason='Windows has a native descriptor backend')
 def test_portable_tree_refuses_unsupported_backend_before_mutation(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    unsupported_platform: str,
 ) -> None:
     root = tmp_path / A.PRIVATE_ROOT_COMPONENT
     root.mkdir(mode=0o700)
     os.chmod(root, 0o700)
     before = _bounded_tree_state(root)
-    monkeypatch.setattr(A.sys, 'platform', unsupported_platform)
+    monkeypatch.setattr(A.sys, 'platform', 'linux')
     with pytest.raises(A.BootstrapStateError, match='only on the macOS host'):
         A.PortableDurableRowIo(root)
     assert _bounded_tree_state(root) == before
@@ -1591,7 +1589,7 @@ def test_portable_cleanup_failure_after_mutation_requires_recovery(
         io.close()
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_bootstrap_refuses_raced_empty_final_destination(
     tmp_path: Path,
 ) -> None:
@@ -1624,7 +1622,7 @@ def test_offline_bootstrap_refuses_raced_empty_final_destination(
     assert list(final.iterdir()) == []
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_full_run_preserves_approved_policy_and_resumes_rows(
     tmp_path: Path,
 ) -> None:
@@ -1672,7 +1670,7 @@ def test_offline_full_run_preserves_approved_policy_and_resumes_rows(
     assert A.validate_atomic_run(run_dir)['retained_rows'] == 3
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_run_resumes_after_k_row_publications(tmp_path: Path) -> None:
     config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
     published = 0
@@ -1702,7 +1700,7 @@ def test_offline_run_resumes_after_k_row_publications(tmp_path: Path) -> None:
     assert A.validate_atomic_run(config.output_root / config.run_id)['retained_rows'] == 3
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_run_refuses_foreign_root_artifact_on_resume(tmp_path: Path) -> None:
     config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
 
@@ -1748,15 +1746,36 @@ def test_offline_run_refuses_group_readable_ledger_on_resume(tmp_path: Path) -> 
         )
 
 
-@pytest.mark.skipif(sys.platform != 'darwin', reason='macOS descriptor backend')
+@pytest.mark.skipif(sys.platform not in {'darwin', 'win32'}, reason='descriptor backend')
 def test_offline_cli_loads_approved_portable_key_and_runs(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     config, authorization, _approved, archive = _offline_approved_case(tmp_path)
     key_path = authorization.live_smoke_receipt.parent / 'author-corpus-r1a.key'
     key_path.write_bytes(KEY)
     os.chmod(key_path, 0o600)
+    monkeypatch.setattr(
+        A, '_SyntheticFixtureRowIo',
+        lambda _root: pytest.fail('production offline flow used fixture-only reader'),
+    )
+    approved_snapshot = authorization.approved_smoke_run / A.SNAPSHOT_FILENAME
+    real_open_read_only = A._open_read_only_database
+    snapshot_move_blocked = False
+
+    def guarded_open(path: Path) -> sqlite3.Connection:
+        nonlocal snapshot_move_blocked
+        if Path(path) == approved_snapshot and sys.platform == 'win32':
+            with pytest.raises(PermissionError):
+                os.replace(
+                    approved_snapshot,
+                    approved_snapshot.with_name("concurrent-snapshot"),
+                )
+            snapshot_move_blocked = True
+        return real_open_read_only(path)
+
+    monkeypatch.setattr(A, '_open_read_only_database', guarded_open)
     assert A.main([
         '--offline-approved-import',
         '--exclude-group-chats',
@@ -1779,6 +1798,8 @@ def test_offline_cli_loads_approved_portable_key_and_runs(
     )['retained_rows'] == 3
 
 
+    if sys.platform == 'win32':
+        assert snapshot_move_blocked
 def test_offline_cli_requires_all_approval_paths(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc_info:
         A.main(['--offline-approved-import'])

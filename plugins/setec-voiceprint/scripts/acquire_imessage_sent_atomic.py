@@ -18,8 +18,13 @@ from pathlib import Path
 import sqlite3
 import stat
 import sys
+import time
 from typing import Any, Callable, Mapping, Sequence
+import warnings
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+if os.name == "nt":  # native handle-relative backend; never imported elsewhere
+    import windows_descriptor_io as _winio
 
 
 TOOL_NAME = "acquire_imessage_sent_atomic"
@@ -571,10 +576,6 @@ def _validate_hmac_key(key_bytes: bytes) -> bytes:
 def load_hmac_key(path: Path) -> bytes:
     """Load an existing bounded owner-only key without exposing its path."""
 
-    if os.name == "nt":
-        raise HmacKeyError(
-            "secure atomic HMAC key loading is available only on the macOS/POSIX host"
-        )
     key_path = path.expanduser().absolute()
     if ".." in key_path.parts or PRIVATE_ROOT_COMPONENT not in key_path.parts:
         raise HmacKeyError("HMAC key private path is invalid")
@@ -583,6 +584,52 @@ def load_hmac_key(path: Path) -> bytes:
         for index, part in enumerate(key_path.parts)
         if part == PRIVATE_ROOT_COMPONENT
     )
+    if os.name == "nt":
+        parent_parent: int | None = None
+        parent: int | None = None
+        key_handle: int | None = None
+        try:
+            parent_parent, parent, parent_name = _winio.pin_directory(
+                key_path.parent, writable_final=False
+            )
+            if parent_name != key_path.parent.name:
+                raise HmacKeyError("HMAC key parent binding drifted")
+            key_handle = _winio.open_file(parent, key_path.name)
+            before = _winio.require_direct(key_handle, "file")
+            if before.size < 32 or before.size > MAX_HMAC_KEY_BYTES:
+                raise HmacKeyError("HMAC key size is outside the allowed range")
+            chunks: list[bytes] = []
+            remaining = MAX_HMAC_KEY_BYTES + 1
+            while remaining:
+                chunk = _winio.read(key_handle, min(64 * 1024, remaining))
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                remaining -= len(chunk)
+            key = b"".join(chunks)
+            after = _winio.require_direct(key_handle, "file")
+            rebound = _winio.open_file(parent, key_path.name)
+            try:
+                named = _winio.require_direct(rebound, "file")
+            finally:
+                _winio.close(rebound)
+        except HmacKeyError:
+            raise
+        except OSError as exc:
+            raise HmacKeyError("cannot securely open or read HMAC key") from exc
+        finally:
+            for handle in (key_handle, parent, parent_parent):
+                if handle is not None:
+                    _winio.close(handle)
+        if (
+            before.identity != after.identity
+            or after.identity[:2] != named.identity[:2]
+            or len(key) < 32
+            or len(key) > MAX_HMAC_KEY_BYTES
+        ):
+            raise HmacKeyError("HMAC key changed while being read")
+        return _validate_hmac_key(key)
+
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     directory_flag = getattr(os, "O_DIRECTORY", 0)
     # Do not compare the current callable identity against
@@ -776,13 +823,17 @@ def load_offline_approved_hmac_key(
         authorization.approved_smoke_run,
         'approved smoke run',
     )
-    smoke, _ = _read_io_object(
-        _SyntheticFixtureRowIo(approved_run),
-        SMOKE_POLICY_FILENAME,
-        'approved smoke policy',
-        validator=_validated_smoke_policy,
-        max_bytes=MAX_SMOKE_POLICY_BYTES,
-    )
+    approved_io = _PrivateReadOnlyRowIo(approved_run)
+    try:
+        smoke, _ = _read_io_object(
+            approved_io,
+            SMOKE_POLICY_FILENAME,
+            'approved smoke policy',
+            validator=_validated_smoke_policy,
+            max_bytes=MAX_SMOKE_POLICY_BYTES,
+        )
+    finally:
+        approved_io.close()
     if smoke['hmac']['key_id'] != hmac_key_id(key):
         raise HmacKeyError('offline HMAC key does not match the approved run')
     return key
@@ -1615,7 +1666,7 @@ def _open_private_parent_dirfd(path: Path) -> tuple[int, str]:
     private_index = private_indices[-1]
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     directory_flag = getattr(os, "O_DIRECTORY", 0)
-    if not nofollow or not directory_flag or os.open not in os.supports_dir_fd:
+    if not nofollow or not directory_flag:
         raise BootstrapStateError("host lacks descriptor-relative bootstrap I/O")
     flags = (
         os.O_RDONLY
@@ -4476,8 +4527,66 @@ def _snapshot_sidecars(snapshot: Path) -> tuple[Path, ...]:
     return tuple(found)
 
 
+def _provably_empty_snapshot_wal(path: Path) -> bool:
+    """Bind a direct WAL inode and prove it stayed empty during inspection."""
+
+    if path.name.endswith("-wal") is False:
+        return False
+    descriptor: int | None = None
+    try:
+        before = path.lstat()
+        if (
+            not stat.S_ISREG(before.st_mode)
+            or stat.S_ISLNK(before.st_mode)
+            or _is_reparse_or_symlink(path)
+            or before.st_nlink != 1
+            or before.st_size != 0
+        ):
+            return False
+        descriptor = os.open(
+            path,
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOINHERIT", 0)
+            | getattr(os, "O_NOFOLLOW", 0),
+        )
+        opened_before = os.fstat(descriptor)
+        if os.read(descriptor, 1):
+            return False
+        opened_after = os.fstat(descriptor)
+        after = path.lstat()
+    except OSError:
+        return False
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+    fields = ("st_dev", "st_ino", "st_size", "st_mtime_ns", "st_ctime_ns")
+    identities = (before, opened_before, opened_after, after)
+    return (
+        all(
+            getattr(identities[0], field) == getattr(item, field)
+            for item in identities[1:]
+            for field in fields
+        )
+        and after.st_size == 0
+        and not stat.S_ISLNK(after.st_mode)
+        and not _is_reparse_or_symlink(path)
+    )
+
+
 def _reject_snapshot_sidecars(snapshot: Path) -> None:
-    if _snapshot_sidecars(snapshot):
+    blocking: list[Path] = []
+    for sidecar in _snapshot_sidecars(snapshot):
+        if sidecar.name == snapshot.name + "-wal" and _provably_empty_snapshot_wal(sidecar):
+            warnings.warn(
+                "WARNING: immutable snapshot has a provably empty crash-vestige WAL; "
+                "continuing without treating it as committed SQLite state",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+            continue
+        blocking.append(sidecar)
+    if blocking:
         raise SnapshotError("immutable snapshot has unexpected SQLite sidecars")
 
 
@@ -15158,6 +15267,11 @@ class PortableDurableRowIo(LiveDurableRowIo):
         self._verify_root()
 
 
+if os.name == "nt":
+    from windows_portable_tree import WindowsPortableDurableRowIo
+    PortableDurableRowIo = WindowsPortableDurableRowIo
+
+
 class _PrivateReadOnlyRowIo:
     """Descriptor-pinned, no-follow reader for a completed private run."""
 
@@ -15271,6 +15385,7 @@ class _PrivateReadOnlyRowIo:
                 descriptor,
                 owner_uid=os.getuid(),
                 ops=_PrivateTreeOsOps(),
+
                 label="completed atomic run directory",
             )
             return names
@@ -15289,6 +15404,12 @@ class _PrivateReadOnlyRowIo:
             return raw
         finally:
             os.close(parent_fd)
+
+
+if os.name == "nt":
+    from windows_portable_tree import WindowsPrivateReadOnlyRowIo
+
+    _PrivateReadOnlyRowIo = WindowsPrivateReadOnlyRowIo
 
 
 def _ledger_payload(
@@ -16323,6 +16444,27 @@ def _is_hmac_locator(value: object) -> bool:
     )
 
 
+def _stream_hash_windows_handle(
+    handle: int,
+) -> tuple[str, int, tuple[int, int, int, int, int, int, int, int]]:
+    before = _winio.require_direct(handle, "file")
+    _winio.seek(handle, 0)
+    digest = hashlib.sha256()
+    size = 0
+    while True:
+        chunk = _winio.read(handle, 1024 * 1024)
+        if not chunk:
+            break
+        digest.update(chunk)
+        size += len(chunk)
+    after = _winio.require_direct(handle, "file")
+    if before.identity != after.identity or size != after.size:
+        raise AtomicAcquisitionError(
+            "atomic run snapshot changed while hashing"
+        )
+    return "sha256:" + digest.hexdigest(), size, after.identity
+
+
 def _validated_snapshot_for_run(
     io: _SyntheticFixtureRowIo | LiveDurableRowIo | _PrivateReadOnlyRowIo,
     *,
@@ -16385,6 +16527,68 @@ def _validated_snapshot_for_run(
             semantic_options=semantic,
             run_controls=controls,
         )
+    elif os.name == "nt" and isinstance(
+        io, (PortableDurableRowIo, _PrivateReadOnlyRowIo)
+    ):
+        io._verify_root()
+        snapshot_handle: int | None = None
+        named_handle: int | None = None
+        try:
+            snapshot_handle = _winio.open_file(
+                io.final_fd,
+                SNAPSHOT_FILENAME,
+                share_delete=False,
+                share_write=False,
+            )
+            first_hash, first_size, first_identity = (
+                _stream_hash_windows_handle(snapshot_handle)
+            )
+            snapshot_path = io.root / SNAPSHOT_FILENAME
+            conn = _open_read_only_database(snapshot_path)
+            try:
+                _quick_check(conn)
+                recomputed = _snapshot_metadata_from_hash(
+                    conn, file_hash=first_hash, byte_size=first_size
+                )
+                schema_info = atomic_schema_preflight(conn)
+                universe = discover_candidate_universe(
+                    conn,
+                    schema_info,
+                    apple_date_unit=semantic["apple_date_unit"],
+                    timezone_name=semantic["timezone"],
+                    since=since,
+                    until=until,
+                    max_messages=controls["max_messages"],
+                )
+            finally:
+                conn.close()
+            second_hash, second_size, second_identity = (
+                _stream_hash_windows_handle(snapshot_handle)
+            )
+            named_handle = _winio.open_file(io.final_fd, SNAPSHOT_FILENAME)
+            named_identity = _winio.require_direct(named_handle, "file").identity
+            io._verify_root()
+            if (
+                first_identity != second_identity
+                or named_identity[:2] != first_identity[:2]
+                or not _snapshot_metadata_matches_creator_binding(
+                    recomputed, metadata
+                )
+                or second_hash != first_hash
+                or second_size != first_size
+            ):
+                raise AtomicAcquisitionError(
+                    "atomic run snapshot metadata drifted"
+                )
+        except OSError as exc:
+            raise SnapshotError(
+                "cannot pin atomic run snapshot on Windows"
+            ) from exc
+        finally:
+            if named_handle is not None:
+                _winio.close(named_handle)
+            if snapshot_handle is not None:
+                _winio.close(snapshot_handle)
     else:
         snapshot_path = io.root / SNAPSHOT_FILENAME
         try:
@@ -17005,7 +17209,7 @@ def validate_atomic_run(
     owned_reader: _PrivateReadOnlyRowIo | None = None
     row_io = io
     if row_io is None:
-        if os.name != "nt" and PRIVATE_ROOT_COMPONENT in root.parts:
+        if PRIVATE_ROOT_COMPONENT in root.parts:
             owned_reader = _PrivateReadOnlyRowIo(root)
             row_io = owned_reader
         else:
@@ -17356,6 +17560,76 @@ def _validate_offline_evidence_against_run(
         raise AtomicAcquisitionError('offline approved evidence drifted from the run')
 
 
+def _read_offline_approved_run(
+    approved_run: Path,
+) -> tuple[
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    dict[str, Any],
+    bytes,
+    AtomicCandidateUniverse,
+]:
+    """Read one approved run through a single owned descriptor capability."""
+
+    approved_io = _PrivateReadOnlyRowIo(approved_run)
+    try:
+        summary = validate_atomic_run(approved_run, io=approved_io)
+        semantic, _ = _read_io_object(
+            approved_io,
+            SEMANTIC_OPTIONS_FILENAME,
+            'approved semantic options',
+            validator=_validated_semantic_options,
+            max_bytes=MAX_SEMANTIC_OPTIONS_BYTES,
+        )
+        approved_controls, _ = _read_io_object(
+            approved_io,
+            RUN_CONTROLS_FILENAME,
+            'approved run controls',
+            validator=_validated_run_controls,
+            max_bytes=MAX_RUN_CONTROLS_BYTES,
+        )
+        smoke, _ = _read_io_object(
+            approved_io,
+            SMOKE_POLICY_FILENAME,
+            'approved smoke policy',
+            validator=_validated_smoke_policy,
+            max_bytes=MAX_SMOKE_POLICY_BYTES,
+        )
+        owner, _ = _read_io_object(
+            approved_io,
+            RUN_OWNER_FILENAME,
+            'approved run owner',
+            max_bytes=MAX_RUN_OWNER_BYTES,
+        )
+        approved_receipt, approved_receipt_raw = _read_io_object(
+            approved_io,
+            'acquisition-receipt.json',
+            'approved acquisition receipt',
+        )
+        approved_universe = _validated_snapshot_for_run(
+            approved_io,
+            semantic=semantic,
+            controls=approved_controls,
+            expected_metadata=smoke['snapshot_metadata'],
+            expected_schema=smoke['atomic_schema'],
+        )
+        return (
+            summary,
+            semantic,
+            approved_controls,
+            smoke,
+            owner,
+            approved_receipt,
+            approved_receipt_raw,
+            approved_universe,
+        )
+    finally:
+        approved_io.close()
+
+
 def _authorize_offline_approved_import(
     config: AtomicRunConfig,
     authorization: OfflineApprovedImport,
@@ -17404,39 +17678,17 @@ def _authorize_offline_approved_import(
             'offline archive must be independent of the approved smoke run'
         )
 
-    summary = validate_atomic_run(approved_run)
-    approved_io = _SyntheticFixtureRowIo(approved_run)
-    semantic, _ = _read_io_object(
-        approved_io,
-        SEMANTIC_OPTIONS_FILENAME,
-        'approved semantic options',
-        validator=_validated_semantic_options,
-        max_bytes=MAX_SEMANTIC_OPTIONS_BYTES,
-    )
-    approved_controls, _ = _read_io_object(
-        approved_io,
-        RUN_CONTROLS_FILENAME,
-        'approved run controls',
-        validator=_validated_run_controls,
-        max_bytes=MAX_RUN_CONTROLS_BYTES,
-    )
-    smoke, _ = _read_io_object(
-        approved_io,
-        SMOKE_POLICY_FILENAME,
-        'approved smoke policy',
-        validator=_validated_smoke_policy,
-        max_bytes=MAX_SMOKE_POLICY_BYTES,
-    )
-    owner, _ = _read_io_object(
-        approved_io,
-        RUN_OWNER_FILENAME,
-        'approved run owner',
-        max_bytes=MAX_RUN_OWNER_BYTES,
-    )
-    approved_receipt, approved_receipt_raw = _read_io_object(
-        approved_io,
-        'acquisition-receipt.json',
-        'approved acquisition receipt',
+    (
+        summary,
+        semantic,
+        approved_controls,
+        smoke,
+        owner,
+        approved_receipt,
+        approved_receipt_raw,
+        approved_universe,
+    ) = _read_offline_approved_run(
+        approved_run
     )
     if (
         summary.get('retained_rows') != 1
@@ -17477,13 +17729,6 @@ def _authorize_offline_approved_import(
 
     metadata = SnapshotMetadata(**smoke['snapshot_metadata'])
     schema_info = AtomicSchemaInfo(**smoke['atomic_schema'])
-    approved_universe = _validated_snapshot_for_run(
-        approved_io,
-        semantic=semantic,
-        controls=approved_controls,
-        expected_metadata=smoke['snapshot_metadata'],
-        expected_schema=smoke['atomic_schema'],
-    )
     archive_metadata, archive_schema, archive_universe = (
         _scan_portable_candidate_universe(
             archive,
@@ -17911,6 +18156,31 @@ def _same_pinned_private_root(first: Path, second: Path) -> Path:
     second_root = _private_root_path(second)
     if first_root != second_root:
         raise AtomicAcquisitionError("live smoke paths do not share one private root")
+    if os.name == "nt":
+        handles: list[int] = []
+        try:
+            first_parent, first_handle, _ = _winio.pin_directory(first_root)
+            handles.extend((first_handle, first_parent))
+            second_parent, second_handle, _ = _winio.pin_directory(second_root)
+            handles.extend((second_handle, second_parent))
+            first_info = _winio.require_direct(first_handle, "directory")
+            second_info = _winio.require_direct(second_handle, "directory")
+            if (
+                first_info.volume_serial,
+                first_info.file_id,
+            ) != (
+                second_info.volume_serial,
+                second_info.file_id,
+            ):
+                raise AtomicAcquisitionError("live smoke private-root handle drifted")
+        except AtomicAcquisitionError:
+            raise
+        except OSError as exc:
+            raise AtomicAcquisitionError("cannot pin live smoke private root") from exc
+        finally:
+            for handle in handles:
+                _winio.close(handle)
+        return first_root
     first_fd, _ = _open_private_parent_dirfd(first_root / ".private-root-anchor")
     second_fd, _ = _open_private_parent_dirfd(second_root / ".private-root-anchor")
     try:
@@ -17928,6 +18198,41 @@ def _require_receipt_location_outside_run_or_repo(path: Path, private_root: Path
         parent.relative_to(private_root)
     except ValueError as exc:
         raise AtomicAcquisitionError("live smoke receipt escapes the private root") from exc
+    if os.name == "nt":
+        cumulative = Path(parent.anchor)
+        for component in parent.parts[1:]:
+            cumulative /= component
+            grandparent: int | None = None
+            directory: int | None = None
+            try:
+                grandparent, directory, _ = _winio.pin_directory(
+                    cumulative, writable_final=False
+                )
+                for marker in (RUN_OWNER_FILENAME, ".git"):
+                    marker_handle: int | None = None
+                    try:
+                        try:
+                            marker_handle = _winio.open_node(directory, marker)
+                        except FileNotFoundError:
+                            continue
+                        raise AtomicAcquisitionError(
+                            "live smoke receipt must be outside every run and repository subtree"
+                        )
+                    finally:
+                        if marker_handle is not None:
+                            _winio.close(marker_handle)
+            except AtomicAcquisitionError:
+                raise
+            except OSError as exc:
+                raise AtomicAcquisitionError(
+                    "cannot pin live smoke receipt ancestry"
+                ) from exc
+            finally:
+                if directory is not None:
+                    _winio.close(directory)
+                if grandparent is not None:
+                    _winio.close(grandparent)
+        return
     private_parent_fd, _ = _open_private_parent_dirfd(
         parent / ".live-smoke-parent-anchor"
     )
