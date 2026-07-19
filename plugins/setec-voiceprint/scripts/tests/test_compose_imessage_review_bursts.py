@@ -176,6 +176,51 @@ def test_canonical_json_refuses_out_of_domain_payloads(
         B._canonical_json(payload)
 
 
+def test_canonical_json_normalizes_unicode_encode_error() -> None:
+    with pytest.raises(B.ReviewBurstError, match="canonically encoded"):
+        B._canonical_json({"value": "\ud800"})
+
+
+def test_canonical_json_normalizes_recursive_encoding_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def recursive_encoding(*_args: object, **_kwargs: object) -> str:
+        raise RecursionError("nested too deeply")
+
+    monkeypatch.setattr(B.json, "dumps", recursive_encoding)
+    with pytest.raises(B.ReviewBurstError, match="canonically encoded"):
+        B._canonical_json({"value": "text"})
+
+
+def test_canonical_object_normalizes_recursive_parse_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def recursive_parse(*_args: object, **_kwargs: object) -> object:
+        raise RecursionError("nested too deeply")
+
+    monkeypatch.setattr(B.json, "loads", recursive_parse)
+    with pytest.raises(B.ReviewBurstError, match="source ledger is unreadable"):
+        B._canonical_object(b"{}\n", "source ledger")
+
+
+def test_cli_returns_two_for_canonical_encoding_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_during_composition(*_args: object, **_kwargs: object) -> object:
+        return B._canonical_json({"value": "\ud800"})
+
+    monkeypatch.setattr(B, "compose_review_bursts", fail_during_composition)
+    result = B.main([
+        "--input-run", str(tmp_path / "input"),
+        "--output-root", str(tmp_path / "output"),
+        "--package-id", "package",
+    ])
+    assert result == 2
+    assert "canonically encoded" in capsys.readouterr().err
+
+
 def _atomic_schema(conn: sqlite3.Connection) -> None:
     definitions = {
         table: list(columns.items())
@@ -369,6 +414,101 @@ def test_journal_only_crash_state_resumes(
     assert receipt["counts"]["source_retained_rows"] == 3
 
 
+@pytest.mark.parametrize(
+    "boundary,expected_journal,expected_copying",
+    [
+        ("journal_copying", False, True),
+        ("after_journal", True, False),
+    ],
+)
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_create_journal_crash_windows_require_explicit_resume(
+    tmp_path: Path,
+    boundary: str,
+    expected_journal: bool,
+    expected_copying: bool,
+) -> None:
+    source_run, output_root = _completed_source_run(tmp_path)
+    package_id = f"crash-{boundary}"
+    interrupted = False
+
+    def fault(observed: str) -> None:
+        nonlocal interrupted
+        if observed == boundary and not interrupted:
+            interrupted = True
+            raise RuntimeError("journal interruption")
+
+    with pytest.raises(RuntimeError, match="journal interruption"):
+        B.compose_review_bursts(
+            source_run,
+            output_root,
+            package_id,
+            fault=fault,
+        )
+    journal = output_root / f".{package_id}.review-burst-journal.json"
+    copying = output_root / f".{journal.name}.copying"
+    staging = output_root / f".{package_id}.review-burst-staging"
+    assert journal.exists() is expected_journal
+    assert copying.exists() is expected_copying
+    assert not staging.exists()
+
+    with pytest.raises(B.ReviewBurstError, match="requires --resume"):
+        B.compose_review_bursts(source_run, output_root, package_id)
+    receipt = B.compose_review_bursts(
+        source_run,
+        output_root,
+        package_id,
+        resume=True,
+    )
+    assert receipt["counts"]["source_retained_rows"] == 3
+    assert (output_root / package_id).is_dir()
+    assert not copying.exists()
+
+
+@pytest.mark.parametrize("boundary", ["journal_copying", "after_journal"])
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_create_journal_recovery_refuses_drifted_residue(
+    tmp_path: Path,
+    boundary: str,
+) -> None:
+    source_run, output_root = _completed_source_run(tmp_path)
+    package_id = f"drift-{boundary}"
+
+    def fault(observed: str) -> None:
+        if observed == boundary:
+            raise RuntimeError("journal interruption")
+
+    with pytest.raises(RuntimeError, match="journal interruption"):
+        B.compose_review_bursts(
+            source_run,
+            output_root,
+            package_id,
+            fault=fault,
+        )
+    journal = output_root / f".{package_id}.review-burst-journal.json"
+    if boundary == "journal_copying":
+        residue = output_root / f".{journal.name}.copying"
+        residue.write_bytes(b"not-an-approved-prefix")
+        expected = "not an exact prefix"
+    else:
+        residue = journal
+        payload = json.loads(residue.read_bytes())
+        payload["source_config_fingerprint"] = "sha256:" + "0" * 64
+        residue.write_bytes(B._canonical_json(payload))
+        expected = "binding drifted"
+    os.chmod(residue, 0o600)
+
+    with pytest.raises(B.ReviewBurstError, match=expected):
+        B.compose_review_bursts(
+            source_run,
+            output_root,
+            package_id,
+            resume=True,
+        )
+    assert not (output_root / package_id).exists()
+    assert not (output_root / f".{package_id}.review-burst-staging").exists()
+
+
 @pytest.mark.parametrize("boundary", ["checkpoint_after_next", "checkpoint_after_swap"])
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_checkpoint_transaction_resumes_at_each_durable_boundary(
@@ -454,6 +594,48 @@ def test_source_hash_drift_refuses_before_output(tmp_path: Path) -> None:
     with pytest.raises(B.ReviewBurstError, match="source atomic run validation"):
         B.compose_review_bursts(source_run, output_root, "drift-package")
     assert not (output_root / "drift-package").exists()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_post_validation_coherent_source_forgery_refuses_before_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_run, output_root = _completed_source_run(tmp_path)
+    validate = B.atomic.validate_atomic_run
+
+    def validate_then_forge(
+        run_dir: Path,
+        *,
+        io: object | None = None,
+    ) -> dict[str, object]:
+        result = validate(run_dir, io=io)
+        ledger_path = source_run / "source-ledger.json"
+        ledger = json.loads(ledger_path.read_bytes())
+        retained = next(row for row in ledger["rows"] if row["disposition"] == "retained")
+        stem = retained["row_stem"]
+        text_path = source_run / "rows" / stem / f"{stem}.txt"
+        sidecar_path = source_run / "rows" / stem / f"{stem}.meta.json"
+        forged_text = b"nine ten"
+        forged_digest = B._sha256_tag(forged_text)
+        sidecar = json.loads(sidecar_path.read_bytes())
+        sidecar["content_hash"] = forged_digest
+        sidecar["word_count"] = 2
+        retained["content_sha256"] = forged_digest
+        retained["word_count"] = 2
+        text_path.write_bytes(forged_text)
+        sidecar_path.write_bytes(B._canonical_json(sidecar))
+        ledger_path.write_bytes(B._canonical_json(ledger))
+        for path in (text_path, sidecar_path, ledger_path):
+            os.chmod(path, 0o600)
+        return result
+
+    monkeypatch.setattr(B.atomic, "validate_atomic_run", validate_then_forge)
+    with pytest.raises(B.ReviewBurstError, match="changed after validation"):
+        B.compose_review_bursts(source_run, output_root, "forged-package")
+    assert not (output_root / "forged-package").exists()
+    assert not (output_root / ".forged-package.review-burst-staging").exists()
+    assert not (output_root / ".forged-package.review-burst-journal.json").exists()
 
 
 def test_ledger_retained_row_missing_source_ordinal_refuses(tmp_path: Path) -> None:
