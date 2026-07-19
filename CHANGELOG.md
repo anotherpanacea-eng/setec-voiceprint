@@ -7,6 +7,158 @@ All notable changes to this project. Format follows [Keep a Changelog](https://k
 Unreleased changes accumulate as fragments in [`changelog.d/`](changelog.d/) (one `<slug>.md` per PR). Run
 `python3 tools/assemble_changelog.py --version X.Y.Z --date YYYY-MM-DD` to cut a release section from them.
 
+## [1.125.0] - 2026-07-19
+
+### Added
+
+- Add a private, no-prose author-registry normalizer that explicitly maps legacy source registers and source-qualified persona aliases to the multi-register author-modeling taxonomy, refuses duplicate-key, non-author, or non-baseline posture before eligibility, retains source provenance and exact-byte deduplication, and writes only owner-readable artifacts.
+- Allow `author_corpus_export` to accept an explicit, receipt- and smoke-bound source-persona alias, so a verified legacy label can be intentionally joined to its canonical author persona.
+- Add an exact-byte document-local adapter for attested pre-AI author material, with closed control-character and duplicate-key refusal, source-qualified persona aliases, symlink-closed owner-only output permissions, and Windows ACL checks for locally held HMAC keys.
+
+- `acquire_gmail_sent`: crash-safe, single-full-invocation resume. The manifest
+  row is now the single per-piece commit marker and dedupe is
+  manifest-authoritative, so a kill inside the per-piece write sequence no longer
+  orphans a piece out of `draft_manifest.jsonl` permanently. On start the tool
+  reconciles crash residue (drops a torn trailing manifest line, deletes any
+  `.txt`/`.meta.json` with no committed manifest row, sweeps stray `*.tmp`) and,
+  when a persisted `._thread_index.json` matches the mbox sha256 + filter
+  fingerprint, reuses it so a resume does not redo the thread-root pass.
+  Re-running the identical command after a crash reproduces the uninterrupted
+  run's content and manifest rows identically **except for two re-stamped
+  provenance fields** — the manifest `acquired_via` date and the sidecar
+  `acquired_at` timestamp, which are regenerated on every run; a resume against a
+  changed mbox/params fails loud. `--max-items N` counts rows already committed to
+  the manifest, so a crash after `k` commits followed by an identical resume
+  finishes at exactly `N` total rows, not `k + N`. A Takeout export that carries
+  the same sent message twice (byte-identical, same Message-ID) does not brick the
+  rerun/resume path: the duplicate binds to one source and dedupe commits it once;
+  only *differing* content under one Message-ID stays a hard fail-closed refusal.
+  Reconciliation only ever deletes residue it can prove is its own: an
+  *unevidenced* output directory (no committed manifest rows and no valid resume
+  checkpoint) that already holds `.txt`/`.meta.json` files is refused loudly
+  before any mutation — every corpus under the private root passes the privacy
+  gate, so a mistyped `--output-dir` at a foreign corpus tree must never be swept.
+- `acquire_gmail_sent`: the recipient redaction map (`recipient_map.json`) is now
+  persisted durably (atomic unique-temp write + fsync + read-back) whenever a new
+  `recipient_NN` label appears and **before** the dependent manifest row commits,
+  so a mid-run crash never leaves a committed row whose raw→label mapping was
+  never written. (Previously the map was saved only at a clean close.)
+- `acquire_gmail_sent`: smoke approval separated from acquisition via three
+  subcommands — `smoke` (windowed review slice that mints no approval and writes a
+  `.smoke_descriptor.json`), `validate-smoke` (read-only closed-tree/staleness
+  check), and `approve-smoke` (TTY mint of the live-smoke receipt from a validated
+  smoke tree; it acquires no messages and reads no message content, though it does
+  hash the mbox file for a staleness check). `approve-smoke`/`validate-smoke` now
+  **recompute and verify** the descriptor's `manifest_rows` and `acquired` against
+  the actual tree and its `behavior_fingerprint` against its recorded
+  `behavior_params` before prompting or minting, so a hand-edited descriptor fails
+  closed. The live-smoke receipt is keyed to a location-independent behavior
+  fingerprint (own address, Sent token, min-words, register, name-map, signature
+  lines), so a dedicated smoke tree and a separate full-run output tree share one
+  fingerprint while a drift in any reviewed determinant refuses the unwindowed
+  gate. The legacy flat CLI is preserved unchanged.
+- `gmail_locator_map` (new utility): build a metadata-only companion locator map
+  from `acquire_gmail_sent` `*.meta.json` sidecars for the shadow reacquisition
+  gate. Enforces a strict one-to-one sidecar↔manifest join (refusing on any
+  orphan, missing locator, locator collision, or duplicate manifest id — the
+  latter is rejected, not collapsed through a set), never opens a `.txt` body, and
+  publishes both atomically and **exclusively** (unique temp + fsync + read-back +
+  an `os.link` claim that fails closed if a foreign destination appeared after the
+  pre-publish existence check, never overwriting it). Prose-free: only a JSON
+  summary on stdout, offending stems confined to stderr.
+- `acquisition_core`: `write_piece` gains an optional `extra_meta` parameter and
+  now publishes the `.txt` and `.meta.json` atomically (unique temp + fsync +
+  `os.replace`); `append_manifest_entry` gains an optional `fsync` flag;
+  `StableRedactionMap` gains an optional `save(fsync=...)` durable path (unique
+  temp + fsync + read-back) and an `entry_count()` accessor. All changes are
+  additive and default-preserving, so every other acquirer emits byte-identical
+  output.
+
+Added an internal, model-free `compose_imessage_review_bursts.py` CLI that
+turns one fully closed atomic iMessage acquisition into deterministic review
+bursts. It preserves exact retained-row and word accounting, treats excluded
+and held rows as explicit non-members, keeps member identities inside the
+private package, and supports owner-only macOS create-new/resume publication.
+The tool is not a registered capability and does not activate, classify, or
+ingest any corpus.
+
+### Changed
+
+**`acquire_imessage_sent_atomic` remains WIP and is not an operator-ready producer.**
+The atomic path's stable message/chat HMAC identities, exact integer timestamps
+and timezone handling, descriptor-pinned snapshot/bootstrap, staged row
+transaction, resumable ledger/checkpoint, derived manifest, validator, and
+one-row owner-TTY smoke ladder now pass their portable and macOS-synthetic
+durability, recovery, and reconstruction gates. Outgoing source rows with no
+chat join are now conserved in a deterministic owner-only hold ledger under
+`missing_chat_join`; they are never published or assigned a fallback identity,
+while orphaned joins and ambiguous multi-chat identities remain fatal. The hold
+ledger is initialization-resumable and bound into owner, checkpoint, receipt,
+semantic-tree, and strict-validation evidence. Durable create-new publication
+now uses macOS destination-exclusive rename for both JSON state and row bytes,
+avoiding synchronized-filesystem hard-link metadata races while preserving
+inode-bound verification, parent fsync, and recovery-required ambiguity. Live
+preprocessing metadata also binds the legacy floating strip ratio to its token
+counts and stores it as an exact rational, keeping semantic artifacts inside
+the float-free canonical JSON domain. A strictly validated closed atomic run
+can now supply its already-approved snapshot by exact descriptor-pinned copy,
+preserving the whole-file hash required by the live-smoke receipt instead of
+rewriting SQLite header bytes through another backup. Row publication now runs
+the exhaustive historical-tree reconciliation once per invocation/resume and
+carries only verified durable transaction state between rows, removing the
+quadratic rescan that made full acquisitions impractical while preserving the
+same per-row journal, ledger, and checkpoint gates. Live readiness still requires
+the owner-confirmed one-row smoke, the real resumable run, and a green paired
+Voicewright fixture gate.
+`author_corpus_export` also recognizes atomic message units and preserves
+synthetic equal-normalized-content events as distinct source records without
+expanding bounded selection to chat peers. No private corpus is acquired,
+exported, trained on, or activated by this change.
+
+### Fixed
+
+**`voice_fingerprint` no longer crashes on bf16 encoder weights, and the StyleDistance encoder now mean-pools instead of reading an untrained CLS head.** Two defects that only surface when real weights load — the stub suite never instantiates a model, so both passed CI and were caught by the M2 GPU smoke run:
+
+- **bf16 → numpy.** `_LUAREncoder` called `.detach().cpu().numpy()` directly on the model output. A bf16 checkpoint (StyleDistance ships bf16 weights) has no numpy dtype, so this raised `TypeError: Got unsupported ScalarType BFloat16` before any distance was computed. The tensor is now cast with `.float()` first — a no-op on the fp32 LUAR/Wegmann path and the fix on the bf16 path.
+- **Wrong pooling manifold.** `_StyleDistanceEncoder` preferred `pooler_output` when the model exposed it. StyleDistance ships as a sentence-transformers model whose `1_Pooling` config sets `pooling_mode_mean_tokens=true`; the RoBERTa `pooler_output` is the *untrained* CLS dense+tanh head — a different manifold that collapses the embedding and silently produced meaningless voice distances rather than an error. The encoder now always mask-weighted mean-pools the token states, matching the published pooling config.
+
+Also adds `scripts/calibration/fetch_pan24_voightkampff.py`, a local-only fetcher for the PAN@CLEF 2024 Voight-Kampff bootstrap corpus (Zenodo `10.5281/zenodo.10718757`). It follows `fetch_pangram_editlens.py`: requires a destination beneath an `ai-prose-baselines-private` marker directory, writes a `NOTICE.md` recording the research-use-only / no-redistribution terms, verifies Zenodo's pinned archive digest before an atomic cache publish, and bounds archive members and uncompressed size before refusing any member that would extract outside the destination. No corpus material is committed.
+
+No capability surface, schema, envelope, or contract-fixture change.
+
+- `acquire_gmail_sent`: canonicalize decoded MIME line endings before
+  `format=flowed` processing, preserve authored/quoted reply boundaries, and
+  write exact UTF-8 bytes so Windows does not silently change corpus content
+  hashes. Legacy all-CRLF text-mode output remains deduplicated only when its
+  normalized logical-LF bytes match the recorded hash; mixed or malformed
+  newline states fail closed. Flowed space-stuffing and `delsp=yes` are now
+  handled without joining authored text to reply attributions or turning soft
+  line wraps into apparent blank paragraphs.
+
+- `acquire_gmail_sent` redacts email addresses embedded in Subject lines before
+  publishing title metadata and removes recognized trailing multi-line service
+  footers while preserving authored service citations in the message body.
+
+- `acquisition_core`: route atomic piece temp creation, replacement, and cleanup
+  through Windows extended-length paths, so UUID temp siblings that reach legacy
+  `MAX_PATH` no longer abort Gmail acquisition; ordinary caller `Path` values,
+  replacement semantics, and POSIX behavior are unchanged.
+
+### Removed
+
+- `acquire_gmail_sent`: the acquisition-time in-band `--live-smoke-confirmed`
+  approval path is removed. Passing it is now hard-refused (exit 2), directing to
+  the separated `smoke` → `validate-smoke` → `approve-smoke` flow, so an approval
+  receipt is never minted while acquiring or writing records. Approval only
+  validates an already-closed smoke tree, prompts, and mints without acquiring or
+  changing any records.
+
+### Security
+
+**Harden `imessage_sent_atomic` follow-up coverage.** The approved offline HMAC-key reader now requests no-follow opens on hosts that provide them, and CI runs the atomic iMessage descriptor-confinement suite on macOS, the production platform for the portable durable writer.
+
+**`acquire_imessage_sent_atomic` now confines receipt-bound offline imports to a pinned private-tree capability.** Offline bootstrap, resumable snapshot copying, initialization, row transactions, cleanup, and durability mutations use descriptor-relative no-follow operations with exclusive publication and inode-bound verification. Intermediate symlink replacement and hard-linked mutable residue cannot redirect writes outside the inspected root. Unsupported platforms, including the current Windows runtime, refuse before mutation instead of using a path-based fallback. The adapter remains private, local, and non-activating. Tests use synthetic fixtures only; live-approved execution can still reach path-based input readers, but they are read-only, HMAC- and inode-bound, and schema/universe-validated so replacement can only refuse. All output mutation remains confined to the pinned descriptor capability. Closes #324.
+
 ## [1.124.0] - 2026-07-12
 
 ### Added
