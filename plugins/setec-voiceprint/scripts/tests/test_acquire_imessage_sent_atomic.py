@@ -13392,6 +13392,11 @@ def test_durable_row_publication_resumes_and_validates(tmp_path: Path) -> None:
         "selected_ambiguous_multi_chat_rows": 0,
         "considered_rows": 1,
         "not_considered_after_bound": 2,
+        "identity_scan": {
+            "scanned_txt_rows": 1,
+            "adjudicated_excluded_txt_rows": 0,
+            "adjudicated_exclusions_sha256": None,
+        },
     }
     row_dir = run_dir / "rows" / planned[0].row_stem
     text_path = row_dir / f"{planned[0].row_stem}.txt"
@@ -13408,10 +13413,24 @@ def _synthetic_row_publication_case(
     *,
     chatless_message_ids: tuple[int, ...] = (),
     max_retained: int | None = 1,
+    chat_identifier: str = "",
+    message_text: str | None = None,
 ) -> tuple[tuple[A.PlannedAtomicRow, ...], A.AtomicProcessingResult]:
     run_dir.mkdir()
     snapshot_path = run_dir / A.SNAPSHOT_FILENAME
     conn, schema = _candidate_fixture(snapshot_path)
+    if chat_identifier:
+        conn.execute(
+            "UPDATE chat SET chat_identifier = ?",
+            (chat_identifier,),
+        )
+    if message_text is not None:
+        conn.execute(
+            "UPDATE message SET text = ? WHERE is_from_me = 1",
+            (message_text,),
+        )
+    if chat_identifier or message_text is not None:
+        conn.commit()
     if chatless_message_ids:
         conn.executemany(
             "DELETE FROM chat_message_join WHERE message_id = ?",
@@ -13455,6 +13474,80 @@ def _synthetic_row_publication_case(
     for artifact in initialization.artifacts:
         (run_dir / artifact.filename).write_bytes(artifact.raw)
     return planned, result
+
+
+def test_atomic_validator_scans_txt_only_and_uses_digit_boundaries(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "shortcode-in-structured-data"
+    planned, result = _synthetic_row_publication_case(
+        run_dir,
+        chat_identifier="22224",
+        message_text="receipt token 1222249 remains non-identifying",
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+    text_raw = (
+        run_dir / A.ROWS_DIRNAME / stem / f"{stem}.txt"
+    ).read_bytes()
+    sidecar_raw = (
+        run_dir / A.ROWS_DIRNAME / stem / f"{stem}.meta.json"
+    ).read_bytes()
+    assert b"22224" in text_raw
+    assert b"22224" in sidecar_raw
+    assert not A._text_contains_forbidden_identity(
+        text_raw.decode("utf-8"), ("22224",)
+    )
+    assert A._text_contains_forbidden_identity(
+        "send the message to 22224 now", ("22224",)
+    )
+
+    summary = A.validate_atomic_run(run_dir)
+
+    assert summary["identity_scan"] == {
+        "scanned_txt_rows": 1,
+        "adjudicated_excluded_txt_rows": 0,
+        "adjudicated_exclusions_sha256": None,
+    }
+
+
+def test_atomic_validator_requires_adjudication_for_email_in_txt_body(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "email-in-body"
+    email = "author@example.test"
+    planned, result = _synthetic_row_publication_case(
+        run_dir,
+        chat_identifier=email,
+        message_text=f"Please write to {email} about this.",
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+
+    with pytest.raises(A.AtomicAcquisitionError, match="row text leaks raw identity"):
+        A.validate_atomic_run(run_dir)
+
+    exclusions_raw = A._canonical_json_bytes({
+        "schema": "setec-imessage-atomic-adjudicated-identity-exclusions/1",
+        "rows": [{
+            "row_stem": stem,
+            "reason": "owner rejected identity-bearing row from corpus ingestion",
+            "owner_decision_date": "2026-07-19",
+        }],
+    })
+    (run_dir / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME).write_bytes(
+        exclusions_raw
+    )
+
+    summary = A.validate_atomic_run(run_dir)
+
+    assert summary["identity_scan"] == {
+        "scanned_txt_rows": 0,
+        "adjudicated_excluded_txt_rows": 1,
+        "adjudicated_exclusions_sha256": A._sha256_tag(exclusions_raw),
+    }
 
 
 def test_row_publication_preflight_is_constant_per_invocation(
@@ -13546,6 +13639,11 @@ def test_one_row_run_with_two_chatless_holds_reports_conserved_aggregate_counts(
         "selected_ambiguous_multi_chat_rows": 0,
         "considered_rows": 1,
         "not_considered_after_bound": 0,
+        "identity_scan": {
+            "scanned_txt_rows": 1,
+            "adjudicated_excluded_txt_rows": 0,
+            "adjudicated_exclusions_sha256": None,
+        },
     }
     receipt_raw = (run_dir / "acquisition-receipt.json").read_bytes()
     ledger_raw = (run_dir / "source-ledger.json").read_bytes()
