@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import author_corpus_export as E  # type: ignore
+import acquire_imessage_sent_atomic as A  # type: ignore
 import setec_run  # type: ignore
 
 
@@ -71,6 +72,21 @@ def _atomic_imessage_source(root: Path) -> Path:
     src = root / "imessage_sent_atomic"
     shutil.copytree(ATOMIC_EXPORT_SEAM_FIXTURE, src)
     return src / "draft_manifest.jsonl"
+
+
+def _write_atomic_adjudication(
+    manifest: Path, stems: list[str], *, decision_date: str = "2026-07-19",
+) -> None:
+    path = manifest.parent / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME
+    path.write_bytes(A._canonical_json_bytes({
+        "schema": "setec-imessage-atomic-adjudicated-identity-exclusions/1",
+        "rows": [{
+            "row_stem": stem,
+            "reason": "owner rejected identity-bearing row from corpus ingestion",
+            "owner_decision_date": decision_date,
+        } for stem in sorted(stems)],
+    }))
+    os.chmod(path, 0o600)
 
 
 def _document_source(root: Path, *, count: int = 3):
@@ -676,6 +692,66 @@ def test_atomic_imessage_preserves_events_duplicates_and_record_atomic_bounds(
     E._verify_package(
         bounded, bounded_texts, bounded_receipt, hmac_key=b"k" * 32,
     )
+
+
+def test_atomic_imessage_adjudication_rejects_row_and_binds_snapshot(
+    private_root: Path,
+):
+    manifest = _atomic_imessage_source(private_root)
+    manifest_entries = [
+        json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines()
+    ]
+    rejected_entry = manifest_entries[0]
+    rejected_stem = rejected_entry["path"].split("/")[1]
+    rejected_bytes = (manifest.parent / rejected_entry["path"]).read_bytes()
+    _write_atomic_adjudication(manifest, [rejected_stem])
+    kwargs = {
+        "sources": {"imessage_sent_atomic": manifest},
+        "register_map": {"imessage_sent_atomic:personal": "text.personal"},
+        "allowed_ai_status": ["pre_ai_human"],
+        "persona": "fixture_persona",
+        "hmac_key": b"k" * 32,
+    }
+
+    records, texts, receipt, config_hash, _ = E.build_export(**kwargs)
+
+    assert len(records) == 2
+    assert len(texts) == 2
+    assert rejected_entry["content_hash"] not in texts
+    assert rejected_bytes not in texts.values()
+    assert all(
+        record["content_sha256"] != rejected_entry["content_hash"]
+        for record in records
+    )
+
+    _write_atomic_adjudication(
+        manifest, [rejected_stem], decision_date="2026-07-20",
+    )
+    changed_records, changed_texts, changed_receipt, changed_config_hash, _ = (
+        E.build_export(**kwargs)
+    )
+    assert changed_records == records
+    assert changed_texts == texts
+    assert changed_receipt["package_hash"] == receipt["package_hash"]
+    assert changed_receipt["source_snapshot_sha256"] != (
+        receipt["source_snapshot_sha256"]
+    )
+    assert changed_config_hash != config_hash
+
+
+def test_atomic_imessage_adjudication_unknown_stem_fails_closed(
+    private_root: Path,
+):
+    manifest = _atomic_imessage_source(private_root)
+    _write_atomic_adjudication(manifest, ["unknown-row-stem"])
+    with pytest.raises(ValueError, match="adjudicated identity exclusions are invalid"):
+        E.build_export(
+            sources={"imessage_sent_atomic": manifest},
+            register_map={"imessage_sent_atomic:personal": "text.personal"},
+            allowed_ai_status=["pre_ai_human"],
+            persona="fixture_persona",
+            hmac_key=b"k" * 32,
+        )
 
 
 @pytest.mark.parametrize(
