@@ -725,7 +725,12 @@ def load_offline_approved_hmac_key(
         )
     ):
         raise HmacKeyError('offline HMAC key is not a bounded direct regular file')
-    flags = os.O_RDONLY | getattr(os, 'O_BINARY', 0) | getattr(os, 'O_NOINHERIT', 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, 'O_BINARY', 0)
+        | getattr(os, 'O_NOINHERIT', 0)
+        | getattr(os, 'O_NOFOLLOW', 0)
+    )
     descriptor: int | None = None
     try:
         descriptor = os.open(key_path, flags)
