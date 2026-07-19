@@ -203,22 +203,9 @@ def test_canonical_object_normalizes_recursive_parse_error(
         B._canonical_object(b"{}\n", "source ledger")
 
 
-def test_cli_returns_two_for_canonical_encoding_failure(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    def fail_during_composition(*_args: object, **_kwargs: object) -> object:
-        return B._canonical_json({"value": "\ud800"})
-
-    monkeypatch.setattr(B, "compose_review_bursts", fail_during_composition)
-    result = B.main([
-        "--input-run", str(tmp_path / "input"),
-        "--output-root", str(tmp_path / "output"),
-        "--package-id", "package",
-    ])
-    assert result == 2
-    assert "canonically encoded" in capsys.readouterr().err
+def test_safe_name_refuses_lone_surrogate() -> None:
+    with pytest.raises(B.ReviewBurstError, match="package ID is invalid"):
+        B._safe_name("package-\ud800", "package ID")
 
 
 def _atomic_schema(conn: sqlite3.Connection) -> None:
@@ -348,6 +335,22 @@ def test_compose_integration_conserves_rows_and_holds_privately(tmp_path: Path) 
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_cli_lone_surrogate_package_id_returns_two_on_real_compose_path(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    source_run, output_root = _completed_source_run(tmp_path)
+    result = B.main([
+        "--input-run", str(source_run),
+        "--output-root", str(output_root),
+        "--package-id", "package-\ud800",
+    ])
+    assert result == 2
+    assert "package ID is invalid" in capsys.readouterr().err
+    assert list(output_root.iterdir()) == []
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_interrupted_pair_resumes_only_with_explicit_resume(tmp_path: Path) -> None:
     source_run, output_root = _completed_source_run(tmp_path)
     interrupted = False
@@ -465,6 +468,50 @@ def test_create_journal_crash_windows_require_explicit_resume(
     assert not copying.exists()
 
 
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_zero_byte_journal_copy_refuses_changed_config_resume(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_run, output_root = _completed_source_run(tmp_path)
+    real_write = B.os.write
+    failed = False
+
+    def fail_before_first_byte(descriptor: int, raw: bytes | memoryview) -> int:
+        nonlocal failed
+        if not failed:
+            failed = True
+            raise OSError("journal write failed before first byte")
+        return real_write(descriptor, raw)
+
+    monkeypatch.setattr(B.os, "write", fail_before_first_byte)
+    with pytest.raises(B.ReviewBurstError, match="cannot write review-burst journal"):
+        B.compose_review_bursts(
+            source_run,
+            output_root,
+            "zero-journal-package",
+            config=B.BurstConfig(target_words=300),
+        )
+    monkeypatch.setattr(B.os, "write", real_write)
+
+    journal = output_root / ".zero-journal-package.review-burst-journal.json"
+    copying = output_root / f".{journal.name}.copying"
+    assert copying.read_bytes() == b""
+    with pytest.raises(B.ReviewBurstError, match="incomplete or binding drifted"):
+        B.compose_review_bursts(
+            source_run,
+            output_root,
+            "zero-journal-package",
+            config=B.BurstConfig(target_words=301),
+            resume=True,
+        )
+    assert not journal.exists()
+    assert not (output_root / "zero-journal-package").exists()
+    assert not (
+        output_root / ".zero-journal-package.review-burst-staging"
+    ).exists()
+
+
 @pytest.mark.parametrize("boundary", ["journal_copying", "after_journal"])
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
 def test_create_journal_recovery_refuses_drifted_residue(
@@ -489,7 +536,7 @@ def test_create_journal_recovery_refuses_drifted_residue(
     if boundary == "journal_copying":
         residue = output_root / f".{journal.name}.copying"
         residue.write_bytes(b"not-an-approved-prefix")
-        expected = "not an exact prefix"
+        expected = "incomplete or binding drifted"
     else:
         residue = journal
         payload = json.loads(residue.read_bytes())

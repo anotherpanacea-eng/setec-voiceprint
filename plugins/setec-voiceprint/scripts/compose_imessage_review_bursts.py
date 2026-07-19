@@ -227,8 +227,11 @@ class _ValidatedSourceView:
 
 def _safe_name(value: str, label: str) -> str:
     try:
+        if "\x00" in value:
+            raise ValueError("NUL is not a filesystem name character")
+        value.encode(sys.getfilesystemencoding(), errors="strict")
         return atomic._bootstrap_basename(value, label)
-    except atomic.AtomicAcquisitionError as exc:
+    except (atomic.AtomicAcquisitionError, UnicodeError, ValueError) as exc:
         raise ReviewBurstError(f"{label} is invalid") from exc
 
 
@@ -1283,6 +1286,16 @@ def compose_review_bursts(
                 output_fd, staging_name
             )
         elif journal_copying_exists and not journal_exists and not staging_exists:
+            journal_copying_raw = _read_private_bytes_at(
+                output_fd,
+                journal_copying_name,
+                max_bytes=len(journal_expected_raw),
+                label="partial review-burst journal",
+            )
+            if journal_copying_raw != journal_expected_raw:
+                raise ReviewBurstError(
+                    "partial review-burst journal is incomplete or binding drifted"
+                )
             _publish_resumable_file_at(
                 output_fd,
                 journal_name,
