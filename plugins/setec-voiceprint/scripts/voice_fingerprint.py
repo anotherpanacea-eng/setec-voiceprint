@@ -246,7 +246,11 @@ class _LUAREncoder:
             # Fallback only: unexpected token-level (B, seq, dim) output
             # -> mean-pool. The LUAR path returns (N, dim) and skips this.
             emb = emb.mean(dim=1)
-        vecs = emb.detach().cpu().numpy().astype("float32")
+        # .float() BEFORE .numpy(): a bf16 model (e.g. StyleDistance ships bf16 weights)
+        # has no numpy dtype — a direct .numpy() raises "unsupported ScalarType BFloat16".
+        # .float() is a no-op on fp32 (LUAR/Wegmann) and the fix for bf16 (caught by the
+        # M2 GPU smoke; the stub suite never loads real weights).
+        vecs = emb.float().detach().cpu().numpy().astype("float32")
         return _unit_normalize_rows(vecs)
 
 
@@ -351,21 +355,25 @@ class _StyleDistanceEncoder:
             enc = {k: v.to(self._device) for k, v in enc.items()}
         with torch.no_grad():
             out = self._model(**enc)
-        # Prefer a pooled/sentence embedding if exposed; else mask-weighted
-        # mean-pool of the token states (the content-vs-style choice is the
-        # model card's — both yield (N, dim)).
-        pooled = getattr(out, "pooler_output", None)
-        if pooled is not None:
-            emb = pooled
-        else:
-            hidden = getattr(out, "last_hidden_state", out)
-            if isinstance(hidden, (tuple, list)):
-                hidden = hidden[0]
-            mask = enc["attention_mask"].unsqueeze(-1).type_as(hidden)
-            summed = (hidden * mask).sum(dim=1)
-            counts = mask.sum(dim=1).clamp(min=1.0)
-            emb = summed / counts
-        vecs = emb.detach().cpu().numpy().astype("float32")
+        # MEAN-pool the token states (mask-weighted) — do NOT use pooler_output.
+        # StyleDistance ships as a sentence-transformers model whose 1_Pooling
+        # config is pooling_mode_mean_tokens=true; the RoBERTa pooler_output is the
+        # UNTRAINED CLS dense+tanh, a different (wrong) manifold that collapses the
+        # cosine distribution into a tight cone. M2 GPU smoke confirmed: pooler_output
+        # gave author-separation 0.022; mean-pool matches the sentence-transformers
+        # reference load (0.051). Mean-pool is the model card's trained pooling.
+        hidden = getattr(out, "last_hidden_state", out)
+        if isinstance(hidden, (tuple, list)):
+            hidden = hidden[0]
+        mask = enc["attention_mask"].unsqueeze(-1).type_as(hidden)
+        summed = (hidden * mask).sum(dim=1)
+        counts = mask.sum(dim=1).clamp(min=1.0)
+        emb = summed / counts
+        # .float() BEFORE .numpy(): a bf16 model (e.g. StyleDistance ships bf16 weights)
+        # has no numpy dtype — a direct .numpy() raises "unsupported ScalarType BFloat16".
+        # .float() is a no-op on fp32 (LUAR/Wegmann) and the fix for bf16 (caught by the
+        # M2 GPU smoke; the stub suite never loads real weights).
+        vecs = emb.float().detach().cpu().numpy().astype("float32")
         return _unit_normalize_rows(vecs)
 
 
@@ -451,7 +459,11 @@ class _MUAREncoder:
             # Fallback only: unexpected token-level (B, seq, dim) output
             # -> mean-pool. The UAR path returns (N, dim) and skips this.
             emb = emb.mean(dim=1)
-        vecs = emb.detach().cpu().numpy().astype("float32")
+        # .float() BEFORE .numpy(): a bf16 model (e.g. StyleDistance ships bf16 weights)
+        # has no numpy dtype — a direct .numpy() raises "unsupported ScalarType BFloat16".
+        # .float() is a no-op on fp32 (LUAR/Wegmann) and the fix for bf16 (caught by the
+        # M2 GPU smoke; the stub suite never loads real weights).
+        vecs = emb.float().detach().cpu().numpy().astype("float32")
         return _unit_normalize_rows(vecs)
 
 
