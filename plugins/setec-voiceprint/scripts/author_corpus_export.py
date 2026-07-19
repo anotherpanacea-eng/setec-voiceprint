@@ -31,6 +31,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import acquisition_core as ac  # noqa: E402
+import acquire_imessage_sent_atomic as atomic_imessage  # noqa: E402
 from claim_license import ClaimLicense  # noqa: E402
 from output_schema import build_error_output, build_output  # noqa: E402
 
@@ -643,9 +644,100 @@ def _record_id(record: dict[str, Any]) -> str:
     return _digest(DOMAIN_RECORD, payload)
 
 
-def _source_snapshot_hash(rows: list[dict[str, Any]]) -> str:
+def _atomic_row_stem(entry_path: Any) -> str:
+    """Return the sealed atomic row stem without exposing it in failures."""
+
+    try:
+        parts = atomic_imessage._row_relative_parts(entry_path)
+    except ValueError as exc:
+        raise ValueError("atomic iMessage manifest row path is malformed") from exc
+    if (
+        len(parts) != 3
+        or parts[0] != "rows"
+        or parts[2] != f"{parts[1]}.txt"
+    ):
+        raise ValueError("atomic iMessage manifest row path is malformed")
+    return parts[1]
+
+
+def _atomic_adjudication_binding(
+    manifest: Path, manifest_bytes: bytes,
+) -> tuple[set[str], bytes | None]:
+    """Load the optional owner rejection file and bind it to manifest rows."""
+
+    path = manifest.parent / atomic_imessage.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME
+    if not path.exists() and not path.is_symlink():
+        return set(), None
+    _check_private([path])
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(
+            "atomic adjudicated identity exclusions must be a regular private file"
+        )
+    retained_stems: set[str] = set()
+    try:
+        manifest_text = manifest_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("atomic iMessage manifest is not valid UTF-8") from exc
+    for lineno, raw_line in enumerate(manifest_text.splitlines(), 1):
+        if not raw_line.strip():
+            continue
+        entry = _load_json_object(raw_line, f"source manifest line {lineno}")
+        retained_stems.add(_atomic_row_stem(entry.get("path")))
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise ValueError("atomic adjudicated identity exclusions are unreadable") from exc
+    try:
+        payload = atomic_imessage._decode_canonical_private_json(
+            raw,
+            max_bytes=atomic_imessage.MAX_ADJUDICATED_IDENTITY_EXCLUSIONS_BYTES,
+            validator=atomic_imessage._canonical_object_validator,
+            artifact_label="atomic adjudicated identity exclusions",
+        )
+        excluded = atomic_imessage._validated_adjudicated_identity_exclusions(
+            payload, retained_row_stems=retained_stems,
+        )
+    except ValueError as exc:
+        raise ValueError("atomic adjudicated identity exclusions are invalid") from exc
+    return excluded, raw
+
+
+def _verify_atomic_adjudication_unchanged(
+    manifest: Path, expected: bytes | None,
+) -> None:
+    """Refuse an export if owner decisions changed after their first read."""
+
+    path = manifest.parent / atomic_imessage.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME
+    present = path.exists() or path.is_symlink()
+    if expected is None:
+        if present:
+            raise ValueError("atomic adjudicated identity exclusions changed during export")
+        return
+    if not present:
+        raise ValueError("atomic adjudicated identity exclusions changed during export")
+    _check_private([path])
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("atomic adjudicated identity exclusions changed during export")
+    try:
+        actual = path.read_bytes()
+    except OSError as exc:
+        raise ValueError(
+            "atomic adjudicated identity exclusions changed during export"
+        ) from exc
+    if not hmac.compare_digest(actual, expected):
+        raise ValueError("atomic adjudicated identity exclusions changed during export")
+
+
+def _source_snapshot_hash(
+    rows: list[dict[str, Any]],
+    adjudication_bindings: list[dict[str, str]] | None = None,
+) -> str:
     payload = {
-        "schema": "setec-author-corpus-source-snapshot-hash/1",
+        "schema": (
+            "setec-author-corpus-source-snapshot-hash/2"
+            if adjudication_bindings
+            else "setec-author-corpus-source-snapshot-hash/1"
+        ),
         "entries": [{
             "source_kind": row["source_kind"],
             "source_manifest_sha256": row["source_manifest_sha256"],
@@ -655,6 +747,11 @@ def _source_snapshot_hash(rows: list[dict[str, Any]]) -> str:
             "private_entry_locator": row["private_entry_locator"],
         } for row in sorted(rows, key=lambda r: (r["source_kind"], r["source_id"]))],
     }
+    if adjudication_bindings:
+        payload["adjudicated_identity_exclusions"] = sorted(
+            adjudication_bindings,
+            key=lambda row: (row["source_kind"], row["source_manifest_sha256"]),
+        )
     return _digest(DOMAIN_SNAPSHOT, payload)
 
 
@@ -754,6 +851,8 @@ def build_export(
             raise ValueError("document AI statuses are outside exporter policy")
     key_id = _sha(DOMAIN_KEY_ID + hmac_key)
     source_rows: list[dict[str, Any]] = []
+    adjudication_bindings: list[dict[str, str]] = []
+    adjudication_snapshots: list[tuple[Path, bytes | None]] = []
     seen_private_entries: set[tuple[str, str]] = set()
     built: list[
         tuple[dict[str, Any], bytes, str, tuple[bool, str, str] | None, bool]
@@ -767,6 +866,18 @@ def build_export(
             raise ValueError("source manifest is not a regular non-symlink file")
         manifest_bytes = manifest.read_bytes()
         manifest_hash = _sha(manifest_bytes)
+        adjudicated_stems: set[str] = set()
+        if kind == "imessage_sent_atomic":
+            adjudicated_stems, adjudication_raw = _atomic_adjudication_binding(
+                manifest, manifest_bytes,
+            )
+            adjudication_snapshots.append((manifest, adjudication_raw))
+            if adjudication_raw is not None:
+                adjudication_bindings.append({
+                    "source_kind": kind,
+                    "source_manifest_sha256": manifest_hash,
+                    "adjudicated_identity_exclusions_sha256": _sha(adjudication_raw),
+                })
         for lineno, raw in enumerate(manifest_bytes.decode("utf-8").splitlines(), 1):
             if not raw.strip():
                 continue
@@ -788,6 +899,11 @@ def build_export(
                     source_persona_aliases=source_persona_aliases,
                 )
                 era = entry["era"]
+            if (
+                kind == "imessage_sent_atomic"
+                and _atomic_row_stem(entry["path"]) in adjudicated_stems
+            ):
+                continue
             if entry["ai_status"] not in allowed_ai_status:
                 raise ValueError("source AI status was not explicitly allowed")
             map_key = f"{kind}:{entry['register']}"
@@ -980,6 +1096,9 @@ def build_export(
         raise ValueError("duplicate source-entry fingerprint")
     texts = {r["content_sha256"]: text_bytes for r, text_bytes, _, _, _ in built}
 
+    for manifest, expected_adjudication in adjudication_snapshots:
+        _verify_atomic_adjudication_unchanged(manifest, expected_adjudication)
+
     package_hash = _package_hash(records)
     by_register = Counter(r["register"] for r in records)
     by_ai = Counter(r["ai_status"] for r in records)
@@ -990,7 +1109,9 @@ def build_export(
         "surface": TOOL_NAME,
         "surface_version": SURFACE_VERSION,
         "producer_revision": _producer_revision(),
-        "source_snapshot_sha256": _source_snapshot_hash(source_rows),
+        "source_snapshot_sha256": _source_snapshot_hash(
+            source_rows, adjudication_bindings,
+        ),
         "document_map_hash": document_map_hash,
         "document_attestation_hash": document_attestation_hash,
         "hmac_key_id": key_id,

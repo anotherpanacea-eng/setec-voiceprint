@@ -55,6 +55,10 @@ def _excluded(reason: str = "automated_system") -> B.SourceEvent:
     return B.SourceEvent(None, reason)
 
 
+def _adjudicated(row: B.RetainedSourceRow) -> B.SourceEvent:
+    return B.SourceEvent(row, None, adjudicated=True)
+
+
 def test_build_bursts_keeps_equal_gap_and_target_boundaries() -> None:
     rows = (
         _retained(_source_row(0, words=2, timestamp_minutes=0)),
@@ -109,6 +113,54 @@ def test_excluded_row_breaks_consecutiveness() -> None:
     ]
 
 
+def test_adjudicated_event_requires_its_retained_row() -> None:
+    with pytest.raises(B.ReviewBurstError, match="adjudicated source event"):
+        B.SourceEvent(None, "automated_system", adjudicated=True)
+    with pytest.raises(B.ReviewBurstError, match="adjudicated source event"):
+        B.SourceEvent(_source_row(0), None, adjudicated=1)  # type: ignore[arg-type]
+
+
+def test_adjudicated_row_is_rejected_and_breaks_consecutiveness() -> None:
+    events = (
+        _retained(_source_row(0)),
+        _adjudicated(_source_row(1)),
+        _retained(_source_row(2)),
+    )
+    bursts = B.build_bursts(events, B.BurstConfig())
+    assert [tuple(row.source_index for row in burst.members) for burst in bursts] == [
+        (0,),
+        (2,),
+    ]
+    assert events[1].retained is not None
+    assert all(
+        events[1].retained.text_bytes not in burst.text_bytes for burst in bursts
+    )
+    conservation = B._conservation_payload(
+        events,
+        bursts,
+        {"holds": [], "held_missing_chat_join_rows": 0},
+    )
+    assert conservation["source_retained_rows"] == 3
+    assert conservation["burst_member_rows"] == 2
+    assert conservation["adjudicated_excluded_rows"] == 1
+    assert conservation["adjudicated_excluded_words"] == 2
+    assert conservation["source_retained_words"] == 6
+    assert conservation["burst_member_words"] == 4
+
+
+def test_conservation_refuses_adjudicated_row_leaked_into_bursts() -> None:
+    row0, row1 = _source_row(0), _source_row(1)
+    leaked = B.build_bursts((_retained(row0), _retained(row1)), B.BurstConfig())
+    assert len(leaked) == 1 and len(leaked[0].members) == 2
+    events = (_retained(row0), _adjudicated(row1))
+    with pytest.raises(B.ReviewBurstError, match="conservation failed"):
+        B._conservation_payload(
+            events,
+            leaked,
+            {"holds": [], "held_missing_chat_join_rows": 0},
+        )
+
+
 def test_oversized_message_is_a_singleton_and_conserves_words() -> None:
     events = (
         _retained(_source_row(0, words=7)),
@@ -148,6 +200,15 @@ def test_non_increasing_source_index_refuses(second_index: int) -> None:
         (
             _retained(_source_row(0, timestamp_minutes=10)),
             _excluded(),
+            _retained(_source_row(2, timestamp_minutes=9)),
+        ),
+        (
+            _retained(_source_row(0, timestamp_minutes=10)),
+            _adjudicated(_source_row(1, timestamp_minutes=9)),
+        ),
+        (
+            _retained(_source_row(0, timestamp_minutes=0)),
+            _adjudicated(_source_row(1, timestamp_minutes=10)),
             _retained(_source_row(2, timestamp_minutes=9)),
         ),
     ],
@@ -245,7 +306,45 @@ def _apple_ns(day: dt.date, minute: int) -> int:
     )
 
 
-def _completed_source_run(tmp_path: Path) -> tuple[Path, Path]:
+def _retained_ledger_stems(source_run: Path) -> list[str]:
+    ledger = json.loads((source_run / "source-ledger.json").read_bytes())
+    return [
+        row["row_stem"]
+        for row in ledger["rows"]
+        if row["disposition"] == "retained"
+    ]
+
+
+def _write_adjudication(
+    source_run: Path,
+    stems: list[str],
+    *,
+    owner_decision_date: str = "2026-07-19",
+) -> bytes:
+    raw = A._canonical_json_bytes({
+        "schema": "setec-imessage-atomic-adjudicated-identity-exclusions/1",
+        "rows": [
+            {
+                "row_stem": stem,
+                "reason": (
+                    "owner rejected identity-bearing row from corpus ingestion"
+                ),
+                "owner_decision_date": owner_decision_date,
+            }
+            for stem in sorted(stems)
+        ],
+    })
+    path = source_run / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME
+    path.write_bytes(raw)
+    os.chmod(path, 0o600)
+    return raw
+
+
+def _completed_source_run(
+    tmp_path: Path,
+    *,
+    adjudicated_leak: bool = False,
+) -> tuple[Path, Path]:
     private_root = tmp_path / A.PRIVATE_ROOT_COMPONENT
     private_root.mkdir(mode=0o700)
     os.chmod(private_root, 0o700)
@@ -256,8 +355,24 @@ def _completed_source_run(tmp_path: Path) -> tuple[Path, Path]:
     day = dt.date(2020, 6, 15)
     messages = (
         (1, "message-guid-1", "one two", 1, _apple_ns(day, 0), 0, 0),
-        (2, "message-guid-2", "three four", 1, _apple_ns(day, 10), 0, 0),
-        (3, "message-guid-3", "call ended", 1, _apple_ns(day, 20), 0, 0),
+        (
+            2,
+            "message-guid-2",
+            "three chat-guid four" if adjudicated_leak else "three four",
+            1,
+            _apple_ns(day, 10),
+            0,
+            0,
+        ),
+        (
+            3,
+            "message-guid-3",
+            "seven eight" if adjudicated_leak else "call ended",
+            1,
+            _apple_ns(day, 20),
+            0,
+            0,
+        ),
         (4, "message-guid-4", "five six", 1, _apple_ns(day, 25), 0, 0),
         (5, "message-guid-held", "held words", 1, _apple_ns(day, 30), 0, 0),
     )
@@ -296,13 +411,36 @@ def _completed_source_run(tmp_path: Path) -> tuple[Path, Path]:
         max_retained=None,
         allow_empty=False,
     )
+    source_run = input_root / "source-run"
+    if adjudicated_leak:
+        with pytest.raises(
+            A.AtomicAcquisitionError, match="row text leaks raw identity"
+        ):
+            A.run(
+                config,
+                key_bytes=KEY,
+                bootstrap=A._synthetic_fixture_bootstrap,
+                preprocessor=lambda text: (text, {"rules": []}),
+            )
+        leaking = [
+            stem
+            for stem in _retained_ledger_stems(source_run)
+            if b"chat-guid" in (
+                source_run / "rows" / stem / f"{stem}.txt"
+            ).read_bytes()
+        ]
+        assert len(leaking) == 1
+        _write_adjudication(source_run, leaking)
+        summary = A.validate_atomic_run(source_run)
+        assert summary["retained_rows"] == 4
+        assert summary["identity_scan"]["adjudicated_excluded_txt_rows"] == 1
+        return source_run, output_root
     A.run(
         config,
         key_bytes=KEY,
         bootstrap=A._synthetic_fixture_bootstrap,
         preprocessor=lambda text: (text, {"rules": []}),
     )
-    source_run = input_root / "source-run"
     assert A.validate_atomic_run(source_run)["retained_rows"] == 3
     return source_run, output_root
 
@@ -338,6 +476,96 @@ def test_compose_integration_conserves_rows_and_holds_privately(tmp_path: Path) 
         stat.S_IMODE(path.stat().st_mode) == 0o600
         for path in package.iterdir()
     )
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_compose_rejects_adjudicated_row_from_corpus(tmp_path: Path) -> None:
+    source_run, output_root = _completed_source_run(tmp_path, adjudicated_leak=True)
+    receipt = B.compose_review_bursts(
+        source_run,
+        output_root,
+        "review-package",
+        config=B.BurstConfig(target_words=10, min_review_words=5),
+    )
+    package = output_root / "review-package"
+    assert receipt["counts"]["bursts"] == 2
+    assert receipt["counts"]["source_retained_rows"] == 4
+    assert receipt["counts"]["burst_member_rows"] == 3
+    assert receipt["counts"]["adjudicated_excluded_rows"] == 1
+    assert receipt["counts"]["adjudicated_excluded_words"] == 3
+    assert receipt["counts"]["excluded_selected_eligible_rows"] == 0
+    assert receipt["counts"]["held_rows"] == 1
+    assert (package / "burst-000001.txt").read_bytes() == b"one two"
+    assert (package / "burst-000002.txt").read_bytes() == (
+        b"seven eight\n\nfive six"
+    )
+    package_names = {path.name for path in package.iterdir()}
+    assert package_names == {
+        "burst-000001.txt", "burst-000001.meta.json",
+        "burst-000002.txt", "burst-000002.meta.json",
+        B.MANIFEST_FILENAME, B.HELD_FILENAME,
+        B.CHECKPOINT_FILENAME, B.RECEIPT_FILENAME,
+    }
+    for name in package_names - {B.HELD_FILENAME}:
+        raw = (package / name).read_bytes()
+        assert b"chat-guid" not in raw
+        assert b"three" not in raw
+    checkpoint = json.loads((package / B.CHECKPOINT_FILENAME).read_bytes())
+    assert checkpoint["conservation"]["adjudicated_excluded_rows"] == 1
+    assert checkpoint["conservation"]["adjudicated_excluded_words"] == 3
+    outward = B._canonical_json(receipt)
+    assert b"row_stem" not in outward
+    assert b"entry_locator" not in outward
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_completed_package_binds_adjudication_state_on_resume(tmp_path: Path) -> None:
+    source_run, output_root = _completed_source_run(tmp_path, adjudicated_leak=True)
+    config = B.BurstConfig(target_words=10, min_review_words=5)
+    first = B.compose_review_bursts(
+        source_run, output_root, "review-package", config=config
+    )
+    resumed = B.compose_review_bursts(
+        source_run, output_root, "review-package", config=config, resume=True
+    )
+    assert resumed == first
+    adjudicated = json.loads(
+        (source_run / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME).read_bytes()
+    )
+    _write_adjudication(
+        source_run,
+        [row["row_stem"] for row in adjudicated["rows"]],
+        owner_decision_date="2026-07-20",
+    )
+    summary = A.validate_atomic_run(source_run)
+    assert summary["identity_scan"]["adjudicated_excluded_txt_rows"] == 1
+    with pytest.raises(B.ReviewBurstError, match="journal binding drifted"):
+        B.compose_review_bursts(
+            source_run, output_root, "review-package", config=config, resume=True
+        )
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")
+def test_fully_adjudicated_run_composes_zero_bursts(tmp_path: Path) -> None:
+    source_run, output_root = _completed_source_run(tmp_path)
+    _write_adjudication(source_run, _retained_ledger_stems(source_run))
+    receipt = B.compose_review_bursts(
+        source_run,
+        output_root,
+        "review-package",
+        config=B.BurstConfig(target_words=10, min_review_words=5),
+    )
+    package = output_root / "review-package"
+    assert receipt["counts"]["bursts"] == 0
+    assert receipt["counts"]["burst_member_rows"] == 0
+    assert receipt["counts"]["burst_member_words"] == 0
+    assert receipt["counts"]["source_retained_rows"] == 3
+    assert receipt["counts"]["adjudicated_excluded_rows"] == 3
+    assert (package / B.MANIFEST_FILENAME).read_bytes() == b""
+    assert {path.name for path in package.iterdir()} == {
+        B.MANIFEST_FILENAME, B.HELD_FILENAME,
+        B.CHECKPOINT_FILENAME, B.RECEIPT_FILENAME,
+    }
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="macOS private review-burst production")

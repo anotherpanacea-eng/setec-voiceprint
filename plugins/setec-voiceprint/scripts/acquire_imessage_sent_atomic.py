@@ -16812,7 +16812,17 @@ def _validated_adjudicated_identity_exclusions(
     *,
     retained_row_stems: set[str],
 ) -> set[str]:
-    """Validate owner decisions without echoing row-level private data."""
+    """Validate owner decisions without echoing row-level private data.
+
+    Contract (reject-from-corpus): an adjudicated row is the owner's rejection
+    of that row from corpus ingestion, not an approval of its content. The
+    sealed run tree keeps the row directory and its draft_manifest.jsonl line
+    because completed-run bindings are immutable post-close; this validator
+    only exempts the row from the completed-run identity scan. Every
+    downstream corpus consumer of a completed run (compose_imessage_review_
+    bursts.py and any later ingester) MUST drop adjudicated row stems from its
+    output and account for them under an explicit excluded category.
+    """
 
     if set(payload) != {"schema", "rows"} or payload.get("schema") != (
         "setec-imessage-atomic-adjudicated-identity-exclusions/1"

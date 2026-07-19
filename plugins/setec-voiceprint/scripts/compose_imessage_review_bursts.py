@@ -1,5 +1,12 @@
 #!/usr/bin/env python3
-"""Compose validated atomic iMessage rows into private review bursts."""
+"""Compose validated atomic iMessage rows into private review bursts.
+
+Owner-adjudicated identity exclusions (adjudicated-identity-exclusions.json in
+the source run) are rejected from corpus ingestion here: an adjudicated row
+never contributes text to any burst, acts as a hard burst boundary like an
+acquisition exclusion, and is accounted for under the explicit
+adjudicated_excluded_rows / adjudicated_excluded_words conservation category.
+"""
 
 from __future__ import annotations
 
@@ -22,7 +29,7 @@ import acquire_imessage_sent_atomic as atomic
 
 
 TOOL_NAME = "compose_imessage_review_bursts"
-TOOL_VERSION = "1.0"
+TOOL_VERSION = "1.1"
 DEFAULT_GAP_MINUTES = 30
 DEFAULT_TARGET_WORDS = 300
 DEFAULT_MIN_REVIEW_WORDS = 20
@@ -81,10 +88,17 @@ class RetainedSourceRow:
 class SourceEvent:
     retained: RetainedSourceRow | None
     exclusion_reason: str | None
+    adjudicated: bool = False
 
     def __post_init__(self) -> None:
         if (self.retained is None) == (self.exclusion_reason is None):
             raise ReviewBurstError("source event must be retained or excluded")
+        if type(self.adjudicated) is not bool or (
+            self.adjudicated and self.retained is None
+        ):
+            raise ReviewBurstError(
+                "adjudicated source event must bind its retained row"
+            )
 
 
 @dataclass(frozen=True)
@@ -591,6 +605,7 @@ def _load_source_events(
     bytes,
     dict[str, Any],
     bytes,
+    bytes | None,
 ]:
     ledger_raw = reader.read_bytes("source-ledger.json", "source ledger")
     ledger = _canonical_object(ledger_raw, "source ledger")
@@ -610,6 +625,7 @@ def _load_source_events(
 
     events: list[SourceEvent] = []
     seen_locators: set[str] = set()
+    stem_by_event_index: dict[int, str] = {}
     for index, ledger_row in enumerate(rows):
         if type(ledger_row) is not dict:
             raise ReviewBurstError("source ledger row is invalid")
@@ -657,6 +673,7 @@ def _load_source_events(
             }
         ):
             raise ReviewBurstError("retained source row binding drifted")
+        stem_by_event_index[len(events)] = stem
         events.append(SourceEvent(RetainedSourceRow(
             source_index=index,
             source_ordinal=source_ordinal,
@@ -671,14 +688,41 @@ def _load_source_events(
         ), None))
     if ledger.get("retained_rows") != sum(event.retained is not None for event in events):
         raise ReviewBurstError("retained source row count drifted")
-    return tuple(events), ledger, ledger_raw, holds, holds_raw
+    adjudicated_raw: bytes | None = None
+    if atomic.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME in reader.root_names():
+        try:
+            adjudicated, adjudicated_raw = atomic._read_io_object(
+                reader,
+                atomic.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME,
+                "adjudicated identity exclusions",
+                max_bytes=atomic.MAX_ADJUDICATED_IDENTITY_EXCLUSIONS_BYTES,
+            )
+            adjudicated_stems = atomic._validated_adjudicated_identity_exclusions(
+                adjudicated,
+                retained_row_stems=set(stem_by_event_index.values()),
+            )
+        except atomic.AtomicAcquisitionError as exc:
+            raise ReviewBurstError(
+                "source adjudicated identity exclusions are invalid"
+            ) from exc
+        for index, stem in stem_by_event_index.items():
+            if stem in adjudicated_stems:
+                events[index] = SourceEvent(
+                    events[index].retained, None, adjudicated=True
+                )
+    return tuple(events), ledger, ledger_raw, holds, holds_raw, adjudicated_raw
 
 
 def build_bursts(
     events: Sequence[SourceEvent],
     config: BurstConfig,
 ) -> tuple[PlannedBurst, ...]:
-    """Build deterministic bursts while treating exclusions as hard boundaries."""
+    """Build deterministic bursts while treating exclusions as hard boundaries.
+
+    Owner-adjudicated rows are rejected from the corpus here: their text never
+    enters a burst, and — like acquisition exclusions — they close the current
+    burst so rows on either side are not misrepresented as contiguous.
+    """
 
     if type(config) is not BurstConfig:
         raise ReviewBurstError("burst config is invalid")
@@ -711,6 +755,9 @@ def build_bursts(
         ):
             raise ReviewBurstError("source event timestamp precedes its predecessor")
         previous_retained = row
+        if event.adjudicated:
+            close_current()
+            continue
         if current:
             previous = current[-1]
             gap = row.unix_nanoseconds - previous.unix_nanoseconds
@@ -821,18 +868,29 @@ def _conservation_payload(
     source_holds: dict[str, Any],
 ) -> dict[str, Any]:
     retained = [event.retained for event in events if event.retained is not None]
+    adjudicated = [
+        event.retained
+        for event in events
+        if event.retained is not None and event.adjudicated
+    ]
+    composed = [
+        event.retained
+        for event in events
+        if event.retained is not None and not event.adjudicated
+    ]
     members = [member for burst in bursts for member in burst.members]
-    retained_locators = [row.entry_locator for row in retained]
+    composed_locators = [row.entry_locator for row in composed]
     member_locators = [row.entry_locator for row in members]
     source_words = sum(row.word_count for row in retained)
+    adjudicated_words = sum(row.word_count for row in adjudicated)
     burst_words = sum(int(burst.metadata["word_count"]) for burst in bursts)
     excluded = sum(event.exclusion_reason is not None for event in events)
     inserted = sum(int(burst.metadata["separator"]["inserted_bytes"]) for burst in bursts)
     holds = source_holds.get("holds")
     if (
-        retained_locators != member_locators
+        composed_locators != member_locators
         or len(member_locators) != len(set(member_locators))
-        or source_words != burst_words
+        or source_words != burst_words + adjudicated_words
         or type(holds) is not list
     ):
         raise ReviewBurstError("review-burst conservation failed")
@@ -841,6 +899,8 @@ def _conservation_payload(
         "burst_member_rows": len(members),
         "source_retained_words": source_words,
         "burst_member_words": burst_words,
+        "adjudicated_excluded_rows": len(adjudicated),
+        "adjudicated_excluded_words": adjudicated_words,
         "excluded_selected_eligible_rows": excluded,
         "held_rows": len(holds),
         "inserted_separator_bytes": inserted,
@@ -954,7 +1014,9 @@ def _receipt_payload(
 
 
 def _assert_outward_privacy(payload: dict[str, Any]) -> None:
-    forbidden = {"entry_locator", "group_locator", "source_ordinal", "members"}
+    forbidden = {
+        "entry_locator", "group_locator", "source_ordinal", "members", "row_stem",
+    }
 
     def visit(value: object) -> None:
         if type(value) is dict:
@@ -975,14 +1037,18 @@ def _source_config_fingerprint(
     receipt_raw: bytes,
     ledger_raw: bytes,
     holds_raw: bytes,
+    adjudicated_raw: bytes | None,
     config: BurstConfig,
 ) -> str:
     payload = {
-        "schema": "setec-imessage-review-burst-source-config/1",
+        "schema": "setec-imessage-review-burst-source-config/2",
         "source_checkpoint_sha256": _sha256_tag(checkpoint_raw),
         "source_receipt_sha256": _sha256_tag(receipt_raw),
         "source_ledger_sha256": _sha256_tag(ledger_raw),
         "source_hold_ledger_sha256": _sha256_tag(holds_raw),
+        "source_adjudicated_exclusions_sha256": (
+            _sha256_tag(adjudicated_raw) if adjudicated_raw is not None else None
+        ),
         "config": config.payload(),
         "tool": {"name": TOOL_NAME, "version": TOOL_VERSION},
     }
@@ -1147,13 +1213,27 @@ def compose_review_bursts(
     try:
         checkpoint_source_raw, receipt_source_raw = _preflight_source(source_view)
         try:
-            atomic.validate_atomic_run(source_root, io=source_view)
+            source_summary = atomic.validate_atomic_run(
+                source_root, io=source_view
+            )
         except atomic.AtomicAcquisitionError as exc:
             raise ReviewBurstError("source atomic run validation failed") from exc
         source_view.freeze()
-        events, ledger, ledger_raw, source_holds, source_holds_raw = (
+        events, ledger, ledger_raw, source_holds, source_holds_raw, adjudicated_raw = (
             _load_source_events(source_view)
         )
+        retained_rows = sum(event.retained is not None for event in events)
+        adjudicated_rows = sum(event.adjudicated for event in events)
+        if source_summary.get("identity_scan") != {
+            "scanned_txt_rows": retained_rows - adjudicated_rows,
+            "adjudicated_excluded_txt_rows": adjudicated_rows,
+            "adjudicated_exclusions_sha256": (
+                _sha256_tag(adjudicated_raw)
+                if adjudicated_raw is not None
+                else None
+            ),
+        }:
+            raise ReviewBurstError("source adjudication binding drifted")
         _verify_source_aggregate_bindings(
             checkpoint_raw=checkpoint_source_raw,
             receipt_raw=receipt_source_raw,
@@ -1170,6 +1250,7 @@ def compose_review_bursts(
             receipt_raw=receipt_source_raw,
             ledger_raw=ledger_raw,
             holds_raw=source_holds_raw,
+            adjudicated_raw=adjudicated_raw,
             config=config,
         )
         complete_checkpoint = _checkpoint_payload(
