@@ -704,7 +704,11 @@ def _source_snapshot_hash(
     adjudication_bindings: list[dict[str, str]] | None = None,
 ) -> str:
     payload = {
-        "schema": "setec-author-corpus-source-snapshot-hash/1",
+        "schema": (
+            "setec-author-corpus-source-snapshot-hash/2"
+            if adjudication_bindings
+            else "setec-author-corpus-source-snapshot-hash/1"
+        ),
         "entries": [{
             "source_kind": row["source_kind"],
             "source_manifest_sha256": row["source_manifest_sha256"],
