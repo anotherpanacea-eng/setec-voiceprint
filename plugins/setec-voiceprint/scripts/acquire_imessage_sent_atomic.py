@@ -66,6 +66,7 @@ MAX_ROW_STATE_BYTES = 1024 * 1024 * 1024
 MAX_LIVE_SMOKE_RECEIPT_BYTES = 64 * 1024
 MAX_OFFLINE_APPROVAL_JOURNAL_BYTES = 64 * 1024
 MAX_OFFLINE_APPROVED_EVIDENCE_BYTES = 64 * 1024
+MAX_ADJUDICATED_IDENTITY_EXCLUSIONS_BYTES = 1024 * 1024
 MAX_PRIVATE_TREE_DEPTH = 64
 MAX_PRIVATE_TREE_NODES = 1_000_000
 BOOTSTRAP_JOURNAL_FILENAME = "bootstrap-journal.json"
@@ -77,6 +78,9 @@ PRIVATE_SOURCE_IDENTITY_MAP_FILENAME = "private-source-identity-map.json"
 PRIVATE_SOURCE_HOLD_LEDGER_FILENAME = "private-source-hold-ledger.json"
 RUN_OWNER_FILENAME = "run-owner.json"
 OFFLINE_APPROVED_EVIDENCE_FILENAME = 'offline-approved-evidence.json'
+ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME = (
+    "adjudicated-identity-exclusions.json"
+)
 CHAT_JOIN_POLICY_VERSION = "imessage-chat-join-policy-v2"
 ROW_JOURNAL_FILENAME = ".row-transaction.json"
 ROW_STAGING_DIRNAME = ".row-staging"
@@ -15675,6 +15679,8 @@ def _preflight_row_publication(
     }
     if io.exists(OFFLINE_APPROVED_EVIDENCE_FILENAME):
         fixed.add(OFFLINE_APPROVED_EVIDENCE_FILENAME)
+    if io.exists(ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME):
+        fixed.add(ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME)
     mutable = {
         ROWS_DIRNAME,
         ROW_STAGING_DIRNAME,
@@ -16801,6 +16807,117 @@ def _validate_private_identity_maps(
     return source_by_locator, source_by_guid
 
 
+def _validated_adjudicated_identity_exclusions(
+    payload: dict[str, Any],
+    *,
+    retained_row_stems: set[str],
+) -> set[str]:
+    """Validate owner decisions without echoing row-level private data."""
+
+    if set(payload) != {"schema", "rows"} or payload.get("schema") != (
+        "setec-imessage-atomic-adjudicated-identity-exclusions/1"
+    ):
+        raise AtomicAcquisitionError(
+            "atomic adjudicated identity exclusions schema drifted"
+        )
+    rows = payload.get("rows")
+    if type(rows) is not list:
+        raise AtomicAcquisitionError(
+            "atomic adjudicated identity exclusions rows are malformed"
+        )
+    excluded: set[str] = set()
+    ordered_stems: list[str] = []
+    for row in rows:
+        if type(row) is not dict or set(row) != {
+            "row_stem", "reason", "owner_decision_date",
+        }:
+            raise AtomicAcquisitionError(
+                "atomic adjudicated identity exclusion row is malformed"
+            )
+        stem = row["row_stem"]
+        reason = row["reason"]
+        decision_date = row["owner_decision_date"]
+        if (
+            type(stem) is not str
+            or stem not in retained_row_stems
+            or stem in excluded
+            or type(reason) is not str
+            or not reason
+            or reason != reason.strip()
+            or type(decision_date) is not str
+        ):
+            raise AtomicAcquisitionError(
+                "atomic adjudicated identity exclusion binding drifted"
+            )
+        try:
+            parsed_date = _dt.date.fromisoformat(decision_date)
+        except ValueError as exc:
+            raise AtomicAcquisitionError(
+                "atomic adjudicated identity exclusion date is invalid"
+            ) from exc
+        if parsed_date.isoformat() != decision_date:
+            raise AtomicAcquisitionError(
+                "atomic adjudicated identity exclusion date is invalid"
+            )
+        excluded.add(stem)
+        ordered_stems.append(stem)
+    if ordered_stems != sorted(ordered_stems):
+        raise AtomicAcquisitionError(
+            "atomic adjudicated identity exclusions ordering drifted"
+        )
+    return excluded
+
+
+def _text_contains_forbidden_identity(
+    text: str,
+    forbidden_identities: Sequence[str],
+) -> bool:
+    """Match exact identities, with digit boundaries for digit-only needles."""
+
+    for identity in forbidden_identities:
+        offset = text.find(identity)
+        while offset >= 0:
+            end = offset + len(identity)
+            if not identity.isdigit() or (
+                (offset == 0 or not text[offset - 1].isdigit())
+                and (end == len(text) or not text[end].isdigit())
+            ):
+                return True
+            offset = text.find(identity, offset + 1)
+    return False
+
+
+def _validated_sidecar_preprocessing(
+    preprocessing: object,
+    forbidden_identities: Sequence[str],
+) -> dict[str, Any]:
+    """Scan the one sidecar region exact reconstruction does not cover."""
+
+    if type(preprocessing) is not dict:
+        raise AtomicAcquisitionError("atomic sidecar preprocessing drifted")
+    stack: list[object] = [preprocessing]
+    while stack:
+        value = stack.pop()
+        if type(value) is dict:
+            for key, child in value.items():
+                if type(key) is not str:
+                    raise AtomicAcquisitionError(
+                        "atomic sidecar preprocessing drifted"
+                    )
+                stack.append(key)
+                stack.append(child)
+        elif type(value) is list:
+            stack.extend(value)
+        elif type(value) is str:
+            if _text_contains_forbidden_identity(value, forbidden_identities):
+                raise AtomicAcquisitionError(
+                    "atomic sidecar preprocessing leaks raw identity"
+                )
+        elif value is not None and type(value) not in (bool, int):
+            raise AtomicAcquisitionError("atomic sidecar preprocessing drifted")
+    return preprocessing
+
+
 def _validate_atomic_run_io(
     root: Path,
     io: _SyntheticFixtureRowIo | LiveDurableRowIo | _PrivateReadOnlyRowIo,
@@ -16813,6 +16930,8 @@ def _validate_atomic_run_io(
     root_names = set(io.root_names())
     if OFFLINE_APPROVED_EVIDENCE_FILENAME in root_names:
         required.add(OFFLINE_APPROVED_EVIDENCE_FILENAME)
+    if ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME in root_names:
+        required.add(ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME)
     if root_names != required:
         raise AtomicAcquisitionError("atomic run top-level inventory drifted")
     if io.list_directory(ROW_STAGING_DIRNAME):
@@ -17036,6 +17155,29 @@ def _validate_atomic_run_io(
     expected_row_stems = {row["row_stem"] for row in retained_rows}
     if actual_row_stems != expected_row_stems:
         raise AtomicAcquisitionError("atomic run row inventory drifted")
+    adjudicated_stems: set[str] = set()
+    adjudicated_raw: bytes | None = None
+    if ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME in root_names:
+        adjudicated, adjudicated_raw = _read_io_object(
+            io,
+            ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME,
+            "adjudicated identity exclusions",
+            max_bytes=MAX_ADJUDICATED_IDENTITY_EXCLUSIONS_BYTES,
+        )
+        adjudicated_stems = _validated_adjudicated_identity_exclusions(
+            adjudicated,
+            retained_row_stems=expected_row_stems,
+        )
+    forbidden_identities = tuple(sorted({
+        row["message_guid"] for row in source_map["entries"]
+    } | {
+        value
+        for row in contact_map["contacts"]
+        for value in (
+            row["chat_guid"], row["chat_identifier"], row["room_name"]
+        )
+        if type(value) is str and value
+    }))
     candidates_by_guid = {candidate.message_guid: candidate for candidate in universe.candidates}
     source_guid_by_locator = {
         row["entry_locator"]: row["message_guid"] for row in source_map["entries"]
@@ -17079,6 +17221,11 @@ def _validate_atomic_run_io(
             raise AtomicAcquisitionError("atomic row text is not UTF-8") from exc
         if not text.strip():
             raise AtomicAcquisitionError("atomic retained row text is empty")
+        if (
+            stem not in adjudicated_stems
+            and _text_contains_forbidden_identity(text, forbidden_identities)
+        ):
+            raise AtomicAcquisitionError("atomic row text leaks raw identity")
         sidecar, _ = _read_io_object(
             io, f"{ROWS_DIRNAME}/{stem}/{stem}.meta.json", "atomic sidecar"
         )
@@ -17087,9 +17234,9 @@ def _validate_atomic_run_io(
         )
         if set(sidecar) != sidecar_keys or set(fragment) != fragment_keys:
             raise AtomicAcquisitionError("atomic run row schema drifted")
-        preprocessing = sidecar.get("preprocessing")
-        if type(preprocessing) is not dict:
-            raise AtomicAcquisitionError("atomic sidecar preprocessing drifted")
+        preprocessing = _validated_sidecar_preprocessing(
+            sidecar.get("preprocessing"), forbidden_identities
+        )
         expected_sidecar = {
             "schema": "setec-imessage-atomic-sidecar/1",
             "content_hash": _sha256_tag(text_raw),
@@ -17157,7 +17304,7 @@ def _validate_atomic_run_io(
     checkpoint, _ = _read_io_object(io, "checkpoint.json", "checkpoint")
     if checkpoint != _checkpoint_payload(ledger_raw, ledger):
         raise AtomicAcquisitionError("atomic run checkpoint drifted")
-    receipt, receipt_raw = _read_io_object(io, "acquisition-receipt.json", "receipt")
+    receipt, _ = _read_io_object(io, "acquisition-receipt.json", "receipt")
     semantic_tree = _semantic_tree_payload(io)
     expected_receipt = _acquisition_receipt_payload(
         owner=owner,
@@ -17171,23 +17318,6 @@ def _validate_atomic_run_io(
     )
     if receipt != expected_receipt:
         raise AtomicAcquisitionError("atomic acquisition receipt drifted")
-    forbidden_identities = {
-        row["message_guid"] for row in source_map["entries"]
-    } | {
-        value
-        for row in contact_map["contacts"]
-        for value in (
-            row["chat_guid"], row["chat_identifier"], row["room_name"]
-        )
-        if type(value) is str and value
-    }
-    forbidden_raw = tuple(value.encode("utf-8") for value in forbidden_identities)
-    for entry in semantic_tree["entries"]:
-        raw = io.read_bytes(entry["path"], "semantic privacy artifact")
-        if any(sentinel in raw for sentinel in forbidden_raw):
-            raise AtomicAcquisitionError("atomic semantic tree leaks raw identity")
-    if any(sentinel in receipt_raw for sentinel in forbidden_raw):
-        raise AtomicAcquisitionError("atomic acquisition receipt leaks raw identity")
     return {
         "status": "closed",
         "candidate_outgoing_rows": ledger["candidate_outgoing_rows"],
@@ -17205,6 +17335,15 @@ def _validate_atomic_run_io(
         ],
         "considered_rows": ledger["considered_rows"],
         "not_considered_after_bound": ledger["not_considered_after_bound"],
+        "identity_scan": {
+            "scanned_txt_rows": len(retained_rows) - len(adjudicated_stems),
+            "adjudicated_excluded_txt_rows": len(adjudicated_stems),
+            "adjudicated_exclusions_sha256": (
+                _sha256_tag(adjudicated_raw)
+                if adjudicated_raw is not None
+                else None
+            ),
+        },
     }
 
 

@@ -13392,6 +13392,11 @@ def test_durable_row_publication_resumes_and_validates(tmp_path: Path) -> None:
         "selected_ambiguous_multi_chat_rows": 0,
         "considered_rows": 1,
         "not_considered_after_bound": 2,
+        "identity_scan": {
+            "scanned_txt_rows": 1,
+            "adjudicated_excluded_txt_rows": 0,
+            "adjudicated_exclusions_sha256": None,
+        },
     }
     row_dir = run_dir / "rows" / planned[0].row_stem
     text_path = row_dir / f"{planned[0].row_stem}.txt"
@@ -13408,10 +13413,24 @@ def _synthetic_row_publication_case(
     *,
     chatless_message_ids: tuple[int, ...] = (),
     max_retained: int | None = 1,
+    chat_identifier: str = "",
+    message_text: str | None = None,
 ) -> tuple[tuple[A.PlannedAtomicRow, ...], A.AtomicProcessingResult]:
     run_dir.mkdir()
     snapshot_path = run_dir / A.SNAPSHOT_FILENAME
     conn, schema = _candidate_fixture(snapshot_path)
+    if chat_identifier:
+        conn.execute(
+            "UPDATE chat SET chat_identifier = ?",
+            (chat_identifier,),
+        )
+    if message_text is not None:
+        conn.execute(
+            "UPDATE message SET text = ? WHERE is_from_me = 1",
+            (message_text,),
+        )
+    if chat_identifier or message_text is not None:
+        conn.commit()
     if chatless_message_ids:
         conn.executemany(
             "DELETE FROM chat_message_join WHERE message_id = ?",
@@ -13455,6 +13474,227 @@ def _synthetic_row_publication_case(
     for artifact in initialization.artifacts:
         (run_dir / artifact.filename).write_bytes(artifact.raw)
     return planned, result
+
+
+def test_atomic_validator_scans_txt_only_and_uses_digit_boundaries(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "shortcode-in-structured-data"
+    planned, result = _synthetic_row_publication_case(
+        run_dir,
+        chat_identifier="22224",
+        message_text="receipt token 1222249 remains non-identifying",
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+    text_raw = (
+        run_dir / A.ROWS_DIRNAME / stem / f"{stem}.txt"
+    ).read_bytes()
+    sidecar_raw = (
+        run_dir / A.ROWS_DIRNAME / stem / f"{stem}.meta.json"
+    ).read_bytes()
+    assert b"22224" in text_raw
+    assert b"22224" in sidecar_raw
+    assert not A._text_contains_forbidden_identity(
+        text_raw.decode("utf-8"), ("22224",)
+    )
+    assert A._text_contains_forbidden_identity(
+        "send the message to 22224 now", ("22224",)
+    )
+
+    summary = A.validate_atomic_run(run_dir)
+
+    assert summary["identity_scan"] == {
+        "scanned_txt_rows": 1,
+        "adjudicated_excluded_txt_rows": 0,
+        "adjudicated_exclusions_sha256": None,
+    }
+
+
+def test_atomic_validator_requires_adjudication_for_email_in_txt_body(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "email-in-body"
+    email = "author@example.test"
+    planned, result = _synthetic_row_publication_case(
+        run_dir,
+        chat_identifier=email,
+        message_text=f"Please write to {email} about this.",
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+
+    with pytest.raises(A.AtomicAcquisitionError, match="row text leaks raw identity"):
+        A.validate_atomic_run(run_dir)
+
+    exclusions_raw = A._canonical_json_bytes({
+        "schema": "setec-imessage-atomic-adjudicated-identity-exclusions/1",
+        "rows": [{
+            "row_stem": stem,
+            "reason": "owner rejected identity-bearing row from corpus ingestion",
+            "owner_decision_date": "2026-07-19",
+        }],
+    })
+    (run_dir / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME).write_bytes(
+        exclusions_raw
+    )
+
+    summary = A.validate_atomic_run(run_dir)
+
+    assert summary["identity_scan"] == {
+        "scanned_txt_rows": 0,
+        "adjudicated_excluded_txt_rows": 1,
+        "adjudicated_exclusions_sha256": A._sha256_tag(exclusions_raw),
+    }
+
+
+def test_row_publication_resumes_after_identity_adjudication(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "resume-after-adjudication"
+    email = "author@example.test"
+    planned, result = _synthetic_row_publication_case(
+        run_dir,
+        chat_identifier=email,
+        message_text=f"Please write to {email} about this.",
+    )
+    first_receipt = A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+    (run_dir / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME).write_bytes(
+        A._canonical_json_bytes({
+            "schema": "setec-imessage-atomic-adjudicated-identity-exclusions/1",
+            "rows": [{
+                "row_stem": stem,
+                "reason": (
+                    "owner rejected identity-bearing row from corpus ingestion"
+                ),
+                "owner_decision_date": "2026-07-19",
+            }],
+        })
+    )
+
+    resumed_receipt = A.publish_planned_rows(run_dir, planned, result)
+
+    assert resumed_receipt == first_receipt
+    summary = A.validate_atomic_run(run_dir)
+    assert summary["identity_scan"]["adjudicated_excluded_txt_rows"] == 1
+
+
+def test_atomic_validator_rejects_free_form_sidecar_preprocessing(
+    tmp_path: Path,
+) -> None:
+    run_dir = tmp_path / "sidecar-preprocessing"
+    email = "author@example.test"
+    planned, result = _synthetic_row_publication_case(
+        run_dir, chat_identifier=email
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+    sidecar_raw = (
+        run_dir / A.ROWS_DIRNAME / stem / f"{stem}.meta.json"
+    ).read_bytes()
+    published = json.loads(sidecar_raw)["preprocessing"]
+
+    assert A._validated_sidecar_preprocessing(published, (email,)) == published
+
+    smuggled_snippets = json.loads(json.dumps(published))
+    smuggled_snippets["stripped_text_by_rule"] = {
+        "signature_block": [f"Contact {email}"]
+    }
+    with pytest.raises(
+        A.AtomicAcquisitionError, match="preprocessing leaks raw identity"
+    ):
+        A._validated_sidecar_preprocessing(smuggled_snippets, (email,))
+
+    smuggled_key = json.loads(json.dumps(published))
+    smuggled_key[email] = True
+    with pytest.raises(
+        A.AtomicAcquisitionError, match="preprocessing leaks raw identity"
+    ):
+        A._validated_sidecar_preprocessing(smuggled_key, (email,))
+
+    shortcode_in_count = json.loads(json.dumps(published))
+    shortcode_in_count["tokens_stripped"] = 22224
+    assert A._validated_sidecar_preprocessing(
+        shortcode_in_count, ("22224",)
+    ) == shortcode_in_count
+
+    boundary_hit = json.loads(json.dumps(published))
+    boundary_hit["warning"] = "Stripped tokens near 22224 today."
+    with pytest.raises(
+        A.AtomicAcquisitionError, match="preprocessing leaks raw identity"
+    ):
+        A._validated_sidecar_preprocessing(boundary_hit, ("22224",))
+
+    non_json_scalar = json.loads(json.dumps(published))
+    non_json_scalar["rules"] = [b"bytes"]
+    with pytest.raises(
+        A.AtomicAcquisitionError, match="sidecar preprocessing drifted"
+    ):
+        A._validated_sidecar_preprocessing(non_json_scalar, (email,))
+
+    summary = A.validate_atomic_run(run_dir)
+    assert summary["identity_scan"]["scanned_txt_rows"] == 1
+
+
+@pytest.mark.parametrize(
+    ("mutation", "match"),
+    (
+        ({"schema": "wrong/1"}, "exclusions schema drifted"),
+        ({"note": "extra"}, "exclusions schema drifted"),
+        ({"rows": {}}, "exclusions rows are malformed"),
+        ({"rows": [[]]}, "exclusion row is malformed"),
+        (
+            {"rows": [{"row_stem": "unknown-stem"}]},
+            "exclusion binding drifted",
+        ),
+        ({"rows": [{"reason": ""}]}, "exclusion binding drifted"),
+        ({"rows": [{"reason": " padded "}]}, "exclusion binding drifted"),
+        (
+            {"rows": [{"owner_decision_date": "2026-7-19"}]},
+            "exclusion date is invalid",
+        ),
+        ({"rows": "duplicate"}, "exclusion binding drifted"),
+    ),
+)
+def test_atomic_validator_rejects_malformed_adjudication_files(
+    tmp_path: Path, mutation: dict[str, object], match: str
+) -> None:
+    run_dir = tmp_path / "malformed-adjudication"
+    email = "author@example.test"
+    planned, result = _synthetic_row_publication_case(
+        run_dir,
+        chat_identifier=email,
+        message_text=f"Please write to {email} about this.",
+    )
+    A.publish_planned_rows(run_dir, planned, result)
+    stem = planned[0].row_stem
+    assert stem is not None
+    valid_row = {
+        "row_stem": stem,
+        "reason": "owner rejected identity-bearing row from corpus ingestion",
+        "owner_decision_date": "2026-07-19",
+    }
+    payload: dict[str, object] = {
+        "schema": "setec-imessage-atomic-adjudicated-identity-exclusions/1",
+        "rows": [dict(valid_row)],
+    }
+    for key, value in mutation.items():
+        if key == "rows" and value == "duplicate":
+            payload["rows"] = [dict(valid_row), dict(valid_row)]
+        elif key == "rows" and type(value) is list and value and type(value[0]) is dict:
+            payload["rows"] = [{**valid_row, **value[0]}]
+        else:
+            payload[key] = value
+    (run_dir / A.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME).write_bytes(
+        A._canonical_json_bytes(payload)
+    )
+    with pytest.raises(A.AtomicAcquisitionError, match=match):
+        A.validate_atomic_run(run_dir)
 
 
 def test_row_publication_preflight_is_constant_per_invocation(
@@ -13546,6 +13786,11 @@ def test_one_row_run_with_two_chatless_holds_reports_conserved_aggregate_counts(
         "selected_ambiguous_multi_chat_rows": 0,
         "considered_rows": 1,
         "not_considered_after_bound": 0,
+        "identity_scan": {
+            "scanned_txt_rows": 1,
+            "adjudicated_excluded_txt_rows": 0,
+            "adjudicated_exclusions_sha256": None,
+        },
     }
     receipt_raw = (run_dir / "acquisition-receipt.json").read_bytes()
     ledger_raw = (run_dir / "source-ledger.json").read_bytes()
