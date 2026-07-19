@@ -1152,6 +1152,32 @@ def test_offline_key_loader_refuses_group_readable_key(tmp_path: Path) -> None:
         A.load_offline_approved_hmac_key(key_path, authorization)
 
 
+@pytest.mark.skipif(os.name == 'nt', reason='POSIX no-follow contract')
+def test_offline_key_loader_opens_key_without_following_symlinks(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _config, authorization, _approved, _archive = _offline_approved_case(tmp_path)
+    key_path = authorization.live_smoke_receipt.parent / 'author-corpus-r1a.key'
+    key_path.write_bytes(KEY)
+    os.chmod(key_path, 0o600)
+    nofollow = getattr(os, 'O_NOFOLLOW', 0)
+    if not nofollow:
+        pytest.skip('host does not expose O_NOFOLLOW')
+    real_open = A.os.open
+    observed_key_flags: list[int] = []
+
+    def recording_open(path: object, flags: int, *args: object, **kwargs: object) -> int:
+        if path == key_path:
+            observed_key_flags.append(flags)
+        return real_open(path, flags, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(A.os, 'open', recording_open)
+    assert A.load_offline_approved_hmac_key(key_path, authorization) == KEY
+    assert observed_key_flags
+    assert all(flags & nofollow for flags in observed_key_flags)
+
+
 def test_offline_archive_scan_is_immutable_and_sidecar_free(tmp_path: Path) -> None:
     config, authorization, _approved, archive = _offline_approved_case(tmp_path)
     conn = sqlite3.connect(archive)
