@@ -123,14 +123,17 @@ def _canonical_json(payload: object) -> bytes:
             return
         raise ReviewBurstError("value is outside the canonical JSON domain")
 
-    validate(payload)
-    return json.dumps(
-        payload,
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        allow_nan=False,
-    ).encode("utf-8") + b"\n"
+    try:
+        validate(payload)
+        return json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8") + b"\n"
+    except (RecursionError, UnicodeEncodeError) as exc:
+        raise ReviewBurstError("value cannot be canonically encoded") from exc
 
 
 def _canonical_object(raw: bytes, label: str) -> dict[str, Any]:
@@ -144,17 +147,93 @@ def _canonical_object(raw: bytes, label: str) -> dict[str, Any]:
 
     try:
         payload = json.loads(raw, object_pairs_hook=closed_object)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
         raise ReviewBurstError(f"{label} is unreadable") from exc
-    if type(payload) is not dict or _canonical_json(payload) != raw:
+    try:
+        canonical = _canonical_json(payload)
+    except (ReviewBurstError, RecursionError) as exc:
+        raise ReviewBurstError(f"{label} is unreadable") from exc
+    if type(payload) is not dict or canonical != raw:
         raise ReviewBurstError(f"{label} is not canonical")
     return payload
 
 
-def _safe_name(value: str, label: str) -> str:
+class _ValidatedSourceView:
+    """Capture the exact source view approved by the atomic validator."""
+
+    def __init__(self, reader: atomic._PrivateReadOnlyRowIo) -> None:
+        self.root = reader.root
+        self._reader = reader
+        self._bytes: dict[str, tuple[bytes, str]] = {}
+        self._root_names: tuple[str, ...] | None = None
+        self._exists: dict[str, bool] = {}
+        self._directories: dict[str, tuple[str, ...]] = {}
+        self._frozen = False
+
+    def root_names(self) -> tuple[str, ...]:
+        if self._root_names is None:
+            if self._frozen:
+                raise ReviewBurstError("post-validation source inventory was not approved")
+            self._root_names = self._reader.root_names()
+        return self._root_names
+
+    def exists(self, relative: str) -> bool:
+        if relative not in self._exists:
+            if self._frozen:
+                raise ReviewBurstError("post-validation source path was not approved")
+            self._exists[relative] = self._reader.exists(relative)
+        return self._exists[relative]
+
+    def list_directory(self, relative: str) -> tuple[str, ...]:
+        if relative not in self._directories:
+            if self._frozen:
+                raise ReviewBurstError("post-validation source directory was not approved")
+            self._directories[relative] = self._reader.list_directory(relative)
+        return self._directories[relative]
+
+    def read_bytes(self, relative: str, label: str) -> bytes:
+        if relative not in self._bytes:
+            if self._frozen:
+                raise ReviewBurstError("post-validation source artifact was not approved")
+            self._bytes[relative] = (self._reader.read_bytes(relative, label), label)
+        return self._bytes[relative][0]
+
+    def freeze(self) -> None:
+        self._frozen = True
+
+    def verify_unchanged(self) -> None:
+        """Refuse drift between validator return and the captured composition view."""
+
+        try:
+            if (
+                self._root_names is not None
+                and self._reader.root_names() != self._root_names
+            ):
+                raise ReviewBurstError("source inventory changed after validation")
+            for relative, expected in self._exists.items():
+                if self._reader.exists(relative) is not expected:
+                    raise ReviewBurstError("source path changed after validation")
+            for relative, expected in self._directories.items():
+                if self._reader.list_directory(relative) != expected:
+                    raise ReviewBurstError("source directory changed after validation")
+            for relative, (expected, label) in self._bytes.items():
+                if self._reader.read_bytes(relative, label) != expected:
+                    raise ReviewBurstError("source artifact changed after validation")
+        except ReviewBurstError:
+            raise
+        except (atomic.AtomicAcquisitionError, OSError) as exc:
+            raise ReviewBurstError("source changed after validation") from exc
+
+
+def _safe_name(value: object, label: str) -> str:
+    if type(value) is not str:
+        raise ReviewBurstError(f"{label} is invalid")
     try:
+        if "\x00" in value:
+            raise ValueError("NUL is not a filesystem name character")
+        value.encode(sys.getfilesystemencoding(), errors="strict")
         return atomic._bootstrap_basename(value, label)
-    except atomic.AtomicAcquisitionError as exc:
+    except (atomic.AtomicAcquisitionError, UnicodeError, ValueError) as exc:
         raise ReviewBurstError(f"{label} is invalid") from exc
 
 
@@ -229,6 +308,8 @@ def _publish_resumable_file_at(
     raw: bytes,
     *,
     label: str,
+    fault: Callable[[str], None] | None = None,
+    copying_fault_boundary: str | None = None,
 ) -> str:
     """Create one exact file through a deterministic prefix-resumable temporary."""
 
@@ -314,6 +395,8 @@ def _publish_resumable_file_at(
             os.close(descriptor)
 
     _read_private_bytes_at(parent_fd, temporary, expected=raw, label=f"partial {label}")
+    if fault is not None and copying_fault_boundary is not None:
+        fault(copying_fault_boundary)
     try:
         atomic._macos_rename_exclusive_at(parent_fd, temporary, filename)
         os.fsync(parent_fd)
@@ -476,6 +559,28 @@ def _preflight_source(reader: atomic._PrivateReadOnlyRowIo) -> tuple[bytes, byte
     ):
         raise ReviewBurstError("source receipt lacks full-universe closure")
     return checkpoint_raw, receipt_raw
+
+
+def _verify_source_aggregate_bindings(
+    *,
+    checkpoint_raw: bytes,
+    receipt_raw: bytes,
+    ledger_raw: bytes,
+    holds_raw: bytes,
+) -> None:
+    """Bind captured aggregate bytes to the producer's shipped schemas."""
+
+    checkpoint = _canonical_object(checkpoint_raw, "source checkpoint")
+    receipt = _canonical_object(receipt_raw, "source acquisition receipt")
+    ledger_digest = _sha256_tag(ledger_raw)
+    hold_digest = _sha256_tag(holds_raw)
+    if (
+        checkpoint.get("ledger_sha256") != ledger_digest
+        or receipt.get("ledger_sha256") != ledger_digest
+        or checkpoint.get("source_hold_ledger_hash") != hold_digest
+        or receipt.get("source_hold_ledger_hash") != hold_digest
+    ):
+        raise ReviewBurstError("source aggregates are not bound to the approved closure")
 
 
 def _load_source_events(
@@ -1016,6 +1121,9 @@ def compose_review_bursts(
     journal_name = _safe_name(
         f".{final_name}.review-burst-journal.json", "journal name"
     )
+    journal_copying_name = _safe_name(
+        f".{journal_name}.copying", "journal copying name"
+    )
     lock_name = _safe_name(f".{final_name}.review-burst.lock", "lock name")
     source_root = Path(input_run).expanduser().absolute()
     destination_root = Path(output_root).expanduser().absolute()
@@ -1031,19 +1139,28 @@ def compose_review_bursts(
         raise ReviewBurstError("review-burst output root must remain outside the source run")
 
     reader = atomic._PrivateReadOnlyRowIo(source_root)
+    source_view = _ValidatedSourceView(reader)
     output_parent_fd: int | None = None
     output_fd: int | None = None
     staging_fd: int | None = None
     lock_fd: int | None = None
     try:
-        checkpoint_source_raw, receipt_source_raw = _preflight_source(reader)
+        checkpoint_source_raw, receipt_source_raw = _preflight_source(source_view)
         try:
-            atomic.validate_atomic_run(source_root, io=reader)
+            atomic.validate_atomic_run(source_root, io=source_view)
         except atomic.AtomicAcquisitionError as exc:
             raise ReviewBurstError("source atomic run validation failed") from exc
+        source_view.freeze()
         events, ledger, ledger_raw, source_holds, source_holds_raw = (
-            _load_source_events(reader)
+            _load_source_events(source_view)
         )
+        _verify_source_aggregate_bindings(
+            checkpoint_raw=checkpoint_source_raw,
+            receipt_raw=receipt_source_raw,
+            ledger_raw=ledger_raw,
+            holds_raw=source_holds_raw,
+        )
+        source_view.verify_unchanged()
         bursts = build_bursts(events, config)
         conservation = _conservation_payload(events, bursts, source_holds)
         manifest_raw = _manifest_bytes(bursts)
@@ -1106,15 +1223,22 @@ def compose_review_bursts(
         final_exists = final_name in root_names
         staging_exists = staging_name in root_names
         journal_exists = journal_name in root_names
+        journal_copying_exists = journal_copying_name in root_names
         journal_expected = _journal_payload(
             source_config_fingerprint=fingerprint,
             staging_name=staging_name,
             final_name=final_name,
             config=config,
         )
+        journal_expected_raw = _canonical_json(journal_expected)
 
         if final_exists:
-            if not resume or staging_exists or not journal_exists:
+            if (
+                not resume
+                or staging_exists
+                or not journal_exists
+                or journal_copying_exists
+            ):
                 raise ReviewBurstError("completed review-burst package requires exact resume")
             journal, _journal_raw, _journal_digest = _read_state_at(
                 output_fd, journal_name, "review-burst journal"
@@ -1135,39 +1259,79 @@ def compose_review_bursts(
                 os.close(final_fd)
             return receipt
 
-        if (staging_exists or journal_exists) and not resume:
+        existing_state = staging_exists or journal_exists or journal_copying_exists
+        if existing_state and not resume:
             raise ReviewBurstError("existing review-burst state requires --resume")
-        if staging_exists and not journal_exists:
-            raise ReviewBurstError("review-burst staging and journal state is ambiguous")
-        if journal_exists:
+        if staging_exists and journal_exists and not journal_copying_exists:
             journal, _journal_raw, _journal_digest = _read_state_at(
                 output_fd, journal_name, "review-burst journal"
             )
             if journal != journal_expected:
                 raise ReviewBurstError("review-burst journal binding drifted")
-            if staging_exists:
-                staging_fd, _staging_identity = atomic._open_private_tree_node_at(
-                    output_fd,
-                    staging_name,
-                    kind="directory",
-                    owner_uid=os.getuid(),
-                    ops=atomic._PrivateTreeOsOps(),
-                    label="review-burst staging",
-                )
-            else:
-                staging_fd, _staging_identity = atomic._create_private_staging_at(
-                    output_fd, staging_name
-                )
-        else:
-            _publish_resumable_file_at(
+            staging_fd, _staging_identity = atomic._open_private_tree_node_at(
                 output_fd,
-                journal_name,
-                _canonical_json(journal_expected),
-                label="review-burst journal",
+                staging_name,
+                kind="directory",
+                owner_uid=os.getuid(),
+                ops=atomic._PrivateTreeOsOps(),
+                label="review-burst staging",
             )
+        elif journal_exists and not staging_exists and not journal_copying_exists:
+            journal, _journal_raw, _journal_digest = _read_state_at(
+                output_fd, journal_name, "review-burst journal"
+            )
+            if journal != journal_expected:
+                raise ReviewBurstError("review-burst journal binding drifted")
+            if fault is not None:
+                fault("after_journal")
             staging_fd, _staging_identity = atomic._create_private_staging_at(
                 output_fd, staging_name
             )
+        elif journal_copying_exists and not journal_exists and not staging_exists:
+            journal_copying_raw = _read_private_bytes_at(
+                output_fd,
+                journal_copying_name,
+                max_bytes=len(journal_expected_raw),
+                label="partial review-burst journal",
+            )
+            if journal_copying_raw != journal_expected_raw:
+                raise ReviewBurstError(
+                    "partial review-burst journal is incomplete or binding drifted"
+                )
+            _publish_resumable_file_at(
+                output_fd,
+                journal_name,
+                journal_expected_raw,
+                label="review-burst journal",
+                fault=fault,
+                copying_fault_boundary="journal_copying",
+            )
+            journal, _journal_raw, _journal_digest = _read_state_at(
+                output_fd, journal_name, "review-burst journal"
+            )
+            if journal != journal_expected:
+                raise ReviewBurstError("review-burst journal binding drifted")
+            if fault is not None:
+                fault("after_journal")
+            staging_fd, _staging_identity = atomic._create_private_staging_at(
+                output_fd, staging_name
+            )
+        elif not existing_state:
+            _publish_resumable_file_at(
+                output_fd,
+                journal_name,
+                journal_expected_raw,
+                label="review-burst journal",
+                fault=fault,
+                copying_fault_boundary="journal_copying",
+            )
+            if fault is not None:
+                fault("after_journal")
+            staging_fd, _staging_identity = atomic._create_private_staging_at(
+                output_fd, staging_name
+            )
+        else:
+            raise ReviewBurstError("review-burst staging and journal state is ambiguous")
         _verify_named_private_directory(
             output_fd,
             staging_name,
