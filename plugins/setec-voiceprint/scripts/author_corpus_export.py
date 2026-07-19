@@ -662,7 +662,7 @@ def _atomic_row_stem(entry_path: Any) -> str:
 
 def _atomic_adjudication_binding(
     manifest: Path, manifest_bytes: bytes,
-) -> tuple[set[str], str | None]:
+) -> tuple[set[str], bytes | None]:
     """Load the optional owner rejection file and bind it to manifest rows."""
 
     path = manifest.parent / atomic_imessage.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME
@@ -683,7 +683,10 @@ def _atomic_adjudication_binding(
             continue
         entry = _load_json_object(raw_line, f"source manifest line {lineno}")
         retained_stems.add(_atomic_row_stem(entry.get("path")))
-    raw = path.read_bytes()
+    try:
+        raw = path.read_bytes()
+    except OSError as exc:
+        raise ValueError("atomic adjudicated identity exclusions are unreadable") from exc
     try:
         payload = atomic_imessage._decode_canonical_private_json(
             raw,
@@ -696,7 +699,33 @@ def _atomic_adjudication_binding(
         )
     except ValueError as exc:
         raise ValueError("atomic adjudicated identity exclusions are invalid") from exc
-    return excluded, _sha(raw)
+    return excluded, raw
+
+
+def _verify_atomic_adjudication_unchanged(
+    manifest: Path, expected: bytes | None,
+) -> None:
+    """Refuse an export if owner decisions changed after their first read."""
+
+    path = manifest.parent / atomic_imessage.ADJUDICATED_IDENTITY_EXCLUSIONS_FILENAME
+    present = path.exists() or path.is_symlink()
+    if expected is None:
+        if present:
+            raise ValueError("atomic adjudicated identity exclusions changed during export")
+        return
+    if not present:
+        raise ValueError("atomic adjudicated identity exclusions changed during export")
+    _check_private([path])
+    if path.is_symlink() or not path.is_file():
+        raise ValueError("atomic adjudicated identity exclusions changed during export")
+    try:
+        actual = path.read_bytes()
+    except OSError as exc:
+        raise ValueError(
+            "atomic adjudicated identity exclusions changed during export"
+        ) from exc
+    if not hmac.compare_digest(actual, expected):
+        raise ValueError("atomic adjudicated identity exclusions changed during export")
 
 
 def _source_snapshot_hash(
@@ -823,6 +852,7 @@ def build_export(
     key_id = _sha(DOMAIN_KEY_ID + hmac_key)
     source_rows: list[dict[str, Any]] = []
     adjudication_bindings: list[dict[str, str]] = []
+    adjudication_snapshots: list[tuple[Path, bytes | None]] = []
     seen_private_entries: set[tuple[str, str]] = set()
     built: list[
         tuple[dict[str, Any], bytes, str, tuple[bool, str, str] | None, bool]
@@ -838,14 +868,15 @@ def build_export(
         manifest_hash = _sha(manifest_bytes)
         adjudicated_stems: set[str] = set()
         if kind == "imessage_sent_atomic":
-            adjudicated_stems, adjudication_hash = _atomic_adjudication_binding(
+            adjudicated_stems, adjudication_raw = _atomic_adjudication_binding(
                 manifest, manifest_bytes,
             )
-            if adjudication_hash is not None:
+            adjudication_snapshots.append((manifest, adjudication_raw))
+            if adjudication_raw is not None:
                 adjudication_bindings.append({
                     "source_kind": kind,
                     "source_manifest_sha256": manifest_hash,
-                    "adjudicated_identity_exclusions_sha256": adjudication_hash,
+                    "adjudicated_identity_exclusions_sha256": _sha(adjudication_raw),
                 })
         for lineno, raw in enumerate(manifest_bytes.decode("utf-8").splitlines(), 1):
             if not raw.strip():
@@ -1064,6 +1095,9 @@ def build_export(
     if len({r["source_entry_fingerprint"] for r in records}) != len(records):
         raise ValueError("duplicate source-entry fingerprint")
     texts = {r["content_sha256"]: text_bytes for r, text_bytes, _, _, _ in built}
+
+    for manifest, expected_adjudication in adjudication_snapshots:
+        _verify_atomic_adjudication_unchanged(manifest, expected_adjudication)
 
     package_hash = _package_hash(records)
     by_register = Counter(r["register"] for r in records)

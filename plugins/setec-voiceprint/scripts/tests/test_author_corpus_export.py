@@ -754,6 +754,33 @@ def test_atomic_imessage_adjudication_unknown_stem_fails_closed(
         )
 
 
+def test_atomic_imessage_adjudication_change_during_export_fails_closed(
+    private_root: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    manifest = _atomic_imessage_source(private_root)
+    stems = [
+        json.loads(line)["path"].split("/")[1]
+        for line in manifest.read_text(encoding="utf-8").splitlines()
+    ]
+    _write_atomic_adjudication(manifest, stems[:1])
+    real_binding = E._atomic_adjudication_binding
+
+    def mutate_after_binding(bound_manifest: Path, manifest_bytes: bytes):
+        binding = real_binding(bound_manifest, manifest_bytes)
+        _write_atomic_adjudication(bound_manifest, stems[:2])
+        return binding
+
+    monkeypatch.setattr(E, "_atomic_adjudication_binding", mutate_after_binding)
+    with pytest.raises(ValueError, match="changed during export"):
+        E.build_export(
+            sources={"imessage_sent_atomic": manifest},
+            register_map={"imessage_sent_atomic:personal": "text.personal"},
+            allowed_ai_status=["pre_ai_human"],
+            persona="fixture_persona",
+            hmac_key=b"k" * 32,
+        )
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
