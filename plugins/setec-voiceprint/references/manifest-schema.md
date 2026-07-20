@@ -4,7 +4,7 @@ The canonical reference for the `corpus_manifest.jsonl` contract. SETEC's task s
 
 **Format:** JSONL — one JSON object per line, blank lines and lines starting with `#` skipped.
 
-**Validate:** `python3 scripts/manifest_validator.py path/to/manifest.jsonl`. Exits non-zero on errors; warnings print but don't fail the run unless `--strict`.
+**Validate:** `python3 -u scripts/manifest_validator.py path/to/manifest.jsonl --progress-every 1000`. Exits non-zero on errors; warnings print but don't fail the run unless `--strict`. The unbuffered launcher makes the aggregate stderr heartbeat visible during long scans; set `--progress-every 0` to disable it.
 
 ## Required fields
 

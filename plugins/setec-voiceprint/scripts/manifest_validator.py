@@ -23,6 +23,7 @@ Usage:
   python3 manifest_validator.py corpus_manifest.jsonl
   python3 manifest_validator.py corpus_manifest.jsonl --json
   python3 manifest_validator.py corpus_manifest.jsonl --strict
+  python3 -u manifest_validator.py corpus_manifest.jsonl --progress-every 1000
 """
 
 from __future__ import annotations
@@ -30,9 +31,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 from collections import Counter, defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -646,7 +648,34 @@ def validate_entry(
 
 # ---------- Whole-manifest driver ----------
 
-def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
+def _validate_progress_options(progress_every: int, progress_stream: TextIO | None) -> None:
+    if isinstance(progress_every, bool) or not isinstance(progress_every, int) or progress_every < 0:
+        raise ValueError("progress_every must be a non-negative integer")
+    if progress_every == 0 and progress_stream is not None:
+        raise ValueError("progress_stream must be None when progress_every is 0")
+    if progress_every > 0 and progress_stream is None:
+        raise ValueError("progress_stream is required when progress_every is positive")
+
+
+def _emit_progress(progress_stream: TextIO, *, phase: str, rows: int, entries: int,
+                   started_at: float, issues: list[Issue] | None = None,
+                   n_errors: int | None = None, n_warnings: int | None = None) -> None:
+    elapsed = time.monotonic() - started_at
+    if phase == "scan":
+        message = (
+            f"[{TOOL_NAME}] phase=scan rows={rows} entries={entries} "
+            f"issues_so_far={len(issues or [])} elapsed_seconds={elapsed:.1f}"
+        )
+    else:
+        message = (
+            f"[{TOOL_NAME}] phase=complete rows={rows} entries={entries} "
+            f"errors={n_errors} warnings={n_warnings} elapsed_seconds={elapsed:.1f}"
+        )
+    print(message, file=progress_stream, flush=True)
+
+
+def validate_manifest(manifest_path: str | Path, *, progress_every: int = 0,
+                      progress_stream: TextIO | None = None) -> dict[str, Any]:
     """Validate every line of the manifest and return a result dict.
 
     Importable: downstream tools that consume a manifest can call this
@@ -654,6 +683,8 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
     structured ``issues`` list (errors and warnings together) plus a
     summary of entries by register, ai_status, split, use, and privacy.
     """
+    _validate_progress_options(progress_every, progress_stream)
+    started_at = time.monotonic()
     path = Path(manifest_path)
     issues: list[Issue] = []
     n_entries = 0
@@ -679,6 +710,7 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
     impostor_entries: list[tuple[int, dict[str, Any]]] = []
     tripwires: list[dict[str, Any]] = []
     tripwires_seen: set[str] = set()
+    rows_processed = 0
 
     if not path.exists():
         return {
@@ -720,6 +752,10 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
         line = raw.strip()
         if not line or line.startswith("#"):
             continue
+        # A progress row is one nonblank, noncomment JSONL candidate, whether it proves to be a
+        # valid object, malformed JSON, or another JSON type. This keeps cadence tied to actual
+        # scan work without letting bad input make the heartbeat disappear.
+        rows_processed += 1
         try:
             entry = json.loads(line)
         except json.JSONDecodeError as exc:
@@ -727,6 +763,10 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
                 "error", lineno, None, None,
                 f"Malformed JSON on line {lineno}: {exc.msg}.",
             ))
+            if progress_every and rows_processed % progress_every == 0:
+                assert progress_stream is not None
+                _emit_progress(progress_stream, phase="scan", rows=rows_processed,
+                               entries=n_entries, issues=issues, started_at=started_at)
             continue
         if not isinstance(entry, dict):
             issues.append(Issue(
@@ -734,6 +774,10 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
                 f"Line {lineno} is not a JSON object (got "
                 f"{type(entry).__name__}).",
             ))
+            if progress_every and rows_processed % progress_every == 0:
+                assert progress_stream is not None
+                _emit_progress(progress_stream, phase="scan", rows=rows_processed,
+                               entries=n_entries, issues=issues, started_at=started_at)
             continue
 
         n_entries += 1
@@ -866,6 +910,11 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
         elif effective_role == "impostor":
             impostor_entries.append((lineno, entry))
 
+        if progress_every and rows_processed % progress_every == 0:
+            assert progress_stream is not None
+            _emit_progress(progress_stream, phase="scan", rows=rows_processed,
+                           entries=n_entries, issues=issues, started_at=started_at)
+
     # Ratchet 2: cross-entry persona-reference + cross-register
     # warnings. An impostor's `impostor_for` should name personas
     # that exist in the manifest's identity-baseline entries; a
@@ -917,6 +966,15 @@ def validate_manifest(manifest_path: str | Path) -> dict[str, Any]:
 
     n_errors = sum(1 for i in issues if i.severity == "error")
     n_warnings = sum(1 for i in issues if i.severity == "warning")
+
+    # Always emit a post-cross-entry completion record when progress is enabled. A scan heartbeat
+    # at an exact multiple is necessarily provisional because cross-entry checks run below the row
+    # loop; the completion record is the only heartbeat carrying final error/warning counts.
+    if progress_every:
+        assert progress_stream is not None
+        _emit_progress(progress_stream, phase="complete", rows=rows_processed,
+                       entries=n_entries, n_errors=n_errors, n_warnings=n_warnings,
+                       started_at=started_at)
 
     return {
         "task_surface": TASK_SURFACE,
@@ -1041,6 +1099,16 @@ def render_report(result: dict[str, Any]) -> str:
 
 # ---------- CLI ----------
 
+def _nonnegative_int(raw: str) -> int:
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a non-negative integer") from exc
+    if value < 0:
+        raise argparse.ArgumentTypeError("must be a non-negative integer")
+    return value
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Validate a corpus_manifest.jsonl file. Run before "
@@ -1063,9 +1131,18 @@ def main() -> int:
         "--out",
         help="Write report to file instead of stdout.",
     )
+    parser.add_argument(
+        "--progress-every", type=_nonnegative_int, default=1000, metavar="N",
+        help="Emit a flushed aggregate stderr heartbeat every N manifest rows (default: 1000; "
+             "use 0 to disable).",
+    )
     args = parser.parse_args()
 
-    result = validate_manifest(args.manifest)
+    result = validate_manifest(
+        args.manifest,
+        progress_every=args.progress_every,
+        progress_stream=sys.stderr if args.progress_every else None,
+    )
 
     if args.json:
         envelope = build_audit_payload(result, target_path=args.manifest)
