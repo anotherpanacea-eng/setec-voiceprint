@@ -69,7 +69,7 @@ ALLOWED_REGISTER = {
     "testimony_policy", "personal", "policy_advocacy",
     "literary_horror", "policy_brief", "scholarly_article",
     "legal_brief", "grant_proposal", "expert_affidavit",
-    "regulatory_comment",
+    "regulatory_comment", "professional_letter",
 }
 ALLOWED_SPLIT = {"baseline", "train", "test", "holdout"}
 ALLOWED_PRIVACY = {"private", "shareable", "public_domain"}
