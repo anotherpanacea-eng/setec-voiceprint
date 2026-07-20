@@ -7,6 +7,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -15,7 +17,8 @@ if str(ROOT) not in sys.path:
 import manifest_validator as mv  # type: ignore
 
 
-def test_professional_letter_is_a_known_register_without_warning(tmp_path: Path):
+@pytest.mark.parametrize("register", ["professional_letter", "teaching"])
+def test_owner_approved_register_is_known_without_warning(tmp_path: Path, register: str):
     source = tmp_path / "letter.txt"
     source.write_text("Dear colleague, thank you for your thoughtful letter.", encoding="utf-8")
     entry = {
@@ -23,7 +26,7 @@ def test_professional_letter_is_a_known_register_without_warning(tmp_path: Path)
         "path": source.name,
         "ai_status": "pre_ai_human",
         "use": ["validation"],
-        "register": "professional_letter",
+        "register": register,
     }
     manifest = tmp_path / "corpus_manifest.jsonl"
     manifest.write_text(json.dumps(entry) + "\n", encoding="utf-8")
@@ -32,4 +35,4 @@ def test_professional_letter_is_a_known_register_without_warning(tmp_path: Path)
 
     register_issues = [issue for issue in result["issues"] if issue["field"] == "register"]
     assert register_issues == []
-    assert result["summary"]["by_register"] == {"professional_letter": 1}
+    assert result["summary"]["by_register"] == {register: 1}

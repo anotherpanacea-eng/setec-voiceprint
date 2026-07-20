@@ -1,5 +1,5 @@
 ### Fixed
 
-**`manifest_validator` — recognize professional letters.** Treat
-`professional_letter` as a known register so correctly classified corpus entries no longer emit
-an unknown-register warning.
+**`manifest_validator` — recognize professional-letter and teaching registers.** Treat
+`professional_letter` and `teaching` as known registers so correctly classified corpus entries no
+longer emit an unknown-register warning.
