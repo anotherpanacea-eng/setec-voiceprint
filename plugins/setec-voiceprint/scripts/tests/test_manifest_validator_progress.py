@@ -76,6 +76,41 @@ def test_empty_manifest_emits_completion_and_library_default_is_silent(tmp_path:
     assert capsys.readouterr().err == ""
 
 
+def test_nonexistent_manifest_still_emits_completion_heartbeat(tmp_path: Path):
+    # The unconditional completion contract must hold on the earliest bail-out, too.
+    missing = tmp_path / "does_not_exist.jsonl"
+    progress = io.StringIO()
+
+    result = mv.validate_manifest(missing, progress_every=5, progress_stream=progress)
+
+    assert result["n_errors"] == 1
+    lines = progress.getvalue().splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith(
+        "[manifest_validator] phase=complete rows=0 entries=0 errors=1 warnings=0"
+    )
+    # aggregate-only: the emission carries counts, never the path.
+    assert str(missing) not in progress.getvalue()
+
+
+def test_unreadable_manifest_still_emits_completion_heartbeat(tmp_path: Path):
+    # A directory at the manifest path exists() but raises OSError on read_text: the
+    # unreadable-file bail-out. It must still emit the completion heartbeat.
+    unreadable = tmp_path / "manifest_as_dir"
+    unreadable.mkdir()
+    progress = io.StringIO()
+
+    result = mv.validate_manifest(unreadable, progress_every=5, progress_stream=progress)
+
+    assert result["n_errors"] == 1
+    lines = progress.getvalue().splitlines()
+    assert len(lines) == 1
+    assert lines[0].startswith(
+        "[manifest_validator] phase=complete rows=0 entries=0 errors=1 warnings=0"
+    )
+    assert str(unreadable) not in progress.getvalue()
+
+
 @pytest.mark.parametrize("progress_every, stream", [
     (-1, None), (True, None), (1.5, None), (1, None), (0, io.StringIO()),
 ])

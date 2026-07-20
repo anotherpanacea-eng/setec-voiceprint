@@ -713,6 +713,13 @@ def validate_manifest(manifest_path: str | Path, *, progress_every: int = 0,
     rows_processed = 0
 
     if not path.exists():
+        # Honor the unconditional completion heartbeat even on this early bail-out: emit a
+        # phase=complete record (no rows scanned, one error) before returning when progress is on.
+        if progress_every:
+            assert progress_stream is not None
+            _emit_progress(progress_stream, phase="complete", rows=0,
+                           entries=0, n_errors=1, n_warnings=0,
+                           started_at=started_at)
         return {
             "task_surface": TASK_SURFACE,
             "manifest_path": str(path),
@@ -732,6 +739,12 @@ def validate_manifest(manifest_path: str | Path, *, progress_every: int = 0,
     try:
         text = path.read_text(encoding="utf-8")
     except OSError as exc:
+        # Same unconditional completion heartbeat contract for the unreadable-file bail-out.
+        if progress_every:
+            assert progress_stream is not None
+            _emit_progress(progress_stream, phase="complete", rows=0,
+                           entries=0, n_errors=1, n_warnings=0,
+                           started_at=started_at)
         return {
             "task_surface": TASK_SURFACE,
             "manifest_path": str(path),
