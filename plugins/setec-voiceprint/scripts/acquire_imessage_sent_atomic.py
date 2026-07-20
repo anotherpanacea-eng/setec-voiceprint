@@ -26,6 +26,29 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 if os.name == "nt":  # native handle-relative backend; never imported elsewhere
     import windows_descriptor_io as _winio
 
+# When this file is run directly (`python acquire_imessage_sent_atomic.py ...`),
+# Python registers it in sys.modules as "__main__", not under its own filename.
+# windows_portable_tree.py imports this module back by its canonical name
+# (`import acquire_imessage_sent_atomic as A`) to reach PortableDurableRowIo as
+# its base class; without this alias that lookup misses the already-executing
+# "__main__" copy, so Python re-executes this file from scratch under the
+# canonical name. That second execution reaches the same
+# `from windows_portable_tree import ...` statement below while
+# windows_portable_tree is itself only partway through *its* import of this
+# module — a genuine circular-import deadlock that raises ImportError
+# ("cannot import name '...' from partially initialized module
+# 'windows_portable_tree'"). Aliasing the two names to the same module object
+# up front means windows_portable_tree always finds the one real (in-progress
+# but already-past-PortableDurableRowIo) module instead of triggering a second,
+# distinct execution — exactly how the cycle already resolves for every other
+# (non-`__main__`) importer via sys.modules. This also avoids a subtler bug a
+# second execution would cause: a duplicate module means a duplicate
+# PortableDurableRowIo class object, so isinstance()/issubclass() checks
+# against the "real" class would silently fail for instances built from the
+# duplicate's subclasses.
+if __name__ == "__main__":
+    sys.modules.setdefault("acquire_imessage_sent_atomic", sys.modules["__main__"])
+
 
 TOOL_NAME = "acquire_imessage_sent_atomic"
 TOOL_VERSION = "1.0"
