@@ -113,5 +113,7 @@ jobs:
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_run_resumes_after_k_row_publications `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_run_refuses_foreign_root_artifact_on_resume `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_cli_loads_approved_portable_key_and_runs `
+            plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_direct_script_invocation_help_avoids_circular_import `
+            plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_direct_script_invocation_validate_run_fails_controlled_not_via_import_error `
             -q `
             --basetemp "${{ runner.temp }}\\setec-win-descriptor"

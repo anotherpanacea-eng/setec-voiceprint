@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sqlite3
 import stat
+import subprocess
 import sys
 
 import pytest
@@ -14719,3 +14720,64 @@ def test_processing_receipt_rejects_row_disposition_or_count_drift(
             KEY,
         )
     conn.close()
+
+
+# ---- Regression: direct-script execution vs. the windows_portable_tree
+# <-> acquire_imessage_sent_atomic circular import ------------------------
+#
+# windows_portable_tree.py imports this module at module scope
+# (`import acquire_imessage_sent_atomic as A`) to reach PortableDurableRowIo
+# as its base class; this module imports WindowsPortableDurableRowIo /
+# WindowsPrivateReadOnlyRowIo back from windows_portable_tree, also at
+# module scope. Under pytest or a normal `import acquire_imessage_sent_atomic`
+# (as `A` above), that cycle resolves fine through sys.modules. But launched
+# as a direct script (`python acquire_imessage_sent_atomic.py ...`), Python
+# registers the running module as "__main__" rather than under its own
+# filename; windows_portable_tree.py's `import acquire_imessage_sent_atomic`
+# then finds no such name in sys.modules and re-executes this file from
+# scratch under its canonical name, colliding mid-way through
+# windows_portable_tree's own not-yet-finished import and raising
+# ImportError: cannot import name 'WindowsPortableDurableRowIo' from
+# partially initialized module 'windows_portable_tree'. Every CLI
+# invocation of this script was broken while the in-process test suite
+# stayed green. These tests run the script as a real subprocess so this
+# class of defect can never again be invisible to CI.
+
+SCRIPT_PATH = ROOT / "acquire_imessage_sent_atomic.py"
+
+_IMPORT_CYCLE_MARKERS = (
+    "ImportError",
+    "partially initialized module",
+    "cannot import name",
+)
+
+
+def test_direct_script_invocation_help_avoids_circular_import() -> None:
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "--help"],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    for marker in _IMPORT_CYCLE_MARKERS:
+        assert marker not in proc.stderr, proc.stderr
+    assert "usage:" in proc.stdout
+
+
+def test_direct_script_invocation_validate_run_fails_controlled_not_via_import_error(
+    tmp_path: Path,
+) -> None:
+    missing_root = tmp_path / "no-such-atomic-run"
+    proc = subprocess.run(
+        [sys.executable, str(SCRIPT_PATH), "--validate-run", str(missing_root)],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert proc.returncode != 0
+    for marker in _IMPORT_CYCLE_MARKERS:
+        assert marker not in proc.stderr, proc.stderr
+    # The failure must be the domain-level error the validator raises for a
+    # missing run, not an unrelated crash.
+    assert "AtomicAcquisitionError" in proc.stderr, proc.stderr
