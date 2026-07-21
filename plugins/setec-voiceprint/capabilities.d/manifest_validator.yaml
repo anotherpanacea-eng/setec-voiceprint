@@ -9,13 +9,15 @@ entries:
   purpose: 'Schema and integrity checks for `corpus_manifest.jsonl`. Enforces the
     manifest enum vocabulary (label, ai_status, language_status, use), checks required
     fields, and warns when ESL-labeled entries land in `use: baseline` for voice-coherence
-    work (the language-status ratchet).
+    work (the language-status ratchet). Its opt-in conflict-copy preflight refuses
+    sync-forked corpus trees before manifest parsing.
 
     '
   use_when:
   - You're building a labeled corpus for calibration / validation
   - You received a manifest from elsewhere and want to confirm it parses
   - You're about to run a calibration sweep and need to gate inputs
+  - You're consuming a manifest from a multi-device sync tree and need the conflict-copy preflight
   do_not_use_when:
   - The corpus has no manifest yet (use corpus_template.py to build one first)
   - You're working with a single-file target (this is for collections)
@@ -38,5 +40,7 @@ entries:
   examples:
   - description: Validate a manifest
     cmd: python3 plugins/setec-voiceprint/scripts/manifest_validator.py corpus/manifest.jsonl
+  - description: Refuse Dropbox conflict-copy forks before validation
+    cmd: python3 plugins/setec-voiceprint/scripts/manifest_validator.py corpus/manifest.jsonl --check-conflict-copies
   references:
   - plugins/setec-voiceprint/references/manifest-schema.md

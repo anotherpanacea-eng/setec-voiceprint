@@ -18,11 +18,13 @@ the manifest passed validation.
 Exit codes:
   0   no errors (and no warnings, OR warnings allowed without --strict)
   1   errors present, or --strict and warnings present
+  2   usage error, or --check-conflict-copies found a conflict/incomplete scan
 
 Usage:
   python3 manifest_validator.py corpus_manifest.jsonl
   python3 manifest_validator.py corpus_manifest.jsonl --json
   python3 manifest_validator.py corpus_manifest.jsonl --strict
+  python3 manifest_validator.py corpus_manifest.jsonl --check-conflict-copies
   python3 -u manifest_validator.py corpus_manifest.jsonl --progress-every 1000
 """
 
@@ -30,6 +32,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import stat
 import sys
 import time
 from collections import Counter, defaultdict
@@ -1014,6 +1018,130 @@ def validate_manifest(manifest_path: str | Path, *, progress_every: int = 0,
     }
 
 
+# ---------- Conflict-copy preflight ----------
+
+_CONFLICT_COPY_MARKER = "conflicted copy"
+
+
+def _relative_scan_path(root: Path, path: str | Path) -> str:
+    """Return a root-relative, portable report path.
+
+    This deliberately uses the lexical traversal path rather than resolving
+    either side: resolving would follow a link, which is outside the preflight
+    boundary. ``os.path.relpath`` also keeps the root itself representable as
+    ``.`` when an error prevents opening the first directory.
+    """
+    relative = os.path.relpath(os.fspath(path), os.fspath(root))
+    if relative == ".":
+        return "."
+    # Convert only the host platform's path separator. On POSIX a literal
+    # backslash is a legal basename character; rewriting it would fabricate a
+    # different path (including a false-looking `../` traversal) and can
+    # collapse two distinct entries into one report value.
+    return relative.replace(os.sep, "/")
+
+
+def _is_windows_reparse_point(entry: os.DirEntry[str]) -> bool:
+    """Recognize every Windows reparse point, not only junctions.
+
+    Cloud placeholders and other directory reparse types can report as
+    directories without being symlinks or junctions. The Windows file-attribute
+    bit is the complete traversal-boundary check. On non-Windows hosts the
+    attribute is absent/zero, so this stays a harmless stdlib stat call.
+    """
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    if not reparse_flag:
+        return False
+    file_attributes = getattr(
+        entry.stat(follow_symlinks=False), "st_file_attributes", 0,
+    )
+    return bool(file_attributes & reparse_flag)
+
+
+def check_conflict_copies(manifest_path: str | Path) -> dict[str, Any]:
+    """Inspect the manifest-parent tree for sync conflict-copy names.
+
+    The scan is name-only and fail-closed. It includes hidden entries, but
+    never descends through symlinks or Windows junctions/reparse points.
+    ``scan_errors`` intentionally names only the root-relative location and
+    exception class so reports cannot leak absolute paths or OS diagnostics.
+    """
+    root = Path(manifest_path).parent
+    matches: list[str] = []
+    scan_errors: list[dict[str, str]] = []
+
+    def record_scan_error(path: str | Path, exc: OSError) -> None:
+        scan_errors.append({
+            "path": _relative_scan_path(root, path),
+            "error": type(exc).__name__,
+        })
+
+    def visit(directory: Path) -> None:
+        try:
+            with os.scandir(directory) as iterator:
+                entries = sorted(
+                    list(iterator), key=lambda entry: (entry.name.casefold(), entry.name),
+                )
+        except OSError as exc:
+            record_scan_error(directory, exc)
+            return
+
+        for entry in entries:
+            entry_path = Path(entry.path)
+            relative = _relative_scan_path(root, entry.path)
+            if _CONFLICT_COPY_MARKER in entry.name.casefold():
+                matches.append(relative)
+
+            try:
+                # ``DirEntry.is_dir(follow_symlinks=False)`` handles ordinary
+                # directory links. ``Path.is_junction`` is the corresponding
+                # Windows reparse-point guard (available on supported 3.12).
+                is_symlink = entry.is_symlink()
+                is_junction = getattr(entry_path, "is_junction", lambda: False)()
+                is_reparse_point = _is_windows_reparse_point(entry)
+                is_directory = entry.is_dir(follow_symlinks=False)
+            except OSError as exc:
+                record_scan_error(entry.path, exc)
+                continue
+
+            if (
+                is_directory
+                and not is_symlink
+                and not is_junction
+                and not is_reparse_point
+            ):
+                visit(entry_path)
+
+    visit(root)
+    matches.sort(key=lambda path: (path.casefold(), path))
+    scan_errors.sort(key=lambda item: (item["path"].casefold(), item["path"], item["error"]))
+    return {
+        "checked": True,
+        "root": ".",
+        "n_matches": len(matches),
+        "matches": matches,
+        "n_scan_errors": len(scan_errors),
+        "scan_errors": scan_errors,
+        "validation_ran": False,
+    }
+
+
+def _refused_preflight_result(manifest_path: str | Path,
+                              conflict_copy_check: dict[str, Any]) -> dict[str, Any]:
+    """Shape a refused result without parsing a manifest."""
+    return {
+        "task_surface": TASK_SURFACE,
+        "manifest_path": str(Path(manifest_path)),
+        "n_entries": None,
+        "n_errors": None,
+        "n_warnings": None,
+        "issues": [],
+        "tripwires": [],
+        "summary": {},
+        "conflict_copy_check": conflict_copy_check,
+    }
+
+
 # ---------- Output formatting ----------
 
 def _fmt_counter(counter: dict[str, int]) -> str:
@@ -1025,16 +1153,48 @@ def _fmt_counter(counter: dict[str, int]) -> str:
 
 def render_report(result: dict[str, Any]) -> str:
     lines: list[str] = []
+    conflict_copy_check = result.get("conflict_copy_check")
+    validation_ran = (
+        conflict_copy_check is None or conflict_copy_check["validation_ran"]
+    )
     lines.append("# Manifest Validation Report")
     lines.append("")
     lines.append(f"**Task surface:** `{TASK_SURFACE}`")
     lines.append(f"**Manifest:** {result['manifest_path']}")
-    lines.append(f"**Entries:** {result['n_entries']}")
-    lines.append(
-        f"**Errors:** {result['n_errors']}    "
-        f"**Warnings:** {result['n_warnings']}"
-    )
+    if validation_ran:
+        lines.append(f"**Entries:** {result['n_entries']}")
+        lines.append(
+            f"**Errors:** {result['n_errors']}    "
+            f"**Warnings:** {result['n_warnings']}"
+        )
+    else:
+        lines.append("**Entries:** not run")
+        lines.append("**Errors:** not run    **Warnings:** not run")
     lines.append("")
+
+    if conflict_copy_check is not None:
+        lines.append("## Conflict-copy preflight")
+        lines.append("")
+        lines.append(f"- **Root:** `{conflict_copy_check['root']}`")
+        lines.append(f"- **Matches:** {conflict_copy_check['n_matches']}")
+        lines.append(f"- **Scan errors:** {conflict_copy_check['n_scan_errors']}")
+        lines.append("")
+        if conflict_copy_check["matches"]:
+            lines.append("### Matches")
+            lines.append("")
+            lines.extend(f"- `{path}`" for path in conflict_copy_check["matches"])
+            lines.append("")
+        if conflict_copy_check["scan_errors"]:
+            lines.append("### Incomplete scan locations")
+            lines.append("")
+            lines.extend(
+                f"- `{item['path']}` ({item['error']})"
+                for item in conflict_copy_check["scan_errors"]
+            )
+            lines.append("")
+        if not conflict_copy_check["validation_ran"]:
+            lines.append("Manifest validation: NOT RUN (preflight refused)")
+            lines.append("")
 
     summary = result.get("summary", {})
     if summary:
@@ -1103,7 +1263,9 @@ def render_report(result: dict[str, Any]) -> str:
             )
         lines.append("")
 
-    if not errors and not warnings:
+    if not errors and not warnings and (
+        conflict_copy_check is None or conflict_copy_check["validation_ran"]
+    ):
         lines.append("Manifest is clean.")
         lines.append("")
 
@@ -1145,17 +1307,38 @@ def main() -> int:
         help="Write report to file instead of stdout.",
     )
     parser.add_argument(
+        "--check-conflict-copies", action="store_true",
+        help="Fail closed when the manifest-parent tree contains a sync conflict copy.",
+    )
+    parser.add_argument(
         "--progress-every", type=_nonnegative_int, default=1000, metavar="N",
         help="Emit a flushed aggregate stderr heartbeat every N manifest rows (default: 1000; "
              "use 0 to disable).",
     )
     args = parser.parse_args()
 
-    result = validate_manifest(
-        args.manifest,
-        progress_every=args.progress_every,
-        progress_stream=sys.stderr if args.progress_every else None,
-    )
+    conflict_copy_check: dict[str, Any] | None = None
+    if args.check_conflict_copies:
+        conflict_copy_check = check_conflict_copies(args.manifest)
+        if (
+            conflict_copy_check["n_matches"]
+            or conflict_copy_check["n_scan_errors"]
+        ):
+            result = _refused_preflight_result(args.manifest, conflict_copy_check)
+        else:
+            result = validate_manifest(
+                args.manifest,
+                progress_every=args.progress_every,
+                progress_stream=sys.stderr if args.progress_every else None,
+            )
+            conflict_copy_check["validation_ran"] = True
+            result["conflict_copy_check"] = conflict_copy_check
+    else:
+        result = validate_manifest(
+            args.manifest,
+            progress_every=args.progress_every,
+            progress_stream=sys.stderr if args.progress_every else None,
+        )
 
     if args.json:
         envelope = build_audit_payload(result, target_path=args.manifest)
@@ -1163,12 +1346,30 @@ def main() -> int:
     else:
         output = render_report(result)
 
-    if args.out:
+    if args.check_conflict_copies:
+        # Flag-mode reports are transport artifacts: make their UTF-8 bytes
+        # independent of Windows text-mode newline translation, and give
+        # --out exactly the bytes stdout would otherwise receive.
+        output_bytes = (output.rstrip("\n") + "\n").encode("utf-8")
+        if args.out:
+            with open(args.out, "wb") as out_file:
+                out_file.write(output_bytes)
+            print(f"Written to {args.out}", file=sys.stderr)
+        else:
+            stdout_buffer = getattr(sys.stdout, "buffer", None)
+            if stdout_buffer is not None:
+                stdout_buffer.write(output_bytes)
+                stdout_buffer.flush()
+            else:
+                sys.stdout.write(output_bytes.decode("utf-8"))
+    elif args.out:
         Path(args.out).write_text(output, encoding="utf-8")
         print(f"Written to {args.out}", file=sys.stderr)
     else:
         print(output)
 
+    if conflict_copy_check is not None and not conflict_copy_check["validation_ran"]:
+        return 2
     if result["n_errors"] > 0:
         return 1
     if args.strict and result["n_warnings"] > 0:
@@ -1226,12 +1427,21 @@ def build_audit_payload(
     results_payload: dict[str, Any] = {}
     for k in (
         "manifest_path", "n_entries", "n_errors", "n_warnings",
-        "issues", "tripwires", "summary",
+        "issues", "tripwires", "summary", "conflict_copy_check",
     ):
         if k in result:
             results_payload[k] = result[k]
 
     warnings: list[str] = []
+    conflict_copy_check = result.get("conflict_copy_check")
+    if (
+        conflict_copy_check is not None
+        and not conflict_copy_check.get("validation_ran", False)
+    ):
+        warnings.append(
+            "Conflict-copy preflight refused manifest validation; see "
+            "results.conflict_copy_check."
+        )
     if result.get("n_errors", 0):
         warnings.append(
             f"{result.get('n_errors')} manifest error(s); see "

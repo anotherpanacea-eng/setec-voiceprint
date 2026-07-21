@@ -604,6 +604,7 @@ Schema and integrity checks for `corpus_manifest.jsonl`. Phase 1 step 1 of the v
 python3 manifest_validator.py corpus_manifest.jsonl
 python3 manifest_validator.py corpus_manifest.jsonl --json
 python3 manifest_validator.py corpus_manifest.jsonl --strict --out report.md
+python3 manifest_validator.py corpus_manifest.jsonl --check-conflict-copies
 python3 -u manifest_validator.py corpus_manifest.jsonl --progress-every 1000
 ```
 
@@ -612,6 +613,14 @@ default and an unconditional completion heartbeat after cross-entry checks. Use 
 launcher flag so an external log collector sees the heartbeat immediately; choose another cadence
 with `--progress-every N`, or pass `--progress-every 0` for quiet compatibility. Progress never
 enters stdout, `--out`, or the JSON envelope and contains no entry ids, paths, or corpus prose.
+
+`--check-conflict-copies` first scans the manifest's parent tree for case-insensitive
+`conflicted copy` basenames, including Dropbox's device-prefixed form. It does not read
+file contents or follow directory symlinks/Windows junctions. A match or incomplete scan
+refuses with exit 2 and a deterministic `/`-separated list relative to the manifest parent;
+resolve the sync conflict before trusting the corpus. Without the flag, no tree scan occurs
+and legacy validation/output behavior is unchanged. In flag mode stdout and `--out` are
+byte-identical UTF-8/LF artifacts; progress stderr remains aggregate-only.
 
 ### What it checks
 
@@ -636,10 +645,11 @@ Cross-entry:
 |---|---|
 | 0 | No errors. Warnings allowed unless `--strict`. |
 | 1 | Errors present, OR `--strict` and warnings present. |
+| 2 | CLI usage error, or `--check-conflict-copies` found a conflict/incomplete tree scan. |
 
 ### Output shape
 
-Markdown report with a summary block (counts by register, ai_status, split, use, privacy, persona) and itemized Errors and Warnings sections. JSON output preserves the same structure: a top-level `task_surface: "validation"`, plus `manifest_path`, `n_entries`, `n_errors`, `n_warnings`, an `issues` list, and a `summary` block. Importable: `validate_manifest(path) -> dict` returns the same structure for downstream tools that want to gate on manifest health before composing a run.
+Markdown report with a summary block (counts by register, ai_status, split, use, privacy, persona) and itemized Errors and Warnings sections. JSON output preserves the same structure: a top-level `task_surface: "validation"`, plus `manifest_path`, `n_entries`, `n_errors`, `n_warnings`, an `issues` list, and a `summary` block. With the conflict-copy flag, `results.conflict_copy_check` records relative matches, sanitized scan errors, and whether manifest validation ran; refused preflights carry null validation counts rather than claiming a clean manifest. Importable: `validate_manifest(path) -> dict` returns the ordinary validation structure for downstream tools that want to gate on manifest health before composing a run.
 
 ### Library use
 
