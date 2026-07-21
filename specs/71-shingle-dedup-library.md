@@ -546,11 +546,18 @@ The code contains no checkpoint migration or in-place recovery path.
   absent) plus `FileDispositionInfo` cleanup and the retained root handle. A platform lacking a safe
   identity-bound create-new primitive refuses before work. There is no path-based publication or
   separate verify-then-path-unlink cleanup, and an unverified race winner is never removed.
-- Every payload write handle is flushed, fsynced, and closed before publication; SQLite never opens
-  the payload name. POSIX links the closed temp through retained directory descriptors. Windows may then reopen the owned temp
-  with compatible access/share flags solely as a dedicated identity-control handle for
-  create-new handle-relative rename (replace disabled); cleanup uses that same identity handle and
-  `FileDispositionInfo`. The control handle performs no payload I/O and is closed immediately.
+- Every payload write handle is flushed and fsynced; SQLite never opens the payload name. POSIX
+  opens a second read-only, non-payload identity-control descriptor through the retained parent,
+  verifies it while the write handle still pins the same inode, then closes the write handle before
+  publication. It retains the control descriptor across the handle-relative link and cleanup and
+  never trusts a stale inode number after closing it. Windows opens a non-payload identity pin with
+  compatible sharing while the payload writer is still live, closes the writer, then opens a strict
+  no-share-write verifier against that still-live pin and compares the verifier's exact bytes with
+  the in-memory payload. A separate no-I/O control is verified while both pin and verifier still
+  keep the original file object live before ownership authority transfers. Create-new
+  handle-relative rename (replace disabled) and cleanup use that control with
+  `FileDispositionInfo`. Pin and control perform no payload I/O; all three auxiliary handles close
+  immediately after their identity-bound work.
 - Reject source/output aliases and indirect output paths before work.
 - If an `O_*` flag is used, optional flags use `getattr`; binary descriptors include
   `getattr(os, "O_BINARY", 0)`. Do not require `O_NOFOLLOW` on platforms without it.

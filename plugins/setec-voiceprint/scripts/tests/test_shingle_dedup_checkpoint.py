@@ -216,33 +216,72 @@ def test_pair_json_corruption_with_unchanged_pair_hash_refuses(tmp_path: Path) -
                            logical_index_sha256=HASH_C)
 
 
-@pytest.mark.parametrize("failure", ["write", "flush", "rename", "identity", "memory"])
+@pytest.mark.parametrize("failure", [
+    "write", "flush", "pin_mutation", "byte_mutation", "control_substitution",
+    "control_mutation", "timestamp_change", "rename", "identity", "memory",
+    "delete_memory", "close_memory",
+])
 def test_general_windows_publish_fake_backend_faults_are_fail_closed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str,
 ) -> None:
     events: list[tuple[object, ...]] = []
     class Direct:
-        def __init__(self, identity: tuple[int, int]) -> None: self.identity = identity
+        def __init__(self, identity: tuple[int, ...], size: int = 7) -> None:
+            self.identity = identity
+            self.size = size
     def write(handle: int, view: memoryview) -> int:
         events.append(("write", handle))
-        if failure == "write": raise OSError("injected")
+        if failure in {"write", "close_memory"}: raise OSError("injected")
         return len(view)
     def flush(handle: int) -> None:
         events.append(("flush", handle))
         if failure == "flush": raise OSError("injected")
-    def close(handle: int) -> None: events.append(("close", handle))
-    def open_file(_parent: int, name: str, **_kwargs: object) -> int:
-        return 20 if name.startswith(".tmp-") else 30
+    def close(handle: int) -> None:
+        events.append(("close", handle))
+        if failure == "close_memory": raise MemoryError
+    strict_opens = 0
+    def open_file(_parent: int, name: str, **kwargs: object) -> int:
+        nonlocal strict_opens
+        if not name.startswith(".tmp-"):
+            return 30
+        if kwargs.get("share_write") is True:
+            return 15
+        strict_opens += 1
+        return 18 if strict_opens == 1 else 20
+    pin_direct_calls = 0
     def require_direct(handle: int, _kind: str) -> Direct:
-        return Direct((9, 9) if handle == 30 and failure == "identity" else (1, 2))
+        nonlocal pin_direct_calls
+        if handle == 15 and failure == "pin_mutation":
+            return Direct((1, 2, 7, 101))
+        if handle == 20 and failure == "control_substitution":
+            return Direct((1, 8, 7, 100))
+        if handle == 20 and failure == "control_mutation":
+            return Direct((1, 2, 7, 101))
+        if failure == "timestamp_change":
+            if handle == 15:
+                pin_direct_calls += 1
+                return Direct((1, 2, 7, 100 if pin_direct_calls == 1 else 200))
+            return Direct((1, 2, 7, 100 if handle == 10 else 200))
+        return Direct((1, 9, 7, 100) if handle == 30 and failure == "identity"
+                      else (1, 2, 7, 100))
+    read_offsets: dict[int, int] = {}
+    def read(handle: int, maximum: int) -> bytes:
+        source = b"mutated" if failure == "byte_mutation" else b"payload"
+        start = read_offsets.get(handle, 0)
+        chunk = source[start:start + maximum]
+        read_offsets[handle] = start + len(chunk)
+        return chunk
     def rename(_handle: int, _parent: int, _name: str, *, replace: bool) -> None:
         assert replace is False
-        if failure == "rename": raise FileExistsError("winner")
-    def delete(handle: int) -> None: events.append(("delete", handle))
+        if failure in {"rename", "delete_memory"}: raise FileExistsError("winner")
+    def delete(handle: int) -> None:
+        events.append(("delete", handle))
+        if failure == "delete_memory": raise MemoryError
     fake = types.SimpleNamespace(
         pin_directory=lambda _path, writable_final: (1, 2, "parent"),
         create_file=lambda _parent, _name: 10, write=write, flush=flush, close=close,
-        open_file=open_file, require_direct=require_direct, rename=rename, delete=delete,
+        open_file=open_file, require_direct=require_direct, read=read,
+        rename=rename, delete=delete,
     )
     monkeypatch.setattr(secure_io, "_windows_module", lambda: fake)
     revalidations = 0
@@ -252,12 +291,30 @@ def test_general_windows_publish_fake_backend_faults_are_fail_closed(
         if failure == "memory" and revalidations == 2:
             raise MemoryError
     monkeypatch.setattr(secure_io, "_windows_revalidate_directory", revalidate)
-    with pytest.raises(secure_io.SecureIOError):
+    if failure == "timestamp_change":
         secure_io._windows_publish(tmp_path / "final.bin", b"payload")
-    assert ("delete", 10 if failure in {"write", "flush"} else 20) in events
+    else:
+        with pytest.raises(secure_io.SecureIOError):
+            secure_io._windows_publish(tmp_path / "final.bin", b"payload")
+    if failure in {"write", "flush", "close_memory"}:
+        assert ("delete", 10) in events
+    elif failure in {"control_substitution", "control_mutation"}:
+        assert ("delete", 20) not in events and not any(event[0] == "rename" for event in events)
+        assert ("delete", 18) in events
+        assert ("close", 20) in events
+    elif failure == "pin_mutation":
+        assert ("delete", 10) in events and not any(event[0] == "rename" for event in events)
+    elif failure == "byte_mutation":
+        assert ("delete", 18) in events and not any(event[0] == "rename" for event in events)
+    elif failure == "timestamp_change":
+        assert not any(event[0] == "delete" for event in events)
+    else:
+        assert ("delete", 20) in events
     if failure == "memory":
         assert revalidations == 2
         assert all(("close", handle) in events for handle in (10, 20, 2, 1))
+    if failure == "close_memory":
+        assert all(("close", handle) in events for handle in (10, 2, 1))
 
 
 @pytest.mark.parametrize("mutation", ["wrong_tier", "wrong_selected_fraction"])
@@ -527,6 +584,117 @@ def test_checkpoint_link_side_effect_then_memory_error_cleans_owned_names(
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX handle-relative cleanup")
+def test_checkpoint_temp_substitution_preserves_unverified_race_nodes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "temp-substitution"
+    with checkpoint.CheckpointDirectory.open_new(state_dir) as directory:
+        real_link = checkpoint.os.link
+
+        def substitute_temp(source: str, target: str, **kwargs: object) -> None:
+            source_fd = kwargs.get("src_dir_fd")
+            assert isinstance(source_fd, int)
+            os.unlink(source, dir_fd=source_fd)
+            replacement = os.open(
+                source, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600,
+                dir_fd=source_fd,
+            )
+            try:
+                os.write(replacement, b"RACE_TEMP")
+            finally:
+                os.close(replacement)
+            real_link(source, target, **kwargs)
+
+        monkeypatch.setattr(checkpoint.os, "link", substitute_temp)
+        supported = set(checkpoint.os.supports_dir_fd); supported.add(substitute_temp)
+        monkeypatch.setattr(checkpoint.os, "supports_dir_fd", supported)
+        with pytest.raises(checkpoint.CheckpointRefusal):
+            directory._posix_publish("owned.sqlite", b"OWNED_PAYLOAD")
+
+    assert (state_dir / "owned.sqlite").read_bytes() == b"RACE_TEMP"
+    race_temps = list(state_dir.glob(".tmp-*"))
+    assert len(race_temps) == 1 and race_temps[0].read_bytes() == b"RACE_TEMP"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX handle-relative cleanup")
+def test_checkpoint_control_open_substitution_preserves_race_temp(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    state_dir = tmp_path / "control-substitution"
+    with checkpoint.CheckpointDirectory.open_new(state_dir) as directory:
+        real_open = checkpoint.os.open
+        substituted = False
+
+        def substitute_before_control(
+            path: object, flags: int, mode: int = 0o777, *, dir_fd: int | None = None,
+        ) -> int:
+            nonlocal substituted
+            if (not substituted and isinstance(path, str) and path.startswith(".tmp-")
+                    and flags & os.O_ACCMODE == os.O_RDONLY and dir_fd is not None):
+                substituted = True
+                os.unlink(path, dir_fd=dir_fd)
+                replacement = real_open(
+                    path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600,
+                    dir_fd=dir_fd,
+                )
+                try:
+                    os.write(replacement, b"RACE_CONTROL")
+                finally:
+                    os.close(replacement)
+            return real_open(path, flags, mode, dir_fd=dir_fd)
+
+        monkeypatch.setattr(checkpoint.os, "open", substitute_before_control)
+        with pytest.raises(checkpoint.CheckpointRefusal):
+            directory._posix_publish("owned.sqlite", b"OWNED_PAYLOAD")
+        assert substituted
+
+    assert not (state_dir / "owned.sqlite").exists()
+    race_temps = list(state_dir.glob(".tmp-*"))
+    assert len(race_temps) == 1 and race_temps[0].read_bytes() == b"RACE_CONTROL"
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX handle-relative cleanup")
+@pytest.mark.parametrize("operation", ["stat", "unlink"])
+def test_checkpoint_cleanup_memory_error_is_controlled_and_closes_payload_handles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str,
+) -> None:
+    state_dir = tmp_path / f"cleanup-{operation}"
+    with checkpoint.CheckpointDirectory.open_new(state_dir) as directory:
+        real_open = checkpoint.os.open
+        real_fstat = checkpoint.os.fstat
+        real_stat = checkpoint.os.stat
+        real_unlink = checkpoint.os.unlink
+        opened: list[int] = []
+
+        def recording_open(*args: object, **kwargs: object) -> int:
+            descriptor = real_open(*args, **kwargs)
+            opened.append(descriptor)
+            return descriptor
+
+        def fail_temp_stat(path: object, *args: object, **kwargs: object) -> os.stat_result:
+            if operation == "stat" and isinstance(path, str) and path.startswith(".tmp-"):
+                raise MemoryError
+            return real_stat(path, *args, **kwargs)
+
+        def fail_temp_unlink(path: object, *args: object, **kwargs: object) -> None:
+            if operation == "unlink" and isinstance(path, str) and path.startswith(".tmp-"):
+                raise MemoryError
+            real_unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(checkpoint.os, "open", recording_open)
+        monkeypatch.setattr(checkpoint.os, "stat", fail_temp_stat)
+        monkeypatch.setattr(checkpoint.os, "unlink", fail_temp_unlink)
+        with pytest.raises(checkpoint.CheckpointRefusal):
+            directory._posix_publish("owned.sqlite", b"OWNED_PAYLOAD")
+
+        assert opened and not (state_dir / "owned.sqlite").exists()
+        for descriptor in opened:
+            with pytest.raises(OSError):
+                real_fstat(descriptor)
+        assert len(list(state_dir.glob(".tmp-*"))) == 1
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX handle-relative cleanup")
 def test_checkpoint_first_payload_fstat_memory_error_recovers_temp_identity(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -703,15 +871,20 @@ def test_windows_open_new_transfers_full_chain_and_closes_it_on_failure(
     ]
 
 
-@pytest.mark.parametrize("failure", [None, "flush", "rename", "identity"])
+@pytest.mark.parametrize("failure", [
+    None, "flush", "pin_mutation", "byte_mutation", "control_substitution",
+    "control_mutation", "timestamp_change", "rename", "identity",
+    "delete_memory", "close_memory",
+])
 def test_windows_publish_fake_backend_has_fail_closed_handle_lifecycle(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str | None,
 ) -> None:
     events: list[tuple[object, ...]] = []
 
     class Direct:
-        def __init__(self, identity: tuple[int, int]) -> None:
+        def __init__(self, identity: tuple[int, ...], size: int = 7) -> None:
             self.identity = identity
+            self.size = size
 
     def create_file(parent: int, name: str) -> int:
         events.append(("create", parent, name)); return 10
@@ -721,36 +894,70 @@ def test_windows_publish_fake_backend_has_fail_closed_handle_lifecycle(
 
     def flush(handle: int) -> None:
         events.append(("flush", handle))
-        if failure == "flush": raise OSError("injected flush failure")
+        if failure in {"flush", "close_memory"}: raise OSError("injected flush failure")
 
     def close(handle: int) -> None:
         events.append(("close", handle))
+        if failure == "close_memory": raise MemoryError
 
+    strict_opens = 0
     def open_file(parent: int, name: str, **kwargs: object) -> int:
-        handle = 20 if name.startswith(".tmp-") else 30
+        nonlocal strict_opens
+        if not name.startswith(".tmp-"):
+            handle = 30
+        elif kwargs.get("share_write") is True:
+            handle = 15
+        else:
+            strict_opens += 1
+            handle = 18 if strict_opens == 1 else 20
         events.append(("open", parent, name, kwargs, handle)); return handle
 
+    pin_direct_calls = 0
     def require_direct(handle: int, kind: str) -> Direct:
+        nonlocal pin_direct_calls
         events.append(("direct", handle, kind))
-        identity = (1, 2) if handle != 30 or failure != "identity" else (9, 9)
+        if handle == 15 and failure == "pin_mutation":
+            identity = (1, 2, 7, 101)
+        elif handle == 20 and failure == "control_substitution":
+            identity = (1, 8, 7, 100)
+        elif handle == 20 and failure == "control_mutation":
+            identity = (1, 2, 7, 101)
+        elif failure == "timestamp_change":
+            if handle == 15:
+                pin_direct_calls += 1
+                identity = (1, 2, 7, 100 if pin_direct_calls == 1 else 200)
+            else:
+                identity = (1, 2, 7, 100 if handle == 10 else 200)
+        else:
+            identity = ((1, 9, 7, 100) if handle == 30 and failure == "identity"
+                        else (1, 2, 7, 100))
         return Direct(identity)
+
+    read_offsets: dict[int, int] = {}
+    def read(handle: int, maximum: int) -> bytes:
+        source = b"mutated" if failure == "byte_mutation" else b"payload"
+        start = read_offsets.get(handle, 0)
+        chunk = source[start:start + maximum]
+        read_offsets[handle] = start + len(chunk)
+        return chunk
 
     def rename(handle: int, parent: int, name: str, *, replace: bool) -> None:
         events.append(("rename", handle, parent, name, replace))
-        if failure == "rename": raise FileExistsError("winner arrived")
+        if failure in {"rename", "delete_memory"}: raise FileExistsError("winner arrived")
 
     def delete(handle: int) -> None:
         events.append(("delete", handle))
+        if failure == "delete_memory": raise MemoryError
 
     fake = types.SimpleNamespace(create_file=create_file, write=write, flush=flush,
                                  close=close, open_file=open_file,
-                                 require_direct=require_direct, rename=rename,
+                                 require_direct=require_direct, read=read, rename=rename,
                                  delete=delete)
     monkeypatch.setitem(sys.modules, "windows_descriptor_io", fake)
     directory = checkpoint.CheckpointDirectory(tmp_path, windows_handles=(99,))
     monkeypatch.setattr(directory, "_revalidate", lambda: events.append(("revalidate",)))
 
-    if failure is None:
+    if failure in {None, "timestamp_change"}:
         directory._windows_publish("final.sqlite", b"payload")
     else:
         with pytest.raises(checkpoint.CheckpointRefusal):
@@ -758,25 +965,44 @@ def test_windows_publish_fake_backend_has_fail_closed_handle_lifecycle(
 
     assert events.index(("flush", 10)) < events.index(("close", 10))
     revalidations = [index for index, event in enumerate(events) if event == ("revalidate",)]
-    if failure == "flush":
+    if failure in {"flush", "close_memory"}:
         assert len(revalidations) == 1
         assert ("delete", 10) in events and not any(event[0] == "rename" for event in events)
+    elif failure in {"control_substitution", "control_mutation"}:
+        assert len(revalidations) == 1
+        assert ("delete", 20) not in events and not any(event[0] == "rename" for event in events)
+        assert ("delete", 18) in events
+        assert events.count(("close", 20)) == 1
+    elif failure == "pin_mutation":
+        assert len(revalidations) == 1
+        assert ("delete", 10) in events and not any(event[0] == "rename" for event in events)
+    elif failure == "byte_mutation":
+        assert len(revalidations) == 1
+        assert ("delete", 18) in events and not any(event[0] == "rename" for event in events)
     else:
+        pin_open = next(event for event in events if event[0] == "open" and event[-1] == 15)
+        verifier_open = next(event for event in events if event[0] == "open" and event[-1] == 18)
         control_open = next(event for event in events if event[0] == "open" and event[-1] == 20)
+        assert pin_open[3] == {"delete_access": True, "share_delete": True, "share_write": True}
+        assert verifier_open[3] == {"delete_access": True, "share_delete": True, "share_write": False}
         assert control_open[3] == {"delete_access": True, "share_delete": True, "share_write": False}
+        assert (events.index(pin_open) < events.index(("close", 10))
+                < events.index(verifier_open) < events.index(control_open))
         assert ("rename", 20, 99, "final.sqlite", False) in events
-        assert len(revalidations) == (2 if failure == "rename" else 3)
+        assert len(revalidations) == (2 if failure in {"rename", "delete_memory"} else 3)
         assert revalidations[0] < events.index(("create", 99, control_open[2]))
         assert revalidations[1] < events.index(("rename", 20, 99, "final.sqlite", False))
-        if failure != "rename":
+        if failure not in {"rename", "delete_memory"}:
             final_open = next(index for index, event in enumerate(events)
                               if event[0] == "open" and event[-1] == 30)
             assert events.index(("rename", 20, 99, "final.sqlite", False)) < revalidations[2] < final_open
             assert events.count(("close", 30)) == 1
-        if failure is None:
+        if failure in {None, "timestamp_change"}:
             assert ("delete", 20) not in events and events.count(("close", 20)) == 1
         else:
             assert ("delete", 20) in events and events.count(("close", 20)) == 1
+    if failure == "close_memory":
+        assert ("close", 10) in events
 
 
 @pytest.mark.parametrize("ceiling", [

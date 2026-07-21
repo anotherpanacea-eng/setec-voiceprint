@@ -662,6 +662,8 @@ class CheckpointDirectory:
         parent = self._posix_handles[-1]
         temp_name = ".tmp-" + os.urandom(16).hex()
         descriptor = -1
+        control_descriptor = -1
+        control_verified = False
         identity: tuple[int, int] | None = None
         published_identity: tuple[int, int] | None = None
         try:
@@ -676,10 +678,17 @@ class CheckpointDirectory:
                 view = view[count:]
             os.fsync(descriptor)
             written = os.fstat(descriptor)
-            os.close(descriptor); descriptor = -1
             named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
             if _fingerprint(named) != _fingerprint(written):
                 raise _refuse()
+            control_flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
+            control_descriptor = os.open(temp_name, control_flags, dir_fd=parent)
+            controlled = os.fstat(control_descriptor)
+            if not stat.S_ISREG(controlled.st_mode) or _fingerprint(controlled) != _fingerprint(written):
+                raise _refuse()
+            identity = _identity(controlled)
+            control_verified = True
+            os.close(descriptor); descriptor = -1
             self._revalidate()
             if os.link not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
                 raise _refuse()
@@ -687,17 +696,20 @@ class CheckpointDirectory:
                 os.link(temp_name, name, src_dir_fd=parent, dst_dir_fd=parent,
                         follow_symlinks=False)
             except BaseException:
-                if identity is not None:
+                if identity is not None and control_descriptor >= 0:
                     try:
                         linked = os.stat(name, dir_fd=parent, follow_symlinks=False)
-                        if _identity(linked) == identity:
+                        if _identity(linked) == _identity(os.fstat(control_descriptor)):
                             published_identity = identity
-                    except OSError:
+                    except (OSError, MemoryError):
                         pass
                 raise
             published_identity = identity
+            controlled = os.fstat(control_descriptor)
+            temp_named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
             final = os.stat(name, dir_fd=parent, follow_symlinks=False)
-            if _identity(final) != identity:
+            if (_identity(controlled) != identity or _identity(temp_named) != identity
+                    or _identity(final) != identity):
                 raise _refuse()
             os.unlink(temp_name, dir_fd=parent)
             identity = None
@@ -713,26 +725,31 @@ class CheckpointDirectory:
         except (OSError, TypeError, ValueError, MemoryError):
             raise _refuse() from None
         finally:
-            if descriptor >= 0:
-                if identity is None:
-                    try: identity = _identity(os.fstat(descriptor))
+            try:
+                owner_descriptor = control_descriptor if control_verified else descriptor
+                owned_identity: tuple[int, int] | None = None
+                if owner_descriptor >= 0:
+                    try: owned_identity = _identity(os.fstat(owner_descriptor))
                     except (OSError, MemoryError): pass
-                try: os.close(descriptor)
-                except OSError: pass
-            if identity is not None:
-                try:
-                    named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
-                    if _identity(named) == identity:
-                        os.unlink(temp_name, dir_fd=parent)
-                except OSError:
-                    pass
-            if published_identity is not None:
-                try:
-                    named_final = os.stat(name, dir_fd=parent, follow_symlinks=False)
-                    if _identity(named_final) == published_identity:
-                        os.unlink(name, dir_fd=parent)
-                except OSError:
-                    pass
+                if owned_identity is not None:
+                    try:
+                        named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
+                        if _identity(named) == owned_identity:
+                            os.unlink(temp_name, dir_fd=parent)
+                    except (OSError, MemoryError):
+                        pass
+                if published_identity is not None and owned_identity is not None:
+                    try:
+                        named_final = os.stat(name, dir_fd=parent, follow_symlinks=False)
+                        if _identity(named_final) == owned_identity:
+                            os.unlink(name, dir_fd=parent)
+                    except (OSError, MemoryError):
+                        pass
+            finally:
+                for item in (control_descriptor, descriptor):
+                    if item >= 0:
+                        try: os.close(item)
+                        except (OSError, MemoryError): pass
 
     def _windows_publish(self, name: str, raw: bytes) -> None:  # pragma: no cover - Windows CI
         try:
@@ -740,7 +757,10 @@ class CheckpointDirectory:
             assert self._windows_handles is not None
             parent = self._windows_handles[-1]
             temp_name = ".tmp-" + os.urandom(16).hex()
-            payload = control = 0
+            payload = pin = verifier = control = 0
+            pin_verified = False
+            verifier_verified = False
+            control_verified = False
             try:
                 self._revalidate()
                 payload = winio.create_file(parent, temp_name)
@@ -749,10 +769,43 @@ class CheckpointDirectory:
                     count = winio.write(payload, view[:1024 * 1024])
                     if count <= 0: raise _refuse()
                     view = view[count:]
-                winio.flush(payload); winio.close(payload); payload = 0
+                winio.flush(payload)
+                payload_info = winio.require_direct(payload, "file")
+                if payload_info.size != len(raw):
+                    raise _refuse()
+                pin = winio.open_file(parent, temp_name, delete_access=True,
+                                      share_delete=True, share_write=True)
+                pin_info = winio.require_direct(pin, "file")
+                if pin_info.identity != payload_info.identity or pin_info.size != len(raw):
+                    raise _refuse()
+                pin_verified = True
+                winio.close(payload); payload = 0
+                pin_after_close = winio.require_direct(pin, "file")
+                if pin_after_close.identity[:2] != pin_info.identity[:2] or pin_after_close.size != len(raw):
+                    raise _refuse()
+                verifier = winio.open_file(parent, temp_name, delete_access=True,
+                                           share_delete=True, share_write=False)
+                verifier_info = winio.require_direct(verifier, "file")
+                if verifier_info.identity != pin_after_close.identity or verifier_info.size != len(raw):
+                    raise _refuse()
+                verifier_verified = True
+                offset = 0
+                while offset < len(raw):
+                    chunk = winio.read(verifier, min(1024 * 1024, len(raw) - offset))
+                    if not chunk or chunk != raw[offset:offset + len(chunk)]:
+                        raise _refuse()
+                    offset += len(chunk)
+                if winio.read(verifier, 1):
+                    raise _refuse()
                 control = winio.open_file(parent, temp_name, delete_access=True,
                                           share_delete=True, share_write=False)
-                original = winio.require_direct(control, "file").identity
+                control_info = winio.require_direct(control, "file")
+                if control_info.identity != verifier_info.identity or control_info.size != len(raw):
+                    raise _refuse()
+                control_verified = True
+                original = control_info.identity
+                winio.close(pin); pin = 0
+                winio.close(verifier); verifier = 0
                 self._revalidate()
                 winio.rename(control, parent, name, replace=False)
                 self._revalidate()
@@ -764,19 +817,24 @@ class CheckpointDirectory:
                     winio.close(verify)
                 winio.close(control); control = 0
             except BaseException:
-                if control:
-                    try: winio.delete(control)
-                    except OSError: pass
-                elif payload:
-                    try: winio.delete(payload)
-                    except OSError: pass
+                try:
+                    if control and control_verified:
+                        winio.delete(control)
+                    elif verifier and verifier_verified:
+                        winio.delete(verifier)
+                    elif payload:
+                        winio.delete(payload)
+                    elif pin and pin_verified:
+                        winio.delete(pin)
+                except (OSError, MemoryError):
+                    pass
                 raise
             finally:
-                for handle in (control, payload):
+                for handle in (control, verifier, pin, payload):
                     if handle:
                         try: winio.close(handle)
-                        except OSError: pass
-        except (ImportError, OSError, TypeError, ValueError):
+                        except (OSError, MemoryError): pass
+        except (ImportError, OSError, TypeError, ValueError, MemoryError):
             raise _refuse() from None
 
 

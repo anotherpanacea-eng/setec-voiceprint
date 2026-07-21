@@ -229,6 +229,78 @@ def test_temp_substitution_refuses_without_deleting_unverified_race_nodes(
     assert race_temps[0].read_bytes() == b"RACE_TEMP"
 
 
+def test_control_open_substitution_does_not_authorize_race_temp_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "result.bin"
+    real_open = secure_io.os.open
+    substituted = False
+
+    def substitute_before_control(
+        path: object, flags: int, mode: int = 0o777, *, dir_fd: int | None = None,
+    ) -> int:
+        nonlocal substituted
+        if (not substituted and isinstance(path, str) and path.startswith(".tmp-")
+                and flags & os.O_ACCMODE == os.O_RDONLY and dir_fd is not None):
+            substituted = True
+            os.unlink(path, dir_fd=dir_fd)
+            replacement = real_open(
+                path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=dir_fd,
+            )
+            try:
+                os.write(replacement, b"RACE_CONTROL")
+            finally:
+                os.close(replacement)
+        return real_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(secure_io.os, "open", substitute_before_control)
+    with pytest.raises(secure_io.SecureIOError):
+        secure_io.publish_create_new(destination, b"OWNED_PAYLOAD")
+
+    assert substituted and not destination.exists()
+    race_temps = _temp_entries(tmp_path)
+    assert len(race_temps) == 1 and race_temps[0].read_bytes() == b"RACE_CONTROL"
+
+
+@pytest.mark.parametrize("operation", ["stat", "unlink"])
+def test_cleanup_memory_error_stays_controlled_and_closes_descriptors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str,
+) -> None:
+    destination = tmp_path / "result.bin"
+    real_open = secure_io.os.open
+    real_fstat = secure_io.os.fstat
+    real_stat = secure_io.os.stat
+    real_unlink = secure_io.os.unlink
+    opened: list[int] = []
+
+    def recording_open(*args: object, **kwargs: object) -> int:
+        descriptor = real_open(*args, **kwargs)
+        opened.append(descriptor)
+        return descriptor
+
+    def fail_temp_stat(path: object, *args: object, **kwargs: object) -> os.stat_result:
+        if operation == "stat" and isinstance(path, str) and path.startswith(".tmp-"):
+            raise MemoryError
+        return real_stat(path, *args, **kwargs)
+
+    def fail_temp_unlink(path: object, *args: object, **kwargs: object) -> None:
+        if operation == "unlink" and isinstance(path, str) and path.startswith(".tmp-"):
+            raise MemoryError
+        real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(secure_io.os, "open", recording_open)
+    monkeypatch.setattr(secure_io.os, "stat", fail_temp_stat)
+    monkeypatch.setattr(secure_io.os, "unlink", fail_temp_unlink)
+    with pytest.raises(secure_io.SecureIOError):
+        secure_io.publish_create_new(destination, b"OWNED_PAYLOAD")
+
+    assert opened and not destination.exists()
+    for descriptor in opened:
+        with pytest.raises(OSError):
+            real_fstat(descriptor)
+    assert len(_temp_entries(tmp_path)) == 1
+
+
 def test_ancestor_move_refuses_without_publishing_or_deleting_outside_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

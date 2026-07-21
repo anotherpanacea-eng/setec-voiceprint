@@ -239,11 +239,13 @@ def info(handle: int) -> NodeInfo:
     )
 
 
-def require_direct(handle: int, kind: str) -> NodeInfo:
+def require_direct(
+    handle: int, kind: str, *, allow_multiple_links: bool = False,
+) -> NodeInfo:
     value = info(handle)
     if value.kind != kind or value.attributes & FILE_ATTRIBUTE_REPARSE_POINT:
         raise OSError("private-tree node is indirected or has the wrong kind")
-    if kind == "file" and value.links != 1:
+    if kind == "file" and not allow_multiple_links and value.links != 1:
         raise OSError("private-tree file has multiple hard links")
     return value
 
@@ -258,6 +260,7 @@ def _nt_open(
     delete_access: bool = False,
     share_delete: bool = True,
     share_write: bool = True,
+    allow_multiple_links: bool = False,
 ) -> int:
     component = _valid_component(name)
     buffer = ctypes.create_unicode_buffer(component)
@@ -300,7 +303,7 @@ def _nt_open(
     handle = int(result.value)
     try:
         if kind is not None:
-            require_direct(handle, kind)
+            require_direct(handle, kind, allow_multiple_links=allow_multiple_links)
         elif info(handle).attributes & FILE_ATTRIBUTE_REPARSE_POINT:
             raise OSError("private-tree node is indirected")
         return handle
@@ -329,6 +332,7 @@ def open_file(
     delete_access: bool = False,
     share_delete: bool = True,
     share_write: bool = True,
+    allow_multiple_links: bool = False,
 ) -> int:
     return _nt_open(
         parent, name, kind="file", create=False,
@@ -336,6 +340,7 @@ def open_file(
         delete_access=delete_access,
         share_delete=share_delete,
         share_write=share_write,
+        allow_multiple_links=allow_multiple_links,
     )
 
 

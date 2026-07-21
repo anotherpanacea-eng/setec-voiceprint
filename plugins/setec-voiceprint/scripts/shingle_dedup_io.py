@@ -105,7 +105,7 @@ def _close_all(descriptors: list[int]) -> None:
     for descriptor in reversed(descriptors):
         try:
             os.close(descriptor)
-        except OSError:
+        except (OSError, MemoryError):
             pass
 
 
@@ -218,8 +218,8 @@ def _windows_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] 
         parent_anchor, parent, _name = winio.pin_directory(path.parent, writable_final=False)
         _windows_revalidate_directory(path.parent, parent)
         _windows_require_absent(parent, path.name, forbidden_suffixes)
-        handle = winio.open_file(parent, path.name)
-        opened = winio.require_direct(handle, "file")
+        handle = winio.open_file(parent, path.name, allow_multiple_links=True)
+        opened = winio.require_direct(handle, "file", allow_multiple_links=True)
         if opened.size < 0 or opened.size > maximum:
             raise _fail()
         parts: list[bytes] = []
@@ -232,11 +232,11 @@ def _windows_read(path: Path, maximum: int, forbidden_suffixes: tuple[str, ...] 
             total += len(chunk)
             if total > maximum:
                 raise _fail()
-        after = winio.require_direct(handle, "file")
+        after = winio.require_direct(handle, "file", allow_multiple_links=True)
         _windows_revalidate_directory(path.parent, parent)
         _windows_require_absent(parent, path.name, forbidden_suffixes)
-        verify = winio.open_file(parent, path.name)
-        named = winio.require_direct(verify, "file")
+        verify = winio.open_file(parent, path.name, allow_multiple_links=True)
+        named = winio.require_direct(verify, "file", allow_multiple_links=True)
         if opened.identity != after.identity or opened.identity != named.identity or after.size != total:
             raise _fail()
         return b"".join(parts)
@@ -311,6 +311,8 @@ def _posix_publish(destination: Path, payload: bytes) -> None:
     parent_fd, directories = _posix_open_directory(destination.parent)
     temp_name = _temp_name()
     descriptor = -1
+    control_descriptor = -1
+    control_verified = False
     temp_identity: tuple[int, int] | None = None
     temp_fingerprint: tuple[int, int, int, int, int] | None = None
     published_identity: tuple[int, int] | None = None
@@ -331,12 +333,19 @@ def _posix_publish(destination: Path, payload: bytes) -> None:
         written_info = os.fstat(descriptor)
         temp_identity = _identity(written_info)
         temp_fingerprint = _file_fingerprint(written_info)
+        _posix_revalidate_chain(destination.parent, directories)
+        named_before_control = os.stat(temp_name, dir_fd=parent_fd, follow_symlinks=False)
+        if temp_fingerprint is None or _file_fingerprint(named_before_control) != temp_fingerprint:
+            raise _fail()
+        control_flags = os.O_RDONLY | _optional_flag("O_CLOEXEC") | _optional_flag("O_NOFOLLOW") | _optional_flag("O_BINARY")
+        control_descriptor = os.open(temp_name, control_flags, dir_fd=parent_fd)
+        controlled = os.fstat(control_descriptor)
+        if not stat.S_ISREG(controlled.st_mode) or _file_fingerprint(controlled) != temp_fingerprint:
+            raise _fail()
+        temp_identity = _identity(controlled)
+        control_verified = True
         os.close(descriptor)
         descriptor = -1
-        _posix_revalidate_chain(destination.parent, directories)
-        closed_named = os.stat(temp_name, dir_fd=parent_fd, follow_symlinks=False)
-        if temp_fingerprint is None or _file_fingerprint(closed_named) != temp_fingerprint:
-            raise _fail()
         if os.link not in os.supports_dir_fd or os.unlink not in os.supports_dir_fd:
             raise _fail()
         try:
@@ -346,21 +355,24 @@ def _posix_publish(destination: Path, payload: bytes) -> None:
             # A syscall wrapper can fail after the link took effect.  Recover
             # cleanup authority only when the final still identifies our
             # captured temp inode; never remove an intervening winner.
-            if temp_identity is not None:
+            if temp_identity is not None and control_descriptor >= 0:
                 try:
                     linked = os.stat(destination.name, dir_fd=parent_fd,
                                      follow_symlinks=False)
-                    if _identity(linked) == temp_identity:
+                    if _identity(linked) == _identity(os.fstat(control_descriptor)):
                         published_identity = temp_identity
-                except OSError:
+                except (OSError, MemoryError):
                     pass
             raise
         published = True
         published_identity = temp_identity
         temp_named = os.stat(temp_name, dir_fd=parent_fd, follow_symlinks=False)
         destination_named = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+        controlled = os.fstat(control_descriptor)
         _posix_revalidate_chain(destination.parent, directories)
-        if _identity(temp_named) != temp_identity or _identity(destination_named) != temp_identity:
+        if (_identity(controlled) != temp_identity
+                or _identity(temp_named) != temp_identity
+                or _identity(destination_named) != temp_identity):
             raise _fail()
         os.unlink(temp_name, dir_fd=parent_fd)
         destination_after = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
@@ -372,42 +384,49 @@ def _posix_publish(destination: Path, payload: bytes) -> None:
     except (OSError, TypeError, ValueError, MemoryError):
         raise _fail() from None
     finally:
-        if descriptor >= 0:
-            if temp_identity is None:
+        try:
+            owner_descriptor = control_descriptor if control_verified else descriptor
+            owned_identity: tuple[int, int] | None = None
+            if owner_descriptor >= 0:
                 try:
-                    temp_identity = _identity(os.fstat(descriptor))
+                    owned_identity = _identity(os.fstat(owner_descriptor))
                 except (OSError, MemoryError):
                     pass
-            try:
-                os.close(descriptor)
-            except OSError:
-                pass
-        if temp_identity is not None:
-            try:
-                named = os.stat(temp_name, dir_fd=parent_fd, follow_symlinks=False)
-                # Never delete by a predictable temporary *name*.  The
-                # identity captured from our create-new descriptor is the
-                # ownership proof, so a raced replacement remains intact even
-                # if its metadata happens to resemble the original file.
-                if _identity(named) == temp_identity:
-                    os.unlink(temp_name, dir_fd=parent_fd)
-            except OSError:
-                pass
-        if published_identity is not None:
-            try:
-                named = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
-                if _identity(named) == published_identity:
-                    os.unlink(destination.name, dir_fd=parent_fd)
-            except OSError:
-                pass
-        _close_all(directories)
+            if owned_identity is not None:
+                try:
+                    named = os.stat(temp_name, dir_fd=parent_fd, follow_symlinks=False)
+                    # Never delete by a predictable temporary *name*.  The
+                    # live identity-control descriptor is the ownership proof,
+                    # so a raced replacement remains intact.
+                    if _identity(named) == owned_identity:
+                        os.unlink(temp_name, dir_fd=parent_fd)
+                except (OSError, MemoryError):
+                    pass
+            if published_identity is not None and owned_identity is not None:
+                try:
+                    named = os.stat(destination.name, dir_fd=parent_fd, follow_symlinks=False)
+                    if _identity(named) == owned_identity:
+                        os.unlink(destination.name, dir_fd=parent_fd)
+                except (OSError, MemoryError):
+                    pass
+        finally:
+            for item in (control_descriptor, descriptor):
+                if item >= 0:
+                    try:
+                        os.close(item)
+                    except (OSError, MemoryError):
+                        pass
+            _close_all(directories)
     if not published:
         raise _fail()
 
 
 def _windows_publish(destination: Path, payload: bytes) -> None:  # pragma: no cover - native Windows
     winio = _windows_module()
-    parent_anchor = parent = payload_handle = control = 0
+    parent_anchor = parent = payload_handle = pin = verifier = control = 0
+    pin_verified = False
+    verifier_verified = False
+    control_verified = False
     temp_name = _temp_name()
     try:
         parent_anchor, parent, _name = winio.pin_directory(destination.parent, writable_final=True)
@@ -419,12 +438,49 @@ def _windows_publish(destination: Path, payload: bytes) -> None:  # pragma: no c
                 raise _fail()
             view = view[written:]
         winio.flush(payload_handle)
+        payload_info = winio.require_direct(payload_handle, "file")
+        if payload_info.size != len(payload):
+            raise _fail()
+        # Bridge the writer-to-control handoff with a live non-payload pin.
+        # The pin shares writes only while the payload writer is still open;
+        # the strict control opened below does not.
+        pin = winio.open_file(parent, temp_name, delete_access=True,
+                              share_delete=True, share_write=True)
+        pin_info = winio.require_direct(pin, "file")
+        if pin_info.identity != payload_info.identity or pin_info.size != len(payload):
+            raise _fail()
+        pin_verified = True
         winio.close(payload_handle)
         payload_handle = 0
-        # Reopen solely as the identity-control handle.  It performs no payload
-        # I/O; rename is create-new and cleanup targets this same identity.
+        pin_after_close = winio.require_direct(pin, "file")
+        if pin_after_close.identity[:2] != pin_info.identity[:2] or pin_after_close.size != len(payload):
+            raise _fail()
+        # Freeze writes, bind exact bytes to the in-memory payload, and keep
+        # that verified file object live while opening the no-I/O control.
+        verifier = winio.open_file(parent, temp_name, delete_access=True,
+                                   share_delete=True, share_write=False)
+        verifier_info = winio.require_direct(verifier, "file")
+        if verifier_info.identity != pin_after_close.identity or verifier_info.size != len(payload):
+            raise _fail()
+        verifier_verified = True
+        offset = 0
+        while offset < len(payload):
+            chunk = winio.read(verifier, min(_CHUNK, len(payload) - offset))
+            if not chunk or chunk != payload[offset:offset + len(chunk)]:
+                raise _fail()
+            offset += len(chunk)
+        if winio.read(verifier, 1):
+            raise _fail()
         control = winio.open_file(parent, temp_name, delete_access=True, share_delete=True, share_write=False)
-        original_identity = winio.require_direct(control, "file").identity
+        control_info = winio.require_direct(control, "file")
+        if control_info.identity != verifier_info.identity or control_info.size != len(payload):
+            raise _fail()
+        control_verified = True
+        original_identity = control_info.identity
+        winio.close(pin)
+        pin = 0
+        winio.close(verifier)
+        verifier = 0
         _windows_revalidate_directory(destination.parent, parent)
         winio.rename(control, parent, destination.name, replace=False)
         _windows_revalidate_directory(destination.parent, parent)
@@ -437,23 +493,24 @@ def _windows_publish(destination: Path, payload: bytes) -> None:  # pragma: no c
         winio.close(control)
         control = 0
     except (OSError, TypeError, ValueError, MemoryError):
-        if control:
-            try:
+        try:
+            if control and control_verified:
                 winio.delete(control)
-            except OSError:
-                pass
-        elif payload_handle:
-            try:
+            elif verifier and verifier_verified:
+                winio.delete(verifier)
+            elif payload_handle:
                 winio.delete(payload_handle)
-            except OSError:
-                pass
+            elif pin and pin_verified:
+                winio.delete(pin)
+        except (OSError, MemoryError):
+            pass
         raise _fail() from None
     finally:
-        for item in (control, payload_handle, parent, parent_anchor):
+        for item in (control, verifier, pin, payload_handle, parent, parent_anchor):
             if item:
                 try:
                     winio.close(item)
-                except OSError:
+                except (OSError, MemoryError):
                     pass
 
 

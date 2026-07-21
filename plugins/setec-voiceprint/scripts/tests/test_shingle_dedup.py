@@ -288,6 +288,61 @@ def test_portability_source_avoids_unconditional_posix_permission_calls() -> Non
     assert '_optional_flag("O_NOFOLLOW")' in io_source
 
 
+def test_windows_source_reader_allows_stable_multiple_links_only_for_read_handles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import shingle_dedup_io as secure_io
+
+    payload = b"stable-multiple-link-source"
+    calls: list[tuple[str, bool]] = []
+    offsets: dict[int, int] = {}
+
+    class Direct:
+        def __init__(self, identity: tuple[object, ...], size: int = 0) -> None:
+            self.identity = identity
+            self.size = size
+
+    class FakeWindowsIo:
+        next_handle = 10
+
+        def pin_directory(self, _path: Path, *, writable_final: bool) -> tuple[int, int, str]:
+            assert not writable_final
+            self.next_handle += 2
+            return self.next_handle - 1, self.next_handle, "parent"
+
+        def open_file(self, _parent: int, _name: str, *, allow_multiple_links: bool = False) -> int:
+            calls.append(("open", allow_multiple_links))
+            self.next_handle += 1
+            offsets[self.next_handle] = 0
+            return self.next_handle
+
+        def require_direct(
+            self, handle: int, kind: str, *, allow_multiple_links: bool = False,
+        ) -> Direct:
+            calls.append((kind, allow_multiple_links))
+            if kind == "directory":
+                return Direct(("directory",))
+            return Direct(("file", 2), len(payload))
+
+        def read(self, handle: int, maximum: int) -> bytes:
+            start = offsets[handle]
+            chunk = payload[start:start + maximum]
+            offsets[handle] += len(chunk)
+            return chunk
+
+        def list_names(self, _parent: int) -> list[str]:
+            return []
+
+        def close(self, _handle: int) -> None:
+            return None
+
+    fake = FakeWindowsIo()
+    monkeypatch.setattr(secure_io, "_windows_module", lambda: fake)
+    assert secure_io._windows_read(tmp_path / "source.bin", len(payload)) == payload
+    assert [allowed for kind, allowed in calls if kind in {"open", "file"}] == [True] * 5
+    assert all(not allowed for kind, allowed in calls if kind == "directory")
+
+
 def test_descriptor_symlink_refuses_without_output(tmp_path: Path) -> None:
     target = tmp_path / "target.txt"
     target.write_bytes(_tokens("safe", 8).encode())
@@ -532,12 +587,18 @@ def test_checkpoint_shards_are_sealed_and_resume_ignores_reserved_temp(tmp_path:
     assert any(name.startswith("inventory-") and name.endswith(".sqlite") for name in shard_names)
     assert any(name.startswith("build-") and name.endswith(".sqlite") for name in shard_names)
     assert not any(name.endswith(suffix) for name in shard_names for suffix in ("-wal", "-shm", "-journal"))
-    with sqlite3.connect(index) as connection:
+    connection = sqlite3.connect(index)
+    try:
         assert connection.execute("PRAGMA application_id").fetchone() == (1397244977,)
         assert connection.execute("PRAGMA user_version").fetchone() == (1,)
-    with sqlite3.connect(state / "inventory-00000000.sqlite") as connection:
+    finally:
+        connection.close()
+    connection = sqlite3.connect(state / "inventory-00000000.sqlite")
+    try:
         assert connection.execute("PRAGMA application_id").fetchone() == (1397244721,)
         assert connection.execute("PRAGMA user_version").fetchone() == (1,)
+    finally:
+        connection.close()
     # Simulate an interruption residue.  It has an allowed reserved-temp name,
     # but must never be opened or trusted by resume.
     (state / ".tmp-aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").write_bytes(b"unpublished")
@@ -1015,7 +1076,6 @@ def test_source_output_aliases_refuse_before_work(
     finally:
         sd._materialize_descriptors = original
     assert hardlink.read_bytes() == before and not (tmp_path / "hardlink-state").exists()
-
     source_index = tmp_path / "alias-index.sqlite"
     build = sd._build_index(manifest, source_index, tmp_path / "build-state", resume=False)
     query = tmp_path / "query.txt"; query.write_bytes(_tokens("alias-query", 8).encode())

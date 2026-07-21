@@ -69,6 +69,35 @@ def test_windows_publication_is_create_new(tmp_path: Path) -> None:
     assert b"Traceback" not in result.stderr
 
 
+def test_windows_stable_hardlinked_sources_are_read_only_inputs(tmp_path: Path) -> None:
+    manifest = tmp_path / "records.jsonl"
+    index = tmp_path / "index.sqlite"
+    text = _words(16)
+    manifest.write_bytes(json.dumps({
+        "id": "record", "draft_id": "draft", "stage": "first", "stage_order": 0,
+        "text": text,
+    }, separators=(",", ":")).encode() + b"\n")
+    (tmp_path / "records-alias.jsonl").hardlink_to(manifest)
+    build = _run("build-index", "--manifest", str(manifest), "--index-out", str(index),
+                 "--checkpoint-dir", str(tmp_path / "build-state"))
+    assert build.returncode == 0, build.stderr.decode("utf-8", "replace")
+    receipt = json.loads(build.stdout)
+
+    (tmp_path / "index-alias.sqlite").hardlink_to(index)
+    query = tmp_path / "query.txt"; query.write_bytes(text.encode())
+    (tmp_path / "query-alias.txt").hardlink_to(query)
+    report = tmp_path / "query-report.json"
+    queried = _run("query-doc", "--index", str(index), "--index-sha256", receipt["index_sha256"],
+                   "--query-file", str(query), "--query-id", "query", "--report-out", str(report))
+    assert queried.returncode == 0, queried.stderr.decode("utf-8", "replace")
+
+    batch_report = tmp_path / "batch-report.json"
+    batched = _run("batch-report", "--index", str(index), "--index-sha256", receipt["index_sha256"],
+                   "--report-out", str(batch_report),
+                   "--checkpoint-dir", str(tmp_path / "batch-state"))
+    assert batched.returncode == 0, batched.stderr.decode("utf-8", "replace")
+
+
 def test_windows_native_directory_junction_is_refused_across_ancestor_chain(tmp_path: Path) -> None:
     target = tmp_path / "real-ancestor"; target.mkdir()
     junction = tmp_path / "junction-ancestor"
