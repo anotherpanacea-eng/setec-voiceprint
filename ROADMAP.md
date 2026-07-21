@@ -2,6 +2,16 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-07-21)
+
+- **Manifest conflict-copy tripwire (Spec 69, B5; implementation review GO, draft PR pending).** The existing
+  `manifest_validator` gains an opt-in `--check-conflict-copies` preflight for
+  multi-device sync trees. It scans names only, reports deterministic relative paths,
+  refuses conflict forks or incomplete traversal with exit 2, prunes symlinks and
+  Windows junctions, and preserves the default validator path unchanged. The focused
+  synthetic regression module is wired into the native-Windows CI lane; no corpus
+  material or model work is involved.
+
 ## Status reconciliation (2026-06-17)
 
 Supplements the two passes below for the **1.117.0** release. The plugin is now at **1.117.0**. Where this conflicts with the earlier reconciliations or the inline markers, this is authoritative.

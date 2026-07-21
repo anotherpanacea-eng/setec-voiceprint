@@ -4,7 +4,15 @@ The canonical reference for the `corpus_manifest.jsonl` contract. SETEC's task s
 
 **Format:** JSONL — one JSON object per line, blank lines and lines starting with `#` skipped.
 
-**Validate:** `python3 -u scripts/manifest_validator.py path/to/manifest.jsonl --progress-every 1000`. Exits non-zero on errors; warnings print but don't fail the run unless `--strict`. The unbuffered launcher makes the aggregate stderr heartbeat visible during long scans; set `--progress-every 0` to disable it.
+**Validate:** `python3 -u scripts/manifest_validator.py path/to/manifest.jsonl --progress-every 1000`. Exits 1 on manifest errors (or strict warnings); warnings otherwise do not fail the run. The unbuffered launcher makes the aggregate stderr heartbeat visible during long scans; set `--progress-every 0` to disable it.
+
+**Sync-tree preflight:** add `--check-conflict-copies` when the manifest lives in a
+multi-device sync tree. Before parsing the manifest, the validator recursively checks
+entry basenames below the manifest parent for the case-insensitive phrase `conflicted
+copy`, without reading contents or following directory symlinks/Windows junctions. Any
+match or incomplete scan returns exit 2 and lists deterministic manifest-parent-relative
+paths. Exit 2 takes precedence over manifest validation because a forked or partially
+unreadable tree is not trustworthy. Without the flag, the validator performs no tree scan.
 
 ## Required fields
 
