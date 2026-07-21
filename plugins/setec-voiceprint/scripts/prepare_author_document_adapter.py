@@ -83,8 +83,10 @@ def secure_directory(path: Path) -> None:
             raise ValueError("private output parent is not a regular directory")
         for directory in reversed(missing):
             os.mkdir(directory, 0o700)
-            os.chmod(directory, 0o700)
-    os.chmod(path, 0o700)
+            if os.name == "posix":
+                os.chmod(directory, 0o700)
+    if os.name == "posix":
+        os.chmod(path, 0o700)
 
 
 def secure_directory_tree(root: Path, leaf: Path) -> None:
@@ -109,14 +111,16 @@ def atomic(path: Path, data: str | bytes) -> None:
     )
     temp = Path(raw_temp)
     try:
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as handle:
             descriptor = -1
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp, path)
-        os.chmod(path, 0o600)
+        if os.name == "posix":
+            os.chmod(path, 0o600)
     finally:
         if descriptor >= 0:
             os.close(descriptor)

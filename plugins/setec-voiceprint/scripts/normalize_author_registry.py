@@ -135,8 +135,10 @@ def _secure_directory(path: Path) -> None:
             raise ValueError("private output parent is not a regular directory")
         for directory in reversed(missing):
             os.mkdir(directory, 0o700)
-            os.chmod(directory, 0o700)
-    os.chmod(path, 0o700)
+            if os.name == "posix":
+                os.chmod(directory, 0o700)
+    if os.name == "posix":
+        os.chmod(path, 0o700)
 
 
 def _write_atomic(path: Path, content: str) -> None:
@@ -146,14 +148,16 @@ def _write_atomic(path: Path, content: str) -> None:
     )
     temporary = Path(raw_temporary)
     try:
-        os.fchmod(descriptor, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(descriptor, 0o600)
         with os.fdopen(descriptor, "wb") as handle:
             descriptor = -1
             handle.write(content.encode("utf-8"))
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
-        os.chmod(path, 0o600)
+        if os.name == "posix":
+            os.chmod(path, 0o600)
     finally:
         if descriptor >= 0:
             os.close(descriptor)

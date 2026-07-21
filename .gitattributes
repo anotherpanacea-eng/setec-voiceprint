@@ -2,3 +2,13 @@
 # core.autocrlf=true. A CRLF-terminated *.sh breaks bash/WSL with
 # "$'\r': command not found" / "set: pipefail: invalid option name".
 *.sh text eol=lf
+
+# The atomic-iMessage export-seam fixture pins content hashes over the exact
+# on-disk bytes of its .txt/.meta.json/.jsonl files. With core.autocrlf=true
+# (the default on Windows dev checkouts and GitHub-hosted windows-latest
+# runners) git rewrites those LF endings to CRLF at checkout, so the bytes no
+# longer hash to the pinned content_hash and author_corpus_export's seam tests
+# fail with "source content hash mismatch". This tree is entirely text, so
+# force LF checkout on every platform. Do NOT widen this to all fixtures: some
+# fixture trees hold binaries (e.g. PDFs) that eol=lf would corrupt.
+plugins/setec-voiceprint/scripts/tests/fixtures/imessage_atomic_export_seam/** text eol=lf
