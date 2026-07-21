@@ -36,6 +36,48 @@ Every entry must carry these. Missing any → error.
 | `source` | string | Provenance breadcrumb |
 | `notes` | string | Free-text |
 
+## Owner-corrections sidecar
+
+`apply_owner_corrections.py` is an explicit, pre-registration metadata pass for
+an owner-reviewed correction. It is not part of a manifest: the source manifest
+and its correction JSONL remain separate, and the tool writes a new corrected
+manifest. No registration consumer discovers or applies a sidecar implicitly.
+
+Each nonblank sidecar line is one object with this closed schema:
+
+```json
+{
+  "schema": "setec-owner-correction/1",
+  "match": {"id": "doc-1", "content_hash": "sha256:..."},
+  "expect": {"register": "blog_essay"},
+  "rewrite": {"register": "personal"},
+  "note": "owner-reviewed classification"
+}
+```
+
+- `match` is a nonempty ANDed set of exact, case-sensitive string equalities on
+  `id`, `path`, `source_id`, and/or `content_hash`; each rule must match exactly
+  one row. It never resolves paths, coerces values, or uses glob/regex matching.
+- `expect` is optional stale-state protection for existing `register` and `era`
+  values. `rewrite` is a nonempty replacement limited to those same
+  validator-approved enum fields. Identity, content, provenance, privacy,
+  consent, authorship/training, and `notes` fields are immutable.
+- `note` is a nonempty owner audit rationale. It stays in the sidecar and is
+  bound by the sidecar hash in the aggregate receipt; it is never copied into a
+  manifest `notes` field or stdout.
+- Unknown keys, duplicate JSON keys, invalid UTF-8/BOM, non-finite JSON,
+  malformed identities, zero/multiple matches, conflicting rules, stale
+  expectations, or a validator-invalid result refuse the whole operation.
+
+The corrected output is canonical UTF-8 JSONL with one LF per data row. The
+applier preserves data-row order, refuses unsafe publication, and reports only
+aggregate hashes/counts. It does not inspect or copy corpus prose, infer a
+classification, or alter source text/content hashes. Use the corrected manifest
+only by passing it explicitly to a compatible consumer. In particular, an
+existing `document_local` attestation binds its original manifest bytes: a
+corrected manifest requires a separately attested workflow and must not be
+substituted under that attestation.
+
 ## Impostor-corpus fields (1.14.3+)
 
 For impostor-pool support per `internal/2026-05-08-impostor-corpus-spec.md`. Required only when the entry's `corpus_role` is `impostor`; recommended otherwise.

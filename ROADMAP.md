@@ -24,6 +24,25 @@ Supplements the 2026-06-17 pass above for the **post-1.117.0** window — a larg
 
 Supplements the 2026-06-19 pass above. Where this conflicts with older sections, this is authoritative.
 
+## Status reconciliation (2026-07-21)
+
+Supplements the earlier status passes for the current fleet work. Where it
+conflicts with older text, this section is authoritative.
+
+### In reviewed build since the prior reconciliation
+
+- **Owner-corrections sidecar applier (spec 70).**
+  `apply_owner_corrections.py` canonicalizes the repeated owner-reviewed staging
+  pattern as a deterministic, fail-closed JSONL pre-registration pass. It applies
+  exact-match corrections to only validated `register`/`era` metadata, keeps
+  owner rationale in a hash-bound sidecar rather than the manifest, writes an
+  explicit canonical corrected manifest, and emits aggregate-only receipts. No
+  consumer auto-discovers corrections, source manifests retain their default
+  behavior, and `document_local` attestations may not be reused for corrected
+  bytes. The focused Python 3.12 Windows CI job exercises the byte-exact,
+  platform-portable path. This is not merged or released until its independent
+  review gates clear.
+
 ### Shipped since 2026-06-19 status pass
 
 - **`house_style_decomposition` (spec-wave-4 Tier-4a) — nested-baseline idiolect-vs-house attribution-of-variation.** New `house_style_decomposition` surface. Runs the target's stylometric feature vector against a curated ORDERED LADDER of nested baselines (`same_author_same_org` / `different_context` / `different_authors_same_org` / `same_genre_outside_org` / `broad_reference`) and reports per-level Burrows-Delta, signed idiolect-vs-house contrast, and descriptive attribution labels (`idiolect_borne` / `house_borne` / `shared_or_indistinct`). M1 pure-stdlib (`compare_to_baseline(include_spacy=False)`), no numpy/spaCy/torch. Leakage guard: target author_id + path-identity, with inline-text FORBIDDEN (bypasses path-identity check). `--lens embedding` (M2 seam) refuses fail-loud even when torch is importable. Calibration PROVISIONAL; `status: heuristic`. 17 CI-runnable tests incl. unconditional no-verdict recursive key-walk. Reference: Burrows (2002), *Computers and the Humanities* 37(3).

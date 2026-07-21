@@ -1168,6 +1168,37 @@ canonical persona refuse. Only rows that declare `corpus_role: identity_baseline
 `use: [voice_profile]`, `split: baseline`, and `consent_status: author_consent`
 are eligible, and explicit impostor/comparison markers always refuse.
 
+### Owner-reviewed corrections before registration
+
+Use `apply_owner_corrections.py` only when an owner has already reviewed a
+classification correction. It is a deterministic sidecar-to-new-manifest pass;
+it neither reads corpus prose nor discovers sidecars automatically. From this
+directory, write the corrected manifest beside its source, then pass that new
+path explicitly to an existing registration consumer:
+
+```
+python3 apply_owner_corrections.py corpus_manifest.jsonl owner-corrections.jsonl \
+  --out corpus_manifest.corrected.jsonl
+python3 normalize_author_registry.py \
+  --source-manifest owner=corpus_manifest.corrected.jsonl \
+  --register-map owner:personal=text.personal --persona owner --output-dir normalized/
+```
+
+The correction JSONL uses the closed `setec-owner-correction/1` schema in
+`../references/manifest-schema.md`: an exact `match`, optional old-state `expect`,
+validator-approved `rewrite` of only `register` and/or `era`, and an owner
+`note`. The note remains sidecar-only; output and diagnostics are aggregate-only.
+The source manifest is unchanged unless the operator deliberately selects the
+applier's `--in-place` mode. There is no default behavior change to either
+registration script, no implicit correction precedence, and no path/prose
+matching.
+
+For `author_corpus_export.py`, a non-`document_local` source can consume the
+corrected manifest through its existing source-manifest input. Do **not** replace
+a manifest under an existing `document_local` attestation: that attestation binds
+the original manifest bytes. A corrected document-local manifest needs a separate
+new-attestation workflow, which this tool does not create.
+
 `author_corpus_export.py` is the normalized bridge from private
 `acquire_imessage_sent.py` / `acquire_gmail_sent.py` outputs and explicitly
 attested local author-document manifests to voicewright's
