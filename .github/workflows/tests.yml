@@ -99,10 +99,11 @@ jobs:
       - name: Install focused test dependency
         run: python -m pip install pytest tzdata
 
-      - name: Run Windows handle-relative writer and guard tests
+      - name: Run Windows handle-relative writer, guard, and conflict-copy tests
         shell: pwsh
         run: |
           python -m pytest `
+            plugins/setec-voiceprint/scripts/tests/test_manifest_validator_conflict_copies.py `
             plugins/setec-voiceprint/scripts/tests/test_windows_descriptor_backend.py `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_approved_refuses_output_outside_private_root_without_writes `
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_offline_bootstrap_resumes_interrupted_approved_snapshot_copy `
@@ -117,6 +118,27 @@ jobs:
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_direct_script_invocation_validate_run_fails_controlled_not_via_import_error `
             -q `
             --basetemp "${{ runner.temp }}\\setec-win-descriptor"
+
+  windows-owner-corrections:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install focused test dependency
+        run: python -m pip install pytest
+
+      - name: Run owner-corrections Windows contract tests
+        shell: pwsh
+        run: |
+          python -m pytest `
+            plugins/setec-voiceprint/scripts/tests/test_apply_owner_corrections.py `
+            -q `
+            --basetemp "${{ runner.temp }}\\setec-win-owner-corrections"
 
   windows-shingle-dedup:
     runs-on: windows-latest

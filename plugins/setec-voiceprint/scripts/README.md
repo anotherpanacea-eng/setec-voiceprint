@@ -604,6 +604,7 @@ Schema and integrity checks for `corpus_manifest.jsonl`. Phase 1 step 1 of the v
 python3 manifest_validator.py corpus_manifest.jsonl
 python3 manifest_validator.py corpus_manifest.jsonl --json
 python3 manifest_validator.py corpus_manifest.jsonl --strict --out report.md
+python3 manifest_validator.py corpus_manifest.jsonl --check-conflict-copies
 python3 -u manifest_validator.py corpus_manifest.jsonl --progress-every 1000
 ```
 
@@ -612,6 +613,14 @@ default and an unconditional completion heartbeat after cross-entry checks. Use 
 launcher flag so an external log collector sees the heartbeat immediately; choose another cadence
 with `--progress-every N`, or pass `--progress-every 0` for quiet compatibility. Progress never
 enters stdout, `--out`, or the JSON envelope and contains no entry ids, paths, or corpus prose.
+
+`--check-conflict-copies` first scans the manifest's parent tree for case-insensitive
+`conflicted copy` basenames, including Dropbox's device-prefixed form. It does not read
+file contents or follow directory symlinks/Windows junctions. A match or incomplete scan
+refuses with exit 2 and a deterministic `/`-separated list relative to the manifest parent;
+resolve the sync conflict before trusting the corpus. Without the flag, no tree scan occurs
+and legacy validation/output behavior is unchanged. In flag mode stdout and `--out` are
+byte-identical UTF-8/LF artifacts; progress stderr remains aggregate-only.
 
 ### What it checks
 
@@ -636,10 +645,11 @@ Cross-entry:
 |---|---|
 | 0 | No errors. Warnings allowed unless `--strict`. |
 | 1 | Errors present, OR `--strict` and warnings present. |
+| 2 | CLI usage error, or `--check-conflict-copies` found a conflict/incomplete tree scan. |
 
 ### Output shape
 
-Markdown report with a summary block (counts by register, ai_status, split, use, privacy, persona) and itemized Errors and Warnings sections. JSON output preserves the same structure: a top-level `task_surface: "validation"`, plus `manifest_path`, `n_entries`, `n_errors`, `n_warnings`, an `issues` list, and a `summary` block. Importable: `validate_manifest(path) -> dict` returns the same structure for downstream tools that want to gate on manifest health before composing a run.
+Markdown report with a summary block (counts by register, ai_status, split, use, privacy, persona) and itemized Errors and Warnings sections. JSON output preserves the same structure: a top-level `task_surface: "validation"`, plus `manifest_path`, `n_entries`, `n_errors`, `n_warnings`, an `issues` list, and a `summary` block. With the conflict-copy flag, `results.conflict_copy_check` records relative matches, sanitized scan errors, and whether manifest validation ran; refused preflights carry null validation counts rather than claiming a clean manifest. Importable: `validate_manifest(path) -> dict` returns the ordinary validation structure for downstream tools that want to gate on manifest health before composing a run.
 
 ### Library use
 
@@ -1167,6 +1177,37 @@ that canonical value requires an explicit source-qualified
 canonical persona refuse. Only rows that declare `corpus_role: identity_baseline`,
 `use: [voice_profile]`, `split: baseline`, and `consent_status: author_consent`
 are eligible, and explicit impostor/comparison markers always refuse.
+
+### Owner-reviewed corrections before registration
+
+Use `apply_owner_corrections.py` only when an owner has already reviewed a
+classification correction. It is a deterministic sidecar-to-new-manifest pass;
+it neither reads corpus prose nor discovers sidecars automatically. From this
+directory, write the corrected manifest beside its source, then pass that new
+path explicitly to an existing registration consumer:
+
+```
+python3 apply_owner_corrections.py corpus_manifest.jsonl owner-corrections.jsonl \
+  --out corpus_manifest.corrected.jsonl
+python3 normalize_author_registry.py \
+  --source-manifest owner=corpus_manifest.corrected.jsonl \
+  --register-map owner:personal=text.personal --persona owner --output-dir normalized/
+```
+
+The correction JSONL uses the closed `setec-owner-correction/1` schema in
+`../references/manifest-schema.md`: an exact `match`, optional old-state `expect`,
+validator-approved `rewrite` of only `register` and/or `era`, and an owner
+`note`. The note remains sidecar-only; output and diagnostics are aggregate-only.
+The source manifest is unchanged unless the operator deliberately selects the
+applier's `--in-place` mode. There is no default behavior change to either
+registration script, no implicit correction precedence, and no path/prose
+matching.
+
+For `author_corpus_export.py`, a non-`document_local` source can consume the
+corrected manifest through its existing source-manifest input. Do **not** replace
+a manifest under an existing `document_local` attestation: that attestation binds
+the original manifest bytes. A corrected document-local manifest needs a separate
+new-attestation workflow, which this tool does not create.
 
 `author_corpus_export.py` is the normalized bridge from private
 `acquire_imessage_sent.py` / `acquire_gmail_sent.py` outputs and explicitly

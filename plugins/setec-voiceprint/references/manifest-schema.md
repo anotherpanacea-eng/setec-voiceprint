@@ -4,7 +4,15 @@ The canonical reference for the `corpus_manifest.jsonl` contract. SETEC's task s
 
 **Format:** JSONL — one JSON object per line, blank lines and lines starting with `#` skipped.
 
-**Validate:** `python3 -u scripts/manifest_validator.py path/to/manifest.jsonl --progress-every 1000`. Exits non-zero on errors; warnings print but don't fail the run unless `--strict`. The unbuffered launcher makes the aggregate stderr heartbeat visible during long scans; set `--progress-every 0` to disable it.
+**Validate:** `python3 -u scripts/manifest_validator.py path/to/manifest.jsonl --progress-every 1000`. Exits 1 on manifest errors (or strict warnings); warnings otherwise do not fail the run. The unbuffered launcher makes the aggregate stderr heartbeat visible during long scans; set `--progress-every 0` to disable it.
+
+**Sync-tree preflight:** add `--check-conflict-copies` when the manifest lives in a
+multi-device sync tree. Before parsing the manifest, the validator recursively checks
+entry basenames below the manifest parent for the case-insensitive phrase `conflicted
+copy`, without reading contents or following directory symlinks/Windows junctions. Any
+match or incomplete scan returns exit 2 and lists deterministic manifest-parent-relative
+paths. Exit 2 takes precedence over manifest validation because a forked or partially
+unreadable tree is not trustworthy. Without the flag, the validator performs no tree scan.
 
 ## Required fields
 
@@ -35,6 +43,48 @@ Every entry must carry these. Missing any → error.
 | `adversarial_class` | string | Adversarial-fixture work; `validation_harness.py` slices by this |
 | `source` | string | Provenance breadcrumb |
 | `notes` | string | Free-text |
+
+## Owner-corrections sidecar
+
+`apply_owner_corrections.py` is an explicit, pre-registration metadata pass for
+an owner-reviewed correction. It is not part of a manifest: the source manifest
+and its correction JSONL remain separate, and the tool writes a new corrected
+manifest. No registration consumer discovers or applies a sidecar implicitly.
+
+Each nonblank sidecar line is one object with this closed schema:
+
+```json
+{
+  "schema": "setec-owner-correction/1",
+  "match": {"id": "doc-1", "content_hash": "sha256:..."},
+  "expect": {"register": "blog_essay"},
+  "rewrite": {"register": "personal"},
+  "note": "owner-reviewed classification"
+}
+```
+
+- `match` is a nonempty ANDed set of exact, case-sensitive string equalities on
+  `id`, `path`, `source_id`, and/or `content_hash`; each rule must match exactly
+  one row. It never resolves paths, coerces values, or uses glob/regex matching.
+- `expect` is optional stale-state protection for existing `register` and `era`
+  values. `rewrite` is a nonempty replacement limited to those same
+  validator-approved enum fields. Identity, content, provenance, privacy,
+  consent, authorship/training, and `notes` fields are immutable.
+- `note` is a nonempty owner audit rationale. It stays in the sidecar and is
+  bound by the sidecar hash in the aggregate receipt; it is never copied into a
+  manifest `notes` field or stdout.
+- Unknown keys, duplicate JSON keys, invalid UTF-8/BOM, non-finite JSON,
+  malformed identities, zero/multiple matches, conflicting rules, stale
+  expectations, or a validator-invalid result refuse the whole operation.
+
+The corrected output is canonical UTF-8 JSONL with one LF per data row. The
+applier preserves data-row order, refuses unsafe publication, and reports only
+aggregate hashes/counts. It does not inspect or copy corpus prose, infer a
+classification, or alter source text/content hashes. Use the corrected manifest
+only by passing it explicitly to a compatible consumer. In particular, an
+existing `document_local` attestation binds its original manifest bytes: a
+corrected manifest requires a separately attested workflow and must not be
+substituted under that attestation.
 
 ## Impostor-corpus fields (1.14.3+)
 

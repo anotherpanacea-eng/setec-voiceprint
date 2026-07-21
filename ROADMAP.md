@@ -2,6 +2,16 @@
 
 The architectural narrative and the path from MVP to validated framework. Internal working notes (session logs, design discussions, private corpus references) live separately.
 
+## Status reconciliation (2026-07-21)
+
+- **Manifest conflict-copy tripwire (Spec 69, B5; implementation review GO, draft PR pending).** The existing
+  `manifest_validator` gains an opt-in `--check-conflict-copies` preflight for
+  multi-device sync trees. It scans names only, reports deterministic relative paths,
+  refuses conflict forks or incomplete traversal with exit 2, prunes symlinks and
+  Windows junctions, and preserves the default validator path unchanged. The focused
+  synthetic regression module is wired into the native-Windows CI lane; no corpus
+  material or model work is involved.
+
 ## Status reconciliation (2026-06-17)
 
 Supplements the two passes below for the **1.117.0** release. The plugin is now at **1.117.0**. Where this conflicts with the earlier reconciliations or the inline markers, this is authoritative.
@@ -23,6 +33,25 @@ Supplements the 2026-06-17 pass above for the **post-1.117.0** window — a larg
 ## Status reconciliation (2026-06-23)
 
 Supplements the 2026-06-19 pass above. Where this conflicts with older sections, this is authoritative.
+
+## Status reconciliation (2026-07-21)
+
+Supplements the earlier status passes for the current fleet work. Where it
+conflicts with older text, this section is authoritative.
+
+### In reviewed build since the prior reconciliation
+
+- **Owner-corrections sidecar applier (spec 70).**
+  `apply_owner_corrections.py` canonicalizes the repeated owner-reviewed staging
+  pattern as a deterministic, fail-closed JSONL pre-registration pass. It applies
+  exact-match corrections to only validated `register`/`era` metadata, keeps
+  owner rationale in a hash-bound sidecar rather than the manifest, writes an
+  explicit canonical corrected manifest, and emits aggregate-only receipts. No
+  consumer auto-discovers corrections, source manifests retain their default
+  behavior, and `document_local` attestations may not be reused for corrected
+  bytes. The focused Python 3.12 Windows CI job exercises the byte-exact,
+  platform-portable path. This is not merged or released until its independent
+  review gates clear.
 
 ### In build (Long Pull B3)
 
