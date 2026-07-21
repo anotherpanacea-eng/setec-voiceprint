@@ -1,0 +1,61 @@
+{
+  "id": "shingle_dedup",
+  "script_path": "plugins/setec-voiceprint/scripts/shingle_dedup.py",
+  "surface": "voice_coherence_acquisition",
+  "status": "heuristic",
+  "handoff": "none",
+  "consumers": [],
+  "family": "acquisition",
+  "purpose": "Deterministic, exact 8-token shingle-overlap measurement for locally staged documents. Builds a sealed SQLite inverted index, queries one document, or writes a deterministic same-draft cross-stage candidate report using directional containment and Jaccard diagnostics. The 0.35 and 0.60 containment tiers are operational, uncalibrated review thresholds; this tool neither calls a pair a duplicate nor makes an authorship, provenance, quality, or AI/human claim.",
+  "use_when": [
+    "You need a local, exact, reproducible review queue for possible near-verbatim overlap among explicitly staged documents.",
+    "You need to compare one bounded UTF-8 document against a sealed index, or compare distinct stages of the same opaque draft identifier before review.",
+    "You need aggregate console receipts and a private report artifact that contains opaque operator identifiers but never source prose, raw tokens, shingles, paths, or content digests."
+  ],
+  "do_not_use_when": [
+    "You need semantic or paraphrase similarity, transitive clustering, approximate MinHash/LSH, automatic keep/drop decisions, or manifest mutation.",
+    "You need a duplicate, authorship, provenance, quality, AI/human, or selection verdict; containment tiers are operationally uncalibrated measurements only.",
+    "You cannot keep the explicit descriptor manifest, index, checkpoint, and report artifacts in an operator-controlled local workspace."
+  ],
+  "inputs": {
+    "target": "strict UTF-8 staged-descriptor JSONL plus local bounded UTF-8 documents; build-index writes a named index and checkpoint directory, query-doc reads an exact-pinned index plus a named query document and writes a report, and batch-report reads an exact-pinned index and writes a report/checkpoint.",
+    "required": [
+      "explicit staged-descriptor JSONL or exact-pinned local index, as required by the selected mode"
+    ],
+    "optional": [
+      "--resume for a compatible immutable checkpoint directory"
+    ]
+  },
+  "outputs": {
+    "schema_version": "1.0",
+    "artifacts": [
+      "setec-shingle-index/1 sealed SQLite inverted index with raw and logical SHA-256 seals",
+      "setec-shingle-checkpoint/1 immutable inventory, build, or batch resume shards",
+      "setec-shingle-report/1 canonical private candidate report with opaque IDs only",
+      "aggregate-only canonical JSON receipts on stdout and progress records on stderr"
+    ]
+  },
+  "compute": {
+    "tier": "core",
+    "cost_note": "Standard-library exact token/shingle and SQLite work only; CPU-only, no model, API, network, corpus fixture, or GPU path. Bounded by frozen input, posting, pair, SQLite, checkpoint, and report ceilings.",
+    "length_floor_words": 8
+  },
+  "registers": [],
+  "dependencies": {
+    "python": []
+  },
+  "examples": [
+    {
+      "description": "Build a sealed exact-shingle index from explicit staged descriptors",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/shingle_dedup.py build-index --manifest descriptors.jsonl --index-out staged.sqlite --checkpoint-dir build-state"
+    },
+    {
+      "description": "Write a deterministic same-draft cross-stage candidate report",
+      "cmd": "python3 plugins/setec-voiceprint/scripts/shingle_dedup.py batch-report --index staged.sqlite --index-sha256 INDEX_SHA256 --report-out candidates.json --checkpoint-dir batch-state"
+    }
+  ],
+  "references": [
+    "specs/71-shingle-dedup-library.md",
+    "plugins/setec-voiceprint/references/shingle-dedup-schema.md"
+  ]
+}

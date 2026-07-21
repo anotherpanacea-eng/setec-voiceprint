@@ -278,21 +278,23 @@ The exact constant meta values are `schema_version=setec-shingle-index/1`, `tool
 threshold fractions `35/100` and `60/100`. `unicode_version` equals the build runtime's
 `unicodedata.unidata_version`; every other meta value is derived and reconciled as specified.
 
-Build a unique same-directory temporary database by setting `PRAGMA encoding='UTF-8'` before schema
-creation, then using `journal_mode=DELETE`, `foreign_keys=ON`,
-and one transaction; never use WAL. Apply database page/size, cache, VM-step, and available SQLite
-`setlimit` ceilings. After commit, validate exact schema/types/counts, `foreign_key_check`, exact
-`quick_check == "ok"`, and the recomputed logical seal. Close every cursor and connection, reject
-`-wal`/`-shm`/`-journal` sidecars, fsync the closed database, and only then publish create-new.
+Build the database in a fresh in-memory SQLite connection by setting `PRAGMA encoding='UTF-8'` before
+schema creation, requiring `journal_mode=MEMORY`, enabling `foreign_keys=ON`, and using one
+transaction; never use WAL or a named SQLite working database. Apply database page/size, cache,
+VM-step, and available SQLite `setlimit` ceilings. After commit, serialize to exact bytes, deserialize
+only those bytes into a second hardened in-memory connection, and validate exact schema/types/counts,
+raw byte length versus page geometry, `foreign_key_check`, exact `quick_check == "ok"`, and the
+recomputed logical seal. Close every cursor and connection, then publish the validated payload
+create-new through the retained output-parent handle. No build-side SQLite sidecar can exist.
 
 Before any query or output, cap the source index and reject indirection/non-regular files and
-sidecars. Copy it through a verified binary source handle to an owned bounded temporary snapshot,
-fsync and close the snapshot, and require the snapshot bytes to match `--index-sha256`. A concurrent
-source change can therefore cause only a pin refusal, never a mixed live read. Open only that owned
-snapshot through `Path.resolve().as_uri()` plus controlled `mode=ro&immutable=1` query parameters;
-never interpolate an unescaped `file:` URI. Set `query_only=ON` and `trusted_schema=OFF`, then run
-the closed-schema/type/count/FK/quick-check/logical-seal validation. Close before deleting the owned
-snapshot. Every SQL statement is fixed and parameterized; every result has explicit BINARY/BLOB
+sidecars. Read it exactly once through a verified binary source handle, require those bounded bytes
+to match `--index-sha256`, and deserialize only those pinned bytes into a fresh in-memory SQLite
+connection via the standard-library `Connection.deserialize` API. A runtime without `deserialize`
+refuses; there is no named-path reopen and a concurrent source change can therefore cause only a pin
+refusal, never a mixed live read. Set `query_only=ON` and `trusted_schema=OFF`, then run
+the closed-schema/type/count/FK/quick-check/logical-seal validation. Every SQL statement is fixed
+and parameterized; every result has explicit BINARY/BLOB
 ordering. The loader does not repair, migrate, attach, extend, or partially use an invalid index.
 
 Validation rechecks every persisted value domain before any report row: the exact closed `meta`
@@ -303,13 +305,14 @@ count is zero; unique `(draft_id, stage)` and stage order per draft; posting ref
 documents; exact per-document posting counts; exact total/distinct/fanout aggregates; and the
 recomputed logical seal.
 
-Validation requires exact `PRAGMA encoding == "UTF-8"` for indexes, snapshots, and checkpoint shards.
+Validation requires exact `PRAGMA encoding == "UTF-8"` for indexes, deserialized connections, and
+checkpoint shards.
 
 Physical SQLite bytes may vary with the SQLite runtime and are not a cross-platform determinism
 claim. Each built artifact is nevertheless exact-byte pinned; logical content and canonical report
 bytes are deterministic.
 
-URI tests cover spaces, `#`, `%`, Unicode, URI-looking filenames, Windows drive paths, and UNC-like
+Path tests cover spaces, `#`, `%`, Unicode, URI-looking filenames, Windows drive paths, and UNC-like
 forms where the runner supports them.
 
 ### 5.2 Report: `setec-shingle-report/1`
@@ -431,13 +434,14 @@ Build and batch modes use immutable, atomically published checkpoint **shards**,
 checkpoint database. A build directory contains contiguous `inventory-00000000.sqlite`, ... shards
 followed by contiguous `build-00000000.sqlite`, ... shards; a batch directory contains contiguous
 `batch-00000000.sqlite`, ... shards. Reserved `.tmp-UUID` working names are also allowed. Each shard covers
-at most 250 items. A new shard is built with DELETE journaling in a same-directory reserved temp;
+at most 250 items. A new shard is built in a fresh in-memory SQLite connection with MEMORY journaling;
 rows, cursor/counters, and the already-computed seal are inserted in one transaction. After commit,
-the tool runs exact validation and `quick_check`, closes every SQLite/data handle, rejects sidecars,
-fsyncs the closed file, and publishes the next final shard create-new. Only then does it emit the
-progress record. A crash can leave only a reserved temp and its sidecar; resume ignores those names
-without opening them and continues from the highest contiguous final shard. Published shards are
-never mutated and never have sidecars, so recovery never opens a hot journal or repairs live state.
+the tool serializes exact bytes, deserializes and fully validates those bytes (including
+`quick_check`), closes SQLite, and writes/fsyncs the payload through a same-directory reserved binary
+temp before handle-relative create-new publication. Only then does it emit the progress record. A
+crash can leave only a reserved unpublished payload temp; resume counts but never opens such names
+and continues from the highest contiguous final shard. Published shards are never mutated and SQLite
+never opens their names, so checkpoint creation and recovery cannot create or consume sidecars.
 
 Every shard has `application_id = 0x53484331` (`SHC1`), `user_version = 1`, and exactly
 `checkpoint_meta(key TEXT PRIMARY KEY,value TEXT NOT NULL) WITHOUT ROWID`. Its exact common keys are:
@@ -501,13 +505,15 @@ On resume, enumerate only through the verified checkpoint-directory handle. Befo
 entry, cap total entries, final shards, reserved temps, each file's lstat bytes, and cumulative bytes;
 reject other file types/names. Validation installs the per-connection VM budget and also decrements
 the frozen cumulative validation-work budget across all shard snapshots. Every contiguous final
-shard is copied through a verified handle to an owned bounded snapshot; only the snapshot is opened
-as hardened `mode=ro&immutable=1` SQLite and fully validated. Reserved temp names are never trusted,
-opened, recovered, or published. Any unknown entry, gap, final-shard sidecar, mismatch, corruption,
+shard is read exactly once through a verified handle into owned bounded bytes; only those bytes are
+deserialized into a fresh hardened in-memory SQLite connection and fully validated. Reserved temp
+names are counted from handle-relative directory metadata but never opened, trusted, recovered, or
+published. Any unknown entry, gap, final-shard sidecar, mismatch, corruption,
 over-limit state, cursor discontinuity, or conflicting complete run refuses. For build, rehash every
 current source file and compare it to the inventory rows before continuing; this repeats bounded
 sequential I/O but not tokenization, shingling, or posting insertion. For batch, recreate the owned
-exact-pinned immutable index snapshot before continuing.
+index view by re-reading the bounded index bytes through a verified handle, checking the exact pin,
+and deserializing those verified bytes into a fresh in-memory SQLite connection before continuing.
 
 Shard seals protect accidental corruption, not an attacker able to rewrite both a private local
 checkpoint and its seal. Such malicious local checkpoint forgery is out of scope; final outputs
@@ -515,8 +521,8 @@ remain fully validated against closed schemas, logical seals, and exact source/i
 not replay already completed shingling or pair scoring merely to authenticate an operator-owned
 checkpoint.
 
-Final build consolidation reads validated build-index shard snapshots in order into a new production-index
-temp, then seals/validates/publishes it. Final batch consolidation reads canonical pair rows and
+Final build consolidation reads validated build-index shard snapshots in order into a new in-memory
+production index, then serializes/deserializes/seals/validates and publishes its exact bytes. Final batch consolidation reads canonical pair rows and
 disjoint counters in shard order into the final canonical report. Fresh and resumed runs must yield
 the same logical index and report bytes. Query mode is a single bounded query and does not checkpoint.
 The code contains no checkpoint migration or in-place recovery path.
@@ -526,22 +532,24 @@ The code contains no checkpoint migration or in-place recovery path.
 - Read and write in binary mode. Do not rely on text-mode newline translation.
 - Console JSON uses `sys.stdout.buffer`/`sys.stderr.buffer`, canonical ASCII bytes, exactly one LF,
   and explicit flush. A tested fallback is allowed only for injected in-memory text streams.
-- Use same-directory `mkstemp`; write, flush, `fsync`, and close before publication.
-- Publish named artifacts atomically and create-new with the platform identity-bound hard-link
-  primitive below. There is no overwrite/copy fallback. A race loser preserves the winner and
+- Build SQLite artifacts in memory and serialize exact bytes. Publication writes those bytes to a
+  unique same-directory create-new payload temp through the retained parent handle, flushes, fsyncs,
+  and closes it before the identity-bound final-name operation.
+- Publish named artifacts atomically and create-new with the platform identity-bound primitive
+  below. There is no overwrite/copy fallback. A race loser preserves the winner and
   removes only its own temp.
 - Resolve the output parent once, require a non-indirected regular directory chain, record every
   ancestor identity, create the temp in that resolved directory, and revalidate the full chain and
   temp identity. Publication and owned-temp deletion are handle-relative to the retained parent:
   POSIX uses supported `src_dir_fd`/`dst_dir_fd` link and `dir_fd` unlink primitives; Windows uses an
-  identity-bound directory/file-handle primitive such as `SetFileInformationByHandle` with
-  `FileLinkInfo`/`FileDispositionInfo` and the retained root handle. A platform lacking a safe
+  identity-bound directory/file-handle create-new rename (`FileRenameInformationEx`, replace flag
+  absent) plus `FileDispositionInfo` cleanup and the retained root handle. A platform lacking a safe
   identity-bound create-new primitive refuses before work. There is no path-based publication or
   separate verify-then-path-unlink cleanup, and an unverified race winner is never removed.
-- Every payload/SQLite write handle is flushed, fsynced, and closed before publication. POSIX links
-  the closed temp through retained directory descriptors. Windows may then reopen the owned temp
-  with the minimum compatible access/share flags solely as a dedicated identity-control handle for
-  create-new `FileLinkInfo` (replace disabled); cleanup uses that same identity handle and
+- Every payload write handle is flushed, fsynced, and closed before publication; SQLite never opens
+  the payload name. POSIX links the closed temp through retained directory descriptors. Windows may then reopen the owned temp
+  with compatible access/share flags solely as a dedicated identity-control handle for
+  create-new handle-relative rename (replace disabled); cleanup uses that same identity handle and
   `FileDispositionInfo`. The control handle performs no payload I/O and is closed immediately.
 - Reject source/output aliases and indirect output paths before work.
 - If an `O_*` flag is used, optional flags use `getattr`; binary descriptors include
@@ -609,7 +617,7 @@ staging overlap measurement, not a calibrated signal or automatic deduper.
     failure, sidecars, incompatible method/Unicode version, and oversized bytes before use.
 12. Every declared ceiling has a focused boundary/refusal test, including common-shingle posting and
     candidate-pair amplification. No refusal emits a partial report.
-13. Publication tests inject write/flush/fsync/link failures and create-new races; winners are never
+13. Publication tests inject write/flush/fsync/link-or-rename failures and create-new races; winners are never
     modified, payload/data handles are closed before publication, the Windows-only non-I/O identity
     control handle follows its frozen share/access lifecycle, and owned temps are cleaned by
     identity-bound primitives. Ancestor swaps and reparse changes during manifest, descriptor, query, index,

@@ -1225,6 +1225,49 @@ for reproducibility. The maintainer's manual live-smoke command is documented
 in `internal/2026-05-08-impostor-corpus-spec.md`; run it after any change to
 the Substack extraction path.
 
+### Exact staged-overlap review
+
+`shingle_dedup.py` is a deterministic local staging tool for possible
+near-verbatim overlap. It creates a sealed exact 8-token inverted index, queries
+one bounded UTF-8 document, or writes a same-draft, cross-stage candidate report.
+It does not modify manifests or documents; it does not cluster transitively,
+detect paraphrases, or make any duplicate, authorship, provenance, quality, or
+AI/human determination. The 0.35 and 0.60 directional-containment tiers are
+operationally uncalibrated review-queue labels, not a decision rule.
+
+All paths are explicit. Build an index from strict descriptor JSONL, then retain
+the receipt's exact raw index SHA-256 for later query or batch use:
+
+```
+python3 shingle_dedup.py build-index \
+  --manifest descriptors.jsonl --index-out staged.sqlite \
+  --checkpoint-dir build-state
+python3 shingle_dedup.py query-doc \
+  --index staged.sqlite --index-sha256 INDEX_SHA256 \
+  --query-file candidate.txt --query-id candidate_v2 \
+  --report-out candidate-report.json
+python3 shingle_dedup.py batch-report \
+  --index staged.sqlite --index-sha256 INDEX_SHA256 \
+  --report-out stage-candidates.json --checkpoint-dir batch-state
+```
+
+Descriptor IDs, draft IDs, and stages are opaque operator control values; source
+paths resolve only under the descriptor-manifest directory. Indexes persist
+SHA-256 shingle digests rather than raw shingles. Reports contain opaque pair
+identifiers only; console receipts and progress records are aggregate-only and
+contain no IDs, paths, prose, raw tokens, shingles, or per-document content
+digests. Keep descriptor, index, checkpoint, and report artifacts in the local
+operator workspace. Immutable resume shards cover at most 250 inventory items,
+indexed documents, or potential batch pairs; resume validates at most 4,040
+final shards, 16 reserved payload temps, 4,056 directory entries, 128 MiB per
+shard, and 2 GiB cumulatively. SQLite artifacts are assembled and validated from
+in-memory serialized bytes; final publication is create-new through retained
+directory handles on POSIX and Windows. For a short artifact summary, see
+[`references/shingle-dedup-schema.md`](../references/shingle-dedup-schema.md).
+The full executable contract, including all remaining ceilings, publication
+rules, and platform-specific refusal behavior, is
+[`spec 71`](../../../specs/71-shingle-dedup-library.md).
+
 ---
 
 ## acquire_blogger_takeout.py

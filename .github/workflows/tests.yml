@@ -117,3 +117,28 @@ jobs:
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py::test_direct_script_invocation_validate_run_fails_controlled_not_via_import_error `
             -q `
             --basetemp "${{ runner.temp }}\\setec-win-descriptor"
+
+  windows-shingle-dedup:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install focused test dependency
+        run: python -m pip install pytest
+
+      - name: Run shingle-dedup Windows contract tests
+        shell: pwsh
+        run: |
+          python -m pytest `
+            plugins/setec-voiceprint/scripts/tests/test_shingle_dedup.py `
+            plugins/setec-voiceprint/scripts/tests/test_shingle_dedup_checkpoint.py `
+            plugins/setec-voiceprint/scripts/tests/test_shingle_dedup_io_faults.py `
+            plugins/setec-voiceprint/scripts/tests/test_shingle_dedup_validate.py `
+            plugins/setec-voiceprint/scripts/tests/test_shingle_dedup_windows.py `
+            -q `
+            --basetemp "${{ runner.temp }}\\setec-win-shingle-dedup"

@@ -84,6 +84,13 @@ local branches, as the open-signal):
 | 21 attribution-refusal-lab | build-gated on the strong-foil decision | ✅ M1 cloud (Tier 2), gated |
 | **Spec 25 tail coordinate** *(open thread)* | spec reconciled to the shipped `curvature_t` (PR #294); `p_value_t` removed as unsupported — **do not re-add**. Still open: `curvature_t` is a constant rescale of `curvature_score` (discrimination-inert), so whether to expose T-Detect's tail comparison as a renamed non-probability heuristic coordinate | maintainer design call |
 
+**In build:** 71 deterministic shingle-dedup library (`shingle_dedup`) on the
+existing `voice_coherence_acquisition` surface. It is a stdlib, CPU-only staging
+utility for exact 8-token overlap measurement, not a new inference surface. Its
+0.35/0.60 containment tiers are operationally uncalibrated review-queue labels;
+it neither calls a pair a duplicate nor makes an authorship, provenance, quality,
+or AI/human claim. See [`71-shingle-dedup-library.md`](71-shingle-dedup-library.md).
+
 ## Lifecycle of a spec
 
 1. **Draft** — fill `_TEMPLATE.md`; resolve the license gate from the research brief.
