@@ -604,7 +604,14 @@ Schema and integrity checks for `corpus_manifest.jsonl`. Phase 1 step 1 of the v
 python3 manifest_validator.py corpus_manifest.jsonl
 python3 manifest_validator.py corpus_manifest.jsonl --json
 python3 manifest_validator.py corpus_manifest.jsonl --strict --out report.md
+python3 -u manifest_validator.py corpus_manifest.jsonl --progress-every 1000
 ```
+
+The CLI emits a flushed, aggregate-only progress heartbeat to stderr every 1,000 scanned rows by
+default and an unconditional completion heartbeat after cross-entry checks. Use Python's `-u`
+launcher flag so an external log collector sees the heartbeat immediately; choose another cadence
+with `--progress-every N`, or pass `--progress-every 0` for quiet compatibility. Progress never
+enters stdout, `--out`, or the JSON envelope and contains no entry ids, paths, or corpus prose.
 
 ### What it checks
 
