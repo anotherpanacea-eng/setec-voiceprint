@@ -282,7 +282,9 @@ def _inline_regions(raw: bytes) -> list[Region]:
     text = raw.decode("utf-8", "strict")
     offsets = _char_offsets(text)
     out: list[Region] = []
-    boundary = re.compile(r"(?:\r\n|\r|\n)[^\S\r\n]*(?:\r\n|\r|\n)")
+    # Atomic line-break groups: a single CRLF is one line break, not two, so it
+    # must not be split into `\r`+`\n` and mistaken for a blank-line boundary.
+    boundary = re.compile(r"(?>\r\n|\r|\n)[^\S\r\n]*(?>\r\n|\r|\n)")
     paragraphs: list[tuple[int, int]] = []
     start = 0
     for match in boundary.finditer(text):
@@ -614,7 +616,10 @@ def _token_spans(raw: bytes) -> list[tuple[Span, bytes]]:
 
 def _paragraph_break(raw: bytes, left: Span, right: Span) -> bool:
     between = raw[left.end:right.start].decode("utf-8", "strict")
-    return bool(re.search(r"(?:\r\n|\r|\n)\s*(?:\r\n|\r|\n)", between))
+    # Atomic line-break groups: a single CRLF is one line break and must not be
+    # split into `\r`+`\n`, which would fake a paragraph boundary between tokens
+    # on adjacent CRLF lines and let a verbatim CRLF copy evade the exact-copy gate.
+    return bool(re.search(r"(?>\r\n|\r|\n)[^\S\r\n]*(?>\r\n|\r|\n)", between))
 
 
 def _exact_copy(source: bytes, mirror: bytes, source_mask: bytearray, mirror_mask: bytearray) -> dict[str, object]:

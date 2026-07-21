@@ -468,6 +468,24 @@ def test_exact_run_quote_mask_and_paragraph_boundary_do_not_bridge() -> None:
     assert result["eligible_mirror_tokens"] == 0 and result["coverage"] is None
 
 
+def test_single_crlf_is_one_line_break_for_inline_and_exact_run() -> None:
+    # A single CRLF is one line break, not a blank-line paragraph boundary, so
+    # it must not be split into `\r`+`\n`. An inline quote may span it, and CRLF
+    # source is detected the same as LF source (no Windows-only blind spot).
+    crlf = b'"a\r\nb"'
+    assert [r.payload(crlf) for r in gate._automatic_regions(crlf)] == [b"a\r\nb"]
+    assert quote_result(crlf, crlf)["reason"] == "ok"
+    assert quote_result(crlf, b'"a\nb"')["reason"] == "quote_fidelity_failed"
+    # A verbatim exact run bridges single CRLF line breaks exactly as it bridges
+    # LF ones, so a CRLF near-copy cannot evade the quote-exempt exact-copy gate.
+    block = [f"w{i}".encode() for i in range(20)]
+    joined = lambda sep: sep.join(b" ".join(block[i:i + 4]) for i in range(0, 20, 4))
+    pad = b" ".join(f"z{i}".encode() for i in range(40))
+    for sep in (b"\n", b"\r\n"):
+        exact = gate.evaluate(joined(sep), joined(sep) + b" " + pad)["gate_v3"]["exact_copy"]
+        assert exact["covered_mirror_tokens"] == 20 and exact["ok"] is False
+
+
 def test_newline_canonicalization_preserves_legacy_metrics_but_sha_is_raw() -> None:
     lf = b"one two\n\nthree four"
     crlf = b"one two\r\n\r\nthree four"
