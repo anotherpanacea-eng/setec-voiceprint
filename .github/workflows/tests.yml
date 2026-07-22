@@ -161,16 +161,29 @@ jobs:
             plugins/setec-voiceprint/scripts/tests/test_windows_descriptor_backend.py `
             -q -rs `
             --basetemp "${{ runner.temp }}\\setec-win-nonprose"
+
   windows-private-writer-guards:
-    # This lane covers the Windows-reachable private-corpus writers whose
-    # atomic paths harden modes with POSIX-only fchmod calls. The focused lanes
-    # above do not execute these files, so an unguarded call could otherwise
-    # land invisibly on Windows. The export-seam fixture is also hash-pinned and
-    # must remain LF under core.autocrlf (see .gitattributes).
+    # The private-corpus writers harden file modes with POSIX-only os.fchmod,
+    # which does not exist on native Windows, so an unguarded call raises
+    # AttributeError. The Linux/macOS lanes never see it and the other focused
+    # Windows lanes above only run their own files, so a bare fchmod can land
+    # invisibly. This lane runs the writers whose atomic() path is
+    # Windows-REACHABLE and hits fchmod -- normalize_author_registry and
+    # prepare_author_document_adapter -- so their guards are genuine crash fixes
+    # regression-covered here. author_corpus_export is included because its
+    # export-seam fixture is hash-pinned and must stay LF (see .gitattributes) or
+    # core.autocrlf=true on this runner remangles it into a "source content hash
+    # mismatch" failure.
     #
-    # Scope caveats: Windows cannot prove the os.name == "posix" chmod guards,
-    # and compose_imessage_review_bursts refuses non-macOS execution before its
-    # defensive fchmod sites, so neither claim is made by this lane.
+    # Scope caveats (no overclaiming):
+    #   - The os.name=="posix" chmod guards are NOT regression-covered by
+    #     pass/fail here: os.chmod exists on Windows and silently succeeds, so a
+    #     regressed chmod guard would not fail this lane. It catches the fchmod
+    #     AttributeError class only.
+    #   - compose_imessage_review_bursts is deliberately absent: its production
+    #     entry point raises ReviewBurstError("requires macOS") before reaching
+    #     either fchmod site, so its guards are defensive dead-code hardening --
+    #     not Windows-reachable and not meaningfully testable on windows-latest.
     runs-on: windows-latest
     timeout-minutes: 10
     steps:
