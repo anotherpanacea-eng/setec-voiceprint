@@ -58,14 +58,16 @@ These scripts ask how far a target text is from a *specific writer's or register
 
 What these scripts cannot answer: whether the divergence is caused by AI involvement, register shift, time drift, or genuine voice change. The verdict they license is *"this draft has drifted from this baseline by this much"* — not *"AI involvement caused the drift"* and not *"the writer is no longer themselves."* `voice_drift_tracker.py` adds a temporal axis: it can tell you *which* features have been moving across the writer's history, but not *why* — natural stylistic evolution and symptomatic distortion both produce drift.
 
-### Surface 3: Empirical validation
+### Surface 3: Validation and corpus hygiene
 
-These scripts ask whether SETEC's signals behaved as expected on a labeled corpus.
+These scripts validate corpus descriptors and content, run bounded structural
+hygiene screens, or measure SETEC signals against labeled corpora.
 
 | Script | Scope | Use when |
 |---|---|---|
 | `manifest_validator.py` | Corpus manifest | Refuse contaminated or contradictory validation inputs before running |
 | `check_corpus.py` | Corpus files / manifest slice | Refuse HTML/CSS/code/table contamination before calibration or KL-sensitive runs |
+| `nonprose_sweep.py` | B2 descriptor + referenced UTF-8 documents | Surface fixed VTT, speaker-label, disfluency, and short-line indicators for operator review without dispositioning documents |
 | `validation_harness.py` | Labeled validation entries | Measure performance by register, length, AI status, and language status |
 
 ### Surface 4: Craft restoration
@@ -116,7 +118,7 @@ Most user-facing scripts declare a `TASK_SURFACE` module constant and carry the 
 |---|---|---|
 | `smoothing_diagnosis` | `variance_audit.py`, `surprisal_audit.py`, `sliding_window_heatmap.py`, `manuscript_audit.py`, `repetition_audit.py`, `manuscript_repetition_audit.py`, `chapter_distinctiveness_audit.py`, `bigram_diff.py`, plus several smaller per-signal audits | 1 |
 | `voice_coherence` | `voice_distance.py`, `voice_profile.py`, `idiolect_detector.py`, `voice_drift_tracker.py`, `pov_voice_profile.py`, `voice_validation_harness.py` | 2 |
-| `validation` | `manifest_validator.py`, `check_corpus.py`, `validation_harness.py`, `adversarial_robustness_card.py`, `calibration_drift_monitor.py`, `draft_history_analysis.py` | 3 |
+| `validation` | `manifest_validator.py`, `check_corpus.py`, `nonprose_sweep.py`, `validation_harness.py`, `adversarial_robustness_card.py`, `calibration_drift_monitor.py`, `draft_history_analysis.py` | 3 |
 | `smoothing_diagnosis_calibration` | `calibration/calibration_survey.py` (per-corpus threshold derivation across the Tier 1-4 signal stack) | 3 |
 | `calibration` | `binoculars_calibrate.py` (Surface 5 threshold derivation), `calibration/shard_runner.py` (sharded calibration worker) | 3 |
 | `craft_restoration` | `aic_pattern_audit.py` (named-pattern density pre-pass), `restoration_packet.py` (metric-targeted revision packets), `before_after_restoration.py` (post-check loop); the rest of the surface lives in the reference prose at `references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`, and `references/metric-targeted-restoration.md` | 4 |
@@ -134,7 +136,16 @@ The five surfaces share statistical signals (function-word distributions, lexica
 
 When you have a target document, ask first which question you're trying to answer. If you want to know *whether the prose looks AI-smoothed*, run the audit scripts (Surface 1). If you want to know *whether this draft sounds like the writer*, run the voice scripts (Surface 2). The two surfaces can both run on the same document; their findings should be read separately, not averaged.
 
-A third surface — empirical performance validation against a labeled corpus — is shipped in three pieces. `manifest_validator.py` checks the schema and integrity of `corpus_manifest.jsonl` so manifest-consuming tools can trust the manifest before running. `check_corpus.py` checks the files themselves for HTML/CSS/code/table contamination that a valid manifest cannot see. `validation_harness.py` reports how well smoothing-diagnosis scores discriminate against labeled validation entries, in the manifest's registers, text lengths, AI-status classes, and language-status classes. It produces claims about your corpus, not about the world.
+A third surface — validation and corpus hygiene — has four core pieces.
+`manifest_validator.py` checks the schema and integrity of
+`corpus_manifest.jsonl`. `check_corpus.py` checks for broad markup/code/table
+contamination that a valid manifest cannot see. `nonprose_sweep.py` performs a
+separate fixed-threshold structural screen for VTT, speaker-label,
+disfluency-density, and short-line evidence over a bounded descriptor; it does
+not reuse `check_corpus` defaults or disposition documents.
+`validation_harness.py` measures how smoothing-diagnosis scores discriminate
+against labeled validation entries. These tools report properties of the
+supplied corpus or validation run, not claims about the world.
 
 A fourth surface — craft restoration advice — lives primarily in the skill's reference docs (`references/aic-flags.md`, `references/source-triage.md`, `references/rhetorical-countermoves.md`). It diagnoses prose patterns that humans can read, decides whether each instance is earned in context, and recommends revision moves. The earned/unearned verdict is irreducibly a writer's call. `aic_pattern_audit.py` provides a quantitative pre-pass that counts named-pattern density and surfaces candidate instances for that adjudication; the rest of the surface stays in prose.
 
@@ -727,6 +738,34 @@ result = check_corpus_paths(["baseline/file.md"])
 if result["status"] == "fail":
     raise RuntimeError("Corpus hygiene gate failed")
 ```
+
+---
+
+## nonprose_sweep.py
+
+Bounded, deterministic corpus-hygiene screening over an explicit B2 descriptor
+JSONL and its referenced UTF-8 documents. It reports structural indicators for
+operator review; it never rewrites, registers, accepts, rejects, or dispositions
+documents.
+
+```text
+python3 nonprose_sweep.py --manifest MANIFEST --report-out REPORT
+```
+
+Both operands are required and `REPORT` must not exist. The fixed operational,
+uncalibrated screens are: any recognized VTT structure; speaker labels on
+strictly more than 15% of nonempty lines; closed-lexicon disfluencies strictly
+above 6 per 1,000 analyzable words; and 1-5-word lines strictly above 55% when
+there are more than 15 nonempty lines. All decisions use integer arithmetic.
+
+The private create-new report contains per-document metrics keyed by opaque ID,
+aggregate totals, and manifest/source-set seals. It contains no paths, prose,
+tokens, speaker names, VTT payload, per-document digest, or inference verdict.
+Stdout is a separate aggregate-only SETEC envelope with no IDs. Both are
+canonical UTF-8 bytes with one terminal LF. Exit codes are 0 success, 1
+sanitized internal failure, 2 invalid closed CLI usage, and 3 input/resource/
+publication refusal. See `../references/nonprose-sweep.md` and Spec 72 for the
+complete grammar, ceilings, and claim boundary.
 
 ---
 
