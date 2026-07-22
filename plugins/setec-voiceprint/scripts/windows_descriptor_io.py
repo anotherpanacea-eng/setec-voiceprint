@@ -180,6 +180,12 @@ def _valid_component(name: str) -> str:
         or "\\" in name or "/" in name or ":" in name or "\x00" in name
     ):
         raise ValueError("Windows relative name is not one component")
+    try:
+        encoded_length = len(name.encode("utf-16-le"))
+    except UnicodeEncodeError as exc:
+        raise ValueError("Windows relative name is not valid UTF-16") from exc
+    if encoded_length > 255 * 2:
+        raise ValueError("Windows relative name exceeds the component limit")
     return name
 
 
@@ -238,11 +244,13 @@ def info(handle: int) -> NodeInfo:
     )
 
 
-def require_direct(handle: int, kind: str) -> NodeInfo:
+def require_direct(
+    handle: int, kind: str, *, allow_multiple_links: bool = False
+) -> NodeInfo:
     value = info(handle)
     if value.kind != kind or value.attributes & FILE_ATTRIBUTE_REPARSE_POINT:
         raise OSError("private-tree node is indirected or has the wrong kind")
-    if kind == "file" and value.links != 1:
+    if kind == "file" and not allow_multiple_links and value.links != 1:
         raise OSError("private-tree file has multiple hard links")
     return value
 
@@ -257,6 +265,7 @@ def _nt_open(
     delete_access: bool = False,
     share_delete: bool = True,
     share_write: bool = True,
+    allow_multiple_links: bool = False,
 ) -> int:
     component = _valid_component(name)
     buffer = ctypes.create_unicode_buffer(component)
@@ -299,12 +308,24 @@ def _nt_open(
     handle = int(result.value)
     try:
         if kind is not None:
-            require_direct(handle, kind)
+            require_direct(
+                handle,
+                kind,
+                allow_multiple_links=allow_multiple_links,
+            )
         elif info(handle).attributes & FILE_ATTRIBUTE_REPARSE_POINT:
             raise OSError("private-tree node is indirected")
         return handle
     except BaseException:
-        close(handle)
+        if create:
+            try:
+                delete(handle)
+            except BaseException:
+                pass
+        try:
+            close(handle)
+        except BaseException:
+            pass
         raise
 
 
@@ -328,6 +349,7 @@ def open_file(
     delete_access: bool = False,
     share_delete: bool = True,
     share_write: bool = True,
+    allow_multiple_links: bool = False,
 ) -> int:
     return _nt_open(
         parent, name, kind="file", create=False,
@@ -335,11 +357,26 @@ def open_file(
         delete_access=delete_access,
         share_delete=share_delete,
         share_write=share_write,
+        allow_multiple_links=allow_multiple_links,
     )
 
 
-def create_file(parent: int, name: str) -> int:
-    return _nt_open(parent, name, kind="file", create=True, writable=True)
+def create_file(
+    parent: int,
+    name: str,
+    *,
+    share_delete: bool = True,
+    share_write: bool = True,
+) -> int:
+    return _nt_open(
+        parent,
+        name,
+        kind="file",
+        create=True,
+        writable=True,
+        share_delete=share_delete,
+        share_write=share_write,
+    )
 
 
 def open_node(parent: int, name: str) -> int:
@@ -372,9 +409,15 @@ def pin_directory(path: Path, *, writable_final: bool = True) -> tuple[int, int,
     absolute = Path(path).absolute()
     if ".." in absolute.parts or not absolute.drive or not absolute.name:
         raise OSError("private root path is not an absolute drive path")
-    drive_root = absolute.anchor.rstrip("\\/") + "\\"
+    anchor = absolute.anchor
+    if anchor.startswith("\\\\?\\"):
+        drive_root = anchor.rstrip("\\/") + "\\"
+    elif anchor.startswith("\\\\"):
+        drive_root = "\\\\?\\UNC\\" + anchor.lstrip("\\").rstrip("\\/") + "\\"
+    else:
+        drive_root = "\\\\?\\" + anchor.rstrip("\\/") + "\\"
     root = kernel32.CreateFileW(
-        "\\\\?\\" + drive_root,
+        drive_root,
         0x80000000,
         FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         None, OPEN_EXISTING,
@@ -396,13 +439,20 @@ def pin_directory(path: Path, *, writable_final: bool = True) -> tuple[int, int,
                 parent = current
                 current = following
                 return parent, current, component
-            close(current)
+            previous = current
             current = following
+            close(previous)
         raise OSError("private root path has no final component")
     except BaseException:
         if parent:
-            close(parent)
-        close(current)
+            try:
+                close(parent)
+            except BaseException:
+                pass
+        try:
+            close(current)
+        except BaseException:
+            pass
         raise
 
 
