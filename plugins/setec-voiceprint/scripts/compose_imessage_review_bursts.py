@@ -363,7 +363,8 @@ def _publish_resumable_file_at(
                 0o600,
                 dir_fd=parent_fd,
             )
-            os.fchmod(descriptor, 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, 0o600)
             prefix = b""
         else:
             prefix = _read_private_bytes_at(
@@ -1111,7 +1112,8 @@ def _acquire_package_lock(output_fd: int, lock_name: str) -> int:
             descriptor = os.open(
                 lock_name, flags | os.O_CREAT | os.O_EXCL, 0o600, dir_fd=output_fd
             )
-            os.fchmod(descriptor, 0o600)
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, 0o600)
             os.fsync(descriptor)
             os.fsync(output_fd)
         except FileExistsError:

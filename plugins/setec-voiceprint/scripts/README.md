@@ -20,6 +20,11 @@ The query tool reads `plugins/setec-voiceprint/capabilities.d/` — the single s
 
 **Path convention.** Examples below name each script by bare filename (`python3 variance_audit.py ...`), assuming you are running them from this directory (`plugins/setec-voiceprint/scripts/`). Python's script argument is opened as a path relative to the current working directory, so the bare form requires you to be in that directory. From the repo root, prefix the script name with `plugins/setec-voiceprint/scripts/` (matching the top-level README's repo-root convention), or `cd plugins/setec-voiceprint/scripts/` first. If you've made the scripts executable and put the directory on `$PATH`, you can drop `python3` and invoke them directly as `variance_audit.py ...`.
 
+**Internal helper.** `_mirror_gate.py` is a packet-production guard for an
+annotated source/mirror pair; it is not a public capability. Its CLI and the
+closed, aggregate-only sidecar/result contract are in
+`../references/mirror-gate-v3.md`.
+
 ## Active task surfaces
 
 ### Surface 1: AI-prose smoothing diagnosis
