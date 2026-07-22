@@ -4,13 +4,14 @@ The module has two deliberately separate surfaces:
 
 * :class:`CollectionCapture` and :func:`collect_nodeids` let the planner obtain
   node IDs directly from pytest without parsing human-oriented output.
-* Loading the module as ``-p tools.ci_pytest_plugin`` enables the
-  ``--ci-result-out`` result artifact.  Only the pytest controller publishes;
-  xdist workers merely forward their ordinary reports.
+* Loading the module as ``-p tools.ci_pytest_plugin`` enables the internal
+  ``--ci-result-candidate-out`` candidate artifact.  Only the pytest controller
+  publishes; xdist workers merely forward their ordinary reports.  An external
+  runner owns final merge-gate publication after :func:`pytest.main` returns.
 
-The result file is intentionally create-new.  An incomplete session, worker
+The candidate file is intentionally create-new.  An incomplete session, worker
 failure, collection mismatch, or pre-existing destination never produces a
-valid replacement artifact.
+valid replacement candidate.
 """
 
 from __future__ import annotations
@@ -69,12 +70,12 @@ _STATE_KEY: pytest.StashKey[_RunState] = pytest.StashKey()
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
-    group = parser.getgroup("setec-ci-result")
+    group = parser.getgroup("setec-ci-result-candidate")
     group.addoption(
-        "--ci-result-out",
+        "--ci-result-candidate-out",
         metavar="PATH",
         default=None,
-        help="publish one canonical create-new SETEC CI result report",
+        help="write one internal canonical candidate for external finalization",
     )
 
 
@@ -328,17 +329,17 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_cmdline_main(config: pytest.Config):
-    """Publish only after the complete pytest lifecycle unwinds cleanly."""
+    """Write a candidate after this wrapper's inner lifecycle returns."""
     global _ACTIVE_STATE, _PENDING_WARNINGS
     state = _activate_state(config)
     undo_monitor, restore_showwarning = _monitor_configure_warnings(config, state)
     try:
         result = yield
     except BaseException:
-        # No destination has been created yet.  Preserve pytest's late failure.
+        # No candidate has been created yet.  Preserve pytest's late failure.
         raise
     else:
-        output = config.getoption("ci_result_out")
+        output = config.getoption("ci_result_candidate_out")
         if state.is_worker or output is None:
             return result
         if int(result) not in {int(pytest.ExitCode.OK), int(pytest.ExitCode.TESTS_FAILED)}:

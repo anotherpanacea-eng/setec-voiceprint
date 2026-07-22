@@ -118,7 +118,8 @@ names describe execution safety, not the only testing style present in a file.
 
 ## 4. Planner command contract
 
-The stdlib-only planner has four subcommands:
+The dependency-light planner has five subcommands; only collection and test
+execution require pytest, which is already part of the CI image:
 
 ```text
 ci_test_plan.py verify [--collect] [--collection-out PATH]
@@ -126,6 +127,7 @@ ci_test_plan.py list --lane {unit,serial_subprocess_cli,integration_contract}
                      [--shard-index N] [--null]
 ci_test_plan.py run --lane {unit,serial_subprocess_cli,integration_contract}
                     [--shard-index N] -- [PYTEST_ARGS...]
+ci_test_plan.py run-pytest --ci-result-out PATH -- [PYTEST_ARGS...]
 ci_test_plan.py verify-results --collection-report PATH --result PATH...
                                [--baseline-result PATH]
 ```
@@ -178,7 +180,19 @@ selected whole-file paths followed by the arguments after `--`. It preserves
 the child's stdout, stderr, and exit code. It never uses a shell, rewrites a
 timeout, or converts failure into success.
 
-The pytest plugin also accepts `--ci-result-out PATH`. Its canonical result JSON
+`run-pytest` is the sole final-result publisher. It calls `pytest.main` in the
+planner process with the checked-in plugin writing a candidate only beneath a
+temporary directory via the internal `--ci-result-candidate-out PATH` option.
+The planner does not create `--ci-result-out` until `pytest.main` has returned,
+which is after every `pytest_cmdline_main`, `pytest_sessionfinish`, and
+`pytest_unconfigure` hook and wrapper has unwound. A hook exception, interrupt,
+usage/collection/internal error, non-0/1 status, missing or malformed candidate,
+or candidate/returned-status mismatch leaves the final destination absent and
+returns pytest's internal-error status 3. Ordinary pass status 0 and test-failure
+status 1 are preserved. The single-use CLI invokes `pytest.main` exactly once;
+pytest stdout and stderr are not captured, redirected, decoded, or rewritten.
+
+The plugin's canonical candidate JSON
 has exactly `schema`, `complete`, `exitstatus`, `warnings`, `expected_count`, and
 `outcomes`. `schema` is `setec-ci-test-result/1`; `complete` is boolean;
 `exitstatus`, `warnings`, and `expected_count` are integers; `outcomes` is an
@@ -197,19 +211,19 @@ JSON schema `setec-ci-test-result/1`. Final outcome reduction is exact:
 4. a selected node without one of those complete phase shapes makes the artifact
    incomplete and invalid.
 
-Workers never publish. Under xdist, the controller uses xdist's completed-node
+Workers never write a candidate. Under xdist, the controller uses xdist's completed-node
 collection hook to require identical selected node-ID sets from every worker,
 then records forwarded worker reports and writes their final union. A worker
 crash, mismatched worker collection, missing outcome, interrupt, collection
-error, internal error, or usage error produces no result file. Exit status 0 or
-ordinary test-failure status 1 may publish `complete=true` only when every
-expected node has exactly one closed final outcome. The destination must not exist.
-After the session ends, the controller serializes the complete canonical bytes
-in memory, opens the destination create-new in binary mode, writes them once,
-flushes and fsyncs where supported, and closes it. An existing destination is a
-controlled refusal; no replacement occurs. Truncated/invalid JSON or a report
-without `complete=true` is rejected, so a partial write cannot masquerade as
-complete. Every Linux lane
+error, internal error, or usage error produces no final result file. Exit status
+0 or ordinary test-failure status 1 may produce `complete=true` only when every
+expected node has exactly one closed final outcome. The final destination must
+not exist. After pytest and all of its hooks return, the planner validates the
+candidate schema and returned status, opens the final destination create-new in
+binary mode, writes the exact canonical bytes once, flushes and fsyncs where
+supported, and closes it. An existing destination is a controlled refusal; no
+replacement occurs. Truncated/invalid JSON or a report without `complete=true`
+is rejected, so a partial candidate cannot masquerade as complete. Every Linux lane
 uploads its report. The aggregate downloads them and the stdlib planner verifies
 that their node-ID sets are disjoint and their union equals the exact canonical
 collection. Failures remain failures; this artifact gate detects a collected
@@ -252,8 +266,9 @@ baseline job:
    exactly `success`. Failure, cancellation, or skipping of any required
    dependency makes this job fail.
 
-Each Linux test invocation enables the result plugin and uploads its canonical
-report under a lane/shard-specific artifact name even on failure. Before the
+Each Linux test invocation runs through the planner-owned finalization boundary
+and uploads its canonical report under a lane/shard-specific artifact name even
+on ordinary test failure. Before the
 aggregate returns success, it downloads the reports and verifies exact result
 union conservation against the downloaded `ci-collection` artifact.
 
@@ -336,6 +351,9 @@ The implementation must prove:
     and strict xpass, teardown failure override, interrupt, and collection error;
 18. exactly one valid collection artifact crosses the job boundary; missing,
     duplicate, malformed, partial, or stale collection artifacts fail closed.
+19. final result publication occurs only after the entire pytest lifecycle has
+    returned to the planner; an injected outer command-line wrapper failure for
+    either an underlying passing or failing session leaves no final artifact.
 
 ## 8. Measurement and no-flake gates
 

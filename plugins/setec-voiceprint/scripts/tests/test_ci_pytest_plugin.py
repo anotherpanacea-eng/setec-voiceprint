@@ -13,7 +13,7 @@ import pytest
 
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
-PLUGIN = "tools.ci_pytest_plugin"
+PLANNER = REPO_ROOT / "tools" / "ci_test_plan.py"
 
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
@@ -40,16 +40,12 @@ def _run(
 ) -> subprocess.CompletedProcess[bytes]:
     command = [
         sys.executable,
-        "-m",
-        "pytest",
-        "-p",
-        PLUGIN,
-        "-p",
-        "no:cacheprovider",
-        *pytest_args,
+        str(PLANNER),
+        "run-pytest",
     ]
     if result is not None:
         command.extend(("--ci-result-out", str(result)))
+    command.extend(("--", "-p", "no:cacheprovider", *pytest_args))
     return subprocess.run(
         command,
         cwd=root,
@@ -302,7 +298,43 @@ def test_late_lifecycle_failure_never_leaves_complete_report(
     _write(tmp_path, "test_ok.py", "def test_ok(): pass\n")
     result = tmp_path / "must-not-exist.json"
     completed = _run(tmp_path, "test_ok.py", "-q", result=result)
-    assert completed.returncode != 0
+    assert completed.returncode == int(pytest.ExitCode.INTERNAL_ERROR)
+    assert not result.exists()
+
+
+@pytest.mark.parametrize(
+    ("test_source", "candidate_exitstatus"),
+    [
+        ("def test_outcome(): pass\n", 0),
+        ("def test_outcome(): assert False\n", 1),
+    ],
+)
+def test_same_priority_outer_cmdline_failure_blocks_final_for_any_test_status(
+    tmp_path: Path, test_source: str, candidate_exitstatus: int
+) -> None:
+    marker = tmp_path / "outer-observed-candidate.txt"
+    _write(
+        tmp_path,
+        "conftest.py",
+        "import json\n"
+        "import pytest\n"
+        "from pathlib import Path\n"
+        "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+        "def pytest_cmdline_main(config):\n"
+        "    yield\n"
+        "    candidate = Path(config.getoption('ci_result_candidate_out'))\n"
+        f"    Path({str(marker)!r}).write_text(\n"
+        "        str(json.loads(candidate.read_bytes())['exitstatus'])\n"
+        "        if candidate.is_file() else 'missing',\n"
+        "        encoding='utf-8',\n"
+        "    )\n"
+        "    raise RuntimeError('outer cmdline failure after candidate')\n",
+    )
+    _write(tmp_path, "test_outcome.py", test_source)
+    result = tmp_path / "must-not-finalize.json"
+    completed = _run(tmp_path, "test_outcome.py", "-q", result=result)
+    assert completed.returncode == int(pytest.ExitCode.INTERNAL_ERROR)
+    assert marker.read_text(encoding="utf-8") == str(candidate_exitstatus)
     assert not result.exists()
 
 

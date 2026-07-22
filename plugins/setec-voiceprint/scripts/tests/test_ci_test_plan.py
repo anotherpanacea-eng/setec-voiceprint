@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 import subprocess
 from types import SimpleNamespace
@@ -69,6 +70,14 @@ def _make_repo(tmp_path: Path) -> tuple[Path, Path, dict[str, str]]:
         overrides={paths["unit0"]: 0, paths["unit1"]: 1},
     )
     return root, plan_path, paths
+
+
+def _install_ci_tools(root: Path) -> Path:
+    tools = root / "tools"
+    tools.mkdir(parents=True, exist_ok=True)
+    for name in ("ci_test_plan.py", "ci_pytest_plugin.py"):
+        (tools / name).write_bytes((TOOLS / name).read_bytes())
+    return tools / "ci_test_plan.py"
 
 
 def _result_bytes(outcomes: dict[str, str], *, warnings: int = 0, exitstatus: int = 0) -> bytes:
@@ -376,6 +385,58 @@ def test_output_path_rejects_lone_surrogate_as_plan_error() -> None:
         plan._write_create_new(Path("collection-\ud800.json"), b"{}\n")
 
 
+def test_create_new_removes_partial_after_fsync_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "fsync-failure.json"
+
+    def fail_fsync(file_descriptor: int) -> None:
+        del file_descriptor
+        raise OSError("injected fsync failure")
+
+    monkeypatch.setattr(plan.os, "fsync", fail_fsync)
+    with pytest.raises(plan.PlanError):
+        plan._write_create_new(destination, b'{"complete":true}\n')
+    assert not destination.exists()
+
+
+def test_create_new_removes_partial_after_short_write(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "short-write.json"
+    original_open = Path.open
+
+    class ShortWriter:
+        def __init__(self, path: Path, mode: str) -> None:
+            self.stream = original_open(path, mode)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            self.stream.close()
+
+        def write(self, payload: bytes) -> int:
+            return self.stream.write(payload[:-1])
+
+        def flush(self) -> None:
+            self.stream.flush()
+
+        def fileno(self) -> int:
+            return self.stream.fileno()
+
+    monkeypatch.setattr(
+        Path,
+        "open",
+        lambda self, mode: ShortWriter(self, mode),
+    )
+    with pytest.raises(plan.PlanError):
+        plan._write_create_new(destination, b'{"complete":true}\n')
+    assert not destination.exists()
+
+
 def test_list_lane_validates_shard_combinations(tmp_path: Path) -> None:
     root, plan_path, paths = _make_repo(tmp_path)
     assert plan.list_files("unit", 0, plan_path=plan_path, repo_root=root) == [paths["unit0"]]
@@ -408,6 +469,70 @@ def test_run_uses_current_python_without_shell_and_preserves_arguments(
         sys.executable, "-m", "pytest", paths["unit0"], "-q", "--maxfail=1",
     ]
     assert observed["kwargs"] == {"cwd": root, "check": False}
+
+
+def test_real_run_lane_preserves_arguments_streams_and_exact_status(
+    tmp_path: Path,
+) -> None:
+    root, _, paths = _make_repo(tmp_path)
+    script = _install_ci_tools(root)
+    test_root = root / plan.FIXED_TEST_ROOT
+    (test_root / "conftest.py").write_text(
+        "def pytest_addoption(parser):\n"
+        "    parser.addoption('--round-trip')\n",
+        encoding="utf-8",
+    )
+    (root / paths["unit0"]).write_text(
+        "import sys\n"
+        "def test_round_trip(pytestconfig):\n"
+        "    sys.stdout.buffer.write(b'lane-stdout\\n')\n"
+        "    sys.stdout.buffer.flush()\n"
+        "    sys.stderr.buffer.write(b'lane-stderr\\n')\n"
+        "    sys.stderr.buffer.flush()\n"
+        "    assert pytestconfig.getoption('--round-trip') == 'space # café'\n"
+        "    assert False\n",
+        encoding="utf-8",
+    )
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "run",
+            "--lane",
+            "unit",
+            "--shard-index",
+            "0",
+            "--",
+            "-s",
+            "-q",
+            "--round-trip",
+            "space # café",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 1
+    assert b"lane-stdout\n" in completed.stdout
+    assert b"lane-stderr\n" in completed.stderr
+
+    listed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "list",
+            "--lane",
+            "unit",
+            "--shard-index",
+            "0",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    assert listed.returncode == 0
+    assert listed.stdout == paths["unit0"].encode("utf-8") + b"\n"
+    assert listed.stderr == b""
 
 
 def test_verify_results_conserves_union_and_matches_baseline(tmp_path: Path) -> None:
@@ -581,9 +706,7 @@ def test_real_cli_collects_minimal_repo_without_import_path_failure(
     tmp_path: Path,
 ) -> None:
     root, _, _ = _make_repo(tmp_path)
-    for name in ("ci_test_plan.py", "ci_pytest_plugin.py"):
-        (root / "tools" / name).write_bytes((TOOLS / name).read_bytes())
-    script = root / "tools" / "ci_test_plan.py"
+    script = _install_ci_tools(root)
     artifact = tmp_path / "collection.json"
     completed = subprocess.run(
         [
@@ -650,3 +773,316 @@ def test_real_cli_collects_minimal_repo_without_import_path_failure(
     assert rejected.returncode == 2
     assert rejected.stdout == b""
     assert rejected.stderr == b"ci_test_plan: validation failed\n"
+
+
+@pytest.mark.parametrize(
+    ("assertion", "expected_status", "expected_outcome"),
+    [("True", 0, "passed"), ("False", 1, "failed")],
+)
+def test_run_pytest_publishes_validated_result_after_full_lifecycle(
+    tmp_path: Path,
+    assertion: str,
+    expected_status: int,
+    expected_outcome: str,
+) -> None:
+    root = tmp_path / "repo # café"
+    root.mkdir()
+    script = _install_ci_tools(root)
+    test_file = root / "test_result # café.py"
+    test_file.write_text(
+        f"def test_outcome(): assert {assertion}\n",
+        encoding="utf-8",
+    )
+    final = tmp_path / f"final result # café {expected_status}.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "run-pytest",
+            "--ci-result-out",
+            str(final),
+            "--",
+            test_file.name,
+            "-q",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == expected_status, completed.stderr
+    raw = final.read_bytes()
+    document = json.loads(raw)
+    assert raw == plan._canonical_bytes(document)
+    assert document["exitstatus"] == expected_status
+    assert document["expected_count"] == 1
+    assert document["outcomes"] == [
+        {"nodeid": f"{test_file.name}::test_outcome", "outcome": expected_outcome}
+    ]
+
+
+def test_run_pytest_direct_script_xdist_workers_load_candidate_plugin(
+    tmp_path: Path,
+) -> None:
+    pytest.importorskip("xdist")
+    root = tmp_path / "xdist-direct"
+    root.mkdir()
+    script = _install_ci_tools(root)
+    (root / "test_parallel.py").write_text(
+        "import pytest\n"
+        "@pytest.mark.parametrize('value', range(4))\n"
+        "def test_parallel(value): assert value >= 0\n",
+        encoding="utf-8",
+    )
+    final = root / "xdist-result.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "run-pytest",
+            "--ci-result-out",
+            str(final),
+            "--",
+            "test_parallel.py",
+            "-n",
+            "2",
+            "-q",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    document = json.loads(final.read_bytes())
+    assert document["exitstatus"] == 0
+    assert document["expected_count"] == 4
+    assert len(document["outcomes"]) == 4
+
+
+@pytest.mark.parametrize("pytest_args", [[], ["-n", "2"]])
+def test_run_pytest_preserves_temporary_cwd_and_relative_test_args(
+    tmp_path: Path,
+    pytest_args: list[str],
+) -> None:
+    if pytest_args:
+        pytest.importorskip("xdist")
+    root = tmp_path / "repo-root"
+    root.mkdir()
+    script = _install_ci_tools(root)
+    caller_cwd = root / "caller cwd # café"
+    caller_cwd.mkdir()
+    (caller_cwd / "test_local.py").write_text(
+        "def test_local(): pass\n",
+        encoding="utf-8",
+    )
+    final = caller_cwd / "relative-result.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "run-pytest",
+            "--ci-result-out",
+            str(final),
+            "--",
+            "test_local.py",
+            *pytest_args,
+            "-q",
+        ],
+        cwd=caller_cwd,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    document = json.loads(final.read_bytes())
+    assert document["expected_count"] == 1
+    assert document["outcomes"] == [
+        {"nodeid": "test_local.py::test_local", "outcome": "passed"}
+    ]
+
+
+@pytest.mark.parametrize(
+    ("assertion", "underlying_status"),
+    [("True", 0), ("False", 1)],
+)
+def test_run_pytest_outer_cmdline_wrapper_cannot_publish_final(
+    tmp_path: Path,
+    assertion: str,
+    underlying_status: int,
+) -> None:
+    root = tmp_path / f"outer-{underlying_status}"
+    root.mkdir()
+    script = _install_ci_tools(root)
+    (root / "conftest.py").write_text(
+        "from pathlib import Path\n"
+        "import pytest\n"
+        "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+        "def pytest_cmdline_main(config):\n"
+        "    result = yield\n"
+        "    Path('underlying-status.txt').write_text(str(int(result)), encoding='ascii')\n"
+        "    raise RuntimeError('same-priority outer wrapper')\n",
+        encoding="utf-8",
+    )
+    (root / "test_outcome.py").write_text(
+        f"def test_outcome(): assert {assertion}\n",
+        encoding="utf-8",
+    )
+    final = root / "must-not-exist.json"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "run-pytest",
+            "--ci-result-out",
+            str(final),
+            "--",
+            "test_outcome.py",
+            "-q",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    assert (root / "underlying-status.txt").read_text(encoding="ascii") == str(
+        underlying_status
+    )
+    assert completed.returncode == plan.INTERNAL_ERROR
+    assert not final.exists()
+    assert completed.stderr.endswith(b"ci_test_plan: internal failure\n")
+
+
+def test_run_pytest_refuses_existing_final_without_replacement(tmp_path: Path) -> None:
+    root = tmp_path / "existing-final"
+    root.mkdir()
+    script = _install_ci_tools(root)
+    (root / "test_ok.py").write_text(
+        "def test_ok(): pass\n",
+        encoding="utf-8",
+    )
+    final = root / "existing result # café.json"
+    original = b"do-not-replace\n"
+    final.write_bytes(original)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(script),
+            "run-pytest",
+            "--ci-result-out",
+            str(final),
+            "--",
+            "test_ok.py",
+            "-q",
+        ],
+        cwd=root,
+        capture_output=True,
+        check=False,
+    )
+    assert completed.returncode == plan.INTERNAL_ERROR
+    assert final.read_bytes() == original
+    assert completed.stderr.endswith(b"ci_test_plan: internal failure\n")
+
+
+@pytest.mark.parametrize(
+    "mode",
+    ["exception", "outside-status", "missing", "malformed", "noncanonical", "mismatch"],
+)
+def test_run_pytest_never_publishes_invalid_candidate(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    mode: str,
+) -> None:
+    final = tmp_path / "must-not-exist.json"
+
+    def fake_main(argv: list[str]) -> int:
+        if mode == "exception":
+            raise RuntimeError("injected pytest failure")
+        candidate = Path(argv[argv.index("--ci-result-candidate-out") + 1])
+        if mode == "outside-status":
+            return 2
+        if mode == "missing":
+            return 0
+        if mode == "malformed":
+            candidate.write_bytes(b"{")
+            return 0
+        payload = _result_bytes(
+            {"test_ok.py::test_ok": "passed"},
+            exitstatus=1 if mode == "mismatch" else 0,
+        )
+        candidate.write_bytes(
+            b"  " + payload if mode == "noncanonical" else payload
+        )
+        return 0
+
+    monkeypatch.setattr(pytest, "main", fake_main)
+    assert (
+        plan.run_pytest_finalized(final, ["test_ok.py"], repo_root=tmp_path)
+        == plan.INTERNAL_ERROR
+    )
+    assert not final.exists()
+
+
+@pytest.mark.parametrize("prior_pythonpath", [None, "prior path # café"])
+def test_run_pytest_restores_cwd_and_pythonpath_exactly(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prior_pythonpath: str | None,
+) -> None:
+    repo_root = tmp_path / "repo-root"
+    caller_cwd = tmp_path / "caller-cwd"
+    repo_root.mkdir()
+    caller_cwd.mkdir()
+    monkeypatch.chdir(caller_cwd)
+    if prior_pythonpath is None:
+        monkeypatch.delenv("PYTHONPATH", raising=False)
+    else:
+        monkeypatch.setenv("PYTHONPATH", prior_pythonpath)
+
+    def fake_main(argv: list[str]) -> int:
+        assert Path.cwd() == caller_cwd
+        entries = os.environ["PYTHONPATH"].split(os.pathsep)
+        assert entries[0] == str(repo_root)
+        assert entries[1:] == ([] if prior_pythonpath is None else [prior_pythonpath])
+        candidate = Path(argv[argv.index("--ci-result-candidate-out") + 1])
+        candidate.write_bytes(_result_bytes({"test_ok.py::test_ok": "passed"}))
+        os.chdir(repo_root)
+        return 0
+
+    monkeypatch.setattr(pytest, "main", fake_main)
+    final = caller_cwd / "final.json"
+    assert plan.run_pytest_finalized(final, ["test_ok.py"], repo_root=repo_root) == 0
+    assert final.exists()
+    assert Path.cwd() == caller_cwd
+    if prior_pythonpath is None:
+        assert "PYTHONPATH" not in os.environ
+    else:
+        assert os.environ["PYTHONPATH"] == prior_pythonpath
+
+
+def test_run_pytest_cleanup_failure_never_publishes_final(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate_root = tmp_path / "candidate-root"
+
+    class CleanupFails:
+        def __init__(self, *, prefix: str) -> None:
+            assert prefix == "setec-ci-result-"
+            candidate_root.mkdir()
+
+        def __enter__(self) -> str:
+            return str(candidate_root)
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            raise OSError("injected candidate cleanup failure")
+
+    def fake_main(argv: list[str]) -> int:
+        candidate = Path(argv[argv.index("--ci-result-candidate-out") + 1])
+        candidate.write_bytes(_result_bytes({"test_ok.py::test_ok": "passed"}))
+        return 0
+
+    monkeypatch.setattr(plan.tempfile, "TemporaryDirectory", CleanupFails)
+    monkeypatch.setattr(pytest, "main", fake_main)
+    final = tmp_path / "must-not-exist.json"
+    assert (
+        plan.run_pytest_finalized(final, ["test_ok.py"], repo_root=tmp_path)
+        == plan.INTERNAL_ERROR
+    )
+    assert not final.exists()

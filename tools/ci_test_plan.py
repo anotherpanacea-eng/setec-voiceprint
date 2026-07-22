@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 import stat
 import subprocess
 import sys
+import tempfile
 from typing import Any, Iterable, Sequence
 
 
@@ -46,6 +47,7 @@ RESULT_KEYS = frozenset({
 RESULT_OUTCOMES = frozenset({
     "passed", "skipped", "xfailed", "xpassed", "failed", "error",
 })
+INTERNAL_ERROR = 3
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PLAN_PATH = Path(__file__).with_name("ci_test_plan.json")
@@ -456,23 +458,29 @@ def verify_report(
 
 
 def _write_create_new(path: Path, payload: bytes) -> None:
+    created = False
     try:
         with path.open("xb") as stream:
+            created = True
             written = stream.write(payload)
             if written != len(payload):
                 raise PlanError("short output write")
             stream.flush()
             if hasattr(os, "fsync"):
-                try:
-                    os.fsync(stream.fileno())
-                except OSError:
-                    pass
-    except FileExistsError as exc:
-        raise PlanError("output destination already exists") from exc
-    except PlanError:
+                os.fsync(stream.fileno())
+    except BaseException as exc:
+        if created:
+            try:
+                path.unlink()
+            except BaseException:
+                pass
+        if isinstance(exc, FileExistsError):
+            raise PlanError("output destination already exists") from exc
+        if isinstance(exc, PlanError):
+            raise
+        if isinstance(exc, (OSError, UnicodeError)):
+            raise PlanError("output destination cannot be written") from exc
         raise
-    except (OSError, UnicodeError) as exc:
-        raise PlanError("output destination cannot be written") from exc
 
 
 def list_files(
@@ -511,6 +519,79 @@ def run_lane(
         check=False,
     )
     return int(completed.returncode)
+
+
+def _validated_candidate_bytes(path: Path, exitstatus: int) -> bytes:
+    try:
+        raw = path.read_bytes()
+    except (OSError, UnicodeError) as exc:
+        raise PlanError("result candidate cannot be read") from exc
+    value = _read_json(path)
+    _validate_result_document(value)
+    if value["exitstatus"] != exitstatus:
+        raise PlanError("result candidate exit status does not match pytest")
+    if raw != _canonical_bytes(value):
+        raise PlanError("result candidate is not canonical")
+    return raw
+
+
+def run_pytest_finalized(
+    result_out: Path,
+    pytest_args: Sequence[str],
+    *,
+    repo_root: Path = REPO_ROOT,
+) -> int:
+    """Run pytest in-process and publish only a post-lifecycle result artifact."""
+    if any(argument.startswith("--ci-result-") for argument in pytest_args):
+        return INTERNAL_ERROR
+
+    final_path = result_out.absolute()
+    caller_cwd = Path.cwd()
+    payload: bytes
+    status: int
+    try:
+        repo_root_text = str(repo_root)
+        if repo_root_text not in sys.path:
+            sys.path.insert(0, repo_root_text)
+        import pytest  # type: ignore
+
+        with tempfile.TemporaryDirectory(prefix="setec-ci-result-") as temporary:
+            candidate = Path(temporary) / "candidate.json"
+            had_pythonpath = "PYTHONPATH" in os.environ
+            old_pythonpath = os.environ.get("PYTHONPATH", "")
+            os.environ["PYTHONPATH"] = (
+                repo_root_text
+                if not old_pythonpath
+                else os.pathsep.join((repo_root_text, old_pythonpath))
+            )
+            try:
+                result = pytest.main(
+                    [
+                        "-p",
+                        "tools.ci_pytest_plugin",
+                        "--ci-result-candidate-out",
+                        str(candidate),
+                        *[str(argument) for argument in pytest_args],
+                    ],
+                )
+            finally:
+                if had_pythonpath:
+                    os.environ["PYTHONPATH"] = old_pythonpath
+                else:
+                    os.environ.pop("PYTHONPATH", None)
+                os.chdir(caller_cwd)
+            status = int(result)
+            if status not in {0, 1}:
+                return INTERNAL_ERROR
+            payload = _validated_candidate_bytes(candidate, status)
+    except BaseException:
+        return INTERNAL_ERROR
+
+    try:
+        _write_create_new(final_path, payload)
+    except BaseException:
+        return INTERNAL_ERROR
+    return status
 
 
 def _validate_digest_object(value: object) -> dict[str, Any]:
@@ -553,8 +634,7 @@ def _load_collection_report(
     return validated
 
 
-def _load_result_report(path: Path) -> tuple[dict[str, str], int]:
-    value = _read_json(path)
+def _validate_result_document(value: object) -> tuple[dict[str, str], int]:
     if not isinstance(value, dict) or set(value) != RESULT_KEYS:
         raise PlanError("invalid result report")
     if value.get("schema") != RESULT_SCHEMA or value.get("complete") is not True:
@@ -591,6 +671,10 @@ def _load_result_report(path: Path) -> tuple[dict[str, str], int]:
     if len(outcomes) != value["expected_count"]:
         raise PlanError("result report is incomplete")
     return outcomes, value["warnings"]
+
+
+def _load_result_report(path: Path) -> tuple[dict[str, str], int]:
+    return _validate_result_document(_read_json(path))
 
 
 def verify_results(
@@ -670,6 +754,17 @@ def _write_stderr_line() -> None:
         sys.stderr.flush()
 
 
+def _write_internal_stderr_line() -> None:
+    payload = b"ci_test_plan: internal failure\n"
+    stream = getattr(sys.stderr, "buffer", None)
+    if stream is not None:
+        stream.write(payload)
+        stream.flush()
+    else:  # pragma: no cover - StringIO test harnesses
+        sys.stderr.write(payload.decode("ascii"))
+        sys.stderr.flush()
+
+
 class _SafeArgumentParser(argparse.ArgumentParser):
     def error(self, message: str) -> None:
         raise PlanError("invalid command line")
@@ -692,6 +787,9 @@ def _parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--lane", choices=LANES, required=True)
     run_parser.add_argument("--shard-index", type=int)
 
+    pytest_parser = subparsers.add_parser("run-pytest", allow_abbrev=False)
+    pytest_parser.add_argument("--ci-result-out", type=Path, required=True)
+
     result_parser = subparsers.add_parser("verify-results", allow_abbrev=False)
     result_parser.add_argument("--collection-report", type=Path, required=True)
     result_parser.add_argument("--result", type=Path, nargs="+", action="append", required=True)
@@ -702,7 +800,7 @@ def _parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     args_list = list(sys.argv[1:] if argv is None else argv)
     pytest_args: list[str] = []
-    if args_list and args_list[0] == "run":
+    if args_list and args_list[0] in {"run", "run-pytest"}:
         if "--" not in args_list:
             _write_stderr_line()
             return 2
@@ -725,6 +823,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "run":
             return run_lane(args.lane, args.shard_index, pytest_args)
+        if args.command == "run-pytest":
+            status = run_pytest_finalized(args.ci_result_out, pytest_args)
+            if status == INTERNAL_ERROR:
+                _write_internal_stderr_line()
+            return status
         result_paths = [path for group in args.result for path in group]
         _write_stdout(
             verify_results(
