@@ -4,7 +4,8 @@
 > auditable execution lanes while preserving every test, default, consistency
 > gate, and focused native-platform job.
 
-- **Status:** specification draft; implementation pending independent review
+- **Status:** specification review GO; instrumented monolithic baseline built;
+  immutable-head CI measurement pending
 - **Scope:** CI workflow and test-infrastructure code only
 - **Source contract:** owner-authorized post-B2 CI-topology follow-up
 - **Production behavior:** unchanged

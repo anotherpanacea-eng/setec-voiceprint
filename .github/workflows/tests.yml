@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pytest:
+  pytest-monolith:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -48,11 +48,22 @@ jobs:
           # spaCy Tier-2/Tier-3 model (not on PyPI).
           python -m spacy download en_core_web_sm
 
+      - name: Verify test plan and capture canonical collection
+        run: |
+          python3 tools/ci_test_plan.py verify \
+            --collect \
+            --collection-out "${{ runner.temp }}/ci-collection.json"
+
       - name: Run test suite
         run: |
           # -n auto: parallel via pytest-xdist (installed above). Explicit here so
-          # CI parallelism doesn't depend on the conftest auto-default. ~7min -> ~2min.
-          pytest plugins/setec-voiceprint/scripts/tests -n auto -q -rs
+          # this instrumented baseline preserves the pre-Spec-73 execution topology.
+          pytest plugins/setec-voiceprint/scripts/tests \
+            -n auto \
+            -q \
+            -rs \
+            -p tools.ci_pytest_plugin \
+            --ci-result-out "${{ runner.temp }}/ci-monolith-result.json"
 
       # Consistency gates AGENTS.md treats as enforcement (manifest <-> source
       # drift, contract-fixture drift, changelog coverage, calibration-readiness
@@ -65,6 +76,22 @@ jobs:
           python3 tools/check_capabilities_drift.py
           python3 tools/check_docs_freshness.py
           python3 tools/gen_calibration_readiness.py --check
+
+      - name: Upload canonical collection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-collection
+          path: ${{ runner.temp }}/ci-collection.json
+          if-no-files-found: error
+
+      - name: Upload monolithic result report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-result-pytest-monolith
+          path: ${{ runner.temp }}/ci-monolith-result.json
+          if-no-files-found: error
 
   macos-descriptor-confinement:
     runs-on: macos-latest
@@ -192,3 +219,85 @@ jobs:
             --deselect "plugins/setec-voiceprint/scripts/tests/test_prepare_author_document_adapter.py::test_adapter_refuses_declared_nonbaseline_material" `
             -q `
             --basetemp "${{ runner.temp }}\\setec-win-private-writers"
+
+  windows-ci-test-plan:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install focused test dependencies
+        run: python -m pip install pytest pytest-xdist
+
+      - name: Run CI planner portability and child-process tests
+        shell: pwsh
+        run: |
+          python -m pytest `
+            plugins/setec-voiceprint/scripts/tests/test_ci_test_plan.py `
+            plugins/setec-voiceprint/scripts/tests/test_ci_pytest_plugin.py `
+            -q `
+            -rs `
+            --basetemp "${{ runner.temp }}\\setec-win-ci-test-plan"
+
+  pytest:
+    if: always()
+    needs:
+      - pytest-monolith
+      - macos-descriptor-confinement
+      - windows-descriptor-backend
+      - windows-owner-corrections
+      - windows-private-writer-guards
+      - windows-ci-test-plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Download canonical collection
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-collection
+          path: ${{ runner.temp }}/ci-aggregate/collection
+
+      - name: Download monolithic result report
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-result-pytest-monolith
+          path: ${{ runner.temp }}/ci-aggregate/results
+
+      - name: Verify monolithic result conservation
+        if: always()
+        run: |
+          python3 tools/ci_test_plan.py verify-results \
+            --collection-report "${{ runner.temp }}/ci-aggregate/collection/ci-collection.json" \
+            --result "${{ runner.temp }}/ci-aggregate/results/ci-monolith-result.json"
+
+      - name: Require every baseline dependency to succeed
+        if: always()
+        env:
+          PYTEST_MONOLITH_RESULT: ${{ needs['pytest-monolith'].result }}
+          MACOS_DESCRIPTOR_RESULT: ${{ needs['macos-descriptor-confinement'].result }}
+          WINDOWS_DESCRIPTOR_RESULT: ${{ needs['windows-descriptor-backend'].result }}
+          WINDOWS_OWNER_CORRECTIONS_RESULT: ${{ needs['windows-owner-corrections'].result }}
+          WINDOWS_PRIVATE_WRITERS_RESULT: ${{ needs['windows-private-writer-guards'].result }}
+          WINDOWS_CI_PLAN_RESULT: ${{ needs['windows-ci-test-plan'].result }}
+        run: |
+          if [[ "$PYTEST_MONOLITH_RESULT" != "success" || \
+                "$MACOS_DESCRIPTOR_RESULT" != "success" || \
+                "$WINDOWS_DESCRIPTOR_RESULT" != "success" || \
+                "$WINDOWS_OWNER_CORRECTIONS_RESULT" != "success" || \
+                "$WINDOWS_PRIVATE_WRITERS_RESULT" != "success" || \
+                "$WINDOWS_CI_PLAN_RESULT" != "success" ]]; then
+            echo "required baseline dependency did not succeed" >&2
+            exit 1
+          fi

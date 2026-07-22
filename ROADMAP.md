@@ -11,6 +11,14 @@ The architectural narrative and the path from MVP to validated framework. Intern
   Windows junctions, and preserves the default validator path unchanged. The focused
   synthetic regression module is wired into the native-Windows CI lane; no corpus
   material or model work is involved.
+- **Collection-conserving CI topology (Spec 73; specification review GO,
+  instrumented baseline built).** The full Linux merge gate is moving from one
+  contention-prone `-n auto` process tree to deterministic unit shards, a serial
+  subprocess/CLI lane, and a narrow integration-contract lane. A checked-in
+  planner proves exact node-ID and final-outcome conservation; the historical
+  `pytest` check transitively blocks on every retained macOS/Windows job. The
+  monolithic baseline, cache-confirmed candidate runs, implementation review,
+  and draft-PR CI evidence must clear before any speedup claim or merge.
 
 ## Status reconciliation (2026-06-17)
 
