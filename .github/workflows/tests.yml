@@ -20,7 +20,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pytest-monolith:
+  pytest-unit:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -42,10 +46,105 @@ jobs:
           # importorskip guard), so it must be present for collection.
           # click: spaCy's `download` CLI imports it directly, and recent
           # typer no longer pulls it in transitively.
-          # pytest-xdist: parallel test execution (`-n auto`, set in pytest.ini)
-          # — the suite is ~4,300 tests and serial it runs ~7 min.
+          # pytest-xdist: fixed two-worker execution for this unit shard, as
+          # required by Spec 73. Bare pytest remains serial by default.
           pip install pypdf pytest pytest-xdist click
           # spaCy Tier-2/Tier-3 model (not on PyPI).
+          python -m spacy download en_core_web_sm
+
+      - name: Run fixed unit shard
+        run: |
+          python3 tools/ci_test_plan.py list \
+            --lane unit \
+            --shard-index "${{ matrix.shard }}" \
+            --null \
+            > "${{ runner.temp }}/ci-unit-${{ matrix.shard }}.files"
+          mapfile -d '' -t test_files \
+            < "${{ runner.temp }}/ci-unit-${{ matrix.shard }}.files"
+          if (( ${#test_files[@]} == 0 )); then
+            echo "unit shard file list is empty" >&2
+            exit 1
+          fi
+          python3 tools/ci_test_plan.py run-pytest \
+            --ci-result-out "${{ runner.temp }}/ci-unit-${{ matrix.shard }}-result.json" \
+            -- \
+            "${test_files[@]}" \
+            -n 2 \
+            --dist loadfile \
+            -q \
+            -rs
+
+      - name: Upload unit result report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-result-pytest-unit-${{ matrix.shard }}
+          path: ${{ runner.temp }}/ci-unit-${{ matrix.shard }}-result.json
+          if-no-files-found: error
+
+  pytest-subprocess:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install core dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r plugins/setec-voiceprint/requirements.txt
+          pip install -r plugins/setec-voiceprint/requirements-acquisition.txt
+          pip install pypdf pytest pytest-xdist click
+          python -m spacy download en_core_web_sm
+
+      - name: Run serial subprocess and CLI lane
+        run: |
+          python3 tools/ci_test_plan.py list \
+            --lane serial_subprocess_cli \
+            --null \
+            > "${{ runner.temp }}/ci-subprocess.files"
+          mapfile -d '' -t test_files \
+            < "${{ runner.temp }}/ci-subprocess.files"
+          if (( ${#test_files[@]} == 0 )); then
+            echo "subprocess lane file list is empty" >&2
+            exit 1
+          fi
+          python3 tools/ci_test_plan.py run-pytest \
+            --ci-result-out "${{ runner.temp }}/ci-subprocess-result.json" \
+            -- \
+            "${test_files[@]}" \
+            -q \
+            -rs
+
+      - name: Upload subprocess result report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-result-pytest-subprocess
+          path: ${{ runner.temp }}/ci-subprocess-result.json
+          if-no-files-found: error
+
+  pytest-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install core dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r plugins/setec-voiceprint/requirements.txt
+          pip install -r plugins/setec-voiceprint/requirements-acquisition.txt
+          pip install pypdf pytest pytest-xdist click
           python -m spacy download en_core_web_sm
 
       - name: Verify test plan and capture canonical collection
@@ -54,23 +153,27 @@ jobs:
             --collect \
             --collection-out "${{ runner.temp }}/ci-collection.json"
 
-      - name: Run test suite
+      - name: Run integration contract lane
         run: |
-          # -n auto: parallel via pytest-xdist (installed above). Explicit here so
-          # this instrumented baseline preserves the pre-Spec-73 execution topology.
+          python3 tools/ci_test_plan.py list \
+            --lane integration_contract \
+            --null \
+            > "${{ runner.temp }}/ci-integration.files"
+          mapfile -d '' -t test_files \
+            < "${{ runner.temp }}/ci-integration.files"
+          if (( ${#test_files[@]} == 0 )); then
+            echo "integration lane file list is empty" >&2
+            exit 1
+          fi
           python3 tools/ci_test_plan.py run-pytest \
-            --ci-result-out "${{ runner.temp }}/ci-monolith-result.json" \
+            --ci-result-out "${{ runner.temp }}/ci-integration-result.json" \
             -- \
-            plugins/setec-voiceprint/scripts/tests \
-            -n auto \
+            "${test_files[@]}" \
             -q \
             -rs
 
-      # Consistency gates AGENTS.md treats as enforcement (manifest <-> source
-      # drift, contract-fixture drift, changelog coverage, calibration-readiness
-      # freshness). Previously only run by hand pre-push; wiring them into CI so
-      # drift can't land unblocked. `if: always()` so they report even when the
-      # test step above failed — the two signals are independent.
+      # These remain a single independent gate even if the integration test
+      # step fails; the aggregate requires both this job and every report.
       - name: Consistency gates
         if: always()
         run: |
@@ -86,12 +189,12 @@ jobs:
           path: ${{ runner.temp }}/ci-collection.json
           if-no-files-found: error
 
-      - name: Upload monolithic result report
+      - name: Upload integration result report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ci-result-pytest-monolith
-          path: ${{ runner.temp }}/ci-monolith-result.json
+          name: ci-result-pytest-integration
+          path: ${{ runner.temp }}/ci-integration-result.json
           if-no-files-found: error
 
   macos-descriptor-confinement:
@@ -247,7 +350,9 @@ jobs:
   pytest:
     if: always()
     needs:
-      - pytest-monolith
+      - pytest-unit
+      - pytest-subprocess
+      - pytest-integration
       - macos-descriptor-confinement
       - windows-descriptor-backend
       - windows-owner-corrections
@@ -269,36 +374,64 @@ jobs:
           name: ci-collection
           path: ${{ runner.temp }}/ci-aggregate/collection
 
-      - name: Download monolithic result report
+      - name: Download unit shard 0 result report
         if: always()
         uses: actions/download-artifact@v4
         with:
-          name: ci-result-pytest-monolith
-          path: ${{ runner.temp }}/ci-aggregate/results
+          name: ci-result-pytest-unit-0
+          path: ${{ runner.temp }}/ci-aggregate/results/unit-0
 
-      - name: Verify monolithic result conservation
+      - name: Download unit shard 1 result report
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-result-pytest-unit-1
+          path: ${{ runner.temp }}/ci-aggregate/results/unit-1
+
+      - name: Download subprocess result report
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-result-pytest-subprocess
+          path: ${{ runner.temp }}/ci-aggregate/results/subprocess
+
+      - name: Download integration result report
+        if: always()
+        uses: actions/download-artifact@v4
+        with:
+          name: ci-result-pytest-integration
+          path: ${{ runner.temp }}/ci-aggregate/results/integration
+
+      - name: Verify disjoint full result conservation
         if: always()
         run: |
           python3 tools/ci_test_plan.py verify-results \
             --collection-report "${{ runner.temp }}/ci-aggregate/collection/ci-collection.json" \
-            --result "${{ runner.temp }}/ci-aggregate/results/ci-monolith-result.json"
+            --result "${{ runner.temp }}/ci-aggregate/results/unit-0/ci-unit-0-result.json" \
+            --result "${{ runner.temp }}/ci-aggregate/results/unit-1/ci-unit-1-result.json" \
+            --result "${{ runner.temp }}/ci-aggregate/results/subprocess/ci-subprocess-result.json" \
+            --result "${{ runner.temp }}/ci-aggregate/results/integration/ci-integration-result.json"
 
-      - name: Require every baseline dependency to succeed
+      - name: Require every candidate dependency to succeed
         if: always()
         env:
-          PYTEST_MONOLITH_RESULT: ${{ needs['pytest-monolith'].result }}
+          PYTEST_UNIT_RESULT: ${{ needs['pytest-unit'].result }}
+          PYTEST_SUBPROCESS_RESULT: ${{ needs['pytest-subprocess'].result }}
+          PYTEST_INTEGRATION_RESULT: ${{ needs['pytest-integration'].result }}
           MACOS_DESCRIPTOR_RESULT: ${{ needs['macos-descriptor-confinement'].result }}
           WINDOWS_DESCRIPTOR_RESULT: ${{ needs['windows-descriptor-backend'].result }}
           WINDOWS_OWNER_CORRECTIONS_RESULT: ${{ needs['windows-owner-corrections'].result }}
           WINDOWS_PRIVATE_WRITERS_RESULT: ${{ needs['windows-private-writer-guards'].result }}
           WINDOWS_CI_PLAN_RESULT: ${{ needs['windows-ci-test-plan'].result }}
         run: |
-          if [[ "$PYTEST_MONOLITH_RESULT" != "success" || \
+          if [[ "$PYTEST_UNIT_RESULT" != "success" || \
+                "$PYTEST_SUBPROCESS_RESULT" != "success" || \
+                "$PYTEST_INTEGRATION_RESULT" != "success" || \
                 "$MACOS_DESCRIPTOR_RESULT" != "success" || \
                 "$WINDOWS_DESCRIPTOR_RESULT" != "success" || \
                 "$WINDOWS_OWNER_CORRECTIONS_RESULT" != "success" || \
                 "$WINDOWS_PRIVATE_WRITERS_RESULT" != "success" || \
                 "$WINDOWS_CI_PLAN_RESULT" != "success" ]]; then
-            echo "required baseline dependency did not succeed" >&2
+            echo "required candidate dependency did not succeed" >&2
             exit 1
           fi

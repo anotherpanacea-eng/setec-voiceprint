@@ -701,6 +701,235 @@ def test_checked_in_unit_shard_override_contract() -> None:
         f"{plan.FIXED_TEST_ROOT}/test_acquire_gmail_sent.py",
     }
 
+    # Keep the workflow matrix and aggregate bound to schema v1 without adding
+    # a new collected node: baseline and candidate must have identical node IDs.
+    workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "\t" not in workflow
+    lines = workflow.splitlines()
+
+    def job_block(name: str) -> str:
+        marker = f"  {name}:"
+        starts = [index for index, line in enumerate(lines) if line == marker]
+        assert len(starts) == 1
+        start = starts[0]
+        end = len(lines)
+        for index in range(start + 1, len(lines)):
+            line = lines[index]
+            if line.startswith("  ") and not line.startswith("    ") and line.endswith(":"):
+                end = index
+                break
+        return "\n".join(lines[start:end]) + "\n"
+
+    def named_step(block: str, name: str) -> list[str]:
+        block_lines = block.splitlines()
+        marker = f"      - name: {name}"
+        starts = [index for index, line in enumerate(block_lines) if line == marker]
+        assert len(starts) == 1
+        start = starts[0]
+        end = len(block_lines)
+        for index in range(start + 1, len(block_lines)):
+            if block_lines[index].startswith(("      - ", "      # ")):
+                end = index
+                break
+        return block_lines[start:end]
+
+    assert "  pytest-monolith:\n" not in workflow
+    unit = job_block("pytest-unit")
+    subprocess_lane = job_block("pytest-subprocess")
+    integration = job_block("pytest-integration")
+    aggregate = job_block("pytest")
+
+    assert unit.split("    runs-on:", 1)[0] == (
+        "  pytest-unit:\n"
+        "    strategy:\n"
+        "      fail-fast: false\n"
+        "      matrix:\n"
+        "        shard: [0, 1]\n"
+    )
+    assert [0, 1] == list(range(plan.FIXED_UNIT_SHARDS))
+    assert unit.count("--lane unit") == 1
+    assert unit.count('--shard-index "${{ matrix.shard }}"') == 1
+    assert unit.count("-n 2") == 1
+    assert unit.count("--dist loadfile") == 1
+    assert "-n auto" not in unit
+    assert "ci-result-pytest-unit-${{ matrix.shard }}" in unit
+
+    assert named_step(unit, "Run fixed unit shard") == [
+        "      - name: Run fixed unit shard",
+        "        run: |",
+        "          python3 tools/ci_test_plan.py list \\",
+        "            --lane unit \\",
+        '            --shard-index "${{ matrix.shard }}" \\',
+        "            --null \\",
+        '            > "${{ runner.temp }}/ci-unit-${{ matrix.shard }}.files"',
+        "          mapfile -d '' -t test_files \\",
+        '            < "${{ runner.temp }}/ci-unit-${{ matrix.shard }}.files"',
+        "          if (( ${#test_files[@]} == 0 )); then",
+        '            echo "unit shard file list is empty" >&2',
+        "            exit 1",
+        "          fi",
+        "          python3 tools/ci_test_plan.py run-pytest \\",
+        '            --ci-result-out "${{ runner.temp }}/ci-unit-${{ matrix.shard }}-result.json" \\',
+        "            -- \\",
+        '            "${test_files[@]}" \\',
+        "            -n 2 \\",
+        "            --dist loadfile \\",
+        "            -q \\",
+        "            -rs",
+        "",
+    ]
+
+    assert subprocess_lane.count("--lane serial_subprocess_cli") == 1
+    assert "--shard-index" not in subprocess_lane
+    assert "\n            -n " not in subprocess_lane
+    assert "--dist" not in subprocess_lane
+    assert "ci-result-pytest-subprocess" in subprocess_lane
+    assert named_step(subprocess_lane, "Run serial subprocess and CLI lane") == [
+        "      - name: Run serial subprocess and CLI lane",
+        "        run: |",
+        "          python3 tools/ci_test_plan.py list \\",
+        "            --lane serial_subprocess_cli \\",
+        "            --null \\",
+        '            > "${{ runner.temp }}/ci-subprocess.files"',
+        "          mapfile -d '' -t test_files \\",
+        '            < "${{ runner.temp }}/ci-subprocess.files"',
+        "          if (( ${#test_files[@]} == 0 )); then",
+        '            echo "subprocess lane file list is empty" >&2',
+        "            exit 1",
+        "          fi",
+        "          python3 tools/ci_test_plan.py run-pytest \\",
+        '            --ci-result-out "${{ runner.temp }}/ci-subprocess-result.json" \\',
+        "            -- \\",
+        '            "${test_files[@]}" \\',
+        "            -q \\",
+        "            -rs",
+        "",
+    ]
+
+    assert integration.count("--lane integration_contract") == 1
+    assert "--shard-index" not in integration
+    assert "\n            -n " not in integration
+    assert "--dist" not in integration
+    assert "ci-result-pytest-integration" in integration
+    assert integration.index("verify \\") < integration.index("--lane integration_contract")
+    assert named_step(integration, "Run integration contract lane") == [
+        "      - name: Run integration contract lane",
+        "        run: |",
+        "          python3 tools/ci_test_plan.py list \\",
+        "            --lane integration_contract \\",
+        "            --null \\",
+        '            > "${{ runner.temp }}/ci-integration.files"',
+        "          mapfile -d '' -t test_files \\",
+        '            < "${{ runner.temp }}/ci-integration.files"',
+        "          if (( ${#test_files[@]} == 0 )); then",
+        '            echo "integration lane file list is empty" >&2',
+        "            exit 1",
+        "          fi",
+        "          python3 tools/ci_test_plan.py run-pytest \\",
+        '            --ci-result-out "${{ runner.temp }}/ci-integration-result.json" \\',
+        "            -- \\",
+        '            "${test_files[@]}" \\',
+        "            -q \\",
+        "            -rs",
+        "",
+    ]
+
+    for block in (unit, subprocess_lane, integration):
+        assert block.count("tools/ci_test_plan.py run-pytest") == 1
+        assert "--ci-result-candidate-out" not in block
+        assert "< <(" not in block
+        assert "mapfile -d '' -t test_files" in block
+        assert "${#test_files[@]} == 0" in block
+        assert '"${test_files[@]}"' in block
+
+    consistency_commands = (
+        "python3 tools/check_capabilities_drift.py",
+        "python3 tools/check_docs_freshness.py",
+        "python3 tools/gen_calibration_readiness.py --check",
+    )
+    for command in consistency_commands:
+        assert workflow.count(command) == 1
+        assert command in integration
+    assert "      - name: Consistency gates\n        if: always()\n" in integration
+
+    required_jobs = (
+        "pytest-unit",
+        "pytest-subprocess",
+        "pytest-integration",
+        "macos-descriptor-confinement",
+        "windows-descriptor-backend",
+        "windows-owner-corrections",
+        "windows-private-writer-guards",
+        "windows-ci-test-plan",
+    )
+    needs = aggregate.split("    needs:\n", 1)[1].split("    runs-on:", 1)[0]
+    assert {
+        line.removeprefix("      - ")
+        for line in needs.splitlines()
+        if line.startswith("      - ")
+    } == set(required_jobs)
+    for required_job in required_jobs:
+        assert aggregate.count(f"${{{{ needs['{required_job}'].result }}}}") == 1
+    assert aggregate.count('!= "success"') == len(required_jobs)
+    assert "    if: always()\n" in aggregate
+
+    enforcement = named_step(aggregate, "Require every candidate dependency to succeed")
+    run_index = enforcement.index("        run: |")
+    predicate_lines = [line.removeprefix("          ") for line in enforcement[run_index + 1 :]]
+    assert predicate_lines == [
+        'if [[ "$PYTEST_UNIT_RESULT" != "success" || \\',
+        '      "$PYTEST_SUBPROCESS_RESULT" != "success" || \\',
+        '      "$PYTEST_INTEGRATION_RESULT" != "success" || \\',
+        '      "$MACOS_DESCRIPTOR_RESULT" != "success" || \\',
+        '      "$WINDOWS_DESCRIPTOR_RESULT" != "success" || \\',
+        '      "$WINDOWS_OWNER_CORRECTIONS_RESULT" != "success" || \\',
+        '      "$WINDOWS_PRIVATE_WRITERS_RESULT" != "success" || \\',
+        '      "$WINDOWS_CI_PLAN_RESULT" != "success" ]]; then',
+        '  echo "required candidate dependency did not succeed" >&2',
+        "  exit 1",
+        "fi",
+    ]
+    if os.name != "nt":
+        predicate = "\n".join(predicate_lines) + "\n"
+        environment_names = (
+            "PYTEST_UNIT_RESULT",
+            "PYTEST_SUBPROCESS_RESULT",
+            "PYTEST_INTEGRATION_RESULT",
+            "MACOS_DESCRIPTOR_RESULT",
+            "WINDOWS_DESCRIPTOR_RESULT",
+            "WINDOWS_OWNER_CORRECTIONS_RESULT",
+            "WINDOWS_PRIVATE_WRITERS_RESULT",
+            "WINDOWS_CI_PLAN_RESULT",
+        )
+        all_success = {**os.environ, **dict.fromkeys(environment_names, "success")}
+        assert subprocess.run(
+            ["bash", "-e", "-o", "pipefail", "-c", predicate],
+            env=all_success,
+            check=False,
+        ).returncode == 0
+        for environment_name in environment_names:
+            for result in ("failure", "cancelled", "skipped"):
+                injected = {**all_success, environment_name: result}
+                assert subprocess.run(
+                    ["bash", "-e", "-o", "pipefail", "-c", predicate],
+                    env=injected,
+                    check=False,
+                    capture_output=True,
+                ).returncode != 0
+
+    expected_artifacts = (
+        "ci-collection",
+        "ci-result-pytest-unit-0",
+        "ci-result-pytest-unit-1",
+        "ci-result-pytest-subprocess",
+        "ci-result-pytest-integration",
+    )
+    for artifact in expected_artifacts:
+        assert aggregate.count(f"          name: {artifact}\n") == 1
+    assert aggregate.count("            --result ") == 4
+
 
 def test_real_cli_collects_minimal_repo_without_import_path_failure(
     tmp_path: Path,
