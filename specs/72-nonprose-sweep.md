@@ -40,12 +40,12 @@ nonprose_sweep.py --manifest MANIFEST --report-out REPORT
 
 - Both paths are required. There is no directory discovery, inline-text mode,
   threshold override, overwrite flag, network input, or default output path.
-- `MANIFEST` is a standard-compatible SETEC JSONL manifest. B2 performs its own
-  bounded parse of the exact bytes and accepts the standard manifest's superset of
-  fields, but consumes only `id` and `path`. It requires every data row to carry a
-  unique nonempty string value for both. This projection check is not a substitute
-  for the full `manifest_validator`; B2 must not reuse that validator's unbounded,
-  path-bearing CLI result shape.
+- `MANIFEST` is a B2 descriptor JSONL that accepts a standard SETEC manifest's
+  superset of fields but intentionally narrows path semantics. B2 performs its own
+  bounded parse of the exact bytes and consumes only `id` and `path`. It requires
+  every data row to carry a unique nonempty string value for both. This projection
+  check is not a substitute for the full `manifest_validator`; B2 must not reuse
+  that validator's unbounded, path-bearing CLI result shape.
 - IDs are opaque controls, not filenames. An ID is at most 256 strict UTF-8 bytes,
   contains no C0/C1 control, surrogate, U+2028, or U+2029 character, and is emitted
   only inside the explicit private report. Paths and prose are never emitted.
@@ -56,9 +56,11 @@ nonprose_sweep.py --manifest MANIFEST --report-out REPORT
 - Physical JSONL record separators are exactly LF, CRLF, or lone CR. A missing
   final newline is accepted. U+0085, U+2028, and U+2029 inside JSON strings are
   data, never record separators.
-- Relative document paths resolve from the manifest parent under the existing
-  `manifest_validator.resolve_path` containment rules. A path containing NUL
-  refuses. A source must remain a direct regular file, not a symlink,
+- Document paths must be relative, contain no NUL, empty/`.`/`..` component, drive,
+  or alternate-data-stream colon, and resolve only by component-relative lookup
+  beneath the pinned manifest parent. Absolute paths, parent traversal, and the
+  broader `manifest_validator.resolve_path` parent-parent/CWD fallbacks are not B2
+  inputs. A source must remain a direct regular file, not a symlink,
   junction/reparse point, directory, device, or source/output alias. All input
   handles close before report publication.
 - Documents decode as strict UTF-8 without BOM or NUL. Their physical line separators are
@@ -90,8 +92,8 @@ as corpus-validated owner parameters.
   short-line screens and includes structural VTT lines.
 - Structural prefixes and VTT markup identified below contribute zero analyzable
   words. The remaining text of each physical line is its analyzable content.
-- An analyzable word matches the executable Python regular expression
-  `[^\\W_]+(?:['\u2019\-\u2010\u2011][^\\W_]+)*` under Unicode semantics. Thus a
+- An analyzable word matches
+  `re.compile(r"[^\W_]+(?:['’\-‐‑][^\W_]+)*", re.UNICODE)` exactly. Thus a
   word is one or more Unicode alphanumeric characters, optionally joined by an
   internal apostrophe or listed hyphen; underscore and a bare joiner are not words.
   The explicit executable form, rather than the explanatory notation, is canonical.
@@ -110,10 +112,12 @@ TIMESTAMP [SP/HTAB]+ --> [SP/HTAB]+ TIMESTAMP
   ([SP/HTAB]+ SETTING)*
 
 TIMESTAMP := ([0-9]{2,}:)?[0-5][0-9]:[0-5][0-9].[0-9]{3}
-SETTING   := (vertical|line|position|size|align|region):NONSPACE+
+SETTING   := (vertical|line|position|size|align|region):[!-~]+
 ```
 
-The dot before milliseconds is a literal dot. No comma-millisecond SRT syntax,
+The dot before milliseconds is a literal dot. `[!-~]+` means one or more printable
+ASCII characters with no space/tab; Unicode whitespace and non-ASCII setting bytes
+do not match. No comma-millisecond SRT syntax,
 bare arrow, partial-line search, lowercase header, invalid minute/second, unknown
 setting, or prose containing `-->` matches. A header or timing line makes
 `vtt_any_hit` true; the packet's VTT threshold is therefore exact any-hit.
@@ -136,9 +140,13 @@ ASCII-space/tab-trimmed label is at most 48 strict UTF-8 bytes and is one of:
   space and 1-3 digits; `PARTICIPANT` under the same rule; `INTERVIEWER`,
   `INTERVIEWEE`, `HOST`, `GUEST`, `MODERATOR`, `AUDIENCE`, `AUDIENCE MEMBER`,
   `UNKNOWN`, `Q`, or `A`; or
-- two through four ASCII-space-separated name tokens, each containing at least two
-  Unicode letters and otherwise only Unicode letters plus internal apostrophe or
-  listed hyphen, with every cased letter equal to its uppercase form.
+- two through four name tokens separated by exactly one ASCII space. A name token is
+  split on the joiner set `{ASCII apostrophe, U+2019, ASCII hyphen, U+2010, U+2011}`;
+  it must have no empty segment, every remaining character must satisfy
+  `str.isalpha()`, and it must contain at least two letters. At least one letter must
+  be cased (`lower() != upper()`), and every cased letter must equal its `upper()`.
+  Uncased-script labels therefore do not match, and leading, trailing, or consecutive
+  joiners refuse the token.
 
 The multi-token requirement deliberately excludes one-token acronym/headline forms
 such as `NASA:` and title-case prose such as `Note:`. The label and colon are
@@ -221,6 +229,7 @@ separators=(",", ":"))`. The top-level closed schema is:
 {
   "schema": "setec-nonprose-sweep-report/1",
   "method": "setec-nonprose-method/1",
+  "calibration_status": "operational_uncalibrated",
   "manifest_sha256": "sha256:...",
   "source_set_sha256": "sha256:...",
   "thresholds": {
@@ -262,10 +271,18 @@ row order. Each document object has exactly:
 ```
 
 `source_set_sha256` seals the analyzed source snapshot without publishing individual
-content hashes. It hashes canonical JSONL rows containing exactly opaque `id` and
-the exact document `content_sha256`, sorted by UTF-8 ID bytes; those component hashes
-are retained only in memory. Thus a report is bound to both the manifest bytes and
-every analyzed document byte sequence.
+content hashes. Its preimage is canonical JSONL sorted by UTF-8 ID bytes. Each row
+has exactly `{"content_sha256":"LOWERCASE_64_HEX","id":"OPAQUE_ID"}` serialized
+with `sort_keys=True`, `ensure_ascii=True`, `allow_nan=False`, compact separators,
+strict UTF-8, and one literal LF; the final row also has one LF. The report field is
+`"sha256:"` plus the lowercase SHA-256 hex of that complete byte sequence. Component
+hashes are retained only in memory. Thus a report is bound to both the manifest bytes
+and every analyzed document byte sequence.
+
+`manifest_sha256` hashes the exact raw manifest bytes. It intentionally changes when
+only manifest framing, row order, or JSON key order changes; semantic analysis and
+`source_set_sha256` remain invariant for an equivalent projected inventory. Like all
+three public seals, it is spelled `sha256:` plus 64 lowercase hexadecimal digits.
 
 `totals` contains exactly `documents`, `documents_with_any_screen`,
 `nonempty_lines`, `total_analyzable_words`, `authored_residual_words`,
@@ -287,20 +304,28 @@ Success exits 0 and writes one canonical schema-version 1.0 SETEC envelope throu
 - a `ClaimLicense` that licenses only a structural screen and explicitly refuses
   disposition/authorship/provenance/quality/AI-human conclusions;
 - aggregate-only `results` containing the method, fixed thresholds, exact totals,
-  manifest SHA-256, source-set SHA-256, and report SHA-256.
+  `calibration_status="operational_uncalibrated"`, manifest SHA-256, source-set
+  SHA-256, and report SHA-256.
+
+The envelope is serialized once with `json.dumps(..., sort_keys=True,
+ensure_ascii=True, allow_nan=False, separators=(",", ":"))`, encoded as strict
+UTF-8, and followed by exactly one literal LF. The report SHA-256 hashes the exact
+canonical report bytes including their terminal LF and uses the same `sha256:` plus
+lowercase-hex spelling.
 
 Stdout contains no document IDs or paths. The only fallback from `.buffer` is an
 explicitly injected in-memory text stream in unit tests; real subprocess behavior is
 binary and byte-exact on Windows and POSIX.
 
-Aggregate progress may be emitted every 250 completed documents to
-`sys.stderr.buffer` as canonical JSON plus LF with exactly `schema`, `processed`, and
-`total` keys. It contains no ID, path, prose, ratio, or exception string. Controlled
-failure exits 3, writes exactly
+The bounded v1 emits no progress records, so stderr is terminal-only. A closed
+argument parser emits exactly `nonprose_sweep: invalid arguments\n` and exits 2 for
+every usage error, without echoing operands or default argparse help. Controlled
+failure exits 3 and writes exactly
 `nonprose_sweep: input, resource, or publication validation failed\n` as UTF-8 bytes
-to stderr, and writes nothing to stdout. Argparse usage errors exit 2. No controlled
-failure emits a traceback, private path, ID, source value, raw bytes, or platform
-exception text.
+to stderr, and writes nothing to stdout. No controlled failure emits a traceback,
+private path, ID, source value, raw bytes, or platform exception text. An unexpected
+invariant/internal failure exits 1 with exactly
+`nonprose_sweep: internal failure\n`, no stdout, and no traceback or operand detail.
 
 ## 7. Resource and complexity ceilings
 
@@ -334,6 +359,13 @@ B2 does not claim shard-runner/checkpoint parity.
 - `chmod`, `fchmod`, UID, and POSIX-mode assertions are unnecessary. If introduced,
   guard APIs with `hasattr` and assertions with `os.name == "posix"`; do not emulate
   a Windows DACL.
+- Extend `windows_descriptor_io` only through backward-compatible keyword controls:
+  `allow_multiple_links=False` on `require_direct`, `_nt_open`, and `open_file`, and
+  `share_write=True` / `share_delete=True` on `create_file`. Existing callers retain
+  the current restrictive hardlink policy and sharing defaults. B2 alone opts
+  read-only inputs into `allow_multiple_links=True` with write/delete sharing denied,
+  and creates its payload temporary with both sharing flags false. Helper-focused
+  regressions pin old defaults and the B2 opt-in behavior.
 - Preflight records source identity and size from the open handle, reads exactly the
   bounded declared bytes plus EOF, and rechecks stable identity/size before close.
   POSIX pins the source parent and uses descriptor-relative lookup; Windows pins the
@@ -359,6 +391,8 @@ B2 does not claim shard-runner/checkpoint parity.
 Ship in the same draft PR:
 
 - `plugins/setec-voiceprint/scripts/nonprose_sweep.py`;
+- the default-preserving `windows_descriptor_io` keyword extension and focused
+  helper regressions required by section 8;
 - focused synthetic POSIX and native-Windows tests;
 - `capabilities.d/nonprose_sweep.yaml` and the matching per-ID golden fragment;
 - a concise method/report reference document;
@@ -382,8 +416,9 @@ All fixtures are synthetic and code-safe.
    transcript.
 2. Explicit roles, numbered SPEAKER/PARTICIPANT, Q/A, and 2-4 uppercase name tokens
    match. One-token acronym, title-case heading, overlong label, missing colon
-   boundary, and invalid token do not. Speaker continuation stops at every frozen
-   boundary and no word is double-counted inside VTT.
+   boundary, uncased-script label, leading/trailing/consecutive joiner, and invalid
+   token do not. Speaker continuation stops at every frozen boundary and no word is
+   double-counted inside VTT.
 3. Every disfluency lexeme matches case-insensitively as one whole token; substrings
    and excluded phrases do not. Unicode/apostrophe/hyphen word fixtures pin the
    executable tokenizer.
@@ -396,8 +431,10 @@ All fixtures are synthetic and code-safe.
    numerators/denominators. Disfluency/short-line-only evidence leaves words in the
    authored-residual bucket.
 6. Manifest row order, JSON key order, and LF/CRLF/lone-CR/missing-final-LF variants
-   yield byte-identical reports. U+0085/U+2028/U+2029 remain data. Document rows sort
-   by UTF-8 ID bytes.
+   yield identical document metrics, totals, screen decisions, and source-set seal.
+   Their exact raw manifest/report seals may differ. Document newline variants with
+   an otherwise byte-adjusted manifest follow the same rule. U+0085/U+2028/U+2029
+   remain data. Document rows sort by UTF-8 ID bytes.
 7. BOM, invalid UTF-8, duplicate keys/IDs, nonfinite JSON values, malformed manifest
    projection, NUL, invalid ID, unsafe/absolute/escaping path, symlink/reparse, nonregular
    source, hard resource limit, changing source, and every source/output alias refuse
@@ -405,18 +442,21 @@ All fixtures are synthetic and code-safe.
 8. Every resource ceiling has an exact-at-limit success and one-over refusal test,
    using injected small limits where necessary. Common long-line/token amplification
    remains bounded and linear.
-9. Repeated runs produce byte-identical canonical report/stdout bytes except that a
-   changed exact manifest necessarily changes its manifest pin. Report and stdout
-   have one terminal LF and no CR on native Windows and POSIX.
+9. Repeated runs over the same exact manifest and source bytes produce byte-identical
+   canonical report/stdout bytes. A changed exact manifest necessarily changes its
+   manifest pin and report/stdout seal. Report and stdout have one terminal LF and
+   no CR on native Windows and POSIX.
    A one-byte source mutation changes `source_set_sha256` and the report seal even
    when the manifest is byte-identical; individual content hashes are never emitted.
 10. Report publication tests inject write, flush, fsync, create-new, verification,
     cleanup, and `MemoryError` failures. An intervening destination remains
     byte-identical; no unverified winner is deleted; all handles are attempted closed.
-11. Recursive leak tests prove report/stdout/error/progress contain none of the
-    synthetic prose, paths, raw lines/tokens, speaker labels, or VTT payload. Stdout
-    and progress contain no IDs. A recursive posture walk rejects disposition,
-    verdict, label, selection, authorship, provenance, quality, and AI/human keys.
+11. Recursive leak tests prove report/stdout/error contain none of the synthetic
+    prose, paths, raw lines/tokens, speaker labels, or VTT payload. Stdout contains
+    no IDs. A recursive posture walk over the private report and envelope `results`
+    rejects disposition, verdict, label, selection, authorship, provenance, quality,
+    and AI/human keys. The standard envelope's mandatory `ai_status` key remains
+    present and exactly null; it is not duplicated or populated inside `results`.
 12. The standard output envelope, `ClaimLicense`, surface, version, fixed thresholds,
     report seal, capability fragment/golden, docs, calibration matrix, and changelog
     are pinned. Existing `check_corpus`, validation-harness, manifest-validator, and
