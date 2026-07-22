@@ -1507,8 +1507,9 @@ def test_windows_cli_newline_unicode_and_hash_paths(
     assert completed.stdout.endswith(b"\n") and b"\r" not in completed.stdout
     assert report.read_bytes().endswith(b"\n") and b"\r" not in report.read_bytes()
     metrics = json.loads(report.read_bytes())["documents"][0]
-    assert metrics["total_analyzable_words"] == 3
-    assert metrics["transcript_words"] == 3
+    assert metrics["speaker_label_lines"] == 1
+    assert metrics["total_analyzable_words"] == 2
+    assert metrics["transcript_words"] == 2
 
 
 @pytest.mark.skipif(os.name != "nt", reason="native Windows CLI contract")
