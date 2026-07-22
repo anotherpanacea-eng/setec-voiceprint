@@ -26,6 +26,13 @@ structural partition, not an inference about who wrote any words. A screen hit i
 an operational queue condition, not an authorship, provenance, quality, genre,
 fiction/nonfiction, AI/human, or training-eligibility verdict.
 
+V1's applicability boundary is the upstream-selected B2 nonfiction inventory,
+recorded as `all_nonfiction` in the capability registry. The tool does not decide
+that a document is nonfiction and must not be used to classify fiction versus
+nonfiction; fiction and mixed-register discovery are outside this command's input
+scope. Registration states an operator-selected domain, not a conclusion licensed
+by the structural measurements.
+
 The existing `check_corpus.py` remains unchanged. That tool measures broad
 markup/code stripping impact and has existing defaults and consumers. B2 is a
 separate sibling capability named `nonprose_sweep` on the already registered

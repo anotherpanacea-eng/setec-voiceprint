@@ -8,6 +8,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -893,6 +894,163 @@ def test_posix_post_rename_directory_fsync_failure_preserves_final(
     assert calls == 2
     assert destination.read_bytes() == b"payload\n"
     assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")
+@pytest.mark.parametrize("failed_close", [1, 2, 3])
+def test_posix_publication_close_failures_are_controlled_and_all_attempted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_close: int
+) -> None:
+    destination = tmp_path / "report.json"
+    real_close = N.os.close
+    armed = False
+    close_calls = 0
+
+    def arm(stage: str) -> None:
+        nonlocal armed
+        if stage == "final_verified":
+            armed = True
+
+    def fail_selected_close(descriptor: int) -> None:
+        nonlocal close_calls
+        real_close(descriptor)
+        if armed:
+            close_calls += 1
+            if close_calls == failed_close:
+                raise OSError("injected publication close failure")
+
+    monkeypatch.setattr(N, "_FAULT_HOOK", arm)
+    monkeypatch.setattr(N.os, "close", fail_selected_close)
+    with pytest.raises(N.ControlledFailure, match="output close failed"):
+        N._posix_publish_create_new(destination, b"payload\n")
+    assert close_calls == 3
+    assert destination.read_bytes() == b"payload\n"
+    assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")
+def test_posix_close_failure_does_not_mask_primary_publication_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "report.json"
+    real_close = N.os.close
+    armed = False
+    failed = False
+
+    def fail_after_effect(stage: str) -> None:
+        nonlocal armed
+        if stage == "final_verified":
+            armed = True
+            raise MemoryError("primary publication failure")
+
+    def fail_one_close(descriptor: int) -> None:
+        nonlocal failed
+        real_close(descriptor)
+        if armed and not failed:
+            failed = True
+            raise OSError("secondary close failure")
+
+    monkeypatch.setattr(N, "_FAULT_HOOK", fail_after_effect)
+    monkeypatch.setattr(N.os, "close", fail_one_close)
+    with pytest.raises(N.ControlledFailure, match="output publication failed"):
+        N._posix_publish_create_new(destination, b"payload\n")
+    assert failed is True
+    assert destination.read_bytes() == b"payload\n"
+
+
+class _FakeWindowsPublicationIO:
+    parent = 10
+    writer = 20
+    rebound = 21
+    final_rebound = 22
+
+    def __init__(self, failed_close: int | None) -> None:
+        self.failed_close = failed_close
+        self.failed = False
+        self.payload = bytearray()
+        self.positions: dict[int, int] = {}
+        self.close_calls: list[int] = []
+        self.delete_calls: list[int] = []
+        self.published = False
+
+    def create_file(self, *_args: object, **_kwargs: object) -> int:
+        return self.writer
+
+    def require_direct(self, _handle: int, _kind: str) -> SimpleNamespace:
+        return SimpleNamespace(identity=(1, 2, 3), size=len(self.payload))
+
+    def write(self, _handle: int, raw: bytes) -> int:
+        self.payload.extend(raw)
+        return len(raw)
+
+    def flush(self, _handle: int) -> None:
+        return None
+
+    def seek(self, handle: int, position: int) -> None:
+        self.positions[handle] = position
+
+    def read(self, handle: int, count: int) -> bytes:
+        position = self.positions.get(handle, 0)
+        raw = bytes(self.payload[position : position + count])
+        self.positions[handle] = position + len(raw)
+        return raw
+
+    def open_file(self, _parent: int, name: str, **_kwargs: object) -> int:
+        return self.final_rebound if self.published or name == "report.json" else self.rebound
+
+    def rename(self, *_args: object, **_kwargs: object) -> None:
+        self.published = True
+
+    def delete(self, handle: int) -> None:
+        self.delete_calls.append(handle)
+
+    def close(self, handle: int) -> None:
+        self.close_calls.append(handle)
+        if handle == self.failed_close and not self.failed:
+            self.failed = True
+            raise OSError("injected Windows close failure")
+
+
+@pytest.mark.parametrize(
+    "failed_close",
+    [
+        _FakeWindowsPublicationIO.rebound,
+        _FakeWindowsPublicationIO.final_rebound,
+        _FakeWindowsPublicationIO.parent,
+        _FakeWindowsPublicationIO.writer,
+    ],
+)
+def test_windows_publication_close_failures_are_controlled_and_all_attempted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failed_close: int
+) -> None:
+    fake = _FakeWindowsPublicationIO(failed_close)
+    monkeypatch.setattr(N, "_windows_pin_output", lambda _path: (fake, fake.parent))
+    with pytest.raises(N.ControlledFailure):
+        N._windows_publish_create_new(tmp_path / "report.json", b"payload\n")
+    assert fake.failed is True
+    assert fake.writer in fake.close_calls
+    assert fake.parent in fake.close_calls
+    if failed_close != fake.rebound:
+        assert fake.final_rebound in fake.close_calls
+    assert fake.delete_calls
+
+
+def test_windows_close_failure_does_not_mask_primary_publication_refusal(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake = _FakeWindowsPublicationIO(_FakeWindowsPublicationIO.final_rebound)
+
+    def fail_after_effect(stage: str) -> None:
+        if stage == "final_verified":
+            raise MemoryError("primary publication failure")
+
+    monkeypatch.setattr(N, "_windows_pin_output", lambda _path: (fake, fake.parent))
+    monkeypatch.setattr(N, "_FAULT_HOOK", fail_after_effect)
+    with pytest.raises(N.ControlledFailure, match="output publication failed"):
+        N._windows_publish_create_new(tmp_path / "report.json", b"payload\n")
+    assert fake.failed is True
+    assert fake.writer in fake.close_calls
+    assert fake.parent in fake.close_calls
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")

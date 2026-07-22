@@ -1,8 +1,10 @@
 # Deterministic non-prose sweep
 
 `nonprose_sweep.py` is a bounded, stdlib-only corpus-hygiene screen for a B2
-descriptor JSONL and the strict-UTF-8 documents it names. It reports four fixed
-structural conditions for operator review:
+descriptor JSONL from the upstream-selected nonfiction inventory and the
+strict-UTF-8 documents it names. Its `all_nonfiction` registration is an input
+boundary, not a classification result; fiction/mixed-register discovery is out of
+scope. It reports four fixed structural conditions for operator review:
 
 - any recognized WebVTT header or cue timing line;
 - recognized speaker labels on strictly more than 15% of nonempty lines;
