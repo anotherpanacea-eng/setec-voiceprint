@@ -161,3 +161,43 @@ jobs:
             plugins/setec-voiceprint/scripts/tests/test_windows_descriptor_backend.py `
             -q -rs `
             --basetemp "${{ runner.temp }}\\setec-win-nonprose"
+  windows-private-writer-guards:
+    # This lane covers the Windows-reachable private-corpus writers whose
+    # atomic paths harden modes with POSIX-only fchmod calls. The focused lanes
+    # above do not execute these files, so an unguarded call could otherwise
+    # land invisibly on Windows. The export-seam fixture is also hash-pinned and
+    # must remain LF under core.autocrlf (see .gitattributes).
+    #
+    # Scope caveats: Windows cannot prove the os.name == "posix" chmod guards,
+    # and compose_imessage_review_bursts refuses non-macOS execution before its
+    # defensive fchmod sites, so neither claim is made by this lane.
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install focused test dependency
+        # pyyaml: test_author_corpus_export's dispatcher tests load the
+        # capabilities manifest, whose loader imports yaml (capabilities.py).
+        run: python -m pip install pytest tzdata pyyaml
+
+      - name: Run private-writer mode-guard and export-seam tests on native Windows
+        shell: pwsh
+        run: |
+          # test_adapter_refuses_declared_nonbaseline_material is deselected: it
+          # fails on native Windows for an UNRELATED reason (it constructs a path
+          # containing filename-illegal characters -> WinError 123), is
+          # pre-existing on main, and is tracked as a separate follow-up.
+          # Deselecting keeps that known failure from poisoning this lane while
+          # the rest of the file still regression-covers the fchmod guard.
+          python -m pytest `
+            plugins/setec-voiceprint/scripts/tests/test_normalize_author_registry.py `
+            plugins/setec-voiceprint/scripts/tests/test_author_corpus_export.py `
+            plugins/setec-voiceprint/scripts/tests/test_prepare_author_document_adapter.py `
+            --deselect "plugins/setec-voiceprint/scripts/tests/test_prepare_author_document_adapter.py::test_adapter_refuses_declared_nonbaseline_material" `
+            -q `
+            --basetemp "${{ runner.temp }}\\setec-win-private-writers"
