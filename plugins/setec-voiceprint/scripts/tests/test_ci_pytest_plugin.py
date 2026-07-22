@@ -222,6 +222,20 @@ def test_existing_destination_is_refused_without_replacement(tmp_path: Path) -> 
     assert result.read_bytes() == original
 
 
+def test_failed_publish_removes_only_its_new_partial_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    result = tmp_path / "partial.json"
+
+    def fail_fsync(fd: int) -> None:
+        del fd
+        raise OSError("injected fsync failure")
+
+    monkeypatch.setattr(plugin.os, "fsync", fail_fsync)
+    assert not plugin._publish_create_new(result, b'pure-ascii\n')
+    assert not result.exists()
+
+
 def test_serial_warning_count_is_neither_lost_nor_duplicated(tmp_path: Path) -> None:
     _write(
         tmp_path,
@@ -236,6 +250,60 @@ def test_serial_warning_count_is_neither_lost_nor_duplicated(tmp_path: Path) -> 
     assert completed.returncode == 0, completed.stderr.decode("utf-8", "replace")
     _, document = _load(result)
     assert document["warnings"] == 3
+
+
+@pytest.mark.parametrize(("pytest_args", "expected_warnings"), [([], 1), (["-n", "2"], 3)])
+def test_configure_warnings_are_counted_once_in_serial_and_xdist(
+    tmp_path: Path, pytest_args: list[str], expected_warnings: int
+) -> None:
+    if pytest_args:
+        pytest.importorskip("xdist")
+    _write(
+        tmp_path,
+        "conftest.py",
+        "import warnings\n"
+        "def pytest_configure(config):\n"
+        "    warnings.warn('configure-warning', UserWarning)\n",
+    )
+    _write(tmp_path, "test_ok.py", "def test_ok(): pass\n")
+    result = tmp_path / "configure-warnings.json"
+    completed = _run(
+        tmp_path,
+        "test_ok.py",
+        *pytest_args,
+        "-q",
+        result=result,
+    )
+    assert completed.returncode == 0, completed.stderr.decode("utf-8", "replace")
+    _, document = _load(result)
+    assert document["warnings"] == expected_warnings
+
+
+@pytest.mark.parametrize(
+    "conftest_source",
+    [
+        (
+            "import pytest\n"
+            "@pytest.hookimpl(wrapper=True, tryfirst=True)\n"
+            "def pytest_sessionfinish(session, exitstatus):\n"
+            "    yield\n"
+            "    raise RuntimeError('late session-finish error')\n"
+        ),
+        (
+            "def pytest_unconfigure(config):\n"
+            "    raise RuntimeError('late unconfigure error')\n"
+        ),
+    ],
+)
+def test_late_lifecycle_failure_never_leaves_complete_report(
+    tmp_path: Path, conftest_source: str
+) -> None:
+    _write(tmp_path, "conftest.py", conftest_source)
+    _write(tmp_path, "test_ok.py", "def test_ok(): pass\n")
+    result = tmp_path / "must-not-exist.json"
+    completed = _run(tmp_path, "test_ok.py", "-q", result=result)
+    assert completed.returncode != 0
+    assert not result.exists()
 
 
 def test_real_xdist_n2_publishes_one_controller_union(tmp_path: Path) -> None:

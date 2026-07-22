@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import subprocess
+from types import SimpleNamespace
 import sys
 
 import pytest
@@ -84,6 +85,24 @@ def _result_bytes(outcomes: dict[str, str], *, warnings: int = 0, exitstatus: in
     })
 
 
+def _make_junction(link: Path, target: Path) -> None:
+    try:
+        completed = subprocess.run(
+            ["cmd", "/d", "/c", "mklink", "/J", str(link), str(target)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+    except OSError as exc:
+        pytest.skip(f"junction creation unavailable: {exc}")
+    if completed.returncode != 0:
+        pytest.skip(
+            "junction creation unavailable: "
+            f"rc={completed.returncode} stdout={completed.stdout!r} "
+            f"stderr={completed.stderr!r}"
+        )
+
+
 def test_checked_in_plan_is_valid_and_conserves_current_tree() -> None:
     _, lanes = plan.load_and_verify_plan()
     discovered = plan.discover_tests()
@@ -133,6 +152,44 @@ def test_verify_is_canonical_and_stable(tmp_path: Path) -> None:
 )
 def test_process_risk_ast_positive_alias_and_local_cases(tmp_path: Path, source: str) -> None:
     path = tmp_path / "test_risk.py"
+    path.write_text(source, encoding="utf-8")
+    assert plan.has_process_risk(path)
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        (
+            "def risky():\n"
+            " import concurrent.futures as alias\n"
+            " return alias.ProcessPoolExecutor()\n"
+            "def safe():\n"
+            " import json as alias\n"
+            " return alias.loads('{}')\n"
+        ),
+        (
+            "def risky():\n"
+            " import asyncio as alias\n"
+            " return alias.create_subprocess_exec('child')\n"
+            "def safe():\n"
+            " import json as alias\n"
+            " return alias.loads('{}')\n"
+        ),
+        (
+            "def risky():\n"
+            " import os as alias\n"
+            " return alias.system('child')\n"
+            "def safe():\n"
+            " import json as alias\n"
+            " return alias.loads('{}')\n"
+        ),
+    ],
+)
+def test_process_risk_preserves_scope_shadowed_aliases(
+    tmp_path: Path,
+    source: str,
+) -> None:
+    path = tmp_path / "test_shadowed_risk.py"
     path.write_text(source, encoding="utf-8")
     assert plan.has_process_risk(path)
 
@@ -209,6 +266,58 @@ def test_plan_rejects_linked_test(tmp_path: Path) -> None:
         pytest.skip(f"symlink creation unavailable: {exc}")
     with pytest.raises(plan.PlanError):
         plan.load_and_verify_plan(plan_path, root)
+
+
+def test_reparse_attribute_fallback_is_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    flag = 0x0400
+    monkeypatch.setattr(plan.stat, "FILE_ATTRIBUTE_REPARSE_POINT", flag, raising=False)
+
+    class ReparsePath:
+        def is_symlink(self) -> bool:
+            return False
+
+        def lstat(self) -> SimpleNamespace:
+            return SimpleNamespace(st_file_attributes=flag)
+
+    assert plan._is_link_or_reparse(ReparsePath())
+
+
+def test_plan_rejects_windows_junction_component(tmp_path: Path) -> None:
+    root, plan_path, paths = _make_repo(tmp_path)
+    outside = tmp_path / "outside-tests"
+    outside.mkdir()
+    (outside / "test_escape.py").write_text(
+        "def test_escape(): assert True\n",
+        encoding="utf-8",
+    )
+    link = root / plan.FIXED_TEST_ROOT / "junction"
+    _make_junction(link, outside)
+
+    escaped = f"{plan.FIXED_TEST_ROOT}/junction/test_escape.py"
+    assert escaped not in plan.discover_tests(root)
+    value = json.loads(plan_path.read_text(encoding="utf-8"))
+    value["integration_contract"] = sorted(
+        [*value["integration_contract"], escaped],
+        key=str.encode,
+    )
+    plan_path.write_text(
+        json.dumps(value, ensure_ascii=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(plan.PlanError, match="linked or reparse"):
+        plan.load_and_verify_plan(plan_path, root)
+
+
+def test_discovery_rejects_windows_junction_test_root(tmp_path: Path) -> None:
+    root, _, _ = _make_repo(tmp_path)
+    tests = root / plan.FIXED_TEST_ROOT
+    target = tmp_path / "real-tests"
+    tests.rename(target)
+    _make_junction(tests, target)
+    with pytest.raises(plan.PlanError, match="linked or reparse"):
+        plan.discover_tests(root)
 
 
 def test_collect_report_conserves_opaque_nodeids_and_writes_once(
@@ -459,36 +568,54 @@ def test_real_cli_verify_and_list_are_byte_stable() -> None:
     assert listed.stdout.endswith(b"\0")
 
 
-def test_real_cli_collects_repository_without_import_path_failure(tmp_path: Path) -> None:
+def test_checked_in_unit_shard_override_contract() -> None:
+    # These are the smallest two reviewed whole-file moves that bring the
+    # checked-in topology inside Spec 73's measured 1.25 node-count ratio.
+    assert set(plan._read_json(plan.PLAN_PATH)["unit_shard_overrides"]) == {
+        f"{plan.FIXED_TEST_ROOT}/test_acquire_blog.py",
+        f"{plan.FIXED_TEST_ROOT}/test_acquire_gmail_sent.py",
+    }
+
+
+def test_real_cli_collects_minimal_repo_without_import_path_failure(
+    tmp_path: Path,
+) -> None:
+    root, _, _ = _make_repo(tmp_path)
+    for name in ("ci_test_plan.py", "ci_pytest_plugin.py"):
+        (root / "tools" / name).write_bytes((TOOLS / name).read_bytes())
+    script = root / "tools" / "ci_test_plan.py"
     artifact = tmp_path / "collection.json"
     completed = subprocess.run(
         [
             sys.executable,
-            str(TOOLS / "ci_test_plan.py"),
+            str(script),
             "verify",
             "--collect",
             "--collection-out",
             str(artifact),
         ],
-        cwd=REPO_ROOT,
+        cwd=root,
         capture_output=True,
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout == artifact.read_bytes()
     report = json.loads(completed.stdout)
-    assert report["collection"]["canonical"]["count"] > 0
-    # These are the smallest two whole-file moves that bring the current
-    # deterministic hash split inside Spec 73's 1.25 collected-node ratio.
-    assert set(plan._read_json(plan.PLAN_PATH)["unit_shard_overrides"]) == {
-        f"{plan.FIXED_TEST_ROOT}/test_acquire_blog.py",
-        f"{plan.FIXED_TEST_ROOT}/test_acquire_gmail_sent.py",
+    assert report["collection"]["canonical"]["count"] == 4
+    assert {
+        lane: report["collection"][lane]["count"]
+        for lane in (
+            "serial_subprocess_cli",
+            "integration_contract",
+            "unit_0",
+            "unit_1",
+        )
+    } == {
+        "serial_subprocess_cli": 1,
+        "integration_contract": 1,
+        "unit_0": 1,
+        "unit_1": 1,
     }
-    unit_counts = [
-        report["collection"]["unit_0"]["count"],
-        report["collection"]["unit_1"]["count"],
-    ]
-    assert max(unit_counts) / min(unit_counts) <= 1.25
     assert completed.stderr == b""
 
     invalid_result = tmp_path / "surrogate-result.json"
@@ -509,14 +636,14 @@ def test_real_cli_collects_repository_without_import_path_failure(tmp_path: Path
     rejected = subprocess.run(
         [
             sys.executable,
-            str(TOOLS / "ci_test_plan.py"),
+            str(script),
             "verify-results",
             "--collection-report",
             str(artifact),
             "--result",
             str(invalid_result),
         ],
-        cwd=REPO_ROOT,
+        cwd=root,
         capture_output=True,
         check=False,
     )

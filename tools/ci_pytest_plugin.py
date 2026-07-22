@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 import json
 import os
 from pathlib import Path
+import warnings
 from typing import Any, Sequence
 
 import pytest
@@ -61,6 +62,7 @@ class _RunState:
     reports: dict[str, dict[str, Any]] = field(default_factory=dict)
     warnings: int = 0
     invalid: bool = False
+    finished: bool = False
 
 
 _STATE_KEY: pytest.StashKey[_RunState] = pytest.StashKey()
@@ -76,14 +78,72 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     )
 
 
-def pytest_configure(config: pytest.Config) -> None:
+def _activate_state(config: pytest.Config) -> _RunState:
+    global _ACTIVE_STATE, _PENDING_WARNINGS
     is_worker = hasattr(config, "workerinput")
     numprocesses = getattr(config.option, "numprocesses", None)
     is_xdist_controller = not is_worker and numprocesses not in (None, 0, "0")
-    config.stash[_STATE_KEY] = _RunState(
+    state = _RunState(
         is_worker=is_worker,
         is_xdist_controller=is_xdist_controller,
+        warnings=0 if is_worker else _PENDING_WARNINGS,
     )
+    _PENDING_WARNINGS = 0
+    config.stash[_STATE_KEY] = state
+    # Configuration warnings can be emitted before pytest_sessionstart, and
+    # xdist workers can forward their configure-time warnings while the
+    # controller is still inside its own sessionstart hooks.  Activate the
+    # state before pytest invokes the historic pytest_configure hook.
+    _ACTIVE_STATE = state
+    return state
+
+
+def _monitor_configure_warnings(
+    config: pytest.Config, state: _RunState,
+) -> tuple[Any, Any]:
+    """Count warnings across the complete historic configure hook call."""
+    original_showwarning = warnings.showwarning
+    installed = False
+
+    def showwarning(message, category, filename, lineno, file=None, line=None):
+        if state.is_worker:
+            # xdist's worker transport is itself a pytest_warning_recorded
+            # implementation.  Replay once through the hook instead of also
+            # printing locally, so the controller is the sole counter/reporter.
+            config.hook.pytest_warning_recorded.call_historic(
+                kwargs={
+                    "warning_message": warnings.WarningMessage(
+                        message, category, filename, lineno, file, line,
+                    ),
+                    "when": "config",
+                    "nodeid": "",
+                    "location": None,
+                }
+            )
+        else:
+            state.warnings += 1
+            original_showwarning(message, category, filename, lineno, file, line)
+
+    def restore() -> None:
+        nonlocal installed
+        if installed and warnings.showwarning is showwarning:
+            warnings.showwarning = original_showwarning
+        installed = False
+
+    def before(hook_name, hook_impls, kwargs) -> None:
+        del hook_impls, kwargs
+        nonlocal installed
+        if hook_name == "pytest_configure":
+            warnings.showwarning = showwarning
+            installed = True
+
+    def after(outcome, hook_name, hook_impls, kwargs) -> None:
+        del outcome, hook_impls, kwargs
+        if hook_name == "pytest_configure":
+            restore()
+
+    undo = config.pluginmanager.add_hookcall_monitoring(before, after)
+    return undo, restore
 
 
 def _state(config: pytest.Config) -> _RunState:
@@ -148,17 +208,15 @@ def pytest_warning_recorded(
 ) -> None:
     del warning_message, when, nodeid, location
     state = _ACTIVE_STATE
-    if state is not None and not state.is_worker:
+    if state is None:
+        global _PENDING_WARNINGS
+        _PENDING_WARNINGS += 1
+    elif not state.is_worker:
         state.warnings += 1
 
 
 _ACTIVE_STATE: _RunState | None = None
-
-
-@pytest.hookimpl(trylast=True)
-def pytest_sessionstart(session: pytest.Session) -> None:
-    global _ACTIVE_STATE
-    _ACTIVE_STATE = _state(session.config)
+_PENDING_WARNINGS = 0
 
 
 def _has_wasxfail(report: Any) -> bool:
@@ -241,10 +299,6 @@ def _canonical_result(
     ).encode("ascii")
 
 
-def _set_internal_error(session: pytest.Session) -> None:
-    session.exitstatus = pytest.ExitCode.INTERNAL_ERROR
-
-
 def _publish_create_new(path: Path, payload: bytes) -> bool:
     created = False
     try:
@@ -267,28 +321,44 @@ def _publish_create_new(path: Path, payload: bytes) -> bool:
 
 @pytest.hookimpl(trylast=True)
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
-    global _ACTIVE_STATE
+    del exitstatus
     state = _state(session.config)
+    state.finished = True
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_cmdline_main(config: pytest.Config):
+    """Publish only after the complete pytest lifecycle unwinds cleanly."""
+    global _ACTIVE_STATE, _PENDING_WARNINGS
+    state = _activate_state(config)
+    undo_monitor, restore_showwarning = _monitor_configure_warnings(config, state)
     try:
-        output = session.config.getoption("ci_result_out")
+        result = yield
+    except BaseException:
+        # No destination has been created yet.  Preserve pytest's late failure.
+        raise
+    else:
+        output = config.getoption("ci_result_out")
         if state.is_worker or output is None:
-            return
-        if int(exitstatus) not in {int(pytest.ExitCode.OK), int(pytest.ExitCode.TESTS_FAILED)}:
-            return
-        if state.invalid or state.expected is None:
-            _set_internal_error(session)
-            return
+            return result
+        if int(result) not in {int(pytest.ExitCode.OK), int(pytest.ExitCode.TESTS_FAILED)}:
+            return result
+        if not state.finished or state.invalid or state.expected is None:
+            return pytest.ExitCode.INTERNAL_ERROR
         payload = _canonical_result(
-            exitstatus=int(exitstatus),
+            exitstatus=int(result),
             warnings=state.warnings,
             expected=state.expected,
             reports=state.reports,
         )
         if payload is None or not _publish_create_new(Path(output), payload):
-            _set_internal_error(session)
+            return pytest.ExitCode.INTERNAL_ERROR
+        return result
     finally:
-        if not state.is_worker:
-            _ACTIVE_STATE = None
+        restore_showwarning()
+        undo_monitor()
+        _ACTIVE_STATE = None
+        _PENDING_WARNINGS = 0
 
 
 __all__ = ["CollectionCapture", "RESULT_SCHEMA", "collect_nodeids"]

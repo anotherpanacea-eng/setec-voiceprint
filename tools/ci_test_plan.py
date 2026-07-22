@@ -11,6 +11,7 @@ import io
 import json
 import os
 from pathlib import Path, PurePosixPath
+import stat
 import subprocess
 import sys
 from typing import Any, Iterable, Sequence
@@ -114,15 +115,34 @@ def _validate_rel_test_path(value: object) -> str:
     return value
 
 
-def _assert_no_symlink_components(repo_root: Path, relative: str) -> Path:
+def _is_link_or_reparse(path: Path) -> bool:
+    """Recognize links and Windows reparse points without following them."""
+    if path.is_symlink():
+        return True
+    is_junction = getattr(path, "is_junction", None)
+    if is_junction is not None and is_junction():
+        return True
+    attributes = getattr(path.lstat(), "st_file_attributes", 0)
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+    return bool(reparse_flag and attributes & reparse_flag)
+
+
+def _assert_no_link_components(
+    repo_root: Path,
+    relative: str,
+    *,
+    require_file: bool = True,
+) -> Path:
     current = repo_root
     try:
         for component in PurePosixPath(relative).parts:
             current = current / component
-            if current.is_symlink():
-                raise PlanError("symlink path is forbidden")
-        if not current.is_file() or current.is_symlink():
+            if _is_link_or_reparse(current):
+                raise PlanError("linked or reparse path is forbidden")
+        if require_file and (not current.is_file() or _is_link_or_reparse(current)):
             raise PlanError("test path is not a regular file")
+        if not require_file and (not current.is_dir() or _is_link_or_reparse(current)):
+            raise PlanError("test directory is missing or linked")
     except (OSError, UnicodeError) as exc:
         raise PlanError("test path cannot be inspected") from exc
     return current
@@ -130,10 +150,14 @@ def _assert_no_symlink_components(repo_root: Path, relative: str) -> Path:
 
 def discover_tests(repo_root: Path = REPO_ROOT) -> list[str]:
     """Discover regular test files without following directory or file links."""
-    root = repo_root / FIXED_TEST_ROOT
     try:
-        if root.is_symlink() or not root.is_dir():
-            raise PlanError("fixed test root is missing or linked")
+        root = _assert_no_link_components(
+            repo_root,
+            FIXED_TEST_ROOT,
+            require_file=False,
+        )
+    except PlanError:
+        raise
     except OSError as exc:
         raise PlanError("fixed test root cannot be inspected") from exc
 
@@ -146,9 +170,9 @@ def discover_tests(repo_root: Path = REPO_ROOT) -> list[str]:
             raise PlanError("test tree cannot be inspected") from exc
         for entry in entries:
             try:
-                if entry.is_symlink():
-                    continue
                 entry_path = Path(entry.path)
+                if _is_link_or_reparse(entry_path):
+                    continue
                 if entry.is_dir(follow_symlinks=False):
                     walk(entry_path)
                 elif (
@@ -164,13 +188,15 @@ def discover_tests(repo_root: Path = REPO_ROOT) -> list[str]:
     return sorted(discovered, key=_byte_key)
 
 
-def _dotted_name(node: ast.AST, bindings: dict[str, str]) -> str | None:
+def _dotted_names(node: ast.AST, bindings: dict[str, set[str]]) -> set[str]:
     if isinstance(node, ast.Name):
-        return bindings.get(node.id, node.id)
+        return bindings.get(node.id, {node.id})
     if isinstance(node, ast.Attribute):
-        prefix = _dotted_name(node.value, bindings)
-        return f"{prefix}.{node.attr}" if prefix else None
-    return None
+        return {
+            f"{prefix}.{node.attr}"
+            for prefix in _dotted_names(node.value, bindings)
+        }
+    return set()
 
 
 def _is_process_target(name: str) -> bool:
@@ -202,14 +228,16 @@ def has_process_risk(path: Path) -> bool:
     except (OSError, UnicodeError, SyntaxError) as exc:
         raise PlanError("test source cannot be parsed") from exc
 
-    bindings: dict[str, str] = {}
+    bindings: dict[str, set[str]] = {}
     risky = False
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 root = alias.name.split(".", 1)[0]
                 binding = alias.asname or root
-                bindings[binding] = alias.name if alias.asname else root
+                bindings.setdefault(binding, set()).add(
+                    alias.name if alias.asname else root
+                )
                 if root in {"subprocess", "multiprocessing"}:
                     risky = True
         elif isinstance(node, ast.ImportFrom) and node.level == 0:
@@ -221,14 +249,13 @@ def has_process_risk(path: Path) -> bool:
                 if alias.name == "*":
                     continue
                 full = f"{module}.{alias.name}" if module else alias.name
-                bindings[alias.asname or alias.name] = full
+                bindings.setdefault(alias.asname or alias.name, set()).add(full)
                 if _is_process_target(full):
                     risky = True
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.Name, ast.Attribute)):
-            name = _dotted_name(node, bindings)
-            if name and _is_process_target(name):
+            if any(_is_process_target(name) for name in _dotted_names(node, bindings)):
                 risky = True
     return risky
 
@@ -298,9 +325,9 @@ def load_and_verify_plan(
     discovered = discover_tests(repo_root)
     discovered_set = set(discovered)
     for relative in [*serial, *integration, *overrides]:
+        _assert_no_link_components(repo_root, relative)
         if relative not in discovered_set:
             raise PlanError("plan references a missing test file")
-        _assert_no_symlink_components(repo_root, relative)
 
     explicit = set(serial) | set(integration)
     unit = [relative for relative in discovered if relative not in explicit]
