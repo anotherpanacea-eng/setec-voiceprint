@@ -373,10 +373,11 @@ B2 does not claim shard-runner/checkpoint parity.
 - Extend `windows_descriptor_io` only through backward-compatible keyword controls:
   `allow_multiple_links=False` on `require_direct`, `_nt_open`, and `open_file`, and
   `share_write=True` / `share_delete=True` on `create_file`. Existing callers retain
-  the current restrictive hardlink policy and sharing defaults. B2 alone opts
-  read-only inputs into `allow_multiple_links=True` with write/delete sharing denied,
-  and creates its payload temporary with both sharing flags false. Helper-focused
-  regressions pin old defaults and the B2 opt-in behavior.
+  the current restrictive hardlink policy and sharing defaults. B2's manifest/control
+  open retains `allow_multiple_links=False`; only B2 document-source opens opt into
+  `allow_multiple_links=True` with write/delete sharing denied. B2 creates its payload
+  temporary with both sharing flags false. Helper-focused regressions pin old defaults
+  and both B2 open policies.
 - Preflight records source identity and size from the open handle, reads exactly the
   bounded declared bytes plus EOF, and rechecks stable identity/size before close.
   POSIX pins the source parent and uses descriptor-relative lookup; Windows pins the
@@ -453,7 +454,8 @@ All fixtures are synthetic and code-safe.
    projection, NUL, invalid ID, unsafe/absolute/escaping path, symlink/reparse, nonregular
    source, hard resource limit, changing manifest/source, source-manifest alias,
    duplicate descriptor source identity, and every source/output alias refuse with
-   exit 3 and no report. One stable multiply-linked source remains accepted.
+   exit 3 and no report. A multiply-linked manifest refuses while one stable
+   multiply-linked document source remains accepted.
 8. Every resource ceiling has an exact-at-limit success and one-over refusal test,
    using injected small limits where necessary. Common long-line/token amplification
    remains bounded and linear.
