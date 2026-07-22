@@ -458,6 +458,10 @@ def verify_report(
 
 
 def _write_create_new(path: Path, payload: bytes) -> None:
+    # Native Windows accepts lone UTF-16 surrogates in some path APIs even
+    # though they cannot be represented by the planner's strict UTF-8 contract.
+    # Validate before any filesystem effect so behavior matches POSIX.
+    _byte_key(str(path))
     created = False
     try:
         with path.open("xb") as stream:
