@@ -51,8 +51,10 @@ conflicts with older text, this section is authoritative.
   register, disposition, classify fiction, or make authorship, provenance,
   quality, or AI/human claims. Native Windows CI covers the byte-exact
   descriptor, report-publication, and handle-relative I/O contract. Draft PR
-  #341 has local implementation-review GO; native-Windows CI is pending, and
-  merge remains held for Code-PC Claude. It is not merged or released.
+  #341 has implementation-review GO. At implementation head `9904a1e`, all six
+  CI jobs were green (full Ubuntu: 7046 passed, 163 skipped, 22 warnings;
+  native Windows sweep: 138 passed, 20 skipped). Merge remains held for
+  Code-PC Claude. It is not merged or released.
 
 - **Owner-corrections sidecar applier (spec 70).**
   `apply_owner_corrections.py` canonicalizes the repeated owner-reviewed staging

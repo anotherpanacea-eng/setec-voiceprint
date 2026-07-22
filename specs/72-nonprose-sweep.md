@@ -4,8 +4,10 @@
 > default-preserving validation capability with fixed operational thresholds and
 > an exact authored-residual/transcript word partition.
 
-- **Status:** Implementation review GO; draft PR #341; native-Windows CI pending;
-  merge held for Code-PC Claude (`codex/nonprose-sweep`)
+- **Status:** Implementation review GO; draft PR #341; at implementation head
+  `9904a1e`, all six CI jobs green (full Ubuntu: 7046 passed, 163 skipped,
+  22 warnings; native Windows sweep: 138 passed, 20 skipped); merge held for
+  Code-PC Claude (`codex/nonprose-sweep`)
 - **Tier:** core / stdlib / CPU
 - **GPU required:** no
 - **Source contract:** fleet refill packet B2 and update-14 Windows portability guidance
