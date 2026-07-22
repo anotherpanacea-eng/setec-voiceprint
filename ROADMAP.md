@@ -50,8 +50,9 @@ conflicts with older text, this section is authoritative.
   source/manifest sealed; stdout is aggregate-only. It does not rewrite,
   register, disposition, classify fiction, or make authorship, provenance,
   quality, or AI/human claims. Native Windows CI covers the byte-exact
-  descriptor, report-publication, and handle-relative I/O contract. The build is
-  under review and is not merged or released.
+  descriptor, report-publication, and handle-relative I/O contract. Draft PR
+  #341 has local implementation-review GO; native-Windows CI is pending, and
+  merge remains held for Code-PC Claude. It is not merged or released.
 
 - **Owner-corrections sidecar applier (spec 70).**
   `apply_owner_corrections.py` canonicalizes the repeated owner-reviewed staging

@@ -4,7 +4,8 @@
 > default-preserving validation capability with fixed operational thresholds and
 > an exact authored-residual/transcript word partition.
 
-- **Status:** In build (`codex/nonprose-sweep`)
+- **Status:** Implementation review GO; draft PR #341; native-Windows CI pending;
+  merge held for Code-PC Claude (`codex/nonprose-sweep`)
 - **Tier:** core / stdlib / CPU
 - **GPU required:** no
 - **Source contract:** fleet refill packet B2 and update-14 Windows portability guidance
