@@ -40,6 +40,9 @@ nonprose_sweep.py --manifest MANIFEST --report-out REPORT
 
 - Both paths are required. There is no directory discovery, inline-text mode,
   threshold override, overwrite flag, network input, or default output path.
+- `MANIFEST` itself must remain a direct, single-linked regular file beneath a
+  pinned direct parent; symlink/reparse, directory/device, replacement during read,
+  or multiply-linked control identity refuses.
 - `MANIFEST` is a B2 descriptor JSONL that accepts a standard SETEC manifest's
   superset of fields but intentionally narrows path semantics. B2 performs its own
   bounded parse of the exact bytes and consumes only `id` and `path`. It requires
@@ -56,13 +59,17 @@ nonprose_sweep.py --manifest MANIFEST --report-out REPORT
 - Physical JSONL record separators are exactly LF, CRLF, or lone CR. A missing
   final newline is accepted. U+0085, U+2028, and U+2029 inside JSON strings are
   data, never record separators.
-- Document paths must be relative, contain no NUL, empty/`.`/`..` component, drive,
-  or alternate-data-stream colon, and resolve only by component-relative lookup
-  beneath the pinned manifest parent. Absolute paths, parent traversal, and the
+- Document paths use `/` as their only separator. They must be relative and contain
+  no literal backslash, NUL, empty/`.`/`..` component, drive, or alternate-data-stream
+  colon, and resolve only by component-relative lookup beneath the pinned manifest
+  parent. Absolute paths, parent traversal, and the
   broader `manifest_validator.resolve_path` parent-parent/CWD fallbacks are not B2
   inputs. A source must remain a direct regular file, not a symlink,
   junction/reparse point, directory, device, or source/output alias. All input
-  handles close before report publication.
+  handles close before report publication. No source may alias the manifest, and no
+  two descriptor rows may resolve to the same stable file identity, including two
+  names/hardlinks for one inode/file ID. A single selected read-only source may have
+  multiple links.
 - Documents decode as strict UTF-8 without BOM or NUL. Their physical line separators are
   exactly LF, CRLF, or lone CR; a missing terminal newline is equivalent. Unicode
   line/paragraph separators remain content within one physical line.
@@ -356,6 +363,10 @@ B2 does not claim shard-runner/checkpoint parity.
 - Raw descriptor flags, if used, add `getattr(os, "O_BINARY", 0)` and obtain every
   optional flag such as `O_CLOEXEC` or `O_NOFOLLOW` with `getattr`. Absence of a
   POSIX-only flag must not make Windows unusable.
+- On POSIX, nonzero `O_NOFOLLOW` and `O_DIRECTORY` plus descriptor-relative
+  open/stat/link/unlink support are required for this capability; absence refuses
+  before any source read or output write. The guarded-zero fallback applies only to
+  the separate Windows handle backend, never as a silent POSIX safety downgrade.
 - `chmod`, `fchmod`, UID, and POSIX-mode assertions are unnecessary. If introduced,
   guard APIs with `hasattr` and assertions with `os.name == "posix"`; do not emulate
   a Windows DACL.
@@ -404,7 +415,9 @@ Ship in the same draft PR:
 The capability manifest uses `status: heuristic`, `surface: validation`,
 `handoff: none`, `consumers: []`, stdlib/core compute, and describes the four
 operational screens without implying calibration or a disposition. No new task
-surface or claim-license fragment is added.
+surface or claim-license fragment is added. The script carries the exact unannotated
+module-level assignment `TASK_SURFACE = "validation"` required by the capability
+drift AST gate.
 
 ## 10. Executable acceptance criteria
 
@@ -430,15 +443,17 @@ All fixtures are synthetic and code-safe.
    fixtures prove both per-document and aggregate conservation and exact fraction
    numerators/denominators. Disfluency/short-line-only evidence leaves words in the
    authored-residual bucket.
-6. Manifest row order, JSON key order, and LF/CRLF/lone-CR/missing-final-LF variants
-   yield identical document metrics, totals, screen decisions, and source-set seal.
-   Their exact raw manifest/report seals may differ. Document newline variants with
-   an otherwise byte-adjusted manifest follow the same rule. U+0085/U+2028/U+2029
-   remain data. Document rows sort by UTF-8 ID bytes.
+6. Manifest row order, JSON key order, and manifest LF/CRLF/lone-CR/missing-final-LF
+   variants over unchanged source bytes yield identical document metrics, totals,
+   screen decisions, and source-set seal; their exact raw manifest/report seals
+   differ. Document newline variants yield identical metrics, totals, and decisions,
+   but their exact source-set/report/stdout seals differ. U+0085/U+2028/U+2029 remain
+   data. Document rows sort by UTF-8 ID bytes.
 7. BOM, invalid UTF-8, duplicate keys/IDs, nonfinite JSON values, malformed manifest
    projection, NUL, invalid ID, unsafe/absolute/escaping path, symlink/reparse, nonregular
-   source, hard resource limit, changing source, and every source/output alias refuse
-   with exit 3 and no report.
+   source, hard resource limit, changing manifest/source, source-manifest alias,
+   duplicate descriptor source identity, and every source/output alias refuse with
+   exit 3 and no report. One stable multiply-linked source remains accepted.
 8. Every resource ceiling has an exact-at-limit success and one-over refusal test,
    using injected small limits where necessary. Common long-line/token amplification
    remains bounded and linear.
@@ -454,13 +469,16 @@ All fixtures are synthetic and code-safe.
 11. Recursive leak tests prove report/stdout/error contain none of the synthetic
     prose, paths, raw lines/tokens, speaker labels, or VTT payload. Stdout contains
     no IDs. A recursive posture walk over the private report and envelope `results`
-    rejects disposition, verdict, label, selection, authorship, provenance, quality,
-    and AI/human keys. The standard envelope's mandatory `ai_status` key remains
-    present and exactly null; it is not duplicated or populated inside `results`.
+    rejects the bare inference keys `disposition`, `verdict`, `label`, `selection`,
+    `authorship`, `provenance`, `quality`, `is_ai`, and `is_human`. Measured-property
+    names beginning `speaker_label_` are explicitly allowed. The standard envelope's
+    mandatory `ai_status` key remains present and exactly null; it is not duplicated
+    or populated inside `results`.
 12. The standard output envelope, `ClaimLicense`, surface, version, fixed thresholds,
     report seal, capability fragment/golden, docs, calibration matrix, and changelog
-    are pinned. Existing `check_corpus`, validation-harness, manifest-validator, and
-    registration defaults remain byte/behavior unchanged.
+    are pinned, including the literal module-level `TASK_SURFACE = "validation"`.
+    Existing `check_corpus`, validation-harness, manifest-validator, and registration
+    defaults remain byte/behavior unchanged.
 13. Native Windows CI runs the real CLI on Unicode/space/`#` paths and verifies strict
     UTF-8, LF/CRLF/lone-CR equivalence, binary one-LF stdout/report, create-new race
     preservation, closed handles before rename/delete, and absence of unguarded
