@@ -172,7 +172,9 @@ jobs:
           python-version: "3.12"
 
       - name: Install focused test dependency
-        run: python -m pip install pytest tzdata
+        # pyyaml: test_author_corpus_export's dispatcher tests load the
+        # capabilities manifest, whose loader imports yaml (capabilities.py).
+        run: python -m pip install pytest tzdata pyyaml
 
       - name: Run private-writer mode-guard and export-seam tests on native Windows
         shell: pwsh
