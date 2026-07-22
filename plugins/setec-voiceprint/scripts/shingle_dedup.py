@@ -247,8 +247,20 @@ def _parse_manifest_descriptors(path: Path) -> tuple[list[dict[str, Any]], str]:
 
 
 def _materialize_descriptors(descriptors: Iterable[dict[str, Any]], root: Path, *,
-                             compute_shingles: bool) -> tuple[list[dict[str, Any]], int, int]:
-    """Read/hash and optionally score one bounded (at most 250-item) shard."""
+                             compute_shingles: bool,
+                             prior_bytes: int = 0, prior_tokens: int = 0) -> tuple[list[dict[str, Any]], int, int]:
+    """Read/hash and optionally score one bounded (at most 250-item) shard.
+
+    ``prior_bytes``/``prior_tokens`` carry the running totals already accepted
+    from earlier shards so the global ``MAX_TOTAL_DOCUMENT_BYTES`` /
+    ``MAX_TOTAL_TOKENS`` ceilings are enforced *incrementally* here — the refusal
+    fires the moment the running total crosses a ceiling, before the offending
+    document's shingle set is built and before the next document is read.  This
+    bounds peak memory near the ceiling instead of at 250 x per-document caps.
+    The aggregate refusal decision is identical to a post-materialization check:
+    the cumulative totals are monotonic, so crossing incrementally iff crossing
+    at the end.
+    """
     items = list(descriptors)
     if len(items) > 250:
         raise Refusal()
@@ -271,11 +283,15 @@ def _materialize_descriptors(descriptors: Iterable[dict[str, Any]], root: Path, 
         if len(source) > MAX_DOCUMENT_BYTES:
             raise Refusal()
         total_bytes += len(source)
+        if prior_bytes + total_bytes > MAX_TOTAL_DOCUMENT_BYTES:
+            raise Refusal()
         decoded = _decode_text(source)
         tokens = _tokens(decoded) if compute_shingles else []
         if len(tokens) > MAX_TOKENS:
             raise Refusal()
         total_tokens += len(tokens)
+        if prior_tokens + total_tokens > MAX_TOTAL_TOKENS:
+            raise Refusal()
         shingles = _shingle_digests(tokens) if compute_shingles else set()
         if len(shingles) > MAX_SHINGLES_PER_DOCUMENT:
             raise Refusal()
@@ -408,6 +424,7 @@ def _build_index(manifest: Path, index_out: Path, checkpoint_dir: Path, *, resum
                 descriptor_shard = ordered_descriptors[offset:offset + 250]
                 shard, shard_bytes, _unused_tokens = _materialize_descriptors(
                     descriptor_shard, manifest.parent, compute_shingles=False,
+                    prior_bytes=inventory_bytes,
                 )
                 inventory_bytes += shard_bytes
                 if inventory_bytes > MAX_TOTAL_DOCUMENT_BYTES:
@@ -446,6 +463,7 @@ def _build_index(manifest: Path, index_out: Path, checkpoint_dir: Path, *, resum
                 else:
                     build_shard, shard_bytes, shard_tokens = _materialize_descriptors(
                         ordered_descriptors[offset:offset + 250], manifest.parent, compute_shingles=True,
+                        prior_bytes=build_bytes, prior_tokens=build_tokens,
                     )
                     build_bytes += shard_bytes; build_tokens += shard_tokens
                     if build_bytes > MAX_TOTAL_DOCUMENT_BYTES or build_tokens > MAX_TOTAL_TOKENS:

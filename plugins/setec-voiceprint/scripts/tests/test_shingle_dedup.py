@@ -835,13 +835,15 @@ def test_inventory_crash_preserves_first_250_and_resume_continues(
     original = sd._materialize_descriptors
     inventory_calls = 0
 
-    def crash_on_second_inventory(descriptors, root, *, compute_shingles):
+    def crash_on_second_inventory(descriptors, root, *, compute_shingles,
+                                  prior_bytes=0, prior_tokens=0):
         nonlocal inventory_calls
         if not compute_shingles:
             inventory_calls += 1
             if inventory_calls == 2:
                 raise sd.Refusal()
-        return original(descriptors, root, compute_shingles=compute_shingles)
+        return original(descriptors, root, compute_shingles=compute_shingles,
+                        prior_bytes=prior_bytes, prior_tokens=prior_tokens)
 
     monkeypatch.setattr(sd, "_materialize_descriptors", crash_on_second_inventory)
     with pytest.raises(sd.Refusal):
@@ -853,11 +855,13 @@ def test_inventory_crash_preserves_first_250_and_resume_continues(
 
     resumed_inventory_sizes: list[int] = []
 
-    def record_resume(descriptors, root, *, compute_shingles):
+    def record_resume(descriptors, root, *, compute_shingles,
+                      prior_bytes=0, prior_tokens=0):
         items = list(descriptors)
         if not compute_shingles:
             resumed_inventory_sizes.append(len(items))
-        return original(items, root, compute_shingles=compute_shingles)
+        return original(items, root, compute_shingles=compute_shingles,
+                        prior_bytes=prior_bytes, prior_tokens=prior_tokens)
 
     monkeypatch.setattr(sd, "_materialize_descriptors", record_resume)
     receipt = sd._build_index(manifest, index, state, resume=True)
@@ -1214,3 +1218,46 @@ def test_declared_ceiling_accepts_boundary_and_refuses_one_over_without_output(
     refused = tmp_path / "over-limit.json"
     with pytest.raises(sd.Refusal): sd._query(index, _pin(receipt), query, "query", refused)
     assert not refused.exists()
+
+
+def test_materialize_enforces_total_token_ceiling_incrementally(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The MAX_TOTAL_TOKENS ceiling refuses mid-shard, before peak amplifies.
+
+    Without an incremental guard a 250-doc shard would build every per-document
+    shingle set (up to 250 x MAX_SHINGLES_PER_DOCUMENT digests) before the global
+    ceiling was ever consulted.  This asserts the refusal fires the moment the
+    running total crosses the ceiling: only the documents strictly below it get
+    shingled, so peak memory stays near the ceiling, not 250x it.
+    """
+    monkeypatch.setattr(sd, "MAX_TOTAL_TOKENS", 25)
+    materialized = 0
+    real_shingle = sd._shingle_digests
+
+    def counting_shingle(tokens: list[str]) -> set[bytes]:
+        nonlocal materialized
+        materialized += 1
+        return real_shingle(tokens)
+
+    monkeypatch.setattr(sd, "_shingle_digests", counting_shingle)
+    descriptors = [
+        {"doc_id": f"d{index:04d}", "draft_id": "a", "stage": f"s{index}",
+         "stage_order": index, "source_control": ("text", _tokens("w", 10))}
+        for index in range(10)
+    ]
+
+    # 10 tokens/doc against a 25-token ceiling: docs 1-2 fit (running 10, 20),
+    # doc 3 (running 30) crosses and must refuse before it is ever shingled.
+    with pytest.raises(sd.Refusal):
+        sd._materialize_descriptors(descriptors, tmp_path, compute_shingles=True)
+    assert materialized == 2
+    assert materialized < len(descriptors)
+
+    # The running total carried from earlier shards is honored: a prior total
+    # already at the ceiling refuses the next document before shingling it.
+    materialized = 0
+    with pytest.raises(sd.Refusal):
+        sd._materialize_descriptors(descriptors[:1], tmp_path, compute_shingles=True,
+                                    prior_tokens=20)
+    assert materialized == 0

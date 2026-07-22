@@ -332,6 +332,48 @@ def test_ancestor_move_refuses_without_publishing_or_deleting_outside_root(
     assert _temp_entries(moved) == []
 
 
+def test_post_link_same_inode_mutation_is_detected_and_rolled_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    destination = tmp_path / "result.bin"
+    payload = b"OWNED_PAYLOAD"
+    real_link = secure_io.os.link
+
+    def mutate_after_link(
+        source: str,
+        target: str,
+        *,
+        src_dir_fd: int | None = None,
+        dst_dir_fd: int | None = None,
+        follow_symlinks: bool = True,
+    ) -> None:
+        real_link(
+            source,
+            target,
+            src_dir_fd=src_dir_fd,
+            dst_dir_fd=dst_dir_fd,
+            follow_symlinks=follow_symlinks,
+        )
+        # Same-inode, size-preserving in-place content mutation via the
+        # just-created hard link.  (dev, ino) and size are unchanged, so only a
+        # post-link byte re-read under the retained control handle can catch it;
+        # an inode-identity-only comparison would publish the mutated bytes.
+        descriptor = os.open(target, os.O_WRONLY, dir_fd=dst_dir_fd)
+        try:
+            os.pwrite(descriptor, b"X" * len(payload), 0)
+        finally:
+            os.close(descriptor)
+
+    _install_link_fault(monkeypatch, mutate_after_link)
+    with pytest.raises(secure_io.SecureIOError):
+        secure_io.publish_create_new(destination, payload)
+
+    # The publish must refuse and roll back the final it linked; no mutated
+    # partial survives, and its temporary is cleaned.
+    assert not destination.exists()
+    assert _temp_entries(tmp_path) == []
+
+
 def test_post_link_ancestor_refusal_removes_owned_final(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

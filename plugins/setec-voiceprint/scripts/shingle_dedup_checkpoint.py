@@ -229,6 +229,49 @@ def _fingerprint(info: os.stat_result) -> tuple[int, int, int, int, int, int]:
             int(info.st_ctime_ns), int(info.st_nlink))
 
 
+def _posix_verify_content(descriptor: int, payload: bytes) -> None:
+    """Require the durable bytes behind ``descriptor`` to equal ``payload``.
+
+    Re-reads through the retained identity-control handle after the hard link.
+    The link necessarily advances ``st_ctime``, so the full stat fingerprint is
+    no longer a valid post-link equality; ``_identity`` (dev, ino) proves the
+    node is unchanged and this exact-byte re-read proves the shard content was
+    not mutated in place on that same inode between the pre-link fingerprint
+    check and the publish.
+    """
+    offset = 0
+    length = len(payload)
+    while offset < length:
+        chunk = os.pread(descriptor, min(1024 * 1024, length - offset), offset)
+        if not chunk or chunk != payload[offset:offset + len(chunk)]:
+            raise _refuse()
+        offset += len(chunk)
+    if os.pread(descriptor, 1, length):
+        raise _refuse()
+
+
+def _unlink_if_owned(parent_fd: int, name: str, owner_descriptor: int) -> None:
+    """Remove ``name`` only while a live owner handle proves we created it.
+
+    The removal is directory-fd-relative through the retained, inode-pinned
+    parent handle, gated on the leaf currently resolving to the exact inode
+    behind ``owner_descriptor`` (which keeps that inode open, so its identity
+    cannot be recycled onto a racer's node).  Without such a live handle nothing
+    is removed.  The residual leaf name->inode resolution is not atomic on POSIX
+    (no stdlib ``funlinkat``); a raced same-name replacement is a *different*
+    inode that fails the identity gate here and is left intact.
+    """
+    if owner_descriptor < 0:
+        return
+    try:
+        owned = _identity(os.fstat(owner_descriptor))
+        named = os.stat(name, dir_fd=parent_fd, follow_symlinks=False)
+        if _identity(named) == owned:
+            os.unlink(name, dir_fd=parent_fd)
+    except (OSError, MemoryError):
+        pass
+
+
 def _posix_pin_directory(path: Path) -> tuple[int, list[int]]:
     if not path.is_absolute():
         raise _refuse()
@@ -711,6 +754,7 @@ class CheckpointDirectory:
             if (_identity(controlled) != identity or _identity(temp_named) != identity
                     or _identity(final) != identity):
                 raise _refuse()
+            _posix_verify_content(control_descriptor, raw)
             os.unlink(temp_name, dir_fd=parent)
             identity = None
             final_after = os.stat(name, dir_fd=parent, follow_symlinks=False)
@@ -727,24 +771,13 @@ class CheckpointDirectory:
         finally:
             try:
                 owner_descriptor = control_descriptor if control_verified else descriptor
-                owned_identity: tuple[int, int] | None = None
-                if owner_descriptor >= 0:
-                    try: owned_identity = _identity(os.fstat(owner_descriptor))
-                    except (OSError, MemoryError): pass
-                if owned_identity is not None:
-                    try:
-                        named = os.stat(temp_name, dir_fd=parent, follow_symlinks=False)
-                        if _identity(named) == owned_identity:
-                            os.unlink(temp_name, dir_fd=parent)
-                    except (OSError, MemoryError):
-                        pass
-                if published_identity is not None and owned_identity is not None:
-                    try:
-                        named_final = os.stat(name, dir_fd=parent, follow_symlinks=False)
-                        if _identity(named_final) == owned_identity:
-                            os.unlink(name, dir_fd=parent)
-                    except (OSError, MemoryError):
-                        pass
+                # Both removals are gated on the live owner handle, never on the
+                # predictable temporary/shard *name*: a raced replacement is a
+                # different inode and is left intact.  The rolled-back final is
+                # only attempted once we actually linked it.
+                _unlink_if_owned(parent, temp_name, owner_descriptor)
+                if published_identity is not None:
+                    _unlink_if_owned(parent, name, owner_descriptor)
             finally:
                 for item in (control_descriptor, descriptor):
                     if item >= 0:
