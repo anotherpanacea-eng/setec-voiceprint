@@ -363,10 +363,14 @@ B2 does not claim shard-runner/checkpoint parity.
 - Raw descriptor flags, if used, add `getattr(os, "O_BINARY", 0)` and obtain every
   optional flag such as `O_CLOEXEC` or `O_NOFOLLOW` with `getattr`. Absence of a
   POSIX-only flag must not make Windows unusable.
-- On POSIX, nonzero `O_NOFOLLOW` and `O_DIRECTORY` plus descriptor-relative
-  open/stat/link/unlink support are required for this capability; absence refuses
-  before any source read or output write. The guarded-zero fallback applies only to
-  the separate Windows handle backend, never as a silent POSIX safety downgrade.
+- On POSIX, nonzero `O_NOFOLLOW` and `O_DIRECTORY`, descriptor-relative open/stat,
+  and a native atomic no-replace sibling-rename symbol are required for this
+  capability; symbol absence refuses before any source read or output write. The rename is
+  `renameatx_np(RENAME_EXCL)` on macOS and `renameat2(RENAME_NOREPLACE)` on Linux.
+  A filesystem that rejects the real native operation returns a controlled refusal
+  at publication and preserves the possibly mutation-ambiguous names.
+  The guarded-zero fallback applies only to the separate Windows handle backend,
+  never as a silent POSIX safety downgrade.
 - `chmod`, `fchmod`, UID, and POSIX-mode assertions are unnecessary. If introduced,
   guard APIs with `hasattr` and assertions with `os.name == "posix"`; do not emulate
   a Windows DACL.
@@ -387,13 +391,27 @@ B2 does not claim shard-runner/checkpoint parity.
   conflict, or short/extra read refuses.
 - Report publication writes an owned same-directory binary temporary through a
   retained parent handle, flushes, `fsync`s/flushes, seeks, and exact-byte verifies
-  it while its identity remains pinned. POSIX then performs descriptor-relative
-  create-new link and unlink operations and fsyncs the directory. Windows performs
-  the existing handle-relative create-new rename with replacement disabled while
-  the verified handle remains live. There is no overwrite/copy/path-based fallback.
-  A race winner stays byte-identical and only a name whose live identity still
-  matches the owned temporary may be cleaned. Final-name identity and exact report
-  SHA-256 are verified before success is emitted.
+  it while its identity remains pinned. POSIX then atomically consumes the temporary
+  with a native descriptor-relative no-replace rename and fsyncs the directory.
+  Windows performs the existing handle-relative create-new rename with replacement
+  disabled while the verified handle remains live. There is no
+  overwrite/copy/path-based fallback. A POSIX failure before the atomic rename
+  deliberately preserves the unambiguous UUID temporary: POSIX has no portable
+  primitive that can condition an unlink atomically on inode identity, so a
+  stat-then-unlink cleanup is forbidden. A race winner stays byte-identical and is
+  never deleted. Final-name identity and exact report SHA-256 are verified before
+  success is emitted.
+- The UUID temporary namespace is process-owned. Same-principal replacement of that
+  unpredictable name immediately before the native rename is outside the guarantee
+  available from path-based POSIX APIs: the replacement can become the final name,
+  but retained-writer versus fresh-final identity verification detects it and returns
+  a controlled refusal without deleting, truncating, or renaming either name. Once a
+  native rename has been attempted, even an error is treated as mutation-ambiguous;
+  neither name is cleaned. Unsupported-symbol/filesystem errors never downgrade to
+  `os.rename`, `os.replace`, link/unlink, overwrite, or copy publication.
+- Pre-rename POSIX failure residues may contain the private canonical report and can
+  accumulate. They remain UUID-named in the already-private report directory for
+  operator inspection/cleanup; this capability never deletes them by pathname.
 - Every opened file/descriptor/Windows handle is closed on success, controlled
   failure, and `OSError` or `MemoryError` injection. Cleanup failure cannot authorize
   deletion of an unverified path and must not mask the primary controlled refusal.
@@ -465,9 +483,11 @@ All fixtures are synthetic and code-safe.
    no CR on native Windows and POSIX.
    A one-byte source mutation changes `source_set_sha256` and the report seal even
    when the manifest is byte-identical; individual content hashes are never emitted.
-10. Report publication tests inject write, flush, fsync, create-new, verification,
-    cleanup, and `MemoryError` failures. An intervening destination remains
-    byte-identical; no unverified winner is deleted; all handles are attempted closed.
+10. Report publication tests inject write, flush, fsync, atomic create-new rename,
+    verification, close, and `MemoryError` failures. POSIX pre-rename failures leave
+    the exact owned UUID temporary rather than risk a check/unlink race; Windows
+    exercises handle-bound cleanup. An intervening destination remains byte-identical;
+    no unverified winner is deleted; all handles are attempted closed.
 11. Recursive leak tests prove report/stdout/error contain none of the synthetic
     prose, paths, raw lines/tokens, speaker labels, or VTT payload. Stdout contains
     no IDs. A recursive posture walk over the private report and envelope `results`

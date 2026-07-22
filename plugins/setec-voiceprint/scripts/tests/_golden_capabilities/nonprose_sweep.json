@@ -30,7 +30,7 @@
   },
   "compute": {
     "tier": "core",
-    "cost_note": "stdlib only; no models, network, API, or GPU",
+    "cost_note": "stdlib only; no models, network, API, GPU, or optional runtime",
     "length_floor_words": null
   },
   "registers": [

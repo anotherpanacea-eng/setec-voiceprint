@@ -477,12 +477,67 @@ def _posix_require_capabilities() -> None:
         return
     if not getattr(os, "O_NOFOLLOW", 0) or not getattr(os, "O_DIRECTORY", 0):
         raise ControlledFailure("missing POSIX descriptor capability")
-    required = (os.open, os.stat, os.link, os.unlink)
+    required = (os.open, os.stat)
     if any(function not in os.supports_dir_fd for function in required):
         raise ControlledFailure("missing POSIX dir-fd capability")
-    follow_required = (os.stat, os.link)
+    follow_required = (os.stat,)
     if any(function not in os.supports_follow_symlinks for function in follow_required):
         raise ControlledFailure("missing POSIX no-follow capability")
+    _posix_exclusive_rename_function()
+
+
+def _posix_exclusive_rename_function() -> tuple[Any, Any, int]:
+    """Return a native sibling rename that atomically refuses replacement."""
+
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        if sys.platform == "darwin":
+            function = getattr(libc, "renameatx_np", None)
+            flag = 0x00000004  # RENAME_EXCL
+        elif sys.platform.startswith("linux"):
+            function = getattr(libc, "renameat2", None)
+            flag = 1  # RENAME_NOREPLACE
+        else:
+            function = None
+            flag = 0
+        if function is None:
+            raise ControlledFailure("missing POSIX exclusive-rename capability")
+        function.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        function.restype = ctypes.c_int
+        return ctypes, function, flag
+    except ControlledFailure:
+        raise
+    except (AttributeError, MemoryError, OSError, TypeError, ValueError) as exc:
+        raise ControlledFailure("missing POSIX exclusive-rename capability") from exc
+
+
+def _posix_rename_exclusive_at(
+    parent_fd: int, source: str, destination: str
+) -> None:
+    """Atomically consume one sibling name without replacing a winner."""
+
+    ctypes, function, flag = _posix_exclusive_rename_function()
+    try:
+        result = function(
+            parent_fd,
+            os.fsencode(source),
+            parent_fd,
+            os.fsencode(destination),
+            flag,
+        )
+    except (MemoryError, OSError, TypeError, ValueError) as exc:
+        raise ControlledFailure("output publication failed") from exc
+    if result != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error))
 
 
 def _posix_directory_flags() -> int:
@@ -775,11 +830,6 @@ def _posix_stat_owned(parent_fd: int, name: str, identity: tuple[int, int]) -> b
     return stat.S_ISREG(current.st_mode) and _posix_identity(current) == identity
 
 
-def _posix_unlink_owned(parent_fd: int, name: str, identity: tuple[int, int]) -> None:
-    if _posix_stat_owned(parent_fd, name, identity):
-        os.unlink(name, dir_fd=parent_fd)
-
-
 def _valid_output_name(destination: Path) -> str:
     name = destination.name
     if not name or name in {".", ".."} or "/" in name or "\x00" in name:
@@ -912,13 +962,7 @@ def _posix_publish_create_new(destination: Path, payload: bytes) -> None:
             raise ControlledFailure("temporary identity changed")
         _fault("payload_verified")
         _fault("publish_before")
-        os.link(
-            temporary,
-            destination.name,
-            src_dir_fd=parent_fd,
-            dst_dir_fd=parent_fd,
-            follow_symlinks=False,
-        )
+        _posix_rename_exclusive_at(parent_fd, temporary, destination.name)
         _fault("publish_after_effect")
         verifier = os.open(destination.name, _posix_file_flags(), dir_fd=parent_fd)
         final_info = os.fstat(verifier)
@@ -928,25 +972,12 @@ def _posix_publish_create_new(destination: Path, payload: bytes) -> None:
         _fault("final_verified")
         if not _posix_stat_owned(parent_fd, destination.name, owned_identity):
             raise ControlledFailure("published name changed")
-        _fault("temp_cleanup_before")
-        _posix_unlink_owned(parent_fd, temporary, owned_identity)
-        _fault("temp_cleanup_after_effect")
         os.fsync(parent_fd)
         if not _posix_stat_owned(parent_fd, destination.name, owned_identity):
             raise ControlledFailure("published name changed")
     except ControlledFailure:
-        if owned_identity is not None:
-            try:
-                _posix_unlink_owned(parent_fd, temporary, owned_identity)
-            except BaseException:
-                pass
         raise
     except (OSError, MemoryError) as exc:
-        if owned_identity is not None:
-            try:
-                _posix_unlink_owned(parent_fd, temporary, owned_identity)
-            except BaseException:
-                pass
         raise ControlledFailure("output publication failed") from exc
     finally:
         active_exception = sys.exc_info()[0] is not None
@@ -957,20 +988,10 @@ def _posix_publish_create_new(destination: Path, payload: bytes) -> None:
                     os.close(candidate)
                 except (OSError, MemoryError):
                     close_failed = True
-        if close_failed and owned_identity is not None:
-            try:
-                _posix_unlink_owned(parent_fd, temporary, owned_identity)
-            except BaseException:
-                pass
         try:
             os.close(parent_fd)
         except (OSError, MemoryError):
             close_failed = True
-            if owned_identity is not None:
-                try:
-                    _posix_unlink_owned(parent_fd, temporary, owned_identity)
-                except BaseException:
-                    pass
         if close_failed and not active_exception:
             raise ControlledFailure("output close failed")
 
@@ -1190,7 +1211,7 @@ def _claim_license(totals: dict[str, Any]) -> ClaimLicense:
 
 
 def _arguments(argv: Sequence[str] | None) -> argparse.Namespace:
-    parser = _ClosedParser(add_help=False)
+    parser = _ClosedParser(add_help=False, allow_abbrev=False)
     parser.add_argument("--manifest", required=True)
     parser.add_argument("--report-out", required=True)
     return parser.parse_args(argv)

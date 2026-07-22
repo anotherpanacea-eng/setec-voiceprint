@@ -322,16 +322,39 @@ def test_cli_report_envelope_seals_and_privacy(tmp_path: Path) -> None:
     assert stderr == ""
     assert stdout.endswith("\n") and "\r" not in stdout
     envelope = json.loads(stdout)
+    assert set(envelope) == {
+        "ai_status",
+        "available",
+        "baseline",
+        "claim_license",
+        "claim_license_rendered",
+        "results",
+        "schema_version",
+        "target",
+        "task_surface",
+        "tool",
+        "version",
+        "warnings",
+    }
     assert envelope["schema_version"] == "1.0"
     assert envelope["task_surface"] == "validation"
     assert envelope["tool"] == "nonprose_sweep"
     assert envelope["version"] == "1.0"
+    assert envelope["available"] is True
     assert envelope["baseline"] is None
+    assert set(envelope["target"]) == {"path", "words"}
     assert envelope["target"]["path"] is None
     assert envelope["ai_status"] is None
+    assert set(envelope["results"]) == {
+        "calibration_status",
+        "manifest_sha256",
+        "method",
+        "report_sha256",
+        "source_set_sha256",
+        "thresholds",
+        "totals",
+    }
     assert envelope["results"]["thresholds"] == N._THRESHOLDS
-    assert envelope["claim_license"]["task_surface"] == "validation"
-    assert "authorship" in envelope["claim_license"]["does_not_license"]
     assert envelope["results"]["manifest_sha256"] == N._sha256_tag(manifest_raw)
     assert "opaque-1" not in stdout
     assert str(document) not in stdout
@@ -339,6 +362,55 @@ def test_cli_report_envelope_seals_and_privacy(tmp_path: Path) -> None:
     report_raw = report.read_bytes()
     assert report_raw.endswith(b"\n") and b"\r" not in report_raw
     parsed = json.loads(report_raw)
+    assert set(parsed) == {
+        "calibration_status",
+        "documents",
+        "manifest_sha256",
+        "method",
+        "schema",
+        "source_set_sha256",
+        "thresholds",
+        "totals",
+    }
+    assert set(parsed["totals"]) == {
+        "authored_residual_words",
+        "disfluency_count",
+        "documents",
+        "documents_with_any_screen",
+        "nonempty_lines",
+        "screen_counts",
+        "short_lines",
+        "speaker_label_lines",
+        "total_analyzable_words",
+        "transcript_words",
+        "vtt_structural_hits",
+    }
+    assert set(parsed["totals"]["screen_counts"]) == {
+        "disfluencies",
+        "short_lines",
+        "speaker_labels",
+        "vtt_any",
+    }
+    assert set(parsed["documents"][0]) == {
+        "authored_residual_fraction",
+        "authored_residual_words",
+        "disfluency_count",
+        "id",
+        "nonempty_lines",
+        "screen_hits",
+        "short_lines",
+        "speaker_label_lines",
+        "total_analyzable_words",
+        "transcript_fraction",
+        "transcript_words",
+        "vtt_structural_hits",
+    }
+    assert set(parsed["documents"][0]["screen_hits"]) == {
+        "disfluencies",
+        "short_lines",
+        "speaker_labels",
+        "vtt_any",
+    }
     assert parsed["schema"] == N.REPORT_SCHEMA
     assert parsed["calibration_status"] == N.CALIBRATION_STATUS
     assert parsed["documents"][0]["id"] == "opaque-1"
@@ -349,6 +421,30 @@ def test_cli_report_envelope_seals_and_privacy(tmp_path: Path) -> None:
     preimage = N._canonical_bytes({"content_sha256": component, "id": "opaque-1"})
     assert parsed["source_set_sha256"] == N._sha256_tag(preimage)
     assert component not in report_raw.decode()
+    expected_license = N.ClaimLicense(
+        task_surface="validation",
+        licenses=(
+            "A bounded structural corpus-hygiene screen reporting VTT structure, "
+            "speaker-label density, disfluency density, short-line density, and a "
+            "deterministic authored-residual/transcript word partition."
+        ),
+        does_not_license=(
+            "Corpus disposition, authorship, provenance, quality, genre, fiction or "
+            "nonfiction classification, AI/human inference, or training eligibility."
+        ),
+        comparison_set={
+            "documents": parsed["totals"]["documents"],
+            "documents_with_any_screen": parsed["totals"]["documents_with_any_screen"],
+            "method": N.METHOD_VERSION,
+        },
+        additional_caveats=[
+            "Thresholds are operationally uncalibrated and queue documents only for review.",
+            "authored_residual_words is a structural residual, not an authorship inference.",
+        ],
+        references=["Spec 72"],
+    )
+    assert envelope["claim_license"] == expected_license.to_dict()
+    assert envelope["claim_license_rendered"] == expected_license.render_block().rstrip()
     assert N._has_forbidden_key(parsed) is False
     assert N._has_forbidden_key(envelope["results"]) is False
 
@@ -612,7 +708,7 @@ def test_publish_after_effect_failure_never_deletes_by_racy_final_name(
         "final_verified",
     ],
 )
-def test_publication_memoryerror_stage_cleans_owned_artifacts(
+def test_publication_memoryerror_stage_preserves_safe_residue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
 ) -> None:
     destination = tmp_path / "report.json"
@@ -628,7 +724,17 @@ def test_publication_memoryerror_stage_cleans_owned_artifacts(
         assert destination.read_bytes() == b"payload\n"
     else:
         assert not destination.exists()
-    assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
+    temporaries = list(tmp_path.glob(".setec-nonprose-*.tmp"))
+    if os.name == "posix" and stage in {
+        "temp_created",
+        "write",
+        "flush",
+        "payload_verified",
+        "publish_before",
+    }:
+        assert len(temporaries) == 1
+    else:
+        assert not temporaries
 
 
 def test_temporary_name_memoryerror_occurs_before_parent_pin(
@@ -659,40 +765,28 @@ def test_posix_create_new_race_preserves_intervening_winner(
 ) -> None:
     destination = tmp_path / "report.json"
     winner = b"winner"
-    real_link = N.os.link
+    real_rename = N._posix_rename_exclusive_at
 
-    def install_winner_then_link(
-        source: str,
-        final: str,
-        *,
-        src_dir_fd: int,
-        dst_dir_fd: int,
-        **kwargs: object,
-    ) -> None:
+    def install_winner_then_rename(parent: int, source: str, final: str) -> None:
         descriptor = os.open(
             final,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL,
             0o600,
-            dir_fd=dst_dir_fd,
+            dir_fd=parent,
         )
         try:
             os.write(descriptor, winner)
         finally:
             os.close(descriptor)
-        real_link(
-            source,
-            final,
-            src_dir_fd=src_dir_fd,
-            dst_dir_fd=dst_dir_fd,
-            **kwargs,
-        )
+        real_rename(parent, source, final)
 
-    monkeypatch.setattr(N.os, "link", install_winner_then_link)
-    monkeypatch.setattr(N, "_posix_require_capabilities", lambda: None)
+    monkeypatch.setattr(N, "_posix_rename_exclusive_at", install_winner_then_rename)
     with pytest.raises(N.ControlledFailure):
         N._posix_publish_create_new(destination, b"owned\n")
     assert destination.read_bytes() == winner
-    assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
+    temporaries = list(tmp_path.glob(".setec-nonprose-*.tmp"))
+    assert len(temporaries) == 1
+    assert temporaries[0].read_bytes() == b"owned\n"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")
@@ -715,31 +809,94 @@ def test_posix_final_name_replacement_after_verification_refuses_and_preserves_w
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")
-def test_posix_error_cleanup_never_unlinks_final_name(
+def test_posix_prepublication_failure_never_unlinks_a_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     destination = tmp_path / "report.json"
-    real_unlink_owned = N._posix_unlink_owned
-    cleaned: list[str] = []
+    unlinked: list[str] = []
 
-    def record_cleanup(parent: int, name: str, identity: tuple[int, int]) -> None:
-        cleaned.append(name)
-        real_unlink_owned(parent, name, identity)
+    def record_unlink(name: str, **_kwargs: object) -> None:
+        unlinked.append(name)
+        raise AssertionError("POSIX failure handling must not unlink by path")
 
     def fail(stage: str) -> None:
-        if stage == "publish_after_effect":
+        if stage == "payload_verified":
             raise MemoryError("injected")
 
-    monkeypatch.setattr(N, "_posix_unlink_owned", record_cleanup)
+    monkeypatch.setattr(N.os, "unlink", record_unlink)
     monkeypatch.setattr(N, "_FAULT_HOOK", fail)
     with pytest.raises(N.ControlledFailure):
         N._posix_publish_create_new(destination, b"payload\n")
-    assert destination.name not in cleaned
-    assert destination.read_bytes() == b"payload\n"
+    assert unlinked == []
+    assert not destination.exists()
+    temporaries = list(tmp_path.glob(".setec-nonprose-*.tmp"))
+    assert len(temporaries) == 1
+    assert temporaries[0].read_bytes() == b"payload\n"
 
 
 @pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")
-@pytest.mark.parametrize("operation", ["write", "fsync", "verify", "cleanup"])
+def test_posix_temporary_source_swap_refuses_after_exclusive_rename(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "report.json"
+    replacement = b"same-principal temporary replacement"
+
+    def swap_temporary(stage: str) -> None:
+        if stage != "publish_before":
+            return
+        temporary, = tmp_path.glob(".setec-nonprose-*.tmp")
+        temporary.unlink()
+        temporary.write_bytes(replacement)
+
+    monkeypatch.setattr(N, "_FAULT_HOOK", swap_temporary)
+    with pytest.raises(N.ControlledFailure):
+        N._posix_publish_create_new(destination, b"owned\n")
+    assert destination.read_bytes() == replacement
+    assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")
+def test_posix_success_never_uses_overwriting_or_path_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "report.json"
+
+    def forbidden(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("path mutator must not be used")
+
+    monkeypatch.setattr(N.os, "rename", forbidden)
+    monkeypatch.setattr(N.os, "replace", forbidden)
+    monkeypatch.setattr(N.os, "unlink", forbidden)
+    N._posix_publish_create_new(destination, b"payload\n")
+    assert destination.read_bytes() == b"payload\n"
+    assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")
+def test_posix_post_rename_directory_fsync_failure_preserves_final(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    destination = tmp_path / "report.json"
+    real_fsync = N.os.fsync
+    calls = 0
+
+    def fail_directory_fsync(descriptor: int) -> None:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise OSError("injected directory fsync failure")
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(N.os, "fsync", fail_directory_fsync)
+    with pytest.raises(N.ControlledFailure):
+        N._posix_publish_create_new(destination, b"payload\n")
+    assert calls == 2
+    assert destination.read_bytes() == b"payload\n"
+    assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor publication")
+@pytest.mark.parametrize("operation", ["write", "fsync", "verify", "rename"])
 def test_posix_publication_syscall_failures_are_controlled(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
@@ -759,25 +916,17 @@ def test_posix_publication_syscall_failures_are_controlled(
             lambda *_args: (_ for _ in ()).throw(N.ControlledFailure("injected")),
         )
     else:
-        real_cleanup = N._posix_unlink_owned
-        calls = 0
-
-        def fail_first(parent: int, name: str, identity: tuple[int, int]) -> None:
-            nonlocal calls
-            calls += 1
-            if calls == 1:
-                raise OSError("injected")
-            real_cleanup(parent, name, identity)
-
-        monkeypatch.setattr(N, "_posix_unlink_owned", fail_first)
+        monkeypatch.setattr(
+            N,
+            "_posix_rename_exclusive_at",
+            lambda *_args: (_ for _ in ()).throw(OSError("injected")),
+        )
 
     with pytest.raises(N.ControlledFailure):
         N._posix_publish_create_new(destination, b"payload\n")
-    assert not list(tmp_path.glob(".setec-nonprose-*.tmp"))
-    if operation == "cleanup":
-        assert destination.read_bytes() == b"payload\n"
-    else:
-        assert not destination.exists()
+    assert not destination.exists()
+    temporaries = list(tmp_path.glob(".setec-nonprose-*.tmp"))
+    assert len(temporaries) == 1
 
 
 def _ceiling_fixture(tmp_path: Path, kind: str) -> tuple[Path, str, int]:
@@ -867,6 +1016,15 @@ def test_posix_missing_no_follow_capability_refuses_before_open(
         N._posix_require_capabilities()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX capability contract")
+def test_posix_missing_exclusive_rename_symbol_refuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(N.sys, "platform", "unsupported-posix")
+    with pytest.raises(N.ControlledFailure, match="exclusive-rename"):
+        N._posix_require_capabilities()
+
+
 @pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor close contract")
 def test_source_close_failure_is_controlled_before_publication(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -907,6 +1065,12 @@ def test_sanitized_usage_and_internal_errors(monkeypatch: pytest.MonkeyPatch) ->
     stdout = io.StringIO()
     stderr = io.StringIO()
     assert N.main(["--unknown", "/private/sentinel"], stdout=stdout, stderr=stderr) == 2
+    assert stdout.getvalue() == ""
+    assert stderr.getvalue() == "nonprose_sweep: invalid arguments\n"
+
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    assert N.main(["--man", "m", "--rep", "r"], stdout=stdout, stderr=stderr) == 2
     assert stdout.getvalue() == ""
     assert stderr.getvalue() == "nonprose_sweep: invalid arguments\n"
 
