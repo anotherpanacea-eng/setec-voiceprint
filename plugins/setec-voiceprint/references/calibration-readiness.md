@@ -141,6 +141,7 @@ _Generated from `capabilities.d/` (schema 0.3.0) by `tools/gen_calibration_readi
 | `reference_ecology_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `repetition_audit` | Heuristic (uncalibrated) | No | register-matched personal baseline corpus (required) | stdlib | CPU / stdlib (+ optional spaCy model) | — |
 | `rewriting_invariance_audit` | Heuristic (uncalibrated) | Yes | MODEL (operator-supplied LLM model id used to rewrite) (required); LLM API access (key + per-call cost) (required) | stdlib | No local GPU; LLM API access (network + key + per-call cost) | 50 |
+| `shingle_dedup` | Heuristic (uncalibrated) | Yes | explicit staged-descriptor JSONL or exact-pinned local index, as required by the selected mode (required); for a compatible immutable checkpoint directory (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 8 |
 | `skeleton_overlap_audit` | Heuristic (uncalibrated) | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | stdlib | CPU / stdlib (+ optional spaCy model) | 24 |
 | `sound_texture_audit` | Heuristic (uncalibrated) | Yes | register-matched personal baseline corpus (optional) | stdlib | CPU / stdlib (+ optional spaCy model) | 300 |
 | `specdetect_audit` | Literature-anchored | Yes | nothing required to run; add a baseline / labeled corpus to calibrate | req: transformers, torch; opt: numpy | CPU works (slow); GPU recommended; ~0.6–2 GB model weights on disk | 50 |

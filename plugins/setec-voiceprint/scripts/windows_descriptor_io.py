@@ -62,6 +62,7 @@ FILE_RENAME_FLAG_REPLACE_IF_EXISTS = 0x1
 FILE_RENAME_FLAG_POSIX_SEMANTICS = 0x2
 FILE_DISPOSITION_INFO_CLASS = 4
 FILE_NAMES_INFORMATION_CLASS = 12
+FILE_DIRECTORY_INFORMATION_CLASS = 1
 STATUS_NO_MORE_FILES = ctypes.c_long(0x80000006).value
 
 
@@ -308,11 +309,7 @@ def _nt_open(
     handle = int(result.value)
     try:
         if kind is not None:
-            require_direct(
-                handle,
-                kind,
-                allow_multiple_links=allow_multiple_links,
-            )
+            require_direct(handle, kind, allow_multiple_links=allow_multiple_links)
         elif info(handle).attributes & FILE_ATTRIBUTE_REPARSE_POINT:
             raise OSError("private-tree node is indirected")
         return handle
@@ -456,6 +453,51 @@ def pin_directory(path: Path, *, writable_final: bool = True) -> tuple[int, int,
         raise
 
 
+def pin_directory_chain(path: Path, *, writable_final: bool = True) -> tuple[int, ...]:
+    """Retain the drive root and every direct directory component handle."""
+    absolute = Path(path).absolute()
+    if ".." in absolute.parts or not absolute.drive or not absolute.name:
+        raise OSError("private root path is not an absolute drive path")
+    drive_root = absolute.anchor.rstrip("\\/") + "\\"
+    root = kernel32.CreateFileW(
+        "\\\\?\\" + drive_root, 0x80000000,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        None, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT, None,
+    )
+    if root == INVALID_HANDLE_VALUE:
+        raise _win_error()
+    handles = [int(root)]
+    try:
+        require_direct(handles[0], "directory")
+        components = absolute.parts[1:]
+        for index, component in enumerate(components):
+            handles.append(open_directory(
+                handles[-1], component, writable=writable_final and index == len(components) - 1,
+            ))
+        return tuple(handles)
+    except BaseException:
+        for handle in reversed(handles):
+            try:
+                close(handle)
+            except OSError:
+                pass
+        raise
+
+
+def revalidate_directory_chain(path: Path, retained: tuple[int, ...]) -> None:
+    """Require every currently named ancestor to match its retained handle."""
+    probe = pin_directory_chain(path, writable_final=False)
+    try:
+        if len(probe) != len(retained):
+            raise OSError("directory chain length changed")
+        for expected, current in zip(retained, probe):
+            if require_direct(expected, "directory").identity != require_direct(current, "directory").identity:
+                raise OSError("directory chain identity changed")
+    finally:
+        for handle in reversed(probe):
+            close(handle)
+
+
 def list_names(directory: int) -> tuple[str, ...]:
     names: list[str] = []
     restart = True
@@ -476,6 +518,34 @@ def list_names(directory: int) -> tuple[str, ...]:
         if name not in {".", ".."}:
             names.append(name)
     return tuple(sorted(names, key=lambda value: value.encode("utf-16-le")))
+
+
+def list_entries(directory: int) -> tuple[tuple[str, int, int, int, int, int], ...]:
+    """Enumerate names and non-opening metadata from a retained directory handle."""
+    entries: list[tuple[str, int, int, int, int, int]] = []
+    restart = True
+    while True:
+        buffer = ctypes.create_string_buffer(4096)
+        iosb = IO_STATUS_BLOCK()
+        status = int(ntdll.NtQueryDirectoryFile(
+            directory, None, None, None, ctypes.byref(iosb), buffer,
+            len(buffer), FILE_DIRECTORY_INFORMATION_CLASS, True, None, restart,
+        ))
+        restart = False
+        if status == STATUS_NO_MORE_FILES:
+            break
+        if status < 0:
+            raise _nt_error(status)
+        creation = ctypes.c_longlong.from_buffer(buffer, 8).value
+        write_time = ctypes.c_longlong.from_buffer(buffer, 24).value
+        change_time = ctypes.c_longlong.from_buffer(buffer, 32).value
+        size = ctypes.c_longlong.from_buffer(buffer, 40).value
+        attributes = ctypes.c_ulong.from_buffer(buffer, 56).value
+        length = ctypes.c_ulong.from_buffer(buffer, 60).value
+        name = bytes(buffer[64 : 64 + length]).decode("utf-16-le")
+        if name not in {".", ".."}:
+            entries.append((name, int(size), int(attributes), int(creation), int(write_time), int(change_time)))
+    return tuple(sorted(entries, key=lambda item: item[0].encode("utf-16-le")))
 
 
 def read(handle: int, size: int) -> bytes:

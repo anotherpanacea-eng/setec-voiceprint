@@ -68,6 +68,20 @@ conflicts with older text, this section is authoritative.
   platform-portable path. This is not merged or released until its independent
   review gates clear.
 
+### In build (Long Pull B3)
+
+- **Deterministic shingle-dedup library (spec 71).** `shingle_dedup.py` is a
+  bounded stdlib/CPU staging utility on the existing
+  `voice_coherence_acquisition` surface: it seals an exact 8-token inverted
+  index, queries one document, or produces a deterministic same-draft
+  cross-stage candidate report. Directional containment tiers at 0.35/0.60 are
+  explicitly operational and uncalibrated; this is not automatic deduplication,
+  a selection signal, or a duplicate/authorship/provenance/quality/AI-human
+  verdict. It preserves existing defaults, stores no raw prose/tokens/shingles in
+  the index, emits aggregate-only console records, and has a focused Windows
+  portability gate. This item is not merged or released until independent review
+  gates clear.
+
 ### Shipped since 2026-06-19 status pass
 
 - **`house_style_decomposition` (spec-wave-4 Tier-4a) — nested-baseline idiolect-vs-house attribution-of-variation.** New `house_style_decomposition` surface. Runs the target's stylometric feature vector against a curated ORDERED LADDER of nested baselines (`same_author_same_org` / `different_context` / `different_authors_same_org` / `same_genre_outside_org` / `broad_reference`) and reports per-level Burrows-Delta, signed idiolect-vs-house contrast, and descriptive attribution labels (`idiolect_borne` / `house_borne` / `shared_or_indistinct`). M1 pure-stdlib (`compare_to_baseline(include_spacy=False)`), no numpy/spaCy/torch. Leakage guard: target author_id + path-identity, with inline-text FORBIDDEN (bypasses path-identity check). `--lens embedding` (M2 seam) refuses fail-loud even when torch is importable. Calibration PROVISIONAL; `status: heuristic`. 17 CI-runnable tests incl. unconditional no-verdict recursive key-walk. Reference: Burrows (2002), *Computers and the Humanities* 37(3).
