@@ -140,6 +140,28 @@ jobs:
             -q `
             --basetemp "${{ runner.temp }}\\setec-win-owner-corrections"
 
+  windows-nonprose-sweep:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install focused test dependency
+        run: python -m pip install pytest
+
+      - name: Run non-prose sweep Windows contract tests
+        shell: pwsh
+        run: |
+          python -m pytest `
+            plugins/setec-voiceprint/scripts/tests/test_nonprose_sweep.py `
+            plugins/setec-voiceprint/scripts/tests/test_windows_descriptor_backend.py `
+            -q -rs `
+            --basetemp "${{ runner.temp }}\\setec-win-nonprose"
+
   windows-private-writer-guards:
     # The private-corpus writers harden file modes with POSIX-only os.fchmod,
     # which does not exist on native Windows, so an unguarded call raises

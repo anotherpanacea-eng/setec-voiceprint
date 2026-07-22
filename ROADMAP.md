@@ -41,6 +41,21 @@ conflicts with older text, this section is authoritative.
 
 ### In reviewed build since the prior reconciliation
 
+- **Deterministic non-prose sweep (spec 72, B2).**
+  `nonprose_sweep.py` turns the repeated transcript/non-prose staging check into
+  a bounded stdlib validation capability over an explicit descriptor. It freezes
+  operational VTT-any, speaker-label-density, disfluency-density, and
+  short-line-density thresholds and reports an exact
+  authored-residual/transcript word partition. The private report is
+  source/manifest sealed; stdout is aggregate-only. It does not rewrite,
+  register, disposition, classify fiction, or make authorship, provenance,
+  quality, or AI/human claims. Native Windows CI covers the byte-exact
+  descriptor, report-publication, and handle-relative I/O contract. Draft PR
+  #341 has implementation-review GO. At implementation head `9904a1e`, all six
+  CI jobs were green (full Ubuntu: 7046 passed, 163 skipped, 22 warnings;
+  native Windows sweep: 138 passed, 20 skipped). Merge remains held for
+  Code-PC Claude. It is not merged or released.
+
 - **Owner-corrections sidecar applier (spec 70).**
   `apply_owner_corrections.py` canonicalizes the repeated owner-reviewed staging
   pattern as a deterministic, fail-closed JSONL pre-registration pass. It applies

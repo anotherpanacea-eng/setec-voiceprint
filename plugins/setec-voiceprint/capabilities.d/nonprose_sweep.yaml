@@ -1,0 +1,44 @@
+entries:
+- id: nonprose_sweep
+  script_path: plugins/setec-voiceprint/scripts/nonprose_sweep.py
+  surface: validation
+  status: heuristic
+  handoff: none
+  consumers: []
+  family: corpus-hygiene
+  purpose: >-
+    Bounded, deterministic structural screening over a B2 descriptor JSONL and
+    its referenced documents. Reports VTT structure, speaker-label density,
+    disfluency density, and short-line density at fixed operational thresholds,
+    while refusing disposition, authorship, provenance, quality, genre, and
+    AI/human conclusions.
+  use_when:
+  - You need an aggregate corpus-hygiene screen for transcript-like or fragmented documents
+  - You need byte-bound, reproducible structural counts before downstream corpus work
+  do_not_use_when:
+  - You need a content-quality, authorship, provenance, genre, or AI/human verdict
+  - You need automatic corpus disposition, source rewriting, or registration
+  inputs:
+    target: B2 descriptor manifest JSONL and its referenced UTF-8 documents
+    required:
+    - B2 descriptor and referenced UTF-8 documents
+  outputs:
+    schema_version: '1.0'
+    artifacts:
+    - private setec-nonprose-sweep-report/1 JSON report
+    - aggregate-only schema-version 1.0 SETEC stdout envelope
+  compute:
+    tier: core
+    cost_note: stdlib only; no models, network, API, GPU, or optional runtime
+    length_floor_words: null
+  registers:
+  - all_nonfiction
+  dependencies:
+    python: []
+    python_optional: []
+  examples:
+  - description: Screen a bounded descriptor into a create-new private report
+    cmd: python3 plugins/setec-voiceprint/scripts/nonprose_sweep.py --manifest MANIFEST --report-out REPORT
+  references:
+  - specs/72-nonprose-sweep.md
+  - plugins/setec-voiceprint/references/nonprose-sweep.md

@@ -322,6 +322,13 @@ def derive(entry: dict[str, Any]) -> dict[str, Any]:
     packages = "; ".join(pkg_parts)
 
     readiness_label = STATUS_READINESS.get(status, (status or "—", ""))[0]
+    hardware = TIER_HARDWARE.get(tier, tier)
+    if (
+        tier == "core"
+        and not opt_pkgs
+        and "optional runtime" in str(compute.get("cost_note", "")).casefold()
+    ):
+        hardware = "CPU / stdlib"
 
     return {
         "id": eid,
@@ -332,7 +339,7 @@ def derive(entry: dict[str, Any]) -> dict[str, Any]:
         "runs_without_corpus": not needs_corpus,
         "supplies": supplies,
         "packages": packages,
-        "hardware": TIER_HARDWARE.get(tier, tier),
+        "hardware": hardware,
         "length_floor": length_floor,
     }
 
