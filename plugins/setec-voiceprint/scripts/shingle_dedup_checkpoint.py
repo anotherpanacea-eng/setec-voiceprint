@@ -811,7 +811,11 @@ class CheckpointDirectory:
                 self._revalidate()
                 verify = winio.open_file(parent, name)
                 try:
-                    if winio.require_direct(verify, "file").identity != original:
+                    # Durable (volume, file-id) identity only: NTFS file tunneling
+                    # can reissue a reused shard name's creation_time on rename, so
+                    # the time fields are not identity. Exact bytes/size were
+                    # verified before the rename.
+                    if winio.require_direct(verify, "file").identity[:2] != original[:2]:
                         raise _refuse()
                 finally:
                     winio.close(verify)

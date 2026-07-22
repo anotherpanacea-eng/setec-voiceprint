@@ -486,7 +486,12 @@ def _windows_publish(destination: Path, payload: bytes) -> None:  # pragma: no c
         _windows_revalidate_directory(destination.parent, parent)
         published = winio.open_file(parent, destination.name)
         try:
-            if winio.require_direct(control, "file").identity != original_identity or winio.require_direct(published, "file").identity != original_identity:
+            # Compare the durable (volume, file-id) identity only: NTFS file
+            # tunneling can reissue a reused filename's creation_time onto the
+            # renamed file, so the full-tuple times are not identity here. Exact
+            # bytes and size were already verified against the payload above.
+            if (winio.require_direct(control, "file").identity[:2] != original_identity[:2]
+                    or winio.require_direct(published, "file").identity[:2] != original_identity[:2]):
                 raise _fail()
         finally:
             winio.close(published)
