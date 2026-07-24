@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import os
 import re
+import stat
 import sys
 import time
 from email import message_from_bytes
@@ -1954,6 +1956,50 @@ def test_dry_run_stderr_never_echoes_private_subject(
     stderr = capsys.readouterr().err
     assert sentinel.decode() not in stderr
     assert "dry-run eligible item 1" in stderr
+
+# --- shared atomic-publish migration (follow-up to PR #346) ---------------
+
+
+def test_control_plane_writes_route_through_shared_atomic_publish():
+    # The local umask-dependent _atomic_write_text is gone; every
+    # control-plane write now flows through the shared owner-mode helper.
+    import atomic_publish as ap
+
+    assert not hasattr(G, "_atomic_write_text")
+    assert G.atomic_publish is ap
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes only")
+def test_smoke_descriptor_written_with_private_mode(tmp_path, mbox):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    assert _smoke(mbox, smoke_dir) == 0
+    descriptor = smoke_dir / G.SMOKE_DESCRIPTOR_NAME
+    assert descriptor.exists()
+    assert stat.S_IMODE(os.stat(descriptor).st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes only")
+def test_thread_index_written_with_private_mode(tmp_path, mbox):
+    out = _out(tmp_path)
+    assert _run(mbox, out) == 0
+    index = out / G.THREAD_INDEX_NAME
+    assert index.exists()
+    assert stat.S_IMODE(os.stat(index).st_mode) == 0o600
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX file modes only")
+def test_approved_receipt_written_with_private_mode(tmp_path, mbox, monkeypatch):
+    smoke_dir = tmp_path / "ai-prose-baselines-private" / "smoke"
+    full = tmp_path / "ai-prose-baselines-private" / "full"
+    assert _smoke(mbox, smoke_dir) == 0
+    monkeypatch.setattr(G.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr("builtins.input", lambda: "y")
+    assert G.main(["approve-smoke", "--mbox-path", str(mbox),
+                   "--smoke-dir", str(smoke_dir), "--output-dir", str(full)]) == 0
+    receipt = full / G.RECEIPT_NAME
+    assert receipt.exists()
+    assert stat.S_IMODE(os.stat(receipt).st_mode) == 0o600
+
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
