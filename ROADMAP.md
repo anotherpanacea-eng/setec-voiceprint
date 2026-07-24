@@ -272,6 +272,17 @@ Unimodality itself needs no build: `homogeneity_audit.py --manifest` already rep
 
 **Status (spec 36 M1 built, Codex fixes 2026-07-24).** The passage-level dedup mode shipped as `near_dup_dedup.py --passages`, but **not** as the single-pass reuse of the LSH path sketched in the first bullet above — spec review's arithmetic retracted that: a 41-token span shared between two ~120-word passages scores Jaccard ≈ 0.19, so the motivating case is invisible to *any* passage-unit similarity threshold, and greedy coalescing of short paragraphs makes it worse. The shipped design is two-stage: **Stage A** near-duplicate raw-paragraph units (uncoalesced; token-empty sub-floor units use raw-text equality; a complete frequency-ordered Jaccard prefix index with length/positional upper bounds prevents LSH false negatives without a common-boilerplate exact-comparison explosion; exact rational arithmetic preserves equality boundaries and exact Jaccard alone decides) and **Stage B** an exact stdlib inverted-8-shingle span scan whose continuation follows repeated occurrence subsets, preserving the arithmetic guarantee even when one shingle has extra occurrences. Passage runs emit flushed progress and transactionally checkpoint Stage-A passage/pair shards plus Stage-B per-document token/key/region/span shards under exact bindings; corpus-derived shards live in a tool-owned private 0700 directory/0600 SQLite database without changing the user checkpoint parent's mode. Exports refuse skipped rows, portable filename collisions, and nested output layouts in either direction, stage sidecars, and publish the manifest last. The mechanical guard shipped as `pool_guard.py` — a per-surface file-level marker scan (a shared-loader kwarg cannot reach the clean-room copies) plus `plugins/setec-voiceprint/scripts/tests/test_pool_guard_coverage.py`, which pins the complete nine-module classification map with a mandatory rationale on every entry, firing and exempt alike. The **register sweep CLI is deferred**, not dropped: `register_classifier._SCORERS` covers 14 of 18 `KNOWN_REGISTERS`, alias ties make only ~8 slugs reachable as `primary`, and `manifest_validator.ALLOWED_REGISTER` overlaps `KNOWN_REGISTERS` on only 6 slugs (with `personal` — a plurality value in real manifests — absent entirely), so a sweep over it would report taxonomy misalignment as corpus mixture. It needs its own spec after those two fixes. The memorization-probe bullet is unchanged and still a training-side project.
 
+**Status (Spec 37 H1 implemented; independent implementation review pending,
+2026-07-24).** The classifier-only prerequisite now uses the versioned
+`register_families/v2` vocabulary: all canonical manifest registers and ten
+deprecated classifier inputs resolve through one family-first mapping, all eight
+emittable families have distinct scorers, exact top ties refuse, and
+`voice_distance` propagates the taxonomy and live match strength into its
+claim-license block. This does not build the register-composition sweep; Spec 73
+remains a separate post-review, post-release-gate project. APODICTIC and
+setec-voicewright fixture/pin migrations remain required before consumer-ready
+promotion.
+
 ### ESL handling
 
 Non-native English prose sits in the same low-variance region of stylometric space as RLHF-aligned LLM output. Liang et al. (*Patterns* 2023) found average 61% false-positive rate on TOEFL essays across seven AI-prose detectors, and the field's most durable false-positive failure mode is ESL writing. Implications:

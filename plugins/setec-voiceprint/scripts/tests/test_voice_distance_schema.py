@@ -9,6 +9,7 @@ see no change.
 
 from __future__ import annotations
 
+import inspect
 import sys
 from pathlib import Path
 
@@ -19,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import voice_distance as vd  # type: ignore
+from register_classifier import REGISTER_TAXONOMY  # type: ignore
 
 
 REQUIRED_TOP_LEVEL_KEYS = frozenset({
@@ -149,21 +151,34 @@ class TestClaimLicense:
             "## What this result licenses"
         )
 
+    def test_register_match_read_site_uses_live_strength_key(self):
+        source = inspect.getsource(vd._claim_license)
+        assert '.get("strength")' in source
+        assert '.get("verdict")' not in source
+
 
 class TestOptionalBlocks:
     def test_register_match_under_results(self):
         result = _fake_result()
         result["register_match"] = {
             "target_classification": {
-                "primary": "literary_fiction",
+                "primary": "narrative_fiction",
                 "confidence": 0.8,
+                "taxonomy": REGISTER_TAXONOMY,
             },
-            "match": {"verdict": "match"},
+            "match": {
+                "strength": "strong",
+                "taxonomy": REGISTER_TAXONOMY,
+            },
         }
         envelope = vd.build_audit_payload(
             result, target_path=Path("draft.md"),
         )
         assert "register_match" in envelope["results"]
+        assert (
+            envelope["claim_license"]["comparison_set"]["register_match"]
+            == "strong"
+        )
 
     def test_length_matched_bootstrap_under_results(self):
         result = _fake_result()

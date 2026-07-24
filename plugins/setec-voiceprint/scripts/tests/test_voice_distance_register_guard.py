@@ -39,6 +39,7 @@ except ImportError:  # pragma: no cover
     pytest = None
 
 import voice_distance as vd  # type: ignore
+from register_classifier import REGISTER_TAXONOMY  # type: ignore
 
 
 # ---------- _baseline_registers -----------------------------------
@@ -110,6 +111,9 @@ class TestBuildRegisterMatch:
         ]
         match = vd._build_register_match(entries, "literary_fiction")
         assert match["strength"] == "unavailable"
+        assert match["taxonomy"] == REGISTER_TAXONOMY
+        assert match["target_family"] == "narrative_fiction"
+        assert match["baseline_family_distribution"] == {}
         assert "register tags" in match["rationale"]
         assert match["target"] == "literary_fiction"
         assert match["baseline_distribution"] == {}
@@ -123,18 +127,49 @@ class TestBuildRegisterMatch:
         ]
         match = vd._build_register_match(entries, "blog_essay")
         assert match["strength"] == "strong"
+        assert match["taxonomy"] == REGISTER_TAXONOMY
 
     def test_mismatch_via_metadata(self):
         """When metadata IS present and the target genuinely
         doesn't match, mismatch is the correct call (not the
         spurious one the bug produced)."""
         entries = [
-            {"id": str(i), "metadata": {"register": "legal_memo"}}
+            {"id": str(i), "metadata": {"register": "legal_brief"}}
             for i in range(5)
         ]
         match = vd._build_register_match(entries, "blog_essay")
         assert match["strength"] == "mismatch"
-        assert "legal_memo" in match["rationale"]
+        assert "formal_legal_policy" in match["rationale"]
+
+    def test_family_collapse_disclosure_survives_report_render(self):
+        entries = [
+            {"id": "a", "metadata": {"register": "legal_brief"}},
+            {"id": "b", "metadata": {"register": "grant_proposal"}},
+        ]
+        match = vd._build_register_match(entries, "formal_legal_policy")
+        assert match["strength"] == "strong"
+        result = {
+            "target_summary": {"n_words": 200},
+            "baseline_summary": {"n_files": 2, "total_words": 400, "mean_words": 200},
+            "warnings": [],
+            "families": {},
+            "overall": {
+                "band": "Within range",
+                "weighted_delta": 0.1,
+                "interpretation": "Synthetic.",
+            },
+            "register_match": {
+                "target_classification": {
+                    "primary": "formal_legal_policy",
+                    "confidence": 0.8,
+                    "secondary": [],
+                    "taxonomy": REGISTER_TAXONOMY,
+                },
+                "match": match,
+            },
+        }
+        rendered = vd.render_report(result, Path("fixture.md"), 5)
+        assert "does not distinguish document types" in rendered
 
     def test_partial_register_coverage(self):
         """Some entries with register, some without (mixed manifest
@@ -160,6 +195,28 @@ class TestBuildRegisterMatch:
         ]
         match = vd._build_register_match(entries, "blog_essay")
         assert match["strength"] == "unavailable"
+
+    def test_guard_projects_both_taxonomy_markers_when_unavailable(self):
+        guard = vd._build_register_guard(
+            [{"id": "a", "metadata": {}}],
+            {
+                "primary": "narrative_fiction",
+                "confidence": 0.8,
+                "secondary": ["first_person_essay"],
+                "taxonomy": REGISTER_TAXONOMY,
+                "scores": {},
+                "evidence": {},
+                "warning": None,
+            },
+        )
+        assert guard["target_classification"] == {
+            "primary": "narrative_fiction",
+            "confidence": 0.8,
+            "secondary": ["first_person_essay"],
+            "taxonomy": REGISTER_TAXONOMY,
+        }
+        assert guard["match"]["strength"] == "unavailable"
+        assert guard["match"]["taxonomy"] == REGISTER_TAXONOMY
 
 
 if __name__ == "__main__":

@@ -605,7 +605,11 @@ def _build_register_match(
     ``strength="unavailable"`` rather than calling ``register_match``
     (which would otherwise see all-unknown baseline registers and
     emit a false "mismatch" warning)."""
-    from register_classifier import register_match  # type: ignore
+    from register_classifier import (  # type: ignore
+        REGISTER_TAXONOMY,
+        register_match,
+        resolve_family,
+    )
     baseline_registers = _baseline_registers(baseline_entries)
     if all(r is None or not r.strip() for r in baseline_registers):
         return {
@@ -618,8 +622,32 @@ def _build_register_match(
             ),
             "target": target_primary,
             "baseline_distribution": {},
+            "taxonomy": REGISTER_TAXONOMY,
+            "target_family": resolve_family(target_primary),
+            "baseline_family_distribution": {},
         }
     return register_match(target_primary, baseline_registers)
+
+
+def _build_register_guard(
+    baseline_entries: list[dict[str, Any]],
+    target_classification: dict[str, Any],
+) -> dict[str, Any]:
+    """Project the classifier's public v2 marker and build its match block."""
+    from register_classifier import REGISTER_TAXONOMY  # type: ignore
+
+    return {
+        "target_classification": {
+            "primary": target_classification.get("primary"),
+            "confidence": target_classification.get("confidence"),
+            "secondary": target_classification.get("secondary"),
+            "taxonomy": REGISTER_TAXONOMY,
+        },
+        "match": _build_register_match(
+            baseline_entries,
+            target_classification.get("primary"),
+        ),
+    }
 
 
 def main() -> int:
@@ -852,17 +880,10 @@ def main() -> int:
         target_register_pred = classify_register(
             target_text, hint=args.register,
         )
-        match = _build_register_match(
-            baseline_entries, target_register_pred.get("primary"),
+        result["register_match"] = _build_register_guard(
+            baseline_entries,
+            target_register_pred,
         )
-        result["register_match"] = {
-            "target_classification": {
-                "primary": target_register_pred.get("primary"),
-                "confidence": target_register_pred.get("confidence"),
-                "secondary": target_register_pred.get("secondary"),
-            },
-            "match": match,
-        }
     except ImportError:  # pragma: no cover - register_classifier always present
         pass
 
@@ -935,7 +956,7 @@ def _claim_license(result: dict[str, Any]) -> ClaimLicense:
             "band": overall.get("band"),
             "weighted_delta": overall.get("weighted_delta"),
             "register_match": (
-                register_match.get("match", {}).get("verdict")
+                register_match.get("match", {}).get("strength")
                 if register_match else None
             ),
         },
