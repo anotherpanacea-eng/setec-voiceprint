@@ -37,10 +37,12 @@ threshold can see both classes:
 
   * **Stage A — near-duplicate passage units.** Documents are split into raw
     paragraphs (never coalesced, never split), short paragraphs are grouped by
-    exact normalized-token equality instead of being fed to MinHash, and LSH
-    candidates are confirmed against the **true shingle sets** rather than
-    MinHash's estimate. Catches reused boilerplate, edited reprints, repeated
-    section templates.
+    exact normalized-token equality. Above-floor passages use an exact
+    frequency-ordered prefix index, then confirm against the **true shingle
+    sets**. Length/positional overlap bounds preserve complete Jaccard-threshold
+    recall without either probabilistic LSH omissions or common-boilerplate
+    exact-comparison explosions. Catches
+    reused boilerplate, edited reprints, repeated section templates.
   * **Stage B — exact shared-span scan.** A stdlib inverted index over word
     8-shingles finds every contiguous verbatim span repeated at >= 2 locations,
     regardless of what surrounds it. A verbatim span of L tokens produces
@@ -75,11 +77,18 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
+import shutil
+import sqlite3
+import stat
 import sys
+import tempfile
+import unicodedata
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
@@ -95,8 +104,8 @@ DEFAULT_SHINGLE_SIZE = 5
 DEFAULT_THRESHOLD = 0.8
 
 # --- passage mode (spec 36) ---
-# Paragraphs below this many word tokens never enter the LSH: they are grouped by
-# EXACT normalized-token equality instead. Two reasons, both mechanical. (1) It
+# Paragraphs below this many word tokens never enter the similarity index: they
+# are grouped by EXACT normalized-token equality instead. Two reasons, both mechanical. (1) It
 # catches a repeated three-word sign-off exactly, which a similarity threshold
 # cannot. (2) `shingles()`'s documented sub-k fallback collapses any text shorter
 # than k words to a single whole-text shingle, so two unrelated short paragraphs
@@ -125,6 +134,129 @@ _PARAGRAPH_SPLIT_RE = re.compile(r"\n\s*\n+")
 # A document id that itself ends in the passage-id suffix would make the derived
 # provenance ambiguous ("is `x#p0007` a document or a passage of `x`?").
 _PASSAGE_ID_SUFFIX_RE = re.compile(r"#p\d+$")
+
+
+class _RecoveryStore:
+    """Safe, incremental SQLite shards for long passage-mode stages."""
+
+    def __init__(self, path: Path, *, private_parent: bool = False) -> None:
+        if path.parent.is_symlink():
+            raise PassageModeError(
+                f"recovery shard directory must not be a symlink: {path.parent}"
+            )
+        parent_existed = path.parent.exists()
+        try:
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        except OSError as exc:
+            raise PassageModeError(
+                f"cannot create recovery shard directory {path.parent}: {exc}"
+            ) from None
+        if not path.parent.is_dir():
+            raise PassageModeError(
+                f"recovery shard parent is not a directory: {path.parent}"
+            )
+        if private_parent or not parent_existed:
+            try:
+                os.chmod(path.parent, 0o700)
+            except OSError as exc:
+                raise PassageModeError(
+                    f"cannot make recovery shard directory private {path.parent}: {exc}"
+                ) from None
+        if path.exists() or path.is_symlink():
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+                raise PassageModeError(
+                    f"recovery shard path must be a regular non-symlink file: {path}"
+                )
+            try:
+                os.chmod(path, 0o600)
+            except OSError as exc:
+                raise PassageModeError(
+                    f"cannot make recovery shard file private {path}: {exc}"
+                ) from None
+        else:
+            try:
+                descriptor = os.open(
+                    path,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                )
+            except OSError as exc:
+                raise PassageModeError(
+                    f"cannot create private recovery shard file {path}: {exc}"
+                ) from None
+            os.close(descriptor)
+        try:
+            self._db = sqlite3.connect(path)
+        except (OSError, sqlite3.Error) as exc:
+            raise PassageModeError(
+                f"cannot open recovery shard database {path}: {exc}"
+            ) from None
+        try:
+            os.chmod(path, 0o600)
+        except OSError as exc:
+            self._db.close()
+            raise PassageModeError(
+                f"cannot make recovery shard file private {path}: {exc}"
+            ) from None
+        try:
+            self._db.execute(
+                "CREATE TABLE IF NOT EXISTS shards "
+                "(stage TEXT NOT NULL, shard_key TEXT NOT NULL, payload TEXT NOT NULL, "
+                "PRIMARY KEY(stage, shard_key))"
+            )
+        except sqlite3.Error as exc:
+            self._db.close()
+            raise PassageModeError(
+                f"recovery shard database is unreadable or corrupt {path}: {exc}"
+            ) from None
+
+    def close(self) -> None:
+        self._db.close()
+
+    def __enter__(self) -> _RecoveryStore:
+        return self
+
+    def __exit__(self, *_exc: Any) -> None:
+        self.close()
+
+    def get(self, stage: str, shard_key: str) -> Any | None:
+        try:
+            row = self._db.execute(
+                "SELECT payload FROM shards WHERE stage=? AND shard_key=?",
+                (stage, shard_key),
+            ).fetchone()
+            return None if row is None else json.loads(row[0])
+        except (sqlite3.Error, json.JSONDecodeError, UnicodeError, TypeError) as exc:
+            raise PassageModeError(
+                f"recovery shard payload is unreadable or corrupt: {exc}"
+            ) from None
+
+    def put(self, stage: str, shard_key: str, payload: Any) -> None:
+        try:
+            self._db.execute(
+                "INSERT OR REPLACE INTO shards(stage, shard_key, payload) VALUES (?, ?, ?)",
+                (
+                    stage,
+                    shard_key,
+                    json.dumps(payload, sort_keys=True, ensure_ascii=False),
+                ),
+            )
+            self._db.commit()
+        except (sqlite3.Error, TypeError, ValueError) as exc:
+            raise PassageModeError(
+                f"cannot publish recovery shard: {exc}"
+            ) from None
+
+    def bind(self, binding: str) -> None:
+        existing = self.get("_meta", "analysis_binding")
+        if existing is None:
+            self.put("_meta", "analysis_binding", binding)
+        elif existing != binding:
+            raise PassageModeError(
+                "recovery shards do not match the exact manifest contents, "
+                "referenced texts, selected stages, or analysis parameters"
+            )
 
 
 # --------------- Shingling (stdlib) -------------------------------
@@ -521,6 +653,24 @@ def _exact_jaccard(a: set[str], b: set[str]) -> float:
     return inter / (len(a) + len(b) - inter)
 
 
+def _ceil_fraction(value: Fraction) -> int:
+    return -(-value.numerator // value.denominator)
+
+
+def _meets_jaccard_threshold(
+    a: set[str],
+    b: set[str],
+    threshold: Fraction,
+) -> bool:
+    intersection = len(a & b)
+    union = len(a) + len(b) - intersection
+    return (
+        union > 0
+        and intersection * threshold.denominator
+        >= union * threshold.numerator
+    )
+
+
 def stage_a_clusters(
     passages: list[Passage],
     *,
@@ -528,6 +678,8 @@ def stage_a_clusters(
     num_perm: int = DEFAULT_NUM_PERM,
     shingle_size: int = DEFAULT_SHINGLE_SIZE,
     min_passage_words: int = DEFAULT_MIN_PASSAGE_WORDS,
+    progress: Callable[[str], None] | None = None,
+    recovery: _RecoveryStore | None = None,
 ) -> dict[str, Any]:
     """Cluster near-duplicate passage *units*; return kept / dropped / clusters.
 
@@ -535,19 +687,21 @@ def stage_a_clusters(
 
       * Sub-floor passages (``< min_passage_words`` tokens) are grouped by exact
         equality of their normalized token sequence. They never reach the LSH.
-      * The rest are shingled and indexed in MinHash-LSH exactly as document mode
-        does, but candidate pairs are confirmed against the **true shingle sets**
-        (already in memory from signature construction), never against
-        ``MinHash.jaccard()``'s estimate. At ``num_perm=128`` that estimate has
-        SE ~0.04 near J=0.8 — squarely in the borderline band — and passage-scale
-        comparison produces far more borderline pairs than document scale. A
-        false merge here is destructive (Stage A's export drops non-representative
-        members from a *training* corpus), so LSH is candidate-generation only.
+      * The rest are shingled and indexed with a deterministic, globally ordered
+        Jaccard prefix filter. Every pair whose true Jaccard clears the threshold
+        must share a prefix item; length/positional overlap bounds reject
+        infeasible common-boilerplate posting buckets without enumerating every
+        pair. Candidate pairs are confirmed against the **true shingle sets**.
 
     Clustering, representative choice (longest text, then lowest id), and the
     duplicate-id refusal are the shipped document-mode rules, unchanged.
     """
-    MinHash, MinHashLSH = _require_datasketch()
+    # Preserve the documented optional-dependency contract for Stage A. Candidate
+    # completeness itself is now deterministic rather than delegated to LSH.
+    _require_datasketch()
+    if not 0 < threshold <= 1:
+        raise ValueError("threshold must be in (0, 1]")
+    threshold_ratio = Fraction(str(threshold))
 
     ids: list[str] = []
     texts: dict[str, str] = {}
@@ -561,12 +715,17 @@ def stage_a_clusters(
     for pid in ids:
         union.add(pid)
 
-    short_keys: dict[str, list[str]] = {}
+    short_keys: dict[tuple[str, str], list[str]] = {}
     long_ids: list[str] = []
     for p in passages:
         tokens = _norm_tokens(p.text)
         if len(tokens) < min_passage_words:
-            short_keys.setdefault(" ".join(tokens), []).append(p.passage_id)
+            key = (
+                ("tokens", " ".join(tokens))
+                if tokens
+                else ("raw", p.text)
+            )
+            short_keys.setdefault(key, []).append(p.passage_id)
         else:
             long_ids.append(p.passage_id)
 
@@ -579,23 +738,118 @@ def stage_a_clusters(
             union.union(members[0], other)
 
     if len(long_ids) > 1:
-        lsh = MinHashLSH(threshold=threshold, num_perm=num_perm)
-        minhashes: dict[str, Any] = {}
         shingle_sets: dict[str, set[str]] = {}
-        for pid in long_ids:
-            sset = shingles(texts[pid], k=shingle_size)
+        for item_number, pid in enumerate(long_ids, 1):
+            cached = recovery.get("stage_a_shingles", pid) if recovery else None
+            sset = (
+                set(cached)
+                if isinstance(cached, list)
+                else shingles(texts[pid], k=shingle_size)
+            )
             shingle_sets[pid] = sset
-            mh = MinHash(num_perm=num_perm)
-            for sh in sset:
-                mh.update(sh.encode("utf-8"))
-            minhashes[pid] = mh
-            lsh.insert(pid, mh)
+            if recovery and cached is None:
+                recovery.put("stage_a_shingles", pid, sorted(sset))
+            if progress and (item_number % 100 == 0 or item_number == len(long_ids)):
+                progress(f"stage A shingle shards {item_number}/{len(long_ids)}")
+
+        # Exact AllPairs-style prefix filtering. With one global frequency order,
+        # two sets whose Jaccard clears ``threshold`` must share an item in these
+        # prefixes. Common boilerplate sorts late and therefore does not mint
+        # every-pair candidate explosions; exact Jaccard remains the sole
+        # accept/reject decision.
+        frequencies: dict[str, int] = {}
+        for sset in shingle_sets.values():
+            for shingle in sset:
+                frequencies[shingle] = frequencies.get(shingle, 0) + 1
+        prefixes: dict[str, list[str]] = {}
         for pid in long_ids:
-            for cand in lsh.query(minhashes[pid]):
-                if cand == pid:
-                    continue
-                if _exact_jaccard(shingle_sets[pid], shingle_sets[cand]) >= threshold:
-                    union.union(pid, cand)
+            ordered = sorted(
+                shingle_sets[pid],
+                key=lambda shingle: (frequencies[shingle], shingle),
+            )
+            prefix_len = (
+                len(ordered)
+                - _ceil_fraction(threshold_ratio * len(ordered))
+                + 1
+            )
+            prefixes[pid] = ordered[:prefix_len]
+
+        order_index = {pid: index for index, pid in enumerate(long_ids)}
+        # token -> (set length, token position) -> prior passage ids. The
+        # position buckets let the Jaccard upper bound reject a whole common-
+        # boilerplate bucket without enumerating every pair in it.
+        postings: dict[str, dict[tuple[int, int], set[str]]] = {}
+        for left_index, left in enumerate(long_ids):
+            shard_key = f"{left_index:012d}"
+            confirmed = (
+                recovery.get("stage_a_pairs", shard_key) if recovery else None
+            )
+            if not isinstance(confirmed, list):
+                left_size = len(shingle_sets[left])
+                overlap_counts: dict[str, int] = {}
+                pruned: set[str] = set()
+                for left_pos, shingle in enumerate(prefixes[left]):
+                    for (right_size, right_pos), members in postings.get(
+                        shingle, {}
+                    ).items():
+                        if (
+                            Fraction(
+                                min(left_size, right_size),
+                                max(left_size, right_size),
+                            )
+                            < threshold_ratio
+                        ):
+                            continue
+                        required_overlap = _ceil_fraction(
+                            threshold_ratio
+                            / (1 + threshold_ratio)
+                            * (left_size + right_size)
+                        )
+                        remaining = min(
+                            left_size - left_pos - 1,
+                            right_size - right_pos - 1,
+                        )
+                        # If a first match in this position bucket cannot reach
+                        # the required overlap, inspect only members that already
+                        # accumulated a match; do not enumerate the full bucket.
+                        if 1 + remaining < required_overlap:
+                            eligible = members.intersection(overlap_counts)
+                        else:
+                            eligible = members
+                        for right in eligible:
+                            if right in pruned:
+                                continue
+                            count = overlap_counts.get(right, 0) + 1
+                            if count + remaining < required_overlap:
+                                overlap_counts.pop(right, None)
+                                pruned.add(right)
+                            else:
+                                overlap_counts[right] = count
+                confirmed = []
+                for right in sorted(overlap_counts, key=order_index.get):
+                    if _meets_jaccard_threshold(
+                        shingle_sets[left],
+                        shingle_sets[right],
+                        threshold_ratio,
+                    ):
+                        confirmed.append(right)
+                if recovery:
+                    recovery.put("stage_a_pairs", shard_key, confirmed)
+            for right in confirmed:
+                union.union(left, right)
+            left_size = len(shingle_sets[left])
+            for left_pos, shingle in enumerate(prefixes[left]):
+                postings.setdefault(shingle, {}).setdefault(
+                    (left_size, left_pos), set()
+                ).add(left)
+            if progress and (
+                (left_index + 1) % 100 == 0
+                or left_index + 1 == len(long_ids)
+            ):
+                progress(
+                    f"stage A exact-candidate shards "
+                    f"{left_index + 1}/{len(long_ids)}"
+                )
 
     order = {pid: i for i, pid in enumerate(ids)}
     kept: list[str] = []
@@ -622,17 +876,17 @@ def stage_a_clusters(
 # --------------- Passage mode: Stage B (stdlib) -------------------
 
 
-def _aligned(prev_occ: list[tuple[str, int]], next_occ: list[tuple[str, int]]) -> bool:
-    """True when every occurrence of a shingle continues into the next one.
-
-    That is the exact condition for a repeated span to extend by one token at
-    *all* of its locations simultaneously — the run boundary. Keying runs on this
-    (rather than on the merged marked-region) keeps two spans that merely happen
-    to abut in one document from being reported as one span.
-    """
-    if len(prev_occ) != len(next_occ):
+def _can_extend_left(
+    occurrences: set[tuple[str, int]],
+    tokens: dict[str, list[tuple[str, int, int]]],
+) -> bool:
+    """Whether every occurrence shares one preceding normalized token."""
+    if not occurrences or any(position == 0 for _doc_id, position in occurrences):
         return False
-    return set(next_occ) == {(d, q + 1) for (d, q) in prev_occ}
+    return len({
+        tokens[doc_id][position - 1][0]
+        for doc_id, position in occurrences
+    }) == 1
 
 
 def stage_b_spans(
@@ -640,6 +894,8 @@ def stage_b_spans(
     *,
     span_shingle_k: int = DEFAULT_SPAN_SHINGLE_K,
     min_span_words: int = DEFAULT_MIN_SPAN_WORDS,
+    progress: Callable[[str], None] | None = None,
+    recovery: _RecoveryStore | None = None,
 ) -> dict[str, Any]:
     """Exact inverted-index scan for contiguous verbatim spans repeated >= 2x.
 
@@ -653,8 +909,9 @@ def stage_b_spans(
     splits it into verbatim sub-spans (each reported only if it still clears the
     floor) — lightly *edited* whole-passage reuse is Stage A's class, and edited
     sub-passage reuse below the floor is detected by neither stage. Memory is
-    O(corpus tokens) for the index: fine at staged-personal-manifest scale, but a
-    large-corpus run should shard via the repo's `shard_runner` conventions first.
+    O(corpus tokens) for the index. The CLI makes the full mode recoverable with
+    exact-bound SQLite shards after each document/passage work unit, flushed
+    progress, and ``--resume``.
 
     Nothing is ever dropped or excised — the output is an inventory for
     consumer-side action (loss masking / chunk-stream filtering at training time).
@@ -667,35 +924,67 @@ def stage_b_spans(
             # one document's span offsets point into another's text.
             raise ValueError(f"duplicate document id in span-scan input: {doc_id!r}")
         doc_order[doc_id] = i
-        tokens[doc_id] = [
-            (m.group(0).lower(), m.start(), m.end()) for m in _WORD_RE.finditer(text)
-        ]
+        shard_key = f"{i:012d}"
+        cached = recovery.get("stage_b_tokens", shard_key) if recovery else None
+        tokens[doc_id] = (
+            [tuple(item) for item in cached]
+            if isinstance(cached, list)
+            else [
+                (m.group(0).lower(), m.start(), m.end())
+                for m in _WORD_RE.finditer(text)
+            ]
+        )
+        if recovery and cached is None:
+            recovery.put("stage_b_tokens", shard_key, tokens[doc_id])
+        if progress:
+            progress(f"stage B tokenized {i + 1}/{len(docs)} documents")
 
     # Inverted index: shingle -> occurrences, in (document order, position) order
     # because the documents are walked in input order. `keys[doc][p]` is the
     # shingle starting at token position p, so a run walk needs no re-hashing.
     index: dict[str, list[tuple[str, int]]] = {}
     keys: dict[str, list[str]] = {}
-    for doc_id, _ in docs:
+    for doc_number, (doc_id, _) in enumerate(docs, 1):
         tk = tokens[doc_id]
-        klist: list[str] = []
-        for p in range(len(tk) - span_shingle_k + 1):
-            key = " ".join(t[0] for t in tk[p:p + span_shingle_k])
-            klist.append(key)
+        shard_key = f"{doc_number - 1:012d}"
+        cached = recovery.get("stage_b_keys", shard_key) if recovery else None
+        klist = (
+            list(cached)
+            if isinstance(cached, list)
+            else [
+                " ".join(t[0] for t in tk[p:p + span_shingle_k])
+                for p in range(len(tk) - span_shingle_k + 1)
+            ]
+        )
+        if recovery and cached is None:
+            recovery.put("stage_b_keys", shard_key, klist)
+        for p, key in enumerate(klist):
             index.setdefault(key, []).append((doc_id, p))
         keys[doc_id] = klist
+        if progress:
+            progress(f"stage B indexed {doc_number}/{len(docs)} documents")
 
     # Maximal duplicated regions: mark every token position covered by a shingle
     # that occurs at >= 2 distinct locations, then merge consecutive marks.
     regions: list[dict[str, Any]] = []
     regions_below_floor = 0
-    for doc_id, _ in docs:
+    for doc_number, (doc_id, _) in enumerate(docs, 1):
+        shard_key = f"{doc_number - 1:012d}"
+        cached = recovery.get("stage_b_regions", shard_key) if recovery else None
+        if isinstance(cached, dict):
+            regions.extend(cached.get("regions", []))
+            regions_below_floor += int(cached.get("below_floor", 0))
+            if progress:
+                progress(f"stage B regions {doc_number}/{len(docs)} documents")
+            continue
         tk = tokens[doc_id]
         marked = [False] * len(tk)
         for p, key in enumerate(keys[doc_id]):
             if len(index[key]) >= 2:
                 for q in range(p, p + span_shingle_k):
                     marked[q] = True
+        doc_regions: list[dict[str, Any]] = []
+        doc_below_floor = 0
         run_start: int | None = None
         for q in range(len(tk) + 1):
             if q < len(tk) and marked[q]:
@@ -706,7 +995,7 @@ def stage_b_spans(
                 continue
             n_words = q - run_start
             if n_words >= min_span_words:
-                regions.append({
+                doc_regions.append({
                     "source_doc_id": doc_id,
                     "token_start": run_start,
                     "token_end": q - 1,
@@ -715,36 +1004,131 @@ def stage_b_spans(
                     "n_words": n_words,
                 })
             else:
-                regions_below_floor += 1
+                doc_below_floor += 1
             run_start = None
+        regions.extend(doc_regions)
+        regions_below_floor += doc_below_floor
+        if recovery:
+            recovery.put(
+                "stage_b_regions",
+                shard_key,
+                {"regions": doc_regions, "below_floor": doc_below_floor},
+            )
+        if progress:
+            progress(f"stage B regions {doc_number}/{len(docs)} documents")
 
-    # Repeated-span clusters: maximal runs of consecutive shingle positions whose
-    # occurrence set advances in lockstep at every location.
+    # Repeated-span clusters.  A run follows a repeated SUBSET of occurrences,
+    # not the complete global occurrence set of each shingle.  Complete-set
+    # equality is unsound here: a qualifying A/B span is still a qualifying span
+    # when one of its internal shingles also appears at C.  Candidate occurrence
+    # sets only shrink as the run extends; when one shrinks, record the shorter
+    # maximal span for the larger set and continue the longer span for the subset.
     clusters: dict[tuple[Any, ...], dict[str, Any]] = {}
-    spans_below_floor = 0
-    for doc_id, _ in docs:
+    below_floor: set[tuple[Any, ...]] = set()
+
+    def occurrence_key(item: tuple[str, int]) -> tuple[int, int]:
+        return doc_order[item[0]], item[1]
+
+    def record_candidate(
+        doc_id: str,
+        start: int,
+        end: int,
+        occurrences: set[tuple[str, int]],
+        cluster_target: dict[tuple[Any, ...], dict[str, Any]],
+        below_target: set[tuple[Any, ...]],
+    ) -> None:
+        if len(occurrences) < 2 or _can_extend_left(occurrences, tokens):
+            return
+        n_words = (end - start) + span_shingle_k
+        norm_tokens = tuple(
+            token[0] for token in tokens[doc_id][start:start + n_words]
+        )
+        ordered = tuple(sorted(occurrences, key=occurrence_key))
+        ckey = (norm_tokens, ordered)
+        if n_words >= min_span_words:
+            cluster_target.setdefault(
+                ckey,
+                {"occ": list(ordered), "n_words": n_words},
+            )
+        else:
+            below_target.add(ckey)
+
+    for doc_number, (doc_id, _) in enumerate(docs, 1):
+        shard_key = f"{doc_number - 1:012d}"
+        cached = recovery.get("stage_b_spans", shard_key) if recovery else None
+        if isinstance(cached, dict):
+            for item in cached.get("clusters", []):
+                ordered = tuple(tuple(occ) for occ in item["occ"])
+                ckey = (tuple(item["norm_tokens"]), ordered)
+                clusters.setdefault(
+                    ckey,
+                    {"occ": list(ordered), "n_words": item["n_words"]},
+                )
+            for item in cached.get("below_floor", []):
+                below_floor.add((
+                    tuple(item["norm_tokens"]),
+                    tuple(tuple(occ) for occ in item["occ"]),
+                ))
+            if progress:
+                progress(f"stage B spans {doc_number}/{len(docs)} documents")
+            continue
+        local_clusters: dict[tuple[Any, ...], dict[str, Any]] = {}
+        local_below: set[tuple[Any, ...]] = set()
         klist = keys[doc_id]
-        p = 0
-        while p < len(klist):
-            occ = index[klist[p]]
-            if len(occ) < 2:
-                p += 1
+        for p, key in enumerate(klist):
+            active = set(index[key])
+            if len(active) < 2:
                 continue
-            if p > 0 and _aligned(index[klist[p - 1]], occ):
-                p += 1  # not a run start; the run that covers p began earlier
+            # Cheaply skip suffixes of a span already considered.  The same
+            # check is repeated when a run's active subset shrinks.
+            if _can_extend_left(active, tokens):
                 continue
             end = p
-            while end + 1 < len(klist) and _aligned(index[klist[end]], index[klist[end + 1]]):
+            while end + 1 < len(klist):
+                offset = (end + 1) - p
+                next_occurrences = set(index[klist[end + 1]])
+                continued = {
+                    (other_doc, other_start)
+                    for other_doc, other_start in active
+                    if (other_doc, other_start + offset) in next_occurrences
+                }
+                if len(continued) < 2:
+                    break
+                if continued != active:
+                    record_candidate(
+                        doc_id, p, end, active, local_clusters, local_below,
+                    )
+                active = continued
                 end += 1
-            n_words = (end - p) + span_shingle_k
-            ckey = (tuple(occ), n_words)
-            if ckey not in clusters:
-                if n_words >= min_span_words:
-                    clusters[ckey] = {"occ": occ, "n_words": n_words}
-                else:
-                    spans_below_floor += 1
-                    clusters[ckey] = {}
-            p = end + 1
+            record_candidate(
+                doc_id, p, end, active, local_clusters, local_below,
+            )
+        clusters.update(local_clusters)
+        below_floor.update(local_below)
+        if recovery:
+            recovery.put(
+                "stage_b_spans",
+                shard_key,
+                {
+                    "clusters": [
+                        {
+                            "norm_tokens": list(ckey[0]),
+                            "occ": [list(occ) for occ in ckey[1]],
+                            "n_words": entry["n_words"],
+                        }
+                        for ckey, entry in local_clusters.items()
+                    ],
+                    "below_floor": [
+                        {
+                            "norm_tokens": list(ckey[0]),
+                            "occ": [list(occ) for occ in ckey[1]],
+                        }
+                        for ckey in local_below
+                    ],
+                },
+            )
+        if progress:
+            progress(f"stage B spans {doc_number}/{len(docs)} documents")
 
     repeated_spans: list[dict[str, Any]] = []
     for entry in clusters.values():
@@ -780,7 +1164,7 @@ def stage_b_spans(
     return {
         "repeated_spans": repeated_spans,
         "duplicated_regions": regions,
-        "spans_below_floor": spans_below_floor,
+        "spans_below_floor": len(below_floor),
         "regions_below_floor": regions_below_floor,
     }
 
@@ -826,7 +1210,9 @@ _PASSAGE_LIMITS = [
 ]
 
 
-def _load_documents(path: Path) -> list[tuple[str, str, dict[str, Any]]]:
+def _load_documents(
+    path: Path,
+) -> tuple[list[tuple[str, str, dict[str, Any]]], list[str]]:
     """``(doc_id, text, row)`` for every manifest row with resolvable text.
 
     Mirrors :func:`_load_manifest_records`'s parsing but keeps the row dict —
@@ -836,6 +1222,7 @@ def _load_documents(path: Path) -> list[tuple[str, str, dict[str, Any]]]:
     input manifest, so there is no pass-through to preserve).
     """
     out: list[tuple[str, str, dict[str, Any]]] = []
+    skipped: list[str] = []
     base = path.resolve().parent
     for line_no, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         raw = raw.strip()
@@ -845,9 +1232,11 @@ def _load_documents(path: Path) -> list[tuple[str, str, dict[str, Any]]]:
             row = json.loads(raw)
         except json.JSONDecodeError as e:
             sys.stderr.write(f"  manifest line {line_no}: {e}; skipping\n")
+            skipped.append(f"line {line_no} (malformed JSON)")
             continue
         if not isinstance(row, dict):
             sys.stderr.write(f"  manifest line {line_no}: not a JSON object; skipping\n")
+            skipped.append(f"line {line_no} (not a JSON object)")
             continue
         rid = str(row.get("id") or row.get("path") or row.get("text_path") or f"line{line_no}")
         if isinstance(row.get("text"), str):
@@ -860,7 +1249,13 @@ def _load_documents(path: Path) -> list[tuple[str, str, dict[str, Any]]]:
                 out.append((rid, fp.read_text(encoding="utf-8", errors="replace"), row))
             else:
                 sys.stderr.write(f"  manifest line {line_no}: {fp} not found; not compared\n")
-    return out
+                skipped.append(f"{rid} (line {line_no}: text path unresolved)")
+        else:
+            sys.stderr.write(
+                f"  manifest line {line_no}: no inline text or text path; not compared\n"
+            )
+            skipped.append(f"{rid} (line {line_no}: no resolvable text)")
+    return out, skipped
 
 
 def parse_stages(raw: str) -> list[str]:
@@ -876,6 +1271,121 @@ def parse_stages(raw: str) -> list[str]:
     return [s for s in ("a", "b") if s in stages]
 
 
+PASSAGE_CHECKPOINT_SCHEMA = "near-dup-passage-checkpoint/1"
+
+
+def _analysis_binding(
+    manifest_path: Path,
+    documents: list[tuple[str, str, dict[str, Any]]],
+    config: dict[str, Any],
+) -> str:
+    digest = hashlib.sha256()
+    digest.update(manifest_path.read_bytes())
+    digest.update(json.dumps(config, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+    for doc_id, text, _row in documents:
+        digest.update(doc_id.encode("utf-8"))
+        digest.update(b"\x00")
+        digest.update(hashlib.sha256(text.encode("utf-8")).digest())
+    return digest.hexdigest()
+
+
+def _write_passage_checkpoint(path: Path, state: dict[str, Any]) -> None:
+    temp: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        descriptor, raw_temp = tempfile.mkstemp(
+            prefix=f".{path.name}.staging-",
+            dir=path.parent,
+        )
+        os.close(descriptor)
+        temp = Path(raw_temp)
+        temp.write_text(
+            json.dumps(state, sort_keys=True, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temp, path)
+    except (OSError, TypeError, ValueError) as exc:
+        raise PassageModeError(
+            f"cannot publish passage checkpoint {path}: {exc}"
+        ) from None
+    finally:
+        if temp is not None:
+            try:
+                temp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _default_passage_checkpoint(manifest_path: Path) -> Path:
+    path_key = hashlib.sha256(
+        str(manifest_path.resolve()).encode("utf-8")
+    ).hexdigest()
+    return (
+        Path(tempfile.gettempdir())
+        / "setec-near-dup-passage-checkpoints"
+        / f"{path_key}.json"
+    )
+
+
+def _recovery_store_path(checkpoint_path: Path) -> Path:
+    return (
+        checkpoint_path.parent
+        / f".{checkpoint_path.name}.private-shards"
+        / "recovery.sqlite3"
+    )
+
+
+def _reset_recovery_store(path: Path) -> None:
+    parent = path.parent
+    if parent.is_symlink():
+        raise PassageModeError(
+            f"recovery shard directory must not be a symlink: {parent}"
+        )
+    if parent.exists() and not parent.is_dir():
+        raise PassageModeError(
+            f"recovery shard parent is not a directory: {parent}"
+        )
+    for candidate in (
+        path,
+        path.with_name(f"{path.name}-wal"),
+        path.with_name(f"{path.name}-shm"),
+        path.with_name(f"{path.name}-journal"),
+    ):
+        if not (candidate.exists() or candidate.is_symlink()):
+            continue
+        info = candidate.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise PassageModeError(
+                f"recovery shard path must be a regular non-symlink file: {candidate}"
+            )
+        candidate.unlink()
+
+
+def _load_passage_checkpoint(
+    path: Path,
+    *,
+    binding: str,
+    config: dict[str, Any],
+) -> dict[str, Any]:
+    try:
+        state = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        raise PassageModeError(
+            f"--resume requires a readable passage checkpoint at {path}"
+        ) from None
+    if (
+        not isinstance(state, dict)
+        or state.get("schema_version") != PASSAGE_CHECKPOINT_SCHEMA
+        or state.get("binding") != binding
+        or state.get("config") != config
+    ):
+        raise PassageModeError(
+            "--resume checkpoint does not match the exact manifest contents, "
+            "referenced texts, selected stages, or analysis parameters"
+        )
+    return state
+
+
 def analyze_passages(
     manifest_path: Path,
     *,
@@ -886,6 +1396,9 @@ def analyze_passages(
     min_passage_words: int = DEFAULT_MIN_PASSAGE_WORDS,
     span_shingle_k: int = DEFAULT_SPAN_SHINGLE_K,
     min_span_words: int = DEFAULT_MIN_SPAN_WORDS,
+    checkpoint_path: Path | None = None,
+    resume: bool = False,
+    progress: Callable[[str], None] | None = None,
 ) -> tuple[dict[str, Any], list[Passage], dict[str, dict[str, Any]]]:
     """Run passage mode over a staged manifest.
 
@@ -907,7 +1420,9 @@ def analyze_passages(
             "rerun passage mode from the SOURCE document manifest."
         )
 
-    documents = _load_documents(manifest_path)
+    documents, skipped_input_rows = _load_documents(manifest_path)
+    if progress:
+        progress(f"loaded {len(documents)} documents")
     source_manifest = manifest_path.name
     passages: list[Passage] = []
     seen_doc_ids: set[str] = set()
@@ -922,6 +1437,40 @@ def analyze_passages(
 
     rows_by_doc: dict[str, dict[str, Any]] = {d: r for d, _t, r in documents}
     text_by_doc: dict[str, str] = {d: t for d, t, _r in documents}
+    config = {
+        "stages": stages,
+        "threshold": threshold,
+        "num_perm": num_perm,
+        "shingle_size": shingle_size,
+        "min_passage_words": min_passage_words,
+        "span_shingle_k": span_shingle_k,
+        "min_span_words": min_span_words,
+    }
+    binding = _analysis_binding(manifest_path, documents, config)
+    checkpoint_state: dict[str, Any] = {
+        "schema_version": PASSAGE_CHECKPOINT_SCHEMA,
+        "binding": binding,
+        "config": config,
+        "stage_a_detail": None,
+        "stage_b_detail": None,
+    }
+    if checkpoint_path is not None:
+        if resume:
+            checkpoint_state = _load_passage_checkpoint(
+                checkpoint_path,
+                binding=binding,
+                config=config,
+            )
+            if progress:
+                progress(f"resuming from {checkpoint_path}")
+        else:
+            recovery_path = _recovery_store_path(checkpoint_path)
+            _reset_recovery_store(recovery_path)
+            _write_passage_checkpoint(checkpoint_path, checkpoint_state)
+            if progress:
+                progress(f"initialized checkpoint {checkpoint_path}")
+    elif resume:
+        raise PassageModeError("--resume requires a passage checkpoint path")
 
     stage_a: dict[str, Any] = {
         "run": False, "clusters": None, "kept": None, "dropped": None,
@@ -929,10 +1478,38 @@ def analyze_passages(
     }
     stage_a_detail: dict[str, Any] | None = None
     if "a" in stages:
-        stage_a_detail = stage_a_clusters(
-            passages, threshold=threshold, num_perm=num_perm,
-            shingle_size=shingle_size, min_passage_words=min_passage_words,
-        )
+        cached_stage_a = checkpoint_state.get("stage_a_detail")
+        if isinstance(cached_stage_a, dict):
+            stage_a_detail = cached_stage_a
+            if progress:
+                progress("stage A restored from checkpoint")
+        else:
+            if progress:
+                progress("stage A started")
+            if checkpoint_path is not None:
+                with _RecoveryStore(
+                    _recovery_store_path(checkpoint_path),
+                    private_parent=True,
+                ) as recovery:
+                    recovery.bind(binding)
+                    stage_a_detail = stage_a_clusters(
+                        passages, threshold=threshold, num_perm=num_perm,
+                        shingle_size=shingle_size,
+                        min_passage_words=min_passage_words,
+                        progress=progress, recovery=recovery,
+                    )
+            else:
+                stage_a_detail = stage_a_clusters(
+                    passages, threshold=threshold, num_perm=num_perm,
+                    shingle_size=shingle_size,
+                    min_passage_words=min_passage_words,
+                    progress=progress,
+                )
+            checkpoint_state["stage_a_detail"] = stage_a_detail
+            if checkpoint_path is not None:
+                _write_passage_checkpoint(checkpoint_path, checkpoint_state)
+            if progress:
+                progress("stage A complete and checkpointed")
         stage_a = {
             "run": True,
             "clusters": len(stage_a_detail["clusters"]),
@@ -947,10 +1524,38 @@ def analyze_passages(
     }
     stage_b_detail: dict[str, Any] | None = None
     if "b" in stages:
-        stage_b_detail = stage_b_spans(
-            [(d, t) for d, t, _r in documents],
-            span_shingle_k=span_shingle_k, min_span_words=min_span_words,
-        )
+        cached_stage_b = checkpoint_state.get("stage_b_detail")
+        if isinstance(cached_stage_b, dict):
+            stage_b_detail = cached_stage_b
+            if progress:
+                progress("stage B restored from checkpoint")
+        else:
+            if progress:
+                progress("stage B started")
+            if checkpoint_path is not None:
+                with _RecoveryStore(
+                    _recovery_store_path(checkpoint_path),
+                    private_parent=True,
+                ) as recovery:
+                    recovery.bind(binding)
+                    stage_b_detail = stage_b_spans(
+                        [(d, t) for d, t, _r in documents],
+                        span_shingle_k=span_shingle_k,
+                        min_span_words=min_span_words,
+                        progress=progress, recovery=recovery,
+                    )
+            else:
+                stage_b_detail = stage_b_spans(
+                    [(d, t) for d, t, _r in documents],
+                    span_shingle_k=span_shingle_k,
+                    min_span_words=min_span_words,
+                    progress=progress,
+                )
+            checkpoint_state["stage_b_detail"] = stage_b_detail
+            if checkpoint_path is not None:
+                _write_passage_checkpoint(checkpoint_path, checkpoint_state)
+            if progress:
+                progress("stage B complete and checkpointed")
         stage_b = {
             "run": True,
             "repeated_spans": len(stage_b_detail["repeated_spans"]),
@@ -1035,8 +1640,10 @@ def analyze_passages(
             "min_passage_words": min_passage_words,
             "chunking": "raw paragraphs, never coalesced and never split",
             "confirmation": (
-                "exact Jaccard over the true shingle sets; MinHash-LSH is candidate "
-                "generation only, so no estimate participates in any accept/reject decision"
+                "complete frequency-ordered Jaccard prefix filtering with "
+                "length/positional overlap bounds, plus exact Jaccard over the "
+                "true shingle sets; no probabilistic estimate participates in "
+                "recall or any accept/reject decision"
             ),
             "not_run_note": None if "a" in stages else (
                 "Stage A was NOT run (not selected via --stages, or datasketch is absent). "
@@ -1078,6 +1685,7 @@ def analyze_passages(
         "source_manifest": source_manifest,
         "n_documents": len(documents),
         "n_passages": len(passages),
+        "input_rows_skipped": skipped_input_rows,
         "stage_a": stage_a,
         "stage_b": stage_b,
         "documents_affected": [affected[d] for d in sorted(affected)],
@@ -1104,6 +1712,11 @@ _EXPORT_SOURCE_TEXT_FIELDS = frozenset({"text", "text_path"})
 # separator would write outside --passage-dir (or collide). Refuse, don't sanitize:
 # sanitizing two distinct ids to one filename silently loses a passage.
 _UNSAFE_ID_CHARS = ("/", "\\", "\x00")
+
+
+def _portable_filename_key(filename: str) -> str:
+    """Conservative collision key for supported filesystem semantics."""
+    return unicodedata.normalize("NFC", filename).casefold()
 
 
 def _export_required_source_fields() -> tuple[str, ...]:
@@ -1166,6 +1779,14 @@ def export_passages(
             "and Stage B contributes nothing to it (spans are reported, never excised). "
             "Rerun with --stages a or --stages a,b."
         )
+    skipped_input_rows = report.get("input_rows_skipped") or []
+    if skipped_input_rows:
+        raise PassageModeError(
+            "export refused — passage analysis skipped source row(s), so a successful "
+            "export would silently drop source documents from the training corpus. "
+            f"{len(skipped_input_rows)} skipped row(s): "
+            f"{'; '.join(skipped_input_rows[:5])}. Nothing was written."
+        )
 
     kept_ids = {p.passage_id for p in passages}
     for cluster in report["provenance"]["passage_clusters"]:
@@ -1175,6 +1796,8 @@ def export_passages(
     required = _export_required_source_fields()
     missing: list[str] = []
     unsafe: list[str] = []
+    filename_owners: dict[str, str] = {}
+    filename_collisions: list[str] = []
     for p in kept:
         row = rows_by_doc.get(p.doc_id, {})
         gaps = [f for f in required if not _has_value(row, f)]
@@ -1182,6 +1805,10 @@ def export_passages(
             missing.append(f"{p.doc_id} (missing: {', '.join(gaps)})")
         if any(c in p.doc_id for c in _UNSAFE_ID_CHARS) or p.doc_id in (".", ".."):
             unsafe.append(p.doc_id)
+        filename_key = _portable_filename_key(f"{p.passage_id}.txt")
+        prior = filename_owners.setdefault(filename_key, p.passage_id)
+        if prior != p.passage_id:
+            filename_collisions.append(f"{prior!r} / {p.passage_id!r}")
     if missing:
         # Dedupe by source doc: one line per offending row, not one per passage.
         named = sorted(set(missing))
@@ -1199,49 +1826,105 @@ def export_passages(
             "Rename the row ids; the export will not sanitize them (two distinct ids "
             "sanitized to one filename would silently lose a passage). Nothing was written."
         )
+    if filename_collisions:
+        raise PassageModeError(
+            "export refused — passage ids collide under supported case-insensitive/"
+            "Unicode-normalizing filesystem semantics: "
+            f"{', '.join(sorted(set(filename_collisions)))}. Rename the source row ids; "
+            "nothing was written."
+        )
+    if (
+        out_path.resolve().is_relative_to(passage_dir.resolve())
+        or passage_dir.resolve().is_relative_to(out_path.resolve())
+    ):
+        raise PassageModeError(
+            "export refused — --out and --passage-dir must not contain one another. "
+            "The sidecar "
+            "directory is atomically published before the manifest commit marker, "
+            "so nesting the marker inside that directory is unsupported. Choose "
+            "sibling paths; nothing was written."
+        )
+    if out_path.exists() or passage_dir.exists():
+        raise PassageModeError(
+            "export refused — --out and --passage-dir must both be new paths so an "
+            "interrupted rerun cannot mix a stale manifest with partially replaced "
+            "sidecars. Choose fresh destinations; nothing was written."
+        )
 
-    passage_dir.mkdir(parents=True, exist_ok=True)
     out_path.parent.mkdir(parents=True, exist_ok=True)
+    passage_dir.parent.mkdir(parents=True, exist_ok=True)
     params = report["assumptions"]
     rows: list[dict[str, Any]] = []
-    for p in kept:
-        source_row = rows_by_doc.get(p.doc_id, {})
-        text_file = passage_dir / f"{p.passage_id}.txt"
-        text_file.write_text(p.text, encoding="utf-8")
-        try:
-            rel = text_file.resolve().relative_to(out_path.resolve().parent)
-            rel_str = rel.as_posix()
-        except ValueError:
-            rel_str = text_file.resolve().as_posix()
-        row: dict[str, Any] = {
-            k: v for k, v in source_row.items()
-            if k not in _EXPORT_RECOMPUTED_FIELDS and k not in _EXPORT_SOURCE_TEXT_FIELDS
-        }
-        row["id"] = p.passage_id
-        row["path"] = rel_str
-        row["word_count"] = len(_norm_tokens(p.text))
-        row["content_hash"] = f"sha256:{_sha256_hex(p.text)}"
-        row[pool_guard.PASSAGE_DEDUP_MARKER] = {
-            "source_doc_id": p.doc_id,
-            "source_manifest": manifest_path.name,
-            "ordinal": p.ordinal,
-            "char_start": p.char_start,
-            "char_end": p.char_end,
-            "stages": list(report["stages"]),
-            "params": {
-                "shingle_size": params["stage_a"]["shingle_size"],
-                "threshold": params["stage_a"]["threshold"],
-                "num_perm": params["stage_a"]["num_perm"],
-                "min_passage_words": params["stage_a"]["min_passage_words"],
-                "span_shingle_k": params["stage_b"]["span_shingle_k"],
-                "min_span_words": params["stage_b"]["min_span_words"],
-            },
-        }
-        rows.append(row)
+    staging_dir = Path(tempfile.mkdtemp(
+        prefix=f".{passage_dir.name}.staging-",
+        dir=passage_dir.parent,
+    ))
+    descriptor, temp_manifest_raw = tempfile.mkstemp(
+        prefix=f".{out_path.name}.staging-",
+        dir=out_path.parent,
+    )
+    os.close(descriptor)
+    temp_manifest = Path(temp_manifest_raw)
+    published_sidecars = False
+    try:
+        for p in kept:
+            source_row = rows_by_doc.get(p.doc_id, {})
+            staged_text_file = staging_dir / f"{p.passage_id}.txt"
+            final_text_file = passage_dir / f"{p.passage_id}.txt"
+            staged_text_file.write_text(p.text, encoding="utf-8")
+            try:
+                rel = final_text_file.resolve().relative_to(out_path.resolve().parent)
+                rel_str = rel.as_posix()
+            except ValueError:
+                rel_str = final_text_file.resolve().as_posix()
+            row: dict[str, Any] = {
+                k: v for k, v in source_row.items()
+                if k not in _EXPORT_RECOMPUTED_FIELDS
+                and k not in _EXPORT_SOURCE_TEXT_FIELDS
+            }
+            row["id"] = p.passage_id
+            row["path"] = rel_str
+            row["word_count"] = len(_norm_tokens(p.text))
+            row["content_hash"] = f"sha256:{_sha256_hex(p.text)}"
+            row[pool_guard.PASSAGE_DEDUP_MARKER] = {
+                "source_doc_id": p.doc_id,
+                "source_manifest": manifest_path.name,
+                "ordinal": p.ordinal,
+                "char_start": p.char_start,
+                "char_end": p.char_end,
+                "stages": list(report["stages"]),
+                "params": {
+                    "shingle_size": params["stage_a"]["shingle_size"],
+                    "threshold": params["stage_a"]["threshold"],
+                    "num_perm": params["stage_a"]["num_perm"],
+                    "min_passage_words": params["stage_a"]["min_passage_words"],
+                    "span_shingle_k": params["stage_b"]["span_shingle_k"],
+                    "min_span_words": params["stage_b"]["min_span_words"],
+                },
+            }
+            rows.append(row)
 
-    with out_path.open("w", encoding="utf-8") as f:
-        for row in rows:
-            f.write(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
+        with temp_manifest.open("w", encoding="utf-8") as f:
+            for row in rows:
+                f.write(json.dumps(row, sort_keys=True, ensure_ascii=False) + "\n")
+
+        # The final manifest is the commit marker and lands last.  It can never
+        # become visible while its sidecar directory is partial.
+        os.replace(staging_dir, passage_dir)
+        published_sidecars = True
+        os.replace(temp_manifest, out_path)
+    except OSError as exc:
+        if published_sidecars and passage_dir.exists():
+            shutil.rmtree(passage_dir, ignore_errors=True)
+        raise PassageModeError(
+            f"export refused during staged publication ({exc.__class__.__name__}); "
+            "the final manifest was not published"
+        ) from None
+    finally:
+        if staging_dir.exists():
+            shutil.rmtree(staging_dir, ignore_errors=True)
+        if temp_manifest.exists():
+            temp_manifest.unlink(missing_ok=True)
     return len(rows)
 
 
@@ -1295,6 +1978,21 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         f"counted, not itemized (default: {DEFAULT_MIN_SPAN_WORDS}).")
     g.add_argument("--report-out", type=Path, default=None,
                    help="Write the passage-mode JSON report here.")
+    g.add_argument(
+        "--checkpoint",
+        type=Path,
+        default=None,
+        help=(
+            "Passage-mode checkpoint. Defaults to an opaque path in the system "
+            "temp directory; completed passage/document shards and stages are "
+            "published transactionally."
+        ),
+    )
+    g.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume passage analysis from the exact-bound checkpoint.",
+    )
     g.add_argument("--passage-dir", type=Path, default=None,
                    help="Directory for the exported passage text files. Required with "
                         "--out in passage mode.")
@@ -1354,9 +2052,30 @@ def _run_passages(args: argparse.Namespace) -> int:
             "files and the manifest that indexes them ship together).\n"
         )
         return 2
+    if (
+        args.out
+        and args.passage_dir
+        and (
+            args.out.resolve().is_relative_to(args.passage_dir.resolve())
+            or args.passage_dir.resolve().is_relative_to(args.out.resolve())
+        )
+    ):
+        sys.stderr.write(
+            "[near_dup_dedup] --out and --passage-dir must not contain one another: "
+            "the sidecar "
+            "directory publishes before the manifest commit marker. Choose sibling "
+            "paths; nothing was analyzed or written.\n"
+        )
+        return 2
 
     try:
         stages = parse_stages(args.stages)
+        checkpoint_path = args.checkpoint or _default_passage_checkpoint(args.manifest)
+
+        def progress(message: str) -> None:
+            sys.stderr.write(f"[near_dup_dedup] {message}\n")
+            sys.stderr.flush()
+
         report, passages, rows_by_doc = analyze_passages(
             args.manifest,
             stages=stages,
@@ -1366,6 +2085,9 @@ def _run_passages(args: argparse.Namespace) -> int:
             min_passage_words=args.min_passage_words,
             span_shingle_k=args.span_shingle_k,
             min_span_words=args.min_span_words,
+            checkpoint_path=checkpoint_path,
+            resume=args.resume,
+            progress=progress,
         )
     except PassageModeError as e:
         sys.stderr.write(f"[near_dup_dedup] {e}\n")

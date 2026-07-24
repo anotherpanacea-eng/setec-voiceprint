@@ -12,8 +12,8 @@ Document-mode invariants (frozen — passage mode must not move them):
 Passage-mode invariants (spec 36 M1, the second half of this file):
   * Chunking is raw paragraphs, never coalesced, and every passage/span slices
     back byte-for-byte from the document text as loaded.
-  * Stage A confirms LSH candidates on EXACT Jaccard, and sub-floor passages are
-    grouped by exact token equality without ever reaching the estimator.
+  * Stage A uses complete frequency-ordered prefix candidates confirmed on
+    EXACT Jaccard, and sub-floor passages are grouped by exact token equality.
   * Stage B reports the motivating 41-token embedded span that Stage A provably
     cannot see, and honors the `L >= max(k, min_span_words)` guarantee.
   * The report carries `assumptions` + a real ClaimLicense and passes the
@@ -30,6 +30,8 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import sqlite3
+import stat
 import sys
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -343,8 +345,8 @@ def test_stage_a_confirms_on_exact_jaccard_not_the_estimate(monkeypatch):
     exact = ndd._exact_jaccard(
         ndd.shingles(BASE, k=5), ndd.shingles(NEAR_DUP, k=5),
     )
-    # Same pair, threshold set just above their true Jaccard: no merge, even
-    # though the LSH is coerced into offering every pair as a candidate.
+    # Same pair, threshold set just above their true Jaccard: no merge. The
+    # injected legacy LSH is deliberately irrelevant to passage-mode acceptance.
     class _AllPairsLSH:
         def __init__(self, **kwargs):
             self._keys: list[str] = []
@@ -369,6 +371,133 @@ def test_stage_a_confirms_on_exact_jaccard_not_the_estimate(monkeypatch):
     # ...and accept it when the threshold sits just below the true value.
     out2 = ndd.stage_a_clusters(p_hi, threshold=exact - 0.01)
     assert out2["dropped"] == ["x#p0000"]
+
+
+@_needs_datasketch
+def test_stage_a_lsh_cannot_drop_true_exact_match():
+    """Exact-Jaccard recall cannot depend on probabilistic LSH candidacy."""
+    base = [f"token{i}" for i in range(100)]
+    edited = list(base)
+    edited[30] = "replacement30"
+    edited[70] = "replacement70"
+    passages = [
+        ndd.Passage("a#p0000", "a", 0, 0, 1, " ".join(base)),
+        ndd.Passage("b#p0000", "b", 0, 0, 1, " ".join(edited)),
+    ]
+    exact = ndd._exact_jaccard(
+        ndd.shingles(passages[0].text, k=5),
+        ndd.shingles(passages[1].text, k=5),
+    )
+    assert exact >= 0.8
+    out = ndd.stage_a_clusters(passages, threshold=0.8)
+    assert len(out["dropped"]) == 1
+    assert set(out["kept"] + out["dropped"]) == {"a#p0000", "b#p0000"}
+
+
+@pytest.mark.parametrize(
+    ("threshold", "left_tokens", "right_tokens"),
+    [
+        (
+            0.2,
+            ["a_only", "c1", "c2", "c3"],
+            [*[f"b{i}" for i in range(11)], "c1", "c2", "c3"],
+        ),
+        (
+            0.8,
+            [f"c{i}" for i in range(28)],
+            [*[f"c{i}" for i in range(28)], *[f"b{i}" for i in range(7)]],
+        ),
+    ],
+)
+@_needs_datasketch
+def test_stage_a_exact_threshold_boundaries_do_not_round_up(
+    threshold, left_tokens, right_tokens,
+):
+    passages = [
+        ndd.Passage("a#p0000", "a", 0, 0, 1, " ".join(left_tokens)),
+        ndd.Passage("b#p0000", "b", 0, 0, 1, " ".join(right_tokens)),
+    ]
+    out = ndd.stage_a_clusters(
+        passages,
+        threshold=threshold,
+        shingle_size=1,
+        min_passage_words=0,
+    )
+    assert len(out["dropped"]) == 1
+
+
+@_needs_datasketch
+def test_stage_a_prefix_filter_avoids_common_shingle_pair_explosion(monkeypatch):
+    passages = []
+    for i in range(400):
+        text = "shared0 shared1 shared2 shared3 shared4 " + " ".join(
+            f"u{i}_{j}" for j in range(30)
+        )
+        passages.append(ndd.Passage(f"d{i}#p0000", f"d{i}", 0, 0, len(text), text))
+    real_exact = ndd._meets_jaccard_threshold
+    comparisons = 0
+
+    def counted(left, right, threshold):
+        nonlocal comparisons
+        comparisons += 1
+        return real_exact(left, right, threshold)
+
+    monkeypatch.setattr(ndd, "_meets_jaccard_threshold", counted)
+    out = ndd.stage_a_clusters(passages, threshold=0.8)
+    assert out["dropped"] == []
+    assert comparisons < 1_000
+
+
+@_needs_datasketch
+def test_stage_a_positional_filter_avoids_long_boilerplate_all_pairs(monkeypatch):
+    common = " ".join(f"shared{i}" for i in range(49))
+    passages = []
+    for i in range(400):
+        text = common + " " + " ".join(f"u{i}_{j}" for j in range(8))
+        passages.append(ndd.Passage(f"d{i}#p0000", f"d{i}", 0, 0, len(text), text))
+    real_exact = ndd._meets_jaccard_threshold
+    comparisons = 0
+
+    def counted(left, right, threshold):
+        nonlocal comparisons
+        comparisons += 1
+        return real_exact(left, right, threshold)
+
+    monkeypatch.setattr(ndd, "_meets_jaccard_threshold", counted)
+    out = ndd.stage_a_clusters(passages, threshold=0.8)
+    assert out["dropped"] == []
+    assert comparisons < 1_000
+
+
+@_needs_datasketch
+def test_stage_a_recovery_reuses_completed_shingle_shard(tmp_path, monkeypatch):
+    passages = [
+        ndd.Passage("a#p0000", "a", 0, 0, len(BASE), BASE),
+        ndd.Passage("b#p0000", "b", 0, 0, len(NEAR_DUP), NEAR_DUP),
+    ]
+    store_path = tmp_path / "recovery.sqlite3"
+    with ndd._RecoveryStore(store_path) as recovery:
+        recovery.put("stage_a_shingles", "a#p0000", sorted(ndd.shingles(BASE)))
+        real_shingles = ndd.shingles
+
+        def no_redo(text, **kwargs):
+            if text == BASE:
+                raise AssertionError("completed passage shard was recomputed")
+            return real_shingles(text, **kwargs)
+
+        monkeypatch.setattr(ndd, "shingles", no_redo)
+        ndd.stage_a_clusters(passages, recovery=recovery)
+
+
+@_needs_datasketch
+def test_stage_a_token_empty_passages_do_not_collapse():
+    passages = [
+        ndd.Passage("a#p0000", "a", 0, 0, 3, "!!!"),
+        ndd.Passage("b#p0000", "b", 0, 0, 3, "???"),
+    ]
+    out = ndd.stage_a_clusters(passages)
+    assert out["kept"] == ["a#p0000", "b#p0000"]
+    assert out["dropped"] == []
 
 
 @_needs_datasketch
@@ -441,6 +570,35 @@ def test_stage_b_guarantee_sweep_floor_and_within_document(tmp_path):
     assert out["spans_below_floor"] == 1
 
 
+def test_stage_b_guarantee_survives_extra_boundary_occurrence():
+    """A third occurrence of one shingle cannot hide a qualifying A/B span."""
+    span20 = " ".join(f"boundary{i}" for i in range(20))
+    first_shingle_only = " ".join(span20.split()[:8])
+
+    out = ndd.stage_b_spans([
+        ("a", span20),
+        ("b", span20),
+        ("c", first_shingle_only),
+    ])
+
+    assert len(out["repeated_spans"]) == 1
+    span = out["repeated_spans"][0]
+    assert span["n_words"] == 20
+    assert {
+        (occ["source_doc_id"], occ["token_start"])
+        for occ in span["occurrences"]
+    } == {("a", 0), ("b", 0)}
+
+
+def test_stage_b_reports_overlapping_periodic_occurrences():
+    out = ndd.stage_b_spans([("a", " ".join(["x"] * 40))])
+    assert out["repeated_spans"]
+    assert any(
+        span["n_words"] >= 20 and span["n_occurrences"] >= 2
+        for span in out["repeated_spans"]
+    )
+
+
 def test_stage_b_edited_span_splits_into_verbatim_subspans():
     """Contract 5 (second half): one token changed mid-span splits the 41-token
     span into the two verbatim sub-spans the arithmetic predicts."""
@@ -504,6 +662,225 @@ def test_report_only_default_writes_nothing(tmp_path):
     assert sorted(p.name for p in tmp_path.iterdir()) == ["corpus.jsonl"]
     report = json.loads(out.getvalue())
     assert report["mode"] == "passages"
+
+
+def test_passage_checkpoint_resume_is_bound_and_skips_completed_stage(tmp_path, monkeypatch):
+    m = _passage_manifest(tmp_path, [
+        _full_row("a", SPAN_41),
+        _full_row("b", SPAN_41),
+    ])
+    checkpoint = tmp_path / "state.json"
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(checkpoint), "--json",
+        ]) == 0
+    state = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert state["stage_b_detail"]["repeated_spans"]
+
+    def must_not_rerun(*_args, **_kwargs):
+        raise AssertionError("completed Stage B must be restored")
+
+    monkeypatch.setattr(ndd, "stage_b_spans", must_not_rerun)
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        assert ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(checkpoint), "--resume", "--json",
+        ]) == 0
+    assert "stage B restored from checkpoint" in err.getvalue()
+
+    m.write_text(m.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        assert ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(checkpoint), "--resume", "--json",
+        ]) == 2
+    assert "does not match the exact manifest" in err.getvalue()
+
+
+def test_recovery_shards_are_private(tmp_path):
+    m = _passage_manifest(tmp_path, [
+        _full_row("a", SPAN_41),
+        _full_row("b", SPAN_41),
+    ])
+    checkpoint = tmp_path / "state.json"
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(checkpoint), "--json",
+        ]) == 0
+    recovery_path = ndd._recovery_store_path(checkpoint)
+    assert stat.S_IMODE(recovery_path.parent.stat().st_mode) == 0o700
+    assert stat.S_IMODE(recovery_path.stat().st_mode) == 0o600
+
+
+def test_recovery_store_does_not_chmod_user_owned_parent(tmp_path):
+    user_parent = tmp_path / "project"
+    user_parent.mkdir(mode=0o755)
+    user_parent.chmod(0o755)
+    with ndd._RecoveryStore(user_parent / "state.sqlite3"):
+        pass
+    assert stat.S_IMODE(user_parent.stat().st_mode) == 0o755
+    assert stat.S_IMODE((user_parent / "state.sqlite3").stat().st_mode) == 0o600
+
+
+def test_corrupt_recovery_database_refuses_without_traceback(tmp_path):
+    m = _passage_manifest(tmp_path, [
+        _full_row("a", SPAN_41),
+        _full_row("b", SPAN_41),
+    ])
+    checkpoint = tmp_path / "state.json"
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(checkpoint), "--json",
+        ]) == 0
+    state = json.loads(checkpoint.read_text(encoding="utf-8"))
+    state["stage_b_detail"] = None
+    checkpoint.write_text(json.dumps(state) + "\n", encoding="utf-8")
+    recovery_path = ndd._recovery_store_path(checkpoint)
+    recovery_path.write_bytes(b"not a sqlite database")
+
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        rc = ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(checkpoint), "--resume", "--json",
+        ])
+    assert rc == 2
+    assert "unreadable or corrupt" in err.getvalue()
+
+
+def test_invalid_utf8_recovery_payload_refuses_without_traceback(tmp_path):
+    m = _passage_manifest(tmp_path, [
+        _full_row("a", SPAN_41),
+        _full_row("b", SPAN_41),
+    ])
+    checkpoint = tmp_path / "state.json"
+    with redirect_stdout(io.StringIO()), redirect_stderr(io.StringIO()):
+        assert ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(checkpoint), "--json",
+        ]) == 0
+    state = json.loads(checkpoint.read_text(encoding="utf-8"))
+    state["stage_b_detail"] = None
+    checkpoint.write_text(json.dumps(state) + "\n", encoding="utf-8")
+    recovery_path = ndd._recovery_store_path(checkpoint)
+    with sqlite3.connect(recovery_path) as db:
+        db.execute(
+            "UPDATE shards SET payload=? WHERE stage=? AND shard_key=?",
+            (sqlite3.Binary(b"\xff"), "_meta", "analysis_binding"),
+        )
+
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        rc = ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(checkpoint), "--resume", "--json",
+        ])
+    assert rc == 2
+    assert "unreadable or corrupt" in err.getvalue()
+
+
+def test_checkpoint_parent_regular_file_refuses_without_traceback(tmp_path):
+    m = _passage_manifest(tmp_path, [_full_row("a", SPAN_41)])
+    parent = tmp_path / "not-a-directory"
+    parent.write_text("occupied", encoding="utf-8")
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        rc = ndd.main([
+            str(m), "--passages", "--stages", "b",
+            "--checkpoint", str(parent / "state.json"), "--json",
+        ])
+    assert rc == 2
+    assert "cannot publish passage checkpoint" in err.getvalue()
+    assert parent.read_text(encoding="utf-8") == "occupied"
+
+
+def test_stage_b_recovery_reuses_completed_document_shard(tmp_path, monkeypatch):
+    docs = [("a", SPAN_41), ("b", SPAN_41)]
+    cached = [
+        (m.group(0).lower(), m.start(), m.end())
+        for m in ndd._WORD_RE.finditer(SPAN_41)
+    ]
+    store_path = tmp_path / "recovery.sqlite3"
+    real_word_re = ndd._WORD_RE
+
+    class _NoFirstRetokenize:
+        @staticmethod
+        def finditer(text):
+            if text == SPAN_41:
+                # Both texts are equal, so distinguish the cached first document
+                # by allowing exactly one live tokenization for the second.
+                if _NoFirstRetokenize.calls == 0:
+                    _NoFirstRetokenize.calls += 1
+                    return real_word_re.finditer(text)
+                raise AssertionError("unexpected additional tokenization")
+
+        calls = 0
+
+    with ndd._RecoveryStore(store_path) as recovery:
+        recovery.put("stage_b_tokens", "000000000000", cached)
+        monkeypatch.setattr(ndd, "_WORD_RE", _NoFirstRetokenize)
+        out = ndd.stage_b_spans(docs, recovery=recovery)
+    assert out["repeated_spans"]
+    assert _NoFirstRetokenize.calls == 1
+
+
+def test_analyze_resume_continues_after_interrupted_document_shard(tmp_path, monkeypatch):
+    text_a = _filler(30, 141) + " " + SPAN_41
+    text_b = _filler(30, 142) + " " + SPAN_41
+    m = _passage_manifest(tmp_path, [
+        _full_row("a", text_a),
+        _full_row("b", text_b),
+    ])
+    checkpoint = tmp_path / "state.json"
+    real_stage_b = ndd.stage_b_spans
+
+    def interrupt_after_first_shard(*args, **kwargs):
+        upstream_progress = kwargs.get("progress")
+
+        def progress(message):
+            if upstream_progress:
+                upstream_progress(message)
+            if message == "stage B tokenized 1/2 documents":
+                raise RuntimeError("injected interruption")
+
+        kwargs["progress"] = progress
+        return real_stage_b(*args, **kwargs)
+
+    monkeypatch.setattr(ndd, "stage_b_spans", interrupt_after_first_shard)
+    with pytest.raises(RuntimeError, match="injected interruption"):
+        ndd.analyze_passages(
+            m,
+            stages=["b"],
+            checkpoint_path=checkpoint,
+            progress=lambda _message: None,
+        )
+    state = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert state["stage_b_detail"] is None
+
+    monkeypatch.setattr(ndd, "stage_b_spans", real_stage_b)
+    real_word_re = ndd._WORD_RE
+
+    class _NoCompletedShardRedo:
+        @staticmethod
+        def finditer(text):
+            if text == text_a:
+                raise AssertionError("completed document shard was recomputed")
+            return real_word_re.finditer(text)
+
+    monkeypatch.setattr(ndd, "_WORD_RE", _NoCompletedShardRedo)
+    report, _passages, _rows = ndd.analyze_passages(
+        m,
+        stages=["b"],
+        checkpoint_path=checkpoint,
+        resume=True,
+        progress=lambda _message: None,
+    )
+    assert report["stage_b"]["repeated_spans"] == 1
 
 
 def test_report_carries_claim_license_and_no_verdict(tmp_path):
@@ -730,6 +1107,108 @@ def test_export_refuses_rather_than_fabricating_provenance(tmp_path):
     assert not out_manifest.exists(), "refusal must not leave a partial write"
     # The report is still produced.
     assert json.loads(report_out.read_text(encoding="utf-8"))["mode"] == "passages"
+
+
+@_needs_datasketch
+def test_export_refuses_if_analysis_skipped_unreadable_source_row(tmp_path):
+    good = _full_row("a", _filler(40, 113))
+    bad = _full_row("b", _filler(40, 114))
+    del bad["text"]
+    bad["path"] = "missing.txt"
+    m = _passage_manifest(tmp_path, [good, bad])
+    out_manifest = tmp_path / "export" / "passages.jsonl"
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        rc = ndd.main([
+            str(m), "--passages", "--out", str(out_manifest),
+            "--passage-dir", str(tmp_path / "export" / "p"),
+        ])
+    assert rc == 2
+    assert "silently drop source documents" in err.getvalue()
+    assert not out_manifest.exists()
+    assert not (tmp_path / "export" / "p").exists()
+
+
+@_needs_datasketch
+def test_export_refuses_portable_filename_collision(tmp_path):
+    m = _passage_manifest(tmp_path, [
+        _full_row("A", _filler(40, 115)),
+        _full_row("a", _filler(40, 116)),
+    ])
+    out_manifest = tmp_path / "export" / "passages.jsonl"
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        rc = ndd.main([
+            str(m), "--passages", "--out", str(out_manifest),
+            "--passage-dir", str(tmp_path / "export" / "p"),
+        ])
+    assert rc == 2
+    assert "filesystem semantics" in err.getvalue()
+    assert not out_manifest.exists()
+
+
+@_needs_datasketch
+def test_export_stages_sidecars_before_publication(tmp_path, monkeypatch):
+    m = _passage_manifest(tmp_path, [
+        _full_row("a", _filler(40, 117)),
+        _full_row("b", _filler(40, 118)),
+    ])
+    out_manifest = tmp_path / "export" / "passages.jsonl"
+    passage_dir = tmp_path / "export" / "p"
+    real_write_text = Path.write_text
+    writes = 0
+
+    def fail_second_sidecar(self, data, *args, **kwargs):
+        nonlocal writes
+        if ".p.staging-" in str(self.parent):
+            writes += 1
+            if writes == 2:
+                raise OSError("injected")
+        return real_write_text(self, data, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", fail_second_sidecar)
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        rc = ndd.main([
+            str(m), "--passages", "--out", str(out_manifest),
+            "--passage-dir", str(passage_dir),
+        ])
+    assert rc == 2
+    assert "staged publication" in err.getvalue()
+    assert not out_manifest.exists()
+    assert not passage_dir.exists()
+
+
+@_needs_datasketch
+def test_export_rejects_nested_manifest_before_writing(tmp_path):
+    m = _passage_manifest(tmp_path, [_full_row("a", _filler(40, 119))])
+    passage_dir = tmp_path / "export"
+    out_manifest = passage_dir / "passages.jsonl"
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        rc = ndd.main([
+            str(m), "--passages", "--out", str(out_manifest),
+            "--passage-dir", str(passage_dir),
+        ])
+    assert rc == 2
+    assert "--out and --passage-dir must not contain one another" in err.getvalue()
+    assert not passage_dir.exists()
+
+
+@_needs_datasketch
+def test_export_rejects_passage_dir_nested_under_manifest_path(tmp_path):
+    m = _passage_manifest(tmp_path, [_full_row("a", _filler(40, 120))])
+    out_manifest = tmp_path / "export"
+    passage_dir = out_manifest / "p"
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        rc = ndd.main([
+            str(m), "--passages", "--out", str(out_manifest),
+            "--passage-dir", str(passage_dir),
+        ])
+    assert rc == 2
+    assert "--out and --passage-dir must not contain one another" in err.getvalue()
+    assert not out_manifest.exists()
 
 
 @_needs_datasketch

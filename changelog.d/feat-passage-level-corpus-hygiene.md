@@ -11,9 +11,12 @@ see both classes.
 - **Stage A — near-duplicate passage units.** Documents split into raw paragraphs
   (never coalesced, never split); sub-floor paragraphs grouped by exact
   normalized-token equality instead of being fed to MinHash (which closes the
-  sub-`k` shingle-fallback false-merge class); LSH candidates confirmed against
-  the **true shingle sets** rather than `MinHash.jaccard()`'s estimate, so no
-  probabilistic estimate participates in any accept/reject decision.
+  sub-`k` shingle-fallback false-merge class; token-empty passages use exact raw
+  text); a complete frequency-ordered Jaccard prefix index proposes candidates
+  and confirms them against the **true shingle sets**. No probabilistic estimate
+  participates in recall or acceptance; length/positional overlap bounds reject
+  infeasible common-boilerplate posting buckets before exact comparison. Exact
+  rational/integer threshold arithmetic preserves `J == threshold` boundaries.
 - **Stage B — exact shared-span scan.** A stdlib inverted 8-shingle index reports
   every contiguous verbatim span repeated at ≥ 2 locations, with an arithmetic
   detection guarantee (`L − k + 1` consecutive shared shingles ⇒ every verbatim
@@ -37,9 +40,20 @@ The optional `--out MANIFEST --passage-dir DIR` export writes a
 `manifest_validator`-clean passage-unit corpus: one text file per kept passage,
 rows carrying a resolvable `path` and **every inheritable source field copied
 verbatim** (including `ai_status`, `privacy`, `consent_status`). It **refuses
-entirely** — no partial write, no bypass flag — when a source row lacks a field
-required on the output row, so the hygiene pass can never launder a
-redaction status onto a training artifact.
+entirely** — no partial write, no bypass flag — when a source row lacks a field,
+was skipped/unreadable, or would collide under supported filesystem semantics.
+Sidecars stage privately and the manifest publishes last, so a visible manifest
+never indexes partial sidecars. Nested `--out`/`--passage-dir` layouts in either
+direction are refused before analysis; use sibling targets.
+
+Passage mode emits flushed progress and transactionally checkpoints Stage-A
+passage/pair shards and Stage-B per-document token/key/region/span shards by
+default; `--resume` restores only an exact input/config binding and loses at most
+the interrupted shard. Corpus-derived recovery data is held in a dedicated
+mode-0700 directory and mode-0600 SQLite file; unsafe path types refuse.
+The private directory is tool-owned; a user-selected checkpoint parent is never
+chmodded, and corrupt databases/payloads or invalid checkpoint paths fail through
+the typed refusal path.
 
 **New `pool_guard` — duplicate-dependent pools refuse a passage-deduped manifest.**
 `corpus_novelty_audit`, `homogeneity_audit`, `distinct_diversity_audit`,

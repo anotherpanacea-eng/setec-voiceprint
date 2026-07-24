@@ -2,7 +2,8 @@
 
 > **Passage-level repetition hygiene for training corpora** — a `--passages` mode for
 > `near_dup_dedup.py` with a **two-stage detection design**: **Stage A** clusters near-duplicate
-> *passage units* (uncoalesced paragraphs; MinHash-LSH candidates confirmed by **exact** Jaccard)
+> *passage units* (uncoalesced paragraphs; a complete frequency-ordered Jaccard prefix index,
+> all confirmed by **exact** Jaccard)
 > and can export a schema-valid filtered passage manifest; **Stage B** is an **exact shared-span
 > scan** (inverted shingle index, stdlib) that finds a contiguous repeated span of the motivating
 > size *inside* otherwise-distinct passages — the case passage-level Jaccard provably cannot see.
@@ -126,26 +127,27 @@ edited reprints of a passage, repeated section templates.
   are never merged and never split: coalescing was shown to *destroy* the short-boilerplate
   signal (above), and paragraph boundaries are the authorial unit the whole-passage class recurs
   in.
-- **Short passages never enter the LSH.** Paragraphs with fewer than `--min-passage-words`
+- **Short passages never enter the similarity index.** Paragraphs with fewer than `--min-passage-words`
   tokens (default **10**, i.e. `2k`) are grouped by **exact equality of their normalized token
   sequence** (lowercased `_WORD_RE` tokens, the module's existing normalization) instead of
-  MinHash. This both catches repeated short sign-offs *exactly* and closes a false-positive
+  MinHash; token-empty passages fall back to exact raw-text equality. This both catches
+  repeated short sign-offs *exactly* and closes a false-positive
   class the review flagged: `shingles()`'s documented sub-`k` fallback collapses any <5-word
   text to a single whole-text shingle, so two such passages can score Jaccard exactly 1.0
   spuriously under MinHash. Passage mode never exposes sub-`k` texts to the estimator. (The
   library fallback itself is unchanged — document mode keeps its shipped behavior.)
-- **Comparison: LSH candidates, EXACT-Jaccard confirmation.** Passages ≥ the floor are shingled
-  (`shingles(text, k=5)`, the existing helper) and indexed in MinHash-LSH exactly as document
-  mode does — but candidate pairs are confirmed against the **true shingle sets** (already in
-  memory from signature construction), not against `MinHash.jaccard()`'s estimate. Rationale
-  (the second half of the retraction): at `num_perm = 128` the MinHash Jaccard estimate has
-  SE ≈ 0.04 near `J = 0.8`, sitting exactly in the borderline band — and passage-scale
-  comparison produces far more borderline pairs than document scale. Estimated-Jaccard
-  confirmation therefore admits false merges, and false merges are **destructive here**: Stage
-  A's export drops non-representative cluster members from a *training* corpus. Exact
-  confirmation makes every confirmed pair a true `≥ threshold` near-duplicate,
-  deterministically, at the cost of one set intersection per LSH candidate pair (candidates are
-  already the pruned set; cheap). LSH remains the *candidate generator only*.
+- **Comparison: complete prefix candidates, EXACT-Jaccard confirmation.** Passages ≥ the floor
+  are shingled (`shingles(text, k=5)`, the existing helper). Shingles receive one deterministic
+  global order by corpus frequency then text; each set indexes the standard Jaccard prefix
+  `|S| - ceil(threshold × |S|) + 1`. Every pair whose true Jaccard clears the threshold must
+  share a prefix item. Common boilerplate sorts late; length and positional-overlap upper bounds
+  reject entire posting buckets that cannot meet the required overlap, avoiding the quadratic
+  exact-comparison path caused by closing over every pair sharing any shingle. Candidate pairs
+  are confirmed against the **true shingle sets**. Threshold, prefix, length, and required-
+  overlap comparisons use exact rational/integer arithmetic, including `J == threshold`
+  boundaries. No MinHash estimate participates in recall or acceptance. A false merge is
+  destructive here—Stage A's export drops non-representative
+  members from a *training* corpus—so exact confirmation is mandatory.
 - **Clustering + representative:** unchanged from the shipped path — union-find over confirmed
   pairs, deterministic representative (longest text, then lowest id; zero-padded passage
   ordinals keep the id tiebreak sane).
@@ -190,9 +192,14 @@ of Lee et al.'s exact-substring dedup pass (arXiv:2107.06499).
   whole-passage reuse is Stage A's class, and edited sub-passage reuse below the floor is
   detected by neither stage (the honest residual, stated in `assumptions` and
   `does_not_license`). (b) Memory is O(corpus tokens) for the index — fine at personal-corpus
-  scale; a run at large-corpus scale falls under the repo's standing long-running-surface rules
-  (recoverable / visible / continuable) and should shard via the existing `shard_runner`
-  conventions before this mode is pointed at anything bigger than a staged personal manifest.
+  scale. The CLI emits flushed progress and transactionally checkpoints Stage-A passage
+  shingles/candidate shards plus Stage-B token/key/region/span document shards under an exact
+  input/config binding. `--resume` loses at most the interrupted shard, not the corpus-wide
+  stage. Recovery shards contain corpus-derived tokens, so they live in a dedicated mode-0700
+  tool-owned directory with a mode-0600 SQLite file; symlink/non-regular targets are refused,
+  corrupt databases/payloads and invalid checkpoint paths produce a typed refusal, and the
+  helper never changes permissions on the user-selected checkpoint parent. Export sidecars are
+  staged and the manifest publishes last.
 - **Stage B never drops anything.** Its output is the span inventory (report + per-document
   duplicated-region map) for consumer-side action — loss-masking or chunk-stream filtering at
   training time is the training pipeline's decision. Excising spans from documents is refused on
@@ -233,10 +240,9 @@ recorded.
 
 ### Determinism
 
-Deterministic chunking (byte-driven paragraph split); exact-Jaccard confirmation and the exact
-span index (no estimation participates in any accept/reject decision — MinHash-LSH is
-candidate-generation only, and datasketch's fixed default seed keeps even the candidate set
-stable for a given datasketch version); stable representative rule; zero-padded positional ids.
+Deterministic chunking (byte-driven paragraph split); complete frequency-ordered Jaccard prefix
+filtering, exact-Jaccard confirmation, and the exact span index;
+stable representative rule; zero-padded positional ids.
 Same input manifest + same params ⇒ byte-identical report and export. Pinned by a run-twice
 byte-identity test, not asserted.
 
@@ -294,6 +300,9 @@ pipelines), redesigned to be **valid under `manifest_validator` by construction*
   all source-row fields are inherited except `id` / `path` / `word_count` / `content_hash`,
   which are recomputed per passage) — plus the `passage_dedup` provenance object (the guard
   marker).
+- `--out` and `--passage-dir` must be sibling/disjoint paths: neither may contain the other.
+  The sidecar directory publishes atomically first and the manifest is its commit marker. The
+  CLI refuses nested layouts before analysis or creation of either target.
 - **Refusal, not fabrication:** if any source row feeding the export lacks a field that is
   REQUIRED on the output row (`ai_status`, `use`), the export **refuses entirely** (clear error
   naming the rows; no partial write; the report is still produced). A hygiene tool must not
@@ -425,6 +434,7 @@ and named as operator/consumer responsibility, exactly as the document-level rul
 - **CLI:** `python3 plugins/setec-voiceprint/scripts/near_dup_dedup.py <manifest> --passages
   [--stages a,b] [--min-passage-words 10] [--threshold 0.8] [--num-perm 128] [--shingle-size 5]
   [--span-shingle-k 8] [--min-span-words 20] [--report-out FILE]
+  [--checkpoint FILE] [--resume]
   [--out MANIFEST --passage-dir DIR] [--json]`. Passage mode without `--out` is report-only;
   `--out` requires `--passage-dir`; passage mode never rewrites the input manifest. Document
   mode's CLI and output are unchanged.
@@ -474,11 +484,14 @@ existing test files; new `tests/test_pool_guard_coverage.py`.
    the exact raw slice (no folding, no NFC).
 2. **short-passage exact grouping:** two identical 3-word sign-off paragraphs across documents →
    one exact group in `short_exact_groups`; two *different* sub-`k` paragraphs → NOT grouped
-   (the sub-`k`-fallback false-positive class is closed: no sub-floor text reaches the LSH,
-   asserted structurally).
+   (the sub-`k`-fallback false-positive class is closed: no sub-floor text reaches the index,
+   asserted structurally); distinct token-empty punctuation passages remain distinct.
 3. **Stage A exact-confirmation pin:** a candidate pair whose exact Jaccard is just below
-   threshold is NOT merged even when presented as an LSH candidate; a pair with exact
-   `J ≥ threshold` is merged. (Pins confirm-on-exact, not confirm-on-estimate.)
+   threshold is NOT merged; a pair with exact `J ≥ threshold` is merged. A high-frequency
+   shared shingle—or a 49-token common boilerplate block—across 400 otherwise-distinct
+   passages does not mint 79,800 exact comparisons. (Pins complete prefix recall, positional
+   pruning, exact acceptance, and the common-shingle scaling guard.) Exact-equality boundaries
+   at 0.2 and 0.8 are pinned against binary-float `ceil` drift.
 4. **the motivating case pinned (Stage B):** two documents that are NOT document-level
    near-duplicates, sharing only a single embedded ~41-token verbatim span inside
    otherwise-distinct ~120-word paragraphs → Stage A reports **no** cluster for them (honest:
@@ -502,7 +515,8 @@ existing test files; new `tests/test_pool_guard_coverage.py`.
    `passage_dedup`.
 9. **export refusal, not fabrication:** a source row missing `ai_status` or `use` → the export
    refuses entirely (clear error naming the row; no partial write; the report is still
-   produced).
+   produced); skipped/unreadable rows and portable filename collisions also refuse, sidecars
+   stage before the manifest commit marker, and no bypass exists.
 10. **deterministic rerun:** same input + params → byte-identical report and export (run twice).
 11. **representative rule inherited:** longest passage kept; tie → lowest passage id.
 12. **no in-place rewrite in passage mode**; doc-mode behavior unchanged (existing tests green).
@@ -529,6 +543,14 @@ existing test files; new `tests/test_pool_guard_coverage.py`.
     and no classification makes the test fail (self-test of the sweep).
 20. **pool_guard unit pins:** marked row → reported with id/line; unmarked manifest → empty;
     malformed JSONL lines skipped without crashing; pure stdlib import.
+21. **continuation:** the CLI emits progress, transactionally checkpoints Stage-A passage/pair
+    shards and Stage-B per-document token/key/region/span shards, restores them under
+    `--resume`, and refuses a checkpoint whose exact input/config binding moved. A crash loses
+    at most the interrupted shard.
+22. **checkpoint privacy:** the dedicated tool-owned recovery directory is mode 0700 and its
+    SQLite file mode 0600 even under a permissive umask; symlink/non-regular recovery targets
+    corrupt databases/payloads and invalid checkpoint paths refuse without a traceback, and an
+    existing user checkpoint parent retains its original mode.
 
 ## Calibration posture
 
@@ -627,6 +649,22 @@ is specified here.
    Stage A catches *near*-verbatim whole-passage reuse (edited reprints, templated paragraphs)
    that exact matching splits into sub-floor fragments. Stage A is also the only stage that can
    feed an export (a span cannot be "kept or dropped" without excision).
+
+### Codex code-review fixes (2026-07-24)
+
+- Stage B continuation now follows repeated occurrence subsets, so an extra occurrence of one
+  shingle cannot fracture a qualifying span below the reporting floor.
+- Stage A closes probabilistic LSH false negatives with a complete frequency-ordered Jaccard
+  prefix index with length/positional upper bounds; common boilerplate cannot materialize
+  quadratic exact comparisons, exact rational arithmetic preserves equality boundaries, and
+  exact Jaccard is the only accept/reject rule.
+- Export refuses skipped/unreadable rows, portable filename collisions, and existing targets;
+  sidecars stage privately and the manifest publishes last.
+- Token-empty short passages use exact raw-text fallback rather than collapsing every
+  punctuation-only passage into one empty normalized group.
+- Passage CLI runs publish flushed progress and exact-bound SQLite shards after each passage or
+  document work unit by default, with `--resume` restoring completed partial work. Corpus-derived
+  shards are kept in a private 0700 directory/0600 database and reject unsafe path types.
 
 ## Open questions
 
