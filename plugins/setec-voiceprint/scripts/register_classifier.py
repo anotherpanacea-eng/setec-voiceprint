@@ -33,7 +33,9 @@ Public API:
         "scores": {"first_person_essay": 0.62, "short_social": 0.41, ...},
         "evidence": {"citation_density_per_1k": 0.0,
                      "dialogue_ratio": 0.05, ...},
+        "warning": None,
         "taxonomy": "register_families/v2",
+        "refusal_reason": None,
     }
 
     register_match(target_register, baseline_registers) -> {
@@ -62,6 +64,11 @@ TASK_SURFACE = "validation"
 # Classifier output taxonomy. Manifest document-type registers map into these
 # scorer-backed families; ``unknown`` is a refusal sentinel and is never scored.
 REGISTER_TAXONOMY = "register_families/v2"
+REGISTER_REFUSAL_REASONS: tuple[str, ...] = (
+    "short_text",
+    "all_weak",
+    "exact_top_tie",
+)
 REGISTER_FAMILIES: tuple[str, ...] = (
     "formal_legal_policy",
     "formal_first_person",
@@ -387,6 +394,25 @@ _SCORERS = {
 # --- Public API ------------------------------------------------
 
 
+def _unrecognized_hint_warning(hint: str) -> str:
+    return f"Ignored unrecognized register hint {hint!r}."
+
+
+def _short_text_warning(n_words: int, min_words: int) -> str:
+    return (
+        f"Text has {n_words} words; register classification "
+        f"requires at least {min_words}. Returning 'unknown'."
+    )
+
+
+def _exact_top_tie_warning(tied: list[str]) -> str:
+    return (
+        "Exact top register-family tie among "
+        + ", ".join(f"`{register}`" for register in tied)
+        + "; returning 'unknown'."
+    )
+
+
 def classify_register(
     text: str,
     *,
@@ -397,8 +423,12 @@ def classify_register(
 
     Returns a dict with `primary` (best match), `confidence` (the
     primary score in [0, 1]), `secondary` (registers within 0.10 of
-    the primary), `scores` (per-register), and `evidence` (the
-    feature vector).
+    the primary), `scores` (per-register), `evidence` (the feature
+    vector), `warning` (advisory prose or ``None``), `taxonomy`, and
+    `refusal_reason` (one of :data:`REGISTER_REFUSAL_REASONS` or
+    ``None``). ``primary == "unknown"`` if and only if
+    ``refusal_reason`` is a member of
+    :data:`REGISTER_REFUSAL_REASONS`.
 
     Below ``min_words``, the classifier refuses with primary
     ``"unknown"`` and confidence 0.0 — heuristics are noisy on short
@@ -410,13 +440,10 @@ def classify_register(
     hint_family = resolve_family(hint) if hint else None
     warnings: list[str] = []
     if hint and hint_family == "unknown" and hint.strip() != "unknown":
-        warnings.append(f"Ignored unrecognized register hint {hint!r}.")
+        warnings.append(_unrecognized_hint_warning(hint))
     n_words = features.get("n_words", 0) or 0
     if n_words < min_words:
-        warnings.append(
-            f"Text has {n_words} words; register classification "
-            f"requires at least {min_words}. Returning 'unknown'."
-        )
+        warnings.append(_short_text_warning(n_words, min_words))
         return {
             "primary": "unknown",
             "confidence": 0.0,
@@ -425,6 +452,7 @@ def classify_register(
             "evidence": features,
             "warning": "; ".join(warnings),
             "taxonomy": REGISTER_TAXONOMY,
+            "refusal_reason": "short_text",
         }
 
     scores: dict[str, float] = {}
@@ -436,8 +464,10 @@ def classify_register(
     ranked = sorted(scores.items(), key=lambda kv: -kv[1])
     primary = ranked[0][0] if ranked else "unknown"
     primary_score = ranked[0][1] if ranked else 0.0
+    refusal_reason: str | None = None
     if primary_score < 0.30:
         primary = "unknown"
+        refusal_reason = "all_weak"
         secondary: list[str] = [
             register for register, score in ranked[1:]
             if (primary_score - score) < 0.10 and score > 0.30
@@ -446,17 +476,14 @@ def classify_register(
         tied = [register for register, score in ranked if score == primary_score]
         if len(tied) > 1:
             primary = "unknown"
+            refusal_reason = "exact_top_tie"
             secondary = tied + [
                 register for register, score in ranked
                 if register not in tied
                 and (primary_score - score) < 0.10
                 and score > 0.30
             ]
-            warnings.append(
-                "Exact top register-family tie among "
-                + ", ".join(f"`{register}`" for register in tied)
-                + "; returning 'unknown'."
-            )
+            warnings.append(_exact_top_tie_warning(tied))
         else:
             secondary = [
                 register for register, score in ranked[1:]
@@ -471,6 +498,7 @@ def classify_register(
         "evidence": features,
         "warning": "; ".join(warnings) if warnings else None,
         "taxonomy": REGISTER_TAXONOMY,
+        "refusal_reason": refusal_reason,
     }
 
 
@@ -609,6 +637,7 @@ __all__ = [
     "KNOWN_REGISTERS",
     "REGISTER_FAMILIES",
     "REGISTER_TAXONOMY",
+    "REGISTER_REFUSAL_REASONS",
     "CANONICAL_REGISTER_TO_FAMILY",
     "LEGACY_REGISTER_TO_FAMILY",
     "resolve_family",

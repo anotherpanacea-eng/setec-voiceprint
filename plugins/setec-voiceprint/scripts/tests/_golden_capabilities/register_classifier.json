@@ -23,7 +23,12 @@
   },
   "outputs": {
     "artifacts": [
-      "In-memory classify_register and register_match dictionaries carrying the register_families/v2 taxonomy marker."
+      "In-memory classify_register and register_match dictionaries carrying the register_families/v2 taxonomy marker; classify_register always carries a nullable refusal_reason (short_text, all_weak, or exact_top_tie when it refuses, otherwise null)."
+    ],
+    "refusal_reasons": [
+      "short_text",
+      "all_weak",
+      "exact_top_tie"
     ],
     "schema_version": "1.0"
   },
