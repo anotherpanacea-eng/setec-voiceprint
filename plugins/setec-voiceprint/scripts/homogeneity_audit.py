@@ -40,6 +40,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
+import pool_guard  # noqa: E402
 from stylometry_core import (  # noqa: E402
     char_ngram_features,
     function_word_features,
@@ -375,6 +376,16 @@ def _run_pool(args: argparse.Namespace) -> dict[str, Any]:
             task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
             reason="pool mode needs --manifest or --dir (or use --target + a centroid for proximity)",
             reason_category="bad_input")
+    # Pool-collapse IS the read here, so a passage-deduped manifest has had the
+    # measured object removed before this surface ever sees it (spec 36).
+    if args.manifest:
+        marked = pool_guard.scan_manifest_for_passage_dedup(Path(args.manifest))
+        if marked:
+            return build_error_output(
+                task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+                target_path=args.manifest,
+                reason=pool_guard.refusal_reason(args.manifest, marked, flag="--manifest"),
+                reason_category="bad_input")
     try:
         if args.dir:
             pool = _load_dir(Path(args.dir))

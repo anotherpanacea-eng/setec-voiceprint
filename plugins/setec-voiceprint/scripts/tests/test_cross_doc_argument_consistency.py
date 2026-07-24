@@ -364,3 +364,44 @@ def test_below_floor_focal_abstains(tmp_path):
     env = cdac.compose_envelope(focal, pool, judge_kind="mock")
     assert env["available"] is False
     assert env["reason_category"] == "text_too_short"
+
+# A passage-deduped manifest (rows carrying the spec-36 `passage_dedup` marker).
+_GUARD_MARKED_ROWS = [
+    {"id": "docA#p0000",
+     "text": "The harbor lights came on one at a time along the western pier while the last of the fishing boats turned home tonight.",
+     "passage_dedup": {"source_doc_id": "docA", "ordinal": 0}},
+    {"id": "docB#p0000",
+     "text": "Quantum entanglement continues to defy ordinary intuition about locality and separability in ways that still puzzle working physicists today somehow.",
+     "passage_dedup": {"source_doc_id": "docB", "ordinal": 0}},
+    {"id": "docC#p0000",
+     "text": "Parliament debated the contentious measure for many hours before adjourning without any clear resolution late that long gray winter evening.",
+     "passage_dedup": {"source_doc_id": "docC", "ordinal": 0}},
+]
+
+
+# --- spec 36: the pool guard must NOT creep onto this comparison pool -------
+#
+# Contract 17 (negative control). This surface imports the shared pool loaders
+# (from cross_doc_novelty_profile, not originality_audit — which is why the
+# coverage sweep keys on the imported NAMES), but its measurement is a
+# claim-consistency COMPARISON across one author's documents, not a
+# duplicate-dependent diversity read. It must accept a marked manifest.
+
+def test_pool_guard_does_not_creep_onto_this_comparison_pool(tmp_path):
+    import pool_guard  # type: ignore
+
+    m = tmp_path / "marked.jsonl"
+    rows = [
+        {"id": "pool#p0000",
+         "text": (FIXTURES / "pool_genuine.txt").read_text(encoding="utf-8"),
+         "passage_dedup": {"source_doc_id": "pool", "ordinal": 0}},
+    ]
+    m.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    out = tmp_path / "out.json"
+    rc = cdac.main([
+        "--focal", str(FIXTURES / "focal.txt"),
+        "--reference-manifest", str(m), "--judge", "mock", "--out", str(out),
+    ])
+    env = json.loads(out.read_text(encoding="utf-8"))
+    assert rc == 0 and env["available"] is True
+    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env)
