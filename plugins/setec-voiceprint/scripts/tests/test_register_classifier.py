@@ -775,6 +775,59 @@ class TestTaxonomy:
         assert completed.returncode == 0
 
 
+def test_capability_fragment_reason_list_matches_the_code_constant():
+    """The published capability registry must not advertise a stale reason set.
+
+    `REGISTER_REFUSAL_REASONS` and the `refusal_reasons` list in the capability
+    fragment (plus its golden mirror) are three independent copies of one
+    vocabulary. `check_capabilities_drift.py` validates manifest<->source
+    structurally and does not compare this field's CONTENTS, so without this
+    test a fourth reason could be added to the tuple and its emitting branch,
+    pass every classifier test and the drift gate, and leave the registry
+    silently advertising the old three-value vocabulary to consumers.
+    """
+    yaml = pytest.importorskip("yaml")
+    root = Path(__file__).resolve().parents[2]
+    fragment = root / "capabilities.d" / "register_classifier.yaml"
+    golden = Path(__file__).resolve().parent / "_golden_capabilities" / "register_classifier.json"
+    assert fragment.exists(), fragment
+
+    declared = yaml.safe_load(fragment.read_text(encoding="utf-8"))
+    listed = _find_refusal_reasons(declared)
+    assert listed is not None, f"no refusal_reasons key in {fragment}"
+    assert tuple(listed) == rc.REGISTER_REFUSAL_REASONS, (
+        "capabilities.d/register_classifier.yaml refusal_reasons "
+        f"{tuple(listed)!r} != REGISTER_REFUSAL_REASONS "
+        f"{rc.REGISTER_REFUSAL_REASONS!r}"
+    )
+
+    if golden.exists():
+        golden_entry = json.loads(golden.read_text(encoding="utf-8"))
+        found = _find_refusal_reasons(golden_entry)
+        assert found is not None, f"no refusal_reasons key in {golden}"
+        assert tuple(found) == rc.REGISTER_REFUSAL_REASONS, (
+            f"golden {golden.name} refusal_reasons {tuple(found)!r} != "
+            f"REGISTER_REFUSAL_REASONS {rc.REGISTER_REFUSAL_REASONS!r}"
+        )
+
+
+def _find_refusal_reasons(node):
+    """Locate the `refusal_reasons` list anywhere in a nested golden payload."""
+    if isinstance(node, dict):
+        if "refusal_reasons" in node:
+            return node["refusal_reasons"]
+        for value in node.values():
+            found = _find_refusal_reasons(value)
+            if found is not None:
+                return found
+    elif isinstance(node, list):
+        for value in node:
+            found = _find_refusal_reasons(value)
+            if found is not None:
+                return found
+    return None
+
+
 if __name__ == "__main__":
     if pytest is None:
         sys.stderr.write("pytest not installed; cannot run tests.\n")
