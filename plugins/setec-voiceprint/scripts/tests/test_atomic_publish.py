@@ -162,27 +162,172 @@ def test_atomic_write_cleans_descriptor_and_temp_after_identity_failure(
 ) -> None:
     target = tmp_path / "private" / "payload.bin"
     created: list[tuple[int, Path]] = []
+    identity_events: list[str] = []
     real_mkstemp = publish.tempfile.mkstemp
     real_fstat = publish.os.fstat
+    real_stat = publish.os.stat
 
     def recording_mkstemp(*, dir, prefix, suffix):
         descriptor, raw = real_mkstemp(dir=dir, prefix=prefix, suffix=suffix)
         created.append((descriptor, Path(raw)))
         return descriptor, raw
 
+    def recording_stat(path, *, follow_symlinks=True):
+        if (
+            created
+            and not isinstance(path, int)
+            and Path(path) == created[0][1]
+            and not follow_symlinks
+        ):
+            identity_events.append("name")
+        return real_stat(path, follow_symlinks=follow_symlinks)
+
     def fail_fstat(_descriptor: int):
+        identity_events.append("descriptor")
         raise OSError(errno.EIO, "synthetic identity failure")
 
     monkeypatch.setattr(publish.tempfile, "mkstemp", recording_mkstemp)
+    monkeypatch.setattr(publish.os, "stat", recording_stat)
     monkeypatch.setattr(publish.os, "fstat", fail_fstat)
     with pytest.raises(OSError, match="synthetic identity failure"):
         publish.atomic_write_private(target, b"payload")
 
     assert len(created) == 1
     descriptor, temporary = created[0]
+    assert identity_events[:2] == ["name", "descriptor"]
     assert not temporary.exists()
     with pytest.raises(OSError):
         real_fstat(descriptor)
+
+
+def test_atomic_write_cleans_descriptor_and_temp_after_name_identity_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "private" / "payload.bin"
+    created: list[tuple[int, Path]] = []
+    identity_events: list[str] = []
+    failed_name_stat = False
+    real_mkstemp = publish.tempfile.mkstemp
+    real_fstat = publish.os.fstat
+    real_stat = publish.os.stat
+
+    def recording_mkstemp(*, dir, prefix, suffix):
+        descriptor, raw = real_mkstemp(dir=dir, prefix=prefix, suffix=suffix)
+        created.append((descriptor, Path(raw)))
+        return descriptor, raw
+
+    def fail_first_name_stat(path, *, follow_symlinks=True):
+        nonlocal failed_name_stat
+        if (
+            created
+            and Path(path) == created[0][1]
+            and not follow_symlinks
+            and not failed_name_stat
+        ):
+            failed_name_stat = True
+            identity_events.append("name")
+            raise OSError(errno.EIO, "synthetic name identity failure")
+        return real_stat(path, follow_symlinks=follow_symlinks)
+
+    def recording_fstat(descriptor: int):
+        identity_events.append("descriptor")
+        return real_fstat(descriptor)
+
+    monkeypatch.setattr(publish.tempfile, "mkstemp", recording_mkstemp)
+    monkeypatch.setattr(publish.os, "stat", fail_first_name_stat)
+    monkeypatch.setattr(publish.os, "fstat", recording_fstat)
+    with pytest.raises(OSError, match="synthetic name identity failure"):
+        publish.atomic_write_private(target, b"payload")
+
+    assert len(created) == 1
+    descriptor, temporary = created[0]
+    assert identity_events[:2] == ["name", "descriptor"]
+    assert not temporary.exists()
+    with pytest.raises(OSError):
+        real_fstat(descriptor)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX descriptor duplicate")
+def test_name_identity_error_survives_cleanup_descriptor_dup_failure(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "private" / "payload.bin"
+    created: list[tuple[int, Path]] = []
+    failed_name_stat = False
+    real_mkstemp = publish.tempfile.mkstemp
+    real_fstat = publish.os.fstat
+    real_stat = publish.os.stat
+
+    def recording_mkstemp(*, dir, prefix, suffix):
+        descriptor, raw = real_mkstemp(dir=dir, prefix=prefix, suffix=suffix)
+        created.append((descriptor, Path(raw)))
+        return descriptor, raw
+
+    def fail_first_name_stat(path, *, follow_symlinks=True):
+        nonlocal failed_name_stat
+        if (
+            created
+            and Path(path) == created[0][1]
+            and not follow_symlinks
+            and not failed_name_stat
+        ):
+            failed_name_stat = True
+            raise OSError(errno.EIO, "synthetic name identity failure")
+        return real_stat(path, follow_symlinks=follow_symlinks)
+
+    def fail_dup(_descriptor: int):
+        raise OSError(errno.EMFILE, "synthetic descriptor exhaustion")
+
+    monkeypatch.setattr(publish.tempfile, "mkstemp", recording_mkstemp)
+    monkeypatch.setattr(publish.os, "stat", fail_first_name_stat)
+    monkeypatch.setattr(publish.os, "dup", fail_dup)
+    with pytest.raises(OSError, match="synthetic name identity failure") as caught:
+        publish.atomic_write_private(target, b"payload")
+
+    assert caught.value.errno == errno.EIO
+    assert len(created) == 1
+    descriptor, temporary = created[0]
+    assert not temporary.exists()
+    with pytest.raises(OSError):
+        real_fstat(descriptor)
+
+
+@pytest.mark.skipif(os.name != "posix", reason="open-file substitution probe")
+def test_atomic_write_never_cleans_a_substitute_seen_before_descriptor_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    target = tmp_path / "private" / "payload.bin"
+    displaced: list[Path] = []
+    replacement: list[Path] = []
+    real_stat = publish.os.stat
+
+    def substitute_before_named_stat(path, *, follow_symlinks=True):
+        candidate = Path(path)
+        if (
+            not replacement
+            and candidate.name.startswith(".payload.bin.")
+            and candidate.name.endswith(".tmp")
+            and not follow_symlinks
+        ):
+            owned = candidate.with_name(candidate.name + ".owned")
+            os.rename(candidate, owned)
+            candidate.write_bytes(b"not-owned")
+            displaced.append(owned)
+            replacement.append(candidate)
+        return real_stat(path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(publish.os, "stat", substitute_before_named_stat)
+    with pytest.raises(OSError, match="temporary identity changed"):
+        publish.atomic_write_private(target, b"owned")
+
+    assert len(replacement) == 1
+    assert replacement[0].read_bytes() == b"not-owned"
+    assert len(displaced) == 1
+    assert displaced[0].read_bytes() == b""
+    assert not target.exists()
 
 
 @pytest.mark.parametrize("base", [str, bytes])

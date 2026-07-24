@@ -107,7 +107,35 @@ def atomic_write_private(path: Path, data: str | bytes) -> None:
     owned_identity: tuple[int, int] | None = None
     owner_descriptor = -1
     try:
-        owned_identity = _identity(os.fstat(descriptor))
+        named_error: OSError | None = None
+        try:
+            named_info = os.stat(temporary, follow_symlinks=False)
+        except OSError as exc:
+            named_error = exc
+        else:
+            if not stat.S_ISREG(named_info.st_mode):
+                raise OSError(
+                    errno.EIO,
+                    "atomic-write temporary is not a regular file",
+                )
+            owned_identity = _identity(named_info)
+        descriptor_identity = _identity(os.fstat(descriptor))
+        if named_error is not None:
+            owned_identity = descriptor_identity
+            if os.name == "posix":
+                try:
+                    owner_descriptor = os.dup(descriptor)
+                except OSError:
+                    # The original descriptor remains available to prove
+                    # cleanup ownership; preserve the pathname-stat error.
+                    pass
+            raise named_error
+        if descriptor_identity != owned_identity:
+            # The name may already identify another actor's replacement.  The
+            # still-open descriptor proves only the displaced file, so revoke
+            # pathname cleanup ownership before failing closed.
+            owned_identity = None
+            raise OSError(errno.EIO, "atomic-write temporary identity changed")
         # A retained identity handle makes cleanup ownership durable on POSIX.
         # Keep Windows rename-compatible: a live CRT duplicate can deny rename
         # sharing, so Windows cleanup relies on the captured file identity.
@@ -127,13 +155,15 @@ def atomic_write_private(path: Path, data: str | bytes) -> None:
             os.chmod(target, PRIVATE_FILE_MODE)
     finally:
         cleanup_descriptor = (
-            owner_descriptor if owner_descriptor >= 0 else descriptor
+            owner_descriptor
+            if owner_descriptor >= 0
+            else descriptor if os.name == "posix" else -1
         )
-        if owned_identity is None and cleanup_descriptor >= 0:
-            try:
-                owned_identity = _identity(os.stat(cleanup_descriptor))
-            except (OSError, TypeError, ValueError):
-                pass
+        if os.name == "nt" and descriptor >= 0:
+            # Windows may deny name deletion while the CRT handle is open.
+            # The captured file identity still gates the pathname cleanup.
+            os.close(descriptor)
+            descriptor = -1
         if owned_identity is not None:
             _unlink_if_owned(
                 temporary,
