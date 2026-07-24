@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import datetime as dt
+import errno
 import json
 import os
 import shutil
@@ -841,6 +842,98 @@ def test_publish_is_atomic_private_and_rejects_overwrite(private_root: Path):
     assert not list(private_root.glob(".package.staging-*"))
 
 
+@pytest.mark.parametrize("winner_kind", ["file", "directory", "symlink"])
+def test_publish_race_preserves_winner_and_cleans_only_staging(
+    private_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    winner_kind: str,
+):
+    records, texts, receipt, _config_hash, evidence = _build(private_root)
+    out = private_root / f"raced-{winner_kind}"
+    real_publish = E.atomic_publish.publish_directory_noreplace
+
+    def race_then_publish(staging: Path, destination: Path) -> None:
+        assert destination == out
+        if winner_kind == "file":
+            destination.write_bytes(b"file-winner")
+        elif winner_kind == "directory":
+            destination.mkdir()
+            (destination / "sentinel").write_bytes(b"directory-winner")
+        else:
+            symlink_target = private_root / "symlink-winner"
+            symlink_target.mkdir(exist_ok=True)
+            try:
+                destination.symlink_to(symlink_target, target_is_directory=True)
+            except OSError as exc:
+                pytest.skip(f"symlink creation unavailable: {exc}")
+        real_publish(staging, destination)
+
+    monkeypatch.setattr(
+        E.atomic_publish,
+        "publish_directory_noreplace",
+        race_then_publish,
+    )
+    with pytest.raises(
+        ValueError,
+        match="destination already exists; refusing overwrite",
+    ):
+        E.publish_package(
+            out,
+            records,
+            texts,
+            receipt,
+            hmac_key=b"k" * 32,
+            evidence=evidence,
+        )
+
+    assert not list(private_root.glob(f".{out.name}.staging-*"))
+    if winner_kind == "file":
+        assert out.read_bytes() == b"file-winner"
+    elif winner_kind == "directory":
+        assert (out / "sentinel").read_bytes() == b"directory-winner"
+    else:
+        assert out.is_symlink()
+        assert out.resolve() == (private_root / "symlink-winner").resolve()
+
+
+def test_publish_failure_never_cleans_a_substituted_staging_directory(
+    private_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    records, texts, receipt, _config_hash, evidence = _build(private_root)
+    out = private_root / "substituted-staging"
+    replacement: list[Path] = []
+
+    def substitute_then_fail(staging: Path, _destination: Path) -> None:
+        owned = staging.with_name(staging.name + ".owned")
+        os.rename(staging, owned)
+        staging.mkdir()
+        (staging / "sentinel").write_bytes(b"not-owned")
+        replacement.append(staging)
+        raise OSError(errno.EIO, "synthetic post-substitution failure")
+
+    monkeypatch.setattr(
+        E.atomic_publish,
+        "publish_directory_noreplace",
+        substitute_then_fail,
+    )
+    with pytest.raises(OSError, match="post-substitution"):
+        E.publish_package(
+            out,
+            records,
+            texts,
+            receipt,
+            hmac_key=b"k" * 32,
+            evidence=evidence,
+        )
+
+    assert len(replacement) == 1
+    assert (replacement[0] / "sentinel").read_bytes() == b"not-owned"
+    owned = list(private_root.glob(f".{out.name}.staging-*.owned"))
+    assert len(owned) == 1
+    assert (owned[0] / "records.jsonl").is_file()
+
+
 @pytest.mark.parametrize("mutation", [
     "package_hash", "record_id", "source_group", "entry_mapping",
     "content_bytes", "record_count", "register_count", "era_distribution",
@@ -947,6 +1040,50 @@ def test_json_dry_run_uses_standard_no_path_envelope(private_root: Path, capsys)
     assert set(envelope["results"]) == {"producer_receipt"}
     blob = json.dumps(envelope)
     assert str(private_root) not in blob
+
+
+def test_unsupported_publish_uses_controlled_cli_refusal(
+    private_root: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+):
+    manifest = _source(
+        private_root,
+        "gmail_sent",
+        "Enough words for unsupported publication fixture.",
+    )
+    key = _private_key(private_root, "key.bin", b"z" * 32)
+    out = private_root / "unsupported-package"
+
+    def unsupported(_staging: Path, _destination: Path) -> None:
+        raise OSError(
+            getattr(errno, "ENOTSUP", errno.EINVAL),
+            "atomic no-replace directory publication is unsupported",
+        )
+
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        E.atomic_publish,
+        "publish_directory_noreplace",
+        unsupported,
+    )
+    rc = E.main([
+        "--source-manifest", f"gmail_sent={manifest}",
+        "--register-map", "gmail_sent:personal=email.personal",
+        "--allowed-ai-status", "pre_ai_human", "--persona", "joshua",
+        "--hmac-key", str(key), "--output-dir", str(out),
+        "--max-records", "1", "--max-text-bytes", "1000000",
+        "--live-smoke-confirmed",
+    ])
+
+    captured = capsys.readouterr()
+    assert rc == 2
+    assert not out.exists()
+    assert not list(private_root.glob(".unsupported-package.staging-*"))
+    assert captured.out == ""
+    assert captured.err == (
+        "author_corpus_export: private input or policy validation failed\n"
+    )
 
 
 def test_full_write_requires_matching_smoke(private_root: Path):

@@ -2,12 +2,13 @@
 """Materialize exact-byte, attested private documents for author-corpus export."""
 from __future__ import annotations
 
-import argparse, hashlib, json, os, sys, tempfile
+import argparse, hashlib, json, sys
 from collections import Counter
 from datetime import datetime, timezone, date
 from pathlib import Path
 from typing import Any
 import author_corpus_export as exporter
+import atomic_publish
 
 SCHEMA_MAP = "setec-author-document-map/1"
 SCHEMA_ATTEST = "setec-author-document-attestation/1"
@@ -64,29 +65,7 @@ def resolve(manifest: Path, raw: str) -> Path:
         if "ai-prose-baselines-private" not in {x.casefold() for x in real.parts}: continue
         return p
     raise ValueError(f"missing source text: {raw}")
-def secure_directory(path: Path) -> None:
-    """Create or harden a private output directory without umask dependence."""
-    if path.is_symlink():
-        raise ValueError("private output directories must not be symlinks")
-    if path.exists():
-        if not path.is_dir():
-            raise ValueError("private output directory path is not a directory")
-    else:
-        missing: list[Path] = []
-        current = path
-        while not current.exists():
-            if current.is_symlink():
-                raise ValueError("private output directories must not be symlinks")
-            missing.append(current)
-            current = current.parent
-        if current.is_symlink() or not current.is_dir():
-            raise ValueError("private output parent is not a regular directory")
-        for directory in reversed(missing):
-            os.mkdir(directory, 0o700)
-            if os.name == "posix":
-                os.chmod(directory, 0o700)
-    if os.name == "posix":
-        os.chmod(path, 0o700)
+secure_directory = atomic_publish.secure_private_directory
 
 
 def secure_directory_tree(root: Path, leaf: Path) -> None:
@@ -102,29 +81,7 @@ def secure_directory_tree(root: Path, leaf: Path) -> None:
         secure_directory(current)
 
 
-def atomic(path: Path, data: str | bytes) -> None:
-    """Atomically replace one private file with an explicit owner-only mode."""
-    secure_directory(path.parent)
-    payload = data.encode("utf-8") if isinstance(data, str) else data
-    descriptor, raw_temp = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
-    )
-    temp = Path(raw_temp)
-    try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "wb") as handle:
-            descriptor = -1
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp, path)
-        if os.name == "posix":
-            os.chmod(path, 0o600)
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        if temp.exists(): temp.unlink()
+atomic = atomic_publish.atomic_write_private
 def validate_exact_text(data: bytes) -> bytes:
     """Validate prose controls while preserving the exact UTF-8 bytes."""
     text = data.decode("utf-8")

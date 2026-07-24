@@ -32,6 +32,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 import acquisition_core as ac  # noqa: E402
 import acquire_imessage_sent_atomic as atomic_imessage  # noqa: E402
+import atomic_publish  # noqa: E402
 from claim_license import ClaimLicense  # noqa: E402
 from output_schema import build_error_output, build_output  # noqa: E402
 
@@ -1380,8 +1381,11 @@ def publish_package(destination: Path, records: list[dict[str, Any]],
     destination.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(destination.parent, 0o700)
     staging = destination.parent / f".{destination.name}.staging-{uuid.uuid4().hex}"
+    staging_identity: tuple[int, int] | None = None
     try:
         staging.mkdir(mode=0o700)
+        staged_info = os.stat(staging, follow_symlinks=False)
+        staging_identity = (int(staged_info.st_dev), int(staged_info.st_ino))
         for index, record in enumerate(records, 1):
             out = staging / record["text_path"]
             out.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -1418,10 +1422,24 @@ def publish_package(destination: Path, records: list[dict[str, Any]],
         }
         if _verify_package(staged_records, staged_texts, staged_receipt, **verify_args) != receipt_hash:
             raise ValueError("staged producer receipt changed after the build phase")
-        os.replace(staging, destination)
+        try:
+            atomic_publish.publish_directory_noreplace(staging, destination)
+        except FileExistsError as exc:
+            raise ValueError(
+                "destination already exists; refusing overwrite"
+            ) from exc
     finally:
-        if staging.exists():
-            shutil.rmtree(staging)
+        if staging_identity is not None:
+            try:
+                current = os.stat(staging, follow_symlinks=False)
+                if (
+                    stat.S_ISDIR(current.st_mode)
+                    and (int(current.st_dev), int(current.st_ino))
+                    == staging_identity
+                ):
+                    shutil.rmtree(staging)
+            except (FileNotFoundError, MemoryError):
+                pass
 
 
 def _smoke_path(destination: Path) -> Path:

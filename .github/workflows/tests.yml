@@ -80,10 +80,11 @@ jobs:
       - name: Install test dependency
         run: python -m pip install --upgrade pip pytest
 
-      - name: Run atomic iMessage descriptor-confinement suite
+      - name: Run descriptor-confinement and shared atomic-publish suites
         run: |
           python -m pytest \
             plugins/setec-voiceprint/scripts/tests/test_acquire_imessage_sent_atomic.py \
+            plugins/setec-voiceprint/scripts/tests/test_atomic_publish.py \
             -q -rs
 
   windows-descriptor-backend:
@@ -193,9 +194,11 @@ jobs:
     # AttributeError. The Linux/macOS lanes never see it and the other focused
     # Windows lanes above only run their own files, so a bare fchmod can land
     # invisibly. This lane runs the writers whose atomic() path is
-    # Windows-REACHABLE and hits fchmod -- normalize_author_registry and
-    # prepare_author_document_adapter -- so their guards are genuine crash fixes
-    # regression-covered here. author_corpus_export is included because its
+    # Windows-REACHABLE and reaches the shared atomic writer through
+    # normalize_author_registry and prepare_author_document_adapter, so its
+    # fchmod guard is genuine crash-fix regression coverage. The shared helper's
+    # direct tests also exercise native Windows no-replace rename behavior.
+    # author_corpus_export is included because its
     # export-seam fixture is hash-pinned and must stay LF (see .gitattributes) or
     # core.autocrlf=true on this runner remangles it into a "source content hash
     # mismatch" failure.
@@ -233,6 +236,7 @@ jobs:
           # Deselecting keeps that known failure from poisoning this lane while
           # the rest of the file still regression-covers the fchmod guard.
           python -m pytest `
+            plugins/setec-voiceprint/scripts/tests/test_atomic_publish.py `
             plugins/setec-voiceprint/scripts/tests/test_normalize_author_registry.py `
             plugins/setec-voiceprint/scripts/tests/test_author_corpus_export.py `
             plugins/setec-voiceprint/scripts/tests/test_prepare_author_document_adapter.py `

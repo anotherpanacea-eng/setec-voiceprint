@@ -31,6 +31,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 import acquisition_core as ac  # noqa: E402
+import atomic_publish  # noqa: E402
 
 
 TASK_SURFACE = "voice_coherence_acquisition"
@@ -483,13 +484,6 @@ def discover_messages(
 # Stable contact redaction, item discovery, and preprocessing
 
 
-def _atomic_write_text(path: Path, text: str) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    tmp.replace(path)
-
-
 def _load_name_map(path: Path | None, known_handles: set[str]) -> dict[str, str]:
     if path is None:
         return {}
@@ -836,7 +830,7 @@ def _rewrite_manifest_without_id(path: Path, old_id: str) -> None:
         json.dumps(entry, sort_keys=True, ensure_ascii=False) + "\n"
         for entry in kept
     )
-    _atomic_write_text(path, text)
+    atomic_publish.atomic_write_private(path, text)
 
 
 def _compose_and_write(
@@ -885,7 +879,7 @@ def _compose_and_write(
         metadata["author_corpus_unit_index"] = 0
         metadata["author_corpus_unit_count"] = 1
         metadata["draft_manifest_path"] = str(options.manifest_path.resolve())
-        _atomic_write_text(
+        atomic_publish.atomic_write_private(
             meta_path, json.dumps(metadata, indent=2, sort_keys=True) + "\n"
         )
         ac.append_manifest_entry(options.manifest_path, entry)
@@ -1031,7 +1025,7 @@ def write_live_smoke_receipt(
         "since": since.isoformat() if since else None,
         "until": until.isoformat() if until else None,
     }
-    _atomic_write_text(
+    atomic_publish.atomic_write_private(
         output_dir / RECEIPT_NAME,
         json.dumps(payload, indent=2, sort_keys=True) + "\n",
     )
@@ -1087,7 +1081,7 @@ def write_corpus_readme(
         + _reply_rate_text(summary, stats)
         + "**.\n"
     )
-    _atomic_write_text(output_dir / "README.md", text)
+    atomic_publish.atomic_write_private(output_dir / "README.md", text)
 
 
 _SUMMARY_REASONS = (
