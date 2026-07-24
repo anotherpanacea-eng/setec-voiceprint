@@ -2013,16 +2013,17 @@ def run(args: argparse.Namespace) -> int:
     if args.json:
         sys.stdout.write(json.dumps(result.to_dict(), indent=2) + "\n")
     else:
-        sys.stdout.write(
-            f"Near-dup dedup: {result.total} records → "
+        lines = [
+            f"Near-dup dedup: {result.total} records -> "
             f"{len(result.kept)} kept, {len(result.dropped)} dropped "
-            f"(threshold={result.threshold}).\n"
-        )
+            f"(threshold={result.threshold}).\n",
+        ]
         for rep, others in result.clusters.items():
-            sys.stdout.write(f"  keep {rep}  (drops: {', '.join(others)})\n")
+            lines.append(f"  keep {rep}  (drops: {', '.join(others)})\n")
         if not args.dry_run and result.dropped:
             target = args.out or args.manifest
-            sys.stdout.write(f"Wrote deduped manifest to: {target}\n")
+            lines.append(f"Wrote deduped manifest to: {target}\n")
+        _write_human_stdout("".join(lines))
     return 0
 
 
@@ -2100,7 +2101,7 @@ def _run_passages(args: argparse.Namespace) -> int:
     if args.json:
         sys.stdout.write(text + "\n")
     else:
-        sys.stdout.write(_passage_summary(report))
+        _write_human_stdout(_passage_summary(report))
 
     if not args.out:
         return 0
@@ -2114,18 +2115,35 @@ def _run_passages(args: argparse.Namespace) -> int:
         sys.stderr.write(f"[near_dup_dedup] {e}\n")
         return 2
     if not args.json:
-        sys.stdout.write(
+        _write_human_stdout(
             f"Wrote {n} passage row(s) to {args.out} "
             f"(passage files under {args.passage_dir}).\n"
         )
     return 0
 
 
+def _write_human_stdout(text: str) -> None:
+    """Write operator-facing text without letting console encoding undo success.
+
+    Reports, checkpoints, manifests, and ``--json`` remain UTF-8 / exact-data
+    paths. This fallback is only for the human-readable summaries, whose IDs and
+    file paths can validly contain characters an inherited Windows console cannot
+    encode.
+    """
+    encoding = getattr(sys.stdout, "encoding", None)
+    if encoding:
+        try:
+            text.encode(encoding)
+        except UnicodeEncodeError:
+            text = text.encode(encoding, errors="backslashreplace").decode(encoding)
+    sys.stdout.write(text)
+
+
 def _passage_summary(report: dict[str, Any]) -> str:
     """Human-readable stdout for a passage-mode run without --json."""
     a, b = report["stage_a"], report["stage_b"]
     lines = [
-        f"Passage hygiene: {report['n_documents']} document(s) → "
+        f"Passage hygiene: {report['n_documents']} document(s) -> "
         f"{report['n_passages']} passage(s); stages={','.join(report['stages'])}.",
     ]
     if a["run"]:

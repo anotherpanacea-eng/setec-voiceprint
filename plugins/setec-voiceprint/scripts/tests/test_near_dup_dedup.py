@@ -664,6 +664,78 @@ def test_report_only_default_writes_nothing(tmp_path):
     assert report["mode"] == "passages"
 
 
+def test_passage_human_summary_is_encodable_on_cp1252_console(tmp_path, monkeypatch):
+    """A completed report/checkpoint must not be followed by a console crash."""
+    m = _passage_manifest(tmp_path, [
+        _full_row("a", SPAN_41),
+        _full_row("b", SPAN_41),
+    ])
+    report_out = tmp_path / "report.json"
+    checkpoint = tmp_path / "state.json"
+    encoded_stdout = io.TextIOWrapper(
+        io.BytesIO(), encoding="cp1252", errors="strict", write_through=True
+    )
+    monkeypatch.setattr(sys, "stdout", encoded_stdout)
+
+    assert ndd.main([
+        str(m), "--passages", "--stages", "b",
+        "--checkpoint", str(checkpoint), "--report-out", str(report_out),
+    ]) == 0
+    assert json.loads(report_out.read_text(encoding="utf-8"))["mode"] == "passages"
+    assert json.loads(checkpoint.read_text(encoding="utf-8"))["stage_b_detail"]
+    assert b"->" in encoded_stdout.buffer.getvalue()
+
+
+@_needs_datasketch
+def test_document_human_summary_escapes_unicode_dropped_id_on_cp1252_console(
+    tmp_path, monkeypatch
+):
+    manifest = tmp_path / "input.jsonl"
+    out = tmp_path / "output.jsonl"
+    manifest.write_text(
+        "\n".join(json.dumps(row) for row in [
+            {"id": "dropped-漢", "text": BASE, "author": "Author"},
+            {"id": "kept", "text": NEAR_DUP, "author": "Author"},
+        ]) + "\n",
+        encoding="utf-8",
+    )
+    encoded_stdout = io.TextIOWrapper(
+        io.BytesIO(), encoding="cp1252", errors="strict", write_through=True
+    )
+    monkeypatch.setattr(sys, "stdout", encoded_stdout)
+
+    assert ndd.main([str(manifest), "--out", str(out), "--threshold", "0.6"]) == 0
+    assert out.exists()
+    assert b"dropped-\\u6f22" in encoded_stdout.buffer.getvalue()
+
+
+@_needs_datasketch
+def test_passage_export_human_summary_escapes_unicode_output_path_on_cp1252_console(
+    tmp_path, monkeypatch
+):
+    m = _passage_manifest(tmp_path, [
+        _full_row("a", BASE),
+        _full_row("b", BASE),
+    ])
+    out = tmp_path / "passages-漢.jsonl"
+    passage_dir = tmp_path / "passages-漢"
+    checkpoint = tmp_path / "state.json"
+    encoded_stdout = io.TextIOWrapper(
+        io.BytesIO(), encoding="cp1252", errors="strict", write_through=True
+    )
+    monkeypatch.setattr(sys, "stdout", encoded_stdout)
+
+    assert ndd.main([
+        str(m), "--passages", "--stages", "a", "--threshold", "0.6",
+        "--checkpoint", str(checkpoint), "--out", str(out),
+        "--passage-dir", str(passage_dir),
+    ]) == 0
+    assert out.exists()
+    assert checkpoint.exists()
+    assert list(passage_dir.glob("*.txt"))
+    assert b"\\u6f22" in encoded_stdout.buffer.getvalue()
+
+
 def test_passage_checkpoint_resume_is_bound_and_skips_completed_stage(tmp_path, monkeypatch):
     m = _passage_manifest(tmp_path, [
         _full_row("a", SPAN_41),
