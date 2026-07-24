@@ -149,7 +149,12 @@ REQUIRED_FIELDS = ("id", "path", "ai_status", "use")
 # *unfamiliar* nested shape that would warrant moving to jsonschema.
 TRIPWIRE_BROAD_FIELD_THRESHOLD = 45
 TRIPWIRE_VERSION_FIELDS = ("schema_version", "manifest_version")
-TRIPWIRE_KNOWN_NESTED_FIELDS = frozenset({"notes"})
+# `passage_dedup` (spec 36) is the second documented nested field: every row of a
+# `near_dup_dedup --passages --out` export carries it, and the handcrafted
+# validator already covers it (it is a provenance/marker object with no per-field
+# semantics the validator asserts). Registering it here keeps the Issue #6
+# "unfamiliar nested shape" trigger meaningful instead of firing on every export.
+TRIPWIRE_KNOWN_NESTED_FIELDS = frozenset({"notes", "passage_dedup"})
 
 # All recognized field names. Unknown fields generate warnings.
 KNOWN_FIELDS = {
@@ -170,6 +175,13 @@ KNOWN_FIELDS = {
     # is the content bucket a record's prose belongs to. Topic is parsed,
     # never inferred — SETEC asserts no semantics it cannot license.
     "topic",
+    # Passage-level hygiene marker (spec 36). Stamped on every row of a
+    # `near_dup_dedup --passages --out` export: source doc id + ordinal + char
+    # offsets + the params echo. Registration only — the validator asserts nothing
+    # about its contents. It is load-bearing for `pool_guard`'s refusal at the
+    # duplicate-dependent set-level-diversity pools, so it must not read as an
+    # unknown stray field.
+    "passage_dedup",
 }
 
 

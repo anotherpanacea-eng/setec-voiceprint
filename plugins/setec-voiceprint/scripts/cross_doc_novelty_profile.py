@@ -41,6 +41,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
+import pool_guard  # noqa: E402
 import stylometry_core as sc  # noqa: E402
 
 TASK_SURFACE = "set_level_diversity"
@@ -485,6 +486,19 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
             reason=f"cannot read --target: {e}", reason_category="bad_input")
 
     target_resolved = target_path.resolve()
+
+    # The pool's mean/SD AS IT IS (including a collapsed mode) is the measured
+    # object; silently deduping it widens the SD and inflates apparent novelty, so
+    # a passage-deduped reference manifest is refused (spec 36).
+    if args.reference_manifest:
+        marked = pool_guard.scan_manifest_for_passage_dedup(Path(args.reference_manifest))
+        if marked:
+            return build_error_output(
+                task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+                target_path=args.target,
+                reason=pool_guard.refusal_reason(
+                    args.reference_manifest, marked, flag="--reference-manifest"),
+                reason_category="bad_input")
 
     # Load reference pool.
     try:

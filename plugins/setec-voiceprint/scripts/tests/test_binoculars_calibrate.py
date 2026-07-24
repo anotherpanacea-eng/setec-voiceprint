@@ -795,3 +795,35 @@ def test_cli_returns_three_on_backend_construction_failure(monkeypatch, tmp_path
     monkeypatch.setattr(cal.bin_audit.SurprisalBackend, "__init__", failing_init)
     rc = cal.main([str(manifest)])
     assert rc == 3
+
+# A passage-deduped manifest (rows carrying the spec-36 `passage_dedup` marker).
+_GUARD_MARKED_ROWS = [
+    {"id": "docA#p0000",
+     "text": "The harbor lights came on one at a time along the western pier while the last of the fishing boats turned home tonight.",
+     "passage_dedup": {"source_doc_id": "docA", "ordinal": 0}},
+    {"id": "docB#p0000",
+     "text": "Quantum entanglement continues to defy ordinary intuition about locality and separability in ways that still puzzle working physicists today somehow.",
+     "passage_dedup": {"source_doc_id": "docB", "ordinal": 0}},
+    {"id": "docC#p0000",
+     "text": "Parliament debated the contentious measure for many hours before adjourning without any clear resolution late that long gray winter evening.",
+     "passage_dedup": {"source_doc_id": "docC", "ordinal": 0}},
+]
+
+
+# --- spec 36: the pool guard must NOT creep onto this calibration set -------
+#
+# Contract 17 (negative control). binoculars_calibrate defines its own
+# `_load_manifest`, so it matches the coverage sweep's loader pattern — but it
+# loads a LABELED EVAL SET for calibration scoring, not a diversity pool. It must
+# keep accepting a passage-deduped manifest.
+
+def test_pool_guard_does_not_creep_onto_the_calibration_set(tmp_path):
+    import pool_guard  # type: ignore
+
+    m = tmp_path / "marked.jsonl"
+    rows = [dict(r, ai_status="pre_ai_human") for r in _GUARD_MARKED_ROWS]
+    m.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    assert len(pool_guard.scan_manifest_for_passage_dedup(m)) == 3
+    entries = cal._load_manifest(m)
+    assert [e["id"] for e in entries] == [r["id"] for r in rows]
+    assert "pool_guard" not in (Path(cal.__file__).read_text(encoding="utf-8"))

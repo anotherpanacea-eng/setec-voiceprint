@@ -305,3 +305,50 @@ def test_non_object_jsonl_rows_skipped_not_traceback(tmp_path):
     rc, env = _envelope(["--target", str(tgt), "--manifest", str(man), "--json"])
     assert env["available"] is True                       # the non-object rows are skipped, not fatal
     assert env["results"]["n_reference_docs"] == 1        # only the one valid object row is used
+
+# A passage-deduped manifest (rows carrying the spec-36 `passage_dedup` marker).
+_GUARD_MARKED_ROWS = [
+    {"id": "docA#p0000",
+     "text": "The harbor lights came on one at a time along the western pier while the last of the fishing boats turned home tonight.",
+     "passage_dedup": {"source_doc_id": "docA", "ordinal": 0}},
+    {"id": "docB#p0000",
+     "text": "Quantum entanglement continues to defy ordinary intuition about locality and separability in ways that still puzzle working physicists today somehow.",
+     "passage_dedup": {"source_doc_id": "docB", "ordinal": 0}},
+    {"id": "docC#p0000",
+     "text": "Parliament debated the contentious measure for many hours before adjourning without any clear resolution late that long gray winter evening.",
+     "passage_dedup": {"source_doc_id": "docC", "ordinal": 0}},
+]
+
+
+# --- spec 36: the pool guard must NOT creep onto this comparison pool -------
+#
+# Contract 17 (pinned negative control). originality_audit carries the
+# set_level_diversity tag, but its measurement is NOT duplicate-dependent:
+# duplicate pool members are idempotent for longest-match coverage — the copy
+# count provably cannot change the result. Classification is by
+# duplicate-dependence of the MEASUREMENT, not by surface tag, so this surface is
+# EXEMPT and must keep accepting a passage-deduped reference pool.
+
+def test_pool_guard_does_not_creep_onto_this_comparison_pool(tmp_path):
+    import pool_guard  # type: ignore
+
+    m = tmp_path / "marked.jsonl"
+    m.write_text(
+        "\n".join(json.dumps(r) for r in _GUARD_MARKED_ROWS) + "\n", encoding="utf-8",
+    )
+    tgt = tmp_path / "target.txt"
+    tgt.write_text(_GUARD_MARKED_ROWS[0]["text"], encoding="utf-8")
+    rc, env = _envelope(["--target", str(tgt), "--manifest", str(m), "--json"])
+    assert rc == 0 and env["available"] is True
+    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env)
+
+
+def test_duplicate_pool_members_are_idempotent_for_coverage(tmp_path):
+    """The RATIONALE behind the exemption, pinned rather than asserted in prose:
+    adding a second copy of a pool document cannot move the coverage read, which
+    is why deduping this pool is harmless here."""
+    rdir, tgt = _files(tmp_path)
+    _rc, one = _envelope(["--target", str(tgt), "--reference-dir", str(rdir), "--json"])
+    (rdir / "r1_copy.txt").write_text((rdir / "r1.txt").read_text(), encoding="utf-8")
+    _rc, two = _envelope(["--target", str(tgt), "--reference-dir", str(rdir), "--json"])
+    assert one["results"]["coverage"] == two["results"]["coverage"]
