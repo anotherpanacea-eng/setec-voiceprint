@@ -186,6 +186,10 @@ def _write_fixture(root: Path, relative: str, data: bytes) -> None:
 def _topology_repo(
     path: Path, *, workflow_bytes: bytes | None = None
 ) -> tuple[Path, dict[str, Any], dict[str, str]]:
+    if IS_SHALLOW:
+        pytest.skip(
+            "historical role artifacts are intentionally unavailable in shallow clones"
+        )
     source_receipt = _receipt()
     source_roles = {
         key: source_receipt[key]["reviewed_head"]
@@ -776,6 +780,10 @@ def test_each_allowlisted_workflow_drives_full_receipt_and_git_verification(
     commit: str,
     expected: str,
 ) -> None:
+    if IS_SHALLOW:
+        pytest.skip(
+            "historical workflow blobs are intentionally unavailable in shallow clones"
+        )
     raw = GATE.Git(ROOT).show_file(commit, GATE.WORKFLOW_PATH, 1_048_576)
     assert hashlib.sha256(raw).hexdigest() == expected
     repo, receipt, anchors = _topology_repo(tmp_path / expected[:8], workflow_bytes=raw)
@@ -791,6 +799,10 @@ def test_unknown_reordered_and_future_workflow_bytes_refuse_end_to_end(
     monkeypatch: pytest.MonkeyPatch,
     mutation: str,
 ) -> None:
+    if IS_SHALLOW:
+        pytest.skip(
+            "historical workflow blobs are intentionally unavailable in shallow clones"
+        )
     raw = GATE.Git(ROOT).show_file(
         "7ffabd343066585de2a80c22b4aeba25d27d5450",
         GATE.WORKFLOW_PATH,
