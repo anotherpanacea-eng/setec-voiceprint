@@ -30,6 +30,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
+import pool_guard  # noqa: E402
 from originality_audit import (  # noqa: E402
     DEFAULT_MIN_NGRAM,
     _MAX_SPAN,
@@ -212,6 +213,16 @@ def _claim_license() -> dict[str, str]:
 
 def _run(args: argparse.Namespace) -> dict[str, Any]:
     corpus_ref = args.corpus_dir or args.manifest
+    # A repeated passage IS the low-novelty signal leave-one-out coverage reads,
+    # so a passage-deduped pool has had the measured object removed (spec 36).
+    if args.manifest:
+        marked = pool_guard.scan_manifest_for_passage_dedup(Path(args.manifest))
+        if marked:
+            return build_error_output(
+                task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+                target_path=str(args.manifest),
+                reason=pool_guard.refusal_reason(args.manifest, marked, flag="--manifest"),
+                reason_category="bad_input")
     try:
         if args.corpus_dir:
             loaded = _load_reference_dir(Path(args.corpus_dir))

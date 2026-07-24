@@ -61,6 +61,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
+import pool_guard  # noqa: E402
 from stylometry_core import word_tokens  # noqa: E402
 
 TASK_SURFACE = "set_level_diversity"
@@ -409,6 +410,17 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
             return build_error_output(
                 task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
                 target_path=ref, reason=err["reason"], reason_category=err["reason_category"])
+
+    # Cluster SIZES are the read, so collapsing near-duplicate passages out of the
+    # pool destroys the partition this surface measures (spec 36).
+    if args.manifest:
+        marked = pool_guard.scan_manifest_for_passage_dedup(Path(args.manifest))
+        if marked:
+            return build_error_output(
+                task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+                target_path=args.manifest,
+                reason=pool_guard.refusal_reason(args.manifest, marked, flag="--manifest"),
+                reason_category="bad_input")
 
     try:
         if args.dir:

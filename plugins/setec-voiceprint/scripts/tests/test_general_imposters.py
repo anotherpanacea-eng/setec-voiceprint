@@ -730,6 +730,52 @@ class TestTargetSelfEntry:
         assert entries[0].resolved_path is not None
         assert entries[0].resolved_path == text_path.resolve()
 
+# A passage-deduped manifest (rows carrying the spec-36 `passage_dedup` marker).
+_GUARD_MARKED_ROWS = [
+    {"id": "docA#p0000",
+     "text": "The harbor lights came on one at a time along the western pier while the last of the fishing boats turned home tonight.",
+     "passage_dedup": {"source_doc_id": "docA", "ordinal": 0}},
+    {"id": "docB#p0000",
+     "text": "Quantum entanglement continues to defy ordinary intuition about locality and separability in ways that still puzzle working physicists today somehow.",
+     "passage_dedup": {"source_doc_id": "docB", "ordinal": 0}},
+    {"id": "docC#p0000",
+     "text": "Parliament debated the contentious measure for many hours before adjourning without any clear resolution late that long gray winter evening.",
+     "passage_dedup": {"source_doc_id": "docC", "ordinal": 0}},
+]
+
+
+# --- spec 36: the pool guard must NOT creep onto this comparison pool -------
+#
+# Contract 17 (negative control). general_imposters defines its own
+# `_load_manifest`, so it matches the coverage sweep's loader pattern — but it is
+# an impostor-pool COMPARISON consumer, and near-dup dedup of an impostor pool is
+# legitimate and sometimes required (#306/#307's purpose rule). Refusing a
+# passage-deduped pool here would be the exact inversion the guard forbids.
+
+def test_pool_guard_does_not_creep_onto_the_impostor_pool(tmp_path):
+    import pool_guard  # type: ignore
+
+    corpus = tmp_path / "texts"
+    corpus.mkdir()
+    rows = []
+    for i, r in enumerate(_GUARD_MARKED_ROWS):
+        f = corpus / f"{i}.txt"
+        f.write_text(r["text"], encoding="utf-8")
+        rows.append({
+            "id": r["id"], "path": f"texts/{i}.txt", "persona": "p",
+            "register": "blog_essay", "corpus_role": "impostor",
+            "passage_dedup": r["passage_dedup"],
+        })
+    m = tmp_path / "marked.jsonl"
+    m.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+    # The marker is present...
+    assert len(pool_guard.scan_manifest_for_passage_dedup(m)) == 3
+    # ...and this surface's own loader consumes the pool anyway, unrefused.
+    entries = gi._load_manifest(m)
+    assert [e.id for e in entries] == [r["id"] for r in rows]
+    assert "pool_guard" not in Path(gi.__file__).read_text(encoding="utf-8")
+
 
 if __name__ == "__main__":
     if pytest is None:

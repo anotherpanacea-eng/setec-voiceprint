@@ -33,6 +33,7 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from output_schema import build_error_output, build_output  # noqa: E402
 from claim_license import from_legacy  # noqa: E402
+import pool_guard  # noqa: E402
 from originality_audit import _load_reference_dir, _load_reference_manifest  # noqa: E402
 from stylometry_core import split_sentences  # noqa: E402 (regex fallback when NLTK absent — stdlib path)
 
@@ -309,6 +310,17 @@ def _run(args: argparse.Namespace) -> dict[str, Any]:
             return build_error_output(task_surface=TASK_SURFACE, tool=TOOL_NAME,
                                       version=SCRIPT_VERSION, target_path=str(corpus_ref),
                                       reason=err["reason"], reason_category=err["reason_category"])
+
+    # Cross-document skeleton REUSE is the read, so a passage-deduped pool has had
+    # the measured object removed before this surface sees it (spec 36).
+    if args.manifest:
+        marked = pool_guard.scan_manifest_for_passage_dedup(Path(args.manifest))
+        if marked:
+            return build_error_output(
+                task_surface=TASK_SURFACE, tool=TOOL_NAME, version=SCRIPT_VERSION,
+                target_path=str(args.manifest),
+                reason=pool_guard.refusal_reason(args.manifest, marked, flag="--manifest"),
+                reason_category="bad_input")
 
     try:
         if args.corpus_dir:

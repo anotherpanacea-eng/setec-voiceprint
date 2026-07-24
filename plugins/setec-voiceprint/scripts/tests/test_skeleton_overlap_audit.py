@@ -230,3 +230,70 @@ def test_unit_skeleton_helper_topic_robust():
     a = soa.skeleton_for(_TPL_A)
     b = soa.skeleton_for(_TPL_B)
     assert a["skeleton"] == b["skeleton"] and a["n_units"] == 4
+
+# Twelve distinct >= 20-word prose lines: enough to clear every set floor on this
+# surface, so a refusal can only come from the guard and not from an abstention.
+_GUARD_TEXTS = [
+    "The harbor lights came on one at a time along the western pier while the last of the fishing boats turned home.",
+    "Quantum entanglement continues to defy ordinary intuition about locality and separability in ways that still puzzle working physicists today.",
+    "She baked three heavy loaves of sourdough bread before the summer storm knocked the power out across the whole sleepy village.",
+    "Tax policy reform requires balancing equity against efficiency across many competing constituencies and deeply entrenched political interests over a long horizon.",
+    "The dragon coiled around the jagged mountain peak and exhaled a long plume of green fire into the cold clear morning.",
+    "Investors fled toward safe havens as the bond market signaled a coming recession sometime in the several difficult months ahead.",
+    "My grandmother always kept her most cherished recipes in a small tin box rusted shut by decades of steady kitchen damp.",
+    "The algorithm sorts the enormous array in logarithmic time using a clever recursive divide and conquer approach throughout the whole pass.",
+    "Rain hammered the rattling tin roof all through the night and the swollen river rose far past its soft muddy banks.",
+    "Parliament debated the contentious measure for many hours before adjourning without any clear resolution late that long gray winter evening.",
+    "He tuned the battered old guitar very slowly listening closely for the faint buzz of one loose and badly worn string.",
+    "The telescope captured the faint ancient light of a distant galaxy billions of years deep in the cold cosmic past.",
+]
+
+
+# --- spec 36: the passage-dedup pool guard ----------------------------------
+#
+# Contract 16 (refusal) / 18 (clean input unaffected). This surface's
+# measurement is duplicate-dependent, so a passage-deduped manifest has had the
+# measured object removed before the audit ever sees it: the guard refuses with
+# the shipped set-floor-abstention shape (available:false, bad_input, rc 3)
+# rather than reporting a number computed on a mutilated pool.
+
+import pool_guard  # type: ignore  # noqa: E402
+
+
+def _marked_manifest_soa(tmp_path, name="marked.jsonl"):
+    p = tmp_path / name
+    rows = [
+        {"id": f"doc{i}#p0000", "text": _GUARD_TEXTS[i % len(_GUARD_TEXTS)],
+          "passage_dedup": {"source_doc_id": f"doc{i}", "ordinal": 0}}
+        for i in range(12)
+    ]
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    return p
+
+
+def _clean_manifest_soa(tmp_path, name="clean.jsonl"):
+    p = tmp_path / name
+    rows = [
+        {"id": f"doc{i}", "text": _GUARD_TEXTS[i % len(_GUARD_TEXTS)]}
+        for i in range(12)
+    ]
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+    return p
+
+
+def test_pool_guard_refuses_a_passage_deduped_manifest(tmp_path):
+    m = _marked_manifest_soa(tmp_path)
+    rc, env = _envelope(["--manifest", str(m), "--json"])
+    assert rc == 3
+    assert env["available"] is False
+    assert env["reason_category"] == "bad_input"
+    assert "retained duplicates" in env["reason"]
+    assert "passage-deduped" in env["reason"]
+    # The guard names its own limit so the operator doesn't read it as a seal.
+    assert "manifest-path check" in env["reason"]
+
+
+def test_pool_guard_does_not_fire_on_a_clean_manifest(tmp_path):
+    m = _clean_manifest_soa(tmp_path)
+    _rc, env = _envelope(["--manifest", str(m), "--json"])
+    assert pool_guard.PASSAGE_DEDUP_INVARIANT not in json.dumps(env)
