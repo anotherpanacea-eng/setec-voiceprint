@@ -87,32 +87,9 @@ jobs:
       - name: Spec anchor lint (changed specs)
         if: always() && github.event_name == 'pull_request'
         run: |
-          set -uo pipefail
+          set -euo pipefail
           base="origin/${{ github.base_ref }}"
-          if ! changed="$(git diff --name-only --diff-filter=d "$base"...HEAD -- specs/)"; then
-            echo "::error::Unable to enumerate changed specs; refusing to skip spec-anchor lint."
-            exit 1
-          fi
-          rc=0
-          linted=0
-          for f in $changed; do
-            # Belt and braces: the git pathspec above already scopes to
-            # specs/, but match explicitly so a future pathspec change cannot
-            # silently start linting unrelated markdown.
-            case "$f" in
-              specs/README.md|specs/_TEMPLATE.md) continue ;;
-              specs/*.md) ;;
-              *) continue ;;
-            esac
-            linted=$((linted + 1))
-            echo "::group::spec_anchor_lint $f"
-            python3 tools/spec_anchor_lint.py --spec "$f" --repo . || rc=1
-            echo "::endgroup::"
-          done
-          if [ "$linted" -eq 0 ]; then
-            echo "No spec changes in this PR - spec-anchor lint skipped."
-          fi
-          exit $rc
+          python3 tools/check_changed_spec_anchors.py --repo . --base "$base"
 
   macos-descriptor-confinement:
     runs-on: macos-latest
