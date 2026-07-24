@@ -28,6 +28,21 @@ if str(TOOLS) not in sys.path:
 import spec_anchor_lint as sal  # noqa: E402
 
 
+def test_changed_spec_workflow_discovery_fails_closed():
+    """A broken merge-base/diff must fail CI, never masquerade as no changed specs."""
+    workflow = (REPO_ROOT / ".github" / "workflows" / "tests.yml").read_text(
+        encoding="utf-8"
+    )
+    discovery = next(
+        line.strip()
+        for line in workflow.splitlines()
+        if "git diff --name-only --diff-filter=d" in line
+    )
+    assert discovery.startswith('if ! changed="$(git diff ')
+    assert "|| true" not in discovery
+    assert "Unable to enumerate changed specs" in workflow
+
+
 def _make_repo(root: Path) -> Path:
     (root / "tools").mkdir()
     (root / "tools" / "helper.py").write_text(

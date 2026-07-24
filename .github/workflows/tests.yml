@@ -89,7 +89,10 @@ jobs:
         run: |
           set -uo pipefail
           base="origin/${{ github.base_ref }}"
-          changed="$(git diff --name-only --diff-filter=d "$base"...HEAD -- specs/ || true)"
+          if ! changed="$(git diff --name-only --diff-filter=d "$base"...HEAD -- specs/)"; then
+            echo "::error::Unable to enumerate changed specs; refusing to skip spec-anchor lint."
+            exit 1
+          fi
           rc=0
           linted=0
           for f in $changed; do
