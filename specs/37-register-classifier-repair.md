@@ -12,8 +12,12 @@
 - **Status:** H1-only resolution draft — the merged spec was reviewed on immutable head
   `f864b91410b8f502c78f307f660b5db32442109b` and returned **NEEDS REWORK**
   (two build-blocking P1s). This revision freezes those decisions, restores the
-  classifier-only H1 boundary, and remains build-blocked until an independent
-  spec re-review clears it.
+  classifier-only H1 boundary. **Operator ratification 2026-07-24:** the owner
+  reviewed this revision together with an independent implementation review of the
+  H1 build and **explicitly waived a second full spec-review pass**, ratifying the
+  frozen decisions (including the `testimony` → `formal_first_person` family rename
+  and the `professional_letter` family reassignment). Hard precondition 3 is
+  satisfied by that ratification; the build is cleared.
 - **Tier:** near-term (pure stdlib repair of a shipped module; CI-runnable)
 - **GPU required:** no
 - **Upstream / prior art:** none external — this is an internal-coherence repair of
@@ -35,7 +39,7 @@ declared under the schema's most common register values, the guard is **structur
 to report `weak`/`mismatch` — a false alarm the operator learns to ignore.
 
 This repair is **H1**, the prerequisite for the separately specified **H2
-register-composition sweep** in `specs/73-register-composition-sweep.md`. H1 ships no corpus
+register-composition sweep** (deferred per spec 36 § "Deferred — M2 register-composition sweep"; tracked as burn-down item H2, spec not yet written or numbered). H1 ships no corpus
 runner. H2 may not build until this repair is independently reviewed, landed, and re-verified
 at its immutable implementation head.
 
@@ -315,7 +319,7 @@ Frozen `LEGACY_REGISTER_TO_FAMILY`:
 Implementation scope is `register_classifier.py`, the existing `voice_distance.py` integration,
 and their tests/registration artifacts. The prior "D5 one-line only" constraint is withdrawn
 because it made D6 impossible to satisfy. Corpus scanning, checkpointing, and sweep/report
-publication belong exclusively to Spec 73.
+publication belong exclusively to the deferred register-composition sweep (burn-down H2).
 
 1. **Taxonomy.** Replace the 18-slug `KNOWN_REGISTERS` tuple with the **9-entry family tuple**
    (8 families + `unknown`). Keep the name `KNOWN_REGISTERS` exported with its existing
@@ -393,7 +397,7 @@ publication belong exclusively to Spec 73.
    literal anywhere** (post-#170 drop-in standard). No `references/contract_fixtures/` entry
    exists for this id in voiceprint (grep-confirmed; `position_pair_register.json` is a
    different capability) — nothing to sync in-repo; the **cross-repo** vendored fixture is
-   handled under Consumer-visible change. Spec 73 owns the future
+   handled under Consumer-visible change. The deferred register-composition sweep (burn-down H2) owns the future
    `register_composition_sweep` capability and adds it only after H1 lands. Ship a
    `changelog.d/<slug>-register-classifier-repair.md` fragment; never edit `CHANGELOG.md`
    directly.
@@ -471,8 +475,11 @@ baselines is removed). Migration contract:
    here; the builder may add a newly introduced canonical slug only under the taxonomy
    versioning rule, and may not silently reassign an existing slug. Any other discrepancy
    stops the build and comes back to spec resolution (the anchor-verify rule).
-3. **Independent spec re-review clears this revision.** The merged spec's immutable-head
-   review was NEEDS REWORK; merge status did not make it build-ready.
+3. **~~Independent spec re-review clears this revision.~~ SATISFIED by operator
+   ratification 2026-07-24.** The merged spec's immutable-head review was NEEDS REWORK;
+   merge status alone did not make it build-ready. The owner reviewed this revision
+   alongside an independent implementation review and waived a second full spec-review
+   pass, ratifying the frozen decisions (family rename and slug reassignment included).
 4. **Consumer migrations are scheduled as release gates.** The H1 implementation PR may
    land in voiceprint after its own review, but the release/pin must not be promoted as
    consumer-ready until both APODICTIC and voicewright fixture/pin migrations pass their
@@ -582,7 +589,7 @@ band, no verdict. This repair fixes *coherence*, not *accuracy* — no claim is 
 family scorers are good, only that they are now the honest, complete, collision-free
 resolution of what the module can actually discriminate, and that the structural
 false-mismatch guarantee is gone. A labeled register-tagged corpus evaluation (per-family
-precision against independently adjudicated labels) would calibrate it later. Spec 73's
+precision against independently adjudicated labels) would calibrate it later. The deferred register-composition sweep's
 future composition sweep is explicitly **not** that calibration: declared manifest values
 are comparison metadata, not independent truth. Any calibration run records a PROVENANCE
 entry before any `status` promotion.
@@ -593,7 +600,7 @@ entry before any `status` promotion.
   heuristic quality is a separate concern.
 - **No register-composition sweep, corpus scan, checkpoint, report publication, row
   selection, corpus mutation, registration, or semantic-mode inference.** Those diagnostic
-  inventory mechanics belong to Spec 73 after H1 lands.
+  inventory mechanics belong to the deferred register-composition sweep (burn-down H2) after H1 lands.
 - **No `ALLOWED_REGISTER` changes** — the canonical set is consumed, not edited (PR #343's
   additions are absorbed via the mapping, not negotiated).
 - **No manifest re-tagging, no validator changes** — `manifest_validator.py` is untouched.
@@ -634,7 +641,7 @@ Immutable-head Codex review of merged spec head
 - **[P1] Public semantics left to builder discretion.** All six former open questions are
   resolved: exact canonical/legacy mappings, taxonomy ownership, runtime coupling, family
   names, and exact-tie behavior are frozen. The corrected H1/H2 decomposition moves the
-  corpus sweep into separately reviewed Spec 73.
+  corpus sweep into the separately reviewed, not-yet-numbered register-composition sweep spec (burn-down H2).
 
 Adversarially reviewed (verdict NEEDS-REWORK, 1 P1 + 5 P2; all code-grounded findings
 re-verified against head during the fold). Recorded so the build honors each:
