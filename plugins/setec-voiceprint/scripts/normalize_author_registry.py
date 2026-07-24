@@ -12,12 +12,16 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import os
 import sys
-import tempfile
 from collections import Counter
 from pathlib import Path
 from typing import Any
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+import atomic_publish  # noqa: E402
 
 
 SCHEMA = "setec-author-registry/1"
@@ -117,52 +121,8 @@ def _persona_aliases(values: list[str]) -> dict[tuple[str, str], str]:
     return result
 
 
-def _secure_directory(path: Path) -> None:
-    if path.is_symlink():
-        raise ValueError("private output directories must not be symlinks")
-    if path.exists():
-        if not path.is_dir():
-            raise ValueError("private output directory path is not a directory")
-    else:
-        missing: list[Path] = []
-        current = path
-        while not current.exists():
-            if current.is_symlink():
-                raise ValueError("private output directories must not be symlinks")
-            missing.append(current)
-            current = current.parent
-        if current.is_symlink() or not current.is_dir():
-            raise ValueError("private output parent is not a regular directory")
-        for directory in reversed(missing):
-            os.mkdir(directory, 0o700)
-            if os.name == "posix":
-                os.chmod(directory, 0o700)
-    if os.name == "posix":
-        os.chmod(path, 0o700)
-
-
-def _write_atomic(path: Path, content: str) -> None:
-    _secure_directory(path.parent)
-    descriptor, raw_temporary = tempfile.mkstemp(
-        dir=path.parent, prefix=f".{path.name}.", suffix=".tmp",
-    )
-    temporary = Path(raw_temporary)
-    try:
-        if hasattr(os, "fchmod"):
-            os.fchmod(descriptor, 0o600)
-        with os.fdopen(descriptor, "wb") as handle:
-            descriptor = -1
-            handle.write(content.encode("utf-8"))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-        if os.name == "posix":
-            os.chmod(path, 0o600)
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)
-        if temporary.exists():
-            temporary.unlink()
+_secure_directory = atomic_publish.secure_private_directory
+_write_atomic = atomic_publish.atomic_write_private
 
 
 def _load_json_object(raw: str) -> dict[str, Any]:
