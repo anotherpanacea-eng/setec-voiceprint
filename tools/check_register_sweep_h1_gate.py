@@ -751,7 +751,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
 
 
 def _make_opener() -> urllib.request.OpenerDirector:
-    for key in ("SSL_CERT_FILE", "SSL_CERT_DIR"):
+    for key in ("SSL_CERT_FILE", "SSL_CERT_DIR", "SSLKEYLOGFILE"):
         value = os.environ.get(key)
         if value:
             raise Refusal()

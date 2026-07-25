@@ -519,6 +519,7 @@ def test_shallow_replace_and_missing_object_repositories_refuse(
     git_dir = Path(_git(missing, "rev-parse", "--absolute-git-dir"))
     object_path = git_dir / "objects" / tree[:2] / tree[2:]
     assert object_path.is_file()
+    object_path.chmod(0o600)
     object_path.unlink()
     with pytest.raises(GATE.Refusal):
         GATE._preflight_git(GATE.Git(missing))
@@ -1049,7 +1050,9 @@ def test_token_domain_refuses_without_disclosure(
         GATE._token()
 
 
-@pytest.mark.parametrize("key", ["SSL_CERT_FILE", "SSL_CERT_DIR"])
+@pytest.mark.parametrize(
+    "key", ["SSL_CERT_FILE", "SSL_CERT_DIR", "SSLKEYLOGFILE"]
+)
 def test_custom_ca_environment_refuses_before_context(
     monkeypatch: pytest.MonkeyPatch, key: str
 ) -> None:
@@ -1070,6 +1073,7 @@ def test_tls_opener_disables_proxies_and_freezes_tls12(
     captured: list[object] = []
     monkeypatch.delenv("SSL_CERT_FILE", raising=False)
     monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+    monkeypatch.delenv("SSLKEYLOGFILE", raising=False)
     monkeypatch.setenv("HTTPS_PROXY", "http://proxy.invalid:9")
     monkeypatch.setenv("HTTP_PROXY", "http://proxy.invalid:9")
     monkeypatch.setenv("ALL_PROXY", "socks5://proxy.invalid:9")
