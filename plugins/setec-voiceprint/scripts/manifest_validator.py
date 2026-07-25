@@ -130,6 +130,14 @@ ALLOWED_LANGUAGE_STATUS = {
     "native", "non_native_advanced", "non_native_intermediate",
     "learner", "unknown",
 }
+# ``source_family`` is a deliberately small, operator-declared analytic
+# axis. It is not a path, an acquisition mechanism, or a substitute for
+# document-level ``source_id`` provenance. Unlike the extensible legacy enum
+# fields above, this initial vocabulary is closed so a typo cannot silently
+# split a corpus slice.
+ALLOWED_SOURCE_FAMILY = {
+    "facebook", "metafilter", "wordpress", "unclassified",
+}
 
 # Fields required on every entry. Missing required fields are errors.
 REQUIRED_FIELDS = ("id", "path", "ai_status", "use")
@@ -162,7 +170,7 @@ KNOWN_FIELDS = {
     "genre", "date_written", "ai_status", "editing_status",
     "word_count", "use", "split", "privacy", "source", "notes",
     "language_status",
-    "adversarial_class", "source_id", "transform",
+    "adversarial_class", "source_id", "source_family", "transform",
     # Extra fields surfaced by some manifests.
     "pov", "tags",
     # Impostor-corpus fields (see ALLOWED_CORPUS_ROLE etc. above).
@@ -357,6 +365,25 @@ def validate_entry(
             f"Unknown language_status '{language_status}'. "
             f"Known values: {', '.join(sorted(ALLOWED_LANGUAGE_STATUS))}.",
         ))
+    source_family = entry.get("source_family")
+    if "source_family" in entry:
+        if not isinstance(source_family, str):
+            issues.append(Issue(
+                "error", lineno, entry_id, "source_family",
+                "source_family must be a string when present. "
+                f"Got {type(source_family).__name__}.",
+            ))
+        elif not source_family or source_family != source_family.strip():
+            issues.append(Issue(
+                "error", lineno, entry_id, "source_family",
+                "source_family must be a non-empty, unpadded string.",
+            ))
+        elif source_family not in ALLOWED_SOURCE_FAMILY:
+            issues.append(Issue(
+                "error", lineno, entry_id, "source_family",
+                f"Unknown source_family '{source_family}'. "
+                f"Allowed values: {', '.join(sorted(ALLOWED_SOURCE_FAMILY))}.",
+            ))
 
     # 'use' must be a list per the manifest spec.
     use = entry.get("use")
